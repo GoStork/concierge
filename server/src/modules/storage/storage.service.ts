@@ -120,6 +120,20 @@ export class StorageService {
     return `https://storage.googleapis.com/${this.bucketName}/${destPath}`;
   }
 
+  // Download an object's bytes + content-type (the bucket is private, so this is
+  // how server-side jobs - e.g. the doctor photo upscaler - read existing photos).
+  async downloadObject(objectPath: string): Promise<{ buffer: Buffer; contentType: string }> {
+    this.ensureConfigured();
+    const file = this.bucket.file(objectPath);
+    const [buffer] = await file.download();
+    let contentType = "image/jpeg";
+    try {
+      const [meta] = await file.getMetadata();
+      contentType = meta.contentType || contentType;
+    } catch { /* metadata optional */ }
+    return { buffer, contentType };
+  }
+
   async getSignedUrl(
     objectPath: string,
     expiresInMinutes: number = 60,

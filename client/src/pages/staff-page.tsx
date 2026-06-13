@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check, CheckCircle2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { parsePhoneNumber } from "libphonenumber-js";
 
 function formatPhone(raw: string | null | undefined): string | null {
@@ -325,9 +326,7 @@ function GostorkAdminUsersView() {
                     {getPhotoSrc(member.photoUrl) ? (
                       <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-8 h-8 rounded-[var(--radius)] object-cover" />
                     ) : (
-                      <div className="w-8 h-8 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary">
-                        <UserCircle className="w-4 h-4" />
-                      </div>
+                      <DoctorMonogram name={member.name} size={32} rounded="var(--radius)" />
                     )}
                     <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/users/${member.id}`); }} data-testid={`link-user-name-${member.id}`}>{member.name || "-"}</button>
                     {member.name && <CopyButton value={member.name} testId={`btn-copy-name-${member.id}`} />}

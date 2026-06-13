@@ -3,11 +3,12 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, MapPin, Video, Calendar, Copy, Check } from "lucide-react";
+import { Plus, Trash2, Pencil, Loader2, Phone, MapPin, Video, Calendar, Copy, Check } from "lucide-react";
 
 function CopyButton({ value, testId }: { value: string; testId: string }) {
   const [copied, setCopied] = useState(false);
@@ -274,9 +275,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                       {member.photoUrl ? (
                         <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-7 h-7 rounded-[var(--radius)] object-cover shrink-0" />
                       ) : (
-                        <div className="w-7 h-7 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                          <UserCircle className="w-4 h-4" />
-                        </div>
+                        <DoctorMonogram name={member.name} size={28} rounded="var(--radius)" />
                       )}
                       <div className="truncate flex items-center gap-1">
                         {canEditMember(member) ? (

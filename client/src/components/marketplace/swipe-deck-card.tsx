@@ -9,6 +9,7 @@ import {
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { DoctorMonogram, initialsFromName } from "./doctor-monogram";
 
 export type { TabSection } from "./swipe-mappers";
 
@@ -75,21 +76,6 @@ interface SwipeDeckCardProps {
 
 const SWIPE_THRESHOLD = 150;
 const SWIPE_EXIT_DISTANCE = 500;
-
-// Initials for the photo-less doctor monogram: first letter of the first and last
-// real name tokens (titles + credentials stripped), e.g. "Dr. John A. Smith MD" -> "JS".
-function initialsFromName(name: string): string {
-  const tokens = name
-    .replace(/\b(Dr|Mr|Mrs|Ms|Prof)\.?\b/gi, "")
-    .replace(/,?\s*(MD|DO|PhD|MBA|FACOG|MSc|RN|NP|PA|FACS|HCLD|TS|ELD|Jr|Sr|III|II|IV)\b/gi, "")
-    .trim()
-    .split(/\s+/)
-    .filter((t) => /[a-z]/i.test(t));
-  if (tokens.length === 0) return "";
-  const first = tokens[0][0];
-  const last = tokens.length > 1 ? tokens[tokens.length - 1][0] : "";
-  return (first + last).toUpperCase();
-}
 
 export function SwipeDeckCard({
   id,
@@ -168,12 +154,18 @@ export function SwipeDeckCard({
     : Math.max(photos.length, tabs.length, 1);
   const currentTab = tabs.length > 0 && slideIndex < tabs.length ? tabs[slideIndex] : null;
   const photoSlide = firstSlidePlain ? slideIndex - 1 : slideIndex;
-  const currentPhotoIndex = usablePhotos.length > 0 && photoSlide >= 0 ? photoSlide % usablePhotos.length : -1;
-  // Cream "cover" panel (logo + name centered, content in dark text). Used on
-  // slide 0 of any firstSlidePlain card, AND on EVERY slide when the card has no
-  // photos at all (clinics + photo-less doctors) - so every tab keeps the same
-  // clean cream background as the first tab instead of switching to a dark face.
-  const isCover = firstSlidePlain && !!pinnedHeader && (slideIndex === 0 || usablePhotos.length === 0);
+  // firstSlidePlain (clinics / photo-less doctors): map one face per slide and DO
+  // NOT cycle - tabs beyond the available faces get no photo (-1) and fall back to
+  // the cream cover, so a photo-less tab matches the clean first tab. Other cards
+  // (a single doctor face shown on every tab) keep cycling.
+  const currentPhotoIndex = usablePhotos.length > 0 && photoSlide >= 0
+    ? (firstSlidePlain ? (photoSlide < usablePhotos.length ? photoSlide : -1) : photoSlide % usablePhotos.length)
+    : -1;
+  // Cream "cover" panel (logo/monogram + name, content in dark text). Rendered on
+  // ANY slide of a firstSlidePlain card that has no photo - slide 0, tabs beyond
+  // the face count, and clinics/doctors with no photos at all - so every photo-less
+  // tab keeps the same clean cream background as the first tab.
+  const isCover = firstSlidePlain && !!pinnedHeader && currentPhotoIndex < 0;
 
   useEffect(() => {
     setSlideIndex(0);
@@ -296,12 +288,7 @@ export function SwipeDeckCard({
                 {monogramInitials && !currentPhoto ? (
                   // Photo-less doctor: brand initials avatar instead of the clinic
                   // logo, so the cover reads as a person, not a clinic.
-                  <div
-                    className="w-[88px] h-[88px] rounded-full shrink-0 shadow-sm flex items-center justify-center bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--accent))]"
-                    data-testid={`pinned-monogram-${id}`}
-                  >
-                    <span className="font-heading text-white/95 leading-none" style={{ fontSize: '34px' }}>{monogramInitials}</span>
-                  </div>
+                  <DoctorMonogram name={monogramName} size={88} className="shadow-sm" data-testid={`pinned-monogram-${id}`} />
                 ) : pinnedHeader.logoUrl ? (
                   <img src={pinnedHeader.logoUrl} alt="" className="w-[72px] h-[72px] rounded-xl object-contain bg-white p-2 shrink-0 shadow-sm border border-border/30" draggable={false} data-testid={`pinned-logo-${id}`} />
                 ) : null}
@@ -316,17 +303,21 @@ export function SwipeDeckCard({
                 )}
               </div>
 
-              {currentTab && currentTab.layoutType === "success_bars" && (
-                <div className="shrink-0">
-                  <p className="text-[hsl(var(--primary))] font-heading mb-1 flex items-center gap-1.5" style={{ fontSize: '15px' }}>
-                    <Check className="w-4 h-4" strokeWidth={2.5} />
-                    {currentTab.title}
-                  </p>
+              {currentTab && (
+                <div className="shrink-0 overflow-hidden">
+                  {currentTab.title && (
+                    <p className="text-[hsl(var(--primary))] font-heading mb-1 flex items-center gap-1.5" style={{ fontSize: '15px' }}>
+                      <Check className="w-4 h-4 shrink-0" strokeWidth={2.5} />
+                      {currentTab.title}
+                    </p>
+                  )}
                   {currentTab.subtitle && (
                     <p className="text-muted-foreground font-ui mb-2.5" style={{ fontSize: '12px' }}>{currentTab.subtitle}</p>
                   )}
-                  {currentTab.bars && currentTab.bars.length > 0 && (
-                    <div className="space-y-2.5">
+
+                  {/* success_bars: clinic-vs-national bars (dark) */}
+                  {currentTab.layoutType === "success_bars" && currentTab.bars && currentTab.bars.length > 0 && (
+                    <div className="space-y-2.5 mb-2.5">
                       {currentTab.bars.map((bar, i) => (
                         <div key={`${bar.label}-${i}`}>
                           <div className="flex items-center justify-between text-foreground mb-1" style={{ fontSize: '13px' }}>
@@ -340,19 +331,43 @@ export function SwipeDeckCard({
                       ))}
                     </div>
                   )}
-                  {!isMobile && currentTab.items.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2.5">
-                      {currentTab.items.map((item, i) => (
-                        <Badge
-                          key={`${item.label}-${i}`}
-                          className="bg-primary/10 text-foreground font-ui px-3 py-1 inline-flex items-start gap-1.5 border border-primary/20 max-w-full whitespace-normal break-words text-left leading-snug"
-                          style={{ fontSize: '13px' }}
-                          data-testid={`badge-matched-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}
-                        >
-                          <span className="min-w-0">{item.label}</span>
-                          <Check className="w-3 h-3 text-[hsl(var(--accent))] shrink-0 mt-0.5" />
-                        </Badge>
-                      ))}
+
+                  {/* icon_list: e.g. Costs (dark rows) */}
+                  {currentTab.layoutType === "icon_list" && currentTab.items.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      {currentTab.items.map((item, i) => {
+                        const Icon = item.icon;
+                        return (
+                          <div key={`${item.label}-${i}`} className="flex items-center gap-2.5" data-testid={`icon-row-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}>
+                            {Icon && <Icon className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />}
+                            <span className="text-foreground font-body" style={{ fontSize: '14px' }}>{item.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* chips: Locations / Doctors (standard_bubbles), matched reasons,
+                      and success_bars reason items - all as dark chips on cream.
+                      success_bars reason chips stay desktop-only to save room. */}
+                  {((currentTab.layoutType === "standard_bubbles" || currentTab.layoutType === "matched_bubbles") || (currentTab.layoutType === "success_bars" && !isMobile)) && currentTab.items.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-0.5">
+                      {currentTab.items.map((item, i) => {
+                        const BubbleIcon = item.icon;
+                        const showCheck = currentTab.layoutType !== "standard_bubbles";
+                        return (
+                          <Badge
+                            key={`${item.label}-${i}`}
+                            className="bg-primary/10 text-foreground font-ui px-3 py-1 inline-flex items-start gap-1.5 border border-primary/20 max-w-full whitespace-normal break-words text-left leading-snug"
+                            style={{ fontSize: '13px' }}
+                            data-testid={`badge-attr-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}
+                          >
+                            {BubbleIcon && <BubbleIcon className="w-3 h-3 text-[hsl(var(--accent))] shrink-0 mt-0.5" />}
+                            <span className="min-w-0">{item.label}</span>
+                            {showCheck && <Check className="w-3 h-3 text-[hsl(var(--accent))] shrink-0 mt-0.5" />}
+                          </Badge>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

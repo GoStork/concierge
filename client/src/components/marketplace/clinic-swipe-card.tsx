@@ -125,10 +125,16 @@ export function ClinicSwipeCard({
   const contextLabel = cardEggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, cardIsNew ? "First-time IVF" : "Prior cycles"].join(" · ");
 
   const members: any[] = Array.isArray(provider.members) ? provider.members.filter((m: any) => m?.isPublicProfile !== false) : [];
-  // Clinic cards stay on the clean cream cover background across ALL tabs - we do
-  // NOT use doctor faces as tab backgrounds (those are dark/inconsistent and made
-  // the inner tabs look nothing like the first tab). The doctors still appear by
-  // name on the "Doctors at this clinic" tab.
+  // Doctor faces are used as the tab backgrounds (one face per tab). Tabs beyond
+  // the available faces fall back to the cream cover (handled in SwipeDeckCard),
+  // so a tab with no photo matches the clean first-tab background.
+  const photoMembers = members.filter((m: any) => !!getPhotoSrc(m?.photoUrl)).slice(0, 10);
+  const doctorPhotos: string[] = photoMembers.map((m: any) => getPhotoSrc(m.photoUrl) as string);
+  const photoLabels: Record<string, string> = {};
+  photoMembers.forEach((m: any) => {
+    const src = getPhotoSrc(m.photoUrl);
+    if (src && m.name) photoLabels[src] = m.name;
+  });
   const clinicDoctors = members.filter((m: any) => m?.name).map((m: any) => ({ name: m.name }));
   const primaryLocation = provider.locations?.[0];
   const primaryLocationLabel = primaryLocation ? [primaryLocation.city, primaryLocation.state].filter(Boolean).join(", ") : null;

@@ -4,6 +4,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { scrapeProviderWebsite, getRootDomain, normalizeHostname } from "./scrape.service";
 import { buildDoctorEnrichment } from "./doctor-data";
+import { upscaleMissingDoctorPhotos } from "../../lib/upscale-doctors";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 

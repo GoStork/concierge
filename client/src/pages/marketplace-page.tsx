@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, Loader2, Calendar, User, MapPin, Award, Heart, Clock, Info, X, Baby, FlaskRound, SlidersHorizontal, ArrowLeft } from "lucide-react";
+import { Search, Loader2, Calendar, MapPin, Award, Heart, Clock, Info, X, Baby, FlaskRound, SlidersHorizontal, ArrowLeft } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
@@ -24,6 +24,7 @@ import { Tabs as UnderlineTabs, TabsList as UnderlineTabsList, TabsTrigger as Un
 import { Drawer as FullDrawer, DrawerContent as FullDrawerContent } from "@/components/ui/drawer";
 import { Check as CheckIcon } from "lucide-react";
 import { SwipeDeckCard } from "@/components/marketplace/swipe-deck-card";
+import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
 import { useMarketplaceViewContext, recordProfileView, useScrollPastView } from "@/lib/profile-views";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -96,9 +97,7 @@ function ScheduleConsultationDialog({ providerId, providerName, open, onClose }:
                   {photoSrc ? (
                     <img src={photoSrc} alt="" className="w-10 h-10 rounded-full object-cover" />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                      <User className="w-5 h-5" />
-                    </div>
+                    <DoctorMonogram name={m.name} size={40} />
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-ui truncate">{m.name || "Team Member"}</p>

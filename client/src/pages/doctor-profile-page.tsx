@@ -4,10 +4,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProfileSection } from "@/components/ui/profile-section";
 import {
-  ArrowLeft, MapPin, Building2, User, Loader2, GraduationCap, Award, Globe,
+  ArrowLeft, MapPin, Building2, Loader2, GraduationCap, Award, Globe,
   Stethoscope, Heart, Video, BadgeCheck, Star, ShieldCheck,
 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 
 // CDC metric codes (mirrors ivf-success-rates-section.tsx) used to pick a headline rate.
 const OWN_METRIC = "pct_intended_retrievals_live_births";
@@ -72,14 +73,6 @@ export default function DoctorProfilePage() {
   const reviews: any[] = doctor.reviews || [];
   const hasReviews = (doctor.reviewCount ?? 0) > 0 && reviews.length > 0;
 
-  const initials = (doctor.name || "")
-    .split(" ")
-    .map((p: string) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-
   return (
     <div className="space-y-6 w-full">
       <div className="flex items-center justify-between">
@@ -98,13 +91,7 @@ export default function DoctorProfilePage() {
             data-testid="img-doctor-photo"
           />
         ) : (
-          <div className="w-24 h-24 rounded-full bg-secondary/40 flex items-center justify-center border border-border/30 shrink-0">
-            {initials ? (
-              <span className="text-2xl font-heading text-muted-foreground">{initials}</span>
-            ) : (
-              <User className="w-10 h-10 text-muted-foreground/40" />
-            )}
-          </div>
+          <DoctorMonogram name={doctor.name} size={96} className="border border-border/30" />
         )}
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-doctor-name">

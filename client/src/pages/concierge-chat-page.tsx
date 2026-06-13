@@ -25,6 +25,7 @@ import { MessageStatus } from "@/components/ui/message-status";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
+import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
 import {
   mapDatabaseDonorToSwipeProfile,
@@ -2151,9 +2152,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
         <img src={getPhotoSrc(card.photo) || undefined} alt={card.name} className="w-full h-full object-cover" />
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center px-6" style={{ backgroundColor: `${brandColor}10` }}>
-          <div className="w-20 h-20 rounded-full flex items-center justify-center text-primary-foreground text-3xl font-bold mb-4" style={{ backgroundColor: brandColor }}>
-            {(card.name || "").charAt(0)}
-          </div>
+          <DoctorMonogram name={card.name} size={80} className="mb-4" />
           <h3 className="font-heading text-xl text-center leading-tight">{card.name}</h3>
           {card.location && <p className="text-muted-foreground text-sm mt-1">{formatLocationDisplay(card.location)}</p>}
         </div>
