@@ -438,7 +438,7 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
     const current = sorted[currentIndex];
     const next = currentIndex + 1 < sorted.length ? sorted[currentIndex + 1] : null;
     return (
-      <div className="h-[600px] max-w-[420px] mx-auto px-3" data-testid="clinic-swipe-deck-mobile">
+      <div className="h-full" data-testid="clinic-swipe-deck-mobile">
         <div className="relative h-full w-full">
           {next && <div className="absolute inset-0 z-0" data-testid={`clinic-card-next-${next.id}`}>{renderCard(next, false)}</div>}
           <div className="absolute inset-0 z-10" data-testid={`clinic-card-container-${current.id}`}>{renderCard(current, true)}</div>
@@ -564,7 +564,7 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
     const current = filtered[currentIndex];
     const next = currentIndex + 1 < filtered.length ? filtered[currentIndex + 1] : null;
     return (
-      <div className="h-[600px] max-w-[420px] mx-auto px-3" data-testid="doctor-swipe-deck-mobile">
+      <div className="h-full" data-testid="doctor-swipe-deck-mobile">
         <div className="relative h-full w-full">
           {next && (
             <div className="absolute inset-0 z-0" data-testid={`doctor-card-next-${next.slug}`}>
@@ -1848,7 +1848,7 @@ export default function MarketplacePage() {
     />
   ) : null;
 
-  if (isMobile && isDonorTab) {
+  if (isMobile && (isDonorTab || isIvfTab)) {
     return (
       <div className="fixed inset-x-0 top-0 bottom-[calc(88px+env(safe-area-inset-bottom))] z-[60] flex flex-col" style={{ backgroundColor: 'hsl(var(--deck-bg))' }} data-testid="marketplace-mobile-immersive">
         {showFavoritesOnly ? (
@@ -1892,6 +1892,21 @@ export default function MarketplacePage() {
                 showFavoritesOnly
                   ? <MobileSavedGrid donors={spermDonors} type="sperm-donor" />
                   : <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSpermDonors} hasNextPage={hasMoreSpermDonors} isFetchingMore={isFetchingMoreSpermDonors} />
+              )}
+              {isIvfTab && (
+                showFavoritesOnly ? (
+                  <div className="flex items-center justify-center h-full px-6 text-center" data-testid="saved-empty-clinics">
+                    <div>
+                      <Heart className="w-12 h-12 mx-auto mb-3 text-white/40" />
+                      <p className="font-ui text-base text-white/85">No saved clinics yet</p>
+                      <p className="font-ui text-sm text-white/55 mt-1">Saving clinics is coming soon. For now, browse them on the Discover tab.</p>
+                    </div>
+                  </div>
+                ) : clinicView === "doctors" ? (
+                  <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
+                ) : (
+                  <IvfClinicDeckGrid providers={providers} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
+                )
               )}
             </>
           )}

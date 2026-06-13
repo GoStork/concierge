@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export type { TabSection } from "./swipe-mappers";
 
@@ -99,6 +100,7 @@ export function SwipeDeckCard({
   onMessage,
   onViewFullProfile,
 }: SwipeDeckCardProps) {
+  const isMobile = useIsMobile();
   const [slideIndex, setSlideIndex] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanding, setIsExpanding] = useState(false);
@@ -293,7 +295,7 @@ export function SwipeDeckCard({
                       ))}
                     </div>
                   )}
-                  {currentTab.items.length > 0 && (
+                  {!isMobile && currentTab.items.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2.5">
                       {currentTab.items.map((item, i) => (
                         <Badge
@@ -622,7 +624,7 @@ export function SwipeDeckCard({
                       ))}
                     </div>
                   )}
-                  {currentTab.items.length > 0 && (
+                  {!isMobile && currentTab.items.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {currentTab.items.map((item, i) => (
                         <Badge

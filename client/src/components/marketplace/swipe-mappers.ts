@@ -874,7 +874,16 @@ export function getDoctorTabs(
   // Hard safety cap on chip length: a chip is a tag, not a sentence. Prevents a
   // verbose AI reason from ballooning into a multi-line block over the face.
   const asChip = (s: string) => (s.length > 42 ? s.slice(0, 40).trimEnd() + "…" : s);
-  let reasonLabels = reasons.slice(0, 3).map(asChip);
+  // Render-level enforcement of the prompt's "tag, not sentence" rule: even if
+  // the model slips and emits a full sentence, a location, or the success rate
+  // (all explicitly forbidden in reasons - and already shown by the bars +
+  // header), drop it here so it can never cover the doctor's face. A real tag is
+  // <= 5 words and carries no "N%" success-rate figure.
+  const isTagLike = (s: string) => {
+    const t = (s || "").trim();
+    return t.length > 0 && t.split(/\s+/).length <= 5 && !/\d\s*%/.test(t);
+  };
+  let reasonLabels = reasons.filter(isTagLike).slice(0, 3).map(asChip);
   if (reasonLabels.length === 0) {
     reasonLabels = ((doctor.matchedSpecialties && doctor.matchedSpecialties.length > 0)
       ? doctor.matchedSpecialties
