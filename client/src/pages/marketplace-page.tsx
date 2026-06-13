@@ -396,7 +396,9 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
   const handlePass = (id: string) => {
     dispatch(passClinic(id));
     syncPref("skip", id, "add");
-    if (isMobile) setCurrentIndex((p) => p + 1);
+    // Do NOT advance the index here: passing removes the clinic from `sorted`
+    // (the filter above), which auto-advances. Incrementing too would skip the
+    // card that was previewed behind the current one (mirrors DonorGrid).
   };
 
   const renderCard = (p: ProviderWithRelations, swipe: boolean) => (
@@ -440,8 +442,8 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
     return (
       <div className="h-full" data-testid="clinic-swipe-deck-mobile">
         <div className="relative h-full w-full">
-          {next && <div className="absolute inset-0 z-0" data-testid={`clinic-card-next-${next.id}`}>{renderCard(next, false)}</div>}
-          <div className="absolute inset-0 z-10" data-testid={`clinic-card-container-${current.id}`}>{renderCard(current, true)}</div>
+          {next && <div key={`clinic-next-${next.id}`} className="absolute inset-0 z-0" data-testid={`clinic-card-next-${next.id}`}>{renderCard(next, false)}</div>}
+          <div key={`clinic-cur-${current.id}`} className="absolute inset-0 z-10" data-testid={`clinic-card-container-${current.id}`}>{renderCard(current, true)}</div>
         </div>
       </div>
     );
