@@ -448,6 +448,108 @@ export class ProvidersController {
     }).slice(0, 250);
   }
 
+  // Lean clinic cards for the marketplace deck. Mirrors marketplace/doctors: one
+  // server-filtered, success-rate-scoped, capped query that returns EVERYTHING the
+  // ClinicSwipeCard needs (logo, locations, a few public member faces, the matched
+  // + fallback success-rate rows) so the deck renders with NO per-card refetch -
+  // the old `/api/providers/:id`-per-card pattern was what made the Clinics tab lag.
+  @Get("marketplace/clinics")
+  @ApiOperation({ summary: "Lean clinic cards for the marketplace deck (no per-card refetch)" })
+  @Header("Cache-Control", "public, max-age=30")
+  async marketplaceClinics(@Query() query: any) {
+    const where: any = {
+      services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
+    };
+
+    if (query.location) {
+      where.locations = { some: { OR: buildLocationFilter(query.location.trim()) } };
+    }
+
+    if (query.search) {
+      // Match the clinic name OR a doctor (member) at the clinic - same as the
+      // legacy list, so searching a doctor returns the clinics they practice at.
+      const raw = query.search.trim();
+      const terms = raw.split(/[\s\-_]+/).filter(Boolean);
+      const nameMatch =
+        terms.length > 1
+          ? { AND: terms.map((t: string) => ({ name: { contains: t, mode: "insensitive" } })) }
+          : { name: { contains: raw, mode: "insensitive" } };
+      const memberMatch =
+        terms.length > 1
+          ? { members: { some: { AND: terms.map((t: string) => ({ name: { contains: t, mode: "insensitive" } })) } } }
+          : { members: { some: { name: { contains: raw, mode: "insensitive" } } } };
+      where.OR = [nameMatch, memberMatch];
+    }
+
+    const eggSource = query.eggSource || "own_eggs";
+    const ageGroup = query.ageGroup || "under_35";
+    const isNewPatient = query.ivfHistory === "false" ? false : true;
+
+    const latestYearResult = await this.prisma.ivfSuccessRate.aggregate({ _max: { year: true } });
+    const latestYear = latestYearResult._max.year || 0;
+
+    // Rate rows the card needs: the selected context PLUS the under-35/new-patient
+    // baseline, so a clinic missing the exact context still shows the fallback bar
+    // (parity with the old per-card fetch which pulled all rates).
+    let contextClause: any;
+    if (eggSource === "own_eggs") {
+      const codes = isNewPatient
+        ? ["pct_new_patients_live_birth_after_1_retrieval", "pct_intended_retrievals_live_births"]
+        : ["pct_intended_retrievals_live_births"];
+      contextClause = { profileType: "own_eggs", ageGroup, isNewPatient, metricCode: { in: codes } };
+    } else if (eggSource === "donated_embryos") {
+      contextClause = { profileType: "donor", submetric: "donated_embryos", metricCode: "pct_transfers_live_births_donor" };
+    } else {
+      contextClause = {
+        profileType: "donor",
+        submetric: { in: ["fresh_embryos_fresh_eggs", "fresh_embryos_frozen_eggs", "frozen_embryos"] },
+        metricCode: "pct_transfers_live_births_donor",
+      };
+    }
+    const fallbackClause = { profileType: "own_eggs", ageGroup: "under_35", isNewPatient: true, metricCode: "pct_new_patients_live_birth_after_1_retrieval" };
+    const rateWhere = { year: latestYear, OR: [contextClause, fallbackClause] };
+
+    const rows = await this.prisma.provider.findMany({
+      where,
+      take: 600,
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        logoUrl: true,
+        acceptedInsurance: true,
+        ivfAcceptingPatients: true,
+        // CDC JSON columns drive the personalized "Experience with your needs" tab.
+        cdcServices: true,
+        cdcExperience: true,
+        cdcCycleStats: true,
+        services: { where: { status: "APPROVED" }, select: { status: true, providerType: { select: { name: true } } } },
+        locations: { select: { city: true, state: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+        members: {
+          where: { isPublicProfile: true },
+          select: { id: true, name: true, photoUrl: true, isPublicProfile: true },
+          orderBy: { sortOrder: "asc" },
+          take: 12,
+        },
+        ivfSuccessRates: {
+          where: rateWhere,
+          select: {
+            profileType: true, ageGroup: true, isNewPatient: true, metricCode: true,
+            submetric: true, successRate: true, nationalAverage: true, top10pct: true, cycleCount: true,
+          },
+        },
+      },
+    });
+
+    const insuranceCarrier = query.insurance ? insuranceCarrierOf(query.insurance) : null;
+    const wantsLgbtq = query.lgbtq === "true";
+    return rows.filter((p) => {
+      if (insuranceCarrier && !acceptsInsuranceCarrier(p.acceptedInsurance, insuranceCarrier)) return false;
+      if (wantsLgbtq && !(Array.isArray(p.ivfAcceptingPatients) && (p.ivfAcceptingPatients as string[]).includes("gay_couple"))) return false;
+      return true;
+    });
+  }
+
   @Get()
   @ApiOperation({ summary: "List all providers with services and locations" })
   @ApiResponse({ status: 200, description: "List of providers", type: [ProviderResponseDto] })
