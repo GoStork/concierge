@@ -205,8 +205,14 @@ interface SartResult {
 function normalizeName(name: string): string {
   return name
     .replace(/^\s*(?:Dr|Doctor)\b\.?\s*/i, "") // strip leading "Dr."/"Doctor" so "Dr. X" and "X" match
-    .replace(/,?\s*(LLC|Inc\.?|PC|PA|SC|LTD|LLP|Corporation|Corp\.?|PLLC|dba\b.*)/gi, "")
-    .replace(/,?\s*(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\b/gi, "")
+    // Strip "dba ..." (everything from the dba onward).
+    .replace(/,?\s*\bdba\b.*/gi, "")
+    // Legal-entity + credential suffixes - matched ONLY as whole words (leading \b).
+    // Without the leading \b these eat substrings out of real words ("Colora[do]",
+    // "[Pa]cific", "Fertility [Pa]rtners", "[Sc]ience"), which silently corrupted
+    // SART clinic matching AND doctor personKeys/slugs.
+    .replace(/,?\s*\b(LLC|Inc|PC|PA|SC|LTD|LLP|Corporation|Corp|PLLC)\b\.?/gi, "")
+    .replace(/,?\s*\b(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\b/gi, "")
     .replace(/[.,'"]/g, "")
     .replace(/[\-–]/g, " ")
     .toLowerCase()
