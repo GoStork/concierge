@@ -39,6 +39,7 @@ import { hasProviderRole } from "@shared/roles";
 import { MeetingReminderPopup } from "@/components/meeting-reminder-popup";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon } from "@/components/icons/marketplace-icons";
+import { ExploreProviderPicker } from "@/components/marketplace/explore-provider-picker";
 import { useAppDispatch, useAppSelector } from "@/store";
 import { setMarketplaceTab } from "@/store/uiSlice";
 
@@ -657,6 +658,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     enabled: !!user,
     staleTime: 5 * 60 * 1000,
   });
+  const [exploreOpen, setExploreOpen] = useState(false);
   const [calendarBannerDismissed, setCalendarBannerDismissed] = useState(false);
   const [bannerGoogleReconnecting, setBannerGoogleReconnecting] = useState(false);
   const [bannerMicrosoftReconnecting, setBannerMicrosoftReconnecting] = useState(false);
@@ -727,14 +729,15 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { id: "sperm-donors", label: "Sperm Donors", mobileLabel: "Sperm", icon: SpermIcon },
   ];
 
-  const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; desktopOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number; fillOnActive?: boolean }[] = [
+  const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; desktopOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number; fillOnActive?: boolean; isExplore?: boolean }[] = [
     { show: false /* hidden for now */, to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', mobileLabel: 'Dashboard' },
     { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
     { show: isProvider && !isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
     ...(isParentOnly && !(brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY')
       ? [
-          // Mobile bottom nav: single Discover entry, type pills live inside the deck view
-          { show: true, to: '/marketplace', icon: Flame, label: 'Discover', mobileLabel: 'Discover', fillOnActive: true, mobileOnly: true },
+          // Mobile bottom nav: a centered Explore button that opens the explode
+          // picker (provider pills now live in that fan, not a top bar).
+          { show: true, to: '/marketplace', icon: Flame, label: 'Explore', mobileLabel: 'Explore', fillOnActive: true, mobileOnly: true, isExplore: true },
           // Desktop top nav: each marketplace type as its own primary tab (no secondary pill row)
           ...MARKETPLACE_TABS.map((tab) => ({
             show: true,
@@ -770,7 +773,19 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // priority ones simply don't appear on mobile (they're still on desktop).
   const mobileNav = visibleNav.filter(item => !item.desktopOnly);
   const profileItem = mobileNav.find(item => item.to === '/account');
-  const nonProfileMobile = mobileNav.filter(item => item.to !== '/account');
+  let nonProfileMobile = mobileNav.filter(item => item.to !== '/account');
+  // When the Explore button is present (parent marketplace mode), center it in the
+  // bar: Chat, Saved (Heart), Explore, Calendar, then anything else; Profile stays
+  // pinned last by the assembly below. Only reorders mobile - desktop is untouched.
+  if (nonProfileMobile.some(item => item.isExplore)) {
+    const rank = (it: typeof nonProfileMobile[number]) =>
+      it.to === '/chat' ? 0
+      : it.to.includes('view=saved') ? 1
+      : it.isExplore ? 2
+      : it.to === '/calendar' ? 3
+      : 99;
+    nonProfileMobile = [...nonProfileMobile].sort((a, b) => rank(a) - rank(b));
+  }
   const bottomTabs = profileItem
     ? [...nonProfileMobile.slice(0, maxBottomTabs - 1), profileItem]
     : nonProfileMobile.slice(0, maxBottomTabs);
@@ -916,7 +931,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <div
-        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 ${onMarketplaceDeck ? 'pt-5 pb-0' : 'pb-2'} ${hideBottomNav || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) || location.pathname === "/concierge" || location.pathname.startsWith("/agreements/") ? "hidden" : ""}`}
+        className={`fixed bottom-0 left-0 right-0 z-50 md:hidden safe-area-bottom px-3 transition-all duration-200 ${exploreOpen ? 'opacity-0 translate-y-6 pointer-events-none' : 'opacity-100'} ${onMarketplaceDeck ? 'pt-5 pb-0' : 'pb-2'} ${hideBottomNav || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname) || location.pathname === "/concierge" || location.pathname.startsWith("/agreements/") ? "hidden" : ""}`}
         style={{
           backgroundColor: onMarketplaceDeck ? 'hsl(var(--deck-bg))' : 'var(--bottom-nav-safe-area-bg, transparent)',
           paddingBottom: 'env(safe-area-inset-bottom)',
@@ -936,6 +951,34 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         <div className="flex items-stretch justify-around h-[68px] px-2">
           {bottomTabs.map((item) => {
             const Icon = item.icon;
+
+            // Centered Explore button: opens the explode picker overlay instead of
+            // navigating. Raised filled circle (monday.com-style center action).
+            if (item.isExplore) {
+              const exploreInactive = onMarketplaceDeck ? 'hsl(var(--deck-fg-muted))' : 'var(--bottom-nav-fg, hsl(var(--muted-foreground)))';
+              const navStyleE = brandSettings?.bottomNavStyle || 'icon-label';
+              const iconOnlyE = navStyleE === 'icon-only';
+              return (
+                <button
+                  key="explore"
+                  type="button"
+                  onClick={() => setExploreOpen(true)}
+                  aria-label="Explore providers"
+                  data-testid="tab-explore"
+                  className={`flex flex-col items-center justify-center flex-1 gap-0.5 font-medium font-ui focus:outline-none ${iconOnlyE ? 'text-[0px]' : 'text-[13px]'}`}
+                  style={{ color: exploreInactive }}
+                >
+                  <div
+                    className="-mt-4 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform duration-150 active:scale-95"
+                    style={{ backgroundColor: 'hsl(var(--primary))' }}
+                  >
+                    <Icon className="w-6 h-6 text-primary-foreground" fill="currentColor" />
+                  </div>
+                  {!iconOnlyE && <span>{item.mobileLabel}</span>}
+                </button>
+              );
+            }
+
             const active = item.tabId
               ? (!onSavedView && location.pathname === '/marketplace' && marketplaceTab === item.tabId)
               : isActive(item.to);
@@ -1028,6 +1071,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
       </div>
+
+      <ExploreProviderPicker open={exploreOpen} onClose={() => setExploreOpen(false)} />
 
       {showCalendarBanner && (
         <div className="fixed top-16 left-0 right-0 z-40 hidden md:block">
