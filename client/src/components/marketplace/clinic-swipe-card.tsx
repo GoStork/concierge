@@ -21,6 +21,7 @@ import { getClinicTabs } from "./swipe-mappers";
  */
 export function ClinicSwipeCard({
   providerId,
+  provider: providerProp,
   eggSource,
   ageGroup,
   isNewPatient,
@@ -35,6 +36,10 @@ export function ClinicSwipeCard({
   onViewProfile,
 }: {
   providerId: string;
+  // Pre-fetched lean clinic row (from /api/providers/marketplace/clinics). When
+  // supplied, the card renders from it with NO per-card /api/providers/:id fetch
+  // (the marketplace deck). When omitted (AI chat card), it self-fetches by id.
+  provider?: any;
   eggSource?: string;
   ageGroup?: string;
   isNewPatient?: boolean;
@@ -49,7 +54,8 @@ export function ClinicSwipeCard({
   onUndo?: () => void;
   onViewProfile: () => void;
 }) {
-  const [provider, setProvider] = useState<any>(null);
+  const [fetchedProvider, setFetchedProvider] = useState<any>(null);
+  const provider = providerProp ?? fetchedProvider;
   const [costItems, setCostItems] = useState<{ label: string }[]>([]);
   const { user } = useAuth();
   const isMobile = useIsMobile();
@@ -81,15 +87,16 @@ export function ClinicSwipeCard({
   }, [parentProfile]);
 
   useEffect(() => {
+    if (providerProp) return; // marketplace supplies the row; skip the per-card fetch
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch(`/api/providers/${providerId}`, { credentials: "include" });
-        if (res.ok && !cancelled) setProvider(await res.json());
+        if (res.ok && !cancelled) setFetchedProvider(await res.json());
       } catch { /* non-critical */ }
     })();
     return () => { cancelled = true; };
-  }, [providerId]);
+  }, [providerId, providerProp]);
 
   // Parent-matched published cost programs -> a single "Starting at $X" headline.
   useEffect(() => {

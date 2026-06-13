@@ -402,6 +402,7 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
   const renderCard = (p: ProviderWithRelations, swipe: boolean) => (
     <ClinicSwipeCard
       providerId={p.id}
+      provider={p}
       eggSource={eggSource}
       ageGroup={ageGroup}
       isNewPatient={isNew}
@@ -1687,7 +1688,33 @@ export default function MarketplacePage() {
       const data: ProviderWithRelations[] = await res.json();
       return data.filter((p) => p.name !== "GoStork");
     },
-    enabled: isProviderTab,
+    // Clinics now load via the lean /marketplace/clinics endpoint below; this
+    // generic (heavy) list only serves the Surrogacy Agencies tab.
+    enabled: activeTab === "surrogacy-agencies",
+  });
+
+  // Lean clinic cards (mirrors marketplace/doctors): one capped, success-rate-
+  // scoped query that the deck + ClinicSwipeCard render from directly, with NO
+  // per-card /api/providers/:id refetch - what made the Clinics tab lag before.
+  const clinicQueryParams = new URLSearchParams(
+    Object.entries({
+      search: ivfSearch,
+      location: ivfLocation,
+      insurance: insuranceFilter,
+      lgbtq: lgbtqFilter ? "true" : "",
+      eggSource,
+      ageGroup,
+      ivfHistory: isNewPatient === "false" ? "false" : "",
+    }).filter(([, v]) => v) as [string, string][],
+  ).toString();
+  const { data: clinics, isLoading: clinicsLoading } = useQuery<any[]>({
+    queryKey: ["/api/providers/marketplace/clinics", ivfSearch, ivfLocation, insuranceFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient],
+    queryFn: async () => {
+      const res = await fetch(`/api/providers/marketplace/clinics${clinicQueryParams ? `?${clinicQueryParams}` : ""}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch clinics");
+      return res.json();
+    },
+    enabled: isIvfTab,
   });
 
   const doctorQueryParams = new URLSearchParams(
@@ -1758,11 +1785,9 @@ export default function MarketplacePage() {
   };
 
   const ivfClinicCount = useMemo(() => {
-    if (!providers || !isIvfTab) return 0;
-    return providers.filter((p) =>
-      p.services?.some((s: any) => s.status === "APPROVED" && s.providerType?.name === "IVF Clinic")
-    ).length;
-  }, [providers, isIvfTab]);
+    if (!clinics || !isIvfTab) return 0;
+    return clinics.length;
+  }, [clinics, isIvfTab]);
 
   const {
     data: eggDonorPages,
@@ -1822,7 +1847,7 @@ export default function MarketplacePage() {
   const spermDonors = useMemo(() => spermDonorPages?.pages.flatMap((p) => p.data) ?? [], [spermDonorPages]);
 
   const isLoading =
-    (activeTab === "ivf-clinics" && providersLoading) ||
+    (activeTab === "ivf-clinics" && clinicsLoading) ||
     (activeTab === "surrogacy-agencies" && providersLoading) ||
     (activeTab === "egg-donors" && eggLoading) ||
     (activeTab === "surrogates" && surrogatesLoading) ||
@@ -1897,7 +1922,7 @@ export default function MarketplacePage() {
                     </div>
                   </div>
                 ) : (
-                  <IvfClinicDeckGrid providers={providers} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
+                  <IvfClinicDeckGrid providers={clinics as any} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
                 )
               )}
               {isDoctorTab && (
@@ -2049,7 +2074,7 @@ export default function MarketplacePage() {
                 </div>
               ) : (
                 <IvfClinicDeckGrid
-                  providers={providers}
+                  providers={clinics as any}
                   eggSource={eggSource}
                   ageGroup={ageGroup}
                   isNewPatient={isNewPatient}
