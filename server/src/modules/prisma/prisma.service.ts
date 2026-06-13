@@ -179,6 +179,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.userDonorPreference;
   }
 
+  get userProfilePreference() {
+    return prisma.userProfilePreference;
+  }
+
   get inAppNotification() {
     return prisma.inAppNotification;
   }
