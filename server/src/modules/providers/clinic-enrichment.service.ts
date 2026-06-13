@@ -899,6 +899,29 @@ export class ClinicEnrichmentService {
     private readonly storageService: StorageService | null = null,
   ) {}
 
+  /**
+   * After an enrichment run completes, AI-upscale any doctors that now have a
+   * photo but no crisp highResPhotoUrl. Fire-and-forget (not awaited) so it never
+   * slows the run; idempotent (skips already-upscaled), so re-running is safe.
+   */
+  private upscaleNewDoctorPhotos(): void {
+    const storage = this.storageService;
+    if (!storage?.isConfigured()) return;
+    const bucketName = process.env.GCS_BUCKET_NAME || "gostork-recordings";
+    upscaleMissingDoctorPhotos(
+      {
+        prisma: this.prisma,
+        bucketName,
+        downloadObject: (p) => storage.downloadObject(p),
+        uploadPublic: (b, dest, ct) => storage.uploadBufferPublic(b, dest, ct),
+        log: (m) => console.log(`[clinic-enrichment] ${m}`),
+      },
+      { concurrency: 3 },
+    )
+      .then((r) => console.log(`[clinic-enrichment] doctor photo upscale done: ${r.done} upscaled, ${r.skip} skipped, ${r.fail} failed`))
+      .catch((e) => console.error("[clinic-enrichment] doctor photo upscale error:", e?.message || e));
+  }
+
   async enrichClinicProfile(providerId: string): Promise<boolean> {
     const provider = await this.prisma.provider.findUnique({
       where: { id: providerId },
@@ -1895,6 +1918,7 @@ export class ClinicEnrichmentService {
 
       if (finalUpdate.count > 0) {
         console.log(`[clinic-enrichment] Targeted enrichment (${modeLabel}) complete: ${processed} processed, ${errors} errors, ${skipped} skipped`);
+        this.upscaleNewDoctorPhotos();
       }
     } catch (err: any) {
       console.error(`[clinic-enrichment] Fatal targeted enrichment error:`, err.message);
@@ -2029,6 +2053,7 @@ export class ClinicEnrichmentService {
 
       if (finalUpdate.count > 0) {
         console.log(`[clinic-enrichment] Enrichment complete: ${processed} processed, ${errors} errors, ${skipped} skipped`);
+        this.upscaleNewDoctorPhotos();
       } else {
         console.log(`[clinic-enrichment] Enrichment loop finished but job was cancelled - skipping COMPLETED update`);
       }
