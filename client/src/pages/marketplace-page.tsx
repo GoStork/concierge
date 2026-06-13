@@ -1913,17 +1913,7 @@ export default function MarketplacePage() {
                   : <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSpermDonors} hasNextPage={hasMoreSpermDonors} isFetchingMore={isFetchingMoreSpermDonors} />
               )}
               {isIvfTab && (
-                showFavoritesOnly ? (
-                  <div className="flex items-center justify-center h-full px-6 text-center" data-testid="saved-empty-clinics">
-                    <div>
-                      <Heart className="w-12 h-12 mx-auto mb-3 text-white/40" />
-                      <p className="font-ui text-base text-white/85">No saved clinics yet</p>
-                      <p className="font-ui text-sm text-white/55 mt-1">Saving clinics is coming soon. For now, browse them on the Discover tab.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <IvfClinicDeckGrid providers={clinics as any} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
-                )
+                <IvfClinicDeckGrid providers={clinics as any} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
               )}
               {isDoctorTab && (
                 <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
@@ -2064,23 +2054,13 @@ export default function MarketplacePage() {
         ) : (
           <>
             {isIvfTab && (
-              showFavoritesOnly ? (
-                <div className="flex items-center justify-center py-20 px-6 text-center" data-testid="saved-empty-clinics">
-                  <div>
-                    <Heart className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
-                    <p className="font-ui text-base text-foreground">No saved clinics yet</p>
-                    <p className="font-ui text-sm text-muted-foreground mt-1">Saving clinics is coming soon. For now, browse them on the Discover tab.</p>
-                  </div>
-                </div>
-              ) : (
-                <IvfClinicDeckGrid
-                  providers={clinics as any}
-                  eggSource={eggSource}
-                  ageGroup={ageGroup}
-                  isNewPatient={isNewPatient}
-                  sortBy={sortBy}
-                />
-              )
+              <IvfClinicDeckGrid
+                providers={clinics as any}
+                eggSource={eggSource}
+                ageGroup={ageGroup}
+                isNewPatient={isNewPatient}
+                sortBy={sortBy}
+              />
             )}
             {isDoctorTab && (
               <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
