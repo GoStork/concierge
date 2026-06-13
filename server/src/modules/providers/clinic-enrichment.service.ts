@@ -5,6 +5,7 @@ import { StorageService } from "../storage/storage.service";
 import { scrapeProviderWebsite, getRootDomain, normalizeHostname } from "./scrape.service";
 import { buildDoctorEnrichment } from "./doctor-data";
 import { upscaleMissingDoctorPhotos } from "../../lib/upscale-doctors";
+import { US_STATES } from "./us-states";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -1205,8 +1206,15 @@ export class ClinicEnrichmentService {
     }
 
     const keptKeys = new Set(kept.map(l => allKey(l.city, l.state)));
+    // Always anchor on THIS lab's own CDC city/state. Networks expose only
+    // state-level location pages whose parsed city is the state name (and whose
+    // state is often mis-parsed), so the scraped locations rarely contain the
+    // clinic's actual city - but its CDC location is authoritative. This is the
+    // key scopeTeamToLab matches doctor location-hints against, so without it a
+    // network clinic keeps zero doctors even when the roster is correctly tagged.
+    if (thisCity || thisState) keptKeys.add(allKey(thisCity, thisState));
     console.log(
-      `[clinic-enrichment] scopeToLab: "${provider.name}" kept ${kept.length}/${scrapedLocations.length} scraped locations`,
+      `[clinic-enrichment] scopeToLab: "${provider.name}" kept ${kept.length}/${scrapedLocations.length} scraped locations (anchor=${allKey(thisCity, thisState)})`,
     );
     return { keptLocations: kept, keptLocationKeys: keptKeys, hasSiblings: true };
   }
@@ -1246,14 +1254,34 @@ export class ClinicEnrichmentService {
     if (!hasSiblings) return mergedTeam;
 
     const sartKeys = new Set(sartMembers.map(m => normalizeMemberKey(m.name)).filter(k => k.length >= 4));
-    const keptCities = Array.from(keptLocationKeys).map(k => k.split("|")[0]).filter(Boolean);
+
+    // Place tokens that legitimately belong to THIS lab. Each kept "city|state"
+    // contributes its city, its state abbreviation, and the full state name.
+    // Networks often organize their roster by STATE (state-level team pages like
+    // "Arizona Fertility Clinics"), so a doctor's location hint may name the state
+    // rather than the exact city - match on either so those doctors aren't dropped.
+    const cityTokens: string[] = [];
+    const stateNameTokens: string[] = [];
+    const stateAbbrTokens: string[] = [];
+    for (const key of keptLocationKeys) {
+      const [city, state] = key.split("|");
+      if (city) cityTokens.push(city);
+      if (state) {
+        stateAbbrTokens.push(state); // e.g. "az"
+        const full = US_STATES[state.toUpperCase()];
+        if (full) stateNameTokens.push(full.toLowerCase()); // e.g. "arizona"
+      }
+    }
 
     return mergedTeam.filter(m => {
       if (sartKeys.has(normalizeMemberKey(m.name))) return true; // authoritative per-lab
       if (m.locationHints.length === 0) return false; // scraped-only, unattributable -> drop
       return m.locationHints.some(hint => {
         const h = hint.toLowerCase();
-        return keptCities.some(city => h.includes(city));
+        if (cityTokens.some(city => h.includes(city))) return true;
+        if (stateNameTokens.some(name => h.includes(name))) return true;
+        // 2-letter abbrev: word-boundary so "az" doesn't match inside "azalea".
+        return stateAbbrTokens.some(ab => new RegExp(`(?:^|[^a-z])${ab}(?:[^a-z]|$)`).test(h));
       });
     });
   }

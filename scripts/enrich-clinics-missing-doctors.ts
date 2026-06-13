@@ -32,6 +32,7 @@ const LIMIT = arg("limit") ? parseInt(arg("limit")!, 10) : undefined;
 const CONCURRENCY = arg("concurrency") ? parseInt(arg("concurrency")!, 10) : 2;
 const DIAGNOSE = process.argv.includes("--diagnose");
 const INSPECT = arg("inspect"); // clinic name substring: scrape + dump per-doctor data
+const ONLY = arg("only"); // clinic name substring: enrich ONLY matching clinics
 
 const prisma = new PrismaService();
 const storage = new StorageService();
@@ -117,7 +118,7 @@ async function main() {
   const clinics = await prisma.provider.findMany({
     where: {
       services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
-      members: { none: { isPublicProfile: { not: false } } },
+      ...(ONLY ? { name: { contains: ONLY, mode: "insensitive" } } : { members: { none: { isPublicProfile: { not: false } } } }),
     },
     select: { id: true, name: true, websiteUrl: true },
     orderBy: { name: "asc" },
