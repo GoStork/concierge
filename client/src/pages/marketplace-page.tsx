@@ -1385,14 +1385,12 @@ function MarketplaceFiltersDrawer({ providerType, open, onOpenChange, ivfFilterP
   );
 }
 
-function MobileFilterOverlay({ providerType, hasResults = true, types, activeTab, onSelectType, onOpenFilters }: {
-  providerType: "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
-  hasResults?: boolean;
-  types: { id: string; label: string }[];
-  activeTab: string;
-  onSelectType: (id: string) => void;
-  onOpenFilters: () => void;
-}) {
+// Full-bleed deck chrome: the filter (top-left) and search (top-right) controls
+// re-mounted as absolutely-positioned overlays ON TOP of the immersive deck, with
+// a top scrim for contrast over photos. Replaces the old MobileFilterOverlay top
+// bar - the provider type switcher now lives in the Explore explode picker, not
+// here. Notch-safe via the top safe-area inset.
+function MobileDeckControls({ onOpenFilters }: { onOpenFilters: () => void }) {
   const dispatch = useAppDispatch();
   const searchQuery = useAppSelector((state) => state.ui.marketplaceSearchQuery);
   const [searchExpanded, setSearchExpanded] = useState(false);
@@ -1408,73 +1406,59 @@ function MobileFilterOverlay({ providerType, hasResults = true, types, activeTab
   }, [searchExpanded]);
 
   const handleSearchBlur = useCallback(() => {
-    if (!searchQuery) {
-      setSearchExpanded(false);
-    }
+    if (!searchQuery) setSearchExpanded(false);
   }, [searchQuery]);
 
-  // Deck container is always dark (deck-bg) regardless of results - use white chrome on top of it
-  const iconColor = 'text-white';
-  const searchInputBg = 'bg-black/40 backdrop-blur-md text-white placeholder:text-white/50 border-white/15 focus:border-white/30';
-  const clearColor = 'text-white/60';
+  const chip = "pointer-events-auto shrink-0 w-9 h-9 rounded-full bg-black/35 backdrop-blur-md flex items-center justify-center text-white";
 
   return (
-    <div className="shrink-0 w-full px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }} data-testid="mobile-filter-overlay">
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onOpenFilters}
-          className="relative shrink-0 w-8 h-8 flex items-center justify-center"
-          aria-label="Open filters"
-          data-testid="button-open-filters"
-        >
-          <SlidersHorizontal className={`w-5 h-5 ${iconColor}`} />
+    <div
+      className="absolute inset-x-0 top-0 z-30 pointer-events-none"
+      style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}
+      data-testid="mobile-deck-controls"
+    >
+      {/* Top scrim so the white chrome reads over light photos */}
+      <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/55 to-transparent" />
+      <div className="relative flex items-center gap-2 px-3">
+        <button onClick={onOpenFilters} className={chip} aria-label="Open filters" data-testid="button-open-filters">
+          <SlidersHorizontal className="w-5 h-5" />
         </button>
 
         {searchExpanded ? (
-          <div className="flex-1 relative">
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => dispatch(setMarketplaceSearchQuery(e.target.value))}
-              onBlur={handleSearchBlur}
-              placeholder="Search..."
-              className={`w-full h-9 pl-3 pr-8 rounded-full text-sm border outline-none ${searchInputBg}`}
-              data-testid="input-search-overlay"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => dispatch(setMarketplaceSearchQuery(""))}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2"
-                data-testid="button-clear-search-overlay"
-              >
-                <X className={`w-3.5 h-3.5 ${clearColor}`} />
-              </button>
-            )}
-          </div>
+          <>
+            <div className="pointer-events-auto relative flex-1 min-w-0">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => dispatch(setMarketplaceSearchQuery(e.target.value))}
+                onBlur={handleSearchBlur}
+                placeholder="Search..."
+                className="w-full h-9 pl-3 pr-8 rounded-full text-sm border outline-none bg-black/40 backdrop-blur-md text-white placeholder:text-white/50 border-white/15 focus:border-white/30"
+                data-testid="input-search-overlay"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => dispatch(setMarketplaceSearchQuery(""))}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2"
+                  data-testid="button-clear-search-overlay"
+                >
+                  <X className="w-3.5 h-3.5 text-white/60" />
+                </button>
+              )}
+            </div>
+            <button onClick={handleSearchToggle} className={chip} aria-label="Close search" data-testid="button-search-toggle">
+              <X className="w-5 h-5" />
+            </button>
+          </>
         ) : (
-          <div className="flex-1 flex justify-center">
-            <DeckTypeSwitcher
-              types={types}
-              activeTab={activeTab}
-              onSelect={onSelectType}
-              theme="dark"
-            />
-          </div>
+          <>
+            <div className="flex-1" />
+            <button onClick={handleSearchToggle} className={chip} aria-label="Search" data-testid="button-search-toggle">
+              <Search className="w-5 h-5" />
+            </button>
+          </>
         )}
-
-        <button
-          onClick={handleSearchToggle}
-          className="relative shrink-0 w-8 h-8 flex items-center justify-center"
-          aria-label={searchExpanded ? "Close search" : "Search"}
-          data-testid="button-search-toggle"
-        >
-          {searchExpanded ? (
-            <X className={`w-5 h-5 ${iconColor}`} />
-          ) : (
-            <Search className={`w-5 h-5 ${iconColor}`} />
-          )}
-        </button>
       </div>
     </div>
   );
@@ -1875,7 +1859,7 @@ export default function MarketplacePage() {
   if (isMobile && (isDonorTab || isIvfTab || isDoctorTab)) {
     return (
       <div className="fixed inset-x-0 top-0 bottom-[calc(88px+env(safe-area-inset-bottom))] z-[60] flex flex-col" style={{ backgroundColor: 'hsl(var(--deck-bg))' }} data-testid="marketplace-mobile-immersive">
-        {showFavoritesOnly ? (
+        {showFavoritesOnly && (
           <div className="shrink-0 w-full px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }} data-testid="saved-type-switcher-mobile">
             <DeckTypeSwitcher
               types={parentAvailableTypes}
@@ -1884,18 +1868,10 @@ export default function MarketplacePage() {
               theme="dark"
             />
           </div>
-        ) : (
-          <MobileFilterOverlay
-            providerType={currentProviderType}
-            hasResults={hasResults}
-            types={parentAvailableTypes}
-            activeTab={activeTab}
-            onSelectType={(id) => dispatch(setMarketplaceTab(id))}
-            onOpenFilters={openFiltersPage}
-          />
         )}
 
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 relative">
+          {!showFavoritesOnly && <MobileDeckControls onOpenFilters={openFiltersPage} />}
           {isLoading ? (
             <div className="flex justify-center items-center h-full">
               <Loader2 className="w-8 h-8 animate-spin text-primary" data-testid="loading-spinner" />
