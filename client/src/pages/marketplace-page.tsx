@@ -1112,33 +1112,92 @@ function formatHeightInches(v: number) {
   return `${ft}'${inches}"`;
 }
 
-function MobileSavedGrid({ donors, type }: {
-  donors: any[];
-  type: "egg-donor" | "surrogate" | "sperm-donor";
+// Saved-tab grid, shared by ALL provider types (egg donors, surrogates, sperm
+// donors, IVF clinics, doctors) so the Saved view has ONE consistent 2-up card
+// design. Each entity is normalized to a single card shape (photo/title/subtitle
+// + remove-heart + open route); clinics fall back to their logo, doctors to a
+// brand monogram when there's no headshot.
+type SavedCard = {
+  key: string;
+  photo: string | null;
+  logo?: string | null;
+  monogramName?: string | null;
+  title: string;
+  subtitle?: string | null;
+  onOpen: () => void;
+  onRemove: () => void;
+};
+
+function MobileSavedGrid({ kind, items }: {
+  kind: "egg-donor" | "surrogate" | "sperm-donor" | "clinic" | "doctor";
+  items: any[];
 }) {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const favoritedIds = useAppSelector((s) => s.ui.favoritedDonorIds);
-  const filtered = useMemo(
-    () => (donors || []).filter((d) => favoritedIds.includes(d.id)),
-    [donors, favoritedIds],
-  );
+  const favoritedDonorIds = useAppSelector((s) => s.ui.favoritedDonorIds);
+  const favoritedClinicIds = useAppSelector((s) => s.ui.favoritedClinicIds);
+  const favoritedDoctorSlugs = useAppSelector((s) => s.ui.favoritedDoctorSlugs);
 
-  const mapProfile = useCallback((d: any) => {
-    if (type === "surrogate") return mapDatabaseSurrogateToSwipeProfile(d);
-    if (type === "sperm-donor") return mapDatabaseSpermDonorToSwipeProfile(d);
-    return mapDatabaseDonorToSwipeProfile(d);
-  }, [type]);
+  const cards: SavedCard[] = useMemo(() => {
+    const list = items || [];
+    if (kind === "clinic") {
+      return list
+        .filter((p) => favoritedClinicIds.includes(p.id))
+        .map((p) => {
+          const members = Array.isArray(p.members) ? p.members.filter((m: any) => m?.isPublicProfile !== false) : [];
+          const face = members.map((m: any) => getPhotoSrc(m?.photoUrl)).find(Boolean) || null;
+          const loc = p.locations?.[0];
+          return {
+            key: p.id,
+            photo: face,
+            logo: getPhotoSrc(p.logoUrl) || null,
+            title: p.name,
+            subtitle: loc ? [loc.city, loc.state].filter(Boolean).join(", ") : null,
+            onOpen: () => navigate(`/providers/${p.id}`),
+            onRemove: () => dispatch(toggleFavoriteClinic(p.id)),
+          };
+        });
+    }
+    if (kind === "doctor") {
+      return list
+        .filter((d) => favoritedDoctorSlugs.includes(d.slug))
+        .map((d) => ({
+          key: d.slug,
+          photo: getPhotoSrc(d.photoUrl) || null,
+          monogramName: d.name,
+          title: d.name,
+          subtitle: d.providerName || null,
+          onOpen: () => navigate(`/doctors/${d.slug}`),
+          onRemove: () => dispatch(toggleFavoriteDoctor(d.slug)),
+        }));
+    }
+    const mapProfile = (d: any) =>
+      kind === "surrogate" ? mapDatabaseSurrogateToSwipeProfile(d)
+        : kind === "sperm-donor" ? mapDatabaseSpermDonorToSwipeProfile(d)
+          : mapDatabaseDonorToSwipeProfile(d);
+    const slug = kind === "surrogate" ? "surrogate" : kind === "sperm-donor" ? "spermdonor" : "eggdonor";
+    return list
+      .filter((d) => favoritedDonorIds.includes(d.id))
+      .map((donor) => {
+        const profile = mapProfile(donor);
+        return {
+          key: donor.id,
+          photo: getPhotoList(profile)[0] || null,
+          title: buildTitle(profile),
+          subtitle: profile.age ? `Age ${profile.age}` : null,
+          onOpen: () => navigate(`/${slug}/${donor.providerId}/${donor.id}`),
+          onRemove: () => dispatch(toggleFavoriteDonor(donor.id)),
+        };
+      });
+  }, [kind, items, favoritedDonorIds, favoritedClinicIds, favoritedDoctorSlugs, navigate, dispatch]);
 
-  const slug = type === "surrogate" ? "surrogate" : type === "sperm-donor" ? "spermdonor" : "eggdonor";
-
-  if (filtered.length === 0) {
+  if (cards.length === 0) {
     return (
       <div className="flex items-center justify-center h-full px-6 text-center" data-testid="saved-empty">
         <div>
           <Heart className="w-12 h-12 mx-auto mb-3 text-white/40" />
-          <p className="font-ui text-base text-white/85">No saved profiles yet</p>
-          <p className="font-ui text-sm text-white/55 mt-1">Tap the heart on a profile while browsing to save it here.</p>
+          <p className="font-ui text-base text-white/85">No saved {kind === "clinic" ? "clinics" : kind === "doctor" ? "doctors" : "profiles"} yet</p>
+          <p className="font-ui text-sm text-white/55 mt-1">Tap the heart while browsing to save it here.</p>
         </div>
       </div>
     );
@@ -1146,45 +1205,40 @@ function MobileSavedGrid({ donors, type }: {
 
   return (
     <div className="grid grid-cols-2 gap-2 px-2 pt-2 pb-4 overflow-y-auto h-full content-start" data-testid="saved-grid">
-      {filtered.map((donor) => {
-        const profile = mapProfile(donor);
-        const photo = getPhotoList(profile)[0];
-        const title = buildTitle(profile);
-        const onOpen = () => navigate(`/${slug}/${donor.providerId}/${donor.id}`);
-        return (
-          // Padding-bottom hack for a reliable 3:4 aspect ratio across all browsers.
-          <div key={donor.id} className="relative w-full" style={{ paddingBottom: '133.333%' }} data-testid={`saved-card-${donor.id}`}>
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={onOpen}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpen(); }}
-              className="absolute inset-0 rounded-[var(--radius)] overflow-hidden bg-[hsl(var(--deck-bg-elevated))] shadow-md cursor-pointer"
-            >
-              {photo ? (
-                <img src={photo} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" decoding="async" />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center text-white/60 text-xs font-ui">No Photo</div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 pt-12 pb-2 px-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
-                <div className="font-ui text-sm font-medium text-white truncate">{title}</div>
-                {profile.age && <div className="font-ui text-xs text-white/80">Age {profile.age}</div>}
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  dispatch(toggleFavoriteDonor(donor.id));
-                }}
-                className="absolute top-2 right-2 w-9 h-9 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center hover:bg-black/75 transition-colors"
-                data-testid={`saved-remove-${donor.id}`}
-                aria-label="Remove from saved"
-              >
-                <Heart className="w-4 h-4" style={{ color: 'var(--swipe-save)' }} fill="currentColor" />
-              </button>
+      {cards.map((c) => (
+        // Padding-bottom hack for a reliable 3:4 aspect ratio across all browsers.
+        <div key={c.key} className="relative w-full" style={{ paddingBottom: '133.333%' }} data-testid={`saved-card-${c.key}`}>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={c.onOpen}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') c.onOpen(); }}
+            className="absolute inset-0 rounded-[var(--radius)] overflow-hidden bg-[hsl(var(--deck-bg-elevated))] shadow-md cursor-pointer"
+          >
+            {c.photo ? (
+              <img src={c.photo} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" decoding="async" />
+            ) : c.logo ? (
+              <div className="absolute inset-0 flex items-center justify-center p-4 bg-white"><img src={c.logo} alt="" className="max-w-full max-h-full object-contain" loading="lazy" /></div>
+            ) : c.monogramName ? (
+              <div className="absolute inset-0 flex items-center justify-center"><DoctorMonogram name={c.monogramName} size={72} /></div>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-white/60 text-xs font-ui">No Photo</div>
+            )}
+            <div className="absolute inset-x-0 bottom-0 pt-12 pb-2 px-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
+              <div className="font-ui text-sm font-medium text-white truncate">{c.title}</div>
+              {c.subtitle && <div className="font-ui text-xs text-white/80 truncate">{c.subtitle}</div>}
             </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); c.onRemove(); }}
+              className="absolute top-2 right-2 w-9 h-9 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center hover:bg-black/75 transition-colors"
+              data-testid={`saved-remove-${c.key}`}
+              aria-label="Remove from saved"
+            >
+              <Heart className="w-4 h-4" style={{ color: 'var(--swipe-save)' }} fill="currentColor" />
+            </button>
           </div>
-        );
-      })}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1901,24 +1955,28 @@ export default function MarketplacePage() {
             <>
               {activeTab === "egg-donors" && (
                 showFavoritesOnly
-                  ? <MobileSavedGrid donors={eggDonors} type="egg-donor" />
+                  ? <MobileSavedGrid kind="egg-donor" items={eggDonors} />
                   : <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreEggDonors} hasNextPage={hasMoreEggDonors} isFetchingMore={isFetchingMoreEggDonors} />
               )}
               {activeTab === "surrogates" && (
                 showFavoritesOnly
-                  ? <MobileSavedGrid donors={surrogates} type="surrogate" />
+                  ? <MobileSavedGrid kind="surrogate" items={surrogates} />
                   : <DonorGrid donors={surrogates} searchQuery={searchQuery} type="surrogate" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSurrogates} hasNextPage={hasMoreSurrogates} isFetchingMore={isFetchingMoreSurrogates} />
               )}
               {activeTab === "sperm-donors" && (
                 showFavoritesOnly
-                  ? <MobileSavedGrid donors={spermDonors} type="sperm-donor" />
+                  ? <MobileSavedGrid kind="sperm-donor" items={spermDonors} />
                   : <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSpermDonors} hasNextPage={hasMoreSpermDonors} isFetchingMore={isFetchingMoreSpermDonors} />
               )}
               {isIvfTab && (
-                <IvfClinicDeckGrid providers={clinics as any} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
+                showFavoritesOnly
+                  ? <MobileSavedGrid kind="clinic" items={(clinics as any) || []} />
+                  : <IvfClinicDeckGrid providers={clinics as any} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
               )}
               {isDoctorTab && (
-                <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
+                showFavoritesOnly
+                  ? <MobileSavedGrid kind="doctor" items={(doctors as any) || []} />
+                  : <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
               )}
             </>
           )}
