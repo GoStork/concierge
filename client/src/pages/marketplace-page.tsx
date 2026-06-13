@@ -1007,8 +1007,11 @@ const PARENT_TYPE_MAP: Record<string, { id: string; label: string }> = {
   "Sperm Donor": { id: "sperm-donors", label: "Sperm" },
   "Surrogate": { id: "surrogates", label: "Surrogates" },
   "Fertility Clinic": { id: "ivf-clinics", label: "Clinics" },
+  // Doctors is a first-class provider type (Path B), not tied to a specific
+  // interestedService - it is always offered in the Explore picker.
+  "Fertility Doctor": { id: "doctors", label: "Doctors" },
 };
-const PARENT_TYPE_ORDER = ["egg-donors", "sperm-donors", "surrogates", "ivf-clinics"];
+const PARENT_TYPE_ORDER = ["egg-donors", "sperm-donors", "surrogates", "ivf-clinics", "doctors"];
 
 function DeckTypeSwitcher({ types, activeTab, onSelect, theme }: {
   types: { id: string; label: string }[];
@@ -1590,10 +1593,26 @@ export default function MarketplacePage() {
 
   useEffect(() => {
     if (!isParentOnly || parentAvailableTypes.length === 0) return;
+    // The Explore picker presents all 5 provider types as first-class, so any of
+    // them is reachable even when the parent didn't list it as an interest - never
+    // bounce them off one of those tabs. Only stale/unknown tabs get redirected.
+    if (PARENT_TYPE_ORDER.includes(activeTab)) return;
     if (!parentAvailableTypes.find(t => t.id === activeTab)) {
       dispatch(setMarketplaceTab(parentAvailableTypes[0].id));
     }
   }, [isParentOnly, parentAvailableTypes, activeTab, dispatch]);
+
+  // Deep-link / saved-filter migration: the old Doctors view was a sub-view of the
+  // IVF Clinics tab, addressed as ?clinicView=doctors. Doctors is now a first-class
+  // tab, so redirect any legacy link to it and strip the stale param.
+  useEffect(() => {
+    if (searchParams.get("clinicView") === "doctors") {
+      const next = new URLSearchParams(searchParams);
+      next.delete("clinicView");
+      setSearchParams(next, { replace: true });
+      dispatch(setMarketplaceTab("doctors"));
+    }
+  }, [searchParams, setSearchParams, dispatch]);
 
   const ivfLocation = searchParams.get("location") || "";
   const ivfSearch = searchParams.get("search") || "";
@@ -1651,6 +1670,7 @@ export default function MarketplacePage() {
 
   const isProviderTab = activeTab === "ivf-clinics" || activeTab === "surrogacy-agencies";
   const isIvfTab = activeTab === "ivf-clinics";
+  const isDoctorTab = activeTab === "doctors";
   const isDonorTab = activeTab === "egg-donors" || activeTab === "surrogates" || activeTab === "sperm-donors";
 
 
@@ -1710,7 +1730,7 @@ export default function MarketplacePage() {
       if (!res.ok) throw new Error("Failed to fetch doctors");
       return res.json();
     },
-    enabled: isIvfTab && clinicView === "doctors",
+    enabled: isDoctorTab || (isIvfTab && clinicView === "doctors"),
   });
 
   const setFilterParam = (key: string, value: string | null) => {
@@ -1753,7 +1773,7 @@ export default function MarketplacePage() {
     onIvfLgbtqCareChange: (v: boolean) => setFilterParam("lgbtq", v ? "true" : null),
     ivfSpecialty: specialtyFilter,
     onIvfSpecialtyChange: (v: string) => setFilterParam("specialty", v || null),
-    ivfShowSpecialty: clinicView === "doctors",
+    ivfShowSpecialty: isDoctorTab || clinicView === "doctors",
     ivfSpecialtyOptions: SPECIALTY_OPTIONS,
     ivfClinicView: clinicView,
     onIvfClinicViewChange: setClinicView,
@@ -1828,9 +1848,13 @@ export default function MarketplacePage() {
     (activeTab === "surrogacy-agencies" && providersLoading) ||
     (activeTab === "egg-donors" && eggLoading) ||
     (activeTab === "surrogates" && surrogatesLoading) ||
-    (activeTab === "sperm-donors" && spermLoading);
+    (activeTab === "sperm-donors" && spermLoading) ||
+    (isDoctorTab && doctorsLoading);
 
-  const currentProviderType = isIvfTab ? "ivf-clinic" as const :
+  // Doctors share the IVF clinics' filter context (success-rate context + the
+  // doctor specialty filter), so the Doctors tab uses the same provider-type
+  // bucket as IVF Clinics for the filters drawer.
+  const currentProviderType = (isIvfTab || isDoctorTab) ? "ivf-clinic" as const :
     activeTab === "surrogates" ? "surrogate" as const :
     activeTab === "sperm-donors" ? "sperm-donor" as const :
     "egg-donor" as const;
@@ -1844,11 +1868,11 @@ export default function MarketplacePage() {
       providerType={currentProviderType}
       open={filtersOpen}
       onOpenChange={(o) => { if (!o) closeFiltersPage(); else openFiltersPage(); }}
-      ivfFilterProps={isIvfTab ? ivfFilterProps : undefined}
+      ivfFilterProps={(isIvfTab || isDoctorTab) ? ivfFilterProps : undefined}
     />
   ) : null;
 
-  if (isMobile && (isDonorTab || isIvfTab)) {
+  if (isMobile && (isDonorTab || isIvfTab || isDoctorTab)) {
     return (
       <div className="fixed inset-x-0 top-0 bottom-[calc(88px+env(safe-area-inset-bottom))] z-[60] flex flex-col" style={{ backgroundColor: 'hsl(var(--deck-bg))' }} data-testid="marketplace-mobile-immersive">
         {showFavoritesOnly ? (
@@ -1907,6 +1931,9 @@ export default function MarketplacePage() {
                 ) : (
                   <IvfClinicDeckGrid providers={providers} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
                 )
+              )}
+              {isDoctorTab && (
+                <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
               )}
             </>
           )}
@@ -2080,6 +2107,9 @@ export default function MarketplacePage() {
                   sortBy={sortBy}
                 />
               )
+            )}
+            {isDoctorTab && (
+              <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
             )}
             {activeTab === "surrogacy-agencies" && (
               showFavoritesOnly ? (

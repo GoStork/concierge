@@ -30,7 +30,7 @@ interface UiState {
   adminProvidersFilters: AdminProvidersFilters;
 }
 
-const VALID_TABS = ["egg-donors", "surrogates", "ivf-clinics", "surrogacy-agencies", "sperm-donors"];
+const VALID_TABS = ["egg-donors", "surrogates", "ivf-clinics", "surrogacy-agencies", "sperm-donors", "doctors"];
 
 const MARKETPLACE_STORAGE_KEY = "marketplaceFilters:v1";
 
