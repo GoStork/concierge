@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
@@ -53,6 +54,31 @@ export function ClinicSwipeCard({
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const parentAccountId = (user as any)?.parentAccountId as string | undefined;
+
+  // This parent's structured diagnoses (CDC labels) - shared react-query cache
+  // (same key the marketplace already uses), so all clinic cards dedupe to one
+  // fetch. Drives the personalized "Experience with your needs" tab.
+  const { data: parentProfile } = useQuery<any>({
+    queryKey: ["/api/parent-profile"],
+    queryFn: async () => {
+      const r = await fetch("/api/parent-profile", { credentials: "include" });
+      return r.ok ? r.json() : null;
+    },
+    enabled: !!parentAccountId,
+    staleTime: 60000,
+  });
+  const patientDiagnoses: string[] = useMemo(() => {
+    const dx: string[] = Array.isArray(parentProfile?.diagnoses) ? [...parentProfile.diagnoses] : [];
+    // Map existing needs/carrier signals to CDC experience labels so a parent who
+    // hasn't stated a diagnosis but needs a surrogate / donor still gets a match.
+    if (parentProfile?.needsSurrogate === true || /surrogate/i.test(parentProfile?.carrier || "")) {
+      if (!dx.includes("Gestational carrier")) dx.push("Gestational carrier");
+    }
+    if (parentProfile?.needsEggDonor === true || /donor/i.test(parentProfile?.eggSource || "")) {
+      if (!dx.includes("Egg or embryo banking")) dx.push("Egg or embryo banking");
+    }
+    return dx;
+  }, [parentProfile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,6 +174,10 @@ export function ClinicSwipeCard({
     doctors: clinicDoctors,
     costs: costItems,
     compact: isMobile,
+    cdcServices: provider.cdcServices || null,
+    cdcExperience: provider.cdcExperience || null,
+    cdcCycleStats: provider.cdcCycleStats || null,
+    patientDiagnoses,
   });
   const successBadge = isTop10 ? "Top 10%" : null;
   const logoSrc = getPhotoSrc(provider.logoUrl) || null;

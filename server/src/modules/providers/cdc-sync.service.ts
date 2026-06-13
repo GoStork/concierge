@@ -1,5 +1,6 @@
 import { PrismaService } from "../prisma/prisma.service";
 import { buildEnrichmentSqlStatements } from "./cdc-enrichment.sql";
+import { syncClinicProfiles } from "./cdc-clinic-profile";
 
 const SOCRATA_CATALOG_URL = "https://api.us.socrata.com/api/catalog/v1";
 const CDC_DATA_BASE = "https://data.cdc.gov/resource";
@@ -277,6 +278,16 @@ export class CdcSyncService {
       }
 
       console.log(`[CDC Sync] Enrichment complete.`);
+
+      // Pull the two ART datasets the success-rate sync doesn't cover (Services &
+      // Profiles, Patient & Cycle Characteristics) onto Provider.cdcServices /
+      // cdcExperience / cdcCycleStats, joined by the cdcClinicId just set above.
+      try {
+        const prof = await syncClinicProfiles(this.prisma, year);
+        console.log(`[CDC Sync] Clinic profiles: services=${prof.servicesFilled} experience=${prof.experienceFilled} cycle=${prof.cycleFilled}`);
+      } catch (e: any) {
+        console.error(`[CDC Sync] Clinic-profile enrichment failed (non-fatal): ${e.message}`);
+      }
 
       await this.prisma.cdcSyncJob.update({
         where: { id: jobId },

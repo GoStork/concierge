@@ -15,6 +15,18 @@ model Provider {
   logoUrl                               String?
   websiteUrl                            String?
   cdcClinicId                           String?
+  // CDC ART profile data (synced from data.cdc.gov by cdcClinicId).
+  // cdcServices: { donorEgg, donatedEmbryo, embryoCryo, eggCryo, gestationalCarrier, ... : boolean }
+  cdcServices                           Json?
+  // cdcExperience: { "Diminished ovarian reserve": 38.3, "Male factor": 47.2, ... } - share of
+  // this clinic's ART patients by diagnosis (CDC "Reason for Using ART"). Experience/volume signal.
+  cdcExperience                         Json?
+  // cdcCycleStats: { pgtPct, icsiPct, frozenPct, singleEmbryoPct, gestationalCarrierPct, fertilityPreservationPct }
+  cdcCycleStats                         Json?
+  // CDC-reported medical director, e.g. "William B. Schoolcraft, MD". Durable
+  // fallback: enrichment recreates this as a member whenever a clinic would
+  // otherwise end with zero doctors (network labs SART can't match by name).
+  cdcMedicalDirector                    String?
   email                                 String?
   phone                                 String?
   yearFounded                           Int?
@@ -1447,6 +1459,11 @@ model IntendedParentProfile {
 
   // Service-Specific Preferences
   clinicReason      String?
+  // Structured diagnoses / reasons for needing ART, using the CDC "Reason for Using ART"
+  // labels (e.g. "Diminished ovarian reserve", "Male factor", "Endometriosis", "Recurrent
+  // pregnancy loss"). Populated by the AI concierge (which already detects these for doctor
+  // search) and used to match a clinic's CDC experience to what THIS parent is looking for.
+  diagnoses         String[] @default([])
   clinicPriority    String?
   insurance         String? // parent's own insurance, "Carrier" or "Carrier - Plan" (drives the marketplace insurance filter)
   donorEyeColor     String?

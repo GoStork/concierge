@@ -340,6 +340,59 @@ function isBotChallenge(html: string): boolean {
   );
 }
 
+// SPA team/location rosters render their cards lazily as the viewport scrolls,
+// and their photos use IntersectionObserver lazy-loading (data-src swapped to src
+// only when scrolled into view). Step-scroll the whole page so every card + image
+// mounts before we snapshot. Bounded by height + step cap so a normal page is cheap.
+async function autoScrollPage(page: any): Promise<void> {
+  try {
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => {
+        let total = 0;
+        const step = 700;
+        const timer = setInterval(() => {
+          const h = document.body.scrollHeight;
+          window.scrollBy(0, step);
+          total += step;
+          if (total >= h || total > 30000) { clearInterval(timer); resolve(); }
+        }, 220);
+      });
+    });
+    await page.waitForTimeout(500).catch(() => {});
+    await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
+    await page.waitForTimeout(300).catch(() => {});
+  } catch { /* scroll is best-effort */ }
+}
+
+// Many rosters hide their tail behind a "Load more" / "View all" / "Show all
+// providers" toggle. Click the visible ones (bounded) so the full team renders.
+async function clickLoadMoreButtons(page: any): Promise<void> {
+  const labels = [
+    "load more", "show more", "view more", "see more",
+    "view all", "see all", "show all", "load all",
+    "view all providers", "view all doctors", "view all physicians",
+    "meet the team", "see our team", "view team",
+  ];
+  try {
+    for (let pass = 0; pass < 4; pass++) {
+      let clickedAny = false;
+      for (const label of labels) {
+        const btn = page.locator(
+          `button:has-text("${label}"), a:has-text("${label}"), [role="button"]:has-text("${label}")`,
+        ).first();
+        try {
+          if (await btn.isVisible({ timeout: 400 })) {
+            await btn.click({ timeout: 2000 });
+            await page.waitForTimeout(900).catch(() => {});
+            clickedAny = true;
+          }
+        } catch { /* not clickable - next label */ }
+      }
+      if (!clickedAny) break;
+    }
+  } catch { /* load-more is best-effort */ }
+}
+
 async function fetchHtmlWithBrowser(url: string, timeoutMs = 45000): Promise<{ html: string; finalUrl: string } | null> {
   const browser = await getRenderBrowser();
   if (!browser) return null;
@@ -389,6 +442,14 @@ async function fetchHtmlWithBrowser(url: string, timeoutMs = 45000): Promise<{ h
         }
       } catch { /* selector not present / not clickable - try next */ }
     }
+
+    // Trigger lazy roster cards + their lazy images, then expand any "load more"
+    // toggles and re-scroll to mount the newly-revealed tail. This is what turns a
+    // JS-rendered team page (503-char shell) into a full extractable roster.
+    await autoScrollPage(page);
+    await clickLoadMoreButtons(page);
+    await autoScrollPage(page);
+    await page.waitForTimeout(500).catch(() => {});
 
     const html = await page.content();
     const finalUrl = page.url() || url;
@@ -454,6 +515,31 @@ async function fetchHtml(url: string, timeoutMs = 45000): Promise<{ html: string
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// URLs that should expose a team/staff/location roster. Used to decide when a
+// thin static fetch is worth the cost of a browser re-render.
+const TEAM_LIKE_PATH = /\/(physicians?|doctors?|providers?|our-?team|teams?|staff|specialists?|meet|faculty|people|our-?doctors|our-?providers|locations?|clinics?|offices?)\b/i;
+
+// SPA-aware fetch for pages that SHOULD carry a roster. Try the cheap static
+// fetch first; if the page rendered but its team section is thin (the roster is
+// client-rendered, e.g. Kindbody's /<city>-location pages return a ~500-char team
+// shell that the visible-text JS-shell check doesn't catch), re-render in the
+// browser (scroll + load-more) and keep whichever yields the larger team section.
+async function fetchTeamPage(url: string, timeoutMs = 45000): Promise<{ html: string; finalUrl: string }> {
+  const fetched = await fetchHtml(url, timeoutMs);
+  if (!TEAM_LIKE_PATH.test(url)) return fetched;
+  const staticTeam = extractTeamSectionHtml(fetched.html, url);
+  if (staticTeam.length >= 600) return fetched;
+  const rendered = await fetchHtmlWithBrowser(url, timeoutMs);
+  if (rendered) {
+    const renderedTeam = extractTeamSectionHtml(rendered.html, rendered.finalUrl || url);
+    if (renderedTeam.length > staticTeam.length) {
+      console.log(`[scraper] SPA re-render lifted team on ${url}: ${staticTeam.length} -> ${renderedTeam.length} chars`);
+      return rendered;
+    }
+  }
+  return fetched;
 }
 
 async function searchYearFounded(companyName: string, websiteUrl: string): Promise<number | null> {
@@ -894,9 +980,77 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
   const mainTeamHtml = extractTeamSectionHtml(mainHtml, effectiveUrl);
   pages.push({ url: effectiveUrl, text: `${mainMeta}\n\nTEXT:\n${mainText}`, teamHtml: mainTeamHtml });
 
+  // Location-page -> member attribution. Declared up here (not after the subpage
+  // loop) because a clinic's /location/<city> pages are often discovered as plain
+  // subpages too, so they're fetched in the generic batch below. Without this, a
+  // network's per-location roster lands in the global team pool with NO location
+  // tag (CCRM: 48 doctors, 0 location hints) and scopeTeamToLab then drops them.
+  // attributeLocationTeam tags each doctor with the location page they appear on -
+  // the precise per-location signal the enrichment scoping relies on.
+  const locationAddresses: string[] = [];
+  const locationTeamHtmlParts: string[] = [];
+  const memberLocationMap = new Map<string, Set<string>>();
+  const photoLocationMap = new Map<string, Set<string>>();
+  const locationCityMap = new Map<string, string>();
+  const scrapedLocationPages: Array<{ url: string; locationName: string; address: string; html: string }> = [];
+  const attributedLocationUrls = new Set<string>();
+
+  const attributeLocationTeam = (html: string, url: string): number => {
+    if (attributedLocationUrls.has(url)) return 0;
+    attributedLocationUrls.add(url);
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const locationName = titleMatch
+      ? titleMatch[1].replace(/<[^>]+>/g, "").replace(/\|.*$/, "").trim()
+      : url.split("/").filter(Boolean).pop()?.replace(/-/g, " ") || "";
+    const address = extractAddressFromHtml(html);
+    const text = extractCleanText(html);
+    locationAddresses.push(`Location: ${locationName}${address ? " | Address: " + address : ""}\n${text.slice(0, 3000)}`);
+    scrapedLocationPages.push({ url, locationName, address, html });
+    const cityFromUrl = url.split("/").filter(Boolean).pop()?.replace(/-/g, " ") || "";
+    const cityFromName = locationName.replace(/^.*(?:in|en|–|-)\s+/i, "").replace(/\s*\|.*$/, "").trim();
+    if (cityFromName.length > 2) locationCityMap.set(cityFromName.toLowerCase(), locationName);
+    if (cityFromUrl.length > 2 && cityFromUrl !== cityFromName.toLowerCase()) locationCityMap.set(cityFromUrl.toLowerCase(), locationName);
+    const teamHtml = extractTeamSectionHtml(html, url);
+    if (!teamHtml) return 0;
+    locationTeamHtmlParts.push(teamHtml);
+    // Map every person listed on this location page to this location. We use the
+    // EXACT same name-candidate extraction the global roster loop uses (alt text +
+    // the "Dr. First M. Last" NEARBY_TEXT patterns, normalized) so these keys line
+    // up with the final roster's member keys - that alignment is what already makes
+    // photo assignment work (46/48). We additionally key by photoUrl (an exact
+    // string), since each final member's photoUrl is sourced from these same blocks.
+    const blocks = teamHtml.match(/\[PERSON\][^\n]+/g) || [];
+    let mapped = 0;
+    for (const block of blocks) {
+      const altMatch = block.match(/alt="([^"]+)"/);
+      const photoMatch = block.match(/photoUrl="([^"]+)"/);
+      const nearbyText = block.replace(/.*NEARBY_TEXT:\s*/, "");
+      const candidates = [altMatch?.[1] || ""];
+      candidates.push(...(nearbyText.match(/(?:Dr\.?\s+)?[A-Z][a-z]+\s+(?:[A-Z]\.?\s+)?[A-Z][a-z]+/g) || []));
+      let tagged = false;
+      for (const rawCandidate of candidates) {
+        const candidate = rawCandidate.trim();
+        if (candidate.length < 4 || !/[A-Z]/.test(candidate)) continue;
+        const key = normalizeNameKey(candidate);
+        if (key.length < 4) continue;
+        if (!memberLocationMap.has(key)) memberLocationMap.set(key, new Set());
+        memberLocationMap.get(key)!.add(locationName);
+        tagged = true;
+      }
+      if (photoMatch) {
+        const pkey = photoMatch[1];
+        if (!photoLocationMap.has(pkey)) photoLocationMap.set(pkey, new Set());
+        photoLocationMap.get(pkey)!.add(locationName);
+        tagged = true;
+      }
+      if (tagged) mapped++;
+    }
+    return mapped;
+  };
+
   const subpageFetches = subpageUrls.map(async (url) => {
     try {
-      const fetched = await fetchHtml(url);
+      const fetched = await fetchTeamPage(url);
       const text = extractCleanText(fetched.html);
       const teamHtml = extractTeamSectionHtml(fetched.html, url);
       return { url, text, teamHtml, html: fetched.html };
@@ -929,61 +1083,33 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
     }
   }
 
-  const alreadyFetched = new Set(pages.map(p => p.url));
-  locationSubpageUrls = [...new Set(locationSubpageUrls)].filter(u => !alreadyFetched.has(u));
-  console.log(`[scraper] Total unique location sub-pages to fetch: ${locationSubpageUrls.length}`);
+  // Attribute location pages that were ALREADY fetched in the generic subpage
+  // batch above. Networks like CCRM expose /location/<city> as plain subpage
+  // links, so they land in `pages` (global team pool) with no location tag;
+  // re-run attribution on their cached HTML so each location's roster carries
+  // per-location hints instead of dissolving into one undifferentiated list.
+  const locationUrlSet = new Set(locationSubpageUrls);
+  for (const result of subpageResults) {
+    if (result && locationUrlSet.has(result.url)) {
+      const n = attributeLocationTeam(result.html, result.url);
+      console.log(`[scraper] Attributed cached location page ${result.url}: ${n} members tagged`);
+    }
+  }
 
-  let locationAddresses: string[] = [];
-  let locationTeamHtmlParts: string[] = [];
-  const memberLocationMap = new Map<string, Set<string>>();
-  const locationCityMap = new Map<string, string>();
-  let scrapedLocationPages: Array<{ url: string; locationName: string; address: string; html: string }> = [];
+  // Fetch the remaining (not-yet-fetched) location pages and attribute them too.
+  locationSubpageUrls = [...new Set(locationSubpageUrls)].filter(u => !attributedLocationUrls.has(u));
+  console.log(`[scraper] Location sub-pages still to fetch: ${locationSubpageUrls.length}`);
   if (locationSubpageUrls.length > 0) {
-    const locFetches = locationSubpageUrls.slice(0, 8).map(async (url) => {
+    await Promise.all(locationSubpageUrls.slice(0, 12).map(async (url) => {
       try {
-        const fetched = await fetchHtml(url, 15000);
-        const html = fetched.html;
-        const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-        const locationName = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").replace(/\|.*$/, "").trim() : url.split("/").pop()?.replace(/-/g, " ") || "";
-        const address = extractAddressFromHtml(html);
-        const text = extractCleanText(html);
-        const teamHtml = extractTeamSectionHtml(html, url);
-        console.log(`[scraper] Location page: ${locationName} | address: ${address ? 'found' : 'not found'} | team: ${teamHtml ? 'found' : 'none'}`);
-        return { url, locationName, address, text: text.slice(0, 3000), teamHtml, html };
+        const fetched = await fetchTeamPage(url, 15000);
+        const teamHtml = extractTeamSectionHtml(fetched.html, url);
+        const n = attributeLocationTeam(fetched.html, url);
+        console.log(`[scraper] Location page: ${url} | team: ${teamHtml ? teamHtml.length + " chars" : "none"} | ${n} members tagged`);
       } catch (err: any) {
         console.log(`[scraper] Failed to fetch location page ${url}: ${err.message}`);
-        return null;
       }
-    });
-    const locResults = await Promise.all(locFetches);
-    for (const loc of locResults) {
-      if (loc) {
-        const entry = `Location: ${loc.locationName}${loc.address ? " | Address: " + loc.address : ""}\n${loc.text}`;
-        locationAddresses.push(entry);
-        scrapedLocationPages.push({ url: loc.url, locationName: loc.locationName, address: loc.address, html: loc.html });
-        const cityFromUrl = loc.url.split("/").pop()?.replace(/-/g, " ") || "";
-        const cityFromName = loc.locationName
-          .replace(/^.*(?:in|en|–|-)\s+/i, "")
-          .replace(/\s*\|.*$/, "")
-          .trim();
-        if (cityFromName.length > 2) {
-          locationCityMap.set(cityFromName.toLowerCase(), loc.locationName);
-        }
-        if (cityFromUrl.length > 2 && cityFromUrl !== cityFromName.toLowerCase()) {
-          locationCityMap.set(cityFromUrl.toLowerCase(), loc.locationName);
-        }
-        if (loc.teamHtml) {
-          locationTeamHtmlParts.push(loc.teamHtml);
-          const altMatches = loc.teamHtml.match(/alt="([A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)?)"/g) || [];
-          for (const m of altMatches) {
-            const personName = m.replace(/alt="([^"]+)"/, "$1").trim();
-            const key = personName.toLowerCase().replace(/[^a-z]/g, "");
-            if (!memberLocationMap.has(key)) memberLocationMap.set(key, new Set());
-            memberLocationMap.get(key)!.add(loc.locationName);
-          }
-        }
-      }
-    }
+    }));
   }
   console.log(`[scraper] Extracted ${locationAddresses.length} location entries for AI prompt`);
   console.log(`[scraper] Location city keywords: ${[...locationCityMap.keys()].join(", ")}`);
@@ -1080,6 +1206,10 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
 
   let doctorProfiles: string[] = [];
   let doctorTeamHtmlParts: string[] = [];
+
+  // URLs already fetched (main + subpages + attributed location pages), so the
+  // per-doctor sub-page crawl below doesn't re-fetch them.
+  const alreadyFetched = new Set<string>([...pages.map(p => p.url), ...attributedLocationUrls]);
 
   for (const result of subpageResults) {
     if (result && doctorPagePattern.test(result.url)) {
@@ -1493,17 +1623,23 @@ Important rules:
     if (!member.isMedicalDirector) {
       member.isMedicalDirector = isMedicalDirectorTitle(member.title, member.bio);
     }
-    let locHints = memberLocationMap.get(nameKey);
-    if (!locHints) {
+    // Location hints from BOTH the name-key map and the exact photoUrl map (the
+    // latter is immune to name-normalization drift). Merge so a doctor matched by
+    // either signal gets tagged with every location page they appeared on.
+    const locSet = new Set<string>();
+    let nameHints = memberLocationMap.get(nameKey);
+    if (!nameHints) {
       for (const [mapKey, mapValue] of memberLocationMap) {
-        if (nameKey.startsWith(mapKey) || mapKey.startsWith(nameKey)) {
-          locHints = mapValue;
-          break;
-        }
+        if (nameKey.startsWith(mapKey) || mapKey.startsWith(nameKey)) { nameHints = mapValue; break; }
       }
     }
-    if (locHints) {
-      member.locationHints = Array.from(locHints);
+    if (nameHints) for (const h of nameHints) locSet.add(h);
+    if (member.photoUrl) {
+      const photoHints = photoLocationMap.get(member.photoUrl);
+      if (photoHints) for (const h of photoHints) locSet.add(h);
+    }
+    if (locSet.size > 0) {
+      member.locationHints = Array.from(locSet);
     }
   }
 

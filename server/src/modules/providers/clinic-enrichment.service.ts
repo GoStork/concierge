@@ -354,6 +354,17 @@ function statesMatch(a: string, b: string): boolean {
   return false;
 }
 
+// Global SART throttle. The enrichment runs clinics at concurrency ~10, but
+// sartcorsonline.com blocks bursts (returns 0 results for everything once
+// hammered). Serialize every SART HTTP call globally with a spacing gap so a
+// concurrent run still queries SART one-at-a-time and keeps matching.
+let _sartGate: Promise<unknown> = Promise.resolve();
+function sartThrottle<T>(fn: () => Promise<T>): Promise<T> {
+  const next = _sartGate.then(fn, fn);
+  _sartGate = next.then(() => sleep(350), () => sleep(350));
+  return next as Promise<T>;
+}
+
 export async function searchSartForClinic(
   clinicName: string,
   city: string | null,
@@ -383,7 +394,7 @@ export async function searchSartForClinic(
       const timeout = setTimeout(() => controller.abort(), 15000);
 
       try {
-        const response = await fetch("https://www.sartcorsonline.com/Membersearch/ClinicSearch", {
+        const response = await sartThrottle(() => fetch("https://www.sartcorsonline.com/Membersearch/ClinicSearch", {
           method: "POST",
           signal: controller.signal,
           headers: {
@@ -401,7 +412,7 @@ export async function searchSartForClinic(
             Page: 0,
             PageSize: 10,
           }),
-        });
+        }));
 
         clearTimeout(timeout);
 
@@ -1042,7 +1053,39 @@ export class ClinicEnrichmentService {
       console.log(`[clinic-enrichment] Cleared stale ${mergedTeam.length}-member roster for "${provider.name}" - none attributable to this lab`);
     }
 
+    // Durable floor: every clinic should show at least its medical director. If
+    // SART + scraping left this clinic with no roster, fall back to the CDC-reported
+    // medical director so a re-scrape can't leave a clinic doctor-less.
+    await this.ensureCdcMedicalDirector(providerId);
+
     return true;
+  }
+
+  // Create the CDC-reported medical director as a member when a clinic has no
+  // roster (network labs SART can't match by name). Idempotent - only acts on a
+  // zero-member clinic. Self-heals on every enrichment run.
+  private async ensureCdcMedicalDirector(providerId: string): Promise<void> {
+    const count = await this.prisma.providerMember.count({ where: { providerId } });
+    if (count > 0) return;
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      select: { cdcMedicalDirector: true },
+    });
+    const raw = provider?.cdcMedicalDirector?.trim();
+    if (!raw) return;
+    const m = raw.match(/^(.*?),?\s*\b(MD\/PhD|DO\/PhD|MD|DO|MBBS|DMD)\b\.?\s*$/i);
+    const name = (m ? m[1] : raw).replace(/[,\s]+$/, "").trim();
+    if (name.length < 3) return;
+    await createMemberWithSlug(this.prisma, {
+      providerId,
+      name,
+      title: "Medical Director",
+      bio: null,
+      photoUrl: null,
+      isMedicalDirector: true,
+      sortOrder: 0,
+    });
+    console.log(`[clinic-enrichment] CDC fallback: added medical director "${name}" for clinic with no roster`);
   }
 
 

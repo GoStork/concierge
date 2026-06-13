@@ -5514,6 +5514,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // Clinic preferences
         "clinicReason", "clinicPriority", "clinicAgeGroup", "clinicPriorityTags",
         "currentClinicName",
+        // Structured diagnoses (CDC "Reason for Using ART" labels) - drives clinic-experience match
+        "diagnoses",
         // Current professionals
         "currentAgencyName", "currentAttorneyName",
         // Egg donor preferences
@@ -5581,6 +5583,35 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             } else {
               profileData.carrier = normalized;
             }
+          } else if (resolvedKey === "diagnoses") {
+            // Normalize free phrasings to the CDC "Reason for Using ART" labels and
+            // UNION with any diagnoses already on file (the AI may surface them one
+            // at a time across the conversation).
+            const CDC_DX: { match: RegExp; label: string }[] = [
+              { match: /male factor|male infertility|sperm|azoosperm|oligosperm/i, label: "Male factor" },
+              { match: /endometriosis/i, label: "Endometriosis" },
+              { match: /tubal|blocked tube|fallopian/i, label: "Tubal factor" },
+              { match: /pcos|polycystic|ovulat|anovulation/i, label: "Ovulatory dysfunction" },
+              { match: /uterine|fibroid|polyp|asherman/i, label: "Uterine factor" },
+              { match: /diminished ovarian|low ovarian|\bdor\b|low amh|premature ovarian/i, label: "Diminished ovarian reserve" },
+              { match: /recurrent (pregnancy )?loss|recurrent miscarriage|\brpl\b/i, label: "Recurrent pregnancy loss" },
+              { match: /gestational carrier|surrogate/i, label: "Gestational carrier" },
+              { match: /egg.{0,6}bank|embryo.{0,6}bank|fertility preservation|freeze.{0,10}egg/i, label: "Egg or embryo banking" },
+              { match: /\bpgt\b|preimplantation|genetic testing|genetic disorder/i, label: "Preimplantation genetic testing" },
+              { match: /unexplained/i, label: "Unexplained factor" },
+            ];
+            const raw = Array.isArray(value) ? value : [value];
+            const normalized = new Set<string>();
+            for (const item of raw) {
+              const s = String(item);
+              for (const d of CDC_DX) if (d.match.test(s)) normalized.add(d.label);
+            }
+            const existing = (await prisma.intendedParentProfile.findFirst({
+              where: { parentAccountId: userRecord!.parentAccountId! },
+              select: { diagnoses: true },
+            }))?.diagnoses || [];
+            const union = Array.from(new Set([...existing, ...normalized]));
+            if (union.length > 0) profileData.diagnoses = union;
           } else if (resolvedKey === "eggSource") {
             profileData.eggSource = normalizeEggSource(String(value), userRecord?.gender);
           } else if (resolvedKey === "spermSource") {

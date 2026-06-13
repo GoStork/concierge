@@ -740,6 +740,14 @@ export function getClinicTabs(opts: {
   // Mobile cards are shorter - cap the Locations/Doctors lists tighter so the
   // bubbles don't overflow up into the header.
   compact?: boolean;
+  // CDC ART profile (from Provider.cdcServices / cdcExperience / cdcCycleStats).
+  cdcServices?: Record<string, boolean> | null;
+  cdcExperience?: Record<string, number> | null;
+  cdcCycleStats?: Record<string, number> | null;
+  // This parent's diagnoses (CDC labels) - the Clinic Experience tab pulls these
+  // to the top and highlights them, so the parent sees the clinic's experience in
+  // exactly what THEY are looking for.
+  patientDiagnoses?: string[];
 }): TabSection[] {
   const tabs: TabSection[] = [];
 
@@ -761,6 +769,35 @@ export function getClinicTabs(opts: {
     bars,
   });
 
+  // Clinic Experience: share of THIS clinic's IVF patients by diagnosis (CDC
+  // "Reason for Using ART"). Personalized - the parent's own diagnoses are pulled
+  // to the top and shown in the clinic color (isClinic:true), so they see the
+  // clinic's experience in exactly what they're looking for; the clinic's next
+  // strongest areas follow in the accent color.
+  const exp = opts.cdcExperience;
+  if (exp && Object.keys(exp).length > 0) {
+    const patientDx = (opts.patientDiagnoses || []).filter((d) => d in exp);
+    const matched = patientDx
+      .map((d) => ({ label: d, value: Math.round(exp[d]), isClinic: true }))
+      .sort((a, b) => b.value - a.value);
+    const others = Object.entries(exp)
+      .filter(([d, v]) => !patientDx.includes(d) && v >= 5 && !/other factor|unexplained/i.test(d))
+      .map(([d, v]) => ({ label: d, value: Math.round(v), isClinic: false }))
+      .sort((a, b) => b.value - a.value);
+    const expBars = [...matched, ...others].slice(0, matched.length > 0 ? 5 : 4);
+    if (expBars.length > 0) {
+      tabs.push({
+        layoutType: "success_bars",
+        title: patientDx.length > 0 ? "Experience with your needs" : "Clinic Experience",
+        subtitle: patientDx.length > 0
+          ? "Share of this clinic's IVF patients with your diagnosis"
+          : "What this clinic's patients most need help with",
+        items: [],
+        bars: expBars,
+      });
+    }
+  }
+
   // Costs tab always present so the structure is consistent across clinics.
   // Only the first line (the "Starting at $X" headline) carries the $ icon; any
   // follow-up note (e.g. "N programs available") stays plain.
@@ -768,6 +805,38 @@ export function getClinicTabs(opts: {
     ? opts.costs.map((c, i) => ({ label: c.label, value: "", icon: i === 0 ? DollarSign : undefined }))
     : [{ label: "Pricing shared on your free consultation", value: "", icon: DollarSign }];
   tabs.push({ layoutType: "icon_list", title: "Costs", items: costItems });
+
+  // Services this clinic offers (CDC Services & Profiles) - chips.
+  const SERVICE_CHIPS: { key: string; label: string }[] = [
+    { key: "donorEgg", label: "Donor Eggs" },
+    { key: "donatedEmbryo", label: "Donated Embryos" },
+    { key: "eggCryo", label: "Egg Freezing" },
+    { key: "embryoCryo", label: "Embryo Freezing" },
+    { key: "gestationalCarrier", label: "Gestational Carrier" },
+    { key: "singleWomen", label: "Single Women" },
+    { key: "femaleCouple", label: "Female Couples" },
+  ];
+  if (opts.cdcServices) {
+    const svc = opts.cdcServices;
+    const serviceItems: TabItem[] = SERVICE_CHIPS.filter((s) => svc[s.key] === true).map((s) => ({ label: s.label, value: "" }));
+    if (serviceItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Services", items: serviceItems });
+  }
+
+  // How they practice (CDC cycle characteristics) - stats with a leading icon.
+  const PRACTICE_ROWS: { key: string; label: string; icon: LucideIcon }[] = [
+    { key: "pgtPct", label: "Genetic testing (PGT)", icon: Award },
+    { key: "icsiPct", label: "ICSI", icon: Syringe },
+    { key: "singleEmbryoPct", label: "Single-embryo transfers", icon: Baby },
+    { key: "frozenPct", label: "Frozen-embryo transfers", icon: Snowflake },
+    { key: "gestationalCarrierPct", label: "Gestational carrier", icon: HeartHandshake },
+  ];
+  const cyc = opts.cdcCycleStats;
+  if (cyc) {
+    const practiceItems: TabItem[] = PRACTICE_ROWS
+      .filter((r) => typeof cyc[r.key] === "number")
+      .map((r) => ({ label: r.label, value: `${Math.round(cyc[r.key])}%`, icon: r.icon }));
+    if (practiceItems.length > 0) tabs.push({ layoutType: "icon_list", title: "How they practice", items: practiceItems });
+  }
 
   const allLocItems: TabItem[] = (opts.locations || [])
     .map((l) => ({ label: [l.city, l.state].filter(Boolean).join(", "), value: "", icon: MapPin }))
