@@ -115,7 +115,11 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
           <tbody className="divide-y divide-border">
             {visibleLogs.map((log) => {
               const isRunning = !log.completedAt;
-              const hasFailed = log.failed > 0 || log.status === "failed";
+              // A run is "partial" when the server saved some profiles but hit a
+              // fatal error mid-run (status === "partial"), OR when it completed
+              // with per-profile failures. Either way it's warning, not failure.
+              const isPartial = log.status === "partial" || (log.status === "completed" && (log.failed > 0));
+              const hasFailed = log.status === "failed" || (log.status === "completed" && log.failed > 0);
               const errors = log.errors || [];
               const isErrorOpen = !!expandedErrors[log.id];
               return (
@@ -138,7 +142,7 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
                           <CheckCircle2 className="w-3 h-3" />
                           Completed
                         </span>
-                      ) : log.status === "completed" && hasFailed ? (
+                      ) : isPartial ? (
                         <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--brand-warning))]">
                           <AlertTriangle className="w-3 h-3" />
                           Partial

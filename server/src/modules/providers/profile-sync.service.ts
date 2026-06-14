@@ -244,13 +244,26 @@ const DEFAULT_HEADERS: Record<string, string> = {
     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 };
 
-async function fetchHtml(url: string, cookies?: string, timeoutMs = 20000, maxChars = 500000): Promise<string> {
+// Classify an error as a transient network blip worth one retry, vs. a hard
+// failure we should surface immediately. Transient = timeouts, dropped sockets,
+// DNS hiccups, and the upstream-gateway 5xx codes (502/503/504). A 401/403/404
+// or a parse error is NOT transient - retrying just wastes time and hides the
+// real cause. The bare "(EAUTHTIMEOUT) timeout while waiting for message" string
+// is what the EDC source/proxy returns over the wire when a read stalls.
+function isTransientFetchError(err: any): boolean {
+  const msg = String(err?.message || err || "").toLowerCase();
+  if (err?.name === "AbortError") return true; // our own timeout fired
+  if (/(econnreset|etimedout|eai_again|enotfound|epipe|econnrefused|socket hang up|network|fetch failed|timeout|eauthtimeout|waiting for message)/.test(msg)) {
+    return true;
+  }
+  // Upstream gateway errors are worth one more try; other HTTP statuses are not.
+  if (/^http (502|503|504)\b/i.test(String(err?.message || ""))) return true;
+  return false;
+}
+
+async function fetchHtmlOnce(url: string, cookies?: string, timeoutMs = 20000, maxChars = 500000): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  if (!url.startsWith('http')) {
-    console.warn(`[donor-sync] fetchHtml caught invalid relative URL: ${url}`);
-    return "";
-  }
   try {
     const headers: Record<string, string> = { ...DEFAULT_HEADERS };
     if (cookies) {
@@ -269,6 +282,35 @@ async function fetchHtml(url: string, cookies?: string, timeoutMs = 20000, maxCh
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// Shared fetch primitive for EVERY scraper path (login, dashboard, AJAX list,
+// per-donor profile/photo tabs, pagination). A single dropped connection from a
+// source used to throw straight through and - depending on the caller - abort an
+// entire 560-profile run, zeroing it. We now give transient blips up to 2 short
+// retries so one stalled read no longer fails the whole sync. Hard errors (4xx,
+// bad markup) still fail fast so the real cause stays visible.
+async function fetchHtml(url: string, cookies?: string, timeoutMs = 20000, maxChars = 500000): Promise<string> {
+  if (!url.startsWith('http')) {
+    console.warn(`[donor-sync] fetchHtml caught invalid relative URL: ${url}`);
+    return "";
+  }
+  const MAX_ATTEMPTS = 3;
+  let lastErr: any;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await fetchHtmlOnce(url, cookies, timeoutMs, maxChars);
+    } catch (err: any) {
+      lastErr = err;
+      if (attempt >= MAX_ATTEMPTS || !isTransientFetchError(err)) {
+        throw err;
+      }
+      const backoffMs = 500 * attempt; // 500ms, then 1000ms
+      console.warn(`[donor-sync] Transient fetch error for ${url} (attempt ${attempt}/${MAX_ATTEMPTS}): ${err.message}. Retrying in ${backoffMs}ms`);
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
+  }
+  throw lastErr;
 }
 
 function extractSetCookies(response: Response): string[] {
@@ -4766,7 +4808,17 @@ async function runSyncJob(
             }
           }
         });
-        await Promise.all(profilePromises);
+        // Fault isolation: a throw inside this batch's profile-fetch phase must
+        // not abort the whole run. Without this, one unguarded rejection bubbles
+        // to the top-level catch and zeroes a 560-profile sync. We log it, record
+        // it, and fall through - items that did resolve still get upserted below,
+        // and the next batch still runs.
+        try {
+          await Promise.all(profilePromises);
+        } catch (batchErr: any) {
+          job.errors.push(`Batch ${i}-${i + batch.length} profile-fetch error (continuing): ${batchErr.message}`);
+          console.error(`[donor-sync] Batch ${i}-${i + batch.length} profile-fetch error (continuing): ${batchErr.message}`);
+        }
 
         for (let j = 0; j < batch.length; j++) {
           const item = batch[j];
@@ -5261,17 +5313,23 @@ async function runSyncJob(
       `[donor-sync] Sync complete: ${job.succeeded} succeeded, ${job.failed} failed, ${job.staleProfilesMarked} marked inactive out of ${job.total}`,
     );
   } catch (err: any) {
+    // Partial-success semantics: if profiles were already saved before this
+    // fatal error, the run is PARTIAL, not a total loss. Reporting it as "failed"
+    // (and discarding the run) is what made one late upstream blip throw away 500+
+    // good saves. We still record the fatal error loudly - the status just tells
+    // the truth about what made it to the DB.
+    const savedSomething = job.succeeded > 0;
     if (!isJobCancelled(job.id)) {
-      job.status = "failed";
+      job.status = savedSomething ? "partial" : "failed";
       job.errors.push(`Fatal error: ${err.message}`);
       job.completedAt = new Date();
     }
     cancelledJobs.delete(job.id);
-    console.error(`[donor-sync] Sync failed:`, err);
+    console.error(`[donor-sync] Sync ${savedSomething ? "partial (saved " + job.succeeded + " before error)" : "failed"}:`, err);
 
     // Ensure DB records the sync ended so auto-resume doesn't restart stuck syncs
     try {
-      const failUpdate = { lastSyncEndedAt: new Date(), syncStatus: "FAILED" };
+      const failUpdate = { lastSyncEndedAt: new Date(), syncStatus: savedSomething ? "PARTIAL" : "FAILED" };
       switch (job.type) {
         case "egg-donor":
           await prisma.eggDonorSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
