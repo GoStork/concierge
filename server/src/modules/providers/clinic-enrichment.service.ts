@@ -6,6 +6,7 @@ import { scrapeProviderWebsite, getRootDomain, normalizeHostname } from "./scrap
 import { buildDoctorEnrichment } from "./doctor-data";
 import { upscaleMissingDoctorPhotos } from "../../lib/upscale-doctors";
 import { US_STATES } from "./us-states";
+import { clusterPersonVariants, pickBestDisplayName } from "../../lib/doctor-name-dedup";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -808,7 +809,13 @@ export function mergeTeamMembers(
 
   const result = Array.from(mergedMap.values());
   const sartOnlyKept = result.filter(m => m.fromSart).length - enrichedFromScraper;
-  const finalMembers = result.map(({ fromSart, ...rest }) => rest);
+  const exactMerged = result.map(({ fromSart, ...rest }) => rest);
+
+  // Second pass: collapse same-person NAME VARIANTS the exact-key map missed
+  // ("Jeff McKeeby M.D." + "Jeffrey L. McKeeby" -> one). The exact key differs
+  // ("jeffmckeebymd" vs "jeffreylmckeeby"), so only fuzzy last-name + compatible
+  // first-name clustering catches these.
+  const finalMembers = collapseTeamNameVariants(exactMerged);
 
   finalMembers.sort((a, b) => {
     if (a.isMedicalDirector && !b.isMedicalDirector) return -1;
@@ -819,6 +826,36 @@ export function mergeTeamMembers(
   console.log(`[clinic-enrichment] Team merge for "${providerName}": ${sartMembers.length} from SART, ${scrapedMembers.length} from scraper → ${finalMembers.length} total (${enrichedFromScraper} enriched by scraper, ${sartOnlyKept > 0 ? sartOnlyKept : 0} SART-only, ${newFromScraper} scraper-only)`);
 
   return finalMembers;
+}
+
+type MergeableMember = { name: string; title: string | null; bio: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[] };
+
+// Collapse same-person NAME VARIANTS in a merged team list. Clusters by fuzzy
+// last-name + compatible first-name, then keeps ONE row per person: the fullest
+// given name ("Jeffrey L. McKeeby" over "Jeff McKeeby M.D.") with the union of
+// every variant's data (longest bio/title, any photo, medical-director if any
+// variant is one, union of location hints). Shared shape with the cleanup script.
+function collapseTeamNameVariants(members: MergeableMember[]): MergeableMember[] {
+  if (members.length < 2) return members;
+  const clusters = clusterPersonVariants(members.map(m => m.name));
+  if (clusters.length === members.length) return members; // no variants found
+  const out: MergeableMember[] = [];
+  for (const idxs of clusters) {
+    if (idxs.length === 1) { out.push(members[idxs[0]]); continue; }
+    const group = idxs.map(i => members[i]);
+    const bestName = pickBestDisplayName(group.map(m => m.name));
+    const longest = (vals: (string | null)[]) =>
+      vals.filter((v): v is string => !!v).sort((a, b) => b.length - a.length)[0] || null;
+    out.push({
+      name: bestName,
+      title: longest(group.map(m => m.title)),
+      bio: longest(group.map(m => m.bio)),
+      photoUrl: group.map(m => m.photoUrl).find(Boolean) || null,
+      isMedicalDirector: group.some(m => m.isMedicalDirector),
+      locationHints: Array.from(new Set(group.flatMap(m => m.locationHints))),
+    });
+  }
+  return out;
 }
 
 async function persistPhotoToGcs(
