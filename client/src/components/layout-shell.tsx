@@ -1095,7 +1095,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </nav>
       </div>
 
-      <ExploreProviderPicker open={exploreOpen} onClose={() => setExploreOpen(false)} />
+      <ExploreProviderPicker open={exploreOpen} onClose={() => setExploreOpen(false)} allowedTypeIds={visibleTypeIds} />
 
       {showCalendarBanner && (
         <div className="fixed top-16 left-0 right-0 z-40 hidden md:block">

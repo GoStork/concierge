@@ -58,10 +58,16 @@ function fanPosition(i: number, n: number) {
   };
 }
 
-export function ExploreProviderPicker({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ExploreProviderPicker({ open, onClose, allowedTypeIds }: { open: boolean; onClose: () => void; allowedTypeIds?: string[] | null }) {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [picked, setPicked] = useState<string | null>(null);
+
+  // Show only the provider types matching the parent's "Services You're Looking
+  // For" (passed from layout-shell). Null/undefined -> show all (services unset).
+  const providers = allowedTypeIds
+    ? PROVIDERS.filter(p => allowedTypeIds.includes(p.id))
+    : PROVIDERS;
 
   const handleSelect = (id: string) => {
     if (picked) return;
@@ -103,8 +109,8 @@ export function ExploreProviderPicker({ open, onClose }: { open: boolean; onClos
             className="absolute left-1/2 -translate-x-1/2"
             style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 26px)" }}
           >
-            {PROVIDERS.map((p, i) => {
-              const pos = fanPosition(i, PROVIDERS.length);
+            {providers.map((p, i) => {
+              const pos = fanPosition(i, providers.length);
               const isPicked = picked === p.id;
               const isDimmed = picked !== null && !isPicked;
               const { Badge } = p;
