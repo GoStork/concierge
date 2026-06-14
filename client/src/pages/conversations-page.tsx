@@ -819,6 +819,10 @@ export default function ConversationsPage() {
   const autoRestored = useRef(false);
   useEffect(() => {
     if (autoRestored.current) return;
+    // Mobile lands on the inbox list (a separate full screen), so don't auto-open
+    // the last conversation - that would skip the inbox straight into (usually) the
+    // AI concierge. Desktop is master-detail (inbox + pane), so restoring is fine.
+    if (window.innerWidth < 768) return;
     if (!lastChatKey) return;
     const currentPath = window.location.pathname;
     const hasUrlSelection = !!urlEntityId || !!urlSubjectId || window.location.search.includes("session=");
