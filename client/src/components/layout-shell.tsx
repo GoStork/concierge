@@ -985,7 +985,16 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 <button
                   key="explore"
                   type="button"
-                  onClick={() => setExploreOpen(true)}
+                  onClick={() => {
+                    // With a single available provider type, the fan would hold one
+                    // card - skip it and jump straight to that marketplace tab.
+                    if (visibleTypeIds && visibleTypeIds.length === 1) {
+                      dispatch(setMarketplaceTab(visibleTypeIds[0]));
+                      navigate('/marketplace');
+                    } else {
+                      setExploreOpen(true);
+                    }
+                  }}
                   aria-label="Explore providers"
                   data-testid="tab-explore"
                   className={`flex flex-col items-center justify-center flex-1 gap-0.5 font-medium font-ui focus:outline-none ${iconOnlyE ? 'text-[0px]' : 'text-[13px]'}`}
