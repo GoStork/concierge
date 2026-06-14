@@ -16,6 +16,7 @@ import { Search, Loader2, Calendar, MapPin, Award, Heart, Clock, Info, X, Baby, 
 import { Slider } from "@/components/ui/slider";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
+import { PARENT_TYPE_MAP, DOCTORS_TYPE, PARENT_TYPE_ORDER } from "@/lib/parent-marketplace-types";
 import { useAppSelector, useAppDispatch } from "@/store";
 import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, loadProviderPreferences, toggleFavoriteDoctor, passDoctor, undoPassDoctor, toggleFavoriteClinic, passClinic, undoPassClinic, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter, clearFilters } from "@/store/uiSlice";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
@@ -1080,17 +1081,9 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
 }
 
 
-const PARENT_TYPE_MAP: Record<string, { id: string; label: string }> = {
-  "Egg Donor": { id: "egg-donors", label: "Eggs" },
-  "Sperm Donor": { id: "sperm-donors", label: "Sperm" },
-  "Surrogate": { id: "surrogates", label: "Surrogates" },
-  "Fertility Clinic": { id: "ivf-clinics", label: "Clinics" },
-};
-// Doctors (Path B) has no interestedService of its own - doctors practice at
-// clinics, so the Doctors type is offered exactly when IVF Clinics is (see
-// parentAvailableTypes). It still gets its own first-class tab + Explore card.
-const DOCTORS_TYPE = { id: "doctors", label: "Doctors" };
-const PARENT_TYPE_ORDER = ["egg-donors", "sperm-donors", "surrogates", "ivf-clinics", "doctors"];
+// PARENT_TYPE_MAP / DOCTORS_TYPE / PARENT_TYPE_ORDER now live in the shared
+// parent-marketplace-types module (reused by layout-shell's nav). Re-exported via
+// the import below.
 
 function DeckTypeSwitcher({ types, activeTab, onSelect, theme }: {
   types: { id: string; label: string }[];

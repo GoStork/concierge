@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { queryClient } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { parentVisibleTypeIds } from "@/lib/parent-marketplace-types";
 import {
   LogOut,
   Baby,
@@ -517,6 +518,20 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     enabled: isProvider && !!(user as any)?.providerId,
   });
 
+  // A parent's "Services You're Looking For" drives which marketplace provider
+  // tabs appear in the nav, so deselecting e.g. Fertility Clinic hides IVF
+  // Clinics + Doctors. Same source the marketplace Explore picker uses.
+  const { data: parentProfile } = useQuery<{ interestedServices?: string[] }>({
+    queryKey: ["/api/parent-profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/parent-profile", { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: isParentOnly,
+    staleTime: 60_000,
+  });
+
   const SERVICE_TO_TABS: Record<string, { id: string; label: string; mobileLabel: string; icon: any }[]> = {
     "Egg Donor Agency": [{ id: "egg-donors", label: "Egg Donors", mobileLabel: "Donors", icon: EggDonorIcon }],
     "Surrogacy Agency": [
@@ -722,13 +737,20 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const fullScreenRoutes = ["/onboarding", "/complete-profile", "/matchmaker-selection", "/concierge", "/w9"];
   if (fullScreenRoutes.some(r => location.pathname.startsWith(r))) return <>{reminderPopup}{children}</>;
 
-  const MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [
+  const ALL_MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [
     { id: "egg-donors", label: "Egg Donors", mobileLabel: "Donors", icon: EggDonorIcon },
     { id: "surrogates", label: "Surrogates", mobileLabel: "Surrogates", icon: SurrogateIcon },
     { id: "ivf-clinics", label: "IVF Clinics", mobileLabel: "IVF", icon: IvfClinicIcon },
     { id: "doctors", label: "Doctors", mobileLabel: "Doctors", icon: DoctorIcon },
     { id: "sperm-donors", label: "Sperm Donors", mobileLabel: "Sperm", icon: SpermIcon },
   ];
+  // For parents, show only the provider types matching their "Services You're
+  // Looking For" (deselecting Fertility Clinic hides IVF Clinics + Doctors).
+  // Admins/providers keep the full set. Falls back to all when services are unset.
+  const visibleTypeIds = isParentOnly ? parentVisibleTypeIds(parentProfile?.interestedServices) : null;
+  const MARKETPLACE_TABS = visibleTypeIds
+    ? ALL_MARKETPLACE_TABS.filter(t => visibleTypeIds.includes(t.id))
+    : ALL_MARKETPLACE_TABS;
 
   const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; desktopOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number; fillOnActive?: boolean; isExplore?: boolean }[] = [
     { show: false /* hidden for now */, to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', mobileLabel: 'Dashboard' },
