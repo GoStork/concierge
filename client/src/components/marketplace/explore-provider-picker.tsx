@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useAppDispatch } from "@/store";
 import { setMarketplaceTab } from "@/store/uiSlice";
-import { EggDonorIcon, SpermIcon, SurrogateIcon, IvfClinicIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
+import { EggsBadge, SpermBadge, SurrogateBadge, ClinicsBadge, DoctorsBadge } from "@/components/icons/provider-badges";
 
 /**
  * Explore "explode" picker - a monday.com-style fan that blooms 5 provider cards
@@ -33,17 +33,17 @@ const SPRING = { type: "spring" as const, stiffness: 260, damping: 18 };
 type Provider = {
   id: string;            // marketplaceTab id dispatched on select
   label: string;
-  Icon: (props: { className?: string }) => JSX.Element;
+  Badge: (props: { className?: string }) => JSX.Element;
 };
 
 // Left -> right across the fan. All 5 are first-class and symmetric (Doctors via
-// Path B), each with a brand line icon.
+// Path B), each a finished gradient badge (gradient-badge-06 set).
 const PROVIDERS: Provider[] = [
-  { id: "egg-donors", label: "Eggs", Icon: EggDonorIcon },
-  { id: "sperm-donors", label: "Sperm", Icon: SpermIcon },
-  { id: "surrogates", label: "Surrogates", Icon: SurrogateIcon },
-  { id: "ivf-clinics", label: "Clinics", Icon: IvfClinicIcon },
-  { id: "doctors", label: "Doctors", Icon: DoctorIcon },
+  { id: "egg-donors", label: "Eggs", Badge: EggsBadge },
+  { id: "sperm-donors", label: "Sperm", Badge: SpermBadge },
+  { id: "surrogates", label: "Surrogates", Badge: SurrogateBadge },
+  { id: "ivf-clinics", label: "Clinics", Badge: ClinicsBadge },
+  { id: "doctors", label: "Doctors", Badge: DoctorsBadge },
 ];
 
 // Resting offset + tilt for card i. Index 0 sits on the left, last on the right.
@@ -107,7 +107,7 @@ export function ExploreProviderPicker({ open, onClose }: { open: boolean; onClos
               const pos = fanPosition(i, PROVIDERS.length);
               const isPicked = picked === p.id;
               const isDimmed = picked !== null && !isPicked;
-              const { Icon } = p;
+              const { Badge } = p;
               return (
                 <motion.button
                   key={p.id}
@@ -127,9 +127,7 @@ export function ExploreProviderPicker({ open, onClose }: { open: boolean; onClos
                   transition={{ ...SPRING, delay: picked ? 0 : i * 0.05 }}
                   data-testid={`explore-card-${p.id}`}
                 >
-                  <span className="w-16 h-16 rounded-2xl bg-card shadow-xl flex items-center justify-center">
-                    <Icon className="w-7 h-7 text-primary" />
-                  </span>
+                  <Badge className="w-16 h-16 drop-shadow-xl" />
                   <span className="font-ui text-[11px] font-medium text-white drop-shadow">{p.label}</span>
                 </motion.button>
               );
