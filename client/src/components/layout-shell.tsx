@@ -773,7 +773,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             desktopOnly: true,
           })),
           // Saved is universal: mobile bottom and desktop top
-          { show: true, to: '/marketplace?view=saved', icon: Heart, label: 'Saved', mobileLabel: 'Saved', fillOnActive: true },
+          { show: true, to: '/marketplace?view=saved', icon: Heart, label: 'Saved', mobileLabel: 'Saved', fillOnActive: false },
         ]
       : []),
     { show: isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread, fillOnActive: false },
@@ -784,7 +784,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { show: isAdmin, to: '/admin/test-runner', icon: FlaskConical, label: 'Test Runner', mobileLabel: 'Tests' },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Calendar', mobileLabel: 'Calendar', badge: isProvider ? pendingMeetings : undefined, fillOnActive: false },
-    { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true, fillOnActive: true },
+    { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true, fillOnActive: false },
   ];
 
   const visibleNav = navigation.filter(item => item.show);
@@ -977,13 +977,16 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
             const Icon = item.icon;
 
             // Centered Explore button: opens the explode picker overlay instead of
-            // navigating. Raised filled circle (monday.com-style center action).
+            // Explore opens the explode picker (or jumps straight to the single
+            // available type). Rendered as a FLAT tab like the others - the stork
+            // is just the 3rd icon, following the same outline rule (gray ->
+            // teal-on-active), no special raised circle.
             if (item.isExplore) {
-              const exploreInactive = onMarketplaceDeck ? 'hsl(var(--deck-fg-muted))' : 'var(--bottom-nav-fg, hsl(var(--muted-foreground)))';
               const navStyleE = brandSettings?.bottomNavStyle || 'icon-label';
               const iconOnlyE = navStyleE === 'icon-only';
-              // Active = currently on the marketplace deck (not the Saved view).
               const exploreActive = onMarketplaceDeck && !onSavedView;
+              const exploreActiveColor = onMarketplaceDeck ? 'hsl(var(--deck-fg))' : 'var(--bottom-nav-active-fg, hsl(var(--primary)))';
+              const exploreInactiveColor = onMarketplaceDeck ? 'hsl(var(--deck-fg-muted))' : 'var(--bottom-nav-fg, hsl(var(--muted-foreground)))';
               return (
                 <button
                   key="explore"
@@ -1000,19 +1003,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                   }}
                   aria-label="Explore providers"
                   data-testid="tab-explore"
-                  className={`flex flex-col items-center justify-center flex-1 gap-0.5 font-medium font-ui focus:outline-none ${iconOnlyE ? 'text-[0px]' : 'text-[13px]'}`}
-                  style={{ color: exploreInactive }}
+                  className={`flex flex-col items-center justify-center flex-1 gap-0.5 font-medium font-ui transition-colors duration-200 focus:outline-none ${iconOnlyE ? 'text-[0px]' : 'text-[13px]'}`}
+                  style={{ color: exploreActive ? exploreActiveColor : exploreInactiveColor }}
                 >
-                  <div
-                    className="-mt-4 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform duration-150 active:scale-95"
-                    style={{
-                      backgroundColor: exploreActive ? '#ffffff' : 'hsl(var(--primary))',
-                      border: exploreActive ? '1px solid hsl(var(--primary) / 0.2)' : undefined,
-                    }}
-                  >
-                    {/* GoStork mark: white-on-teal by default, inverted to teal-on-white
-                        while the marketplace deck is the active view. */}
-                    <GoStorkSymbol className={`w-8 h-auto ${exploreActive ? 'text-primary' : 'text-primary-foreground'}`} />
+                  <div className="p-1.5 flex items-center justify-center">
+                    <GoStorkSymbol outline strokeWidth={exploreActive ? 150 : 120} className={iconOnlyE ? 'w-9 h-auto shrink-0' : 'w-8 h-auto shrink-0'} />
                   </div>
                   {!iconOnlyE && <span>{item.mobileLabel}</span>}
                 </button>
