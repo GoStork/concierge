@@ -19,7 +19,11 @@ function ProviderGlyph({ className, children }: IconProps & { children: ReactNod
       strokeLinejoin="round"
       className={className}
     >
-      {children}
+      {/* Scale the glyph up within the same icon box so it fills more of its slot
+          (matches the enlarged mobile badge glyphs), scaled around the center. */}
+      <g transform="translate(12 12) scale(1.3) translate(-12 -12)">
+        {children}
+      </g>
     </svg>
   );
 }
