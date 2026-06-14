@@ -40,6 +40,7 @@ import { hasProviderRole } from "@shared/roles";
 import { MeetingReminderPopup } from "@/components/meeting-reminder-popup";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
+import { GoStorkSymbol } from "@/components/icons/gostork-symbol";
 import { ExploreProviderPicker } from "@/components/marketplace/explore-provider-picker";
 import { useAppDispatch, useAppSelector } from "@/store";
 import { setMarketplaceTab } from "@/store/uiSlice";
@@ -981,6 +982,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
               const exploreInactive = onMarketplaceDeck ? 'hsl(var(--deck-fg-muted))' : 'var(--bottom-nav-fg, hsl(var(--muted-foreground)))';
               const navStyleE = brandSettings?.bottomNavStyle || 'icon-label';
               const iconOnlyE = navStyleE === 'icon-only';
+              // Active = currently on the marketplace deck (not the Saved view).
+              const exploreActive = onMarketplaceDeck && !onSavedView;
               return (
                 <button
                   key="explore"
@@ -1002,9 +1005,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                 >
                   <div
                     className="-mt-4 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform duration-150 active:scale-95"
-                    style={{ backgroundColor: 'hsl(var(--primary))' }}
+                    style={{
+                      backgroundColor: exploreActive ? '#ffffff' : 'hsl(var(--primary))',
+                      border: exploreActive ? '1px solid hsl(var(--primary) / 0.2)' : undefined,
+                    }}
                   >
-                    <Icon className="w-6 h-6 text-primary-foreground" fill="currentColor" />
+                    {/* GoStork mark: white-on-teal by default, inverted to teal-on-white
+                        while the marketplace deck is the active view. */}
+                    <GoStorkSymbol className={`w-8 h-auto ${exploreActive ? 'text-primary' : 'text-primary-foreground'}`} />
                   </div>
                   {!iconOnlyE && <span>{item.mobileLabel}</span>}
                 </button>
