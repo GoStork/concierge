@@ -858,7 +858,7 @@ function collapseTeamNameVariants(members: MergeableMember[]): MergeableMember[]
   return out;
 }
 
-async function persistPhotoToGcs(
+export async function persistPhotoToGcs(
   url: string | null | undefined,
   storageService: StorageService | null,
 ): Promise<string | null> {
