@@ -33,6 +33,7 @@ const CONCURRENCY = arg("concurrency") ? parseInt(arg("concurrency")!, 10) : 2;
 const DIAGNOSE = process.argv.includes("--diagnose");
 const INSPECT = arg("inspect"); // clinic name substring: scrape + dump per-doctor data
 const ONLY = arg("only"); // clinic name substring: enrich ONLY matching clinics
+const THIN = process.argv.includes("--thin"); // enrich clinics with <=1 doctor (just the CDC director)
 
 const prisma = new PrismaService();
 const storage = new StorageService();
@@ -114,31 +115,47 @@ async function runInspect(substr: string) {
 async function main() {
   if (INSPECT) return runInspect(INSPECT);
   if (DIAGNOSE) return runDiagnose();
-  // Approved IVF clinics with zero shown doctors.
-  const clinics = await prisma.provider.findMany({
-    where: {
-      services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
-      ...(ONLY ? { name: { contains: ONLY, mode: "insensitive" } } : { members: { none: { isPublicProfile: { not: false } } } }),
-    },
-    select: { id: true, name: true, websiteUrl: true },
-    orderBy: { name: "asc" },
-    ...(LIMIT ? { take: LIMIT } : {}),
-  });
+  // Default: doctor-less clinics. --thin: clinics with <=1 doctor (typically just
+  // the durable CDC medical director, so missing their real roster). --only=<sub>:
+  // a single named clinic.
+  let clinics: Array<{ id: string; name: string; websiteUrl: string | null }>;
+  if (THIN) {
+    const rows = await prisma.provider.findMany({
+      where: { services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } } },
+      select: { id: true, name: true, websiteUrl: true, _count: { select: { members: { where: { isPublicProfile: { not: false } } } } } },
+      orderBy: { name: "asc" },
+    });
+    clinics = rows.filter(r => r._count.members <= 1).map(({ _count, ...c }) => c);
+    if (LIMIT) clinics = clinics.slice(0, LIMIT);
+  } else {
+    clinics = await prisma.provider.findMany({
+      where: {
+        services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
+        ...(ONLY ? { name: { contains: ONLY, mode: "insensitive" } } : { members: { none: { isPublicProfile: { not: false } } } }),
+      },
+      select: { id: true, name: true, websiteUrl: true },
+      orderBy: { name: "asc" },
+      ...(LIMIT ? { take: LIMIT } : {}),
+    });
+  }
 
-  console.log(`[enrich-missing] ${clinics.length} doctor-less IVF clinics to re-enrich (concurrency=${CONCURRENCY})`);
+  console.log(`[enrich-missing] ${clinics.length} ${THIN ? "thin (<=1 doctor)" : "doctor-less"} IVF clinics to re-enrich (concurrency=${CONCURRENCY})`);
   let recovered = 0, stillEmpty = 0, failed = 0, totalNewDoctors = 0;
 
   const processOne = async (c: { id: string; name: string }) => {
     try {
+      const before = await shownDoctorCount(c.id);
       await svc.enrichClinicProfile(c.id);
       const after = await shownDoctorCount(c.id);
-      if (after > 0) {
+      if (after > before) {
         recovered++;
-        totalNewDoctors += after;
-        console.log(`[enrich-missing]  [recovered] ${c.name}: ${after} doctors`);
-      } else {
+        totalNewDoctors += after - before;
+        console.log(`[enrich-missing]  [gained]    ${c.name}: ${before} -> ${after} doctors (+${after - before})`);
+      } else if (after === 0) {
         stillEmpty++;
         console.log(`[enrich-missing]  [empty]     ${c.name}: still 0 doctors`);
+      } else {
+        console.log(`[enrich-missing]  [same]      ${c.name}: ${after} doctors (no change)`);
       }
     } catch (e: any) {
       failed++;
