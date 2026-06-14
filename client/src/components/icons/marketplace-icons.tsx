@@ -1,108 +1,80 @@
+import type { ReactNode } from "react";
+
 interface IconProps {
   className?: string;
 }
 
-export function EggDonorIcon({ className }: IconProps) {
+// Provider line icons (unified-family set) - same glyph family as the gradient
+// badges used on mobile, but stroke="currentColor" so they follow the desktop top
+// nav's active/inactive color. No hardcoded color: they inherit from the parent.
+function ProviderGlyph({ className, children }: IconProps & { children: ReactNode }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.7"
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
     >
-      <path d="M12 2.5c-4 0-7.5 4.5-7.5 10S8 22 12 22s7.5-5 7.5-9.5S16 2.5 12 2.5Z" />
-      <circle cx="12" cy="12" r="3" />
+      {children}
     </svg>
+  );
+}
+
+export function EggDonorIcon({ className }: IconProps) {
+  return (
+    <ProviderGlyph className={className}>
+      <path d="M12 3.8 C 8.7 3.8 6.5 8.9 6.5 12.9 a5.5 5.5 0 0 0 11 0 C 17.5 8.9 15.3 3.8 12 3.8 Z" />
+      <path d="M9.6 8.5 c -0.6 0.95 -1 2.05 -1.1 3.2" />
+    </ProviderGlyph>
   );
 }
 
 export function SurrogateIcon({ className }: IconProps) {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <circle cx="13" cy="3.5" r="2" />
-      <line x1="11" y1="5.5" x2="10" y2="16" />
-      <path d="M13 5.5 C15 6.5,18 9,18 12 C18 15,15.5 17,13 17" />
-      <line x1="10" y1="16" x2="9.5" y2="23" />
-      <line x1="13" y1="17" x2="13.5" y2="23" />
-      <path d="M11 10 C13 9.5,16 10.5,17 12" />
-    </svg>
+    <ProviderGlyph className={className}>
+      <circle cx="10" cy="4" r="1.9" />
+      <path d="M8.9 6.5 C 8.1 7.7 8.3 9.2 8.3 10.6 C 8.3 13.5 8.2 16.6 8.5 19.3 L 12.2 19.3 C 12.4 18.1 12.5 17.4 12.5 16.7 C 14.7 16.1 15.5 14.3 15.5 12.6 C 15.5 10.3 13.8 8.7 11.5 8.3 C 10.8 7.4 10 6.8 8.9 6.5 Z" />
+      <circle cx="12.6" cy="12.9" r="1.45" />
+    </ProviderGlyph>
   );
 }
 
 export function IvfClinicIcon({ className }: IconProps) {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <circle cx="12" cy="4" r="2.5" />
-      <path d="M8 9.5h8a1 1 0 0 1 1 1V16a4 4 0 0 1-4 4h-2a4 4 0 0 1-4-4v-5.5a1 1 0 0 1 1-1Z" />
-      <path d="M10 9.5v-1.5c0-.5.5-1 2-1s2 .5 2 1v1.5" />
-      <circle cx="12" cy="14" r="1.5" />
-      <line x1="12" y1="12.5" x2="12" y2="15.5" />
-      <line x1="10.5" y1="14" x2="13.5" y2="14" />
-      <line x1="9" y1="20" x2="8.5" y2="23" />
-      <line x1="15" y1="20" x2="15.5" y2="23" />
-    </svg>
+    <ProviderGlyph className={className}>
+      <path d="M4.8 19.6 V 11.3 H 9.3 V 8.3 H 14.7 V 11.3 H 19.2 V 19.6 Z" />
+      <path d="M3.7 19.6 H 20.3" />
+      <circle cx="12" cy="5.8" r="1.95" />
+      <path d="M12 4.7 V 6.9 M 10.9 5.8 H 13.1" />
+      <path d="M10.55 19.6 V 14.5 H 13.45 V 19.6" />
+      <rect x="6.15" y="13" width="1.7" height="1.7" rx="0.3" />
+      <rect x="16.15" y="13" width="1.7" height="1.7" rx="0.3" />
+    </ProviderGlyph>
   );
 }
 
 export function SpermIcon({ className }: IconProps) {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <ellipse cx="14" cy="8.5" rx="6.5" ry="5" transform="rotate(-35 14 8.5)" />
-      <line x1="9.8" y1="13.2" x2="8.4" y2="14.8" />
-      <path d="M8.4 14.8 C7.2 16.2, 6.2 17.0, 5.0 18.0 C3.8 19.0, 2.8 19.4, 2.0 21.0" />
-    </svg>
+    <ProviderGlyph className={className}>
+      <ellipse cx="12" cy="6" rx="2.45" ry="3.2" transform="rotate(12 12 6)" />
+      <path d="M11.3 8.9 C 13.7 10.6 9.7 12.3 12 14 C 14.3 15.7 10.3 17.4 12 19.4" />
+    </ProviderGlyph>
   );
 }
 
 export function DoctorIcon({ className }: IconProps) {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      {/* Head + shoulders (the doctor) with a small medical cross on the chest */}
-      <circle cx="12" cy="6" r="3.5" />
-      <path d="M5.5 20v-1a6.5 6.5 0 0 1 13 0v1" />
-      <line x1="12" y1="12.5" x2="12" y2="16" />
-      <line x1="10.25" y1="14.25" x2="13.75" y2="14.25" />
-    </svg>
+    <ProviderGlyph className={className}>
+      <circle cx="12" cy="6.4" r="2.55" />
+      <path d="M6.3 19.5 C 6.3 15.7 8.85 13.1 12 13.1 s 5.7 2.6 5.7 6.4" />
+      <path d="M12 13.2 L 10.45 15.9 M 12 13.2 L 13.55 15.9" />
+      <path d="M9.7 13.6 c -0.45 2.25 0.45 3.9 2.1 4.05" />
+      <circle cx="13.5" cy="17.1" r="0.95" />
+    </ProviderGlyph>
   );
 }
 
