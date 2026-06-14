@@ -19,7 +19,7 @@ export function EggsBadge({ className }: BadgeProps) {
         </linearGradient>
       </defs>
       <circle cx="32" cy="32" r="30" fill="url(#g-eggs)" />
-      <g transform="translate(20 20)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <g transform="translate(32 32) scale(1.4) translate(-12 -12)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 3.8 C 8.7 3.8 6.5 8.9 6.5 12.9 a5.5 5.5 0 0 0 11 0 C 17.5 8.9 15.3 3.8 12 3.8 Z" />
         <path d="M9.6 8.5 c -0.6 0.95 -1 2.05 -1.1 3.2" />
       </g>
@@ -37,7 +37,7 @@ export function SpermBadge({ className }: BadgeProps) {
         </linearGradient>
       </defs>
       <circle cx="32" cy="32" r="30" fill="url(#g-sperm)" />
-      <g transform="translate(20 20)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <g transform="translate(32 32) scale(1.4) translate(-12 -12)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <ellipse cx="12" cy="6" rx="2.45" ry="3.2" transform="rotate(12 12 6)" />
         <path d="M11.3 8.9 C 13.7 10.6 9.7 12.3 12 14 C 14.3 15.7 10.3 17.4 12 19.4" />
       </g>
@@ -55,7 +55,7 @@ export function SurrogateBadge({ className }: BadgeProps) {
         </linearGradient>
       </defs>
       <circle cx="32" cy="32" r="30" fill="url(#g-surrogate)" />
-      <g transform="translate(20 20)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <g transform="translate(32 32) scale(1.4) translate(-12 -12)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="10" cy="4" r="1.9" />
         <path d="M8.9 6.5 C 8.1 7.7 8.3 9.2 8.3 10.6 C 8.3 13.5 8.2 16.6 8.5 19.3 L 12.2 19.3 C 12.4 18.1 12.5 17.4 12.5 16.7 C 14.7 16.1 15.5 14.3 15.5 12.6 C 15.5 10.3 13.8 8.7 11.5 8.3 C 10.8 7.4 10 6.8 8.9 6.5 Z" />
         <circle cx="12.6" cy="12.9" r="1.45" />
@@ -74,7 +74,7 @@ export function ClinicsBadge({ className }: BadgeProps) {
         </linearGradient>
       </defs>
       <circle cx="32" cy="32" r="30" fill="url(#g-clinics)" />
-      <g transform="translate(20 20)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <g transform="translate(32 32) scale(1.4) translate(-12 -12)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4.8 19.6 V 11.3 H 9.3 V 8.3 H 14.7 V 11.3 H 19.2 V 19.6 Z" />
         <path d="M3.7 19.6 H 20.3" />
         <circle cx="12" cy="5.8" r="1.95" />
@@ -97,7 +97,7 @@ export function DoctorsBadge({ className }: BadgeProps) {
         </linearGradient>
       </defs>
       <circle cx="32" cy="32" r="30" fill="url(#g-doctors)" />
-      <g transform="translate(20 20)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <g transform="translate(32 32) scale(1.4) translate(-12 -12)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="6.4" r="2.55" />
         <path d="M6.3 19.5 C 6.3 15.7 8.85 13.1 12 13.1 s 5.7 2.6 5.7 6.4" />
         <path d="M12 13.2 L 10.45 15.9 M 12 13.2 L 13.55 15.9" />
