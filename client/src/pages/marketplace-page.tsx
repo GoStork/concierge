@@ -1885,7 +1885,7 @@ export default function MarketplacePage() {
     />
   );
 
-  if (isMobile && (isDonorTab || isIvfTab || isDoctorTab)) {
+  if (isMobile && (isDonorTab || isIvfTab || isDoctorTab || activeTab === "surrogacy-agencies")) {
     return (
       <div className="fixed inset-x-0 top-0 bottom-[calc(88px+env(safe-area-inset-bottom))] z-[60] flex flex-col" style={{ backgroundColor: 'hsl(var(--deck-bg))' }} data-testid="marketplace-mobile-immersive">
         {showFavoritesOnly && (
@@ -1931,6 +1931,15 @@ export default function MarketplacePage() {
                 showFavoritesOnly
                   ? <MobileSavedGrid kind="doctor" items={(doctors as any) || []} />
                   : <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
+              )}
+              {activeTab === "surrogacy-agencies" && (
+                // Providers see only their OWN agency here; admins see all. Rendered
+                // inside the immersive container so the deck has a real height (the
+                // desktop-flow render collapsed to 0 height -> blank card).
+                <AgencyDeck
+                  providers={isProviderUser ? (providers || []).filter((p) => p.id === (user as any)?.providerId) : providers}
+                  searchQuery={searchQuery}
+                />
               )}
             </>
           )}
