@@ -61,7 +61,7 @@ function fanPosition(i: number, n: number) {
   };
 }
 
-export function ExploreProviderPicker({ open, onClose, allowedTypeIds }: { open: boolean; onClose: () => void; allowedTypeIds?: string[] | null }) {
+export function ExploreProviderPicker({ open, onClose, allowedTypeIds, labelOverrides }: { open: boolean; onClose: () => void; allowedTypeIds?: string[] | null; labelOverrides?: Record<string, string> }) {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [picked, setPicked] = useState<string | null>(null);
@@ -137,7 +137,7 @@ export function ExploreProviderPicker({ open, onClose, allowedTypeIds }: { open:
                   data-testid={`explore-card-${p.id}`}
                 >
                   <Badge className="w-16 h-16 drop-shadow-xl" />
-                  <span className="font-ui text-[11px] font-medium text-white drop-shadow">{p.label}</span>
+                  <span className="font-ui text-[11px] font-medium text-white drop-shadow text-center leading-tight">{labelOverrides?.[p.id] ?? p.label}</span>
                 </motion.button>
               );
             })}

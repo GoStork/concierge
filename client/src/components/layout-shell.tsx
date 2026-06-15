@@ -741,7 +741,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const ALL_MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [
     { id: "egg-donors", label: "Egg Donors", mobileLabel: "Donors", icon: EggDonorIcon },
     { id: "surrogates", label: "Surrogates", mobileLabel: "Surrogates", icon: SurrogateIcon },
-    { id: "surrogacy-agencies", label: "Agency", mobileLabel: "Agency", icon: AgencyIcon },
+    // Agency providers see their own profile as "Agency"; GoStork admins browse
+    // all of them, labeled "Surrogacy Agencies" to match the desktop tab.
+    { id: "surrogacy-agencies", label: isAdmin ? "Surrogacy Agencies" : "Agency", mobileLabel: isAdmin ? "Surrogacy Agencies" : "Agency", icon: AgencyIcon },
     { id: "ivf-clinics", label: "IVF Clinics", mobileLabel: "IVF", icon: IvfClinicIcon },
     { id: "doctors", label: "Doctors", mobileLabel: "Doctors", icon: DoctorIcon },
     { id: "sperm-donors", label: "Sperm Donors", mobileLabel: "Sperm", icon: SpermIcon },
@@ -824,12 +826,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         : 99;
       nonProfileMobile = [...nonProfileMobile].sort((a, b) => rank(a) - rank(b));
     } else {
-      // Providers / admins: center the stork Explore button among their own
-      // items (Profile is still pinned last by the assembly below).
+      // Providers / admins: center the stork Explore button in the FULL bar.
+      // Profile is pinned last by the assembly below, so account for it when
+      // computing the middle slot (otherwise the stork lands left-of-center).
       const explore = nonProfileMobile.find(i => i.isExplore)!;
       const others = nonProfileMobile.filter(i => !i.isExplore);
-      const mid = Math.floor(others.length / 2);
-      nonProfileMobile = [...others.slice(0, mid), explore, ...others.slice(mid)];
+      const totalSlots = Math.min(others.length + 1 + (profileItem ? 1 : 0), maxBottomTabs);
+      const centerIdx = Math.min(Math.floor((totalSlots - 1) / 2), others.length);
+      nonProfileMobile = [...others.slice(0, centerIdx), explore, ...others.slice(centerIdx)];
     }
   }
   const bottomTabs = profileItem
@@ -1129,7 +1133,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       </nav>
       </div>
 
-      <ExploreProviderPicker open={exploreOpen} onClose={() => setExploreOpen(false)} allowedTypeIds={visibleTypeIds} />
+      <ExploreProviderPicker open={exploreOpen} onClose={() => setExploreOpen(false)} allowedTypeIds={visibleTypeIds} labelOverrides={{ "surrogacy-agencies": isAdmin ? "Surrogacy Agencies" : "Agency" }} />
 
       {showCalendarBanner && (
         <div className="fixed top-16 left-0 right-0 z-40 hidden md:block">

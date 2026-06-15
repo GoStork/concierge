@@ -1873,14 +1873,17 @@ export default function MarketplacePage() {
   const onFilteredCountChange = useCallback((count: number) => setFilteredCount(count), []);
   const hasResults = isLoading || (filteredCount === null ? true : filteredCount > 0);
 
-  const filtersDrawerEl = isParentOnly ? (
+  // The filters drawer is for everyone who sees the immersive deck (parents,
+  // providers, admins) - the sliders button renders for all of them, so the
+  // drawer must too (previously parent-only, which left admins' button dead).
+  const filtersDrawerEl = (
     <MarketplaceFiltersDrawer
       providerType={currentProviderType}
       open={filtersOpen}
       onOpenChange={(o) => { if (!o) closeFiltersPage(); else openFiltersPage(); }}
       ivfFilterProps={(isIvfTab || isDoctorTab) ? ivfFilterProps : undefined}
     />
-  ) : null;
+  );
 
   if (isMobile && (isDonorTab || isIvfTab || isDoctorTab)) {
     return (
