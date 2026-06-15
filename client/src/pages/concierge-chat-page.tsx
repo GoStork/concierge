@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
+import { AgencySwipeCard } from "@/components/marketplace/agency-swipe-card";
 import {
   mapDatabaseDonorToSwipeProfile,
   mapDatabaseSurrogateToSwipeProfile,
@@ -1922,111 +1923,35 @@ function CountryProgramCard({ card, brandColor, onAction }: { card: MatchCard; b
   );
 }
 
+// International surrogacy-agency match card. Now uses the SHARED AgencySwipeCard
+// (same component the marketplace agencies deck renders), exactly like
+// ClinicMatchCard uses the shared ClinicSwipeCard - the matcher just adds the
+// chat actions + footer buttons. The richer agency content (babies born /
+// time-to-match / screening / locations) lives in getAgencyTabs, so chat and
+// marketplace stay identical.
 function AgencyMatchCard({ card, brandColor, onAction }: { card: MatchCard; brandColor: string; onAction: (text: string) => void }) {
-  const [provider, setProvider] = useState<any>(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`/api/providers/${card.providerId}`, { credentials: "include" });
-        if (res.ok) setProvider(await res.json());
-      } catch {}
-    })();
-  }, [card.providerId]);
-
-  if (!provider) {
-    return (
-      <div className="min-w-[320px] max-w-[420px] w-full rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  const sp = provider.surrogacyProfile || {};
-  const primaryLocation = provider.locations?.[0];
-  const allLocations: string[] = (provider.locations || [])
-    .map((l: any) => [l.city, l.state].filter(Boolean).join(", "))
-    .filter(Boolean);
-  const locationStr = card.location || allLocations[0] || "";
-
-  const stats: { label: string; value: string }[] = [];
-  if (sp.numberOfBabiesBorn) stats.push({ label: "Babies born", value: String(sp.numberOfBabiesBorn) + "+" });
-  if (sp.timeToMatch) stats.push({ label: "Time to match", value: sp.timeToMatch });
-  if (sp.familiesPerCoordinator) stats.push({ label: "Families / coordinator", value: String(sp.familiesPerCoordinator) });
+  const agencyName = card.name || "this agency";
+  const goToProfile = () => navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } });
 
   return (
-    <div
-      className="min-w-[320px] max-w-[420px] w-full animate-[slideUp_0.4s_ease-out_forwards] border border-border bg-card overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-      style={{ borderRadius: "var(--container-radius, 0.5rem)" }}
-      data-testid={`match-card-${card.providerId}`}
-      onClick={() => navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } })}
-    >
-      <div className="p-4 space-y-3">
-        {/* Header: logo + name + location */}
-        <div className="flex items-start gap-3">
-          {provider.logoUrl ? (
-            <img src={getPhotoSrc(provider.logoUrl) || undefined} alt="" className="w-10 h-10 rounded-[var(--radius)] object-contain border border-border/30 bg-background p-0.5 shrink-0" />
-          ) : (
-            <div className="w-10 h-10 rounded-[var(--radius)] flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0" style={{ backgroundColor: brandColor }}>
-              {(provider.name || "A").charAt(0)}
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <h3 className="text-base font-heading text-foreground leading-tight">{provider.name}</h3>
-            {locationStr && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
-                <Globe className="w-3.5 h-3.5 shrink-0" />
-                {locationStr}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Key stats */}
-        {stats.length > 0 && (
-          <div className="grid grid-cols-3 gap-2">
-            {stats.map((s) => (
-              <div key={s.label} className="rounded-[var(--radius)] bg-muted px-2 py-2 text-center">
-                <p className="text-sm font-heading text-foreground">{s.value}</p>
-                <p className="text-xs text-muted-foreground leading-tight mt-0.5">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Match reasons */}
-        {card.reasons?.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {card.reasons.map((r) => (
-              <span key={r} className="text-xs px-2 py-0.5 rounded-full border border-border bg-background text-foreground font-ui">
-                {r}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Additional locations */}
-        {allLocations.length > 1 && (
-          <p className="text-xs text-muted-foreground">
-            Also in: {allLocations.slice(1).join(" · ")}
-          </p>
-        )}
+    <div className="w-full" data-testid={`match-card-${card.providerId}`}>
+      <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+        <AgencySwipeCard
+          providerId={card.providerId}
+          reasons={card.reasons || []}
+          disableSwipe
+          chatMode
+          onPass={() => onAction(`I'm not interested in ${agencyName}. Show me another option.`)}
+          onSave={() => onAction(`I like ${agencyName}! Save as favorite. ❤️`)}
+          onViewProfile={goToProfile}
+        />
       </div>
-
-      <div className="border-t border-border/50 px-4 py-3 flex gap-2">
-        <Button
-          variant="outline"
-          className="flex-1 text-xs font-ui h-8"
-          onClick={(e) => { e.stopPropagation(); navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } }); }}
-        >
+      <div className="mt-2 flex gap-2">
+        <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={goToProfile}>
           View Agency
         </Button>
-        <Button
-          className="flex-1 text-xs font-ui h-8 text-primary-foreground"
-          style={{ backgroundColor: brandColor }}
-          onClick={(e) => { e.stopPropagation(); onAction(`I'd like to schedule a consultation with ${provider.name}`); }}
-        >
+        <Button className="flex-1 text-xs font-ui h-8 text-primary-foreground" style={{ backgroundColor: brandColor }} onClick={() => onAction(`I'd like to schedule a consultation with ${agencyName}`)}>
           Book Consultation
         </Button>
       </div>

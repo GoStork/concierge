@@ -913,6 +913,71 @@ export interface DoctorCardData {
   matchedReasons?: string[];
 }
 
+// Tabs for a Surrogacy Agency SwipeDeckCard - the SAME card shell the clinics
+// use (cream cover + tabs), only the CONTENT differs. Built from the agency's
+// SurrogacyAgencyProfile (babies born / time-to-match / families-per-coordinator),
+// its screening practices, and locations. Used by BOTH the marketplace agency
+// deck and the AI Concierge's agency match card so they render identically.
+const AGENCY_SCREENING_LABELS: { key: string; label: string }[] = [
+  { key: "criminalBackgroundCheck", label: "Criminal background check" },
+  { key: "homeVisits", label: "Home visits" },
+  { key: "financialsReview", label: "Financial review" },
+  { key: "socialWorkerScreening", label: "Social worker screening" },
+  { key: "medicalRecordsReview", label: "Medical records review" },
+  { key: "surrogateInsuranceReview", label: "Insurance review" },
+  { key: "psychologicalScreening", label: "Psychological screening" },
+];
+
+export function getAgencyTabs(opts: {
+  reasons?: string[];
+  numberOfBabiesBorn?: number | null;
+  timeToMatch?: string | null;
+  familiesPerCoordinator?: number | null;
+  screening?: Record<string, boolean> | null;
+  locations?: { city?: string | null; state?: string | null }[];
+}): TabSection[] {
+  const tabs: TabSection[] = [];
+
+  // "Matched to you" - the AI's reasons (chips). Only when present (matcher).
+  const matched = (opts.reasons || []).filter((r) => r && r.trim() !== "").slice(0, 6);
+  if (matched.length > 0) {
+    tabs.push({
+      layoutType: "matched_bubbles",
+      title: "Matched to you",
+      items: matched.map((r) => ({ label: r, value: "" })),
+    });
+  }
+
+  // Overview - the agency's headline stats.
+  const overview: TabItem[] = [];
+  if (opts.numberOfBabiesBorn != null) overview.push({ label: "Babies born", value: `${opts.numberOfBabiesBorn}+` });
+  if (opts.timeToMatch) overview.push({ label: "Time to match", value: String(opts.timeToMatch) });
+  if (opts.familiesPerCoordinator != null) overview.push({ label: "Families / coordinator", value: String(opts.familiesPerCoordinator) });
+  if (overview.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overview });
+
+  // Screening - what the agency screens surrogates for (only the enabled ones).
+  const screening = opts.screening || {};
+  const screeningItems: TabItem[] = AGENCY_SCREENING_LABELS
+    .filter((s) => screening[s.key])
+    .map((s) => ({ label: s.label, value: "" }));
+  if (screeningItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Surrogate Screening", items: screeningItems });
+
+  // Locations.
+  const locationItems: TabItem[] = (opts.locations || [])
+    .map((l) => [l.city, l.state].filter(Boolean).join(", "))
+    .filter((s) => s.trim() !== "")
+    .slice(0, 8)
+    .map((label) => ({ label, value: "" }));
+  if (locationItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Locations", items: locationItems });
+
+  // Always render at least one tab so the card body is never blank.
+  if (tabs.length === 0) {
+    tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: [{ label: "Surrogacy Agency", value: "" }] });
+  }
+
+  return tabs;
+}
+
 // Parse a "55%" string to the number 55 (null if absent / unparseable).
 function pctNum(v: string | number | null | undefined): number | null {
   if (v == null) return null;

@@ -28,6 +28,7 @@ import { SwipeDeckCard } from "@/components/marketplace/swipe-deck-card";
 import { SwipeDeck, type SwipeDeckCardMode, type SwipeDeckCardApi } from "@/components/marketplace/swipe-deck";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
+import { AgencySwipeCard } from "@/components/marketplace/agency-swipe-card";
 import { useMarketplaceViewContext, recordProfileView, useScrollPastView } from "@/lib/profile-views";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -600,7 +601,7 @@ function AgencyDeck({ providers, searchQuery }: {
   };
 
   const renderCard = (p: ProviderWithRelations, mode: SwipeDeckCardMode, api: SwipeDeckCardApi) => (
-    <ClinicSwipeCard
+    <AgencySwipeCard
       providerId={p.id}
       provider={p}
       disableSwipe={mode !== "active"}
