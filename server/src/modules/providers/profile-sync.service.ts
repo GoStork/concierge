@@ -5,6 +5,12 @@ import * as path from "path";
 import { PrismaService } from "../prisma/prisma.service";
 import { recalcAndPersistTotalCostsForProvider } from "../costs/total-cost.utils";
 import type { StorageService } from "../storage/storage.service";
+import {
+  captchaSolverConfigured,
+  extractRecaptchaSitekey,
+  isRecaptchaEnterprise,
+  solveRecaptchaV2,
+} from "./captcha-solver";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -355,6 +361,7 @@ async function authenticateAndGetCookies(
   loginPageUrl: string,
   username: string,
   password: string,
+  onStatus?: (msg: string) => void,
 ): Promise<AuthResult> {
   // 30s per fetch is plenty for any legit login page; on Replit's egress we
   // were seeing the GET hang indefinitely against some sites (genesis o-jms,
@@ -438,15 +445,61 @@ async function authenticateAndGetCookies(
       }
     }
 
+    // WordPress (wp-login.php) uses `log`/`pwd` field names that the generic
+    // email/username detector below doesn't match, so resolve those explicitly.
+    // It also enforces a cookie check, which we satisfy by sending the
+    // `wordpress_test_cookie` and the `testcookie` hidden field.
+    const isWordPress =
+      /wp-login\.php/i.test(loginPageUrl) ||
+      (/name="log"/i.test(loginHtml) && /name="pwd"/i.test(loginHtml));
+
     const emailFieldMatch = loginHtml.match(
-      /<input[^>]*name="([^"]*(?:email|username|user)[^"]*)"/i,
+      /<input[^>]*name="([^"]*(?:email|username|user|login|identifier)[^"]*)"/i,
     );
     const passwordFieldMatch = loginHtml.match(
       /<input[^>]*type="password"[^>]*name="([^"]*)"/i,
     );
 
-    const emailField = emailFieldMatch ? emailFieldMatch[1] : "Email";
-    const passwordField = passwordFieldMatch ? passwordFieldMatch[1] : "Password";
+    const emailField = isWordPress ? "log" : emailFieldMatch ? emailFieldMatch[1] : "Email";
+    const passwordField = isWordPress ? "pwd" : passwordFieldMatch ? passwordFieldMatch[1] : "Password";
+
+    // If the login page is captcha-protected, solve it now and inject the token
+    // into the POST body. We fail loudly (rather than silently importing zero
+    // profiles) when a captcha is present but no solver key is configured.
+    let recaptchaToken: string | null = null;
+    const loginCaptcha = detectCaptcha(loginHtml);
+    if (loginCaptcha === "reCAPTCHA") {
+      const sitekey = extractRecaptchaSitekey(loginHtml);
+      if (!sitekey) {
+        return {
+          ok: false,
+          reason: `reCAPTCHA detected on login page but no sitekey could be extracted`,
+        };
+      }
+      if (!captchaSolverConfigured()) {
+        return {
+          ok: false,
+          reason: `reCAPTCHA on login page requires a captcha solver - set TWOCAPTCHA_API_KEY to enable automated solving`,
+        };
+      }
+      try {
+        console.log(`[donor-sync] Solving reCAPTCHA (sitekey=${sitekey}) for ${loginPageUrl}`);
+        onStatus?.("Solving the site's CAPTCHA (this can take 30-120s)...");
+        recaptchaToken = await solveRecaptchaV2(sitekey, loginPageUrl, {
+          enterprise: isRecaptchaEnterprise(loginHtml),
+        });
+        onStatus?.("CAPTCHA solved - signing in...");
+      } catch (captchaErr: any) {
+        return { ok: false, reason: `captcha solve failed: ${captchaErr.message}` };
+      }
+    } else if (loginCaptcha && loginCaptcha !== "reCAPTCHA") {
+      // hCaptcha / Cloudflare challenge / generic human check - not solvable via
+      // the reCAPTCHA token flow. Surface clearly instead of POSTing blind.
+      return {
+        ok: false,
+        reason: `${loginCaptcha} on login page is not supported by the captcha solver (only reCAPTCHA is)`,
+      };
+    }
 
     const body = new URLSearchParams();
     if (tokenValue) {
@@ -454,7 +507,25 @@ async function authenticateAndGetCookies(
     }
     body.set(emailField, username);
     body.set(passwordField, password);
+    if (recaptchaToken) {
+      // reCAPTCHA v2 posts the token as `g-recaptcha-response`; some WP plugins
+      // also read `g-recaptcha-response-data`. Set both to be safe.
+      body.set("g-recaptcha-response", recaptchaToken);
+      body.set("g-recaptcha-response-data", recaptchaToken);
+    }
+    if (isWordPress) {
+      body.set("wp-submit", "Log In");
+      body.set("testcookie", "1");
+      if (!body.has("redirect_to")) {
+        body.set("redirect_to", new URL(loginPageUrl).origin + "/wp-admin/");
+      }
+    }
 
+    // WordPress rejects logins unless the test cookie round-trips, so add it to
+    // whatever the login GET already set.
+    if (isWordPress && !initialCookies.some((c) => c.startsWith("wordpress_test_cookie="))) {
+      initialCookies.push("wordpress_test_cookie=WP Cookie check");
+    }
     const cookieHeader = initialCookies.join("; ");
 
     const authResp = await timeoutFetch(postUrl, {
@@ -4189,6 +4260,10 @@ async function runSyncJob(
       if (sourcePath.includes("login") || sourcePath.includes("signin") || sourcePath.includes("sign-in")) {
         loginCandidates.push(sourceUrl);
       }
+      // WordPress sites (e.g. Eggspecting) log in at /wp-login.php while the
+      // donor list lives elsewhere (/donor-list), so the source URL points at
+      // the list, not the login page. Always offer the WP login endpoint.
+      loginCandidates.push(loginUrl.origin + "/wp-login.php");
       loginCandidates.push(loginUrl.origin + "/Account/Login");
       if (!loginCandidates.includes(loginUrl.origin + "/login")) {
         loginCandidates.push(loginUrl.origin + "/login");
@@ -4196,12 +4271,14 @@ async function runSyncJob(
 
       let authenticated = false;
       const authFailures: { candidate: string; reason: string }[] = [];
+      job.currentStep = "Signing in to the agency site...";
       for (const candidate of loginCandidates) {
         console.log(`[donor-sync] Trying login at ${candidate}`);
         const result = await authenticateAndGetCookies(
           candidate,
           credentials.username,
           credentials.password,
+          (msg) => { job.currentStep = msg; },
         );
         if (result.ok) {
           sessionCookies = result.cookies;
@@ -4240,6 +4317,7 @@ async function runSyncJob(
         }
         return;
       }
+      job.currentStep = "Signed in - loading the donor list...";
     }
 
     let mainHtml = "";
