@@ -621,7 +621,12 @@ export default function DonorProfilePage() {
     const wasFav = favoritedIds.includes(donorId);
     dispatch(toggleFavoriteDonor(donorId));
     syncPref("favorite", donorId, wasFav ? "remove" : "add");
-  }, [donorId, type, dispatch, favoritedIds, syncPref]);
+    // Mirror handleMobilePass / the in-deck save: saving from inside the profile
+    // should return to the deck so the card "disappears" (it's filtered out of
+    // Explore once favorited), exactly like tapping save on the card itself.
+    // Only on a fresh save - un-saving keeps you on the profile.
+    if (!wasFav) handleBack();
+  }, [donorId, type, dispatch, favoritedIds, syncPref, handleBack]);
 
   const handleMobileMessage = useCallback(() => {
     if (!donorId || !type || !providerId) return;
