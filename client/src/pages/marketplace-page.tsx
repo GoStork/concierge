@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { typeToUrlSlug } from "@/lib/profile-utils";
@@ -18,13 +18,14 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
 import { PARENT_TYPE_MAP, DOCTORS_TYPE, PARENT_TYPE_ORDER } from "@/lib/parent-marketplace-types";
 import { useAppSelector, useAppDispatch } from "@/store";
-import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, loadProviderPreferences, toggleFavoriteDoctor, passDoctor, undoPassDoctor, toggleFavoriteClinic, passClinic, undoPassClinic, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter, clearFilters } from "@/store/uiSlice";
+import { setMarketplaceSearchQuery, setMarketplaceTab, toggleFavoriteDonor, passDonor, undoPassDonor, loadDonorPreferences, loadProviderPreferences, toggleFavoriteDoctor, passDoctor, undoPassDoctor, toggleFavoriteClinic, passClinic, undoPassClinic, toggleFavoriteAgency, passAgency, undoPassAgency, setShowFavoritesOnly, setShowSkippedOnly, setShowExperiencedOnly, setFilter, clearFilters } from "@/store/uiSlice";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
 import { LocationSearchInput } from "@/components/location-search-input";
 import { Tabs as UnderlineTabs, TabsList as UnderlineTabsList, TabsTrigger as UnderlineTabsTrigger } from "@/components/ui/underline-tabs";
 import { Drawer as FullDrawer, DrawerContent as FullDrawerContent } from "@/components/ui/drawer";
 import { Check as CheckIcon } from "lucide-react";
 import { SwipeDeckCard } from "@/components/marketplace/swipe-deck-card";
+import { SwipeDeck, type SwipeDeckCardMode, type SwipeDeckCardApi } from "@/components/marketplace/swipe-deck";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
 import { useMarketplaceViewContext, recordProfileView, useScrollPastView } from "@/lib/profile-views";
@@ -339,16 +340,10 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
 }) {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const isMobile = useIsMobile();
   const favoritedClinics = useAppSelector((s) => s.ui.favoritedClinicIds);
   const passedClinics = useAppSelector((s) => s.ui.passedClinicIds);
   const showFavoritesOnly = useAppSelector((s) => s.ui.showFavoritesOnly);
   const showSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  // Back-button support: stack of acted clinic ids (most recent last) + the id to
-  // pin to the front of the deck after an undo, so "back" shows the last card.
-  const [history, setHistory] = useState<string[]>([]);
-  const [pinFrontId, setPinFrontId] = useState<string | null>(null);
   const isNew = isNewPatient !== "false";
 
   const syncPref = (prefType: "favorite" | "skip", id: string, action: "add" | "remove") => {
@@ -382,16 +377,8 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
         default: return bRate - aRate;
       }
     });
-    const arr = withRates.map((x) => x.provider);
-    // After an undo, surface the restored clinic as the current card.
-    if (pinFrontId) {
-      const i = arr.findIndex((p) => p.id === pinFrontId);
-      if (i > 0) { const [item] = arr.splice(i, 1); arr.unshift(item); }
-    }
-    return arr;
-  }, [providers, eggSource, sortBy, showFavoritesOnly, favoritedClinics, showSkippedOnly, passedClinics, pinFrontId]);
-
-  useEffect(() => { setCurrentIndex(0); setHistory([]); setPinFrontId(null); }, [showFavoritesOnly, showSkippedOnly, providers]);
+    return withRates.map((x) => x.provider);
+  }, [providers, eggSource, sortBy, showFavoritesOnly, favoritedClinics, showSkippedOnly, passedClinics]);
 
   const goToProfile = (id: string) => {
     const params = new URLSearchParams();
@@ -401,92 +388,58 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
     const qs = params.toString();
     navigate(`/providers/${id}${qs ? `?${qs}` : ""}`);
   };
-  // Saving/passing removes the clinic from `sorted` (saved + passed are hidden
-  // from Explore), which auto-advances - so do NOT bump the index (that would skip
-  // the previewed card). Record it for the back button instead.
-  const handleSave = (id: string) => {
+
+  const onSave = (id: string) => {
     const fav = favoritedClinics.includes(id);
     dispatch(toggleFavoriteClinic(id));
     syncPref("favorite", id, fav ? "remove" : "add");
-    setHistory((h) => [...h, id]);
-    setPinFrontId(null);
   };
-  const handlePass = (id: string) => {
+  const onPass = (id: string) => {
     dispatch(passClinic(id));
     syncPref("skip", id, "add");
-    setHistory((h) => [...h, id]);
-    setPinFrontId(null);
   };
-  // Back button: undo the last save/pass and surface that clinic as current.
-  const goBack = () => {
-    const lastId = history[history.length - 1];
-    if (!lastId) return;
-    if (passedClinics.includes(lastId)) { dispatch(undoPassClinic(lastId)); syncPref("skip", lastId, "remove"); }
-    else if (favoritedClinics.includes(lastId)) { dispatch(toggleFavoriteClinic(lastId)); syncPref("favorite", lastId, "remove"); }
-    setHistory((h) => h.slice(0, -1));
-    setPinFrontId(lastId);
+  const onUndo = (id: string) => {
+    if (passedClinics.includes(id)) { dispatch(undoPassClinic(id)); syncPref("skip", id, "remove"); }
+    else if (favoritedClinics.includes(id)) { dispatch(toggleFavoriteClinic(id)); syncPref("favorite", id, "remove"); }
   };
 
-  const renderCard = (p: ProviderWithRelations, swipe: boolean) => (
+  const renderCard = (p: ProviderWithRelations, mode: SwipeDeckCardMode, api: SwipeDeckCardApi) => (
     <ClinicSwipeCard
       providerId={p.id}
       provider={p}
       eggSource={eggSource}
       ageGroup={ageGroup}
       isNewPatient={isNew}
-      disableSwipe={!swipe}
+      disableSwipe={mode !== "active"}
       isSaved={favoritedClinics.includes(p.id)}
       isPassed={passedClinics.includes(p.id)}
-      onSave={() => handleSave(p.id)}
-      onPass={() => handlePass(p.id)}
-      onUndo={
-        swipe && history.length > 0 ? goBack
-          : passedClinics.includes(p.id) ? () => { dispatch(undoPassClinic(p.id)); syncPref("skip", p.id, "remove"); }
-            : undefined
-      }
+      onSave={api.onSave}
+      onPass={api.onPass}
+      onUndo={mode === "active" ? api.onUndo : (passedClinics.includes(p.id) ? () => onUndo(p.id) : undefined)}
       onViewProfile={() => goToProfile(p.id)}
     />
   );
 
-  if (sorted.length === 0) {
-    return (
-      <div className="py-16 text-center text-muted-foreground" data-testid="text-no-clinics">
-        <p className="text-lg font-ui">No clinics found</p>
-        <p className="text-sm">Try adjusting your filters or search criteria.</p>
-      </div>
-    );
-  }
-
-  if (isMobile) {
-    if (currentIndex >= sorted.length) {
-      return (
-        <div className="py-16 text-center text-muted-foreground" data-testid="text-no-more-clinics">
-          <p className="text-lg font-ui">You've seen all clinics!</p>
-          <p className="text-sm mt-2">Adjust your filters or check back later.</p>
-          <Button variant="outline" className="mt-4" onClick={() => setCurrentIndex(0)} data-testid="button-restart-clinic-swipe">Start Over</Button>
-        </div>
-      );
-    }
-    const current = sorted[currentIndex];
-    const next = currentIndex + 1 < sorted.length ? sorted[currentIndex + 1] : null;
-    return (
-      <div className="h-full" data-testid="clinic-swipe-deck-mobile">
-        <div className="relative h-full w-full">
-          {next && <div key={`clinic-next-${next.id}`} className="absolute inset-0 z-0" data-testid={`clinic-card-next-${next.id}`}>{renderCard(next, false)}</div>}
-          <div key={`clinic-cur-${current.id}`} className="absolute inset-0 z-10" data-testid={`clinic-card-container-${current.id}`}>{renderCard(current, true)}</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-[1200px] mx-auto px-6">
-      {sorted.map((p) => (
-        <div key={p.id} className={`h-[600px] ${showSkippedOnly ? "grayscale opacity-60" : ""}`} data-testid={`clinic-card-container-${p.id}`}>
-          {renderCard(p, false)}
-        </div>
-      ))}
-    </div>
+    <SwipeDeck
+      items={sorted}
+      getKey={(p) => p.id}
+      renderCard={renderCard}
+      onSave={onSave}
+      onPass={onPass}
+      onUndo={onUndo}
+      resetDeps={[showFavoritesOnly, showSkippedOnly, providers]}
+      dim={showSkippedOnly}
+      emptyTitle="No clinics found"
+      emptySubtitle="Try adjusting your filters or search criteria."
+      seenAllTitle="You've seen all clinics!"
+      seenAllSubtitle="Adjust your filters or check back later."
+      emptyTestId="text-no-clinics"
+      seenAllTestId="text-no-more-clinics"
+      restartTestId="button-restart-clinic-swipe"
+      mobileDeckTestId="clinic-swipe-deck-mobile"
+      cardTestIdPrefix="clinic-card"
+    />
   );
 }
 
@@ -510,12 +463,6 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
   const passedSlugs = useAppSelector((s) => s.ui.passedDoctorSlugs);
   const showFavoritesOnly = useAppSelector((s) => s.ui.showFavoritesOnly);
   const showSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  // Back-button support: acted doctor slugs (most recent last) + the slug to pin
-  // to the front after an undo so "back" shows the last card.
-  const [history, setHistory] = useState<string[]>([]);
-  const [pinFrontId, setPinFrontId] = useState<string | null>(null);
-
   const ageLabel = ageGroup === "under_35" ? "Under 35" : ageGroup === "35_37" ? "35-37" : ageGroup === "38_40" ? "38-40" : "Over 40";
   const contextLabel = eggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, isNewPatient === "true" ? "First-time IVF" : "Prior cycles"].join(" · ");
 
@@ -525,7 +472,7 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
   };
 
   const filtered = useMemo(() => {
-    const arr = (doctors || []).filter((d) => {
+    return (doctors || []).filter((d) => {
       if (showFavoritesOnly && !favoritedSlugs.includes(d.slug)) return false;
       if (showSkippedOnly && !passedSlugs.includes(d.slug)) return false;
       if (!showSkippedOnly && passedSlugs.includes(d.slug)) return false;
@@ -533,41 +480,23 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
       if (!showFavoritesOnly && favoritedSlugs.includes(d.slug)) return false;
       return true;
     });
-    // After an undo, surface the restored doctor as the current card.
-    if (pinFrontId) {
-      const i = arr.findIndex((d) => d.slug === pinFrontId);
-      if (i > 0) { const [item] = arr.splice(i, 1); arr.unshift(item); }
-    }
-    return arr;
-  }, [doctors, showFavoritesOnly, favoritedSlugs, showSkippedOnly, passedSlugs, pinFrontId]);
+  }, [doctors, showFavoritesOnly, favoritedSlugs, showSkippedOnly, passedSlugs]);
 
-  useEffect(() => { setCurrentIndex(0); setHistory([]); setPinFrontId(null); }, [showFavoritesOnly, showSkippedOnly, doctors]);
-
-  // Saving/passing removes the doctor from `filtered` (auto-advances), so no index
-  // bump. Record it for the back button.
-  const handleSave = (slug: string) => {
+  const onSave = (slug: string) => {
     const isFav = favoritedSlugs.includes(slug);
     dispatch(toggleFavoriteDoctor(slug));
     syncPref("favorite", slug, isFav ? "remove" : "add");
-    setHistory((h) => [...h, slug]);
-    setPinFrontId(null);
   };
-  const handlePass = (slug: string) => {
+  const onPass = (slug: string) => {
     dispatch(passDoctor(slug));
     syncPref("skip", slug, "add");
-    setHistory((h) => [...h, slug]);
-    setPinFrontId(null);
   };
-  const goBack = () => {
-    const lastSlug = history[history.length - 1];
-    if (!lastSlug) return;
-    if (passedSlugs.includes(lastSlug)) { dispatch(undoPassDoctor(lastSlug)); syncPref("skip", lastSlug, "remove"); }
-    else if (favoritedSlugs.includes(lastSlug)) { dispatch(toggleFavoriteDoctor(lastSlug)); syncPref("favorite", lastSlug, "remove"); }
-    setHistory((h) => h.slice(0, -1));
-    setPinFrontId(lastSlug);
+  const onUndo = (slug: string) => {
+    if (passedSlugs.includes(slug)) { dispatch(undoPassDoctor(slug)); syncPref("skip", slug, "remove"); }
+    else if (favoritedSlugs.includes(slug)) { dispatch(toggleFavoriteDoctor(slug)); syncPref("favorite", slug, "remove"); }
   };
 
-  const renderCard = (doctor: DoctorCardData & { slug: string }, swipe: boolean) => {
+  const renderCard = (doctor: DoctorCardData & { slug: string }, mode: SwipeDeckCardMode, api: SwipeDeckCardApi) => {
     const { photos, photoLabels, logoSrc, successBadge, tabs, headerLocation, firstSlidePlain } = buildDoctorCardProps(doctor, { contextLabel, compact: isMobile });
     return (
       <SwipeDeckCard
@@ -579,16 +508,12 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
         monogramName={doctor.name}
         firstSlidePlain={firstSlidePlain}
         tabs={tabs}
-        disableSwipe={!swipe}
+        disableSwipe={mode !== "active"}
         isSaved={favoritedSlugs.includes(doctor.slug)}
         isPassed={passedSlugs.includes(doctor.slug)}
-        onSave={() => handleSave(doctor.slug)}
-        onPass={() => handlePass(doctor.slug)}
-        onUndo={
-          swipe && history.length > 0 ? goBack
-            : passedSlugs.includes(doctor.slug) ? () => { dispatch(undoPassDoctor(doctor.slug)); syncPref("skip", doctor.slug, "remove"); }
-              : undefined
-        }
+        onSave={api.onSave}
+        onPass={api.onPass}
+        onUndo={mode === "active" ? api.onUndo : (passedSlugs.includes(doctor.slug) ? () => onUndo(doctor.slug) : undefined)}
         onViewFullProfile={() => navigate(`/doctors/${doctor.slug}`)}
       />
     );
@@ -601,53 +526,113 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
       </div>
     );
   }
-  if (!filtered || filtered.length === 0) {
-    return (
-      <div className="py-16 text-center text-muted-foreground" data-testid="text-no-doctors">
-        <p className="text-lg font-ui">No doctors found</p>
-        <p className="text-sm">Try a different name, specialty, or location.</p>
-      </div>
-    );
-  }
-
-  if (isMobile) {
-    if (currentIndex >= filtered.length) {
-      return (
-        <div className="py-16 text-center text-muted-foreground" data-testid="text-no-more-doctors">
-          <p className="text-lg font-ui">You've seen all doctors!</p>
-          <p className="text-sm mt-2">Adjust your filters or check back later.</p>
-          <Button variant="outline" className="mt-4" onClick={() => setCurrentIndex(0)} data-testid="button-restart-doctor-swipe">
-            Start Over
-          </Button>
-        </div>
-      );
-    }
-    const current = filtered[currentIndex];
-    const next = currentIndex + 1 < filtered.length ? filtered[currentIndex + 1] : null;
-    return (
-      <div className="h-full" data-testid="doctor-swipe-deck-mobile">
-        <div className="relative h-full w-full">
-          {next && (
-            <div key={`doctor-next-${next.slug}`} className="absolute inset-0 z-0" data-testid={`doctor-card-next-${next.slug}`}>
-              {renderCard(next, false)}
-            </div>
-          )}
-          <div key={`doctor-cur-${current.slug}`} className="absolute inset-0 z-10" data-testid={`doctor-card-container-${current.slug}`}>
-            {renderCard(current, true)}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-[1200px] mx-auto px-6">
-      {filtered.map((d) => (
-        <div key={d.slug} className={`h-[600px] ${showSkippedOnly ? "grayscale opacity-60" : ""}`} data-testid={`doctor-card-container-${d.slug}`}>
-          {renderCard(d, false)}
-        </div>
-      ))}
-    </div>
+    <SwipeDeck
+      items={filtered}
+      getKey={(d) => d.slug}
+      renderCard={renderCard}
+      onSave={onSave}
+      onPass={onPass}
+      onUndo={onUndo}
+      resetDeps={[showFavoritesOnly, showSkippedOnly, doctors]}
+      dim={showSkippedOnly}
+      emptyTitle="No doctors found"
+      emptySubtitle="Try a different name, specialty, or location."
+      seenAllTitle="You've seen all doctors!"
+      seenAllSubtitle="Adjust your filters or check back later."
+      emptyTestId="text-no-doctors"
+      seenAllTestId="text-no-more-doctors"
+      restartTestId="button-restart-doctor-swipe"
+      mobileDeckTestId="doctor-swipe-deck-mobile"
+      cardTestIdPrefix="doctor-card"
+    />
+  );
+}
+
+// Surrogacy Agencies deck - the SAME shared SwipeDeck + provider card the IVF
+// clinics use, so agencies now have an identical swipe / like / pass experience
+// (previously a browse-only grid with no save). Detail opens the shared
+// ProviderProfilePage (/providers/:id). Success-rate bars are simply absent since
+// agencies have none.
+function AgencyDeck({ providers, searchQuery }: {
+  providers: ProviderWithRelations[] | undefined;
+  searchQuery: string;
+}) {
+  const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+  const favoritedAgencies = useAppSelector((s) => s.ui.favoritedAgencyIds);
+  const passedAgencies = useAppSelector((s) => s.ui.passedAgencyIds);
+  const showFavoritesOnly = useAppSelector((s) => s.ui.showFavoritesOnly);
+  const showSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
+
+  const syncPref = (prefType: "favorite" | "skip", id: string, action: "add" | "remove") => {
+    fetch(`/api/profile-preferences/agency/${prefType}/${id}`, { method: action === "add" ? "POST" : "DELETE", credentials: "include" }).catch(() => {});
+  };
+
+  const q = searchQuery.trim().toLowerCase();
+  const sorted = useMemo(() => {
+    const agencies = (providers || []).filter((p) =>
+      (p.services || []).some((s: any) => s.status === "APPROVED" && s.providerType?.name === "Surrogacy Agency"),
+    );
+    return agencies
+      .filter((p) => {
+        if (q && !p.name.toLowerCase().includes(q)) return false;
+        if (showFavoritesOnly && !favoritedAgencies.includes(p.id)) return false;
+        if (showSkippedOnly && !passedAgencies.includes(p.id)) return false;
+        if (!showSkippedOnly && passedAgencies.includes(p.id)) return false;
+        // Explore/Discover hides already-saved agencies (they live in Saved).
+        if (!showFavoritesOnly && favoritedAgencies.includes(p.id)) return false;
+        return true;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [providers, q, showFavoritesOnly, favoritedAgencies, showSkippedOnly, passedAgencies]);
+
+  const onSave = (id: string) => {
+    const fav = favoritedAgencies.includes(id);
+    dispatch(toggleFavoriteAgency(id));
+    syncPref("favorite", id, fav ? "remove" : "add");
+  };
+  const onPass = (id: string) => { dispatch(passAgency(id)); syncPref("skip", id, "add"); };
+  const onUndo = (id: string) => {
+    if (passedAgencies.includes(id)) { dispatch(undoPassAgency(id)); syncPref("skip", id, "remove"); }
+    else if (favoritedAgencies.includes(id)) { dispatch(toggleFavoriteAgency(id)); syncPref("favorite", id, "remove"); }
+  };
+
+  const renderCard = (p: ProviderWithRelations, mode: SwipeDeckCardMode, api: SwipeDeckCardApi) => (
+    <ClinicSwipeCard
+      providerId={p.id}
+      provider={p}
+      disableSwipe={mode !== "active"}
+      isSaved={favoritedAgencies.includes(p.id)}
+      isPassed={passedAgencies.includes(p.id)}
+      onSave={api.onSave}
+      onPass={api.onPass}
+      onUndo={mode === "active" ? api.onUndo : (passedAgencies.includes(p.id) ? () => onUndo(p.id) : undefined)}
+      onViewProfile={() => navigate(`/providers/${p.id}`)}
+    />
+  );
+
+  return (
+    <SwipeDeck
+      items={sorted}
+      getKey={(p) => p.id}
+      renderCard={renderCard}
+      onSave={onSave}
+      onPass={onPass}
+      onUndo={onUndo}
+      resetDeps={[showFavoritesOnly, showSkippedOnly, providers, q]}
+      dim={showSkippedOnly}
+      emptyTitle="No surrogacy agencies found"
+      emptySubtitle="Try adjusting your search."
+      seenAllTitle="You've seen all agencies!"
+      seenAllSubtitle="Adjust your filters or check back later."
+      emptyTestId="text-no-agencies"
+      seenAllTestId="text-no-more-agencies"
+      restartTestId="button-restart-agency-swipe"
+      mobileDeckTestId="agency-swipe-deck-mobile"
+      cardTestIdPrefix="agency-card"
+    />
   );
 }
 
@@ -730,53 +715,24 @@ function ProviderGrid({ providers, searchQuery, providerTypeName, onSchedule }: 
   );
 }
 
-// Grid-mode card wrapper. Uses an IntersectionObserver (via useScrollPastView)
-// to record the profile as "viewed" once it has been on screen for >=1s, so
-// the "New" badge clears as the parent scrolls. Tap / save / pass also record
-// immediately so the badge disappears the moment the parent engages.
-function DonorGridCard({
-  donor, profile, tabs, type, viewedIds, previousVisitAt, showSkippedOnly,
-  favoritedIds, passedIds, dispatch, navigate, syncPref,
-}: {
+// Grid-mode wrapper. Uses an IntersectionObserver (via useScrollPastView) to
+// record the profile as "viewed" once it has been on screen for >=1s, so the
+// "New" badge clears as the parent scrolls the desktop grid. The card itself is
+// rendered by the shared SwipeDeck and passed in as children.
+function DonorGridItem({ donor, type, dim, children }: {
   donor: any;
-  profile: ReturnType<typeof mapDatabaseDonorToSwipeProfile>;
-  tabs: any[];
   type: "egg-donor" | "surrogate" | "sperm-donor";
-  viewedIds: Set<string>;
-  previousVisitAt: Date | null;
-  showSkippedOnly: boolean;
-  favoritedIds: string[];
-  passedIds: string[];
-  dispatch: ReturnType<typeof useAppDispatch>;
-  navigate: ReturnType<typeof useNavigate>;
-  syncPref: (prefType: "favorite" | "skip", donorId: string, action: "add" | "remove") => void;
+  dim: boolean;
+  children: ReactNode;
 }) {
   const setScrollRef = useScrollPastView(donor.id, type);
   return (
     <div
       ref={setScrollRef}
-      className={`h-[600px] ${showSkippedOnly ? "grayscale opacity-60" : ""}`}
+      className={`h-[600px] ${dim ? "grayscale opacity-60" : ""}`}
       data-testid={`card-container-${donor.id}`}
     >
-      <SwipeDeckCard
-        id={profile.id}
-        photos={getPhotoList(profile)}
-        title={buildTitle(profile)}
-        statusLabel={buildStatusLabel(profile, viewedIds, previousVisitAt)}
-        donorStatus={profile.donorStatus}
-        frozenLotStatus={profile.frozenLotStatus}
-        isExperienced={profile.isExperienced}
-        isPremium={profile.isPremium}
-        tabs={tabs}
-        disableSwipe
-        isSaved={favoritedIds.includes(donor.id)}
-        isPassed={passedIds.includes(donor.id)}
-        onPass={() => { recordProfileView(donor.id, type); dispatch(passDonor(donor.id)); syncPref("skip", donor.id, "add"); }}
-        onSave={() => { recordProfileView(donor.id, type); const isFav = favoritedIds.includes(donor.id); dispatch(toggleFavoriteDonor(donor.id)); syncPref("favorite", donor.id, isFav ? "remove" : "add"); }}
-        onUndo={passedIds.includes(donor.id) ? () => { dispatch(undoPassDonor(donor.id)); syncPref("skip", donor.id, "remove"); } : undefined}
-        onMessage={() => { recordProfileView(donor.id, type); navigate(`/concierge?donorId=${donor.id}&donorType=${type}&providerId=${donor.providerId}&photoUrl=${encodeURIComponent(donor.photoUrl || "")}`); }}
-        onViewFullProfile={() => { recordProfileView(donor.id, type); navigate(`/${typeToUrlSlug(type)}/${donor.providerId}/${donor.id}`, { state: { initialPhotoUrl: donor.photoUrl } }); }}
-      />
+      {children}
     </div>
   );
 }
@@ -800,11 +756,6 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   const passedIds = useAppSelector((state) => state.ui.passedDonorIds);
   const showSkippedOnly = useAppSelector((state) => state.ui.showSkippedOnly);
   const showExperiencedOnly = useAppSelector((state) => state.ui.showExperiencedOnly);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  // Back-button support: acted donor ids (most recent last) + the id to pin to
-  // the front after an undo, so "back" shows the last card.
-  const [history, setHistory] = useState<string[]>([]);
-  const [pinFrontId, setPinFrontId] = useState<string | null>(null);
   const { user } = useAuth();
   const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
 
@@ -830,13 +781,8 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
       );
     });
     if (result) result = sortDonors(result, sortBy);
-    // After an undo, surface the restored donor as the current card.
-    if (result && pinFrontId) {
-      const i = result.findIndex((d) => d.id === pinFrontId);
-      if (i > 0) { const [item] = result.splice(i, 1); result.unshift(item); }
-    }
     return result;
-  }, [donors, searchQuery, activeFilters, sortBy, showFavoritesOnly, favoritedIds, showSkippedOnly, passedIds, showExperiencedOnly, userCountry, userIdentification, pinFrontId]);
+  }, [donors, searchQuery, activeFilters, sortBy, showFavoritesOnly, favoritedIds, showSkippedOnly, passedIds, showExperiencedOnly, userCountry, userIdentification]);
 
   useEffect(() => {
     onFilteredCountChange?.(filtered?.length ?? 0);
@@ -881,33 +827,6 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
     return prefs;
   }, [activeFilters]);
 
-  useEffect(() => {
-    setCurrentIndex(0);
-    setHistory([]);
-    setPinFrontId(null);
-  }, [searchQuery, activeFilters, sortBy, showFavoritesOnly, showSkippedOnly, showExperiencedOnly]);
-
-  useEffect(() => {
-    if (!filtered || filtered.length === 0) return;
-    const toPreload = filtered.slice(currentIndex, currentIndex + 3);
-    for (const d of toPreload) {
-      const p = type === "surrogate" ? mapDatabaseSurrogateToSwipeProfile(d) : type === "sperm-donor" ? mapDatabaseSpermDonorToSwipeProfile(d) : mapDatabaseDonorToSwipeProfile(d);
-      for (const src of getPhotoList(p)) {
-        const img = new Image();
-        img.src = src;
-      }
-    }
-  }, [currentIndex, filtered, type]);
-
-  // Deck-mode "scroll-past" equivalent: the moment a card becomes the
-  // current one in the swipe deck, the parent is literally looking at it,
-  // so record it as viewed. Clears the "New" badge on subsequent visits.
-  useEffect(() => {
-    if (!isMobile || !filtered || filtered.length === 0) return;
-    const current = filtered[currentIndex];
-    if (current) recordProfileView(current.id, type);
-  }, [isMobile, currentIndex, filtered, type]);
-
   const mapDonor = (d: any) => {
     if (type === "surrogate") return mapDatabaseSurrogateToSwipeProfile(d);
     if (type === "sperm-donor") return mapDatabaseSpermDonorToSwipeProfile(d);
@@ -938,146 +857,95 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   };
 
   // Saving/passing removes the donor from `filtered` (saved + passed are hidden
-  // from Explore), which auto-advances - so no index bump. Record it for the back
-  // button instead.
-  const handleSave = (donorId: string) => {
+  // from Explore), which auto-advances. The shared SwipeDeck owns the index +
+  // back-button history; these just commit Redux + server state.
+  const onSave = (donorId: string) => {
     recordProfileView(donorId, type);
     const isFav = favoritedIds.includes(donorId);
     dispatch(toggleFavoriteDonor(donorId));
     syncPref("favorite", donorId, isFav ? "remove" : "add");
-    setHistory((h) => [...h, donorId]);
-    setPinFrontId(null);
   };
-
-  const handlePass = (donorId: string) => {
+  const onPass = (donorId: string) => {
     recordProfileView(donorId, type);
     dispatch(passDonor(donorId));
     syncPref("skip", donorId, "add");
-    setHistory((h) => [...h, donorId]);
-    setPinFrontId(null);
+  };
+  const onUndo = (donorId: string) => {
+    if (passedIds.includes(donorId)) { dispatch(undoPassDonor(donorId)); syncPref("skip", donorId, "remove"); }
+    else if (favoritedIds.includes(donorId)) { dispatch(toggleFavoriteDonor(donorId)); syncPref("favorite", donorId, "remove"); }
   };
 
-  // Back button: undo the last save/pass and surface that donor as current.
-  const goBack = () => {
-    const lastId = history[history.length - 1];
-    if (!lastId) return;
-    if (passedIds.includes(lastId)) { dispatch(undoPassDonor(lastId)); syncPref("skip", lastId, "remove"); }
-    else if (favoritedIds.includes(lastId)) { dispatch(toggleFavoriteDonor(lastId)); syncPref("favorite", lastId, "remove"); }
-    setHistory((h) => h.slice(0, -1));
-    setPinFrontId(lastId);
-  };
-
-  if (isMobile) {
-    if (currentIndex >= filtered.length) {
-      return (
-        <div className="py-16 text-center text-muted-foreground" data-testid="text-no-more">
-          <p className="text-lg font-ui">You've seen all profiles!</p>
-          <p className="text-sm mt-2">Adjust your filters or check back later.</p>
-          <Button
-            variant="outline"
-            className="mt-4"
-            onClick={() => setCurrentIndex(0)}
-            data-testid="button-restart-swipe"
-          >
-            Start Over
-          </Button>
-        </div>
-      );
+  // When the mobile active card changes: record the view (clears "New" badge),
+  // preload the next few cards' photos, and paginate near the end.
+  const handleActiveChange = useCallback((donor: any, index: number) => {
+    recordProfileView(donor.id, type);
+    const toPreload = (filtered || []).slice(index, index + 3);
+    for (const d of toPreload) {
+      const p = type === "surrogate" ? mapDatabaseSurrogateToSwipeProfile(d) : type === "sperm-donor" ? mapDatabaseSpermDonorToSwipeProfile(d) : mapDatabaseDonorToSwipeProfile(d);
+      for (const src of getPhotoList(p)) { const img = new Image(); img.src = src; }
     }
+    if (fetchMore && hasNextPage && !isFetchingMore && (filtered?.length ?? 0) - index <= 10) fetchMore();
+  }, [filtered, type, fetchMore, hasNextPage, isFetchingMore]);
 
-    // Pre-load next page when within 10 cards of the end
-    if (fetchMore && hasNextPage && !isFetchingMore && filtered.length - currentIndex <= 10) {
-      fetchMore();
-    }
-
-    const currentDonor = filtered[currentIndex];
-    const nextDonor = currentIndex + 1 < filtered.length ? filtered[currentIndex + 1] : null;
-    const profile = mapDonor(currentDonor);
+  const renderCard = (donor: any, mode: SwipeDeckCardMode, api: SwipeDeckCardApi) => {
+    const profile = mapDonor(donor);
     const tabs = getTabs(profile);
-
-    const nextProfile = nextDonor ? mapDonor(nextDonor) : null;
-    const nextTabs = nextProfile ? getTabs(nextProfile) : [];
-
     return (
-      <div className="h-full" data-testid="swipe-deck-mobile">
-        <div className={`relative h-full w-full ${showSkippedOnly ? "grayscale opacity-60" : ""}`}>
-          {nextDonor && nextProfile && (
-            <div className="absolute inset-0 z-0" data-testid={`card-next-${nextDonor.id}`}>
-              <SwipeDeckCard
-                key={`next-${nextDonor.id}`}
-                id={nextProfile.id}
-                photos={getPhotoList(nextProfile)}
-                title={buildTitle(nextProfile)}
-                statusLabel={buildStatusLabel(nextProfile, viewedIds, previousVisitAt)}
-                donorStatus={nextProfile.donorStatus}
-                frozenLotStatus={nextProfile.frozenLotStatus}
-                isExperienced={nextProfile.isExperienced}
-                isPremium={nextProfile.isPremium}
-                tabs={nextTabs}
-                disableSwipe
-                isSaved={favoritedIds.includes(nextDonor.id)}
-                onPass={() => {}}
-                onSave={() => {}}
-                onViewFullProfile={() => {}}
-              />
-            </div>
-          )}
-          <div className="absolute inset-0 z-10" data-testid={`card-container-${currentDonor.id}`}>
-            <SwipeDeckCard
-              key={currentDonor.id}
-              id={profile.id}
-              photos={getPhotoList(profile)}
-              title={buildTitle(profile)}
-              statusLabel={buildStatusLabel(profile, viewedIds, previousVisitAt)}
-              donorStatus={profile.donorStatus}
-              frozenLotStatus={profile.frozenLotStatus}
-              isExperienced={profile.isExperienced}
-              isPremium={profile.isPremium}
-              tabs={tabs}
-              isSaved={favoritedIds.includes(currentDonor.id)}
-              onPass={() => handlePass(currentDonor.id)}
-              onSave={() => handleSave(currentDonor.id)}
-              onUndo={history.length > 0 ? goBack : undefined}
-              onMessage={() => { recordProfileView(currentDonor.id, type); navigate(`/concierge?donorId=${currentDonor.id}&donorType=${type}&providerId=${currentDonor.providerId}&photoUrl=${encodeURIComponent(currentDonor.photoUrl || "")}`); }}
-              onViewFullProfile={() => { recordProfileView(currentDonor.id, type); navigate(`/${typeToUrlSlug(type)}/${currentDonor.providerId}/${currentDonor.id}`, { state: { initialPhotoUrl: currentDonor.photoUrl, deckList: filtered.map((d) => ({ id: d.id, providerId: d.providerId, photoUrl: d.photoUrl })), deckIndex: currentIndex } }); }}
-            />
-          </div>
-        </div>
-      </div>
+      <SwipeDeckCard
+        id={profile.id}
+        photos={getPhotoList(profile)}
+        title={buildTitle(profile)}
+        statusLabel={buildStatusLabel(profile, viewedIds, previousVisitAt)}
+        donorStatus={profile.donorStatus}
+        frozenLotStatus={profile.frozenLotStatus}
+        isExperienced={profile.isExperienced}
+        isPremium={profile.isPremium}
+        tabs={tabs}
+        disableSwipe={mode !== "active"}
+        isSaved={favoritedIds.includes(donor.id)}
+        isPassed={passedIds.includes(donor.id)}
+        onSave={api.onSave}
+        onPass={api.onPass}
+        onUndo={mode === "active" ? api.onUndo : (passedIds.includes(donor.id) ? () => onUndo(donor.id) : undefined)}
+        onMessage={() => { recordProfileView(donor.id, type); navigate(`/concierge?donorId=${donor.id}&donorType=${type}&providerId=${donor.providerId}&photoUrl=${encodeURIComponent(donor.photoUrl || "")}`); }}
+        onViewFullProfile={() => { recordProfileView(donor.id, type); navigate(`/${typeToUrlSlug(type)}/${donor.providerId}/${donor.id}`, { state: { initialPhotoUrl: donor.photoUrl, deckList: (filtered || []).map((d) => ({ id: d.id, providerId: d.providerId, photoUrl: d.photoUrl })), deckIndex: (filtered || []).findIndex((d) => d.id === donor.id) } }); }}
+      />
     );
-  }
+  };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-[1200px] mx-auto px-6">
-      {filtered.map((donor) => {
-        const profile = mapDonor(donor);
-        const tabs = getTabs(profile);
-        return (
-          <DonorGridCard
-            key={donor.id}
-            donor={donor}
-            profile={profile}
-            tabs={tabs}
-            type={type}
-            viewedIds={viewedIds}
-            previousVisitAt={previousVisitAt}
-            showSkippedOnly={showSkippedOnly}
-            favoritedIds={favoritedIds}
-            passedIds={passedIds}
-            dispatch={dispatch}
-            navigate={navigate}
-            syncPref={syncPref}
-          />
-        );
-      })}
-      {/* Infinite scroll sentinel - load next page when this comes into view */}
-      <div ref={sentinelRef} className="col-span-full" />
-      {isFetchingMore && (
-        <div className="col-span-full flex justify-center py-6">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
+    <SwipeDeck
+      items={filtered}
+      getKey={(d) => d.id}
+      renderCard={renderCard}
+      onSave={onSave}
+      onPass={onPass}
+      onUndo={onUndo}
+      resetDeps={[searchQuery, activeFilters, sortBy, showFavoritesOnly, showSkippedOnly, showExperiencedOnly]}
+      dim={showSkippedOnly}
+      onActiveChange={handleActiveChange}
+      emptyTitle="No profiles found"
+      emptySubtitle="Check back soon as more profiles are added."
+      seenAllTitle="You've seen all profiles!"
+      seenAllSubtitle="Adjust your filters or check back later."
+      seenAllTestId="text-no-more"
+      restartTestId="button-restart-swipe"
+      mobileDeckTestId="swipe-deck-mobile"
+      cardTestIdPrefix="card"
+      renderGridItem={(donor, card) => (
+        <DonorGridItem donor={donor} type={type} dim={showSkippedOnly}>{card}</DonorGridItem>
       )}
-    </div>
+      gridFooter={
+        <>
+          <div ref={sentinelRef} className="col-span-full" />
+          {isFetchingMore && (
+            <div className="col-span-full flex justify-center py-6">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </>
+      }
+    />
   );
 }
 
@@ -1619,7 +1487,13 @@ export default function MarketplacePage() {
           if (name.includes("sperm bank") && !tabs.includes("sperm-donors")) tabs.push("sperm-donors");
           if ((name.includes("egg donor") || name.includes("egg bank")) && !tabs.includes("egg-donors")) tabs.push("egg-donors");
           if (name.includes("surrogacy") && !tabs.includes("surrogates")) tabs.push("surrogates");
-          if ((name.includes("ivf") || name.includes("clinic")) && !tabs.includes("ivf-clinics")) tabs.push("ivf-clinics");
+          if (name.includes("ivf") || name.includes("clinic")) {
+            // Clinics get BOTH the IVF Clinics tab and the Doctors tab (doctors
+            // practice at clinics) - mirrors the parent experience. Both are scoped
+            // to the provider's own clinic by the marketplace/clinics + /doctors APIs.
+            if (!tabs.includes("ivf-clinics")) tabs.push("ivf-clinics");
+            if (!tabs.includes("doctors")) tabs.push("doctors");
+          }
         }
         setProviderTabs(tabs);
         if (tabs.length > 0 && !tabs.includes(activeTab)) {
@@ -1648,6 +1522,8 @@ export default function MarketplacePage() {
           passedDoctors: data.passedDoctors || [],
           favoritedClinics: data.favoritedClinics || [],
           passedClinics: data.passedClinics || [],
+          favoritedAgencies: data.favoritedAgencies || [],
+          passedAgencies: data.passedAgencies || [],
         }));
       })
       .catch(() => {});
@@ -2195,22 +2071,7 @@ export default function MarketplacePage() {
               <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
             )}
             {activeTab === "surrogacy-agencies" && (
-              showFavoritesOnly ? (
-                <div className="flex items-center justify-center py-20 px-6 text-center" data-testid="saved-empty-agencies">
-                  <div>
-                    <Heart className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
-                    <p className="font-ui text-base text-foreground">No saved agencies yet</p>
-                    <p className="font-ui text-sm text-muted-foreground mt-1">Saving agencies is coming soon. For now, browse them on the Discover tab.</p>
-                  </div>
-                </div>
-              ) : (
-                <ProviderGrid
-                  providers={providers}
-                  searchQuery={searchQuery}
-                  providerTypeName="Surrogacy Agency"
-                  onSchedule={setScheduleProvider}
-                />
-              )
+              <AgencyDeck providers={providers} searchQuery={searchQuery} />
             )}
             {activeTab === "egg-donors" && (
               <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" fetchMore={fetchMoreEggDonors} hasNextPage={hasMoreEggDonors} isFetchingMore={isFetchingMoreEggDonors} />

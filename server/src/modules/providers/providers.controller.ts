@@ -379,7 +379,10 @@ export class ProvidersController {
   @Get("marketplace/doctors")
   @ApiOperation({ summary: "Search doctors (provider members) across approved IVF clinics" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceDoctors(@Query() query: any) {
+  async marketplaceDoctors(@Req() req: Request, @Query() query: any) {
+    const user = req.user as any;
+    const roles: string[] = user?.roles || [];
+    const isProviderUser = hasProviderRole(roles);
     const memberWhere: any = {
       isPublicProfile: true,
       slug: { not: null },
@@ -387,6 +390,13 @@ export class ProvidersController {
         services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
       },
     };
+
+    // Provider/clinic users only ever see the doctors at their OWN clinic - never
+    // the full cross-clinic directory. Mirrors the marketplace egg-donors /
+    // surrogates / sperm-donors self-visibility filtering (multi-tenant isolation).
+    if (isProviderUser && user?.providerId) {
+      memberWhere.provider.id = user.providerId;
+    }
 
     if (query.location) {
       memberWhere.provider.locations = { some: { OR: buildLocationFilter(query.location.trim()) } };
@@ -456,10 +466,20 @@ export class ProvidersController {
   @Get("marketplace/clinics")
   @ApiOperation({ summary: "Lean clinic cards for the marketplace deck (no per-card refetch)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceClinics(@Query() query: any) {
+  async marketplaceClinics(@Req() req: Request, @Query() query: any) {
+    const user = req.user as any;
+    const roles: string[] = user?.roles || [];
+    const isProviderUser = hasProviderRole(roles);
     const where: any = {
       services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
     };
+
+    // Provider/clinic users only ever see their OWN clinic card - never the full
+    // marketplace directory. Mirrors the marketplace egg-donors / surrogates /
+    // sperm-donors self-visibility filtering (multi-tenant isolation).
+    if (isProviderUser && user?.providerId) {
+      where.id = user.providerId;
+    }
 
     if (query.location) {
       where.locations = { some: { OR: buildLocationFilter(query.location.trim()) } };

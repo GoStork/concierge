@@ -24,6 +24,8 @@ interface UiState {
   passedDoctorSlugs: string[];
   favoritedClinicIds: string[];
   passedClinicIds: string[];
+  favoritedAgencyIds: string[];
+  passedAgencyIds: string[];
   showFavoritesOnly: boolean;
   showSkippedOnly: boolean;
   showExperiencedOnly: boolean;
@@ -111,6 +113,8 @@ const initialState: UiState = {
   passedDoctorSlugs: [],
   favoritedClinicIds: [],
   passedClinicIds: [],
+  favoritedAgencyIds: [],
+  passedAgencyIds: [],
   showFavoritesOnly: persistedMarketplace.showFavoritesOnly,
   showSkippedOnly: persistedMarketplace.showSkippedOnly,
   showExperiencedOnly: persistedMarketplace.showExperiencedOnly,
@@ -188,11 +192,13 @@ const uiSlice = createSlice({
       state.passedDonorIds = state.passedDonorIds.filter(id => id !== action.payload);
     },
     // --- Phase 6: doctor + clinic saved/passed (mirror the donor actions) ---
-    loadProviderPreferences(state, action: PayloadAction<{ favoritedDoctors: string[]; passedDoctors: string[]; favoritedClinics: string[]; passedClinics: string[] }>) {
+    loadProviderPreferences(state, action: PayloadAction<{ favoritedDoctors: string[]; passedDoctors: string[]; favoritedClinics: string[]; passedClinics: string[]; favoritedAgencies?: string[]; passedAgencies?: string[] }>) {
       state.favoritedDoctorSlugs = action.payload.favoritedDoctors;
       state.passedDoctorSlugs = action.payload.passedDoctors;
       state.favoritedClinicIds = action.payload.favoritedClinics;
       state.passedClinicIds = action.payload.passedClinics;
+      state.favoritedAgencyIds = action.payload.favoritedAgencies || [];
+      state.passedAgencyIds = action.payload.passedAgencies || [];
     },
     toggleFavoriteDoctor(state, action: PayloadAction<string>) {
       const id = action.payload;
@@ -217,6 +223,18 @@ const uiSlice = createSlice({
     },
     undoPassClinic(state, action: PayloadAction<string>) {
       state.passedClinicIds = state.passedClinicIds.filter(id => id !== action.payload);
+    },
+    toggleFavoriteAgency(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      const idx = state.favoritedAgencyIds.indexOf(id);
+      if (idx >= 0) state.favoritedAgencyIds.splice(idx, 1);
+      else state.favoritedAgencyIds.push(id);
+    },
+    passAgency(state, action: PayloadAction<string>) {
+      if (!state.passedAgencyIds.includes(action.payload)) state.passedAgencyIds.push(action.payload);
+    },
+    undoPassAgency(state, action: PayloadAction<string>) {
+      state.passedAgencyIds = state.passedAgencyIds.filter(id => id !== action.payload);
     },
     setShowSkippedOnly(state, action: PayloadAction<boolean>) {
       state.showSkippedOnly = action.payload;
@@ -256,6 +274,9 @@ export const {
   toggleFavoriteClinic,
   passClinic,
   undoPassClinic,
+  toggleFavoriteAgency,
+  passAgency,
+  undoPassAgency,
   setShowSkippedOnly,
   setShowExperiencedOnly,
   setAdminProvidersFilter,

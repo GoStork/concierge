@@ -1682,6 +1682,8 @@ export class UsersController {
     const passedDoctors: string[] = [];
     const favoritedClinics: string[] = [];
     const passedClinics: string[] = [];
+    const favoritedAgencies: string[] = [];
+    const passedAgencies: string[] = [];
     for (const p of prefs) {
       if (p.entityType === "doctor") {
         if (p.type === "favorite") favoritedDoctors.push(p.entityId);
@@ -1689,9 +1691,12 @@ export class UsersController {
       } else if (p.entityType === "clinic") {
         if (p.type === "favorite") favoritedClinics.push(p.entityId);
         else if (p.type === "skip") passedClinics.push(p.entityId);
+      } else if (p.entityType === "agency") {
+        if (p.type === "favorite") favoritedAgencies.push(p.entityId);
+        else if (p.type === "skip") passedAgencies.push(p.entityId);
       }
     }
-    return { favoritedDoctors, passedDoctors, favoritedClinics, passedClinics };
+    return { favoritedDoctors, passedDoctors, favoritedClinics, passedClinics, favoritedAgencies, passedAgencies };
   }
 
   @Post("profile-preferences/:entityType/:type/:entityId")
@@ -1706,7 +1711,7 @@ export class UsersController {
     @Req() req: Request,
   ) {
     const user = req.user as any;
-    if (!["doctor", "clinic"].includes(entityType)) throw new BadRequestException("Invalid entityType");
+    if (!["doctor", "clinic", "agency"].includes(entityType)) throw new BadRequestException("Invalid entityType");
     if (!["favorite", "skip"].includes(type)) throw new BadRequestException("Invalid type");
     await this.prisma.userProfilePreference.upsert({
       where: { userId_entityType_entityId_type: { userId: user.id, entityType, entityId, type } },
@@ -1727,7 +1732,7 @@ export class UsersController {
     @Req() req: Request,
   ) {
     const user = req.user as any;
-    if (!["doctor", "clinic"].includes(entityType)) throw new BadRequestException("Invalid entityType");
+    if (!["doctor", "clinic", "agency"].includes(entityType)) throw new BadRequestException("Invalid entityType");
     if (!["favorite", "skip"].includes(type)) throw new BadRequestException("Invalid type");
     await this.prisma.userProfilePreference.deleteMany({
       where: { userId: user.id, entityType, entityId, type },
