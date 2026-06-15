@@ -207,15 +207,19 @@ interface SartResult {
 function normalizeName(name: string): string {
   return name
     .replace(/^\s*(?:Dr|Doctor)\b\.?\s*/i, "") // strip leading "Dr."/"Doctor" so "Dr. X" and "X" match
+    // Drop punctuation FIRST so dotted credentials collapse ("M.D." -> "MD",
+    // "Ph.D." -> "PhD") and then get stripped as whole words below. Doing this
+    // after the credential strip left "M.D." intact -> "...md", a DIFFERENT
+    // personKey from the plain name, which spawned duplicate doctor members.
+    .replace(/[.,'"]/g, "")
     // Strip "dba ..." (everything from the dba onward).
-    .replace(/,?\s*\bdba\b.*/gi, "")
+    .replace(/\s*\bdba\b.*/gi, "")
     // Legal-entity + credential suffixes - matched ONLY as whole words (leading \b).
     // Without the leading \b these eat substrings out of real words ("Colora[do]",
     // "[Pa]cific", "Fertility [Pa]rtners", "[Sc]ience"), which silently corrupted
     // SART clinic matching AND doctor personKeys/slugs.
-    .replace(/,?\s*\b(LLC|Inc|PC|PA|SC|LTD|LLP|Corporation|Corp|PLLC)\b\.?/gi, "")
-    .replace(/,?\s*\b(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\b/gi, "")
-    .replace(/[.,'"]/g, "")
+    .replace(/\s*\b(LLC|Inc|PC|PA|SC|LTD|LLP|Corporation|Corp|PLLC)\b/gi, "")
+    .replace(/\s*\b(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP)\b/gi, "")
     .replace(/[\-–]/g, " ")
     .toLowerCase()
     .replace(/\s+/g, " ")
