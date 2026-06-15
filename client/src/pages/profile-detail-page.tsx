@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, useAnimation } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields, getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
@@ -574,27 +574,36 @@ function MobilePhotoViewer({ photos, videoUrl }: { photos: string[]; videoUrl?: 
   );
 }
 
-export default function DonorProfilePage() {
-  const { providerId, type: paramType, donorId } = useParams<{ providerId: string; type?: string; donorId: string }>();
+interface ProfileCardProps {
+  providerId?: string;
+  donorId?: string;
+  type?: string;
+  /** Hero photo passed from the deck so the card renders instantly, before the
+   *  donor query resolves - this is what kills the spinner between profiles. */
+  initialPhotoUrl?: string;
+  /** Back button handler, owned by the wrapper so it knows the deck context. */
+  onBack?: () => void;
+}
+
+/**
+ * One donor profile surface. Identity comes from props (not useParams) so the
+ * wrapper can mount two at once (a Tinder-style stack) and prefetch the next.
+ * The mobile action bar lives in the wrapper (DonorProfilePage) so it stays put
+ * while this card is thrown off-screen.
+ */
+function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: ProfileCardProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
   const isMobile = useIsMobile();
-  const dispatch = useAppDispatch();
-  const favoritedIds = useAppSelector((s) => s.ui.favoritedDonorIds);
-  const type = deriveTypeFromPath(location.pathname, paramType);
 
   const chatState = location.state as { fromChat?: boolean; matchReasons?: string[]; chatPath?: string } | null;
   const fromChat = chatState?.fromChat === true;
   const matchReasons = chatState?.matchReasons || [];
   const chatPath = chatState?.chatPath || "/concierge";
 
-  const syncPref = useCallback((prefType: "favorite" | "skip", id: string, action: "add" | "remove") => {
-    const method = action === "add" ? "POST" : "DELETE";
-    fetch(`/api/donor-preferences/${prefType}/${id}`, { method, credentials: "include" }).catch(() => {});
-  }, []);
-
   const handleBack = useCallback(() => {
+    if (onBack) { onBack(); return; }
     if (fromChat) {
       navigate(chatPath);
     } else {
@@ -605,34 +614,7 @@ export default function DonorProfilePage() {
         navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
       }
     }
-  }, [fromChat, chatPath, navigate, providerId, type]);
-
-  const handleMobilePass = useCallback(() => {
-    if (!donorId || !type) return;
-    recordProfileView(donorId, type);
-    dispatch(passDonor(donorId));
-    syncPref("skip", donorId, "add");
-    handleBack();
-  }, [donorId, type, dispatch, syncPref, handleBack]);
-
-  const handleMobileSave = useCallback(() => {
-    if (!donorId || !type) return;
-    recordProfileView(donorId, type);
-    const wasFav = favoritedIds.includes(donorId);
-    dispatch(toggleFavoriteDonor(donorId));
-    syncPref("favorite", donorId, wasFav ? "remove" : "add");
-    // Mirror handleMobilePass / the in-deck save: saving from inside the profile
-    // should return to the deck so the card "disappears" (it's filtered out of
-    // Explore once favorited), exactly like tapping save on the card itself.
-    // Only on a fresh save - un-saving keeps you on the profile.
-    if (!wasFav) handleBack();
-  }, [donorId, type, dispatch, favoritedIds, syncPref, handleBack]);
-
-  const handleMobileMessage = useCallback(() => {
-    if (!donorId || !type || !providerId) return;
-    recordProfileView(donorId, type);
-    navigate(`/concierge?donorId=${donorId}&donorType=${type}&providerId=${providerId}`);
-  }, [donorId, type, providerId, navigate]);
+  }, [onBack, fromChat, chatPath, navigate, providerId, type]);
 
   const endpoint = TYPE_ENDPOINTS[type || ""] || "egg-donors";
 
@@ -712,7 +694,11 @@ export default function DonorProfilePage() {
     return null;
   }, [donor]);
 
-  if (isLoading) {
+  // Spinner only on a genuine COLD load (no preloaded hero). When the deck hands
+  // us initialPhotoUrl, we render the hero instantly and let the body fill in
+  // once the (usually already-prefetched) query resolves - no spinner, no blank
+  // gap between profiles.
+  if (isLoading && !initialPhotoUrl) {
     return (
       <div className="flex justify-center p-12">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -721,6 +707,17 @@ export default function DonorProfilePage() {
   }
 
   if (!donor) {
+    // Have a hero photo from the deck but the donor body hasn't arrived yet:
+    // show the photo full-bleed (no spinner) so a thrown-to card reveals cleanly.
+    if (initialPhotoUrl) {
+      return (
+        <div className="space-y-6 w-full pb-32 md:pb-0" data-testid="profile-card-hero-pending">
+          {isMobile
+            ? <MobilePhotoViewer photos={[initialPhotoUrl]} />
+            : <PhotoGalleryBar photos={[initialPhotoUrl]} />}
+        </div>
+      );
+    }
     return (
       <div className="space-y-4 p-6">
         <Button variant="ghost" onClick={() => {
@@ -805,8 +802,6 @@ export default function DonorProfilePage() {
   }
   if (donor.donationTypes) headerMeta.push(`Types of Donation: ${donor.donationTypes}`);
 
-  const isSaved = donorId ? favoritedIds.includes(donorId) : false;
-
   return (
     <div className="space-y-6 w-full pb-32 md:pb-0">
       {isMobile && (
@@ -851,41 +846,6 @@ export default function DonorProfilePage() {
             >
               <ArrowDown className="w-5 h-5 text-white" strokeWidth={2.5} />
             </button>
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.24, delay: 0.12, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="fixed bottom-6 left-0 right-0 z-50 flex items-center justify-center gap-3 px-4 pointer-events-none"
-            data-testid="mobile-detail-actions"
-          >
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleMobilePass}
-              className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] active:scale-95 active:translate-y-0.5 transition-all duration-200 flex items-center justify-center pointer-events-auto"
-              data-testid="button-mobile-pass"
-            >
-              <X className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-pass)" }} strokeWidth={3} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleMobileSave}
-              className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] active:scale-95 active:translate-y-0.5 transition-all duration-200 flex items-center justify-center pointer-events-auto"
-              data-testid="button-mobile-save"
-            >
-              <Heart className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-save)" }} strokeWidth={3} fill={isSaved ? "currentColor" : "none"} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleMobileMessage}
-              className="h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] active:scale-95 active:translate-y-0.5 transition-all duration-200 flex items-center justify-center pointer-events-auto"
-              data-testid="button-mobile-message"
-            >
-              <Send className="!w-8 !h-8 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-chat)" }} strokeWidth={3} />
-            </Button>
           </motion.div>
         </>
       )}
@@ -1696,6 +1656,196 @@ export default function DonorProfilePage() {
             </div>
         </ProfileSection>
       ))}
+    </div>
+  );
+}
+
+type DeckEntry = { id: string; providerId: string; photoUrl?: string | null };
+
+/**
+ * Tinder-style corner stamp shown on the departing card during a throw.
+ * Like = heart pinned top-left, Pass = X pinned top-right. Subtle, tilted,
+ * NOT a full-card-center watermark and NOT a full-bleed color tint.
+ */
+function ProfileThrowStamp({ dir }: { dir: "like" | "pass" }) {
+  return (
+    <div className="absolute inset-0 z-[60] pointer-events-none" data-testid={`throw-stamp-${dir}`}>
+      {dir === "like" ? (
+        <div
+          className="absolute top-10 left-6 -rotate-[18deg] rounded-2xl border-4 p-2 bg-white/10 backdrop-blur-[1px]"
+          style={{ borderColor: "var(--swipe-save)", color: "var(--swipe-save)" }}
+        >
+          <Heart className="w-12 h-12 drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]" fill="currentColor" strokeWidth={2.5} />
+        </div>
+      ) : (
+        <div
+          className="absolute top-10 right-6 rotate-[18deg] rounded-2xl border-4 p-2 bg-white/10 backdrop-blur-[1px]"
+          style={{ borderColor: "var(--swipe-pass)", color: "var(--swipe-pass)" }}
+        >
+          <X className="w-12 h-12 drop-shadow-[0_2px_6px_rgba(0,0,0,0.45)]" strokeWidth={3.5} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Fixed mobile action bar - lifted out of ProfileCard so it stays put while the
+ *  card is thrown. Identical styling to the deck's action buttons. */
+function ProfileDetailActionBar({ isSaved, busy, onPass, onLike, onMessage }: {
+  isSaved: boolean; busy: boolean; onPass: () => void; onLike: () => void; onMessage: () => void;
+}) {
+  const btn = "h-16 w-16 rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] active:scale-95 active:translate-y-0.5 transition-all duration-200 flex items-center justify-center pointer-events-auto disabled:opacity-100";
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24, delay: 0.12, ease: [0.25, 0.46, 0.45, 0.94] }}
+      className="fixed bottom-6 left-0 right-0 z-[55] flex items-center justify-center gap-3 px-4 pointer-events-none"
+      data-testid="mobile-detail-actions"
+    >
+      <Button variant="ghost" size="icon" onClick={onPass} disabled={busy} className={btn} data-testid="button-mobile-pass">
+        <X className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-pass)" }} strokeWidth={3} />
+      </Button>
+      <Button variant="ghost" size="icon" onClick={onLike} disabled={busy} className={btn} data-testid="button-mobile-save">
+        <Heart className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-save)" }} strokeWidth={3} fill={isSaved ? "currentColor" : "none"} />
+      </Button>
+      <Button variant="ghost" size="icon" onClick={onMessage} className={btn} data-testid="button-mobile-message">
+        <Send className="!w-8 !h-8 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-chat)" }} strokeWidth={3} />
+      </Button>
+    </motion.div>
+  );
+}
+
+/**
+ * Detail-page "deck": mirrors the Explorer's two-card stack
+ * (marketplace-page.tsx) so pressing like/pass throws the current profile
+ * off-screen Tinder-style and reveals the pre-mounted next profile underneath -
+ * no spinner, no blank gap. Falls back to a single card when arrived without a
+ * deck list (chat / saved / admin / cold refresh).
+ */
+export default function DonorProfilePage() {
+  const { providerId, type: paramType, donorId } = useParams<{ providerId: string; type?: string; donorId: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isMobile = useIsMobile();
+  const dispatch = useAppDispatch();
+  const favoritedIds = useAppSelector((s) => s.ui.favoritedDonorIds);
+  const type = deriveTypeFromPath(location.pathname, paramType);
+
+  const navState = location.state as {
+    fromChat?: boolean; chatPath?: string; initialPhotoUrl?: string;
+    deckList?: DeckEntry[]; deckIndex?: number;
+  } | null;
+  const fromChat = navState?.fromChat === true;
+  const chatPath = navState?.chatPath || "/concierge";
+  const deckList = navState?.deckList;
+
+  // Seed the deck index from the donor we navigated to.
+  const seedIdx = useMemo(() => {
+    if (!deckList || !donorId) return 0;
+    const i = deckList.findIndex((d) => d.id === donorId);
+    return i >= 0 ? i : (navState?.deckIndex ?? 0);
+  }, [deckList, donorId, navState?.deckIndex]);
+  const [idx, setIdx] = useState(seedIdx);
+  useEffect(() => { setIdx(seedIdx); }, [seedIdx]);
+
+  const controls = useAnimation();
+  const [throwDir, setThrowDir] = useState<null | "like" | "pass">(null);
+  const [busy, setBusy] = useState(false);
+
+  const syncPref = useCallback((prefType: "favorite" | "skip", id: string, action: "add" | "remove") => {
+    const method = action === "add" ? "POST" : "DELETE";
+    fetch(`/api/donor-preferences/${prefType}/${id}`, { method, credentials: "include" }).catch(() => {});
+  }, []);
+
+  const goBack = useCallback(() => {
+    if (fromChat) navigate(chatPath);
+    else if (window.location.pathname.startsWith("/admin/")) navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
+    else navigate(-1);
+  }, [fromChat, chatPath, navigate, providerId, type]);
+
+  const useDeck = isMobile && !!deckList && deckList.length > 0;
+  const current: DeckEntry = useDeck
+    ? deckList![Math.min(idx, deckList!.length - 1)]
+    : { id: donorId || "", providerId: providerId || "", photoUrl: navState?.initialPhotoUrl };
+  const next: DeckEntry | null = useDeck && idx + 1 < deckList!.length ? deckList![idx + 1] : null;
+
+  const commit = useCallback((dir: "like" | "pass", id: string) => {
+    if (!type || !id) return;
+    recordProfileView(id, type);
+    if (dir === "like") {
+      // Heart = like + advance (Tinder). Only dispatch if not already saved.
+      if (!favoritedIds.includes(id)) { dispatch(toggleFavoriteDonor(id)); syncPref("favorite", id, "add"); }
+    } else {
+      dispatch(passDonor(id)); syncPref("skip", id, "add");
+    }
+  }, [type, favoritedIds, dispatch, syncPref]);
+
+  const handleAction = useCallback(async (dir: "like" | "pass") => {
+    if (busy) return;
+    const actedId = current.id;
+    // No deck context: commit and leave (keeps the single-card layout intact).
+    if (!useDeck) { commit(dir, actedId); goBack(); return; }
+    setBusy(true);
+    setThrowDir(dir);
+    await controls.start({
+      x: dir === "like" ? 500 : -500,
+      rotate: dir === "like" ? 20 : -20,
+      transition: { duration: 0.2, ease: "easeOut" }, // opacity intentionally untouched - stays opaque
+    });
+    commit(dir, actedId);
+    if (idx + 1 < deckList!.length) {
+      const nextEntry = deckList![idx + 1];
+      setIdx((i) => i + 1);
+      setThrowDir(null);
+      controls.set({ x: 0, rotate: 0 });
+      // Keep the URL shareable without remounting the route.
+      const slug = typeToUrlSlug((type || "egg-donor") as any);
+      window.history.replaceState(window.history.state, "", `/${slug}/${nextEntry.providerId}/${nextEntry.id}`);
+      setBusy(false);
+    } else {
+      goBack();
+    }
+  }, [busy, current.id, useDeck, commit, goBack, controls, idx, deckList, type]);
+
+  const handleMessage = useCallback(() => {
+    if (!type) return;
+    recordProfileView(current.id, type);
+    navigate(`/concierge?donorId=${current.id}&donorType=${type}&providerId=${current.providerId}`);
+  }, [type, current, navigate]);
+
+  const isSaved = favoritedIds.includes(current.id);
+
+  // Non-mobile, or no deck context: single card (original layout + behavior).
+  if (!useDeck) {
+    return (
+      <>
+        <ProfileCard providerId={current.providerId} donorId={current.id} type={type} initialPhotoUrl={current.photoUrl || undefined} onBack={goBack} />
+        {isMobile && (
+          <ProfileDetailActionBar isSaved={isSaved} busy={busy} onPass={() => handleAction("pass")} onLike={() => handleAction("like")} onMessage={handleMessage} />
+        )}
+      </>
+    );
+  }
+
+  // Mobile deck: two-card stack. Next card is mounted static underneath (z-0) so
+  // its data + hero are prefetched and ready before the current card throws off.
+  return (
+    <div className="relative h-[100dvh] overflow-hidden" data-testid="profile-detail-deck">
+      {next && (
+        <div className="absolute inset-0 z-0 overflow-y-auto" data-testid={`profile-next-${next.id}`}>
+          <ProfileCard key={`next-${next.id}`} providerId={next.providerId} donorId={next.id} type={type} initialPhotoUrl={next.photoUrl || undefined} />
+        </div>
+      )}
+      <motion.div
+        className="absolute inset-0 z-10 overflow-y-auto bg-background"
+        animate={controls}
+        data-testid={`profile-current-${current.id}`}
+      >
+        <ProfileCard key={`cur-${current.id}`} providerId={current.providerId} donorId={current.id} type={type} initialPhotoUrl={current.photoUrl || undefined} onBack={goBack} />
+        {throwDir && <ProfileThrowStamp dir={throwDir} />}
+      </motion.div>
+      <ProfileDetailActionBar isSaved={isSaved} busy={busy} onPass={() => handleAction("pass")} onLike={() => handleAction("like")} onMessage={handleMessage} />
     </div>
   );
 }

@@ -36,7 +36,7 @@ import {
   type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
 
-import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon } from "@/components/icons/marketplace-icons";
+import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
 
 // "LGBTQ+ Family Building" intentionally omitted - the dedicated "LGBTQ+ care"
 // toggle is the single control for that, so it is not duplicated here.
@@ -52,6 +52,7 @@ const TABS = [
   { id: "egg-donors", label: "Egg Donors", Icon: EggDonorIcon },
   { id: "surrogates", label: "Surrogates", Icon: SurrogateIcon },
   { id: "ivf-clinics", label: "IVF Clinics", providerTypeName: "IVF Clinic", Icon: IvfClinicIcon },
+  { id: "doctors", label: "Doctors", Icon: DoctorIcon },
   { id: "surrogacy-agencies", label: "Surrogacy Agencies", providerTypeName: "Surrogacy Agency", Icon: AgencyIcon },
   { id: "sperm-donors", label: "Sperm Donors", Icon: SpermIcon },
 ];
@@ -1038,7 +1039,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
               onSave={() => handleSave(currentDonor.id)}
               onUndo={history.length > 0 ? goBack : undefined}
               onMessage={() => { recordProfileView(currentDonor.id, type); navigate(`/concierge?donorId=${currentDonor.id}&donorType=${type}&providerId=${currentDonor.providerId}&photoUrl=${encodeURIComponent(currentDonor.photoUrl || "")}`); }}
-              onViewFullProfile={() => { recordProfileView(currentDonor.id, type); navigate(`/${typeToUrlSlug(type)}/${currentDonor.providerId}/${currentDonor.id}`, { state: { initialPhotoUrl: currentDonor.photoUrl } }); }}
+              onViewFullProfile={() => { recordProfileView(currentDonor.id, type); navigate(`/${typeToUrlSlug(type)}/${currentDonor.providerId}/${currentDonor.id}`, { state: { initialPhotoUrl: currentDonor.photoUrl, deckList: filtered.map((d) => ({ id: d.id, providerId: d.providerId, photoUrl: d.photoUrl })), deckIndex: currentIndex } }); }}
             />
           </div>
         </div>
