@@ -87,6 +87,26 @@ export function ClinicsBadge({ className }: BadgeProps) {
   );
 }
 
+export function AgencyBadge({ className }: BadgeProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Agency" className={className}>
+      <defs>
+        <linearGradient id="g-agency" x1="14" y1="6" x2="50" y2="58" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#a06bb3" />
+          <stop offset="1" stopColor="#7a3f93" />
+        </linearGradient>
+      </defs>
+      <circle cx="32" cy="32" r="30" fill="url(#g-agency)" />
+      <g transform="translate(32 32) scale(1.4) translate(-12 -12)" fill="none" stroke="#ffffff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="8.4" cy="7" r="2.1" />
+        <circle cx="15.6" cy="7" r="2.1" />
+        <path d="M4.4 18.4 C 4.4 14.4 6.3 11.8 8.4 11.8 C 10.5 11.8 12.4 14.4 12.4 18.4" />
+        <path d="M11.6 18.4 C 11.6 14.4 13.5 11.8 15.6 11.8 C 17.7 11.8 19.6 14.4 19.6 18.4" />
+      </g>
+    </svg>
+  );
+}
+
 export function DoctorsBadge({ className }: BadgeProps) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Doctors" className={className}>

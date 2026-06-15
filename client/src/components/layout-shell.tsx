@@ -763,8 +763,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; desktopOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number; fillOnActive?: boolean; isExplore?: boolean }[] = [
     { show: false /* hidden for now */, to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', mobileLabel: 'Dashboard' },
-    { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
-    { show: isProvider && !isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS },
+    // Desktop keeps the Marketplace dropdown; on mobile providers/admins get the
+    // same centered stork Explore button as parents (added below).
+    { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS, desktopOnly: true },
+    { show: isProvider && !isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS, desktopOnly: true },
+    // Mobile bottom nav: centered stork Explore button for providers + admins,
+    // matching parents. Opens the explode picker fanned to the role's own types.
+    { show: (isAdmin || (isProvider && !isAdmin)), to: '/marketplace', icon: Flame, label: 'Explore', mobileLabel: 'Explore', fillOnActive: true, mobileOnly: true, isExplore: true },
     ...(isParentOnly && !(brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY')
       ? [
           // Mobile bottom nav: a centered Explore button that opens the explode
@@ -785,12 +790,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         ]
       : []),
     { show: isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread, fillOnActive: false },
-    { show: !isParentOnly && !isAdmin, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread },
-    { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers' },
-    { show: isAdmin, to: '/admin/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing' },
-    { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge', badge: conciergeUnread },
-    { show: isAdmin, to: '/admin/test-runner', icon: FlaskConical, label: 'Test Runner', mobileLabel: 'Tests' },
-    { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents' },
+    { show: !isParentOnly && !isAdmin, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread, fillOnActive: false },
+    { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers', fillOnActive: false },
+    { show: isAdmin, to: '/admin/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing', fillOnActive: false },
+    { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge', badge: conciergeUnread, fillOnActive: false },
+    { show: isAdmin, to: '/admin/test-runner', icon: FlaskConical, label: 'Test Runner', mobileLabel: 'Tests', fillOnActive: false },
+    { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents', fillOnActive: false },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Calendar', mobileLabel: 'Calendar', badge: isProvider ? pendingMeetings : undefined, fillOnActive: false },
     { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true, fillOnActive: false },
   ];
@@ -810,13 +815,22 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // bar: Chat, Saved (Heart), Explore, Calendar, then anything else; Profile stays
   // pinned last by the assembly below. Only reorders mobile - desktop is untouched.
   if (nonProfileMobile.some(item => item.isExplore)) {
-    const rank = (it: typeof nonProfileMobile[number]) =>
-      it.to === '/chat' ? 0
-      : it.to.includes('view=saved') ? 1
-      : it.isExplore ? 2
-      : it.to === '/calendar' ? 3
-      : 99;
-    nonProfileMobile = [...nonProfileMobile].sort((a, b) => rank(a) - rank(b));
+    if (isParentOnly) {
+      const rank = (it: typeof nonProfileMobile[number]) =>
+        it.to === '/chat' ? 0
+        : it.to.includes('view=saved') ? 1
+        : it.isExplore ? 2
+        : it.to === '/calendar' ? 3
+        : 99;
+      nonProfileMobile = [...nonProfileMobile].sort((a, b) => rank(a) - rank(b));
+    } else {
+      // Providers / admins: center the stork Explore button among their own
+      // items (Profile is still pinned last by the assembly below).
+      const explore = nonProfileMobile.find(i => i.isExplore)!;
+      const others = nonProfileMobile.filter(i => !i.isExplore);
+      const mid = Math.floor(others.length / 2);
+      nonProfileMobile = [...others.slice(0, mid), explore, ...others.slice(mid)];
+    }
   }
   const bottomTabs = profileItem
     ? [...nonProfileMobile.slice(0, maxBottomTabs - 1), profileItem]

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useAppDispatch } from "@/store";
 import { setMarketplaceTab } from "@/store/uiSlice";
-import { EggsBadge, SpermBadge, SurrogateBadge, ClinicsBadge, DoctorsBadge } from "@/components/icons/provider-badges";
+import { EggsBadge, SpermBadge, SurrogateBadge, ClinicsBadge, DoctorsBadge, AgencyBadge } from "@/components/icons/provider-badges";
 
 /**
  * Explore "explode" picker - a monday.com-style fan that blooms 5 provider cards
@@ -42,6 +42,9 @@ const PROVIDERS: Provider[] = [
   { id: "egg-donors", label: "Eggs", Badge: EggsBadge },
   { id: "sperm-donors", label: "Sperm", Badge: SpermBadge },
   { id: "surrogates", label: "Surrogates", Badge: SurrogateBadge },
+  // Agencies are filtered in by allowedTypeIds (agency providers + admins only);
+  // parents never receive "surrogacy-agencies" in their allowed set.
+  { id: "surrogacy-agencies", label: "Agency", Badge: AgencyBadge },
   { id: "ivf-clinics", label: "Clinics", Badge: ClinicsBadge },
   { id: "doctors", label: "Doctors", Badge: DoctorsBadge },
 ];
