@@ -44,7 +44,7 @@ export interface TabSection {
 // and never reach the mapper. SOLD_OUT only applies to sperm donors and
 // pure Frozen Eggs donors but the type union is shared so all three
 // mappers can route through here.
-function normalizeProfileStatus(raw: string | null | undefined): "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" {
+export function normalizeProfileStatus(raw: string | null | undefined): "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" {
   if (raw === "PENDING" || raw === "MATCHED" || raw === "SOLD_OUT") return raw;
   return "AVAILABLE";
 }
@@ -61,7 +61,7 @@ function normalizeFrozenLotStatus(raw: string | null | undefined): "AVAILABLE" |
 //                           `status` column is meaningless for them
 //   - "Fresh & Frozen"   -> fresh status (the frozen side is rendered
 //                           as a second badge on the card)
-function resolveEggDonorHeadlineStatus(
+export function resolveEggDonorHeadlineStatus(
   dbDonor: any,
 ): "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" {
   const dt = (dbDonor.donorType || "").toLowerCase();

@@ -3,6 +3,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { getPhotoSrc, getProfileTypeLabel, getProfileCardSummary, getProfileDetails } from "@/lib/profile-utils";
 import type { ProfileType } from "@/lib/profile-utils";
+import { getDonorStatusStyle } from "@/lib/donor-status";
+import { resolveEggDonorHeadlineStatus, normalizeProfileStatus } from "@/components/marketplace/swipe-mappers";
 
 interface AdminControls {
   onToggleVisibility: (profileId: string, hidden: boolean) => void;
@@ -80,6 +82,21 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
   const isHidden = adminControls?.isHidden ?? false;
   const isMarketplace = variant === "marketplace";
 
+  // Resolve the same headline status the parent marketplace card shows
+  // (swipe-deck-card), so providers/admins see PENDING / MATCHED / SOLD_OUT
+  // at a glance. Egg donors route through the donorType-aware resolver
+  // (Frozen Eggs donors surface their frozen-lot state); surrogates and
+  // sperm donors use the raw status column. AVAILABLE renders nothing -
+  // presence in the list is the signal, matching the parent card.
+  const headlineStatus = type === "egg-donor"
+    ? resolveEggDonorHeadlineStatus(profile)
+    : normalizeProfileStatus(profile.status);
+  const statusStyle = headlineStatus !== "AVAILABLE" ? getDonorStatusStyle(headlineStatus) : null;
+  const statusPillBg =
+    headlineStatus === "PENDING"  ? "bg-[hsl(var(--brand-warning))]/90 text-white" :
+    headlineStatus === "SOLD_OUT" ? "bg-destructive/90 text-destructive-foreground" :
+    /* MATCHED */                   "bg-muted-foreground/80 text-background";
+
   return (
     <Card
       data-testid={isMarketplace ? `card-profile-${profile.id}` : `card-${type}-${profile.id}`}
@@ -101,22 +118,29 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
             <User className="w-12 h-12 text-muted-foreground/60" />
           </div>
         )}
-        {isHidden && (
-          <div className="absolute top-2 left-2 z-10" data-testid={`badge-hidden-${profile.id}`}>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow">
+        <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
+          {isHidden && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow" data-testid={`badge-hidden-${profile.id}`}>
               <EyeOff className="w-3 h-3" />
               HIDDEN
             </span>
-          </div>
-        )}
-        {(profile.isPremium || adminControls?.isPremium) && (
-          <div className={`absolute ${isHidden ? "top-9" : "top-2"} left-2 z-10`} data-testid={`badge-premium-${profile.id}`}>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow">
+          )}
+          {(profile.isPremium || adminControls?.isPremium) && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow" data-testid={`badge-premium-${profile.id}`}>
               <Crown className="w-3 h-3" />
               PREMIUM
             </span>
-          </div>
-        )}
+          )}
+          {statusStyle && (
+            <span
+              className={`inline-flex items-center px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading shadow ${statusPillBg}`}
+              title={statusStyle.description}
+              data-testid={`badge-status-${profile.id}`}
+            >
+              {statusStyle.label}
+            </span>
+          )}
+        </div>
         {profile.isExperienced && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 pt-8 flex items-end justify-end">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow">
