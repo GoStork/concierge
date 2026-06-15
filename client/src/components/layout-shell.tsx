@@ -560,7 +560,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    return tabs.filter(tab => tab.id !== "surrogacy-agencies");
+    return tabs;
   }, [isProvider, providerData]);
 
   const navGlassStyle = useMemo(() => {
@@ -741,6 +741,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const ALL_MARKETPLACE_TABS: { id: string; label: string; mobileLabel: string; icon: any }[] = [
     { id: "egg-donors", label: "Egg Donors", mobileLabel: "Donors", icon: EggDonorIcon },
     { id: "surrogates", label: "Surrogates", mobileLabel: "Surrogates", icon: SurrogateIcon },
+    { id: "surrogacy-agencies", label: "Agency", mobileLabel: "Agency", icon: AgencyIcon },
     { id: "ivf-clinics", label: "IVF Clinics", mobileLabel: "IVF", icon: IvfClinicIcon },
     { id: "doctors", label: "Doctors", mobileLabel: "Doctors", icon: DoctorIcon },
     { id: "sperm-donors", label: "Sperm Donors", mobileLabel: "Sperm", icon: SpermIcon },
@@ -748,7 +749,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // For parents, show only the provider types matching their "Services You're
   // Looking For" (deselecting Fertility Clinic hides IVF Clinics + Doctors).
   // Admins/providers keep the full set. Falls back to all when services are unset.
-  const visibleTypeIds = isParentOnly ? parentVisibleTypeIds(parentProfile?.interestedServices) : null;
+  // Type ids each role may browse: parents -> their interested services;
+  // providers -> their approved-service tabs (incl. their own "Agency" tab);
+  // admins -> all. This single list drives the nav, the mobile submenu, and the
+  // stork Explore picker, so every surface agrees on what a role can see.
+  const providerTypeIds = (isProvider && !isAdmin) ? providerMarketplaceTabs.map(t => t.id) : null;
+  const visibleTypeIds = isParentOnly
+    ? parentVisibleTypeIds(parentProfile?.interestedServices)
+    : providerTypeIds;
   const MARKETPLACE_TABS = visibleTypeIds
     ? ALL_MARKETPLACE_TABS.filter(t => visibleTypeIds.includes(t.id))
     : ALL_MARKETPLACE_TABS;

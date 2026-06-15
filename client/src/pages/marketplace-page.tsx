@@ -1487,7 +1487,12 @@ export default function MarketplacePage() {
           const name = (s.providerType?.name || "").toLowerCase();
           if (name.includes("sperm bank") && !tabs.includes("sperm-donors")) tabs.push("sperm-donors");
           if ((name.includes("egg donor") || name.includes("egg bank")) && !tabs.includes("egg-donors")) tabs.push("egg-donors");
-          if (name.includes("surrogacy") && !tabs.includes("surrogates")) tabs.push("surrogates");
+          if (name.includes("surrogacy")) {
+            // Surrogacy agencies get BOTH the Surrogates tab (their carriers) and
+            // their own "Agency" tab - mirrors clinics getting IVF Clinics + Doctors.
+            if (!tabs.includes("surrogates")) tabs.push("surrogates");
+            if (!tabs.includes("surrogacy-agencies")) tabs.push("surrogacy-agencies");
+          }
           if (name.includes("ivf") || name.includes("clinic")) {
             // Clinics get BOTH the IVF Clinics tab and the Doctors tab (doctors
             // practice at clinics) - mirrors the parent experience. Both are scoped
@@ -2072,7 +2077,12 @@ export default function MarketplacePage() {
               <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
             )}
             {activeTab === "surrogacy-agencies" && (
-              <AgencyDeck providers={providers} searchQuery={searchQuery} />
+              // Providers see only their OWN agency profile here (parallel to how a
+              // clinic's IVF Clinics tab is scoped to their own clinic); admins see all.
+              <AgencyDeck
+                providers={isProviderUser ? (providers || []).filter((p) => p.id === (user as any)?.providerId) : providers}
+                searchQuery={searchQuery}
+              />
             )}
             {activeTab === "egg-donors" && (
               <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" fetchMore={fetchMoreEggDonors} hasNextPage={hasMoreEggDonors} isFetchingMore={isFetchingMoreEggDonors} />
