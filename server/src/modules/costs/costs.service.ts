@@ -730,7 +730,18 @@ export class CostsService {
         spermDonorVialTypes = sd?.vialTypes ?? [];
       }
     }
-    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed, spermDonorVialTypes, showAll);
+    // STRICT DONOR-PROFILE SCOPE: when standing on a single-product donor
+    // profile (egg donor or sperm donor), the cost section must show ONLY that
+    // donor's own programs - never the agency's surrogacy / IVF programs. The
+    // generic matcher unions implicitNeed onto the logged-in parent's broader
+    // needs (so a parent who also wants surrogacy would otherwise see surrogacy
+    // programs leak onto an egg-donor profile). strictScopeType forces a pure
+    // single-service filter that ignores the parent's other needs and showAll.
+    // Surrogate profiles are intentionally excluded - combined international
+    // packages legitimately surface there and in the combined-cost flow.
+    const strictScopeType =
+      implicitNeed === "egg_donor" || implicitNeed === "sperm_donor" ? implicitNeed : null;
+    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed, spermDonorVialTypes, showAll, strictScopeType);
   }
 
   /**
@@ -798,7 +809,7 @@ export class CostsService {
       // surrogacy matching flow (they selected this country), so bypass the
       // "complete your profile" gate and surface the program costs - same
       // semantics as standing on a specific surrogate profile.
-      const res = await this._getProviderParentPrograms(pid, parentAccountId, null, "surrogacy", null, false);
+      const res = await this._getProviderParentPrograms(pid, parentAccountId, null, "surrogacy", null, false, null);
       if (res.isPartialProfile) isPartialProfile = true;
       for (const prog of res.programs) {
         let services = (prog.serviceTypes || []).filter((s: string) => JOURNEY_SERVICES.includes(s));
@@ -911,6 +922,7 @@ export class CostsService {
     implicitNeed: string | null,
     spermDonorVialTypes: string[] | null,
     showAll: boolean = false,
+    strictScopeType: string | null = null,
   ) {
     const { subtypes, isPartialProfile } =
       await this.getMatchingSubtypesForParent(parentAccountId);
@@ -1033,13 +1045,28 @@ export class CostsService {
     // overlaps. IVF-tagged programs additionally filter by the biology-driven
     // subtype list so we don't show "own eggs" programs to donor-eggs parents.
     const activeProviderTypeIdsArr = Array.from(activeProviderTypeIds) as string[];
+    // serviceTypes filter:
+    //  - strictScopeType (egg/sperm donor profile): show ONLY programs that are
+    //    purely that donor's service. The program must carry the scope tag AND
+    //    carry none of the other journey services - a program tagged
+    //    ["surrogacy","egg_donor","ivf_clinic"] is a combined package and must
+    //    not leak onto a single egg-donor profile. This overrides showAll and
+    //    the parent-needs union by design.
+    //  - showAll: skip the intersection entirely (parent opted to browse all).
+    //  - default: intersect with the parent's needs (hasSome).
+    const ALL_JOURNEY_SERVICE_TYPES = ["surrogacy", "egg_donor", "ivf_clinic", "sperm_donor"];
+    const serviceTypeFilter = strictScopeType
+      ? {
+          serviceTypes: { has: strictScopeType },
+          NOT: { serviceTypes: { hasSome: ALL_JOURNEY_SERVICE_TYPES.filter((t) => t !== strictScopeType) } },
+        }
+      : showAll
+        ? {}
+        : { serviceTypes: { hasSome: parentNeedsArr } };
     const programs = await this.prisma.costProgram.findMany({
       where: {
         providerId,
-        // When showAll is on, skip the parent-needs intersection so every
-        // serviceTypes tag passes. The parent has explicitly opted to see
-        // everything the provider offers regardless of their own state.
-        ...(showAll ? {} : { serviceTypes: { hasSome: parentNeedsArr } }),
+        ...serviceTypeFilter,
         costSheets: { some: { status: "APPROVED" } },
         // Two independent filters combined via AND so they don't fight the
         // top-level OR each other would otherwise overwrite.
