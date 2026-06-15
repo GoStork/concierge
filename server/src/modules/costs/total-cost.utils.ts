@@ -24,6 +24,49 @@ export async function findProviderTypeIdForDonorType(
   return service?.providerTypeId;
 }
 
+// Maps a donor type (+ egg fresh/frozen) to the canonical subTypes[] coverage
+// leaf carried on cost sheets, so the total-cost calculator matches sheets the
+// same way the parent-facing matcher does. Returns null when the donor type has
+// no cost-sheet coverage concept (then we fall back to any provider sheet).
+function canonicalSubTypeLeaf(donorType: string, subType?: string | null): string | null {
+  if (donorType === "egg-donor") return subType === "frozen" ? "egg_donor_frozen" : "egg_donor_fresh";
+  if (donorType === "surrogate") return "surrogacy";
+  if (donorType === "sperm-donor") return "sperm_donor";
+  return null;
+}
+
+// All canonical subTypes[] leaves that belong to a donor type's own service, so
+// we can tell a DEDICATED single-service sheet from a BUNDLED multi-service one
+// that merely also covers this service.
+function serviceLeavesForDonorType(donorType: string): string[] {
+  if (donorType === "egg-donor") return ["egg_donor_fresh", "egg_donor_frozen"];
+  if (donorType === "surrogate") return ["surrogacy"];
+  if (donorType === "sperm-donor") return ["sperm_donor"];
+  return [];
+}
+
+// Among cost sheets that all cover the target leaf, pick the one most specific to
+// this service: a dedicated sheet (every subType is within this service) beats a
+// bundled multi-service sheet (so an egg donor gets the Egg Donation Program
+// price, not a surrogacy+IVF package that happens to include donor eggs); then
+// fewest subTypes; then newest version.
+function pickMostSpecificSheet<T extends { subTypes?: string[] | null; version?: number | null }>(
+  sheets: T[],
+  serviceLeaves: string[],
+): T | null {
+  if (sheets.length === 0) return null;
+  const isDedicated = (s: T) => (s.subTypes || []).length > 0 && (s.subTypes || []).every((st) => serviceLeaves.includes(st));
+  return [...sheets].sort((a, b) => {
+    const ad = isDedicated(a) ? 0 : 1;
+    const bd = isDedicated(b) ? 0 : 1;
+    if (ad !== bd) return ad - bd;
+    const al = (a.subTypes || []).length;
+    const bl = (b.subTypes || []).length;
+    if (al !== bl) return al - bl;
+    return (b.version || 0) - (a.version || 0);
+  })[0];
+}
+
 export async function resolveCompensationAndTotalCost(
   prisma: PrismaService,
   providerId: string,
@@ -32,31 +75,29 @@ export async function resolveCompensationAndTotalCost(
   sheetStatuses: string[] = ["APPROVED"],
   subType?: string | null,
 ): Promise<{ resolvedCompensation: number | null; calculatedTotalCost: { min: number; max: number } | null }> {
+  // Still needed below to identify base-compensation template fields.
   const providerTypeId = await findProviderTypeIdForDonorType(prisma, providerId, donorType);
 
+  // Match cost sheets by the canonical subTypes[] coverage leaf - the same field
+  // the parent-facing matcher uses - instead of the legacy providerTypeId, which
+  // the upload-first flow never populates (the AI classifier sets serviceTypes /
+  // subTypes but not providerTypeId). This makes sheets reliably discoverable and
+  // lets a bundled multi-service sheet (e.g. egg-donor + surrogacy) correctly
+  // count toward each service it covers.
+  const leaf = canonicalSubTypeLeaf(donorType, subType);
   const baseWhere: any = {
     providerId,
     parentClientId: null,
     status: { in: sheetStatuses },
-    ...(providerTypeId ? { providerTypeId } : {}),
   };
-  let sheetWhere: any;
-  if (subType === "fresh") {
-    sheetWhere = {
-      AND: [baseWhere],
-      OR: [{ subType: "fresh" }, { subType: null }],
-    };
-  } else if (subType !== undefined) {
-    sheetWhere = { ...baseWhere, subType };
-  } else {
-    sheetWhere = baseWhere;
-  }
+  const sheetWhere: any = leaf ? { ...baseWhere, subTypes: { has: leaf } } : baseWhere;
 
-  const approvedSheet = await prisma.providerCostSheet.findFirst({
+  const candidateSheets = await prisma.providerCostSheet.findMany({
     where: sheetWhere,
     include: { items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] } },
     orderBy: { version: "desc" },
   });
+  const approvedSheet = pickMostSpecificSheet(candidateSheets, serviceLeavesForDonorType(donorType));
 
   if (!approvedSheet || approvedSheet.items.length === 0) {
     return { resolvedCompensation: profileCompensation ?? null, calculatedTotalCost: null };
@@ -72,7 +113,22 @@ export async function resolveCompensationAndTotalCost(
     }
   }
 
-  const isBaseCompItem = (item: { key: string }) => baseCompTemplateKeys.has(item.key);
+  // An item is the base compensation line when it matches a base-comp template
+  // field name, OR - since AI-extracted keys routinely differ from the template
+  // names (e.g. "Donor Compensation" vs the "Egg Donor Compensation" template) -
+  // when it sits in the canonical compensation category and reads as a base
+  // compensation line rather than a surcharge / bonus / add-on.
+  const baseCompCategories = new Set(["donor_compensation", "surrogate_compensation"]);
+  const isBaseCompItem = (item: { key: string; category?: string }) => {
+    if (baseCompTemplateKeys.has(item.key)) return true;
+    const cat = (item.category || "").toLowerCase();
+    const key = (item.key || "").toLowerCase();
+    return (
+      baseCompCategories.has(cat) &&
+      key.includes("compensation") &&
+      !/surcharge|additional|bonus|vip|premium|extra/.test(key)
+    );
+  };
 
   const baseCompItem = approvedSheet.items.find(item => isBaseCompItem(item) && item.isIncluded);
 
@@ -108,22 +164,17 @@ async function getFrozenEggSheetData(
   providerId: string,
   sheetStatuses: string[] = ["APPROVED"],
 ): Promise<{ eggLotCost: number | null; numberOfEggs: number | null } | null> {
-  const eggDonorType = await prisma.providerType.findFirst({
-    where: { name: { contains: "Egg Donor Agency", mode: "insensitive" } },
-  });
-  if (!eggDonorType) return null;
-
-  const frozenSheet = await prisma.providerCostSheet.findFirst({
+  const frozenCandidates = await prisma.providerCostSheet.findMany({
     where: {
       providerId,
       status: { in: sheetStatuses },
       parentClientId: null,
-      subType: "frozen",
-      providerTypeId: eggDonorType.id,
+      subTypes: { has: "egg_donor_frozen" },
     },
     include: { items: true },
     orderBy: { version: "desc" },
   });
+  const frozenSheet = pickMostSpecificSheet(frozenCandidates, serviceLeavesForDonorType("egg-donor"));
   if (!frozenSheet || frozenSheet.items.length === 0) return null;
 
   const lotCostItem = frozenSheet.items.find((i) => /egg lot cost/i.test(i.key) && i.isIncluded);
@@ -167,13 +218,19 @@ export async function recalcAndPersistTotalCostsForProvider(
             },
           });
         } else {
-          const { calculatedTotalCost } = await resolveCompensationAndTotalCost(
+          const { resolvedCompensation, calculatedTotalCost } = await resolveCompensationAndTotalCost(
             prisma, providerId, "egg-donor", donor.donorCompensation ?? null,
             ["APPROVED"], "fresh",
           );
           const updateData: any = {
             totalCost: calculatedTotalCost ? Math.round(calculatedTotalCost.min) : null,
           };
+          // When the scraped profile carries no compensation (e.g. Eggspecting
+          // doesn't publish per-donor comp), fall back to the agency cost sheet's
+          // base Egg Donor Compensation so the profile field isn't blank.
+          if (donor.donorCompensation == null && resolvedCompensation != null) {
+            updateData.donorCompensation = Math.round(resolvedCompensation);
+          }
           if (isFreshAndFrozen && frozenSheetData) {
             updateData.eggLotCost = frozenSheetData.eggLotCost != null ? Math.round(frozenSheetData.eggLotCost) : null;
             updateData.numberOfEggs = frozenSheetData.numberOfEggs != null ? Math.round(frozenSheetData.numberOfEggs) : null;
@@ -191,17 +248,21 @@ export async function recalcAndPersistTotalCostsForProvider(
       });
       for (const s of surrogates) {
         const comp = s.baseCompensation != null ? Number(s.baseCompensation) : null;
-        const { calculatedTotalCost } = await resolveCompensationAndTotalCost(
+        const { resolvedCompensation, calculatedTotalCost } = await resolveCompensationAndTotalCost(
           prisma, providerId, "surrogate", comp,
         );
+        const sUpdate: any = {};
         if (calculatedTotalCost) {
-          await prisma.surrogate.update({
-            where: { id: s.id },
-            data: {
-              totalCostMin: calculatedTotalCost.min,
-              totalCostMax: calculatedTotalCost.max,
-            },
-          });
+          sUpdate.totalCostMin = calculatedTotalCost.min;
+          sUpdate.totalCostMax = calculatedTotalCost.max;
+        }
+        // Fall back to the cost sheet's base Surrogate Compensation when the
+        // scraped profile has none.
+        if (comp == null && resolvedCompensation != null) {
+          sUpdate.baseCompensation = resolvedCompensation;
+        }
+        if (Object.keys(sUpdate).length > 0) {
+          await prisma.surrogate.update({ where: { id: s.id }, data: sUpdate });
         }
       }
     } else if (donorType === "sperm-donor") {
@@ -211,14 +272,19 @@ export async function recalcAndPersistTotalCostsForProvider(
       });
       for (const donor of donors) {
         const comp = donor.compensation != null ? Number(donor.compensation) : null;
-        const { calculatedTotalCost } = await resolveCompensationAndTotalCost(
+        const { resolvedCompensation, calculatedTotalCost } = await resolveCompensationAndTotalCost(
           prisma, providerId, "sperm-donor", comp,
         );
+        const spUpdate: any = {};
         if (calculatedTotalCost) {
-          await prisma.spermDonor.update({
-            where: { id: donor.id },
-            data: { totalCost: Math.round(calculatedTotalCost.min) },
-          });
+          spUpdate.totalCost = Math.round(calculatedTotalCost.min);
+        }
+        // Fall back to the cost sheet's base compensation when the profile has none.
+        if (comp == null && resolvedCompensation != null) {
+          spUpdate.compensation = Math.round(resolvedCompensation);
+        }
+        if (Object.keys(spUpdate).length > 0) {
+          await prisma.spermDonor.update({ where: { id: donor.id }, data: spUpdate });
         }
       }
     }
@@ -288,13 +354,12 @@ async function getAllSpermDonorSheetItems(
   providerId: string,
   statuses: string[],
 ): Promise<any[]> {
-  const providerTypeId = await findProviderTypeIdForDonorType(prisma, providerId, "sperm-donor");
   const allSheets = await prisma.providerCostSheet.findMany({
     where: {
       providerId,
       parentClientId: null,
       status: { in: statuses },
-      ...(providerTypeId ? { providerTypeId } : {}),
+      subTypes: { has: "sperm_donor" },
     },
     include: { items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] } },
   });
@@ -308,31 +373,25 @@ async function getProviderSheetData(
   statuses: string[],
   subType?: string | null,
 ): Promise<CachedSheetData> {
+  // Still needed below to identify base-compensation template fields.
   const providerTypeId = await findProviderTypeIdForDonorType(prisma, providerId, donorType);
 
+  // Match by the canonical subTypes[] leaf, not the legacy providerTypeId the
+  // upload-first flow never sets (see resolveCompensationAndTotalCost).
+  const leaf = canonicalSubTypeLeaf(donorType, subType);
   const baseWhere: any = {
     providerId,
     parentClientId: null,
     status: { in: statuses },
-    ...(providerTypeId ? { providerTypeId } : {}),
   };
-  let sheetWhere: any;
-  if (subType === "fresh") {
-    sheetWhere = {
-      AND: [baseWhere],
-      OR: [{ subType: "fresh" }, { subType: null }],
-    };
-  } else if (subType !== undefined) {
-    sheetWhere = { ...baseWhere, subType };
-  } else {
-    sheetWhere = baseWhere;
-  }
+  const sheetWhere: any = leaf ? { ...baseWhere, subTypes: { has: leaf } } : baseWhere;
 
-  const approvedSheet = await prisma.providerCostSheet.findFirst({
+  const candidateSheets = await prisma.providerCostSheet.findMany({
     where: sheetWhere,
     include: { items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] } },
     orderBy: { version: "desc" },
   });
+  const approvedSheet = pickMostSpecificSheet(candidateSheets, serviceLeavesForDonorType(donorType));
 
   const baseCompTemplateKeys = new Set<string>();
   if (providerTypeId) {
@@ -389,7 +448,22 @@ function computeCostFromSheet(
     return { resolvedCompensation: profileCompensation ?? null, calculatedTotalCost: null };
   }
 
-  const isBaseCompItem = (item: { key: string }) => baseCompTemplateKeys.has(item.key);
+  // An item is the base compensation line when it matches a base-comp template
+  // field name, OR - since AI-extracted keys routinely differ from the template
+  // names (e.g. "Donor Compensation" vs the "Egg Donor Compensation" template) -
+  // when it sits in the canonical compensation category and reads as a base
+  // compensation line rather than a surcharge / bonus / add-on.
+  const baseCompCategories = new Set(["donor_compensation", "surrogate_compensation"]);
+  const isBaseCompItem = (item: { key: string; category?: string }) => {
+    if (baseCompTemplateKeys.has(item.key)) return true;
+    const cat = (item.category || "").toLowerCase();
+    const key = (item.key || "").toLowerCase();
+    return (
+      baseCompCategories.has(cat) &&
+      key.includes("compensation") &&
+      !/surcharge|additional|bonus|vip|premium|extra/.test(key)
+    );
+  };
   const baseCompItem = approvedSheet.items.find(item => isBaseCompItem(item) && item.isIncluded);
 
   const hasProfileComp = profileCompensation != null;
