@@ -5023,8 +5023,19 @@ async function runSyncJob(
     const paginationLinks: string[] = extraction.paginationLinks || [];
 
     let allItems = [...items];
+    const globalSeen = new Set<string>();      // dedup across every import call this run
+    const allScrapedIds = new Set<string>();   // every externalId we imported (for stale detection)
+    let streamed = false;                      // true once we import per-page instead of all-at-once
+    let totalIsFixed = false;                  // true when job.total is known upfront (stable bar)
 
-    if (profileLinks.length > 0 && items.length < 3) {
+    // Eggspecting and other WordPress donor lists using wp-paginate serve the full
+    // catalog across ?paged=2,3,... of the SAME listing URL. Detect that here; the
+    // actual crawl + per-page streaming runs below, after enrichAndImportItems is
+    // defined. When this is a WP-paginated site we skip the Gemini-pagination and
+    // profile-link paths entirely (those cards have no per-donor pages and 404).
+    const hasWpPaging = /[?&]paged=\d+/.test(mainHtml) || /wp-paginate/i.test(mainHtml);
+
+    if (!hasWpPaging && profileLinks.length > 0 && items.length < 3) {
       const maxProfiles = Math.min(profileLinks.length, profileLimit && profileLimit > 0 ? profileLimit : 50);
       job.total = maxProfiles;
 
@@ -5049,7 +5060,7 @@ async function runSyncJob(
       }
     }
 
-    if (paginationLinks.length > 0) {
+    if (!hasWpPaging && paginationLinks.length > 0) {
       // Discover ALL listing pages (cap high only as a runaway guard). Checkpoint
       // resume makes long discovery safe - an interrupted sync continues where it
       // stopped instead of restarting. Previously capped at 10 pages, which
@@ -5093,21 +5104,35 @@ async function runSyncJob(
       }
     }
 
-    const seen = new Set<string>();
-    let uniqueItems = allItems.filter((item) => {
+    // Enrich + import a freshly-discovered batch of items immediately, so the UI
+    // fills live per page during discovery instead of waiting for the whole
+    // catalog to be crawled. Dedup is shared across calls via globalSeen (the same
+    // donor never imports twice); allScrapedIds accumulates for stale detection.
+    // The WordPress pagination crawl below streams each page through this; when
+    // nothing streams (single-page / EDC / Gemini-pagination paths) it is called
+    // once with the full allItems set.
+    const enrichAndImportItems = async (rawItems: any[]) => {
+    if (isJobCancelled(job.id)) return;
+    let uniqueItems = rawItems.filter((item) => {
       const key = item.externalId || JSON.stringify(item);
-      if (seen.has(key)) return false;
-      seen.add(key);
+      if (globalSeen.has(key)) return false;
+      globalSeen.add(key);
       return true;
     });
-    if (profileLimit && profileLimit > 0 && uniqueItems.length > profileLimit) {
-      console.log(`[donor-sync] Limiting to ${profileLimit} profiles (test mode)`);
-      uniqueItems = uniqueItems.slice(0, profileLimit);
+    // Honor the test-mode profile cap across the whole run, not per page.
+    if (profileLimit && profileLimit > 0) {
+      const remaining = profileLimit - job.total;
+      if (remaining <= 0) return;
+      if (uniqueItems.length > remaining) uniqueItems = uniqueItems.slice(0, remaining);
     }
+    if (uniqueItems.length === 0) return;
 
-    // Try to assign profileUrls from profileLinks by matching externalId in URLs
+    // Try to assign profileUrls from profileLinks by matching externalId in URLs.
+    // Skipped for WordPress card-listing sites (hasWpPaging): their cards have no
+    // individual profile pages, so Gemini's profileLinks 404 - all donor data is
+    // already on the listing card, so the per-donor fetch is pure waste + log noise.
     for (const item of uniqueItems) {
-      if (!item.profileUrl && item.externalId && profileLinks.length > 0) {
+      if (!hasWpPaging && !item.profileUrl && item.externalId && profileLinks.length > 0) {
         const matchingLink = profileLinks.find((link: string) =>
           link.includes(item.externalId) || link.toLowerCase().includes(item.externalId.toLowerCase())
         );
@@ -5115,10 +5140,13 @@ async function runSyncJob(
           item.profileUrl = matchingLink;
         }
       }
+      if (item.externalId) allScrapedIds.add(item.externalId);
     }
 
-    job.total = uniqueItems.length;
-    job.processed = 0;
+    // When the total is known upfront (e.g. "Page 1 of N" pagination), job.total is
+    // fixed before streaming so the progress bar tracks once from 0 to 100% instead
+    // of the denominator growing each page. Otherwise accumulate as we discover.
+    if (!totalIsFixed) job.total += uniqueItems.length;
 
     // Generate a card hash for each item based on its listing-level data so we can
     // skip full profile fetches for unchanged profiles (same as JMS/EDC paths)
@@ -5353,9 +5381,88 @@ async function runSyncJob(
         await new Promise((r) => setTimeout(r, 500));
       }
     }
+    }; // end enrichAndImportItems
+
+    // Deterministic WordPress ?paged=N crawl - runs now that enrichAndImportItems
+    // is defined. WP lists put all data on the listing cards (no per-donor pages),
+    // so each page imports inline and the UI + progress bar fill live during
+    // discovery instead of waiting for the whole catalog to be crawled. We follow
+    // this deterministically rather than relying on Gemini to surface every
+    // pagination link, which it does not do reliably (it typically returns "Next").
+    if (hasWpPaging && items.length > 0) {
+      streamed = true;
+
+      // wp-paginate renders the total page count on page 1 ("Page 1 of N"), so we
+      // read it straight off the HTML we already have - no extra page loads. That
+      // lets us (a) set a STABLE progress denominator upfront so the bar tracks
+      // once from 0 to 100% instead of growing per page, and (b) stop exactly at
+      // the last page instead of probing past the end. Only when not in test mode
+      // (no profileLimit), so the "Sync N Profiles" cap logic stays simple.
+      const pageOfMatch = mainHtml.match(/Page\s+\d+\s+of\s+(\d+)/i);
+      const totalPages = pageOfMatch ? parseInt(pageOfMatch[1], 10) : 0;
+      const testMode = !!(profileLimit && profileLimit > 0);
+      if (totalPages > 1 && !testMode) {
+        job.total = totalPages * items.length; // estimate; reconciled to exact at the end
+        totalIsFixed = true;
+        console.log(`[donor-sync] Donor list has ${totalPages} pages (~${job.total} donors) - fixed progress bar`);
+      }
+
+      job.currentStep = totalPages > 1 ? `Importing donors - page 1 of ${totalPages}...` : "Importing donors - page 1...";
+      await enrichAndImportItems(items); // stream page 1 immediately
+
+      const lastPage = totalPages > 1 ? totalPages : 200; // 200 = runaway guard when unknown
+      let emptyStreak = 0;
+      for (let pageNum = 2; pageNum <= lastPage; pageNum++) {
+        if (isJobCancelled(job.id)) break;
+        if (testMode && job.total >= profileLimit!) break;
+        const u = new URL(sourceUrl);
+        if (!u.pathname.endsWith("/")) u.pathname += "/";
+        u.search = `paged=${pageNum}`;
+        const pagedUrl = u.href;
+        const before = globalSeen.size;
+        try {
+          job.currentStep = totalPages > 1
+            ? `Importing donors - page ${pageNum} of ${totalPages}...`
+            : `Importing donors - page ${pageNum}...`;
+          const pageHtml = await fetchHtml(pagedUrl, sessionCookies);
+          if (pageHtml.includes('type="password"')) break; // session bounced to login
+          const pageData = await extractDonorsFromPage(pageHtml, pagedUrl, job.type);
+          const pageItems =
+            job.type === "surrogate" ? pageData?.surrogates || [] : pageData?.donors || [];
+          await enrichAndImportItems(pageItems); // import this page's donors now
+        } catch (err: any) {
+          // A 404 past the last page is the normal wp-paginate terminator.
+          console.log(`[donor-sync] Pagination stopped at page ${pageNum}: ${err.message}`);
+          break;
+        }
+        const added = globalSeen.size - before; // new unique donors this page contributed
+        console.log(`[donor-sync] Pagination page ${pageNum}${totalPages > 1 ? `/${totalPages}` : ""}: ${added} new (imported ${job.processed} so far)`);
+        // When the total page count is unknown, stop once a page adds no NEW donors
+        // (end of catalog / wp-paginate repeating the last page). When we know the
+        // total, the loop bound already stops us cleanly at the last page.
+        if (totalPages <= 1) {
+          if (added === 0) { if (++emptyStreak >= 2) break; } else emptyStreak = 0;
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+
+      // Reconcile the estimated denominator to the exact imported count so the bar
+      // lands precisely on 100% rather than stopping short of a too-high estimate.
+      if (totalIsFixed) job.total = job.processed;
+      console.log(`[donor-sync] Deterministic pagination imported ${job.processed} ${job.type} profiles across pages`);
+    }
+
+    // Non-streamed discovery paths (single-page, EDC/Gemini pagination, profile
+    // links) collected everything into allItems; import it once here. The WP
+    // pagination path already streamed each page through enrichAndImportItems.
+    if (!streamed) {
+      job.total = 0;
+      job.processed = 0;
+      await enrichAndImportItems(allItems);
+    }
 
     try {
-      const scrapedIds = new Set(uniqueItems.map((d: any) => d.externalId).filter(Boolean));
+      const scrapedIds = allScrapedIds;
       job.staleProfilesMarked = await markStaleProfiles(prisma, job.providerId, job.type, scrapedIds);
     } catch (e: any) {
       job.errors.push(`Stale profile detection error: ${e.message}`);
@@ -5366,9 +5473,9 @@ async function runSyncJob(
     // login or the post-login scrape silently failed (wrong/expired/wiped
     // password, unsolved captcha, or the source URL not pointing at the donor
     // list). Surface that loudly instead of reporting SUCCESS on an empty import.
-    // (uniqueItems.length === 0 means nothing was even discovered - distinct from
-    // a re-sync where existing donors are skipped as unchanged.)
-    const authenticatedButEmpty = !!credentials && uniqueItems.length === 0;
+    // (globalSeen.size === 0 means nothing was even discovered - distinct from a
+    // re-sync where existing donors are skipped as unchanged.)
+    const authenticatedButEmpty = !!credentials && globalSeen.size === 0;
     if (authenticatedButEmpty) {
       const msg =
         "Imported 0 profiles despite credentials being configured - login or the donor-list scrape likely failed. Check that the Source URL points at the donor list, the password is current, and any login captcha was solved.";
