@@ -11,6 +11,7 @@ import {
   isRecaptchaEnterprise,
   solveRecaptchaV2,
 } from "./captcha-solver";
+import { encryptNullable, decryptNullable } from "../../lib/encrypt";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -2085,14 +2086,22 @@ export async function getSyncConfig(
   providerId: string,
   type: DonorType,
 ) {
-  switch (type) {
-    case "egg-donor":
-      return prisma.eggDonorSyncConfig.findUnique({ where: { providerId } });
-    case "surrogate":
-      return prisma.surrogateSyncConfig.findUnique({ where: { providerId } });
-    case "sperm-donor":
-      return prisma.spermDonorSyncConfig.findUnique({ where: { providerId } });
+  const row =
+    type === "egg-donor"
+      ? await prisma.eggDonorSyncConfig.findUnique({ where: { providerId } })
+      : type === "surrogate"
+        ? await prisma.surrogateSyncConfig.findUnique({ where: { providerId } })
+        : await prisma.spermDonorSyncConfig.findUnique({ where: { providerId } });
+
+  // The stored password is encrypted at rest (AES-256-GCM). Decrypt it here so
+  // callers (runSyncJob -> credentials) get the plaintext login. decryptNullable
+  // returns legacy plaintext values unchanged, so pre-encryption rows keep
+  // working without a migration. Note: the config GET endpoint whitelists fields
+  // and never returns encryptedPassword to the client, so this never leaks.
+  if (row?.encryptedPassword) {
+    return { ...row, encryptedPassword: decryptNullable(row.encryptedPassword) };
   }
+  return row;
 }
 
 export async function saveSyncConfig(
@@ -2101,30 +2110,41 @@ export async function saveSyncConfig(
   type: DonorType,
   data: { databaseUrl: string; username?: string; password?: string },
 ) {
-  const payload = {
+  const hasNewPassword =
+    typeof data.password === "string" && data.password.trim().length > 0;
+
+  const baseFields = {
     databaseUrl: data.databaseUrl,
     username: data.username || null,
-    encryptedPassword: data.password || null,
   };
+  const encryptedPassword = hasNewPassword ? encryptNullable(data.password!) : null;
+
+  // Only touch the password column when a non-empty password is supplied, so
+  // editing the URL/username with a blank password field does NOT wipe the
+  // stored credential (the old behavior silently broke authenticated syncs).
+  const updatePayload = hasNewPassword
+    ? { ...baseFields, encryptedPassword }
+    : baseFields;
+  const createPayload = { providerId, ...baseFields, encryptedPassword };
 
   switch (type) {
     case "egg-donor":
       return prisma.eggDonorSyncConfig.upsert({
         where: { providerId },
-        update: payload,
-        create: { providerId, ...payload },
+        update: updatePayload,
+        create: createPayload,
       });
     case "surrogate":
       return prisma.surrogateSyncConfig.upsert({
         where: { providerId },
-        update: payload,
-        create: { providerId, ...payload },
+        update: updatePayload,
+        create: createPayload,
       });
     case "sperm-donor":
       return prisma.spermDonorSyncConfig.upsert({
         where: { providerId },
-        update: payload,
-        create: { providerId, ...payload },
+        update: updatePayload,
+        create: createPayload,
       });
   }
 }
@@ -5342,10 +5362,28 @@ async function runSyncJob(
       console.error(`[donor-sync] Stale profile detection error: ${e.message}`);
     }
 
+    // An authenticated sync that discovered ZERO profiles almost always means
+    // login or the post-login scrape silently failed (wrong/expired/wiped
+    // password, unsolved captcha, or the source URL not pointing at the donor
+    // list). Surface that loudly instead of reporting SUCCESS on an empty import.
+    // (uniqueItems.length === 0 means nothing was even discovered - distinct from
+    // a re-sync where existing donors are skipped as unchanged.)
+    const authenticatedButEmpty = !!credentials && uniqueItems.length === 0;
+    if (authenticatedButEmpty) {
+      const msg =
+        "Imported 0 profiles despite credentials being configured - login or the donor-list scrape likely failed. Check that the Source URL points at the donor list, the password is current, and any login captcha was solved.";
+      job.errors.push(msg);
+      console.warn(`[donor-sync] Authenticated ${job.type} sync for provider ${job.providerId} discovered 0 profiles - marking FAILED. ${msg}`);
+    }
+
     const syncConfigUpdate = {
       lastSyncAt: new Date(),
       lastSyncEndedAt: new Date(),
-      syncStatus: job.failed === 0 ? "SUCCESS" : "PARTIAL",
+      syncStatus: authenticatedButEmpty
+        ? "FAILED"
+        : job.failed === 0
+          ? "SUCCESS"
+          : "PARTIAL",
     };
 
     switch (job.type) {
