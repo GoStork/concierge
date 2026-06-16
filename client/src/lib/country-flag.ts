@@ -91,6 +91,30 @@ function isUsState(region: string): boolean {
   return US_STATE_ABBR.has(region.trim().toUpperCase()) || US_STATE_NAMES.has(region.trim().toLowerCase());
 }
 
+// Full US state name -> 2-letter abbreviation, so locations render consistently
+// as "City, ST" (the standard form) regardless of how the source stored them.
+const US_STATE_NAME_TO_ABBR: Record<string, string> = {
+  "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
+  "colorado": "CO", "connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA",
+  "hawaii": "HI", "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
+  "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+  "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+  "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV", "new hampshire": "NH",
+  "new jersey": "NJ", "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+  "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA",
+  "rhode island": "RI", "south carolina": "SC", "south dakota": "SD", "tennessee": "TN",
+  "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA", "washington": "WA",
+  "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY", "district of columbia": "DC",
+  "puerto rico": "PR",
+};
+
+/** Returns the 2-letter abbreviation for a US state name or abbrev, else null. */
+export function abbreviateUsState(token: string): string | null {
+  const t = (token || "").trim();
+  if (US_STATE_ABBR.has(t.toUpperCase())) return t.toUpperCase();
+  return US_STATE_NAME_TO_ABBR[t.toLowerCase()] ?? null;
+}
+
 /**
  * Resolve a flag emoji from a marketplace location string. Handles the shapes
  * cards use: "CA" / "California" / "Dayton, Nevada" (US -> 🇺🇸), "South Africa" /

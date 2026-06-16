@@ -9,6 +9,7 @@ import {
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
 import { getLocationFlag } from "@/lib/country-flag";
+import { formatLocationDisplay } from "@/lib/format-location";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { DoctorMonogram, initialsFromName } from "./doctor-monogram";
 import { DonorPhotoFallback } from "./donor-photo-fallback";
@@ -304,7 +305,7 @@ export function SwipeDeckCard({
                     {getLocationFlag(pinnedHeader.location)
                       ? <span className="shrink-0 leading-none">{getLocationFlag(pinnedHeader.location)}</span>
                       : <MapPin className="w-3.5 h-3.5 shrink-0" />}
-                    {pinnedHeader.location}
+                    {formatLocationDisplay(pinnedHeader.location) || pinnedHeader.location}
                   </p>
                 )}
               </div>
@@ -406,7 +407,7 @@ export function SwipeDeckCard({
                     {getLocationFlag(pinnedHeader.location)
                       ? <span className="shrink-0 leading-none">{getLocationFlag(pinnedHeader.location)}</span>
                       : <MapPin className="w-3.5 h-3.5 shrink-0" />}
-                    <span className="truncate">{pinnedHeader.location}</span>
+                    <span className="truncate">{formatLocationDisplay(pinnedHeader.location) || pinnedHeader.location}</span>
                   </p>
                 )}
                 {pinnedHeader.badge && (

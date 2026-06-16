@@ -1,3 +1,5 @@
+import { abbreviateUsState } from "./country-flag";
+
 const COUNTRY_ABBREVIATIONS: Array<[RegExp, string]> = [
   [/\bUnited States of America\b/gi, "USA"],
   [/\bUnited States\b/gi, "USA"],
@@ -15,12 +17,17 @@ export function formatLocationDisplay(location: string | null | undefined): stri
     out = out.replace(re, abbr);
   }
   // Drop empty comma segments so a missing city doesn't leave a dangling comma
-  // (e.g. ", CA" -> "CA", "Ocala, , FL" -> "Ocala, FL").
-  out = out
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .join(", ");
+  // (e.g. ", CA" -> "CA", "Ocala, , FL" -> "Ocala, FL"), and normalize the
+  // trailing US state to its 2-letter abbreviation so every location renders as
+  // the consistent "City, ST" form ("Antigo, Wisconsin" -> "Antigo, WI"). Non-US
+  // trailing tokens (countries) are left untouched.
+  const segments = out.split(",").map((s) => s.trim()).filter(Boolean);
+  if (segments.length > 0) {
+    const lastIdx = segments.length - 1;
+    const abbr = abbreviateUsState(segments[lastIdx]);
+    if (abbr) segments[lastIdx] = abbr;
+  }
+  out = segments.join(", ");
   return out.replace(/\s{2,}/g, " ").trim() || null;
 }
 
