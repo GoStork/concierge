@@ -691,20 +691,30 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     return { count };
   }
 
-  // All PENDING requests for the current user, with NO date window. The badge
-  // (pending-count) and the calendar page's "Pending" list both source from
-  // status="PENDING" so they can never drift out of sync the way the
-  // month-windowed /bookings query did. Same scoping as listBookings.
+  // The "tasks" feed for the calendar page, with NO month window so nothing
+  // can hide off-screen the way the month-scoped /bookings query did:
+  //   - every PENDING request (still actionable), AND
+  //   - recently EXPIRED requests (slot passed unanswered) for the last 30 days,
+  //     so the provider keeps seeing what lapsed instead of it vanishing.
+  // The nav badge stays PENDING-only (actionable count); this list is a superset
+  // (pending + expired history), so they never produce a phantom badge again.
+  // Same user-scoping as listBookings.
   @Get("bookings/pending")
   @UseGuards(SessionOrJwtGuard)
   async listPendingBookings(@Req() req: Request) {
     const user = req.user as any;
     const isParent = user.roles?.includes("PARENT");
     const parentMemberIds = isParent ? await this.getParentAccountMemberIds(user.id) : [user.id];
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const bookings = await this.prisma.booking.findMany({
       where: {
-        status: "PENDING",
-        OR: [{ providerUserId: user.id }, { parentUserId: { in: parentMemberIds } }],
+        AND: [
+          { OR: [{ providerUserId: user.id }, { parentUserId: { in: parentMemberIds } }] },
+          { OR: [
+            { status: "PENDING" },
+            { status: "EXPIRED", expiredAt: { gte: thirtyDaysAgo } },
+          ] },
+        ],
       },
       include: {
         providerUser: { select: { id: true, name: true, email: true, photoUrl: true, dailyRoomUrl: true } },

@@ -696,6 +696,8 @@ export class ProvidersController {
       include: {
         services: { include: { providerType: true } },
         locations: { orderBy: { sortOrder: "asc" } },
+        // Agency cards build their Overview/Screening tabs from this.
+        surrogacyProfile: { include: { screening: true } },
         ...(hasIvfFilters ? { ivfSuccessRates: { where: successRateWhere } } : {}),
       },
       orderBy,

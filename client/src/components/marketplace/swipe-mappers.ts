@@ -930,6 +930,8 @@ const AGENCY_SCREENING_LABELS: { key: string; label: string }[] = [
 
 export function getAgencyTabs(opts: {
   reasons?: string[];
+  about?: string | null;
+  services?: string[];
   numberOfBabiesBorn?: number | null;
   timeToMatch?: string | null;
   familiesPerCoordinator?: number | null;
@@ -948,12 +950,23 @@ export function getAgencyTabs(opts: {
     });
   }
 
-  // Overview - the agency's headline stats.
+  // Overview - the agency's headline stats + a short description line when present.
   const overview: TabItem[] = [];
   if (opts.numberOfBabiesBorn != null) overview.push({ label: "Babies born", value: `${opts.numberOfBabiesBorn}+` });
   if (opts.timeToMatch) overview.push({ label: "Time to match", value: String(opts.timeToMatch) });
   if (opts.familiesPerCoordinator != null) overview.push({ label: "Families / coordinator", value: String(opts.familiesPerCoordinator) });
+  if (opts.about && opts.about.trim()) {
+    // Keep it short - the bubble layout is for chips, not paragraphs.
+    const blurb = opts.about.trim().replace(/\s+/g, " ").slice(0, 160);
+    overview.push({ label: blurb.length === 160 ? blurb + "…" : blurb, value: "" });
+  }
   if (overview.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overview });
+
+  // Services the agency offers (their approved service types) as chips.
+  const services = (opts.services || []).filter((s) => s && s.trim() !== "");
+  if (services.length > 0) {
+    tabs.push({ layoutType: "standard_bubbles", title: "Services", items: services.map((s) => ({ label: s, value: "" })) });
+  }
 
   // Screening - what the agency screens surrogates for (only the enabled ones).
   const screening = opts.screening || {};

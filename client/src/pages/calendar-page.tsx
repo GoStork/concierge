@@ -513,7 +513,7 @@ function SuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId: string
   );
 }
 
-function PendingBookingCard({ booking, start, onSelect, readOnly }: { booking: any; start: Date; onSelect: (b: any) => void; readOnly?: boolean }) {
+function PendingBookingCard({ booking, start, onSelect, readOnly, expired }: { booking: any; start: Date; onSelect: (b: any) => void; readOnly?: boolean; expired?: boolean }) {
   const { toast } = useToast();
   const [showSuggest, setShowSuggest] = useState(false);
 
@@ -545,16 +545,18 @@ function PendingBookingCard({ booking, start, onSelect, readOnly }: { booking: a
 
   return (
     <div
-      className="bg-[hsl(var(--brand-warning)/0.08)] rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.3)] p-3 space-y-2"
-      style={{ borderLeft: "3px solid hsl(var(--brand-warning))" }}
-      data-testid={`pending-card-${booking.id}`}
+      className={expired
+        ? "bg-muted/40 rounded-[var(--radius)] border border-border p-3 space-y-2"
+        : "bg-[hsl(var(--brand-warning)/0.08)] rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.3)] p-3 space-y-2"}
+      style={{ borderLeft: expired ? "3px solid hsl(var(--muted-foreground))" : "3px solid hsl(var(--brand-warning))" }}
+      data-testid={`${expired ? "expired" : "pending"}-card-${booking.id}`}
     >
       <button
         onClick={() => onSelect(booking)}
         className="w-full text-left cursor-pointer hover:opacity-80 transition-opacity"
         data-testid={`pending-detail-${booking.id}`}
       >
-        <p className="text-sm font-ui truncate">{booking.attendeeName || booking.subject || "Meeting Request"}</p>
+        <p className={`text-sm font-ui truncate ${expired ? "text-muted-foreground" : ""}`}>{booking.attendeeName || booking.subject || "Meeting Request"}</p>
         <p className="text-xs text-muted-foreground">
           {format(start, "EEE, MMM d")} · {format(start, "h:mm a")} · {booking.duration}min
         </p>
@@ -563,11 +565,28 @@ function PendingBookingCard({ booking, start, onSelect, readOnly }: { booking: a
         )}
       </button>
       {readOnly ? (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-ui bg-[hsl(var(--brand-warning)/0.08)] text-[hsl(var(--brand-warning))] border border-[hsl(var(--brand-warning)/0.3)]">
-          Awaiting Confirmation
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-ui ${expired
+          ? "bg-muted text-muted-foreground border border-border"
+          : "bg-[hsl(var(--brand-warning)/0.08)] text-[hsl(var(--brand-warning))] border border-[hsl(var(--brand-warning)/0.3)]"}`}>
+          {expired ? "Expired" : "Awaiting Confirmation"}
         </span>
       ) : showSuggest ? (
         <SuggestTimeForm bookingId={booking.id} onCancel={() => setShowSuggest(false)} onSuccess={() => setShowSuggest(false)} />
+      ) : expired ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-ui bg-muted text-muted-foreground border border-border">
+            Expired - not confirmed in time
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs gap-1 px-2 shrink-0"
+            onClick={() => setShowSuggest(true)}
+            data-testid={`button-suggest-time-expired-${booking.id}`}
+          >
+            <CalendarClock className="w-3 h-3" /> New Time
+          </Button>
+        </div>
       ) : (
         <div className="flex gap-1.5 flex-nowrap">
           <Button
@@ -1870,13 +1889,20 @@ export default function CalendarPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  // Show ALL pending requests regardless of date - past-dated ones (a slot that
-  // already passed but the 10-min auto-expiry sweep hasn't run yet) still surface
-  // here so a request is never invisible while it counts toward the badge.
-  const pendingBookings = useMemo(() => {
+  // The tasks feed shows every PENDING request (action needed) AND recently
+  // EXPIRED ones (slot passed unanswered) so nothing silently disappears - the
+  // endpoint returns both with no month window. Pending sorts soonest-first;
+  // expired sorts most-recently-expired first.
+  const pendingTasks = useMemo(() => {
     return ((pendingBookingsData || []) as any[])
-      .slice()
+      .filter((b: any) => b.status === "PENDING")
       .sort((a: any, b: any) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+  }, [pendingBookingsData]);
+
+  const expiredTasks = useMemo(() => {
+    return ((pendingBookingsData || []) as any[])
+      .filter((b: any) => b.status === "EXPIRED")
+      .sort((a: any, b: any) => new Date(b.expiredAt || b.scheduledAt).getTime() - new Date(a.expiredAt || a.scheduledAt).getTime());
   }, [pendingBookingsData]);
 
   const upcomingBookings = useMemo(() => {
@@ -2706,22 +2732,45 @@ export default function CalendarPage() {
               />
             </Card>
 
-            {pendingBookings.length > 0 && (
-              <Card className="shadow-[0_1px_2px_rgba(0,0,0,0.07)] p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[hsl(var(--brand-warning))] animate-pulse" />
-                  <h3 className="text-[11px] font-heading text-[hsl(var(--brand-warning))] uppercase tracking-wider">
-                    Pending ({pendingBookings.length})
-                  </h3>
-                </div>
-                <div className="space-y-2">
-                  {pendingBookings.map((b: any) => {
-                    const start = new Date(b.scheduledAt);
-                    return (
-                      <PendingBookingCard key={b.id} booking={b} start={start} onSelect={setSelectedBooking} readOnly={isParentUser} />
-                    );
-                  })}
-                </div>
+            {(pendingTasks.length > 0 || expiredTasks.length > 0) && (
+              <Card className="shadow-[0_1px_2px_rgba(0,0,0,0.07)] p-4 space-y-4">
+                {pendingTasks.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[hsl(var(--brand-warning))] animate-pulse" />
+                      <h3 className="text-[11px] font-heading text-[hsl(var(--brand-warning))] uppercase tracking-wider">
+                        Pending ({pendingTasks.length})
+                      </h3>
+                    </div>
+                    <div className="space-y-2">
+                      {pendingTasks.map((b: any) => {
+                        const start = new Date(b.scheduledAt);
+                        return (
+                          <PendingBookingCard key={b.id} booking={b} start={start} onSelect={setSelectedBooking} readOnly={isParentUser} />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {expiredTasks.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
+                      <h3 className="text-[11px] font-heading text-muted-foreground uppercase tracking-wider">
+                        Expired ({expiredTasks.length})
+                      </h3>
+                    </div>
+                    <div className="space-y-2">
+                      {expiredTasks.map((b: any) => {
+                        const start = new Date(b.scheduledAt);
+                        return (
+                          <PendingBookingCard key={b.id} booking={b} start={start} onSelect={setSelectedBooking} readOnly={isParentUser} expired />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </Card>
             )}
 

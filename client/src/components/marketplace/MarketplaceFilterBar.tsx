@@ -197,8 +197,8 @@ const FILTER_VALUE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
   status: { AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched", SOLD_OUT: "Sold Out" },
 };
 
-function formatFilterPills(filters: Record<string, string[]>): { key: string; label: string }[] {
-  const pills: { key: string; label: string }[] = [];
+function formatFilterPills(filters: Record<string, string[]>): { key: string; label: string; value?: string }[] {
+  const pills: { key: string; label: string; value?: string }[] = [];
   const SINGLE_VALUE_KEYS = new Set(["maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear"]);
   for (const [key, vals] of Object.entries(filters)) {
     if (!vals || vals.length === 0) continue;
@@ -225,7 +225,9 @@ function formatFilterPills(filters: Record<string, string[]>): { key: string; la
         const displayVal = key === "location"
           ? (formatLocationDisplay(v) || v)
           : (valueMap && valueMap[v]) || v;
-        pills.push({ key, label: `${displayName}: ${displayVal}` });
+        // Carry the raw stored value (e.g. "AVAILABLE") so removePill can match it
+        // directly - the display label (e.g. "Available") must never be used for removal.
+        pills.push({ key, label: `${displayName}: ${displayVal}`, value: v });
       });
     }
   }
@@ -1426,19 +1428,20 @@ export function MarketplaceFilterBar({
   const pills = formatFilterPills(activeFilters);
   const activeCount = pills.length;
 
-  const removePill = (key: string, label: string) => {
+  const removePill = (key: string, value?: string) => {
     if (key === "location") {
       onLocationChange?.("");
       dispatch(setFilter({ key: "location", values: [] }));
       return;
     }
-    if (RANGE_FILTER_KEYS.has(key)) {
+    // Pills without a specific value (range, single-value, boolean) clear the whole filter.
+    // Multi-value pills carry their raw stored value and remove only that one.
+    if (value === undefined) {
       dispatch(setFilter({ key, values: [] }));
-    } else {
-      const value = label.split(": ").slice(1).join(": ");
-      const remaining = (activeFilters[key] || []).filter((x) => x !== value);
-      dispatch(setFilter({ key, values: remaining }));
+      return;
     }
+    const remaining = (activeFilters[key] || []).filter((x) => x !== value);
+    dispatch(setFilter({ key, values: remaining }));
   };
 
   const isDonor = providerType === "egg-donor";
@@ -2274,7 +2277,7 @@ export function MarketplaceFilterBar({
                 data-testid={`pill-${pill.key}`}
               >
                 {pill.label}
-                <X className="w-3 h-3" onClick={() => removePill(pill.key, pill.label)} />
+                <X className="w-3 h-3" onClick={() => removePill(pill.key, pill.value)} />
               </Badge>
             ))}
             <Button
@@ -2355,7 +2358,7 @@ export function MarketplaceFilterBar({
               data-testid={`pill-${pill.key}`}
             >
               {pill.label}
-              <X className="w-3 h-3" onClick={() => removePill(pill.key, pill.label)} />
+              <X className="w-3 h-3" onClick={() => removePill(pill.key, pill.value)} />
             </Badge>
           ))}
         </div>

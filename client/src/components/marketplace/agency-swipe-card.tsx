@@ -69,8 +69,17 @@ export function AgencySwipeCard({
   const primaryLocationLabel = primaryLocation ? [primaryLocation.city, primaryLocation.state].filter(Boolean).join(", ") : null;
   const logoSrc = getPhotoSrc(provider.logoUrl) || null;
 
+  const serviceNames: string[] = Array.from(new Set(
+    (provider.services || [])
+      .filter((s: any) => s?.status === "APPROVED")
+      .map((s: any) => s?.providerType?.name)
+      .filter(Boolean),
+  ));
+
   const tabs = getAgencyTabs({
     reasons,
+    about: provider.about ?? null,
+    services: serviceNames,
     numberOfBabiesBorn: sp.numberOfBabiesBorn ?? null,
     timeToMatch: sp.timeToMatch ?? null,
     familiesPerCoordinator: sp.familiesPerCoordinator ?? null,

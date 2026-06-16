@@ -1221,6 +1221,36 @@ function skipIfManual(field: string, value: any, manualFields: string[]): any {
   return manualFields.includes(field) ? undefined : value;
 }
 
+// Parse a scraped age into a plausible integer, or null. Source sites sometimes
+// carry junk in the age field (e.g. "Age When Donated": "-1976", a stray year,
+// or a blank). Anything outside a sane donor range is rejected so we never
+// persist (or render) "Age -1976".
+function parseDonorAge(raw: any): number | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const p = parseInt(String(raw), 10);
+  if (isNaN(p) || p < 18 || p > 99) return null;
+  return p;
+}
+
+// A real height always carries a unit/format (6'1", 5’11”, 185 cm, 73 in).
+// A bare 1-2 digit number is not a height - it's usually a donor-number suffix
+// (e.g. "BLV26" -> "26") that leaked into the field upstream, so reject it.
+function isPlausibleHeight(raw: any): boolean {
+  if (raw === null || raw === undefined) return false;
+  const s = String(raw).trim();
+  if (s.length === 0) return false;
+  if (/^\d{1,2}$/.test(s)) return false;
+  return true;
+}
+
+// Pick the first candidate that looks like a real height, in priority order.
+function pickPlausibleHeight(...candidates: any[]): string | undefined {
+  for (const c of candidates) {
+    if (isPlausibleHeight(c)) return String(c).trim();
+  }
+  return undefined;
+}
+
 // Decide what to write to the photoUrl column when a fresh migration may have
 // failed. Returns:
 //   - the new GCS URL when migration succeeded
@@ -1668,7 +1698,7 @@ async function upsertEggDonor(
     },
     update: {
       donorType: skipIfManual("donorType", donor.donorType || undefined, mf),
-      age: skipIfManual("age", donor.age ? parseInt(String(donor.age)) || null : undefined, mf),
+      age: skipIfManual("age", parseDonorAge(donor.age) ?? undefined, mf),
       race: skipIfManual("race", donor.race || undefined, mf),
       ethnicity: skipIfManual("ethnicity", donor.ethnicity || null, mf),
       religion: skipIfManual("religion", donor.religion || null, mf),
@@ -1703,7 +1733,7 @@ async function upsertEggDonor(
       providerId,
       externalId: extId,
       donorType: donor.donorType || null,
-      age: donor.age ? parseInt(String(donor.age)) || null : null,
+      age: parseDonorAge(donor.age) ?? null,
       race: donor.race || null,
       ethnicity: donor.ethnicity || null,
       religion: donor.religion || null,
@@ -1848,7 +1878,7 @@ async function upsertSurrogate(
       providerId_externalId: { providerId, externalId: extId },
     },
     update: {
-      age: skipIfManual("age", surrogate.age ? parseInt(String(surrogate.age)) || null : undefined, mf),
+      age: skipIfManual("age", parseDonorAge(surrogate.age) ?? undefined, mf),
       bmi: skipIfManual("bmi", surrogate.bmi ? parseFloat(String(surrogate.bmi)) : undefined, mf),
       baseCompensation: skipIfManual("baseCompensation", surrogate.baseCompensation ? parseFloat(String(surrogate.baseCompensation)) : undefined, mf),
       totalCostMin: skipIfManual("totalCostMin", surrogate.totalCostMin ? parseFloat(String(surrogate.totalCostMin)) : undefined, mf),
@@ -1884,7 +1914,7 @@ async function upsertSurrogate(
     create: {
       providerId,
       externalId: extId,
-      age: surrogate.age ? parseInt(String(surrogate.age)) || null : null,
+      age: parseDonorAge(surrogate.age) ?? null,
       bmi: surrogate.bmi ? parseFloat(String(surrogate.bmi)) : null,
       baseCompensation: surrogate.baseCompensation ? parseFloat(String(surrogate.baseCompensation)) : null,
       totalCostMin: surrogate.totalCostMin ? parseFloat(String(surrogate.totalCostMin)) : null,
@@ -1970,7 +2000,7 @@ async function upsertSpermDonor(
   const secEd = rawSections["Education and Occupation"] || {};
   const secEth = rawSections["Ethnic Background"] || {};
   const secRel = rawSections["Religious Background"] || {};
-  const sdAge = (() => { const v = secGc["Age When Donated"] || flatSections["Age When Donated"] || flatSections["Age"]; if (!v) return undefined; const p = parseInt(String(v)); return isNaN(p) ? undefined : p; })();
+  const sdAge = parseDonorAge(secGc["Age When Donated"] || flatSections["Age When Donated"] || flatSections["Age"]);
   const sdRace = donor.race || secEth["Race"] || flatSections["Race"] || undefined;
   const sdEthnicity = (() => {
     // Build a deduplicated, title-cased ethnicity string
@@ -1990,7 +2020,7 @@ async function upsertSpermDonor(
     if (origins.length > 0) return dedupeEthnicity(origins.join(", "));
     return dedupeEthnicity(flatSections["Ethnicity"] || undefined);
   })();
-  const sdHeight = donor.height || secGc["Height"] || flatSections["Height"] || undefined;
+  const sdHeight = pickPlausibleHeight(donor.height, secGc["Height"], flatSections["Height"]);
   const sdWeight = donor.weight || secGc["Weight"] || flatSections["Weight"] || undefined;
   const sdEyeColor = donor.eyeColor || secGc["Eye Color"] || flatSections["Eye Color"] || undefined;
   const sdHairColor = donor.hairColor || secGc["Hair Color"] || flatSections["Hair Color"] || undefined;
@@ -2014,7 +2044,7 @@ async function upsertSpermDonor(
     },
     update: {
       donorType: skipIfManual("donorType", donor.donorType || undefined, mf),
-      age: skipIfManual("age", donor.age ? parseInt(String(donor.age)) || null : sdAge || undefined, mf),
+      age: skipIfManual("age", parseDonorAge(donor.age) ?? sdAge ?? undefined, mf),
       race: skipIfManual("race", sdRace || undefined, mf),
       ethnicity: skipIfManual("ethnicity", sdEthnicity || undefined, mf),
       height: skipIfManual("height", sdHeight || undefined, mf),
@@ -2046,7 +2076,7 @@ async function upsertSpermDonor(
       providerId,
       externalId: extId,
       donorType: donor.donorType || null,
-      age: donor.age ? parseInt(String(donor.age)) || null : sdAge || null,
+      age: parseDonorAge(donor.age) ?? sdAge ?? null,
       race: sdRace || null,
       ethnicity: sdEthnicity || null,
       height: sdHeight || null,
