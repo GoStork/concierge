@@ -222,7 +222,7 @@ export function SwipeDeckCard({
   return (
     <div className="w-full h-full p-[3px]" data-testid={`swipe-card-${id}`}>
       <motion.div
-        className={`relative w-full h-full overflow-hidden bg-card select-none rounded-[var(--container-radius)] shadow-lg ${disableSwipe ? "" : "cursor-grab active:cursor-grabbing"} ${isPassed ? "opacity-50 grayscale" : ""}`}
+        className={`relative w-full h-full overflow-hidden bg-card select-none rounded-[var(--container-radius)] shadow-lg ${disableSwipe ? "" : "cursor-grab active:cursor-grabbing"} ${isPassed ? "opacity-60" : ""}`}
         style={disableSwipe ? undefined : { x, y, rotate }}
         drag={disableSwipe ? false : true}
         dragConstraints={disableSwipe ? undefined : { left: 0, right: 0, top: 0, bottom: 0 }}
@@ -763,9 +763,16 @@ export function SwipeDeckCard({
                 size="icon"
                 onClick={(e) => { e.stopPropagation(); isPassed ? onUndo?.() : (disableSwipe ? onPass() : animateSwipe("left")); }}
                 className={`${chatMode ? "h-14 w-14" : "h-16 w-16"} rounded-full bg-gradient-to-b from-zinc-700/80 to-black/90 backdrop-blur-xl border border-white/10 border-b-black/80 shadow-[0_10px_20px_rgba(0,0,0,0.5),inset_0_2px_3px_rgba(255,255,255,0.2)] [@media(hover:hover)]:hover:scale-110 [@media(hover:hover)]:hover:brightness-110 active:scale-95 active:translate-y-0.5 active:shadow-[0_4px_8px_rgba(0,0,0,0.5),inset_0_4px_8px_rgba(0,0,0,0.6)] transition-all duration-200 flex items-center justify-center`}
-                data-testid={`button-pass-${id}`}
+                data-testid={isPassed ? `button-undo-${id}` : `button-pass-${id}`}
               >
-                <X className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: isPassed ? "var(--swipe-undo)" : "var(--swipe-pass)" }} strokeWidth={3} />
+                {/* In the skipped/hidden view a passed card's primary action is to
+                    bring it BACK, so show the rounded yellow Back (undo) icon - the
+                    same affordance as the mobile deck - instead of a yellow X. */}
+                {isPassed ? (
+                  <Undo2 className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-undo)" }} strokeWidth={3} />
+                ) : (
+                  <X className="!w-9 !h-9 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ color: "var(--swipe-pass)" }} strokeWidth={3} />
+                )}
               </Button>
             </motion.div>
 

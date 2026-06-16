@@ -306,99 +306,6 @@ function IvfSubtypePopover({
   );
 }
 
-// Egg-donor subtype picker - mirrors IvfSubtypePopover's visual treatment
-// (badge grid, mobile drawer / desktop popover) but with the flat 2-option
-// fresh/frozen list instead of the tab-grouped 14-subtype IVF taxonomy.
-// Used as a sub-popover next to the top-bar "Egg Donor" coverage leaf,
-// analogous to how the IVF leaf surfaces IvfSubtypePopover.
-function EggDonorSubtypePopover({
-  currentSubType,
-  onSelect,
-  triggerClassName,
-}: {
-  currentSubType: string | null;
-  onSelect: (subType: string) => void;
-  triggerClassName?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const isMobile = useIsMobile();
-  const currentLabel = labelOfEggDonorSubtype(currentSubType);
-
-  const trigger = (
-    <Button
-      variant="outline"
-      size="sm"
-      className={cn(
-        "shrink-0 h-8 text-xs font-medium rounded-[var(--radius)] gap-1.5 px-3",
-        triggerClassName,
-      )}
-      data-testid="select-egg-donor-subtype"
-    >
-      <span className="truncate text-left">{currentLabel || "Select donor type..."}</span>
-      <ChevronDown className="w-3.5 h-3.5 opacity-60 flex-shrink-0" />
-    </Button>
-  );
-
-  const body = (
-    <div className="flex flex-wrap gap-2.5">
-      {EGG_DONOR_SUBTYPES.map(s => {
-        const selected = currentSubType === s.id;
-        return (
-          <Badge
-            key={s.id}
-            variant={selected ? "default" : "outline"}
-            className="cursor-pointer font-ui px-4 py-2 rounded-full whitespace-normal text-left max-w-full"
-            style={{ fontSize: 'var(--badge-text-size, 13px)' }}
-            onClick={() => {
-              onSelect(s.id);
-              setOpen(false);
-            }}
-            data-testid={`egg-donor-subtype-option-${s.id}`}
-          >
-            {s.label}
-          </Badge>
-        );
-      })}
-    </div>
-  );
-
-  if (isMobile) {
-    return (
-      <Drawer open={open} onOpenChange={setOpen}>
-        <DrawerTrigger asChild>{trigger}</DrawerTrigger>
-        <DrawerContent data-testid="drawer-egg-donor-subtype">
-          <DrawerHeader>
-            <DrawerTitle>Donor type</DrawerTitle>
-          </DrawerHeader>
-          <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto space-y-4">
-            {body}
-          </div>
-        </DrawerContent>
-      </Drawer>
-    );
-  }
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent
-        className="w-[22rem] max-w-[calc(100vw-2rem)] p-4 max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
-        align="start"
-        side="bottom"
-        sideOffset={6}
-        collisionPadding={16}
-      >
-        <div className="space-y-3">
-          <div className="flex justify-between items-center sticky top-0 bg-popover pb-2 -mt-1 -mx-1 px-1 z-10">
-            <span className="font-ui" style={{ fontSize: 'var(--filter-label-size, 18px)' }}>Donor type</span>
-          </div>
-          {body}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 // Derive the service tags displayed on a program's main row from its
 // canonical subTypes[]. One IVF leaf maps to one "ivf_clinic" tag; the
 // non-IVF leaves map per SERVICE_TAG_OF_NON_IVF_LEAF. Dedupes.
@@ -463,10 +370,6 @@ function getIvfSubtype(subTypes: string[] | null | undefined): string | null {
 // sub-popover styled to match the IVF program-type popover.
 function getEggDonorSubtype(subTypes: string[] | null | undefined): string | null {
   return (subTypes || []).find(s => s === "egg_donor_fresh" || s === "egg_donor_frozen") || null;
-}
-
-function labelOfEggDonorSubtype(subType: string | null | undefined): string | null {
-  return EGG_DONOR_SUBTYPES.find(s => s.id === subType)?.label ?? null;
 }
 
 // Pending-state shape held at the ProgramsView level. One entry per
@@ -660,11 +563,22 @@ function ProgramClassificationControls({
             trigger width keeps downstream slots column-aligned across rows. */}
         {eggDonorOn && !ivfSubtypeExcludesDonor && (
           <div className="flex items-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            <EggDonorSubtypePopover
-              currentSubType={currentEggDonorSubtype}
-              onSelect={setEggDonorSubtype}
-              triggerClassName="w-44 justify-between"
-            />
+            <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm">
+              {EGG_DONOR_SUBTYPES.map(s => (
+                <button
+                  key={`egg-donor-sub-${program.id}-${s.id}`}
+                  type="button"
+                  className={cn(
+                    "px-2.5 py-1 text-xs rounded-[var(--radius)] transition-all font-medium whitespace-nowrap",
+                    currentEggDonorSubtype === s.id ? "bg-accent text-accent-foreground shadow-sm" : "text-foreground hover:bg-accent/10",
+                  )}
+                  onClick={() => setEggDonorSubtype(s.id)}
+                  data-testid={`top-egg-donor-${s.id}-${program.id}`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

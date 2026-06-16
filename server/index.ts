@@ -17,6 +17,7 @@ import { startCalendarHealthScheduler } from "./src/modules/calendar/calendar-he
 import { startCostSheetReminderScheduler } from "./src/modules/billing/cost-sheet-reminder.scheduler";
 import { startReversalRecoupScheduler } from "./src/modules/billing/reversal-recoup.scheduler";
 import { startWhisperSlaScheduler } from "./src/modules/providers/whisper-sla.scheduler";
+import { startPendingBookingScheduler } from "./src/modules/calendar/pending-booking.scheduler";
 import { NotificationService } from "./src/modules/notifications/notification.service";
 import { setNestApp } from "./nest-app-ref";
 import pgSession from "connect-pg-simple";
@@ -213,6 +214,7 @@ export function log(message: string, source = "nestjs") {
   startCostSheetReminderScheduler(prismaService, notificationService);
   startReversalRecoupScheduler(prismaService);
   startWhisperSlaScheduler(prismaService, notificationService);
+  startPendingBookingScheduler(prismaService, notificationService);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

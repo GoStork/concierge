@@ -442,6 +442,168 @@ export class NotificationService implements OnModuleInit {
     }
   }
 
+  /**
+   * Nudge a provider that a booking request is still PENDING and needs their action.
+   * Two flavors:
+   *   - urgent: the requested slot is < 24h away (fires once, gated by pendingUrgentSentAt)
+   *   - daily : the request has been sitting unanswered (re-fires ~once a day until acted/expired)
+   * Provider-only (the parent already knows they're waiting on the provider).
+   */
+  async sendPendingBookingReminder(booking: any, opts: { urgent: boolean }) {
+    const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
+    const providerEmail = providerUser?.email;
+    if (!providerEmail || !booking.confirmToken) return;
+    const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
+    const attendeeName = booking.attendeeName || booking.parentUser?.name || attendeeEmail || "A prospective parent";
+    const scheduledAt = new Date(booking.scheduledAt);
+    const base = getBaseUrl();
+    const brandData = await this.getBrandData();
+    const location = booking.meetingType === "phone" ? "Phone Call" : "Video Call";
+    const dateStr = formatDate(scheduledAt, booking.bookerTimezone);
+    const timeStr = formatTime(scheduledAt, booking.bookerTimezone);
+    const manageLink = `${base}/booking/${booking.confirmToken}/manage`;
+
+    const title = opts.urgent ? "Meeting Request Needs a Response Soon" : "Meeting Request Still Awaiting Your Confirmation";
+    const alertText = opts.urgent
+      ? `The requested time is less than 24 hours away and still needs your response. Please confirm, decline, or suggest a new time before it expires.`
+      : `This request is still waiting on you. Please confirm, decline, or suggest a new time - it will expire automatically if the requested time passes.`;
+
+    const providerHtml = buildBrandedEmail(brandData, {
+      title,
+      greeting: `Hi ${esc(getFirstName(providerUser?.name))},`,
+      body: `You still have an unanswered meeting request from <strong>${esc(attendeeName)}</strong>.`,
+      detailRows: [
+        { label: "Date", value: dateStr },
+        { label: "Time", value: timeStr },
+        { label: "Duration", value: `${booking.duration} minutes` },
+        { label: "Location", value: location },
+        { label: "Client", value: esc(attendeeName) },
+        ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
+      ],
+      alertBox: { text: alertText, type: opts.urgent ? "error" : "warning" },
+      buttons: [
+        { label: "Confirm Meeting", url: manageLink },
+        { label: "Suggest New Time", url: manageLink, variant: "secondary" },
+        { label: "Decline", url: manageLink, variant: "destructive" },
+      ],
+    });
+    await this.dispatchNotification({
+      userId: booking.providerUserId, bookingId: booking.id, type: "EMAIL",
+      channel: opts.urgent ? "booking_pending_urgent" : "booking_pending_reminder", recipient: providerEmail,
+      subject: opts.urgent ? `Action needed soon: meeting request from ${attendeeName}` : `Reminder: meeting request from ${attendeeName} awaits your confirmation`,
+      body: providerHtml,
+    });
+
+    const providerPhone = providerUser?.mobileNumber;
+    if (providerPhone) {
+      await this.dispatchSmsTemplate({
+        userId: booking.providerUserId, bookingId: booking.id,
+        channel: opts.urgent ? "booking_pending_urgent" : "booking_pending_reminder", recipient: providerPhone,
+        contentSid: TWILIO_TEMPLATES.BOOKING_REQUEST_PROVIDER,
+        contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": dateStr, "4": timeStr, "5": manageLink },
+      });
+    }
+  }
+
+  /**
+   * A PENDING request was auto-expired because its slot passed with no provider action.
+   * Notifies both sides (parent + account members + extra attendees, and the provider),
+   * mirroring the cancellation fan-out. SMS reuses the cancelled templates (same meaning:
+   * the meeting won't happen, please rebook); the branded email carries the precise wording.
+   */
+  async sendBookingExpired(booking: any) {
+    const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
+    const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
+    const attendeeName = booking.attendeeName || booking.parentUser?.name || attendeeEmail;
+    const providerEmail = providerUser?.email;
+    const staffMemberName = providerUser?.name || "";
+    const clinicName = providerUser?.provider?.name || "";
+    const providerName = clinicName || staffMemberName || "Provider";
+    const scheduledAt = new Date(booking.scheduledAt);
+    const base = getBaseUrl();
+    const brandData = await this.getBrandData();
+    const dateStr = formatDate(scheduledAt, booking.bookerTimezone);
+    const timeStr = formatTime(scheduledAt, booking.bookerTimezone);
+    const rebookLink = providerUser?.scheduleConfig?.bookingPageSlug ? `${base}/book/${providerUser.scheduleConfig.bookingPageSlug}` : base;
+
+    const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
+      title: "Meeting Request Expired",
+      greeting: `Hi ${esc(firstName)},`,
+      body: `Your meeting request with <strong>${esc(staffMemberName || clinicName)}</strong>${staffMemberName && clinicName ? ` from <strong>${esc(clinicName)}</strong>` : ""} expired because it wasn't confirmed before the requested time.`,
+      detailRows: [
+        { label: "Requested Date", value: dateStr },
+        { label: "Requested Time", value: timeStr },
+      ],
+      alertBox: { text: "This request expired and was not confirmed. You can book a new time whenever you're ready.", type: "warning" },
+      buttons: [
+        { label: "Book a New Time", url: rebookLink },
+      ],
+    });
+
+    if (attendeeEmail) {
+      const html = parentEmailBuilder(getFirstName(attendeeName));
+      await this.dispatchNotification({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_expired", recipient: attendeeEmail,
+        subject: `Your meeting request with ${providerName} expired`, body: html,
+      });
+      const expDetails: Record<string, { name?: string; phone?: string }> = booking.attendeeDetails || {};
+      const expPrimaryDetails = expDetails[attendeeEmail.toLowerCase()] || {};
+      const parentPhone = booking.parentUser?.mobileNumber || expPrimaryDetails.phone;
+      if (parentPhone) {
+        await this.dispatchSmsTemplate({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, channel: "booking_expired", recipient: parentPhone,
+          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PARENT, contentVars: { "1": getFirstName(attendeeName), "2": providerName, "3": dateStr, "4": timeStr, "5": rebookLink },
+        });
+      }
+    }
+
+    await this.fanOutParentNotification(booking, async (memberEmail, memberPhone, memberName, memberId) => {
+      const html = parentEmailBuilder(getFirstName(memberName));
+      await this.dispatchNotification({ userId: memberId, bookingId: booking.id, type: "EMAIL", channel: "booking_expired", recipient: memberEmail,
+        subject: `Your meeting request with ${providerName} expired`, body: html,
+      });
+      if (memberPhone) {
+        await this.dispatchSmsTemplate({ userId: memberId, bookingId: booking.id, channel: "booking_expired", recipient: memberPhone,
+          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PARENT, contentVars: { "1": getFirstName(memberName), "2": providerName, "3": dateStr, "4": timeStr, "5": rebookLink },
+        });
+      }
+    });
+
+    await this.fanOutAdditionalAttendees(booking, async (ae, aeName, aePhone) => {
+      const html = parentEmailBuilder(getFirstName(aeName) || ae.split("@")[0]);
+      await this.dispatchNotification({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_expired", recipient: ae,
+        subject: `Your meeting request with ${providerName} expired`, body: html,
+      });
+      if (aePhone) {
+        await this.dispatchSmsTemplate({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, channel: "booking_expired", recipient: aePhone,
+          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PARENT, contentVars: { "1": getFirstName(aeName) || ae.split("@")[0], "2": providerName, "3": dateStr, "4": timeStr, "5": rebookLink },
+        });
+      }
+    });
+
+    if (providerEmail) {
+      const providerHtml = buildBrandedEmail(brandData, {
+        title: "Meeting Request Expired",
+        greeting: `Hi ${esc(getFirstName(providerUser?.name))},`,
+        body: `The meeting request from <strong>${esc(attendeeName)}</strong> expired because it wasn't confirmed before the requested time.`,
+        detailRows: [
+          { label: "Requested Date", value: dateStr },
+          { label: "Requested Time", value: timeStr },
+          { label: "Client", value: esc(attendeeName) },
+          ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
+        ],
+        alertBox: { text: "No action is needed. The request has been removed from your pending list.", type: "info" },
+      });
+      await this.dispatchNotification({ userId: booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_expired", recipient: providerEmail,
+        subject: `Meeting request from ${attendeeName} expired`, body: providerHtml,
+      });
+      const providerPhone = providerUser?.mobileNumber;
+      if (providerPhone) {
+        await this.dispatchSmsTemplate({ userId: booking.providerUserId, bookingId: booking.id, channel: "booking_expired", recipient: providerPhone,
+          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": dateStr, "4": timeStr },
+        });
+      }
+    }
+  }
+
   async sendBookingConfirmation(booking: any) {
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;

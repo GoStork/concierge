@@ -660,6 +660,9 @@ model Booking {
   attendeeDetails         Json?
   outlookEventId          String?
   parentOutlookEventId    String?
+  pendingReminderAt       DateTime?
+  pendingUrgentSentAt     DateTime?
+  expiredAt               DateTime?
   parentUser              User?               @relation("ParentBookings", fields: [parentUserId], references: [id])
   providerUser            User                @relation("ProviderBookings", fields: [providerUserId], references: [id])
   rescheduledFrom         Booking?            @relation("RescheduledBookings", fields: [rescheduledFromId], references: [id])

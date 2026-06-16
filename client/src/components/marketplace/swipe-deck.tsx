@@ -179,7 +179,10 @@ export function SwipeDeck<T>({
 
     return (
       <div className="h-full" data-testid={mobileDeckTestId}>
-        <div className={`relative h-full w-full ${dim ? "grayscale opacity-60" : ""}`}>
+        {/* No wrapper grayscale in the skipped view - the passed card dims
+            itself (opacity, no grayscale) so its yellow restore control stays
+            vivid instead of being desaturated into grey. */}
+        <div className="relative h-full w-full">
           {next && nextKey && (
             <div key={`next-${nextKey}`} className="absolute inset-0 z-0" data-testid={`${cardTestIdPrefix}-next-${nextKey}`}>
               {renderCard(next, "preview", { onSave: () => {}, onPass: () => {} })}
@@ -210,7 +213,7 @@ export function SwipeDeck<T>({
         });
         if (renderGridItem) return <div key={key}>{renderGridItem(item, card, key)}</div>;
         return (
-          <div key={key} className={`${gridItemClassName} ${dim ? "grayscale opacity-60" : ""}`} data-testid={`${cardTestIdPrefix}-container-${key}`}>
+          <div key={key} className={gridItemClassName} data-testid={`${cardTestIdPrefix}-container-${key}`}>
             {card}
           </div>
         );

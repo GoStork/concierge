@@ -145,6 +145,8 @@ function CreateAppointmentDialog({ open, onClose, config }: { open: boolean; onC
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
       toast({ title: "Appointment created", variant: "success" });
       onClose();
       setDate("");
@@ -476,6 +478,8 @@ function SuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId: string
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
       toast({ title: "New time suggested", description: "The parent has been notified.", variant: "success" });
       onSuccess();
     },
@@ -519,6 +523,8 @@ function PendingBookingCard({ booking, start, onSelect, readOnly }: { booking: a
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
       toast({ title: "Meeting confirmed", description: "The parent has been notified.", variant: "success" });
     },
   });
@@ -529,6 +535,8 @@ function PendingBookingCard({ booking, start, onSelect, readOnly }: { booking: a
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
       toast({ title: "Meeting declined", description: "The parent has been notified.", variant: "success" });
     },
   });
@@ -831,6 +839,8 @@ function RescheduleForm({ bookingId, onCancel, onSuccess }: { bookingId: string;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
       toast({ title: "Meeting rescheduled", variant: "success" });
       onSuccess();
     },
@@ -879,6 +889,8 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
       toast({ title: "Booking cancelled", variant: "success" });
       onClose();
     },
@@ -890,6 +902,8 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
       toast({ title: "Meeting confirmed", description: "The parent has been notified.", variant: "success" });
       onClose();
     },
@@ -901,6 +915,8 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
       toast({ title: "Meeting declined", description: "The parent has been notified.", variant: "success" });
       onClose();
     },
@@ -915,7 +931,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
   const wasCompleted = hasPassed && booking.status === "CONFIRMED" && parentJoined && providerJoined;
   const isParentNoShow = hasPassed && booking.status === "CONFIRMED" && providerJoined && !parentJoined;
   const isProviderNoShow = hasPassed && booking.status === "CONFIRMED" && parentJoined && !providerJoined;
-  const isNoShow = hasPassed && !wasCompleted && !isParentNoShow && !isProviderNoShow && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED";
+  const isNoShow = hasPassed && !wasCompleted && !isParentNoShow && !isProviderNoShow && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED" && booking.status !== "EXPIRED";
   const isParentCancelled = booking.status === "CANCELLED" && booking.cancelledByRole === "parent";
   const isProviderCancelled = booking.status === "CANCELLED" && booking.cancelledByRole === "provider";
 
@@ -972,12 +988,14 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-ui ${
               booking.status === "CANCELLED" ? "bg-destructive/15 text-destructive" :
               booking.status === "RESCHEDULED" ? "bg-muted text-muted-foreground" :
+              booking.status === "EXPIRED" ? "bg-muted text-muted-foreground" :
               wasCompleted || isParentNoShow || isProviderNoShow || isNoShow ? "bg-muted text-muted-foreground" :
               booking.status === "CONFIRMED" ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]" :
               booking.status === "PENDING" ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]" :
               "bg-muted text-foreground"
             }`}>
               {booking.status === "RESCHEDULED" ? "Rescheduled"
+                : booking.status === "EXPIRED" ? "Expired"
                 : isParentCancelled ? "Parent Cancelled"
                 : isProviderCancelled ? "Provider Cancelled"
                 : booking.status === "CANCELLED" ? "Cancelled"
@@ -1402,6 +1420,20 @@ export default function CalendarPage() {
     },
   });
 
+  // Pending requests are fetched WITHOUT a date window so the "Pending" list and
+  // the nav badge (both keyed off status="PENDING") can never drift apart - unlike
+  // the month-windowed `bookings` query above, which used to hide pending requests
+  // scheduled outside the visible month and leave a phantom badge.
+  const { data: pendingBookingsData } = useQuery({
+    queryKey: ["/api/calendar/bookings/pending"],
+    queryFn: async () => {
+      const res = await fetch("/api/calendar/bookings/pending", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
   useEffect(() => {
     const bookingIdParam = urlParams.get("bookingId");
     if (!bookingIdParam || !bookings) return;
@@ -1673,7 +1705,7 @@ export default function CalendarPage() {
     const result: CalendarEvent[] = [];
 
     (bookings || []).forEach((b: any) => {
-      if (b.status === "CANCELLED" || b.status === "RESCHEDULED") return;
+      if (b.status === "CANCELLED" || b.status === "RESCHEDULED" || b.status === "EXPIRED") return;
       const start = new Date(b.scheduledAt);
       const end = new Date(start.getTime() + b.duration * 60 * 1000);
       result.push({
@@ -1838,12 +1870,14 @@ export default function CalendarPage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  // Show ALL pending requests regardless of date - past-dated ones (a slot that
+  // already passed but the 10-min auto-expiry sweep hasn't run yet) still surface
+  // here so a request is never invisible while it counts toward the badge.
   const pendingBookings = useMemo(() => {
-    const now = new Date();
-    return (bookings || [])
-      .filter((b: any) => b.status === "PENDING" && new Date(b.scheduledAt) >= now)
+    return ((pendingBookingsData || []) as any[])
+      .slice()
       .sort((a: any, b: any) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
-  }, [bookings]);
+  }, [pendingBookingsData]);
 
   const upcomingBookings = useMemo(() => {
     const now = new Date();
@@ -2396,7 +2430,8 @@ export default function CalendarPage() {
                       const end = new Date(start.getTime() + (b.duration || 30) * 60 * 1000);
                       const isPast = start < today;
                       const isPending = b.status === "PENDING";
-                      const isCancelled = b.status === "CANCELLED" || b.status === "RESCHEDULED";
+                      const isExpired = b.status === "EXPIRED";
+                      const isCancelled = b.status === "CANCELLED" || b.status === "RESCHEDULED" || isExpired;
                       const barColor = isCancelled ? "hsl(var(--muted-foreground))" : isPending ? "hsl(var(--brand-warning))" : isPast ? "hsl(var(--muted-foreground))" : "hsl(var(--primary))";
                       const recInfo = recordingsByBookingId[b.id];
                       const hasRecording = recInfo?.recording?.status === "ready";
@@ -2442,7 +2477,7 @@ export default function CalendarPage() {
                                     ? "bg-muted/50 text-muted-foreground border border-border"
                                     : "bg-[hsl(var(--brand-success)/0.08)] text-[hsl(var(--brand-success))] border border-[hsl(var(--brand-success)/0.3)]"
                             }`}>
-                              {isCancelled ? (b.status === "RESCHEDULED" ? "Rescheduled" : "Cancelled") : isPending ? "Pending" : isPast ? "Completed" : "Confirmed"}
+                              {isExpired ? "Expired" : isCancelled ? (b.status === "RESCHEDULED" ? "Rescheduled" : "Cancelled") : isPending ? "Pending" : isPast ? "Completed" : "Confirmed"}
                             </span>
                           </div>
                         </button>

@@ -691,6 +691,30 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     return { count };
   }
 
+  // All PENDING requests for the current user, with NO date window. The badge
+  // (pending-count) and the calendar page's "Pending" list both source from
+  // status="PENDING" so they can never drift out of sync the way the
+  // month-windowed /bookings query did. Same scoping as listBookings.
+  @Get("bookings/pending")
+  @UseGuards(SessionOrJwtGuard)
+  async listPendingBookings(@Req() req: Request) {
+    const user = req.user as any;
+    const isParent = user.roles?.includes("PARENT");
+    const parentMemberIds = isParent ? await this.getParentAccountMemberIds(user.id) : [user.id];
+    const bookings = await this.prisma.booking.findMany({
+      where: {
+        status: "PENDING",
+        OR: [{ providerUserId: user.id }, { parentUserId: { in: parentMemberIds } }],
+      },
+      include: {
+        providerUser: { select: { id: true, name: true, email: true, photoUrl: true, dailyRoomUrl: true } },
+        parentUser: { select: { id: true, name: true, email: true, photoUrl: true, parentAccountId: true } },
+      },
+      orderBy: { scheduledAt: "asc" },
+    });
+    return bookings;
+  }
+
   @Get("bookings")
   @UseGuards(SessionOrJwtGuard)
   async listBookings(

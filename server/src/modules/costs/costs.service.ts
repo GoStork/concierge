@@ -737,11 +737,19 @@ export class CostsService {
     // needs (so a parent who also wants surrogacy would otherwise see surrogacy
     // programs leak onto an egg-donor profile). strictScopeType forces a pure
     // single-service filter that ignores the parent's other needs and showAll.
-    // Surrogate profiles are intentionally excluded - combined international
-    // packages legitimately surface there and in the combined-cost flow.
     const strictScopeType =
       implicitNeed === "egg_donor" || implicitNeed === "sperm_donor" ? implicitNeed : null;
-    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed, spermDonorVialTypes, showAll, strictScopeType);
+    // SURROGATE-PROFILE SCOPE: a surrogate profile must only surface programs
+    // that actually include the surrogacy leg - never the agency's standalone
+    // egg-donation / IVF-only programs, which would otherwise leak in via the
+    // logged-in parent's broader needs (egg_donor in parentNeeds matches a
+    // pure ["egg_donor"] program). Unlike the donor strict scope this is a
+    // "must HAVE surrogacy" filter, not "must be ONLY surrogacy", so combined
+    // international packages (surrogacy + egg_donor + ivf) still surface. Only
+    // applied on the profile-view path - the combined-cost flow passes its own
+    // null scope so it can still gather egg/IVF legs across providers.
+    const requireScopeType = implicitNeed === "surrogacy" ? "surrogacy" : null;
+    return this._getProviderParentPrograms(providerId, parentAccountId, specificComp, implicitNeed, spermDonorVialTypes, showAll, strictScopeType, requireScopeType);
   }
 
   /**
@@ -923,6 +931,7 @@ export class CostsService {
     spermDonorVialTypes: string[] | null,
     showAll: boolean = false,
     strictScopeType: string | null = null,
+    requireScopeType: string | null = null,
   ) {
     const { subtypes, isPartialProfile } =
       await this.getMatchingSubtypesForParent(parentAccountId);
@@ -1052,6 +1061,11 @@ export class CostsService {
     //    ["surrogacy","egg_donor","ivf_clinic"] is a combined package and must
     //    not leak onto a single egg-donor profile. This overrides showAll and
     //    the parent-needs union by design.
+    //  - requireScopeType (surrogate profile): show only programs that carry the
+    //    scope tag, but DO allow combined packages that also carry other tags -
+    //    a ["surrogacy","egg_donor","ivf_clinic"] international package belongs
+    //    on a surrogate profile, a pure ["egg_donor"] program does not. Like the
+    //    strict scope this overrides showAll and the parent-needs union.
     //  - showAll: skip the intersection entirely (parent opted to browse all).
     //  - default: intersect with the parent's needs (hasSome).
     const ALL_JOURNEY_SERVICE_TYPES = ["surrogacy", "egg_donor", "ivf_clinic", "sperm_donor"];
@@ -1060,9 +1074,11 @@ export class CostsService {
           serviceTypes: { has: strictScopeType },
           NOT: { serviceTypes: { hasSome: ALL_JOURNEY_SERVICE_TYPES.filter((t) => t !== strictScopeType) } },
         }
-      : showAll
-        ? {}
-        : { serviceTypes: { hasSome: parentNeedsArr } };
+      : requireScopeType
+        ? { serviceTypes: { has: requireScopeType } }
+        : showAll
+          ? {}
+          : { serviceTypes: { hasSome: parentNeedsArr } };
     const programs = await this.prisma.costProgram.findMany({
       where: {
         providerId,

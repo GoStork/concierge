@@ -119,7 +119,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
   const allBookings = bookings || [];
   const hasActive = allBookings.some((b: any) => b.status === "PENDING" || b.status === "CONFIRMED");
   const visibleBookings = hasActive
-    ? allBookings.filter((b: any) => b.status !== "CANCELLED" && b.status !== "DECLINED" && b.status !== "RESCHEDULED")
+    ? allBookings.filter((b: any) => b.status !== "CANCELLED" && b.status !== "DECLINED" && b.status !== "RESCHEDULED" && b.status !== "EXPIRED")
     : allBookings.slice(0, 1);
   const bookingItems: Array<{ type: "booking"; booking: any; createdAt: string }> = visibleBookings.map((b: any) => ({
     type: "booking" as const,

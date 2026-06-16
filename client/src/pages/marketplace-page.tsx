@@ -730,7 +730,7 @@ function DonorGridItem({ donor, type, dim, children }: {
   return (
     <div
       ref={setScrollRef}
-      className={`h-[600px] ${dim ? "grayscale opacity-60" : ""}`}
+      className="h-[600px]"
       data-testid={`card-container-${donor.id}`}
     >
       {children}
@@ -834,18 +834,6 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
     return mapDatabaseDonorToSwipeProfile(d);
   };
 
-  if (!filtered || filtered.length === 0) {
-    const typeLabel = type === "egg-donor" ? "egg donors" : type === "surrogate" ? "surrogates" : "sperm donors";
-    return (
-      <div className="flex items-center justify-center h-full text-center text-muted-foreground" data-testid="text-no-results">
-        <div>
-          <p className="text-lg font-ui">No {typeLabel} found</p>
-          <p className="text-sm">Check back soon as more profiles are added.</p>
-        </div>
-      </div>
-    );
-  }
-
   const getTabs = (profile: ReturnType<typeof mapDonor>) => {
     const matched = getMatchedPreferences(profile, userPrefs);
     if (type === "surrogate") return getSurrogateTabs(profile, matched);
@@ -887,6 +875,22 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
     }
     if (fetchMore && hasNextPage && !isFetchingMore && (filtered?.length ?? 0) - index <= 10) fetchMore();
   }, [filtered, type, fetchMore, hasNextPage, isFetchingMore]);
+
+  // Empty-state early return MUST come after every hook above (incl. the
+  // handleActiveChange useCallback) - returning before a hook changes the hook
+  // count between renders and throws "Rendered fewer hooks than expected" the
+  // moment a filter (e.g. Skipped) empties the list.
+  if (!filtered || filtered.length === 0) {
+    const typeLabel = type === "egg-donor" ? "egg donors" : type === "surrogate" ? "surrogates" : "sperm donors";
+    return (
+      <div className="flex items-center justify-center h-full text-center text-muted-foreground" data-testid="text-no-results">
+        <div>
+          <p className="text-lg font-ui">No {typeLabel} found</p>
+          <p className="text-sm">Check back soon as more profiles are added.</p>
+        </div>
+      </div>
+    );
+  }
 
   const renderCard = (donor: any, mode: SwipeDeckCardMode, api: SwipeDeckCardApi) => {
     const profile = mapDonor(donor);
@@ -1329,10 +1333,13 @@ function MarketplaceFiltersDrawer({ providerType, open, onOpenChange, ivfFilterP
         </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-        {providerType !== "ivf-clinic" && (
-          <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Quick filters</h2>
-            <div className="space-y-2">
+        {/* Quick filters: "Show passed profiles" (Skipped) is available for ALL
+            types including IVF clinics + doctors. "Experienced only" stays
+            donor/surrogate-specific. */}
+        <div>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Quick filters</h2>
+          <div className="space-y-2">
+            {providerType !== "ivf-clinic" && (
               <button
                 onClick={() => dispatch(setShowExperiencedOnly(!showExperiencedOnly))}
                 className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[var(--radius)] border transition-colors ${showExperiencedOnly ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-muted'}`}
@@ -1344,20 +1351,20 @@ function MarketplaceFiltersDrawer({ providerType, open, onOpenChange, ivfFilterP
                 </div>
                 <span className={`text-xs font-medium ${showExperiencedOnly ? 'text-primary' : 'text-muted-foreground'}`}>{showExperiencedOnly ? 'Yes' : 'No'}</span>
               </button>
-              <button
-                onClick={() => dispatch(setShowSkippedOnly(!showSkippedOnly))}
-                className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[var(--radius)] border transition-colors ${showSkippedOnly ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-muted'}`}
-                data-testid="toggle-skipped"
-              >
-                <div className="flex items-center gap-3">
-                  <X className={`w-5 h-5 ${showSkippedOnly ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="font-ui text-sm text-foreground">Show passed profiles</span>
-                </div>
-                <span className={`text-xs font-medium ${showSkippedOnly ? 'text-primary' : 'text-muted-foreground'}`}>{showSkippedOnly ? 'Yes' : 'No'}</span>
-              </button>
-            </div>
+            )}
+            <button
+              onClick={() => dispatch(setShowSkippedOnly(!showSkippedOnly))}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[var(--radius)] border transition-colors ${showSkippedOnly ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-muted'}`}
+              data-testid="toggle-skipped"
+            >
+              <div className="flex items-center gap-3">
+                <X className={`w-5 h-5 ${showSkippedOnly ? 'text-primary' : 'text-muted-foreground'}`} />
+                <span className="font-ui text-sm text-foreground">Show passed profiles</span>
+              </div>
+              <span className={`text-xs font-medium ${showSkippedOnly ? 'text-primary' : 'text-muted-foreground'}`}>{showSkippedOnly ? 'Yes' : 'No'}</span>
+            </button>
           </div>
-        )}
+        </div>
 
         <div>
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Preferences</h2>
