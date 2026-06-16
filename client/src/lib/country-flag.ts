@@ -66,6 +66,37 @@ export function getCountryFlag(name: string): string {
   return codeToFlagEmoji(code);
 }
 
+// US state abbreviations -> these resolve to the US flag. (A 2-letter token like
+// "MD" is a US state in this product, not Moldova.)
+const US_STATE_ABBR = new Set([
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN",
+  "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV",
+  "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
+  "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC", "PR",
+]);
+
+/**
+ * Resolve a flag emoji from a marketplace location string. Handles the shapes
+ * cards use: "CA" / "MD" (US state -> 🇺🇸), "South Africa" / "Taiwan" (country),
+ * and "City, Country" / "City, ST" (uses the last comma segment). Returns "" when
+ * nothing matches so callers can omit the flag cleanly.
+ */
+export function getLocationFlag(location?: string | null): string {
+  if (!location) return "";
+  const parts = location.split(",").map((s) => s.trim()).filter(Boolean);
+  const region = (parts.length ? parts[parts.length - 1] : location.trim());
+  if (US_STATE_ABBR.has(region.toUpperCase())) return getCountryFlag("United States");
+  const direct = getCountryFlag(region);
+  if (direct) return direct;
+  // Strip parenthetical suffixes like "Taiwan (R.O.C.)" and retry.
+  const cleaned = region.replace(/\(.*?\)/g, "").trim();
+  if (cleaned && cleaned !== region) {
+    const f = getCountryFlag(cleaned);
+    if (f) return f;
+  }
+  return getCountryFlag(location.trim());
+}
+
 /** Converts a country name (e.g. "United States") to an ISO 3166-1 alpha-2 code (e.g. "US"). */
 export function countryNameToIsoCode(name: string): string | null {
   if (!name) return null;

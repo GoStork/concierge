@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
+import { getLocationFlag } from "@/lib/country-flag";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { DoctorMonogram, initialsFromName } from "./doctor-monogram";
 import { DonorPhotoFallback } from "./donor-photo-fallback";
@@ -300,7 +301,9 @@ export function SwipeDeckCard({
                 </h3>
                 {pinnedHeader.location && (
                   <p className="text-muted-foreground font-ui flex items-center gap-1" style={{ fontSize: '13px' }}>
-                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    {getLocationFlag(pinnedHeader.location)
+                      ? <span className="shrink-0 leading-none">{getLocationFlag(pinnedHeader.location)}</span>
+                      : <MapPin className="w-3.5 h-3.5 shrink-0" />}
                     {pinnedHeader.location}
                   </p>
                 )}
@@ -400,7 +403,9 @@ export function SwipeDeckCard({
                 )}
                 {pinnedHeader.location && (
                   <p className="text-white/80 font-ui flex items-center gap-1 min-w-0" style={{ fontSize: '13px' }}>
-                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    {getLocationFlag(pinnedHeader.location)
+                      ? <span className="shrink-0 leading-none">{getLocationFlag(pinnedHeader.location)}</span>
+                      : <MapPin className="w-3.5 h-3.5 shrink-0" />}
                     <span className="truncate">{pinnedHeader.location}</span>
                   </p>
                 )}

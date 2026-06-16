@@ -24,15 +24,30 @@ export interface ProviderLocationLike {
   zip?: string | null;
 }
 
+// A "state" that's really a country-level token marks a served-region label
+// (e.g. "Mid-West, USA"), not a pinnable location - those get dropped when they
+// carry no street address.
+const REGION_STATE_TOKENS = new Set([
+  "usa",
+  "us",
+  "u.s.",
+  "u.s.a.",
+  "united states",
+  "united states of america",
+]);
+
 // A provider's location list often mixes precise street addresses with coarse,
 // address-less city/region entries (e.g. a "Los Angeles, CA" or "Mid-West, USA"
 // line alongside a full "21300 Victory Blvd. #760, Woodland Hills, CA" address).
-// When a coarse entry shares its state with another entry that DOES carry a
-// street address, it's a redundant duplicate of an area already pinned - drop
-// it. Coarse entries whose state isn't covered by any precise address are kept
-// (they convey a region no street address represents). Order is preserved.
-// Shared by the provider profile page and the marketplace swipe cards so the
-// same de-duplication runs everywhere a location list is rendered.
+// We drop a coarse, address-less entry when either:
+//   1. its state is already pinned by another entry that DOES carry a street
+//      address (so "Los Angeles, CA" is redundant once a CA address exists), or
+//   2. its "state" is a country-level token like "USA" - a served-region label
+//      ("Mid-West, USA") rather than a real, pinnable location.
+// Coarse entries with a real, otherwise-uncovered state are kept (they convey a
+// place no street address represents). Order is preserved. Shared by the
+// provider profile page and the marketplace swipe cards so the same
+// de-duplication runs everywhere a location list is rendered.
 export function dedupeProviderLocations<T extends ProviderLocationLike>(locations: T[]): T[] {
   if (!Array.isArray(locations)) return [];
   const hasAddress = (l: ProviderLocationLike) => !!(l.address && l.address.trim());
@@ -43,6 +58,7 @@ export function dedupeProviderLocations<T extends ProviderLocationLike>(location
   return locations.filter((l) => {
     if (hasAddress(l)) return true;
     const st = norm(l.state);
+    if (REGION_STATE_TOKENS.has(st)) return false;
     return !(st && statesWithAddress.has(st));
   });
 }

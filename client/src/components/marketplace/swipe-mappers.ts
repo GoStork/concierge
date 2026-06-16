@@ -9,6 +9,14 @@ import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSper
 import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-filters";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay, dedupeProviderLocations } from "@/lib/format-location";
+import { getLocationFlag } from "@/lib/country-flag";
+
+// "🇺🇸 California" - location label with its country flag prefixed (no flag -> plain).
+function flaggedLocation(location: string | null | undefined): string {
+  const label = formatLocationDisplay(location) || (location ? String(location) : "");
+  const flag = getLocationFlag(location);
+  return flag ? `${flag} ${label}` : label;
+}
 
 export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles" | "success_bars";
 
@@ -597,7 +605,7 @@ export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPre
 
   const overviewItems: TabItem[] = [];
   if (!matchedKeys.has("age") && isValidAge(profile.age)) overviewItems.push({ label: `Age ${profile.age}`, value: "" });
-  if (!matchedKeys.has("location") && isNonEmpty(profile.location)) overviewItems.push({ label: formatLocationDisplay(profile.location)!, value: "" });
+  if (!matchedKeys.has("location") && isNonEmpty(profile.location)) overviewItems.push({ label: flaggedLocation(profile.location), value: "" });
   if (isNonEmpty(profile.eggType)) overviewItems.push({ label: profile.eggType!, value: "" });
   if (overviewItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overviewItems });
 
@@ -678,7 +686,7 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
   } else {
     const overviewItems: TabItem[] = [];
     if (isNonEmpty(profile.age)) overviewItems.push({ label: `Age ${profile.age}`, value: "" });
-    if (isNonEmpty(profile.location)) overviewItems.push({ label: formatLocationDisplay(profile.location)!, value: "" });
+    if (isNonEmpty(profile.location)) overviewItems.push({ label: flaggedLocation(profile.location), value: "" });
     if (profile.bmi) overviewItems.push({ label: `BMI ${Math.round(Number(profile.bmi))}`, value: "", lineBreakBefore: true });
     if (isNonEmpty(profile.relationshipStatus)) overviewItems.push({ label: profile.relationshipStatus!, value: "" });
     if (isNonEmpty(profile.occupation)) overviewItems.push({ label: profile.occupation!, value: "" });

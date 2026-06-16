@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Search, Loader2, Calendar, MapPin, Award, Heart, Clock, Info, X, Baby, FlaskRound, SlidersHorizontal, ArrowLeft } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { dedupeProviderLocations } from "@/lib/format-location";
 import { matchesFilter, matchesSameSexCoupleRequirement, matchesInternationalRequirement, omniSearch, sortDonors } from "@/lib/marketplace-filters";
 import { PARENT_TYPE_MAP, DOCTORS_TYPE, PARENT_TYPE_ORDER } from "@/lib/parent-marketplace-types";
 import { useAppSelector, useAppDispatch } from "@/store";
