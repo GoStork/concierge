@@ -1819,7 +1819,37 @@ Important rules:
   const knownCountries = new Set(Object.values(tldCountryMap).map(c => c.toLowerCase()));
   knownCountries.add("united states");
   knownCountries.add("usa");
-  const dedupedLocations = Array.from(cityMap.values()).map(loc => {
+  // Drop generic, address-less rows when a specific street address already
+  // exists for the same state (US) or country (international). The AI extractor
+  // often emits a coarse "Los Angeles, CA" or "Mid-West, USA" row alongside a
+  // real "21300 Victory Blvd., Woodland Hills, CA" address - redundant noise
+  // that the city|state dedup above can't catch (different cities, same state).
+  // Run this BEFORE the country-normalization map below, which strips
+  // international street addresses, so the "same country" case still sees them.
+  // Mirrors dedupeProviderLocations() on the client (client/src/lib/format-location.ts).
+  const REGION_STATE_TOKENS = new Set([
+    "usa", "us", "u.s.", "u.s.a.", "united states", "united states of america",
+  ]);
+  const locHasAddress = (l: { address: string | null }) => !!(l.address && l.address.trim());
+  const cityMapValues = Array.from(cityMap.values());
+  const statesWithAddress = new Set(
+    cityMapValues.filter(locHasAddress).map(l => (l.state || "").trim().toLowerCase()).filter(Boolean),
+  );
+  const prunedLocations = cityMapValues.filter(loc => {
+    if (locHasAddress(loc)) return true;
+    const st = (loc.state || "").trim().toLowerCase();
+    if (REGION_STATE_TOKENS.has(st)) {
+      console.log(`[scraper] Dropping region-label location: ${loc.city || ""}, ${loc.state || ""}`);
+      return false;
+    }
+    if (st && statesWithAddress.has(st)) {
+      console.log(`[scraper] Dropping generic location already pinned by an address: ${loc.city || ""}, ${loc.state || ""}`);
+      return false;
+    }
+    return true;
+  });
+
+  const dedupedLocations = prunedLocations.map(loc => {
     const stateVal = (loc.state || "").trim();
     const isUS = usStates.has(stateVal) || usStates.has(stateVal.toLowerCase());
     if (isUS) return loc;

@@ -9,13 +9,22 @@ import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSper
 import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-filters";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay, dedupeProviderLocations } from "@/lib/format-location";
-import { getLocationFlag } from "@/lib/country-flag";
+import { getLocationFlag, cleanCityState } from "@/lib/country-flag";
 
 // "🇺🇸 California" - location label with its country flag prefixed (no flag -> plain).
 function flaggedLocation(location: string | null | undefined): string {
   const label = formatLocationDisplay(location) || (location ? String(location) : "");
   const flag = getLocationFlag(location);
   return flag ? `${flag} ${label}` : label;
+}
+
+// Recover the city the scraper dropped: the raw profile keeps "City, State" in
+// profileData.Location / "Current City" while the stored `location` scalar often
+// has only the state. Used for the card's display label (NOT for filtering).
+function deriveDisplayLocation(rawLocation: string | null | undefined, profileData: any): string | null {
+  const pd = profileData && typeof profileData === "object" ? profileData : null;
+  const richer = pd ? (pd["Location"] ?? pd["Current City"] ?? null) : null;
+  return cleanCityState(typeof richer === "string" ? richer : null, rawLocation ?? null) ?? (rawLocation ?? null);
 }
 
 export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles" | "success_bars";
@@ -119,7 +128,11 @@ export interface SwipeDeckProfile {
   firstName: string | null;
   externalId: string | null;
   age: number | null;
+  // `location` is the raw stored value, kept for filtering / Matched Preferences
+  // (it must mirror matchesFilter). `displayLocation` is the richer "City, State"
+  // recovered from the scraped profile for the card chip only.
   location: string | null;
+  displayLocation: string | null;
   photos: string[];
   photoUrl: string | null;
 
@@ -206,6 +219,7 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     externalId: dbDonor.externalId ?? null,
     age: r.age ? Number(r.age) : null,
     location: r.location,
+    displayLocation: deriveDisplayLocation(r.location, dbDonor.profileData),
     photos,
     photoUrl: dbDonor.photoUrl ?? null,
     height: r.height,
@@ -278,6 +292,7 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
     externalId: dbSurrogate.externalId ?? null,
     age: r.age ? Number(r.age) : null,
     location: r.location,
+    displayLocation: deriveDisplayLocation(r.location, dbSurrogate.profileData),
     photos,
     photoUrl: dbSurrogate.photoUrl ?? null,
     height: null,
@@ -350,6 +365,7 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
     externalId: dbSperm.externalId ?? null,
     age: r.age ? Number(r.age) : null,
     location: r.location,
+    displayLocation: deriveDisplayLocation(r.location, dbSperm.profileData),
     photos,
     photoUrl: dbSperm.photoUrl ?? null,
     height: r.height,
@@ -605,7 +621,7 @@ export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPre
 
   const overviewItems: TabItem[] = [];
   if (!matchedKeys.has("age") && isValidAge(profile.age)) overviewItems.push({ label: `Age ${profile.age}`, value: "" });
-  if (!matchedKeys.has("location") && isNonEmpty(profile.location)) overviewItems.push({ label: flaggedLocation(profile.location), value: "" });
+  if (!matchedKeys.has("location") && isNonEmpty(profile.location)) overviewItems.push({ label: flaggedLocation(profile.displayLocation || profile.location), value: "" });
   if (isNonEmpty(profile.eggType)) overviewItems.push({ label: profile.eggType!, value: "" });
   if (overviewItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overviewItems });
 
@@ -686,7 +702,7 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
   } else {
     const overviewItems: TabItem[] = [];
     if (isNonEmpty(profile.age)) overviewItems.push({ label: `Age ${profile.age}`, value: "" });
-    if (isNonEmpty(profile.location)) overviewItems.push({ label: flaggedLocation(profile.location), value: "" });
+    if (isNonEmpty(profile.location)) overviewItems.push({ label: flaggedLocation(profile.displayLocation || profile.location), value: "" });
     if (profile.bmi) overviewItems.push({ label: `BMI ${Math.round(Number(profile.bmi))}`, value: "", lineBreakBefore: true });
     if (isNonEmpty(profile.relationshipStatus)) overviewItems.push({ label: profile.relationshipStatus!, value: "" });
     if (isNonEmpty(profile.occupation)) overviewItems.push({ label: profile.occupation!, value: "" });

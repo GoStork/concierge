@@ -102,6 +102,9 @@ export function getLocationFlag(location?: string | null): string {
   const parts = location.split(",").map((s) => s.trim()).filter(Boolean);
   const region = (parts.length ? parts[parts.length - 1] : location.trim());
   if (isUsState(region)) return getCountryFlag("United States");
+  // Space-separated "City ST" with no comma (e.g. "Hemet CA"): check the last word.
+  const lastWord = region.split(/\s+/).pop() || "";
+  if (lastWord !== region && isUsState(lastWord)) return getCountryFlag("United States");
   const direct = getCountryFlag(region);
   if (direct) return direct;
   // Strip parenthetical suffixes like "Taiwan (R.O.C.)" and retry.
@@ -111,6 +114,36 @@ export function getLocationFlag(location?: string | null): string {
     if (f) return f;
   }
   return getCountryFlag(location.trim());
+}
+
+/**
+ * Build a clean "City, State" label, recovering the city the scraper dropped into
+ * the raw profile field. `raw` is the richer source value (e.g. profileData
+ * "Location" = "Hemet CA | $70,000" or "Bakersfield, CA"); `fallbackState` is the
+ * sparse stored value (e.g. "CA"). Strips the "| $comp" suffix, inserts a missing
+ * comma before a trailing state abbreviation ("Hemet CA" -> "Hemet, CA"), and
+ * appends the known state to a city-only value ("South Lyon" + "MI" -> "South
+ * Lyon, MI"). Falls back to the stored value when nothing richer is available.
+ */
+export function cleanCityState(raw: string | null | undefined, fallbackState?: string | null): string | null {
+  const fallback = (fallbackState || "").trim();
+  if (!raw || typeof raw !== "string") return fallback || null;
+  let s = raw.split("|")[0].trim();
+  if (!s) return fallback || null;
+  if (!s.includes(",")) {
+    const words = s.split(/\s+/);
+    const last = words[words.length - 1];
+    if (words.length > 1 && US_STATE_ABBR.has(last.toUpperCase())) {
+      s = `${words.slice(0, -1).join(" ")}, ${last.toUpperCase()}`;
+    } else if (
+      !isUsState(s) && !getCountryFlag(s) &&
+      fallback && s.toLowerCase() !== fallback.toLowerCase()
+    ) {
+      // City-only value plus a known state -> "City, State".
+      s = `${s}, ${fallback}`;
+    }
+  }
+  return s;
 }
 
 /** Converts a country name (e.g. "United States") to an ISO 3166-1 alpha-2 code (e.g. "US"). */
