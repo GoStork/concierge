@@ -541,7 +541,19 @@ function PendingBookingCard({ booking, start, onSelect, readOnly, expired }: { b
     },
   });
 
-  const acting = confirmMutation.isPending || declineMutation.isPending;
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PATCH", `/api/calendar/bookings/${booking.id}`, { status: "CANCELLED" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
+      toast({ title: "Booking cancelled", variant: "success" });
+    },
+  });
+
+  const acting = confirmMutation.isPending || declineMutation.isPending || cancelMutation.isPending;
 
   return (
     <div
@@ -573,19 +585,33 @@ function PendingBookingCard({ booking, start, onSelect, readOnly, expired }: { b
       ) : showSuggest ? (
         <SuggestTimeForm bookingId={booking.id} onCancel={() => setShowSuggest(false)} onSuccess={() => setShowSuggest(false)} />
       ) : expired ? (
-        <div className="flex items-center justify-between gap-2">
+        <div className="space-y-2">
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-ui bg-muted text-muted-foreground border border-border">
             Expired - not confirmed in time
           </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs gap-1 px-2 shrink-0"
-            onClick={() => setShowSuggest(true)}
-            data-testid={`button-suggest-time-expired-${booking.id}`}
-          >
-            <CalendarClock className="w-3 h-3" /> New Time
-          </Button>
+          <div className="flex gap-1.5 flex-nowrap">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1 px-2.5"
+              onClick={() => setShowSuggest(true)}
+              disabled={acting}
+              data-testid={`button-suggest-time-expired-${booking.id}`}
+            >
+              <CalendarClock className="w-3 h-3" /> New Time
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1 px-2.5 text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={() => cancelMutation.mutate()}
+              disabled={acting}
+              data-testid={`button-cancel-expired-${booking.id}`}
+            >
+              {cancelMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+              Cancel Booking
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="flex gap-1.5 flex-nowrap">
@@ -901,6 +927,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
   const isProvider = booking?.providerUserId === user?.id;
   const isPending = booking?.status === "PENDING";
   const isConfirmed = booking?.status === "CONFIRMED";
+  const isExpired = booking?.status === "EXPIRED";
 
   const cancelMutation = useMutation({
     mutationFn: async () => {
@@ -1091,7 +1118,7 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
             </Link>
           )}
         </div>
-        {showSuggestForm && isPending && isProvider && !isNoShow && (
+        {showSuggestForm && (isPending || isExpired) && isProvider && !isNoShow && (
           <div className="border border-border/50 rounded-[var(--radius)] p-3 space-y-2">
             <p className="text-sm font-ui">Suggest a new time</p>
             <SuggestTimeForm
@@ -1130,7 +1157,12 @@ function BookingDetailDialog({ booking, open, onClose }: { booking: any; open: b
               <CalendarClock className="w-4 h-4" /> Reschedule
             </Button>
           )}
-          {!wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED" && (!isPending || !isProvider) && (
+          {isExpired && isProvider && !showSuggestForm && (
+            <Button size="sm" variant="outline" className="gap-1" onClick={() => setShowSuggestForm(true)} data-testid="button-suggest-new-time-expired">
+              <CalendarClock className="w-4 h-4" /> New Time
+            </Button>
+          )}
+          {!wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED" && (!isPending || !isProvider) && !showSuggestForm && (
             <Button size="sm" variant="outline" className="text-destructive" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-cancel-booking">
               {cancelMutation.isPending ? "Cancelling..." : "Cancel Booking"}
             </Button>
