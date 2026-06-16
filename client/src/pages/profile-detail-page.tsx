@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ProfileSection } from "@/components/ui/profile-section";
+import { DonorPhotoFallback } from "@/components/marketplace/donor-photo-fallback";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAppDispatch, useAppSelector } from "@/store";
 import { toggleFavoriteDonor, passDonor } from "@/store/uiSlice";
@@ -52,10 +53,13 @@ function getEmbedUrl(url: string): string {
   return url;
 }
 
-function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: string | null }) {
+function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: { photos: string[]; videoUrl?: string | null; showFallback?: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const [showVideo, setShowVideo] = useState(false);
+  // Drop any photo whose URL 404s so a dead link never renders as a broken image.
+  const [errored, setErrored] = useState<Record<string, boolean>>({});
+  const photos = rawPhotos.filter((p) => !errored[p]);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
 
@@ -98,7 +102,15 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
     el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
   }, []);
 
-  if (photos.length === 0 && !videoUrl) return null;
+  if (photos.length === 0 && !videoUrl) {
+    if (!showFallback) return null;
+    // Anonymous / photo-less donor: branded silhouette instead of an empty hero.
+    return (
+      <div className="h-[280px] w-full max-w-[420px] rounded-[var(--radius)] overflow-hidden" data-testid="photo-gallery-fallback">
+        <DonorPhotoFallback />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -139,6 +151,7 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
                   src={photos[0]}
                   alt="Video thumbnail"
                   className="h-[280px] w-[220px] object-cover brightness-75"
+                  onError={() => setErrored((e) => ({ ...e, [photos[0]]: true }))}
                 />
               ) : (
                 <div className="h-[280px] w-[220px] bg-foreground/90" />
@@ -164,6 +177,7 @@ function PhotoGalleryBar({ photos, videoUrl }: { photos: string[]; videoUrl?: st
                 alt={`Photo ${idx + 1}`}
                 className="h-[280px] w-auto min-w-[180px] max-w-[260px] object-cover hover:scale-105 transition-transform duration-300"
                 loading={idx < 5 ? "eager" : "lazy"}
+                onError={() => setErrored((e) => ({ ...e, [url]: true }))}
               />
             </button>
           ))}
@@ -402,7 +416,8 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
     // The renderer interleaves [left..., right...] into the 2-col grid.
     return [
       // Left column (top to bottom)
-      { label: "Age", value: V(r.age) },
+      // Guard junk ages from a bad scrape (e.g. a stored -1976) - show "-" instead.
+      { label: "Age", value: (Number.isFinite(Number(r.age)) && Number(r.age) >= 18 && Number(r.age) <= 99) ? V(r.age) : "-" },
       { label: "Type", value: V(r.donorType) },
       { label: "Race", value: V(r.race) },
       { label: "Ethnicity", value: V(r.ethnicity) },
@@ -423,7 +438,10 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
   }
 }
 
-function MobilePhotoViewer({ photos, videoUrl }: { photos: string[]; videoUrl?: string | null }) {
+function MobilePhotoViewer({ photos: rawPhotos, videoUrl, showFallback = false }: { photos: string[]; videoUrl?: string | null; showFallback?: boolean }) {
+  // Drop any photo whose URL 404s so a dead link never renders as a broken image.
+  const [errored, setErrored] = useState<Record<string, boolean>>({});
+  const photos = rawPhotos.filter((p) => !errored[p]);
   const slides = useMemo(() => {
     const out: { kind: "photo" | "video"; url: string }[] = [];
     if (videoUrl) out.push({ kind: "video", url: videoUrl });
@@ -438,8 +456,29 @@ function MobilePhotoViewer({ photos, videoUrl }: { photos: string[]; videoUrl?: 
   const goLeft = useCallback(() => setIdx((p) => (p <= 0 ? total - 1 : p - 1)), [total]);
   const goRight = useCallback(() => setIdx((p) => (p >= total - 1 ? 0 : p + 1)), [total]);
 
-  if (total === 0) return null;
-  const current = slides[idx];
+  if (total === 0) {
+    if (!showFallback) return null;
+    // Anonymous / photo-less donor: full-bleed branded silhouette hero.
+    return (
+      <div
+        className="relative bg-muted overflow-hidden"
+        style={{
+          width: "100vw",
+          marginLeft: "calc(50% - 50vw)",
+          marginRight: "calc(50% - 50vw)",
+          marginTop: "4px",
+          height: "min(60vh, 480px)",
+        }}
+        data-testid="mobile-photo-fallback"
+      >
+        <DonorPhotoFallback />
+      </div>
+    );
+  }
+  // Clamp if the active slide was dropped after an image error.
+  const safeIdx = Math.min(idx, total - 1);
+  if (safeIdx !== idx) setIdx(safeIdx);
+  const current = slides[safeIdx];
 
   return (
     <>
@@ -457,17 +496,18 @@ function MobilePhotoViewer({ photos, videoUrl }: { photos: string[]; videoUrl?: 
         {current.kind === "photo" ? (
           <img
             src={current.url}
-            alt={`Photo ${idx + 1}`}
+            alt={`Photo ${safeIdx + 1}`}
             className="w-full h-full object-cover"
             loading="eager"
             decoding="async"
             draggable={false}
-            data-testid={`mobile-photo-${idx}`}
+            onError={() => setErrored((e) => ({ ...e, [current.url]: true }))}
+            data-testid={`mobile-photo-${safeIdx}`}
           />
         ) : (
           <>
             {photos[0] ? (
-              <img src={photos[0]} alt="Video thumbnail" className="w-full h-full object-cover brightness-75" />
+              <img src={photos[0]} alt="Video thumbnail" className="w-full h-full object-cover brightness-75" onError={() => setErrored((e) => ({ ...e, [photos[0]]: true }))} />
             ) : (
               <div className="w-full h-full bg-foreground/90" />
             )}
@@ -863,18 +903,16 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
         )}
       </div>
 
-      {(allPhotos.length > 0 || donorVideoUrl) && (
-        isMobile
-          ? (
-            <motion.div
-              layoutId={`card-hero-${donorId}`}
-              transition={{ duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] }}
-            >
-              <MobilePhotoViewer photos={allPhotos} videoUrl={donorVideoUrl} />
-            </motion.div>
-          )
-          : <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} />
-      )}
+      {isMobile
+        ? (
+          <motion.div
+            layoutId={`card-hero-${donorId}`}
+            transition={{ duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] }}
+          >
+            <MobilePhotoViewer photos={allPhotos} videoUrl={donorVideoUrl} showFallback />
+          </motion.div>
+        )
+        : <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} showFallback />}
 
       <div className={isMobile ? "hidden" : ""}>
         <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-donor-title">

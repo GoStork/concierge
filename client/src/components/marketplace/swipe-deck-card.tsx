@@ -10,6 +10,7 @@ import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { DoctorMonogram, initialsFromName } from "./doctor-monogram";
+import { DonorPhotoFallback } from "./donor-photo-fallback";
 
 export type { TabSection } from "./swipe-mappers";
 
@@ -266,10 +267,9 @@ export function SwipeDeckCard({
             // cover, so a photo-less doctor card matches the clinic's first tab.
             <div className="w-full h-full bg-secondary" data-testid={`hero-branded-${id}`} />
           ) : (
-            <div
-              className="w-full h-full bg-gradient-to-br from-[hsl(var(--secondary))] via-[hsl(var(--secondary))] to-[hsl(var(--muted))]"
-              data-testid={`hero-branded-${id}`}
-            />
+            // Donor / surrogate with no usable photo: branded anonymous silhouette
+            // so the card reads as intentional, never a broken image.
+            <DonorPhotoFallback testId={`hero-branded-${id}`} />
           )}
 
           <div className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/50 via-black/20 to-transparent h-28 z-[15] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} />

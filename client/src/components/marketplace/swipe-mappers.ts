@@ -8,7 +8,7 @@ import type { LucideIcon } from "lucide-react";
 import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
 import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-filters";
 import { formatMoneyDollars } from "@/lib/format-money";
-import { formatLocationDisplay } from "@/lib/format-location";
+import { formatLocationDisplay, dedupeProviderLocations } from "@/lib/format-location";
 
 export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles" | "success_bars";
 
@@ -396,6 +396,15 @@ function V(val: any): string | null {
   return s.length > 0 ? s : null;
 }
 
+// Only render an age when it falls in a plausible donor range. Guards against
+// junk that slips in from a bad scrape (e.g. a stored -1976) so the card never
+// shows "Age -1976".
+function isValidAge(val: any): boolean {
+  if (!isNonEmpty(val)) return false;
+  const n = Number(val);
+  return Number.isFinite(n) && n >= 18 && n <= 99;
+}
+
 function formatCurrency(val: number | null): string | null {
   if (val == null) return null;
   return formatMoneyDollars(Number(val));
@@ -587,7 +596,7 @@ export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPre
   }
 
   const overviewItems: TabItem[] = [];
-  if (!matchedKeys.has("age") && isNonEmpty(profile.age)) overviewItems.push({ label: `Age ${profile.age}`, value: "" });
+  if (!matchedKeys.has("age") && isValidAge(profile.age)) overviewItems.push({ label: `Age ${profile.age}`, value: "" });
   if (!matchedKeys.has("location") && isNonEmpty(profile.location)) overviewItems.push({ label: formatLocationDisplay(profile.location)!, value: "" });
   if (isNonEmpty(profile.eggType)) overviewItems.push({ label: profile.eggType!, value: "" });
   if (overviewItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overviewItems });
@@ -730,7 +739,7 @@ export function getClinicTabs(opts: {
   natAvg: number | null;
   contextLabel: string;
   reasons: string[];
-  locations: { city?: string | null; state?: string | null }[];
+  locations: { address?: string | null; city?: string | null; state?: string | null }[];
   doctors: { name: string }[];
   // The clinic's primary location, shown as the first matched-preference bubble.
   primaryLocationLabel?: string | null;
@@ -838,7 +847,7 @@ export function getClinicTabs(opts: {
     if (practiceItems.length > 0) tabs.push({ layoutType: "icon_list", title: "How they practice", items: practiceItems });
   }
 
-  const allLocItems: TabItem[] = (opts.locations || [])
+  const allLocItems: TabItem[] = dedupeProviderLocations(opts.locations || [])
     .map((l) => ({ label: [l.city, l.state].filter(Boolean).join(", "), value: "", icon: MapPin }))
     .filter((i) => i.label !== "");
   if (allLocItems.length > 0) {
@@ -936,7 +945,7 @@ export function getAgencyTabs(opts: {
   timeToMatch?: string | null;
   familiesPerCoordinator?: number | null;
   screening?: Record<string, boolean> | null;
-  locations?: { city?: string | null; state?: string | null }[];
+  locations?: { address?: string | null; city?: string | null; state?: string | null }[];
 }): TabSection[] {
   const tabs: TabSection[] = [];
 
@@ -976,7 +985,7 @@ export function getAgencyTabs(opts: {
   if (screeningItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Surrogate Screening", items: screeningItems });
 
   // Locations.
-  const locationItems: TabItem[] = (opts.locations || [])
+  const locationItems: TabItem[] = dedupeProviderLocations(opts.locations || [])
     .map((l) => [l.city, l.state].filter(Boolean).join(", "))
     .filter((s) => s.trim() !== "")
     .slice(0, 8)
