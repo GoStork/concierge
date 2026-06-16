@@ -16,3 +16,33 @@ export function formatLocationDisplay(location: string | null | undefined): stri
   }
   return out.replace(/\s{2,}/g, " ").trim();
 }
+
+export interface ProviderLocationLike {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+}
+
+// A provider's location list often mixes precise street addresses with coarse,
+// address-less city/region entries (e.g. a "Los Angeles, CA" or "Mid-West, USA"
+// line alongside a full "21300 Victory Blvd. #760, Woodland Hills, CA" address).
+// When a coarse entry shares its state with another entry that DOES carry a
+// street address, it's a redundant duplicate of an area already pinned - drop
+// it. Coarse entries whose state isn't covered by any precise address are kept
+// (they convey a region no street address represents). Order is preserved.
+// Shared by the provider profile page and the marketplace swipe cards so the
+// same de-duplication runs everywhere a location list is rendered.
+export function dedupeProviderLocations<T extends ProviderLocationLike>(locations: T[]): T[] {
+  if (!Array.isArray(locations)) return [];
+  const hasAddress = (l: ProviderLocationLike) => !!(l.address && l.address.trim());
+  const norm = (s: string | null | undefined) => (s || "").trim().toLowerCase();
+  const statesWithAddress = new Set(
+    locations.filter(hasAddress).map((l) => norm(l.state)).filter(Boolean),
+  );
+  return locations.filter((l) => {
+    if (hasAddress(l)) return true;
+    const st = norm(l.state);
+    return !(st && statesWithAddress.has(st));
+  });
+}

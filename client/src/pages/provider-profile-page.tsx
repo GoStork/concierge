@@ -13,6 +13,7 @@ import { IvfSuccessRatesSection } from "@/components/ivf-success-rates-section";
 import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-section";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getCountryFlag } from "@/lib/country-flag";
+import { dedupeProviderLocations } from "@/lib/format-location";
 
 function FieldItem({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
@@ -414,9 +415,11 @@ export default function ProviderProfilePage() {
         );
       })()}
 
-      {provider.locations && provider.locations.length > 0 && (
+      {(() => {
+        const locations = dedupeProviderLocations(provider.locations || []);
+        return locations.length > 0 && (
         <ProfileSection title="Locations" contentClassName="p-6 space-y-3" data-testid="section-locations">
-            {provider.locations.map((loc: any, idx: number) => {
+            {locations.map((loc: any, idx: number) => {
               const parts = [loc.address, loc.city, loc.state, loc.zip].filter(Boolean);
               if (parts.length === 0) return null;
               return (
@@ -427,7 +430,8 @@ export default function ProviderProfilePage() {
               );
             })}
         </ProfileSection>
-      )}
+        );
+      })()}
 
       {provider.members && provider.members.length > 0 && (
         <ProfileSection title="Team Members" data-testid="section-team">
