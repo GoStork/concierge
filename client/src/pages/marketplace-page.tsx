@@ -191,12 +191,15 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
       </CardHeader>
 
       <CardContent className="space-y-3 flex-1 pt-0">
-        {provider.locations && provider.locations.length > 0 && (
+        {(() => {
+          const loc = dedupeProviderLocations(provider.locations || [])[0];
+          return loc && (
           <p className="text-sm text-muted-foreground flex items-center gap-1" data-testid={`text-provider-location-${provider.id}`}>
             <MapPin className="w-3.5 h-3.5 shrink-0" />
-            {provider.locations[0].city}{provider.locations[0].state ? `, ${provider.locations[0].state}` : ""}
+            {loc.city}{loc.state ? `, ${loc.state}` : ""}
           </p>
-        )}
+          );
+        })()}
 
         {pct !== null && (
           <div data-testid={`ivf-rate-section-${provider.id}`}>
@@ -692,12 +695,15 @@ function ProviderGrid({ providers, searchQuery, providerTypeName, onSchedule }: 
                 </Badge>
               ))}
             </div>
-            {provider.locations && provider.locations.length > 0 && (
+            {(() => {
+              const loc = dedupeProviderLocations(provider.locations || [])[0];
+              return loc && (
               <p className="text-sm text-muted-foreground flex items-center gap-1" data-testid={`text-provider-location-${provider.id}`}>
                 <MapPin className="w-3.5 h-3.5" />
-                {provider.locations[0].city}{provider.locations[0].state ? `, ${provider.locations[0].state}` : ""}
+                {loc.city}{loc.state ? `, ${loc.state}` : ""}
               </p>
-            )}
+              );
+            })()}
           </CardContent>
           <CardFooter className="pt-4 border-t border-border/50 flex gap-2">
             <Button className="flex-1 font-ui" variant="outline" onClick={(e) => { e.stopPropagation(); navigate(`/providers/${provider.id}`); }} data-testid={`button-view-details-${provider.id}`}>
@@ -1089,7 +1095,7 @@ function MobileSavedGrid({ kind, items }: {
         .map((p) => {
           const members = Array.isArray(p.members) ? p.members.filter((m: any) => m?.isPublicProfile !== false) : [];
           const face = members.map((m: any) => getPhotoSrc(m?.photoUrl)).find(Boolean) || null;
-          const loc = p.locations?.[0];
+          const loc = dedupeProviderLocations(p.locations || [])[0];
           return {
             key: p.id,
             photo: face,

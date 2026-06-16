@@ -14,7 +14,14 @@ export function formatLocationDisplay(location: string | null | undefined): stri
   for (const [re, abbr] of COUNTRY_ABBREVIATIONS) {
     out = out.replace(re, abbr);
   }
-  return out.replace(/\s{2,}/g, " ").trim();
+  // Drop empty comma segments so a missing city doesn't leave a dangling comma
+  // (e.g. ", CA" -> "CA", "Ocala, , FL" -> "Ocala, FL").
+  out = out
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(", ");
+  return out.replace(/\s{2,}/g, " ").trim() || null;
 }
 
 export interface ProviderLocationLike {

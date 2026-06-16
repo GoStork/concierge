@@ -66,26 +66,42 @@ export function getCountryFlag(name: string): string {
   return codeToFlagEmoji(code);
 }
 
-// US state abbreviations -> these resolve to the US flag. (A 2-letter token like
-// "MD" is a US state in this product, not Moldova.)
+// US states -> the US flag. Both 2-letter abbreviations (a token like "MD" is a
+// US state in this product, not Moldova) and full names (cards store either
+// "CA" or "California" / "Dayton, Nevada").
 const US_STATE_ABBR = new Set([
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN",
   "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV",
   "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
   "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC", "PR",
 ]);
+const US_STATE_NAMES = new Set([
+  "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut",
+  "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
+  "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan",
+  "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada",
+  "new hampshire", "new jersey", "new mexico", "new york", "north carolina",
+  "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island",
+  "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont",
+  "virginia", "washington", "west virginia", "wisconsin", "wyoming",
+  "district of columbia", "washington dc", "washington, d.c.", "puerto rico",
+]);
+
+function isUsState(region: string): boolean {
+  return US_STATE_ABBR.has(region.trim().toUpperCase()) || US_STATE_NAMES.has(region.trim().toLowerCase());
+}
 
 /**
  * Resolve a flag emoji from a marketplace location string. Handles the shapes
- * cards use: "CA" / "MD" (US state -> 🇺🇸), "South Africa" / "Taiwan" (country),
- * and "City, Country" / "City, ST" (uses the last comma segment). Returns "" when
- * nothing matches so callers can omit the flag cleanly.
+ * cards use: "CA" / "California" / "Dayton, Nevada" (US -> 🇺🇸), "South Africa" /
+ * "Taiwan" (country), and "City, Country" (uses the last comma segment). Returns
+ * "" when nothing matches so callers can omit the flag cleanly.
  */
 export function getLocationFlag(location?: string | null): string {
   if (!location) return "";
   const parts = location.split(",").map((s) => s.trim()).filter(Boolean);
   const region = (parts.length ? parts[parts.length - 1] : location.trim());
-  if (US_STATE_ABBR.has(region.toUpperCase())) return getCountryFlag("United States");
+  if (isUsState(region)) return getCountryFlag("United States");
   const direct = getCountryFlag(region);
   if (direct) return direct;
   // Strip parenthetical suffixes like "Taiwan (R.O.C.)" and retry.
