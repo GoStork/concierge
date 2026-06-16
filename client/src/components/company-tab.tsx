@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import ImageCropPreview from "@/components/image-crop-preview";
+import ImageUploader from "@/components/image-uploader";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import LocationAutocomplete from "@/components/location-autocomplete";
@@ -154,8 +154,6 @@ export default function CompanyTab() {
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [teamMembers, setTeamMembers] = useState<MemberData[]>([]);
   const [editingMemberIdx, setEditingMemberIdx] = useState<number | null>(null);
-  const [uploadingPhotoIdx, setUploadingPhotoIdx] = useState<number | null>(null);
-  const [cropState, setCropState] = useState<{ src: string; idx: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -326,31 +324,6 @@ export default function CompanyTab() {
     );
   }
 
-  async function handlePhotoUpload(file: File | Blob, idx: number) {
-    setCropState(null);
-    setUploadingPhotoIdx(idx);
-    try {
-      const formData = new FormData();
-      formData.append("file", file, file instanceof File ? file.name : "photo.jpg");
-      const res = await fetch("/api/uploads", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: "Upload failed" }));
-        throw new Error(err.message);
-      }
-      const { url } = await res.json();
-      const updated = [...teamMembers];
-      updated[idx] = { ...updated[idx], photoUrl: url };
-      setTeamMembers(updated);
-    } catch (err: any) {
-      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
-    } finally {
-      setUploadingPhotoIdx(null);
-    }
-  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -464,15 +437,6 @@ export default function CompanyTab() {
 
   return (
     <>
-    {cropState && (
-      <ImageCropPreview
-        imageSrc={cropState.src}
-        onCropComplete={(blob) => handlePhotoUpload(blob, cropState.idx)}
-        onCancel={() => setCropState(null)}
-        aspect={1}
-        cropShape="round"
-      />
-    )}
     <form ref={companyFormRef} onSubmit={handleSave} className="space-y-8" data-testid="company-form">
       <Card className="p-6 space-y-5">
         <div className="flex items-center justify-between">
@@ -509,49 +473,14 @@ export default function CompanyTab() {
 
         <div className="space-y-2">
           <Label>Logo</Label>
-          <div className="flex gap-2">
-            <Input
-              value={logoUrl}
-              onChange={e => setLogoUrl(e.target.value)}
-              placeholder="https://..."
-              className="flex-1"
-              disabled={readOnly}
-              data-testid="input-company-logo"
-            />
-            {!readOnly && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => document.getElementById("company-logo-upload")?.click()}
-                data-testid="btn-upload-company-logo"
-              >
-                <Upload className="w-4 h-4 mr-1" /> Upload
-              </Button>
-            )}
-            <input
-              id="company-logo-upload"
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const formData = new FormData();
-                formData.append("file", file);
-                try {
-                  const res = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
-                  if (!res.ok) throw new Error("Upload failed");
-                  const { url } = await res.json();
-                  setLogoUrl(url);
-                } catch (err: any) {
-                  toast({ title: "Upload failed", description: err.message, variant: "destructive" });
-                }
-                e.target.value = "";
-              }}
-            />
-          </div>
+          <ImageUploader
+            value={logoUrl || null}
+            onChange={(url) => setLogoUrl(url || "")}
+            mode="logo"
+            variant="dropzone"
+            disabled={readOnly}
+            testId="company-logo"
+          />
         </div>
 
         <div className="space-y-2">
@@ -1131,73 +1060,18 @@ export default function CompanyTab() {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Photo</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={member.photoUrl || ""}
-                        onChange={e => {
-                          const updated = [...teamMembers];
-                          updated[idx] = { ...updated[idx], photoUrl: e.target.value || null };
-                          setTeamMembers(updated);
-                        }}
-                        placeholder="Photo URL or upload →"
-                        className="h-8 text-sm flex-1"
-                        data-testid={`input-member-photo-${idx}`}
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 px-2 shrink-0"
-                        disabled={uploadingPhotoIdx === idx}
-                        onClick={() => {
-                          const input = document.createElement("input");
-                          input.type = "file";
-                          input.accept = "image/jpeg,image/png,image/webp,image/gif";
-                          input.onchange = (e) => {
-                            const file = (e.target as HTMLInputElement).files?.[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onload = () => setCropState({ src: reader.result as string, idx });
-                              reader.readAsDataURL(file);
-                            }
-                          };
-                          input.click();
-                        }}
-                        data-testid={`btn-upload-member-photo-${idx}`}
-                      >
-                        {uploadingPhotoIdx === idx ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Upload className="w-3.5 h-3.5" />
-                        )}
-                      </Button>
-                    </div>
-                    {member.photoUrl && (
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <img
-                          src={getPhotoSrc(member.photoUrl)!}
-                          alt={member.name}
-                          className="w-10 h-10 rounded-full object-cover bg-secondary"
-                          referrerPolicy="no-referrer"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                        />
-                        <span className="text-xs text-muted-foreground truncate flex-1">{member.photoUrl.split("/").pop()}</span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                          onClick={() => {
-                            const updated = [...teamMembers];
-                            updated[idx] = { ...updated[idx], photoUrl: null };
-                            setTeamMembers(updated);
-                          }}
-                          data-testid={`btn-remove-member-photo-${idx}`}
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    )}
+                    <ImageUploader
+                      value={member.photoUrl}
+                      onChange={(url) => {
+                        const updated = [...teamMembers];
+                        updated[idx] = { ...updated[idx], photoUrl: url };
+                        setTeamMembers(updated);
+                      }}
+                      mode="avatar"
+                      variant="avatar"
+                      size={64}
+                      testId={`member-photo-${idx}`}
+                    />
                   </div>
                   {locations.length > 0 && (
                     <div className="space-y-1">

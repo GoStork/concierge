@@ -16,7 +16,7 @@ import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import MembersTable from "@/components/members-table";
-import ImageCropPreview from "@/components/image-crop-preview";
+import ImageUploader from "@/components/image-uploader";
 import CompanyTab from "@/components/company-tab";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
@@ -83,9 +83,7 @@ const allTabs = [
 function AccountTab() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const isInitializingRef = useRef(false);
-  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -221,7 +219,6 @@ function AccountTab() {
   const userCountry = (user as any).country as string | null;
   const locationDisplay = [userCity, userState].filter(Boolean).join(", ") || null;
 
-  const photoSrc = getPhotoSrc(photoUrl);
 
   const profileLoading = isParent && parentProfileQuery.isLoading;
 
@@ -732,39 +729,17 @@ function AccountTab() {
     }
   }
 
-  async function handlePhotoUpload(file: File | Blob) {
+  // <ImageUploader /> handles the file upload + cropping; we just persist the URL.
+  async function persistPhoto(url: string | null) {
     setUploading(true);
-    setCropImageSrc(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file, file instanceof File ? file.name : "photo.jpg");
-      const uploadRes = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
-      if (!uploadRes.ok) throw new Error("Upload failed");
-      const { url } = await uploadRes.json();
       await apiRequest("PUT", "/api/user/photo", { photoUrl: url });
       await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       if ((user as any).providerId) {
         queryClient.invalidateQueries({ queryKey: ["/api/providers", (user as any).providerId, "users"] });
       }
-      toast({ title: "Photo updated", variant: "success" });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handlePhotoDelete() {
-    setUploading(true);
-    try {
-      await apiRequest("PUT", "/api/user/photo", { photoUrl: null });
-      await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      if ((user as any).providerId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/providers", (user as any).providerId, "users"] });
-      }
-      toast({ title: "Photo removed", variant: "success" });
+      toast({ title: url ? "Photo updated" : "Photo removed", variant: "success" });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -814,15 +789,6 @@ function AccountTab() {
 
   return (
     <>
-    {cropImageSrc && (
-      <ImageCropPreview
-        imageSrc={cropImageSrc}
-        onCropComplete={(blob) => handlePhotoUpload(blob)}
-        onCancel={() => setCropImageSrc(null)}
-        aspect={1}
-        cropShape="round"
-      />
-    )}
     <Card className="p-8">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-heading">Personal Information</h2>
@@ -841,61 +807,17 @@ function AccountTab() {
       </div>
 
       <div className="flex flex-col md:flex-row gap-8">
-        <div className="shrink-0 flex flex-col items-center gap-2">
-          <div className="relative group">
-            {photoSrc ? (
-              <img src={photoSrc} alt="Profile" className="w-24 h-24 rounded-full object-cover border-2 border-border/40" data-testid="img-profile-photo" />
-            ) : (
-              <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center border-2 border-border/40" data-testid="img-profile-photo-placeholder">
-                <User className="w-10 h-10 text-primary" />
-              </div>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className="hidden"
-              data-testid="input-profile-photo"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = () => setCropImageSrc(reader.result as string);
-                  reader.readAsDataURL(file);
-                }
-                e.target.value = "";
-              }}
-            />
-            <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-              {uploading ? (
-                <Loader2 className="w-5 h-5 text-white animate-spin" />
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                    data-testid="button-upload-photo"
-                    title={photoSrc ? "Change photo" : "Upload photo"}
-                  >
-                    <Camera className="w-4 h-4 text-white" />
-                  </button>
-                  {photoSrc && (
-                    <button
-                      type="button"
-                      onClick={handlePhotoDelete}
-                      className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                      data-testid="button-delete-photo"
-                      title="Remove photo"
-                    >
-                      <Trash2 className="w-4 h-4 text-white" />
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">Profile photo</p>
+        <div className="shrink-0">
+          <ImageUploader
+            value={photoUrl}
+            onChange={persistPhoto}
+            mode="avatar"
+            variant="avatar"
+            size={96}
+            label="Profile photo"
+            testId="profile-photo"
+            fallback={<User className="w-10 h-10 text-primary" />}
+          />
         </div>
 
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">

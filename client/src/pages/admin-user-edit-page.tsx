@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Loader2, RefreshCw, User, UserCircle, Phone, MapPin, Building2, Video, Calendar, Link2, Copy, Check, AlertTriangle, Camera, Trash2, Eye, EyeOff, Mail, Shield, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
-import ImageCropPreview from "@/components/image-crop-preview";
+import ImageUploader from "@/components/image-uploader";
 import { PhoneInput } from "@/components/ui/phone-input";
 
 const PROVIDER_ROLES = [
@@ -123,9 +123,7 @@ export default function AdminUserEditPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const editFormRef = useRef<HTMLFormElement | null>(null);
-  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
 
   const currentUserRoles: string[] = (currentUser as any)?.roles || [];
   const isGostorkAdmin = currentUserRoles.includes("GOSTORK_ADMIN");
@@ -150,7 +148,6 @@ export default function AdminUserEditPage() {
   const [personalLocation, setPersonalLocation] = useState({ address: "", city: "", state: "", zip: "", country: "" });
   const [allLocations, setAllLocations] = useState(true);
   const [locationIds, setLocationIds] = useState<string[]>([]);
-  const [uploading, setUploading] = useState(false);
   const [localPhotoUrl, setLocalPhotoUrl] = useState<string | null>(null);
 
   const contextProviderId = providerIdFromUrl || currentUserProviderId;
@@ -294,27 +291,6 @@ export default function AdminUserEditPage() {
     else setLocationIds([...locationIds, locId]);
   }
 
-  async function handlePhotoUpload(file: File | Blob) {
-    setUploading(true);
-    setCropImageSrc(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", file, file instanceof File ? file.name : "photo.jpg");
-      const uploadRes = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
-      if (!uploadRes.ok) throw new Error("Upload failed");
-      const { url } = await uploadRes.json();
-      setLocalPhotoUrl(url);
-      toast({ title: "Photo uploaded", variant: "success" });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  function handlePhotoDelete() {
-    setLocalPhotoUrl(null);
-  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -396,7 +372,6 @@ export default function AdminUserEditPage() {
     ? [userData.parentAccountRole]
     : (userData.roles || []);
   const roleDisplay = roleBadges.map(r => roleBadgeLabel(r)).join(", ");
-  const photoSrc = getPhotoSrc(localPhotoUrl);
   const locationDisplay = [userData.city, userData.state].filter(Boolean).join(", ") || null;
 
   return (
@@ -412,70 +387,17 @@ export default function AdminUserEditPage() {
 
         <form ref={editFormRef} onSubmit={handleSubmit}>
           <div className="flex flex-col md:flex-row gap-8">
-            <div className="shrink-0 flex flex-col items-center gap-2">
-              <div className="relative group">
-                {photoSrc ? (
-                  <img src={photoSrc} alt="Profile" className="w-24 h-24 rounded-full object-cover border-2 border-border/40" data-testid="img-profile-photo" />
-                ) : (
-                  <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center border-2 border-border/40" data-testid="img-profile-photo-placeholder">
-                    <User className="w-10 h-10 text-primary" />
-                  </div>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="hidden"
-                  data-testid="input-profile-photo"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = () => setCropImageSrc(reader.result as string);
-                      reader.readAsDataURL(file);
-                    }
-                    e.target.value = "";
-                  }}
-                />
-                {cropImageSrc && (
-                  <ImageCropPreview
-                    imageSrc={cropImageSrc}
-                    onCropComplete={(blob) => handlePhotoUpload(blob)}
-                    onCancel={() => setCropImageSrc(null)}
-                    aspect={1}
-                    cropShape="round"
-                  />
-                )}
-                <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                  {uploading ? (
-                    <Loader2 className="w-5 h-5 text-white animate-spin" />
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                        data-testid="button-upload-photo"
-                        title={photoSrc ? "Change photo" : "Upload photo"}
-                      >
-                        <Camera className="w-4 h-4 text-white" />
-                      </button>
-                      {photoSrc && (
-                        <button
-                          type="button"
-                          onClick={handlePhotoDelete}
-                          className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                          data-testid="button-delete-photo"
-                          title="Remove photo"
-                        >
-                          <Trash2 className="w-4 h-4 text-white" />
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Profile photo</p>
+            <div className="shrink-0">
+              <ImageUploader
+                value={localPhotoUrl}
+                onChange={(url) => setLocalPhotoUrl(url)}
+                mode="avatar"
+                variant="avatar"
+                size={96}
+                label="Profile photo"
+                testId="profile-photo"
+                fallback={<User className="w-10 h-10 text-primary" />}
+              />
             </div>
 
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
