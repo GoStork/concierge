@@ -4,6 +4,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields, getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
+import { cleanCityState } from "@/lib/country-flag";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { hasProviderRole, hasAnyRole, GOSTORK_ROLES } from "@shared/roles";
@@ -347,6 +348,13 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
   const V = (val: any) => (val != null && val !== "") ? String(val) : "-";
   const profileData = donor.profileData || {};
 
+  // Recover the city the scraper dropped (kept in profileData) and normalize to
+  // the consistent "City, ST" form - same logic the marketplace card uses, so the
+  // detail page no longer shows just the bare state.
+  const richLoc = profileData?.["Location"] ?? profileData?.["Current City"] ?? null;
+  const locDisplay = (raw: any) =>
+    formatLocationDisplay(cleanCityState(typeof richLoc === "string" ? richLoc : null, raw ?? null)) || V(raw);
+
   const fmtUSD = (val: number | null | undefined) => val != null ? formatMoneyDollars(Number(val)) : "-";
   const fmtTotalCost = (tc: { min: number; max: number } | null | undefined) => {
     if (!tc) return "-";
@@ -360,7 +368,7 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
       { label: "Age", value: V(r.age) },
       { label: "Education Level", value: V(r.education) },
       { label: "Eye Color", value: V(r.eyeColor) },
-      { label: "Location", value: V(r.location) },
+      { label: "Location", value: locDisplay(r.location) },
       { label: "Hair Color", value: V(r.hairColor) },
       { label: "Donation Types", value: V(r.donationTypes) },
       { label: "Race", value: V(r.race) },
@@ -379,7 +387,7 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
     const r = resolveSurrogateFields(donor);
     return [
       { label: "Age", value: V(r.age) },
-      { label: "Location", value: V(r.location) },
+      { label: "Location", value: locDisplay(r.location) },
       { label: "BMI", value: V(r.bmi) },
       { label: "Race", value: V(r.race) },
       { label: "Ethnicity", value: V(r.ethnicity) },
@@ -427,7 +435,7 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
       { label: "Education", value: V(r.education) },
       { label: "Occupation", value: V(r.occupation) },
       // Right column (top to bottom) - costs at very end
-      { label: "Location", value: V(r.location) },
+      { label: "Location", value: locDisplay(r.location) },
       { label: "Height", value: V(r.height) },
       { label: "Weight", value: V(r.weight) },
       { label: "Donation Types", value: V(r.donationTypes) },
@@ -821,7 +829,10 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
 
   const headerMeta: string[] = [];
   if (donor.status) headerMeta.push(donor.status);
-  if (donor.location) headerMeta.push(formatLocationDisplay(donor.location)!);
+  if (donor.location) {
+    const richLoc = profileData?.["Location"] ?? profileData?.["Current City"] ?? null;
+    headerMeta.push(formatLocationDisplay(cleanCityState(typeof richLoc === "string" ? richLoc : null, donor.location)) || formatLocationDisplay(donor.location)!);
+  }
   if (type === "sperm-donor") {
     // Show all matching vial cost programs from the cost sheet
     const vialCosts: { label: string; cost: number }[] = Array.isArray(donor.vialCosts) ? donor.vialCosts : [];
