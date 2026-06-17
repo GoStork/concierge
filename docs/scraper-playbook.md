@@ -61,6 +61,14 @@ re-discovering the same problems on every new agency.
   dashboard) rather than assuming all data is in the first HTML response.
 - **Card-list sites (WordPress, e.g. Eggspecting):** capture each donor's **profileUrl**
   from the listing card so the per-donor page can be fetched (commit `465af14`).
+  - **Gotcha: the profile URL's internal id is NOT the public donor number** we store as
+    `externalId`. A card shows `Donor ID : 6501` but links to `/donor-view?donor_id=353` -
+    so you **cannot build the URL from `externalId`**. Pair the card's `view-more` href with
+    the public number in its `old-site-id` div, per card (`extractWpDonorCardProfileUrls`).
+  - **Skip the Gemini section pass for these sites' egg donors** - their donor-view pages
+    are large enough to reliably **time out Gemini** (120s x4 retries) for no benefit. Once
+    the gallery is captured, `return` (`if (hasWpPaging && job.type === "egg-donor")`). Non-WP
+    egg providers (e.g. Family Creations) still run section extraction.
 
 ## Pagination
 
@@ -82,12 +90,19 @@ re-discovering the same problems on every new agency.
   See the `DYNAMIC_PHOTO_PATHS` regex.
 - **Photos tab is often a separate AJAX fragment** (e.g. `_DonorPhotoGalleryHTML?DonorId=`).
   Fetch it; merge into `profileData["All Photos"]`.
+- **WordPress galleries are a Fotorama widget on the donor-view page** (not an AJAX
+  fragment). The **raw HTML** holds a flat list of `<img src=...>` directly inside
+  `<div class="fotorama" ...>`; the `fotorama__img` nodes you see in DevTools Elements are
+  **JS-rendered and absent** from what the scraper fetches. Parse the raw `<img>` tags
+  (`extractFotoramaPhotos`) and skip WordPress `-150x150` thumbnail size-variants.
 - **Hash-skip must never shrink a gallery** (commit `034d8cf`): when a donor's `cardHash`
   is unchanged, the run carries only the single listing-card photo - so preserve the
   existing `All Photos` gallery instead of overwriting it.
-- **Survive image-host 429s** - the shared `fetchHtml` retries `429 Too Many Requests`
-  (and other transient errors) with backoff, so a rate-limiting image host doesn't fail
-  the run.
+- **Survive image-host 429s** - image downloads go through `persistSinglePhoto` (**not**
+  `fetchHtml`), which retries `429` up to **5x with exponential 2s/4s/8s/16s backoff and
+  honours `Retry-After`** (commit `034d8cf`). WordPress image hosts rate-limit photo bursts
+  hard; without this the gallery only downloads partially and the rest is silently dropped.
+  (Page fetches via `fetchHtml` retry `429` separately - see Resilience.)
 
 ## Resilience (all in the shared engine)
 
@@ -108,6 +123,11 @@ re-discovering the same problems on every new agency.
   The card/detail recover the city for display via `cleanCityState` (commit `dfef635`).
   Keep the raw `location` scalar for filtering/Matched-Preferences.
 - **Never assume HTML attribute order in regex** - `src` may come before or after `class`.
+- **Coerce section fields to scalars before writing scalar columns.** AI section extraction
+  sometimes returns a **nested object** for a field (e.g. an "Education" group of sub-fields),
+  but `education`/`occupation`/`height`/`race`/... are String columns - assigning an object
+  **throws on the Prisma upsert** and silently drops that donor. Map via `pickScalar(...)`,
+  which takes the first string/number candidate and ignores objects/arrays.
 - **Compensation / cost** is often appended to the location field (`"City, ST | $70,000"`);
   strip the `| $...` suffix when reading the city.
 
@@ -156,6 +176,9 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
 | `Interrupted - server restarted while sync was running` | Benign - server was restarted mid-run | Ignore; auto-resume re-runs it |
 | Gallery shrank to 1 photo after a nightly | Hash-skip overwrote the gallery | Preserve existing `All Photos` (`034d8cf`) |
 | Only the state shows (no city) | City is in `profileData.Location`, not the scalar | `cleanCityState` recovery (`dfef635`) |
+| `Invalid prisma.*.upsert() ... ` on a scalar field (e.g. `education`) | AI section returned a nested object for a String column | `pickScalar` coercion in the section→column mapping |
+| Gallery only partially downloaded (some photos missing) | Image host rate-limited the burst (429) | `persistSinglePhoto` 5x exp backoff + `Retry-After` (`034d8cf`) |
+| WP donor `profileUrl` points at the wrong/404 page | Built the URL from `externalId` instead of the card's `view-more` href | Internal `donor_id` ≠ public number; capture per card (`extractWpDonorCardProfileUrls`) |
 
 ## Platform cheat-sheet
 
@@ -164,7 +187,10 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
 - **JMS / o-jms** (e.g. genesis): login at **`/user/login`** (NOT `/Account/Login` → 405);
   `profileData.Location` = `"City ST | $comp"`.
 - **WordPress** (e.g. Eggspecting): `log`/`pwd` login fields; Source URL = donor-list page,
-  not `wp-login.php`; per-card `profileUrl` capture; image-host rate-limits (429) - retried.
+  not `wp-login.php`; per-card `profileUrl` capture (internal `donor_id` ≠ public donor number -
+  pair `view-more` href with the `old-site-id` number); gallery = **Fotorama** raw `<img>` list
+  on the donor-view page (`extractFotoramaPhotos`, skip `-150x150` thumbs); **skip Gemini section
+  extraction** (donor-view pages time it out); image-host 429s retried in `persistSinglePhoto`.
 - **Symfony** (e.g. app.spermbankcalifornia): login at **`/login`**; `/Account/Login` → 405.
 
 ---
