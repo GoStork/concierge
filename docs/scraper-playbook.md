@@ -56,30 +56,19 @@ re-discovering the same problems on every new agency.
   405. The engine now **retries transient auth failures** (commit `f30ddf6`), so a momentary
   `fetch failed` no longer cascades to a bogus 405. If you see 405, check whether the *real*
   login URL had a transient blip first.
-- **Auth failures are diagnostic, not generic** (commit `e506762`, `4d7ac03`). The legacy
-  message `Login failed. Please verify your username and password are correct.` is gone -
-  `SyncLog.errors` now carries the specific reason per candidate URL. Know these shapes
-  so you can read the row:
-  - `redirected back to login page (location="...", status=302)` - POST returned 3xx that
-    looped to the login page (creds rejected, or cookie / CSRF mismatch).
-  - `200 OK with error phrase "<word>": ...<snippet>...` - the page itself named the
-    cause. `invalid` / `incorrect` / `wrong password` ⇒ **bad credentials**;
-    `locked` / `lockout` / `too many` / `rate` / `blocked` / `suspended` ⇒ **rate-limit
-    lockout, NOT a credential issue** (see Per-day dedup below); `expired` /
-    `not authorized` ⇒ account-state.
-  - `<captcha-type> required on POST response (status=200)` - reCAPTCHA / hCaptcha /
-    Cloudflare challenge / "verify you are human" was rendered instead of a session.
-    Only reCAPTCHA v2 is solved; the rest fail loudly with this string.
-  - `unexpected HTTP status NNN (Retry-After: SSS) (body: <200-char snippet>)` - 429 /
-    5xx / etc. The `Retry-After` header + body snippet usually reveal lockout, maintenance,
-    or an anti-bot page.
-  - `exception during auth: fetch failed (cause: ENOTFOUND <host>)` - Node's undici hides
-    DNS/TCP/TLS errors as generic `fetch failed`; the engine extracts `err.cause` so you
-    see the real `ENOTFOUND` / `ECONNRESET` / `ECONNREFUSED` / `UND_ERR_SOCKET` / errno.
-    Treat as an upstream-or-egress issue, NOT credentials.
-  - `auth timed out after 30s (likely Replit egress hung against this site)` - see next.
-  - `still on login page (status=200, ...)` - generic fallthrough; auth POST looped to
-    the same form and no specific error phrase matched (cookies / CSRF likely not accepted).
+- **Auth failures are diagnostic, not generic** (commits `e506762`, `4d7ac03`). The legacy
+  `Login failed. Please verify your username and password...` is gone - `SyncLog.errors`
+  now carries a specific reason **per candidate URL**, so the row tells a credential
+  rejection apart from a lockout, captcha, timeout, or network error. Every shape is in the
+  **Troubleshooting table** below; the two non-obvious ones to internalize:
+  - **`fetch failed` hides the real cause.** Node's undici reports DNS/TCP/TLS failures as a
+    bare `fetch failed`; the engine unwraps `err.cause` so the row shows the real
+    `ENOTFOUND` / `ECONNRESET` / `ECONNREFUSED` / `UND_ERR_SOCKET`. That is an
+    upstream-or-egress issue, **NOT** credentials.
+  - **`200 OK` with an error phrase** means the page named the cause itself: `invalid` /
+    `incorrect` / `wrong password` ⇒ bad credentials, but `locked` / `too many` / `rate` /
+    `blocked` / `suspended` ⇒ rate-limit lockout (see Per-day dedup), **not** a credential
+    issue. Don't rotate credentials for a lockout.
 - **30s per-attempt auth-fetch timeout** (commit `b2fc975`). Every `fetch()` in
   `authenticateAndGetCookies` (GET form, POST credentials, follow-redirect) is wrapped in
   an `AbortController` with a **30s deadline**, retried up to 3 attempts on transient
@@ -122,11 +111,11 @@ re-discovering the same problems on every new agency.
 
 ## Pagination
 
-- The AI extraction returns **`paginationLinks`** (Next / page 2 / ...). The engine
-  discovers **all** listing pages, capped at **100 pages** as a runaway guard (was 10,
-  which silently truncated large catalogs).
-- **WordPress (wp-paginate) sites use deterministic `?paged=N` pagination, NOT the AI's
-  `paginationLinks`.** When the listing HTML has `?paged=` or a `wp-paginate` widget
+- **AI-pagination path:** the AI extraction returns **`paginationLinks`** (Next / page 2 /
+  ...). The engine discovers **all** listing pages, capped at **100 pages** as a runaway
+  guard (was 10, which silently truncated large catalogs).
+- **WP `?paged=N` path: WordPress (wp-paginate) sites use deterministic `?paged=N`
+  pagination, NOT the AI's `paginationLinks`.** When the listing HTML has `?paged=` or a `wp-paginate` widget
   (`hasWpPaging`), the engine ignores Gemini's pagination links and crawls `?paged=2,3,...`
   off the same listing URL itself. It reads the total page count straight from **"Page 1 of
   N"** on page 1 (no extra fetch) to fix the progress denominator and stop exactly at the
@@ -182,25 +171,19 @@ re-discovering the same problems on every new agency.
   `"Bakersfield, CA"`) even when the stored `location` scalar is just the state (`"CA"`).
   The card/detail recover the city for display via `cleanCityState` (commit `dfef635`).
   Keep the raw `location` scalar for filtering/Matched-Preferences.
-- **The provider *website* scraper emits coarse/duplicate `ProviderLocation` rows.** This is
-  `scrape.service.ts` (the provider "Scrape" button that fills company profile + locations +
-  team), **not** the donor-sync engine. The AI extractor returns redundant address-less rows
-  next to real street addresses - a coarse `"Los Angeles, CA"` beside `"…, Woodland Hills, CA"`,
-  or a region label `"Mid-West, USA"`. The engine prunes an address-less row when the **same
-  state (US) or country (international)** already has a street address, and drops region-token
-  "states" (`usa`/`us`/`united states`/…) - the `prunedLocations`/`REGION_STATE_TOKENS` pass.
-  It runs **before** the country-normalization map (which nulls international street addresses)
-  so the "same country" case still sees them. The client mirrors the identical rule in
-  `dedupeProviderLocations()` (`client/src/lib/format-location.ts`) to hide them on the profile
-  + swipe cards.
-  - **Gotcha: that broad state-level rule is for display/scrape suppression ONLY - never for a
-    permanent DB delete.** It also suppresses **legitimate distinct satellite-office cities**
-    that merely lack a scraped street address (an agency with offices in 6 towns of one state
-    but only 1 full address - the broad rule would erase 5 real offices). For a one-time DB
-    cleanup use the **narrow** rule: delete an address-less row only when its **city** duplicates
-    an existing street-address city, plus region-token rows and provider-name-as-city junk
-    (`"Brown Fertility"` stored as a city). In one dry run the broad rule matched ~340 rows
-    (mostly real offices); the narrow rule found 41 genuine junk rows.
+- **Provider-location dedup lives in a DIFFERENT scraper.** Coarse/duplicate
+  `ProviderLocation` rows (a bare `"Los Angeles, CA"` beside `"…, Woodland Hills, CA"`, or a
+  region label `"Mid-West, USA"`) come from `scrape.service.ts` - the provider "Scrape"
+  button - **not** this donor-sync engine. For display, the engine's `prunedLocations` /
+  `REGION_STATE_TOKENS` pass + the client's `dedupeProviderLocations()`
+  (`client/src/lib/format-location.ts`) hide an address-less row when the same state/country
+  already has a street address.
+  - **Footgun: that broad state-level rule is for display suppression ONLY - never a
+    permanent DB delete.** It also hides **legitimate satellite offices** that merely lack a
+    scraped street address (one dry run: the broad rule matched ~340 rows, mostly real
+    offices; the narrow rule found 41 genuine junk). For an actual DB cleanup use the
+    **narrow** rule - delete only when the **city** duplicates an existing street-address
+    city, plus region-token rows and provider-name-as-city junk (`"Brown Fertility"` as a city).
 - **Never assume HTML attribute order in regex** - `src` may come before or after `class`.
 - **Coerce section fields to scalars before writing scalar columns.** AI section extraction
   sometimes returns a **nested object** for a field (e.g. an "Education" group of sub-fields),
