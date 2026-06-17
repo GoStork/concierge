@@ -281,6 +281,65 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
   return values.some((v) => fieldVal.includes(v.toLowerCase()));
 }
 
+// Surrogacy-agency filtering. Agencies are providers, not donor rows, so their
+// fields (locations[], services, surrogacy* program rules, lgbtqCare, attached
+// totalCost) don't fit the donor-centric matchesFilter. One agency passes when
+// it satisfies EVERY active filter. parentCountry powers the "Accepts my
+// citizenship" toggle (agencyCitizenship).
+export function agencyMatchesFilters(
+  agency: any,
+  filters: Record<string, string[]>,
+  parentCountry?: string | null,
+): boolean {
+  for (const [key, values] of Object.entries(filters)) {
+    if (!values || values.length === 0) continue;
+
+    if (key === "location") {
+      const locs: string[] = (agency.locations || [])
+        .map((l: any) => [l.city, l.state].filter(Boolean).join(", ").toLowerCase())
+        .filter(Boolean);
+      const ok = values.some((v) => {
+        const terms = resolveLocationTerms(v);
+        return locs.some((loc) => terms.some((t) => loc.includes(t.toLowerCase())));
+      });
+      if (!ok) return false;
+      continue;
+    }
+
+    if (key === "maxCost") {
+      const cost = Number(agency.totalCost || 0);
+      // No priced program yet -> don't exclude on cost (mirrors donor behavior).
+      if (cost > 0) {
+        const [min, max] = values.map(Number);
+        if (!(cost >= min && cost <= max)) return false;
+      }
+      continue;
+    }
+
+    if (key === "agencyTwins") {
+      if (values[0] === "true" && agency.surrogacyTwinsAllowed !== true) return false;
+      continue;
+    }
+
+    if (key === "agencyLgbtq") {
+      if (values[0] === "true" && agency.lgbtqCare !== true) return false;
+      continue;
+    }
+
+    if (key === "agencyCitizenship") {
+      // "Accepts my citizenship" - exclude agencies that bar the parent's country.
+      if (values[0] === "true" && parentCountry) {
+        const notAllowed: string[] = Array.isArray(agency.surrogacyCitizensNotAllowed)
+          ? agency.surrogacyCitizensNotAllowed
+          : [];
+        if (notAllowed.some((c) => countriesMatch(c, parentCountry))) return false;
+      }
+      continue;
+    }
+  }
+  return true;
+}
+
 export function matchesSameSexCoupleRequirement(donor: any, userIdentification: string | null | undefined): boolean {
   if (!userIdentification) return true;
   const straight = userIdentification.toLowerCase() === "straight";

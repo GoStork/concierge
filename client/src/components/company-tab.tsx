@@ -1069,7 +1069,7 @@ export default function CompanyTab() {
                       }}
                       mode="avatar"
                       variant="avatar"
-                      size={64}
+                      size={96}
                       testId={`member-photo-${idx}`}
                     />
                   </div>

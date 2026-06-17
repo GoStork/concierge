@@ -50,6 +50,10 @@ interface SwipeDeckCardProps {
     logoUrl?: string | null;
     title: string;
     location?: string | null;
+    // When set, the header shows a flag per unique country instead of a single
+    // city/state line (agency cards span multiple countries). Each entry is a
+    // pre-resolved { flag emoji, short country label }.
+    countries?: { flag: string; label: string }[] | null;
     badge?: string | null;
   } | null;
   // Clinics: keep the first slide photo-free (clean branded background) so the
@@ -156,6 +160,10 @@ export function SwipeDeckCard({
     ? Math.max(tabs.length, 1)
     : Math.max(photos.length, tabs.length, 1);
   const currentTab = tabs.length > 0 && slideIndex < tabs.length ? tabs[slideIndex] : null;
+  // Per-tab photo mode (clinic card): each tab carries its own background photo
+  // (a doctor face) or none (cream clinic tab), instead of the photos[] array.
+  const usesTabPhotos = tabs.some((t) => !!t.photo);
+  const tabPhoto = usesTabPhotos && currentTab?.photo && !erroredPhotos[currentTab.photo] ? currentTab.photo : null;
   const photoSlide = firstSlidePlain ? slideIndex - 1 : slideIndex;
   // firstSlidePlain (clinics / photo-less doctors): map one face per slide and DO
   // NOT cycle - tabs beyond the available faces get no photo (-1) and fall back to
@@ -168,7 +176,7 @@ export function SwipeDeckCard({
   // ANY slide of a firstSlidePlain card that has no photo - slide 0, tabs beyond
   // the face count, and clinics/doctors with no photos at all - so every photo-less
   // tab keeps the same clean cream background as the first tab.
-  const isCover = firstSlidePlain && !!pinnedHeader && currentPhotoIndex < 0;
+  const isCover = firstSlidePlain && !!pinnedHeader && (usesTabPhotos ? !tabPhoto : currentPhotoIndex < 0);
 
   useEffect(() => {
     setSlideIndex(0);
@@ -216,7 +224,7 @@ export function SwipeDeckCard({
     }
   }, [animateSwipe, controls]);
 
-  const currentPhoto = currentPhotoIndex >= 0 ? (usablePhotos[currentPhotoIndex] || null) : null;
+  const currentPhoto = usesTabPhotos ? tabPhoto : (currentPhotoIndex >= 0 ? (usablePhotos[currentPhotoIndex] || null) : null);
 
   // Photo-less DOCTOR cards show a brand initials monogram so they still read as a
   // person (not a blank box or the clinic logo). Clinics pass no monogramName.
@@ -280,7 +288,7 @@ export function SwipeDeckCard({
             <div className={`absolute inset-0 z-[38] bg-secondary flex flex-col px-5 pt-9 ${readOnly ? "pb-5" : "pb-24"} pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`} data-testid={`cover-${id}`}>
               <button
                 onClick={(e) => { e.stopPropagation(); triggerExpand(); }}
-                className="absolute top-4 right-4 z-[39] shrink-0 w-9 h-9 rounded-full bg-white hover:bg-white shadow-md border border-border/40 flex items-center justify-center transition-colors pointer-events-auto"
+                className="absolute top-6 right-4 z-[39] shrink-0 w-9 h-9 rounded-full bg-white hover:bg-white shadow-md border border-border/40 flex items-center justify-center transition-colors pointer-events-auto"
                 data-testid={`button-view-profile-${id}`}
               >
                 <ArrowUp className="w-5 h-5 text-foreground" strokeWidth={2.5} />
@@ -300,7 +308,16 @@ export function SwipeDeckCard({
                 <h3 className="text-foreground font-heading leading-snug line-clamp-2 px-2" style={{ fontSize: '20px' }} data-testid={`text-name-${id}`}>
                   {pinnedHeader.title}
                 </h3>
-                {pinnedHeader.location && (
+                {pinnedHeader.countries && pinnedHeader.countries.length > 0 ? (
+                  <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-muted-foreground font-ui px-2" style={{ fontSize: '13px' }} data-testid={`pinned-countries-${id}`}>
+                    {pinnedHeader.countries.map((c) => (
+                      <span key={c.label} className="flex items-center gap-1 leading-none">
+                        {c.flag ? <span className="shrink-0 leading-none">{c.flag}</span> : <MapPin className="w-3.5 h-3.5 shrink-0" />}
+                        {c.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : pinnedHeader.location && (
                   <p className="text-muted-foreground font-ui flex items-center gap-1" style={{ fontSize: '13px' }}>
                     {getLocationFlag(pinnedHeader.location)
                       ? <span className="shrink-0 leading-none">{getLocationFlag(pinnedHeader.location)}</span>
@@ -352,6 +369,7 @@ export function SwipeDeckCard({
                           <div key={`${item.label}-${i}`} className="flex items-center gap-2.5" data-testid={`icon-row-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}>
                             {Icon && <Icon className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />}
                             <span className="text-foreground font-body" style={{ fontSize: '14px' }}>{item.label}</span>
+                            {item.value && <span className="ml-auto pl-2 text-foreground/70 font-ui tabular-nums shrink-0" style={{ fontSize: '14px' }}>{item.value}</span>}
                           </div>
                         );
                       })}
@@ -381,6 +399,127 @@ export function SwipeDeckCard({
                       })}
                     </div>
                   )}
+
+                  {/* sections: several titled groups stacked on one tab (e.g. the
+                      agency Overview tab = Overview + Services + Locations). */}
+                  {currentTab.layoutType === "sections" && currentTab.groups && (
+                    <div className="flex flex-col gap-6 overflow-hidden">
+                      {currentTab.groups.map((group, gi) => (
+                        <div key={`${group.title}-${gi}`}>
+                          {group.title && (
+                            <p className="text-[hsl(var(--primary))] font-heading mb-1 flex items-center gap-1.5" style={{ fontSize: '15px' }}>
+                              <Check className="w-4 h-4 shrink-0" strokeWidth={2.5} />
+                              {group.title}
+                            </p>
+                          )}
+                          {group.subtitle && (
+                            <p className="text-muted-foreground font-ui mb-2" style={{ fontSize: '12px' }}>{group.subtitle}</p>
+                          )}
+                          {group.layoutType === "success_bars" ? (
+                            <div className="space-y-2.5">
+                              {(group.bars || []).map((bar, i) => (
+                                <div key={`${bar.label}-${i}`}>
+                                  <div className="flex items-center justify-between text-foreground mb-1" style={{ fontSize: '13px' }}>
+                                    <span>{bar.label}</span>
+                                    <span className="font-ui">{bar.value}%</span>
+                                  </div>
+                                  <div className="h-1.5 rounded-full bg-foreground/[0.08] overflow-hidden">
+                                    <div className="h-full rounded-full" style={{ width: `${Math.min(bar.value, 100)}%`, backgroundColor: bar.isClinic ? 'hsl(var(--primary))' : 'hsl(var(--accent))' }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : group.layoutType === "icon_list" ? (
+                            <div className="flex flex-col gap-2">
+                              {group.items.map((item, i) => {
+                                const Icon = item.icon;
+                                return (
+                                  <div key={`${item.label}-${i}`} className="flex items-center gap-2.5">
+                                    {Icon && <Icon className="w-4 h-4 text-[hsl(var(--accent))] shrink-0" />}
+                                    <span className="text-foreground font-body" style={{ fontSize: '14px' }}>{item.label}</span>
+                                    {item.value && <span className="ml-auto pl-2 text-foreground/70 font-ui tabular-nums shrink-0" style={{ fontSize: '14px' }}>{item.value}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : group.layoutType === "text" ? (
+                            <div className="flex flex-col gap-1.5">
+                              {group.items.map((item, i) => (
+                                <p key={`${item.label}-${i}`} className="text-foreground font-body" style={{ fontSize: '14px', lineHeight: 1.5 }}>{item.label}</p>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {group.items.map((item, i) => {
+                                const BubbleIcon = item.icon;
+                                return (
+                                  <Badge
+                                    key={`${item.label}-${i}`}
+                                    className="bg-primary/10 text-foreground font-ui px-3 py-1 inline-flex items-start gap-1.5 border border-primary/20 max-w-full whitespace-normal break-words text-left leading-snug"
+                                    style={{ fontSize: '13px' }}
+                                  >
+                                    {BubbleIcon && <BubbleIcon className="w-3 h-3 text-[hsl(var(--accent))] shrink-0 mt-0.5" />}
+                                    <span className="min-w-0">{item.label}</span>
+                                  </Badge>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {currentTab.layoutType === "matched_compact" && currentTab.matchedStat && (() => {
+                    const m = currentTab.matchedStat;
+                    const stat = [m.cycles ? `${m.cycles.toLocaleString()} cycles` : null, m.babies ? `${m.babies.toLocaleString()} babies born` : null].filter(Boolean).join(" · ");
+                    return (
+                      <div>
+                        {m.context && <p className="text-foreground font-ui mb-2" style={{ fontSize: '15px' }}>{m.context}</p>}
+                        {m.pct != null && (
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="font-heading text-[hsl(var(--primary))]" style={{ fontSize: '38px', lineHeight: 1 }}>{m.pct}%</span>
+                            <span className="text-foreground font-ui" style={{ fontSize: '17px' }}>live births</span>
+                            {m.natAvg != null && <span className="ml-auto text-foreground font-ui" style={{ fontSize: '15px' }}>vs {m.natAvg}% national</span>}
+                          </div>
+                        )}
+                        {m.pct != null && m.natAvg != null && (
+                          <div className="relative mt-3 h-2 rounded-full bg-foreground/[0.10]">
+                            <div className="absolute left-0 top-0 bottom-0 rounded-full" style={{ width: `${Math.min(m.pct, 100)}%`, backgroundColor: 'hsl(var(--primary))' }} />
+                            <div className="absolute -top-1 -bottom-1 w-0.5 rounded-full" style={{ left: `${Math.min(m.natAvg, 100)}%`, backgroundColor: 'hsl(var(--accent))' }} />
+                          </div>
+                        )}
+                        {stat && <p className="text-foreground font-ui mt-3 tabular-nums" style={{ fontSize: '16px' }}>{stat} <span className="text-muted-foreground">per year</span></p>}
+                      </div>
+                    );
+                  })()}
+
+                  {/* cost_cards: mini program cards mirroring the profile's cost
+                      cards (flag + country, "Program N" pill, name, big total) -
+                      no line items. Cheapest-first, capped with a "+N more" note. */}
+                  {currentTab.layoutType === "cost_cards" && currentTab.costPrograms && currentTab.costPrograms.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      {currentTab.costPrograms.map((p, i) => {
+                        const heading = p.programName || p.country;
+                        const showCountry = !!p.country && p.country !== heading;
+                        return (
+                          <div key={`${p.programName}-${i}`} className="rounded-xl border border-[hsl(var(--brand-success))]/40 px-3 py-1.5" data-testid={`cost-card-${i}`}>
+                            <span className="block font-heading text-foreground truncate" style={{ fontSize: '14px' }}>{heading}</span>
+                            <div className="flex items-end justify-between gap-2 mt-0.5">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {p.flag && <span className="shrink-0 leading-none" style={{ fontSize: '14px' }} aria-hidden>{p.flag}</span>}
+                                {showCountry && <span className="text-foreground/70 font-body truncate" style={{ fontSize: '12px' }}>{p.country}</span>}
+                              </div>
+                              <span className="font-heading text-[hsl(var(--primary))] shrink-0" style={{ fontSize: '17px', lineHeight: 1 }}>{p.total}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {currentTab.costOverflow ? (
+                        <p className="text-muted-foreground font-ui text-center mt-0.5" style={{ fontSize: '12px' }}>+{currentTab.costOverflow} more {currentTab.costOverflow === 1 ? "program" : "programs"}</p>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -391,18 +530,27 @@ export function SwipeDeckCard({
               {/* On the photo slides, label the face with that doctor's name (smaller,
                   fits one line); the clinic name lives on the first/cover slide. */}
               {(() => {
-                const faceLabel = currentPhoto ? photoLabels?.[currentPhoto] : undefined;
+                const faceLabel = currentTab?.faceLabel || (currentPhoto ? photoLabels?.[currentPhoto] : undefined);
                 return (
-                  <h3 className="text-white font-heading leading-tight line-clamp-2" style={{ fontSize: faceLabel ? '18px' : 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
+                  <h3 className="text-white font-heading leading-tight line-clamp-2 text-center" style={{ fontSize: 'var(--card-title-size, 24px)' }} data-testid={`text-name-${id}`}>
                     {faceLabel || pinnedHeader.title}
                   </h3>
                 );
               })()}
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center justify-center gap-2 mt-2">
                 {pinnedHeader.logoUrl && (
                   <img src={pinnedHeader.logoUrl} alt="" className="w-7 h-7 rounded-md object-contain bg-white p-0.5 shrink-0 shadow-sm" draggable={false} data-testid={`pinned-logo-${id}`} />
                 )}
-                {pinnedHeader.location && (
+                {pinnedHeader.countries && pinnedHeader.countries.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-white/80 font-ui min-w-0" style={{ fontSize: '13px' }} data-testid={`pinned-countries-${id}`}>
+                    {pinnedHeader.countries.map((c) => (
+                      <span key={c.label} className="flex items-center gap-1 leading-none">
+                        {c.flag ? <span className="shrink-0 leading-none">{c.flag}</span> : <MapPin className="w-3.5 h-3.5 shrink-0" />}
+                        {c.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : pinnedHeader.location && (
                   <p className="text-white/80 font-ui flex items-center gap-1 min-w-0" style={{ fontSize: '13px' }}>
                     {getLocationFlag(pinnedHeader.location)
                       ? <span className="shrink-0 leading-none">{getLocationFlag(pinnedHeader.location)}</span>
@@ -659,8 +807,9 @@ export function SwipeDeckCard({
                         className="flex items-center gap-2.5"
                         data-testid={`icon-row-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}
                       >
-                        {Icon && <Icon className="w-4 h-4 text-accent/80 shrink-0" />}
+                        {Icon && <Icon className="w-4 h-4 text-white/80 shrink-0" />}
                         <span className="text-white font-body" style={{ fontSize: 'var(--card-overlay-size, 16px)' }}>{item.label}</span>
+                        {item.value && <span className="ml-auto pl-2 text-white/80 font-ui tabular-nums shrink-0" style={{ fontSize: 'var(--card-overlay-size, 16px)' }}>{item.value}</span>}
                       </div>
                     );
                   })}
@@ -731,16 +880,143 @@ export function SwipeDeckCard({
                           {item.lineBreakBefore && <div className="w-full" />}
                           <Badge
                             variant="secondary"
-                            className="bg-white/12 text-white border border-white/10 font-ui px-4 py-2 backdrop-blur-sm flex items-center"
+                            className="bg-white/12 text-white border border-white/10 font-ui px-4 py-2 backdrop-blur-sm inline-flex items-start gap-1.5 max-w-full whitespace-normal break-words text-left leading-snug"
                             style={{ fontSize: 'var(--card-overlay-size, 16px)' }}
                             data-testid={`badge-attr-${String(item.label).replace(/\s+/g, "-").toLowerCase()}`}
                           >
-                            {BubbleIcon && <BubbleIcon className="w-3 h-3 mr-1.5 text-accent/70" />}
-                            {item.label}
+                            {BubbleIcon && <BubbleIcon className="w-3 h-3 mt-1 text-white/80 shrink-0" />}
+                            <span className="min-w-0">{item.label}</span>
                           </Badge>
                         </Fragment>
                       );
                     })}
+                  </div>
+                </div>
+              )}
+
+              {currentTab && currentTab.layoutType === "sections" && currentTab.groups && (
+                <div className="flex flex-col gap-6">
+                  {currentTab.groups.map((group, gi) => (
+                    <div key={`${group.title}-${gi}`}>
+                      {group.title && (
+                        <p className="text-white font-heading mb-2 flex items-center gap-1.5" style={{ fontSize: 'var(--card-overlay-size, 16px)' }}>
+                          <Flower2 className="w-4 h-4 text-white/80" />
+                          {group.title}
+                        </p>
+                      )}
+                      {group.subtitle && (
+                        <p className="text-white/70 font-ui mb-2" style={{ fontSize: '12px' }}>{group.subtitle}</p>
+                      )}
+                      {group.layoutType === "success_bars" ? (
+                        <div className="space-y-1.5">
+                          {(group.bars || []).map((bar, i) => (
+                            <div key={`${bar.label}-${i}`}>
+                              <div className="flex items-center justify-between text-white/90 mb-0.5" style={{ fontSize: '13px' }}>
+                                <span>{bar.label}</span>
+                                <span className="font-ui">{bar.value}%</span>
+                              </div>
+                              <div className="h-2 rounded-full bg-white/20 overflow-hidden">
+                                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(bar.value, 100)}%`, backgroundColor: bar.isClinic ? 'hsl(var(--primary))' : 'hsl(var(--accent))' }} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : group.layoutType === "icon_list" ? (
+                        <div className="flex flex-col gap-2">
+                          {group.items.map((item, i) => {
+                            const Icon = item.icon;
+                            return (
+                              <div key={`${item.label}-${i}`} className="flex items-center gap-2.5">
+                                {Icon && <Icon className="w-4 h-4 text-white/80 shrink-0" />}
+                                <span className="text-white font-body" style={{ fontSize: 'var(--card-overlay-size, 16px)' }}>{item.label}</span>
+                                {item.value && <span className="ml-auto pl-2 text-white/80 font-ui tabular-nums shrink-0" style={{ fontSize: 'var(--card-overlay-size, 16px)' }}>{item.value}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : group.layoutType === "text" ? (
+                        <div className="flex flex-col gap-1.5">
+                          {group.items.map((item, i) => (
+                            <p key={`${item.label}-${i}`} className="text-white font-body" style={{ fontSize: 'var(--card-overlay-size, 16px)', lineHeight: 1.5 }}>{item.label}</p>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {group.items.map((item, i) => {
+                            const BubbleIcon = item.icon;
+                            return (
+                              <Badge
+                                key={`${item.label}-${i}`}
+                                variant="secondary"
+                                className="bg-white/12 text-white border border-white/10 font-ui px-4 py-2 backdrop-blur-sm inline-flex items-start gap-1.5 max-w-full whitespace-normal break-words text-left leading-snug"
+                                style={{ fontSize: 'var(--card-overlay-size, 16px)' }}
+                              >
+                                {BubbleIcon && <BubbleIcon className="w-3 h-3 mt-1 text-white/80 shrink-0" />}
+                                <span className="min-w-0">{item.label}</span>
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {currentTab && currentTab.layoutType === "matched_compact" && currentTab.matchedStat && (() => {
+                const m = currentTab.matchedStat;
+                const stat = [m.cycles ? `${m.cycles.toLocaleString()} cycles` : null, m.babies ? `${m.babies.toLocaleString()} babies born` : null].filter(Boolean).join(" · ");
+                return (
+                  <div>
+                    {m.context && <p className="text-white font-ui mb-2" style={{ fontSize: '15px' }}>{m.context}</p>}
+                    {m.pct != null && (
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="text-white font-heading" style={{ fontSize: '42px', lineHeight: 1 }}>{m.pct}%</span>
+                        <span className="text-white font-ui" style={{ fontSize: '17px' }}>live births</span>
+                        {m.natAvg != null && <span className="ml-auto text-white font-ui" style={{ fontSize: '15px' }}>vs {m.natAvg}% national</span>}
+                      </div>
+                    )}
+                    {m.pct != null && m.natAvg != null && (
+                      <div className="relative mt-3 h-2 rounded-full bg-white/25">
+                        <div className="absolute left-0 top-0 bottom-0 rounded-full" style={{ width: `${Math.min(m.pct, 100)}%`, backgroundColor: 'hsl(var(--primary))' }} />
+                        <div className="absolute -top-1 -bottom-1 w-0.5 rounded-full" style={{ left: `${Math.min(m.natAvg, 100)}%`, backgroundColor: 'hsl(var(--accent))' }} />
+                      </div>
+                    )}
+                    {stat && <p className="text-white font-ui mt-3 tabular-nums" style={{ fontSize: '16px' }}>{stat} <span className="text-white/80">per year</span></p>}
+                  </div>
+                );
+              })()}
+
+              {/* cost_cards over a photo: same mini program cards as the cream
+                  variant but glassy white-on-dark. */}
+              {currentTab && currentTab.layoutType === "cost_cards" && currentTab.costPrograms && currentTab.costPrograms.length > 0 && (
+                <div>
+                  {currentTab.title && (
+                    <p className="text-white font-heading mb-2 flex items-center gap-1.5" style={{ fontSize: 'var(--card-overlay-size, 16px)' }}>
+                      <Flower2 className="w-4 h-4 text-white/80" />
+                      {currentTab.title}
+                    </p>
+                  )}
+                  <div className="flex flex-col gap-1.5">
+                    {currentTab.costPrograms.map((p, i) => {
+                      const heading = p.programName || p.country;
+                      const showCountry = !!p.country && p.country !== heading;
+                      return (
+                        <div key={`${p.programName}-${i}`} className="rounded-xl border border-white/30 bg-black/25 backdrop-blur-sm px-3 py-1.5" data-testid={`cost-card-${i}`}>
+                          <span className="block font-heading text-white truncate" style={{ fontSize: '14px' }}>{heading}</span>
+                          <div className="flex items-end justify-between gap-2 mt-0.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {p.flag && <span className="shrink-0 leading-none" style={{ fontSize: '14px' }} aria-hidden>{p.flag}</span>}
+                              {showCountry && <span className="text-white/75 font-body truncate" style={{ fontSize: '12px' }}>{p.country}</span>}
+                            </div>
+                            <span className="font-heading text-white shrink-0" style={{ fontSize: '17px', lineHeight: 1 }}>{p.total}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {currentTab.costOverflow ? (
+                      <p className="text-white/80 font-ui text-center mt-0.5" style={{ fontSize: '12px' }}>+{currentTab.costOverflow} more {currentTab.costOverflow === 1 ? "program" : "programs"}</p>
+                    ) : null}
                   </div>
                 </div>
               )}

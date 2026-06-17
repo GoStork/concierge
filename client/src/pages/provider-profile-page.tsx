@@ -14,6 +14,8 @@ import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-sec
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getCountryFlag } from "@/lib/country-flag";
 import { dedupeProviderLocations } from "@/lib/format-location";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { MobileCloseButton } from "@/components/mobile-profile-close-header";
 
 function FieldItem({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
@@ -31,6 +33,7 @@ export default function ProviderProfilePage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const chatState = location.state as { fromChat?: boolean; chatPath?: string } | null;
   const fromChat = chatState?.fromChat === true;
   const chatPath = chatState?.chatPath || "/chat";
@@ -88,7 +91,8 @@ export default function ProviderProfilePage() {
 
   return (
     <div className="space-y-6 w-full">
-      <div className="flex items-center justify-between">
+      {/* Desktop: the "Back to Marketplace" text link (hidden on mobile). */}
+      <div className={`flex items-center justify-between ${isMobile ? "hidden" : ""}`}>
         <Button variant="ghost" onClick={() => fromChat ? navigate(chatPath) : navigate(-1)} data-testid="link-back-marketplace">
           <ArrowLeft className="w-4 h-4 mr-2" /> {fromChat ? "Back to Chat" : "Back to Marketplace"}
         </Button>
@@ -130,6 +134,11 @@ export default function ProviderProfilePage() {
             </a>
           )}
         </div>
+        {isMobile && (
+          <div className="ml-auto self-start">
+            <MobileCloseButton onClose={() => fromChat ? navigate(chatPath) : navigate(-1)} />
+          </div>
+        )}
       </div>
 
       <ProfileSection title="Company Information" data-testid="section-company-info">

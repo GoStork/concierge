@@ -1,5 +1,4 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Circle, MessageSquare } from "lucide-react";
 import { getCountryFlag } from "@/lib/country-flag";
 import { formatMoneyDollars } from "@/lib/format-money";
@@ -52,10 +51,10 @@ function formatTotal(min: number, max: number): string {
 
 export function CostSheetProgramCard({
   program,
-  index,
 }: {
   program: ProgramCardData;
-  index: number;
+  // index is still accepted by callers (kept in the type) but no longer shown.
+  index?: number;
 }) {
   const flag = getCountryFlag(program.country);
 
@@ -65,34 +64,25 @@ export function CostSheetProgramCard({
       data-testid={`program-card-${program.programId}`}
     >
       <CardContent className="p-0 flex flex-col h-full">
-        <div className="px-5 pt-5 pb-3 flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
-            {flag ? (
-              <span className="text-xl" aria-hidden>{flag}</span>
-            ) : null}
-            <h3 className="font-heading text-xl text-foreground" data-testid="program-country">
-              {program.country}
-            </h3>
-          </div>
-          <Badge
-            variant="outline"
-            className="bg-primary text-primary-foreground border-primary rounded-full px-3 py-0.5 text-xs font-medium"
-            data-testid="program-index"
-          >
-            Program {index + 1}
-          </Badge>
-        </div>
-
-        <div className="px-5 pb-4">
-          <p className="text-base font-heading text-foreground" data-testid="program-name">
+        {/* Program name leads (full first row); flag + country + total below. */}
+        <div className="px-5 pt-5 pb-4">
+          <h3 className="font-heading text-lg text-foreground leading-snug" data-testid="program-name">
             {program.programName}
-          </p>
+          </h3>
           {program.subTypeLabel && (
             <p className="text-xs text-muted-foreground mt-0.5">{program.subTypeLabel}</p>
           )}
-          <p className="text-3xl font-heading text-primary mt-3 text-right" data-testid="program-total">
-            {formatTotal(program.minTotal, program.maxTotal)}
-          </p>
+          <div className="flex items-center justify-between gap-3 mt-3">
+            <div className="flex items-center gap-2 min-w-0">
+              {flag ? <span className="text-xl shrink-0" aria-hidden>{flag}</span> : null}
+              <span className="font-heading text-base text-foreground truncate" data-testid="program-country">
+                {program.country}
+              </span>
+            </div>
+            <p className="text-3xl font-heading text-primary shrink-0" data-testid="program-total">
+              {formatTotal(program.minTotal, program.maxTotal)}
+            </p>
+          </div>
         </div>
 
         <div className="border-t border-border/60 px-5 py-4 space-y-2 flex-1">

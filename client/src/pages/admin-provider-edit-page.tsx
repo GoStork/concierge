@@ -48,6 +48,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import ImageUploader from "@/components/image-uploader";
 import ManageServicesDialog, { SERVICE_STATUS_STYLES } from "@/components/manage-services-dialog";
 
 type ScrapedTeamMember = {
@@ -211,7 +212,6 @@ export default function AdminProviderEditPage() {
   const [editLocations, setEditLocations] = useState<any[]>([]);
   const [editTeamMembers, setEditTeamMembers] = useState<ScrapedTeamMember[]>([]);
   const [editingEditMemberIdx, setEditingEditMemberIdx] = useState<number | null>(null);
-  const [uploadingEditPhotoIdx, setUploadingEditPhotoIdx] = useState<number | null>(null);
   const [editScrapedData, setEditScrapedData] = useState<ScrapedData | null>(null);
   const [editMergeSelections, setEditMergeSelections] = useState<Record<string, "keep" | "scraped">>({});
   const [initialized, setInitialized] = useState(false);
@@ -341,7 +341,7 @@ export default function AdminProviderEditPage() {
     }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, acceptedInsurance, lgbtqCare, clinicOffersVideo, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, partnerProviderIds, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, acceptedInsurance, lgbtqCare, clinicOffersVideo, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, partnerProviderIds, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   const editScrapeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -364,26 +364,6 @@ export default function AdminProviderEditPage() {
     },
   });
 
-  async function handleEditPhotoUpload(file: File, idx: number) {
-    setUploadingEditPhotoIdx(idx);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: "Upload failed" }));
-        throw new Error(err.message);
-      }
-      const { url } = await res.json();
-      const updated = [...editTeamMembers];
-      updated[idx] = { ...updated[idx], photoUrl: url };
-      setEditTeamMembers(updated);
-    } catch (err: any) {
-      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
-    } finally {
-      setUploadingEditPhotoIdx(null);
-    }
-  }
 
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -483,8 +463,10 @@ export default function AdminProviderEditPage() {
         if (!old) return old;
         return {
           ...old,
-          acceptedInsurance,
-          offersVideoVisits: clinicOffersVideo,
+          // Spread the full saved payload so EVERY just-saved clinic scalar
+          // (incl. all ivfSurrogate* matching fields) survives a lagging pooled
+          // read - otherwise toggles flip back to their pre-save value until refresh.
+          ...data,
           members: (old.members || []).map((m: any) => {
             const local = localMemberById.get(m.id) as any;
             return local
@@ -778,49 +760,19 @@ export default function AdminProviderEditPage() {
               <h3 className="text-lg font-heading flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-primary" /> Company Profile
               </h3>
-              <div className="flex items-start gap-4">
-                <button
-                  type="button"
-                  className="relative w-16 h-16 rounded-[var(--radius)] bg-secondary shrink-0 overflow-hidden group cursor-pointer border border-border/40 hover:border-primary/40 transition-colors"
-                  onClick={() => document.getElementById("edit-logo-upload")?.click()}
-                  data-testid="btn-upload-logo"
-                >
-                  {editLogoUrl ? (
-                    <img
-                      src={getPhotoSrc(editLogoUrl) || editLogoUrl}
-                      alt="Logo"
-                      className="w-full h-full object-contain"
-                      referrerPolicy="no-referrer"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                      <Building2 className="w-6 h-6" />
-                    </div>
-                  )}
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Upload className="w-4 h-4 text-white" />
-                  </div>
-                </button>
-                <input id="edit-logo-upload" type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const formData = new FormData();
-                  formData.append("file", file);
-                  try {
-                    const res = await fetch("/api/uploads", { method: "POST", body: formData, credentials: "include" });
-                    if (!res.ok) throw new Error("Upload failed");
-                    const { url } = await res.json();
-                    setEditLogoUrl(url);
-                  } catch (err: any) {
-                    toast({ title: "Upload failed", description: err.message, variant: "destructive" });
-                  }
-                  e.target.value = "";
-                }} />
-                <div className="flex-1 space-y-2">
-                  <Label>Provider Name</Label>
-                  <Input value={editName} onChange={e => setEditName(e.target.value)} required data-testid="input-edit-name" />
-                </div>
+              <div className="space-y-2">
+                <Label>Logo</Label>
+                <ImageUploader
+                  value={editLogoUrl || null}
+                  onChange={(url) => setEditLogoUrl(url || "")}
+                  mode="logo"
+                  variant="dropzone"
+                  testId="edit-company-logo"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Provider Name</Label>
+                <Input value={editName} onChange={e => setEditName(e.target.value)} required data-testid="input-edit-name" />
               </div>
               <div className="space-y-2">
                 <Label>Website URL</Label>
@@ -1430,69 +1382,18 @@ export default function AdminProviderEditPage() {
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Photo</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              value={member.photoUrl || ""}
-                              onChange={e => {
-                                const updated = [...editTeamMembers];
-                                updated[idx] = { ...updated[idx], photoUrl: e.target.value || null };
-                                setEditTeamMembers(updated);
-                              }}
-                              placeholder="Photo URL or upload →"
-                              className="h-8 text-sm flex-1"
-                              data-testid={`input-edit-member-photo-${idx}`}
-                            />
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-8 px-2 shrink-0"
-                              disabled={uploadingEditPhotoIdx === idx}
-                              onClick={() => {
-                                const input = document.createElement("input");
-                                input.type = "file";
-                                input.accept = "image/jpeg,image/png,image/webp,image/gif";
-                                input.onchange = (e) => {
-                                  const file = (e.target as HTMLInputElement).files?.[0];
-                                  if (file) handleEditPhotoUpload(file, idx);
-                                };
-                                input.click();
-                              }}
-                              data-testid={`button-edit-upload-photo-${idx}`}
-                            >
-                              {uploadingEditPhotoIdx === idx ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Upload className="w-3.5 h-3.5" />
-                              )}
-                            </Button>
-                          </div>
-                          {member.photoUrl && (
-                            <div className="mt-1.5 flex items-center gap-2">
-                              <img
-                                src={getPhotoSrc(member.photoUrl)!}
-                                alt={member.name}
-                                className="w-10 h-10 rounded-full object-cover bg-secondary"
-                                referrerPolicy="no-referrer"
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                              />
-                              <span className="text-xs text-muted-foreground truncate flex-1">{member.photoUrl.split("/").pop()}</span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                                onClick={() => {
-                                  const updated = [...editTeamMembers];
-                                  updated[idx] = { ...updated[idx], photoUrl: null };
-                                  setEditTeamMembers(updated);
-                                }}
-                                data-testid={`button-edit-remove-photo-${idx}`}
-                              >
-                                <X className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          )}
+                          <ImageUploader
+                            value={member.photoUrl}
+                            onChange={(url) => {
+                              const updated = [...editTeamMembers];
+                              updated[idx] = { ...updated[idx], photoUrl: url };
+                              setEditTeamMembers(updated);
+                            }}
+                            mode="avatar"
+                            variant="avatar"
+                            size={96}
+                            testId={`edit-member-photo-${idx}`}
+                          />
                         </div>
                         {provider && provider.locations && provider.locations.length > 0 && (
                           <div className="space-y-1">

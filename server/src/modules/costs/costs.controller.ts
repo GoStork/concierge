@@ -552,6 +552,26 @@ export class CostsController {
     );
   }
 
+  /**
+   * Marketplace agencies tab: parent-matched starting cost for every surrogacy
+   * agency at once, so the Total Cost filter has all prices upfront. Returns
+   * { [agencyId]: startingCost }.
+   */
+  @Get("agencies/starting-costs")
+  @UseGuards(SessionOrJwtGuard)
+  async getAgencyStartingCosts(
+    @Query("parentAccountId") parentAccountId: string,
+    @Req() req: Request,
+  ) {
+    this.assertAuthenticated(req);
+    const user = this.getUserFromRequest(req);
+    const resolvedParentAccountId = parentAccountId || user?.parentAccountId;
+    if (!resolvedParentAccountId) {
+      throw new HttpException("parentAccountId required", HttpStatus.BAD_REQUEST);
+    }
+    return this.costsService.getAgencyStartingCosts(resolvedParentAccountId);
+  }
+
   // Part 4: combined cost for an international surrogacy program (agency +
   // partner IVF clinic(s)) for the requesting parent. parentAccountId is
   // derived from the session user when not passed explicitly, so the chat

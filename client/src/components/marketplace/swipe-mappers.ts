@@ -1,15 +1,16 @@
 import {
-  MapPin, DollarSign, Wallet, GraduationCap, Briefcase,
+  DollarSign, Wallet, GraduationCap, Briefcase,
   Snowflake, HeartHandshake, Baby, Scissors, Users, Award,
   Ruler, Scale, Hash, Globe, Heart, Syringe,
   Video, Stethoscope, UserCheck, ThumbsUp, Star,
+  Calendar, FileText, ShieldCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
 import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-filters";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay, dedupeProviderLocations } from "@/lib/format-location";
-import { getLocationFlag, cleanCityState } from "@/lib/country-flag";
+import { getLocationFlag, cleanCityState, getCountryFlag } from "@/lib/country-flag";
 
 // "🇺🇸 California" - location label with its country flag prefixed (no flag -> plain).
 function flaggedLocation(location: string | null | undefined): string {
@@ -27,13 +28,95 @@ function deriveDisplayLocation(rawLocation: string | null | undefined, profileDa
   return cleanCityState(typeof richer === "string" ? richer : null, rawLocation ?? null) ?? (rawLocation ?? null);
 }
 
-export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles" | "success_bars";
+// Build the shared "Costs" tab. When the card components supply structured
+// program data (country + name + total) it renders as mini program cards that
+// mirror the profile page (flag, "Program N" pill, name, big price) minus the
+// line items. Otherwise it falls back to the flat $ icon_list, and to a
+// consultation note when there are no programs at all - so the tab is always
+// present. Capped on the fixed-height card with a "+N more" overflow.
+function buildCostsTab(costs: CostInput[] | undefined, compact?: boolean): TabSection {
+  const hasRich = !!costs && costs.length > 0 && costs.some((c) => c.programName && c.total);
+  if (hasRich) {
+    const CAP = compact ? 4 : 5;
+    const programs: CostProgramCard[] = (costs as CostInput[]).slice(0, CAP).map((c) => {
+      // Program names are often "<subtype> · <option>" (e.g. "Frozen Embryo
+      // Transfer (Surrogate) · Embryo Transfer (One Cycle)"). The country heading
+      // already covers the lead; show only the trailing option so the compact
+      // one-line name stays distinguishable across programs.
+      const full = c.programName || c.label || "Program";
+      const programName = full.includes(" · ") ? (full.split(" · ").pop() || full).trim() : full;
+      return {
+        country: c.country || "",
+        flag: c.country ? getCountryFlag(c.country) : "",
+        programName,
+        subLabel: c.subLabel ?? null,
+        total: c.total || "",
+      };
+    });
+    const overflow = (costs as CostInput[]).length - CAP;
+    return { layoutType: "cost_cards", title: "Costs", items: [], costPrograms: programs, costOverflow: overflow > 0 ? overflow : 0 };
+  }
+  let costItems: TabItem[];
+  if (costs && costs.length > 0) {
+    const CAP = compact ? 4 : 6;
+    costItems = costs.slice(0, CAP).map((c) => ({ label: c.label, value: "", icon: DollarSign }));
+    if (costs.length > CAP) costItems.push({ label: `+${costs.length - CAP} more programs`, value: "" });
+  } else {
+    costItems = [{ label: "Pricing shared on your free consultation", value: "", icon: DollarSign }];
+  }
+  return { layoutType: "icon_list", title: "Costs", items: costItems };
+}
+
+export type LayoutType = "matched_bubbles" | "icon_list" | "standard_bubbles" | "success_bars" | "sections" | "matched_compact" | "cost_cards";
+
+// One mini program card on the "Costs" tab - mirrors the profile's program card
+// (flag + country, "Program N" pill, program name, big total) but with NO line
+// items. Cheapest-first; capped on the card with a "+N more" note.
+export interface CostProgramCard {
+  country: string;
+  flag: string;
+  programName: string;
+  subLabel?: string | null;
+  total: string;
+}
+
+// Rich cost input from the card components - `label` is the legacy flat string
+// (kept as a fallback); the structured fields drive the cost_cards layout.
+export interface CostInput {
+  label: string;
+  value?: string;
+  country?: string | null;
+  programName?: string | null;
+  subLabel?: string | null;
+  total?: string | null;
+}
+
+// Compact "Matched to you" stat block: success rate (clinic vs national) + the
+// per-year cycles/babies, in a few lines so it never covers half the photo.
+export interface MatchedStat {
+  pct: number | null;
+  natAvg: number | null;
+  cycles: number | null;
+  babies: number | null;
+  context?: string;
+}
 
 export interface TabItem {
   label: string;
   value: string;
   icon?: LucideIcon;
   lineBreakBefore?: boolean;
+}
+
+// One sub-section inside a "sections" tab (a tab that stacks several titled
+// groups - e.g. the agency Overview tab shows Overview / Services / Locations,
+// or the Matched tab shows Success rate + per-year volume).
+export interface TabGroup {
+  title?: string;
+  subtitle?: string;
+  layoutType: "standard_bubbles" | "icon_list" | "success_bars" | "text";
+  items: TabItem[];
+  bars?: SuccessBar[];
 }
 
 // A single horizontal bar in the "success_bars" layout (clinic vs national avg).
@@ -52,6 +135,19 @@ export interface TabSection {
   items: TabItem[];
   // Only for the "success_bars" layout.
   bars?: SuccessBar[];
+  // Only for the "sections" layout - the stacked titled groups.
+  groups?: TabGroup[];
+  // Only for the "matched_compact" layout.
+  matchedStat?: MatchedStat;
+  // Only for the "cost_cards" layout - the mini program cards + overflow count.
+  costPrograms?: CostProgramCard[];
+  costOverflow?: number;
+  // Per-tab background photo (opt-in). When set, THIS tab renders over this
+  // photo (face hero) instead of the cream cover; photoless tabs stay cream.
+  // Used by the clinic card to put each doctor's own info on their face tab.
+  photo?: string | null;
+  // Name shown in the header when this tab has a photo (e.g. the doctor's name).
+  faceLabel?: string;
 }
 
 // Coerce a raw DB status string to the canonical UI set. Anything outside
@@ -754,6 +850,51 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
   return tabs;
 }
 
+// One doctor's "Overview" tab (About / Works at / Locations / Languages) for
+// embedding on the CLINIC card - the SAME first tab the doctor's own card shows.
+// The doctor's face becomes this tab's background; clinic context fills Works
+// at / Locations. Returns null when the member has nothing to show.
+export function buildClinicDoctorTab(
+  member: { name?: string | null; bio?: string | null; languagesSpoken?: string[] | null },
+  clinicName: string | null,
+  clinicLocations: { city?: string | null; state?: string | null }[],
+  facePhoto: string | null,
+): TabSection | null {
+  const doctorData: DoctorCardData = {
+    slug: "",
+    name: member.name || "Doctor",
+    bio: member.bio ?? null,
+    languagesSpoken: (member.languagesSpoken || []).filter(Boolean),
+    clinics: clinicName
+      ? [{ providerId: "", providerName: clinicName, location: (clinicLocations[0] ? [clinicLocations[0].city, clinicLocations[0].state].filter(Boolean).join(", ") : null) }]
+      : [],
+  };
+  // getDoctorTabs[0] is the Overview sections tab (About/Works at/Locations/Languages).
+  const overview = getDoctorTabs(doctorData)[0];
+  if (!overview || overview.layoutType !== "sections" || !overview.groups || overview.groups.length === 0) return null;
+  return { ...overview, photo: facePhoto, faceLabel: member.name || undefined };
+}
+
+// The shared "Matched to you" tab for clinics AND doctors. A COMPACT stat block
+// (success rate hero + a slim clinic-vs-national bar + one inline cycles/babies
+// line) so it never covers half the photo. contextLabel spells out who
+// "patients like you" are (e.g. "Own eggs · Under 35 · First-time IVF").
+function buildMatchedTab(contextLabel: string | null | undefined, bars: SuccessBar[], cycles: number | null, babies: number | null): TabSection {
+  const clinic = bars.find((b) => b.isClinic);
+  const nat = bars.find((b) => !b.isClinic);
+  return {
+    layoutType: "matched_compact",
+    items: [],
+    matchedStat: {
+      pct: clinic ? clinic.value : null,
+      natAvg: nat ? nat.value : null,
+      cycles: cycles != null && cycles > 0 ? cycles : null,
+      babies: babies != null && babies > 0 ? babies : null,
+      context: contextLabel || undefined,
+    },
+  };
+}
+
 // Tabs for a clinic SwipeDeckCard. The first tab pairs the parent-matched
 // preferences with the clinic-vs-national success-rate bars (success_bars
 // layout); then Locations and Doctors-at-clinic. Callers compute pct/natAvg
@@ -763,13 +904,52 @@ export function getClinicTabs(opts: {
   natAvg: number | null;
   contextLabel: string;
   reasons: string[];
+  // Clinic year founded + about blurb - the Overview section of the first tab.
+  yearFounded?: number | null;
+  about?: string | null;
+  // Matched-context volume shown under the success bars: cycles (exact, the CDC
+  // denominator) and babies born for the SAME parent journey as the rates.
+  matchedCycles?: number | null;
+  matchedBabies?: number | null;
   locations: { address?: string | null; city?: string | null; state?: string | null }[];
-  doctors: { name: string }[];
   // The clinic's primary location, shown as the first matched-preference bubble.
   primaryLocationLabel?: string | null;
-  // Published cost items, when available. Always renders a Costs tab; falls back
-  // to a "shared on consultation" note when the clinic has no published pricing.
-  costs?: { label: string }[];
+  // Published cost programs (parent-matched). One row per program - label is the
+  // program/country name + total. Falls back to a consultation note when empty.
+  costs?: CostInput[];
+  // Accepted insurances (carrier names) -> the Insurance tab.
+  insurances?: string[];
+  // IVF parent-matching requirements -> the "Parents Matching Requirements" tab.
+  matching?: {
+    twinsAllowed?: boolean | null;
+    transferFromOtherClinics?: boolean | null;
+    maxAgeIp1?: number | null;
+    maxAgeIp2?: number | null;
+    biologicalConnection?: string | null;
+    acceptingPatients?: string[] | null;
+  } | null;
+  // IVF surrogate-matching requirements -> the "Surrogate Matching Requirements"
+  // tab, shown ONLY when showSurrogateMatching is true (parent seeks surrogacy).
+  showSurrogateMatching?: boolean;
+  surrogateMatching?: {
+    minAge?: number | null;
+    maxAge?: number | null;
+    minBmi?: number | null;
+    maxBmi?: number | null;
+    maxDeliveries?: number | null;
+    maxCSections?: number | null;
+    maxMiscarriages?: number | null;
+    maxAbortions?: number | null;
+    maxYearsFromLastPregnancy?: number | null;
+    monthsPostVaginal?: number | null;
+    covidVaccination?: boolean;
+    gdDiet?: boolean;
+    gdMedication?: boolean;
+    highBloodPressure?: boolean;
+    preeclampsia?: boolean;
+    placentaPrevia?: boolean;
+    healthHistoryNotes?: string | null;
+  } | null;
   // Mobile cards are shorter - cap the Locations/Doctors lists tighter so the
   // bubbles don't overflow up into the header.
   compact?: boolean;
@@ -784,23 +964,53 @@ export function getClinicTabs(opts: {
 }): TabSection[] {
   const tabs: TabSection[] = [];
 
+  // Services this clinic offers (CDC Services & Profiles) - chips.
+  const SERVICE_CHIPS: { key: string; label: string }[] = [
+    { key: "donorEgg", label: "Donor Eggs" },
+    { key: "donatedEmbryo", label: "Donated Embryos" },
+    { key: "eggCryo", label: "Egg Freezing" },
+    { key: "embryoCryo", label: "Embryo Freezing" },
+    { key: "gestationalCarrier", label: "Gestational Carrier" },
+    { key: "singleWomen", label: "Single Women" },
+    { key: "femaleCouple", label: "Female Couples" },
+  ];
+
+  // Tab 1 (Overview) - Founded year + the About description (plain text) below it.
+  const overviewStats: TabItem[] = [];
+  if (opts.yearFounded != null) overviewStats.push({ label: `Founded ${opts.yearFounded}`, value: "" });
+  const tab1Groups: TabGroup[] = [];
+  if (overviewStats.length > 0) tab1Groups.push({ title: "Overview", layoutType: "text", items: overviewStats });
+  if (opts.about && opts.about.trim()) {
+    const blurb = opts.about.trim().replace(/\s+/g, " ").slice(0, 300);
+    tab1Groups.push({ title: "About", layoutType: "text", items: [{ label: blurb.length === 300 ? blurb + "…" : blurb, value: "" }] });
+  }
+  if (tab1Groups.length > 0) tabs.push({ layoutType: "sections", title: undefined, items: [], groups: tab1Groups });
+
+  // Tab 2 - Services + Locations (each location chip carries its country flag).
+  const serviceChipItems: TabItem[] = opts.cdcServices
+    ? SERVICE_CHIPS.filter((s) => opts.cdcServices![s.key] === true).map((s) => ({ label: s.label, value: "" }))
+    : [];
+  const allClinicLocationLabels = dedupeProviderLocations(opts.locations || [])
+    .map((l) => [l.city, l.state].filter(Boolean).join(", "))
+    .filter((s) => s.trim() !== "");
+  const tab2Groups: TabGroup[] = [];
+  if (serviceChipItems.length > 0) tab2Groups.push({ title: "Services", layoutType: "standard_bubbles", items: serviceChipItems });
+  if (allClinicLocationLabels.length > 0) {
+    const LOC_CAP = opts.compact ? 3 : 5;
+    const locItems: TabItem[] = allClinicLocationLabels.slice(0, LOC_CAP).map((l) => {
+      const flag = getLocationFlag(l);
+      return { label: flag ? `${flag} ${l}` : l, value: "" };
+    });
+    if (allClinicLocationLabels.length > LOC_CAP) locItems.push({ label: `+${allClinicLocationLabels.length - LOC_CAP} more`, value: "" });
+    tab2Groups.push({ title: "Locations", layoutType: "standard_bubbles", items: locItems });
+  }
+  if (tab2Groups.length > 0) tabs.push({ layoutType: "sections", title: undefined, items: [], groups: tab2Groups });
+
   const bars: SuccessBar[] = [];
   if (opts.pct != null) bars.push({ label: "This clinic", value: opts.pct, isClinic: true });
   if (opts.natAvg != null && opts.natAvg > 0) bars.push({ label: "National average", value: opts.natAvg, isClinic: false });
-  // Note: the clinic's location lives in the pinned header, not here. A location
-  // bubble on the "Matched to you" tab would only be appropriate if it actually
-  // matched a location the parent asked for - which the reasons already capture.
-  const matchedItems: TabItem[] = (opts.reasons || [])
-    .filter((r) => r && r.trim() !== "")
-    .slice(0, 5)
-    .map((r) => ({ label: r, value: "" }));
-  tabs.push({
-    layoutType: "success_bars",
-    title: "Matched to you",
-    subtitle: opts.contextLabel || undefined,
-    items: matchedItems,
-    bars,
-  });
+  // "Matched to you": success rate + per-year cycles/babies for this journey.
+  tabs.push(buildMatchedTab(opts.contextLabel, bars, opts.matchedCycles ?? null, opts.matchedBabies ?? null));
 
   // Clinic Experience: share of THIS clinic's IVF patients by diagnosis (CDC
   // "Reason for Using ART"). Personalized - the parent's own diagnoses are pulled
@@ -831,28 +1041,76 @@ export function getClinicTabs(opts: {
     }
   }
 
-  // Costs tab always present so the structure is consistent across clinics.
-  // Only the first line (the "Starting at $X" headline) carries the $ icon; any
-  // follow-up note (e.g. "N programs available") stays plain.
-  const costItems: TabItem[] = (opts.costs && opts.costs.length > 0)
-    ? opts.costs.map((c, i) => ({ label: c.label, value: "", icon: i === 0 ? DollarSign : undefined }))
-    : [{ label: "Pricing shared on your free consultation", value: "", icon: DollarSign }];
-  tabs.push({ layoutType: "icon_list", title: "Costs", items: costItems });
+  // Costs tab - mini program cards (flag, Program N, name, total) like the profile.
+  tabs.push(buildCostsTab(opts.costs, opts.compact));
 
-  // Services this clinic offers (CDC Services & Profiles) - chips.
-  const SERVICE_CHIPS: { key: string; label: string }[] = [
-    { key: "donorEgg", label: "Donor Eggs" },
-    { key: "donatedEmbryo", label: "Donated Embryos" },
-    { key: "eggCryo", label: "Egg Freezing" },
-    { key: "embryoCryo", label: "Embryo Freezing" },
-    { key: "gestationalCarrier", label: "Gestational Carrier" },
-    { key: "singleWomen", label: "Single Women" },
-    { key: "femaleCouple", label: "Female Couples" },
-  ];
-  if (opts.cdcServices) {
-    const svc = opts.cdcServices;
-    const serviceItems: TabItem[] = SERVICE_CHIPS.filter((s) => svc[s.key] === true).map((s) => ({ label: s.label, value: "" }));
-    if (serviceItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Services", items: serviceItems });
+  // Parents Matching Requirements - the clinic's IVF program rules (mirrors the
+  // agency card's matching tab).
+  const m = opts.matching || {};
+  const matchItems: TabItem[] = [];
+  if (m.twinsAllowed != null) matchItems.push({ label: m.twinsAllowed ? "Twin pregnancies allowed" : "Singleton pregnancies only", value: "", icon: Baby });
+  if (m.transferFromOtherClinics != null) matchItems.push({ label: m.transferFromOtherClinics ? "Accepts embryo transfers from other clinics" : "No outside embryo transfers", value: "", icon: Snowflake });
+  if (m.maxAgeIp1 != null) matchItems.push({ label: `Max age (IP1): ${m.maxAgeIp1}`, value: "", icon: Calendar });
+  if (m.maxAgeIp2 != null) matchItems.push({ label: `Max age (IP2): ${m.maxAgeIp2}`, value: "", icon: Calendar });
+  if (m.biologicalConnection) {
+    const bc = m.biologicalConnection === "at_least_one" ? "At least one biological parent required"
+      : m.biologicalConnection === "at_least_two" ? "Both parents must be biologically connected"
+      : m.biologicalConnection === "none" ? "No biological connection to embryos needed"
+      : m.biologicalConnection;
+    matchItems.push({ label: bc, value: "", icon: HeartHandshake });
+  }
+  const ACCEPT_LABELS: Record<string, string> = {
+    single_woman: "Single women", single_man: "Single men", straight_couple: "Straight couples",
+    straight_married_couple: "Married straight couples", gay_couple: "Gay couples", lesbian_couple: "Lesbian couples",
+  };
+  const accepting = (m.acceptingPatients || []).map((a) => ACCEPT_LABELS[a] || a).filter(Boolean);
+  if (accepting.length > 0) matchItems.push({ label: `Accepts: ${accepting.join(", ")}`, value: "", icon: Users });
+  if (matchItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Parents Matching Requirements", items: matchItems });
+
+  // Surrogate Matching Requirements - the clinic's rules for the surrogate they
+  // accept. ONLY shown to parents who are seeking surrogacy (showSurrogateMatching).
+  const sm = opts.surrogateMatching;
+  if (opts.showSurrogateMatching && sm) {
+    // Each threshold is its own chip so boundaries are unambiguous (the paired
+    // "·" rows read as a run-on). Chips wrap and stay compact.
+    const reqChips: TabItem[] = [];
+    if (sm.minAge != null && sm.maxAge != null) reqChips.push({ label: `Age ${sm.minAge}-${sm.maxAge}`, value: "", icon: Calendar });
+    if (sm.minBmi != null && sm.maxBmi != null) reqChips.push({ label: `BMI ${sm.minBmi}-${sm.maxBmi}`, value: "", icon: Scale });
+    if (sm.maxDeliveries != null) reqChips.push({ label: `Up to ${sm.maxDeliveries} deliveries`, value: "", icon: Baby });
+    if (sm.maxCSections != null) reqChips.push({ label: `Up to ${sm.maxCSections} C-sections`, value: "", icon: Scissors });
+    if (sm.maxMiscarriages != null) reqChips.push({ label: `Up to ${sm.maxMiscarriages} miscarriages`, value: "", icon: Heart });
+    if (sm.maxAbortions != null) reqChips.push({ label: `Up to ${sm.maxAbortions} abortions`, value: "", icon: Heart });
+    if (sm.maxYearsFromLastPregnancy != null) reqChips.push({ label: `Within ${sm.maxYearsFromLastPregnancy} yrs of last pregnancy`, value: "", icon: Calendar });
+    if (sm.monthsPostVaginal != null) reqChips.push({ label: `${sm.monthsPostVaginal}mo post-vaginal delivery`, value: "", icon: Calendar });
+
+    // Accepted prior-health-history conditions as compact wrapping chips.
+    const acceptedChips: TabItem[] = [];
+    if (sm.covidVaccination) acceptedChips.push({ label: "COVID vaccinated", value: "", icon: ShieldCheck });
+    if (sm.gdDiet) acceptedChips.push({ label: "Gestational diabetes (diet)", value: "", icon: ShieldCheck });
+    if (sm.gdMedication) acceptedChips.push({ label: "Gestational diabetes (medication)", value: "", icon: ShieldCheck });
+    if (sm.highBloodPressure) acceptedChips.push({ label: "High blood pressure", value: "", icon: ShieldCheck });
+    if (sm.preeclampsia) acceptedChips.push({ label: "Preeclampsia", value: "", icon: ShieldCheck });
+    if (sm.placentaPrevia) acceptedChips.push({ label: "Placenta previa", value: "", icon: ShieldCheck });
+
+    if (reqChips.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Surrogate Matching Requirements", items: reqChips });
+    // Accepted prior-health-history gets its own tab so neither list crowds the card.
+    // The clinic's free-text "Health History Notes" renders beneath the chips.
+    const note = (sm.healthHistoryNotes || "").trim();
+    if (acceptedChips.length > 0 || note) {
+      const acceptedGroups: TabGroup[] = [];
+      if (acceptedChips.length > 0) acceptedGroups.push({ layoutType: "standard_bubbles", items: acceptedChips });
+      if (note) acceptedGroups.push({ subtitle: "Notes", layoutType: "text", items: [{ label: note, value: "" }] });
+      tabs.push({ layoutType: "sections", title: "Accepted Surrogate History Of", items: [], groups: acceptedGroups });
+    }
+  }
+
+  // Insurance - the major insurances the clinic accepts (carrier chips).
+  const insChips = Array.from(new Set((opts.insurances || []).filter((s) => s && s.trim() !== "")));
+  if (insChips.length > 0) {
+    const INS_CAP = opts.compact ? 6 : 10;
+    const insItems: TabItem[] = insChips.slice(0, INS_CAP).map((s) => ({ label: s, value: "" }));
+    if (insChips.length > INS_CAP) insItems.push({ label: `+${insChips.length - INS_CAP} more`, value: "" });
+    tabs.push({ layoutType: "standard_bubbles", title: "Insurance accepted", items: insItems });
   }
 
   // How they practice (CDC cycle characteristics) - stats with a leading icon.
@@ -871,36 +1129,8 @@ export function getClinicTabs(opts: {
     if (practiceItems.length > 0) tabs.push({ layoutType: "icon_list", title: "How they practice", items: practiceItems });
   }
 
-  const allLocItems: TabItem[] = dedupeProviderLocations(opts.locations || [])
-    .map((l) => ({ label: [l.city, l.state].filter(Boolean).join(", "), value: "", icon: MapPin }))
-    .filter((i) => i.label !== "");
-  if (allLocItems.length > 0) {
-    // Cap to keep the tab from overflowing; surface the overflow as a "+N more".
-    const LOC_CAP = opts.compact ? 3 : 5;
-    const locItems = allLocItems.slice(0, LOC_CAP);
-    if (allLocItems.length > LOC_CAP) locItems.push({ label: `+${allLocItems.length - LOC_CAP} more`, value: "" });
-    tabs.push({ layoutType: "standard_bubbles", title: "Locations", items: locItems });
-  }
-
-  // Dedupe doctors by normalized name (the same person can appear as "Dr. X"
-  // and "X"), then cap with a "+N more" so the tab does not flood the card.
-  const seenDoctors = new Set<string>();
-  const dedupedDoctors = (opts.doctors || [])
-    .map((d) => (d.name || "").trim())
-    .filter(Boolean)
-    .filter((name) => {
-      const key = name.toLowerCase().replace(/^(dr\.?|prof\.?)\s+/i, "").replace(/[.,]/g, "").trim();
-      if (seenDoctors.has(key)) return false;
-      seenDoctors.add(key);
-      return true;
-    });
-  if (dedupedDoctors.length > 0) {
-    const DOC_CAP = opts.compact ? 4 : 6;
-    const docItems: TabItem[] = dedupedDoctors.slice(0, DOC_CAP).map((name) => ({ label: name, value: "" }));
-    if (dedupedDoctors.length > DOC_CAP) docItems.push({ label: `+${dedupedDoctors.length - DOC_CAP} more`, value: "" });
-    tabs.push({ layoutType: "standard_bubbles", title: "Doctors at this clinic", items: docItems });
-  }
-
+  // Each doctor now gets their own face tab (built in clinic-swipe-card), so the
+  // old "Doctors at this clinic" list tab is gone.
   return tabs;
 }
 
@@ -928,6 +1158,7 @@ export interface DoctorCardData {
   name: string;
   credential?: string | null;
   title?: string | null;
+  bio?: string | null;
   photoUrl?: string | null;
   specialties?: string[];
   matchedSpecialties?: string[];
@@ -965,11 +1196,29 @@ export function getAgencyTabs(opts: {
   reasons?: string[];
   about?: string | null;
   services?: string[];
+  yearFounded?: number | null;
   numberOfBabiesBorn?: number | null;
   timeToMatch?: string | null;
   familiesPerCoordinator?: number | null;
   screening?: Record<string, boolean> | null;
   locations?: { address?: string | null; city?: string | null; state?: string | null }[];
+  // Published cost programs (parent-matched). One row per program - label is the
+  // program/country name, value is the formatted total. When empty, falls back
+  // to a "shared on consultation" note so the tab is always present.
+  costs?: CostInput[];
+  // Parents Matching Requirements - the agency's surrogacy program rules.
+  matching?: {
+    twinsAllowed?: boolean | null;
+    citizensNotAllowed?: string[] | null;
+    stayAfterBirthMonths?: number | null;
+    surrogateRemovableFromCert?: boolean | null;
+    bothParentsOnBirthCert?: boolean | null;
+  } | null;
+  // Team members (leadership first) shown as chips, mirroring the clinic's
+  // "Doctors at this clinic" tab. Names pair with the rotating face backgrounds.
+  team?: { name: string; title?: string | null }[];
+  // Mobile cards are shorter - cap the team/locations lists tighter.
+  compact?: boolean;
 }): TabSection[] {
   const tabs: TabSection[] = [];
 
@@ -983,23 +1232,69 @@ export function getAgencyTabs(opts: {
     });
   }
 
-  // Overview - the agency's headline stats + a short description line when present.
-  const overview: TabItem[] = [];
-  if (opts.numberOfBabiesBorn != null) overview.push({ label: "Babies born", value: `${opts.numberOfBabiesBorn}+` });
-  if (opts.timeToMatch) overview.push({ label: "Time to match", value: String(opts.timeToMatch) });
-  if (opts.familiesPerCoordinator != null) overview.push({ label: "Families / coordinator", value: String(opts.familiesPerCoordinator) });
-  if (opts.about && opts.about.trim()) {
-    // Keep it short - the bubble layout is for chips, not paragraphs.
-    const blurb = opts.about.trim().replace(/\s+/g, " ").slice(0, 160);
-    overview.push({ label: blurb.length === 160 ? blurb + "…" : blurb, value: "" });
-  }
-  if (overview.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overview });
-
-  // Services the agency offers (their approved service types) as chips.
+  // Overview (the first tab) - three stacked sections: Overview stats, the
+  // services the agency offers, and where it operates (each location chip
+  // carries its country flag). Rendered as one "sections" tab so all three
+  // read as distinct groups instead of a single chip pile.
   const services = (opts.services || []).filter((s) => s && s.trim() !== "");
-  if (services.length > 0) {
-    tabs.push({ layoutType: "standard_bubbles", title: "Services", items: services.map((s) => ({ label: s, value: "" })) });
+  const allLocationLabels = dedupeProviderLocations(opts.locations || [])
+    .map((l) => [l.city, l.state].filter(Boolean).join(", "))
+    .filter((s) => s.trim() !== "");
+  const stats: TabItem[] = [];
+  if (opts.yearFounded != null) stats.push({ label: `Founded ${opts.yearFounded}`, value: "" });
+  if (opts.numberOfBabiesBorn != null) stats.push({ label: `${opts.numberOfBabiesBorn}+ babies born`, value: "" });
+  if (opts.timeToMatch) stats.push({ label: `Match in ${opts.timeToMatch}`, value: "" });
+  if (opts.familiesPerCoordinator != null) stats.push({ label: `${opts.familiesPerCoordinator} families / coordinator`, value: "" });
+  // Tab 1 (Overview) - headline stats + the About description (plain text) below.
+  const tab1Groups: TabGroup[] = [];
+  if (stats.length > 0) tab1Groups.push({ title: "Overview", layoutType: "text", items: stats });
+  if (opts.about && opts.about.trim()) {
+    const blurb = opts.about.trim().replace(/\s+/g, " ").slice(0, 300);
+    tab1Groups.push({ title: "About", layoutType: "text", items: [{ label: blurb.length === 300 ? blurb + "…" : blurb, value: "" }] });
   }
+  if (tab1Groups.length > 0) tabs.push({ layoutType: "sections", title: undefined, items: [], groups: tab1Groups });
+
+  // Tab 2 - Services + Locations (each location chip carries its country flag).
+  const tab2Groups: TabGroup[] = [];
+  if (services.length > 0) tab2Groups.push({ title: "Services", layoutType: "standard_bubbles", items: services.map((s) => ({ label: s, value: "" })) });
+  if (allLocationLabels.length > 0) {
+    const LOC_CAP = opts.compact ? 3 : 5;
+    const locItems: TabItem[] = allLocationLabels.slice(0, LOC_CAP).map((l) => {
+      const flag = getLocationFlag(l);
+      return { label: flag ? `${flag} ${l}` : l, value: "" };
+    });
+    if (allLocationLabels.length > LOC_CAP) locItems.push({ label: `+${allLocationLabels.length - LOC_CAP} more`, value: "" });
+    tab2Groups.push({ title: "Locations", layoutType: "standard_bubbles", items: locItems });
+  }
+  if (tab2Groups.length > 0) tabs.push({ layoutType: "sections", title: undefined, items: [], groups: tab2Groups });
+
+  // Costs - mini program cards (flag, Program N, name, total) like the profile.
+  tabs.push(buildCostsTab(opts.costs, opts.compact));
+
+  // Parents Matching Requirements - the agency's surrogacy program rules that
+  // determine which intended parents they accept.
+  const m = opts.matching || {};
+  const matchItems: TabItem[] = [];
+  if (m.twinsAllowed != null) {
+    matchItems.push({ label: m.twinsAllowed ? "Twin pregnancies allowed" : "Singleton pregnancies only", value: "", icon: Baby });
+  }
+  const restricted = (m.citizensNotAllowed || []).filter((c) => c && c.trim() !== "");
+  if (restricted.length > 0) {
+    // Same label the provider profile uses for this field ("Citizens not allowed").
+    matchItems.push({ label: `Citizens not allowed: ${restricted.join(", ")}`, value: "", icon: Globe });
+  } else if (m.citizensNotAllowed != null) {
+    matchItems.push({ label: "Serves parents of all nationalities", value: "", icon: Globe });
+  }
+  if (m.stayAfterBirthMonths != null) {
+    matchItems.push({ label: m.stayAfterBirthMonths > 0 ? `Stay ~${m.stayAfterBirthMonths} mo after birth` : "No stay required after birth", value: "", icon: Calendar });
+  }
+  if (m.bothParentsOnBirthCert != null) {
+    matchItems.push({ label: m.bothParentsOnBirthCert ? "Both parents on birth certificate" : "Birth certificate rules vary", value: "", icon: FileText });
+  }
+  if (m.surrogateRemovableFromCert != null) {
+    matchItems.push({ label: m.surrogateRemovableFromCert ? "Surrogate removable from certificate" : "Surrogate stays on certificate", value: "", icon: ShieldCheck });
+  }
+  if (matchItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Parents Matching Requirements", items: matchItems });
 
   // Screening - what the agency screens surrogates for (only the enabled ones).
   const screening = opts.screening || {};
@@ -1008,13 +1303,23 @@ export function getAgencyTabs(opts: {
     .map((s) => ({ label: s.label, value: "" }));
   if (screeningItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Surrogate Screening", items: screeningItems });
 
-  // Locations.
-  const locationItems: TabItem[] = dedupeProviderLocations(opts.locations || [])
-    .map((l) => [l.city, l.state].filter(Boolean).join(", "))
-    .filter((s) => s.trim() !== "")
-    .slice(0, 8)
-    .map((label) => ({ label, value: "" }));
-  if (locationItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Locations", items: locationItems });
+  // Our Team - leadership-first member names (paired with the rotating faces).
+  const seenTeam = new Set<string>();
+  const teamNames = (opts.team || [])
+    .map((t) => (t.name || "").trim())
+    .filter(Boolean)
+    .filter((name) => {
+      const key = name.toLowerCase().replace(/^(dr\.?|prof\.?)\s+/i, "").replace(/[.,]/g, "").trim();
+      if (seenTeam.has(key)) return false;
+      seenTeam.add(key);
+      return true;
+    });
+  if (teamNames.length > 0) {
+    const TEAM_CAP = opts.compact ? 4 : 6;
+    const teamItems: TabItem[] = teamNames.slice(0, TEAM_CAP).map((name) => ({ label: name, value: "" }));
+    if (teamNames.length > TEAM_CAP) teamItems.push({ label: `+${teamNames.length - TEAM_CAP} more`, value: "" });
+    tabs.push({ layoutType: "standard_bubbles", title: "Our Team", items: teamItems });
+  }
 
   // Always render at least one tab so the card body is never blank.
   if (tabs.length === 0) {
@@ -1039,52 +1344,81 @@ function pctNum(v: string | number | null | undefined): number | null {
 // languages & visits, and (when present) verified reviews.
 export function getDoctorTabs(
   doctor: DoctorCardData,
-  opts: { reasons?: string[]; contextLabel?: string | null; compact?: boolean } = {},
+  opts: { reasons?: string[]; contextLabel?: string | null; compact?: boolean; costs?: CostInput[] } = {},
 ): TabSection[] {
   const tabs: TabSection[] = [];
-
-  // 1) Matched to you - ONE tab combining the success-rate bars (this clinic vs
-  // national) with the short "why this doctor" reasons, using the IDENTICAL
-  // success_bars layout + colors + position as the clinic card's first tab.
   const clinics = doctor.clinics || [];
   const primary = clinics[0] || null;
-  // Keep reasons SHORT so the chips sit in the bottom strip and never cover the
-  // doctor's face. Cap to 3; fall back to matched specialties when none given.
-  const reasons = (opts.reasons || []).filter((r) => r && r.trim() !== "");
-  // Hard safety cap on chip length: a chip is a tag, not a sentence. Prevents a
-  // verbose AI reason from ballooning into a multi-line block over the face.
-  const asChip = (s: string) => (s.length > 42 ? s.slice(0, 40).trimEnd() + "…" : s);
-  // Render-level enforcement of the prompt's "tag, not sentence" rule: even if
-  // the model slips and emits a full sentence, a location, or the success rate
-  // (all explicitly forbidden in reasons - and already shown by the bars +
-  // header), drop it here so it can never cover the doctor's face. A real tag is
-  // <= 5 words and carries no "N%" success-rate figure.
-  const isTagLike = (s: string) => {
-    const t = (s || "").trim();
-    return t.length > 0 && t.split(/\s+/).length <= 5 && !/\d\s*%/.test(t);
-  };
-  let reasonLabels = reasons.filter(isTagLike).slice(0, 3).map(asChip);
-  if (reasonLabels.length === 0) {
-    reasonLabels = ((doctor.matchedSpecialties && doctor.matchedSpecialties.length > 0)
-      ? doctor.matchedSpecialties
-      : (doctor.specialties || [])).slice(0, 3).map(asChip);
+  const contextLabel = opts.contextLabel || primary?.successRateLabel || undefined;
+
+  // 1) Overview (first tab) - kept SHORT so the face stays visible (like the
+  // egg-donor / surrogate first card): Works at, Locations, Languages only. The
+  // bio (the tall block) lives on its own "About" tab below.
+  const overviewGroups: TabGroup[] = [];
+  const seenClinics = new Set<string>();
+  const clinicNames: TabItem[] = clinics
+    .map((c) => (c.providerName || "").trim())
+    .filter(Boolean)
+    .filter((n) => { const k = n.toLowerCase(); if (seenClinics.has(k)) return false; seenClinics.add(k); return true; })
+    .map((n) => ({ label: n, value: "" }));
+  if (clinicNames.length > 0) overviewGroups.push({ title: "Works at", layoutType: "standard_bubbles", items: clinicNames });
+  const seenLoc = new Set<string>();
+  const locItems: TabItem[] = clinics
+    .map((c) => (c.location || "").trim())
+    .filter(Boolean)
+    .filter((l) => { const k = l.toLowerCase(); if (seenLoc.has(k)) return false; seenLoc.add(k); return true; })
+    .map((l) => { const flag = getLocationFlag(l); return { label: flag ? `${flag} ${l}` : l, value: "" }; });
+  if (locItems.length > 0) overviewGroups.push({ title: "Locations", layoutType: "standard_bubbles", items: locItems });
+  const langs = (doctor.languagesSpoken || []).filter(Boolean);
+  if (langs.length > 0) overviewGroups.push({ title: "Languages", layoutType: "standard_bubbles", items: langs.map((l) => ({ label: l, value: "" })) });
+  if (overviewGroups.length > 0) tabs.push({ layoutType: "sections", items: [], groups: overviewGroups });
+
+  // 1b) About - the bio on its OWN tab (it's the tall block that would otherwise
+  // cover the doctor's face on the first tab).
+  if (doctor.bio && doctor.bio.trim()) {
+    // Plain text on its own tab (not a bubble), same as the clinic About tab.
+    const blurb = doctor.bio.trim().replace(/\s+/g, " ").slice(0, 300);
+    tabs.push({ layoutType: "sections", items: [], groups: [{ title: "About", layoutType: "text", items: [{ label: blurb.length === 300 ? blurb + "…" : blurb, value: "" }] }] });
   }
+
+  // 2) Credentials - board certs, role, experience, education, NPI, + visits
+  // (moved here from the eliminated "Languages & visits" tab).
+  const cred: TabItem[] = [];
+  for (const bc of (doctor.boardCertifications || []).filter(Boolean).slice(0, 3)) {
+    cred.push({ label: `Board Certified: ${String(bc)}`, value: "", icon: Award });
+  }
+  if (doctor.title) cred.push({ label: String(doctor.title), value: "", icon: Briefcase });
+  if (doctor.yearsExperience) cred.push({ label: `${doctor.yearsExperience} years experience`, value: "", icon: Briefcase });
+  const eduStr = Array.isArray(doctor.education)
+    ? doctor.education.filter(Boolean).join(", ")
+    : doctor.education;
+  if (eduStr) cred.push({ label: String(eduStr), value: "", icon: GraduationCap });
+  if (doctor.npiTaxonomy) cred.push({ label: String(doctor.npiTaxonomy), value: "", icon: Stethoscope });
+  if (doctor.offersVideoVisits) cred.push({ label: "Video visits available", value: "", icon: Video });
+  if (doctor.acceptingNewPatients) cred.push({ label: "Accepting new patients", value: "", icon: UserCheck });
+  if (cred.length > 0) tabs.push({ layoutType: "icon_list", title: "Credentials", items: cred });
+
+  // 3) Matched to you - success rate + per-year cycles/babies (this doctor's
+  // primary clinic), using the SAME 2-section tab as the clinic card.
   const bars: SuccessBar[] = [];
+  let mCycles: number | null = null;
+  let mBabies: number | null = null;
   if (primary) {
     const pct = primary.successPct ?? pctNum(primary.successRate);
     const nat = pctNum(primary.nationalAverage);
     if (pct != null) bars.push({ label: "This clinic", value: pct, isClinic: true });
     if (nat != null && nat > 0) bars.push({ label: "National average", value: nat, isClinic: false });
+    if (primary.cycleCount != null && primary.cycleCount > 0) {
+      mCycles = primary.cycleCount;
+      if (pct != null) mBabies = Math.round((pct / 100) * primary.cycleCount);
+    }
   }
-  tabs.push({
-    layoutType: "success_bars",
-    title: "Matched to you",
-    subtitle: opts.contextLabel || primary?.successRateLabel || undefined,
-    items: reasonLabels.map((label) => ({ label, value: "" })),
-    bars,
-  });
+  tabs.push(buildMatchedTab(contextLabel, bars, mCycles, mBabies));
 
-  // 3) Specialties - the doctor's full focus areas (key differentiator).
+  // 3b) Costs - the doctor's clinic cost programs as mini program cards (profile-style).
+  if (opts.costs && opts.costs.length > 0) tabs.push(buildCostsTab(opts.costs, opts.compact));
+
+  // 4) Specialties - the doctor's full focus areas (key differentiator).
   const specialties = (doctor.specialties || []).filter(Boolean);
   if (specialties.length > 0) {
     const SPEC_CAP = opts.compact ? 6 : 10;
@@ -1093,30 +1427,7 @@ export function getDoctorTabs(
     tabs.push({ layoutType: "standard_bubbles", title: "Specialties", items });
   }
 
-  // 4) Credentials - board certs, role, experience, education, NPI classification.
-  const cred: TabItem[] = [];
-  for (const bc of (doctor.boardCertifications || []).filter(Boolean).slice(0, 3)) {
-    cred.push({ label: `Board Certified: ${String(bc)}`, value: "", icon: Award });
-  }
-  if (doctor.title) cred.push({ label: String(doctor.title), value: "", icon: Briefcase });
-  if (doctor.yearsExperience) cred.push({ label: `${doctor.yearsExperience} years experience`, value: "", icon: Briefcase });
-  // education can be a string OR an array (ProviderMember.education is String[]).
-  const eduStr = Array.isArray(doctor.education)
-    ? doctor.education.filter(Boolean).join(", ")
-    : doctor.education;
-  if (eduStr) cred.push({ label: String(eduStr), value: "", icon: GraduationCap });
-  if (doctor.npiTaxonomy) cred.push({ label: String(doctor.npiTaxonomy), value: "", icon: Stethoscope });
-  if (cred.length > 0) tabs.push({ layoutType: "icon_list", title: "Credentials", items: cred });
-
-  // 5) Languages & visits.
-  const lv: TabItem[] = [];
-  const langs = (doctor.languagesSpoken || []).filter(Boolean);
-  if (langs.length > 0) lv.push({ label: `Speaks ${langs.join(", ")}`, value: "", icon: Globe });
-  if (doctor.offersVideoVisits) lv.push({ label: "Video visits available", value: "", icon: Video });
-  if (doctor.acceptingNewPatients) lv.push({ label: "Accepting new patients", value: "", icon: UserCheck });
-  if (lv.length > 0) tabs.push({ layoutType: "icon_list", title: "Languages & visits", items: lv });
-
-  // 6) Reviews - only when this doctor has verified reviews.
+  // 5) Reviews - only when this doctor has verified reviews.
   if ((doctor.reviewCount || 0) > 0) {
     const rev: TabItem[] = [];
     if (doctor.recommendPct != null) rev.push({ label: `${doctor.recommendPct}% would recommend`, value: "", icon: ThumbsUp });
@@ -1135,7 +1446,7 @@ export function getDoctorTabs(
 // name at 18px (same look as the clinic card's doctor-face tabs).
 export function buildDoctorCardProps(
   doctor: DoctorCardData,
-  opts: { contextLabel?: string | null; compact?: boolean; reasons?: string[] } = {},
+  opts: { contextLabel?: string | null; compact?: boolean; reasons?: string[]; costs?: CostInput[] } = {},
 ): {
   photos: string[];
   photoLabels: Record<string, string>;
@@ -1156,12 +1467,17 @@ export function buildDoctorCardProps(
   const photos = photoSrc ? [photoSrc] : [];
   const photoLabels: Record<string, string> = {};
   if (photoSrc) photoLabels[photoSrc] = doctor.name;
-  const logoSrc = primary?.providerLogoUrl ? getPhotoSrc(primary.providerLogoUrl) : null;
+  // No clinic logo in the doctor header - the clinic is shown in the "Works at"
+  // section of the Overview tab instead.
+  const logoSrc = null;
   const successBadge = primary?.top10pct ? "Top 10%" : null;
-  const tabs = getDoctorTabs(doctor, { reasons: opts.reasons, contextLabel: opts.contextLabel, compact: opts.compact });
-  const headerLocation = primary
-    ? [primary.providerName, primary.location].filter(Boolean).join(" · ") || null
-    : null;
+  const tabs = getDoctorTabs(doctor, { reasons: opts.reasons, contextLabel: opts.contextLabel, compact: opts.compact, costs: opts.costs });
+  // The clinic name lives in the first tab's "Works at" section now, so the
+  // header shows only the centered doctor name (+ clinic logo), no sub-line.
+  const headerLocation = null;
+  // The doctor's photo is the hero from the first slide (the Overview sections
+  // render over it in white). Only fall back to the cream cover when there's no
+  // photo at all. The face name is centered in the overlay header.
   return { photos, photoLabels, logoSrc, primary, successBadge, tabs, headerLocation, firstSlidePlain: photos.length === 0 };
 }
 

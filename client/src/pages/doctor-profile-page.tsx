@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { MobileCloseButton } from "@/components/mobile-profile-close-header";
 
 // CDC metric codes (mirrors ivf-success-rates-section.tsx) used to pick a headline rate.
 const OWN_METRIC = "pct_intended_retrievals_live_births";
@@ -35,6 +37,7 @@ function formatLocation(l: { address?: string | null; city?: string | null; stat
 export default function DoctorProfilePage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const { data: doctor, isLoading, isError } = useQuery<any>({
     queryKey: ["/api/providers/doctors", slug],
@@ -75,7 +78,8 @@ export default function DoctorProfilePage() {
 
   return (
     <div className="space-y-6 w-full">
-      <div className="flex items-center justify-between">
+      {/* Desktop: the "Back" text link (hidden on mobile). */}
+      <div className={`flex items-center justify-between ${isMobile ? "hidden" : ""}`}>
         <Button variant="ghost" onClick={() => navigate(-1)} data-testid="link-back">
           <ArrowLeft className="w-4 h-4 mr-2" /> Back
         </Button>
@@ -119,6 +123,11 @@ export default function DoctorProfilePage() {
             )}
           </div>
         </div>
+        {isMobile && (
+          <div className="ml-auto self-start">
+            <MobileCloseButton onClose={() => navigate(-1)} />
+          </div>
+        )}
       </div>
 
       {/* About */}

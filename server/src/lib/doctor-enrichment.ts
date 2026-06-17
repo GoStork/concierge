@@ -22,6 +22,7 @@ export const DOCTOR_MEMBER_SELECT = {
   slug: true,
   name: true,
   title: true,
+  bio: true,
   photoUrl: true,
   highResPhotoUrl: true,
   credential: true,
@@ -99,6 +100,7 @@ export interface EnrichedDoctor {
   slug: string;
   name: string;
   title: string | null;
+  bio: string | null;
   photoUrl: string | null;
   credential: string | null;
   npiTaxonomy: string | null;
@@ -192,6 +194,7 @@ export function enrichDoctorRows(rows: any[], ctx: DoctorEnrichmentContext): Enr
       slug: m.slug,
       name: m.name,
       title: m.title,
+      bio: m.bio ?? null,
       // Prefer the AI-upscaled crisp variant; fall back to the original.
       photoUrl: m.highResPhotoUrl || m.photoUrl,
       credential: m.credential,

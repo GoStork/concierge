@@ -358,6 +358,10 @@ type EditorState =
   | { kind: "logo"; url: string }
   | null;
 
+// SVGs are vector; the canvas logo editor can't meaningfully edit them and some
+// fail to rasterize, so we skip the editor for them.
+const isSvgUrl = (u: string | null) => !!u && /\.svg($|\?)/i.test(u);
+
 export default function ImageUploader({
   value,
   onChange,
@@ -395,34 +399,62 @@ export default function ImageUploader({
     const isSvg = file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
 
     if (mode === "avatar") {
-      // Read to a data URL and open the cropper.
+      // Read to a data URL and open the cropper. Nothing is committed until the
+      // user hits Save in the cropper, so Cancel leaves the old photo intact.
       const reader = new FileReader();
       reader.onload = () => setEditor({ kind: "avatar", src: reader.result as string });
       reader.readAsDataURL(file);
       return;
     }
 
-    // logo mode: SVGs upload as-is (no canvas processing); otherwise upload (or remove bg) then edit.
-    setUploading(true);
-    try {
-      if (makeTransparent && !isSvg) {
-        const url = await removeBackgroundFromFile(file);
-        onChange(url);
-        setEditor({ kind: "logo", url });
-      } else {
+    // logo mode.
+    if (isSvg) {
+      // SVGs can't be canvas-edited; upload and commit directly.
+      setUploading(true);
+      try {
         const url = await uploadFile(file);
         onChange(url);
-        if (isSvg) {
-          setEditor(null);
-        } else {
-          setEditor({ kind: "logo", url });
-        }
+      } catch (err: any) {
+        toast({ title: "Upload failed", description: err?.message, variant: "destructive" });
+      } finally {
+        setUploading(false);
       }
+      return;
+    }
+    if (makeTransparent) {
+      // Needs a round-trip to the background-removal API; open the editor on the
+      // result but DON'T commit until Apply.
+      setUploading(true);
+      try {
+        const url = await removeBackgroundFromFile(file);
+        setEditor({ kind: "logo", url });
+      } catch (err: any) {
+        toast({ title: "Upload failed", description: err?.message, variant: "destructive" });
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
+    // Common case: upload the file so the canvas can load it via the proven
+    // (proxied) path, open the editor, but commit to the field only on Apply -
+    // so Cancel leaves the existing logo untouched.
+    setUploading(true);
+    try {
+      const url = await uploadFile(file);
+      setEditor({ kind: "logo", url });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err?.message, variant: "destructive" });
     } finally {
       setUploading(false);
     }
+  };
+
+  // Close the editor, releasing any object URL created for a local preview.
+  const closeEditor = () => {
+    setEditor((prev) => {
+      if (prev?.kind === "logo" && prev.url.startsWith("blob:")) URL.revokeObjectURL(prev.url);
+      return null;
+    });
   };
 
   /** Open the editor on the EXISTING image. */
@@ -432,13 +464,14 @@ export default function ImageUploader({
       const src = proxiedForCanvas(displayUrl || value);
       setEditor({ kind: "avatar", src });
     } else {
+      if (isSvgUrl(value)) return; // vector logos aren't canvas-editable
       setEditor({ kind: "logo", url: value });
     }
   };
 
   /** Avatar cropper finished -> upload the blob and publish the URL. */
   const handleCropComplete = async (blob: Blob) => {
-    setEditor(null);
+    closeEditor();
     setUploading(true);
     try {
       const url = await uploadFile(blob, "photo.jpg");
@@ -457,15 +490,15 @@ export default function ImageUploader({
       <ImageCropPreview
         imageSrc={editor.src}
         onCropComplete={handleCropComplete}
-        onCancel={() => setEditor(null)}
+        onCancel={closeEditor}
         aspect={1}
         cropShape={shape === "rect" ? "rect" : "round"}
       />
     ) : (
       <LogoEditorOverlay
         imageUrl={editor.url}
-        onSave={(url) => { onChange(url); setEditor(null); }}
-        onCancel={() => setEditor(null)}
+        onSave={(url) => { onChange(url); closeEditor(); }}
+        onCancel={closeEditor}
         testId={testId}
       />
     )
@@ -516,7 +549,7 @@ export default function ImageUploader({
             {hiddenInput}
             {!disabled && (
               <div
-                className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1"
+                className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-0.5"
                 style={{ borderRadius: radius }}
               >
                 {uploading ? (
@@ -527,7 +560,7 @@ export default function ImageUploader({
                       <button
                         type="button"
                         onClick={editExisting}
-                        className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                        className="p-1 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
                         data-testid={`${testId}-edit`}
                         title="Edit photo"
                       >
@@ -547,7 +580,7 @@ export default function ImageUploader({
                       <button
                         type="button"
                         onClick={() => onChange(null)}
-                        className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                        className="p-1 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
                         data-testid={`${testId}-delete`}
                         title="Remove photo"
                       >
@@ -606,7 +639,7 @@ export default function ImageUploader({
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-muted-foreground">Click or drag to replace</span>
-                {mode === "logo" && (
+                {mode === "logo" && !isSvgUrl(value) && (
                   <button
                     type="button"
                     className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"

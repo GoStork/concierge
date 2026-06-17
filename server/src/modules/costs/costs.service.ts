@@ -20,6 +20,33 @@ import {
   MatcherInput,
 } from "./cost-sheet-subtype-matcher";
 
+// Generic, non-IVF leaves that double as serviceType tags - they add no useful
+// program subtitle (the program name already conveys "surrogacy" / "egg donor").
+const GENERIC_SUBTYPE_LEAVES = new Set<string>([
+  "surrogacy", "egg_donor_fresh", "egg_donor_frozen", "sperm_donor",
+]);
+
+// Pick the most descriptive subtype for a program's subtitle from its canonical
+// subTypes[] coverage. Prefers the specific IVF-journey leaf (e.g. ship-embryos-
+// to-surrogate) over the generic surrogacy/egg-donor tags, using ALL_SUBTYPES
+// order (specific leaves come first). Falls back to the legacy scalar only when
+// it is itself a valid specific leaf. Returns null when nothing descriptive
+// applies. The legacy scalar `subType` is unreliable on its own (it can hold a
+// stale value), so the canonical array is consulted first.
+function pickDisplaySubType(subTypes: unknown, scalar: string | null | undefined): SubType | null {
+  const arr = Array.isArray(subTypes) ? (subTypes as string[]) : [];
+  const specific = arr
+    .filter((s) => isValidSubType(s) && !GENERIC_SUBTYPE_LEAVES.has(s))
+    .sort((a, b) => ALL_SUBTYPES.indexOf(a as SubType) - ALL_SUBTYPES.indexOf(b as SubType));
+  if (specific.length > 0) return specific[0] as SubType;
+  // Only trust the legacy scalar when there is NO canonical coverage at all
+  // (an un-migrated program). When subTypes[] is populated but carries only
+  // generic leaves (e.g. ["surrogacy"]), the program has no specific IVF
+  // journey, so it gets no subtitle - never the stale scalar.
+  if (arr.length === 0 && scalar && isValidSubType(scalar) && !GENERIC_SUBTYPE_LEAVES.has(scalar)) return scalar as SubType;
+  return null;
+}
+
 @Injectable()
 export class CostsService {
   private readonly logger = new Logger(CostsService.name);
@@ -753,6 +780,35 @@ export class CostsService {
   }
 
   /**
+   * Marketplace agencies tab: parent-matched starting cost per surrogacy
+   * agency, used by both the card's "Starting at $X" line and the Total Cost
+   * filter (which needs every agency's price upfront, so a per-card fetch
+   * won't do). Returns { [agencyId]: startingCost } - the cheapest matched
+   * program minTotal; agencies with no priced program are omitted. Reuses the
+   * SAME matcher the card uses, so the numbers are identical.
+   */
+  async getAgencyStartingCosts(parentAccountId: string): Promise<Record<string, number>> {
+    const agencies = await this.prisma.provider.findMany({
+      where: { services: { some: { status: "APPROVED", providerType: { name: "Surrogacy Agency" } } } },
+      select: { id: true },
+    });
+    const out: Record<string, number> = {};
+    await Promise.all(
+      agencies.map(async (a) => {
+        try {
+          const res = await this.getProviderParentPrograms(a.id, parentAccountId, undefined, undefined, true);
+          const programs: any[] = (res as any)?.programs || [];
+          const totals = programs
+            .map((p) => Number(p.minTotal))
+            .filter((n) => Number.isFinite(n) && n > 0);
+          if (totals.length) out[a.id] = Math.min(...totals);
+        } catch { /* skip - an unpriced agency simply has no starting cost */ }
+      }),
+    );
+    return out;
+  }
+
+  /**
    * Combined cost for an international surrogacy program (Part 4).
    *
    * An international program is agency-led: the surrogacy agency plus one or
@@ -1102,21 +1158,23 @@ export class CostsService {
             ],
           },
           {
-            // subType is the IVF-only taxonomy. The legacy migration backfilled
-            // it onto every program (including sperm-bank and egg-bank ones),
-            // which made non-IVF programs fail the "subType is null or in the
-            // parent's IVF subtype list" filter and broke matching for any
-            // parent who didn't need IVF. So scope the subType constraint to
-            // IVF-tagged programs only - non-IVF programs always pass.
+            // Match on the canonical subTypes[] coverage array - the single
+            // source of truth. The legacy scalar `subType` is unreliable: it
+            // can hold a stale value from an earlier classification (e.g. a
+            // ship-embryos-to-surrogate program left with
+            // "ivf_cycle_own_eggs_own_carry"), which silently HID the correct
+            // program and SURFACED the wrong one whose stale scalar happened to
+            // overlap the parent's list. Scope the constraint to IVF-tagged
+            // programs only - non-IVF programs always pass (their IVF taxonomy
+            // is irrelevant).
             OR: [
-              // Non-IVF program: doesn't carry the ivf_clinic tag in
-              // serviceTypes, so its subType (stale or not) is irrelevant.
+              // Non-IVF program: doesn't carry the ivf_clinic tag in serviceTypes.
               { NOT: { serviceTypes: { has: "ivf_clinic" } } },
-              // IVF program with no subType (newly created, not yet classified).
-              { subType: null },
-              // IVF program with a subType that matches the parent's eligible
+              // IVF program not yet classified into any canonical subtype.
+              { subTypes: { isEmpty: true } },
+              // IVF program whose coverage overlaps the parent's eligible
               // biology-driven subtypes.
-              ...(subtypes.length > 0 ? [{ subType: { in: subtypes } }] : []),
+              ...(subtypes.length > 0 ? [{ subTypes: { hasSome: subtypes } }] : []),
             ],
           },
         ],
@@ -1203,12 +1261,16 @@ export class CostsService {
           baseMax += max === 0 && min > 0 ? min : max;
         }
 
+        // Derive the subtitle from the canonical subTypes[] (the scalar subType
+        // can be stale and mislabels the program - e.g. a ship-embryos program
+        // showing "Own eggs, own/self carry").
+        const displaySubType = pickDisplaySubType(p.subTypes, p.subType);
         const programMeta = {
           programId: p.id,
           country: p.country,
           tab: p.tab,
-          subType: p.subType,
-          subTypeLabel: p.subType && isValidSubType(p.subType) ? SUBTYPE_LABEL[p.subType as SubType] : null,
+          subType: displaySubType,
+          subTypeLabel: displaySubType ? SUBTYPE_LABEL[displaySubType] : null,
           tabLabel: p.tab && isValidTab(p.tab) ? TAB_LABEL[p.tab as Tab] : null,
           isFixedCost: sheet.isFixedCost,
           updatedAt: sheet.updatedAt,

@@ -19,7 +19,7 @@ import { LocationSearchInput } from "@/components/location-search-input";
 import { InsurancePicker } from "@/components/ui/insurance-picker";
 import { parseInsuranceValue } from "@shared/insurance-data";
 
-type ProviderType = "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic";
+type ProviderType = "egg-donor" | "surrogate" | "sperm-donor" | "ivf-clinic" | "surrogacy-agency";
 
 function DrawerHeaderActions({ title, onClose }: { title: string; onClose: () => void }) {
   return (
@@ -86,6 +86,9 @@ interface MarketplaceFilterBarProps {
   location?: string;
   onLocationChange?: (value: string) => void;
   hasLocation?: boolean;
+  // Surrogacy-agency filter: the parent's country, which powers the "Accepts my
+  // citizenship" toggle (hidden when the parent has no country on file).
+  agencyParentCountry?: string | null;
   hideFavorites?: boolean;
   inlineMode?: boolean;
   overlayStyle?: boolean;
@@ -115,6 +118,14 @@ const IVF_SORT_OPTIONS = [
   { value: "closest_distance", label: "Closest distance", needsLocation: true },
   { value: "best_success_range", label: "Best success within range", needsLocation: true },
   { value: "best_balance", label: "Best balance: success + distance", needsLocation: true },
+];
+
+const AGENCY_SORT_OPTIONS = [
+  { value: "alphabetical", label: "Alphabetical (A-Z)" },
+  { value: "alphabetical_desc", label: "Alphabetical (Z-A)" },
+  { value: "cost_asc", label: "Cost: Low to High" },
+  { value: "cost_desc", label: "Cost: High to Low" },
+  { value: "newest", label: "Newest First" },
 ];
 
 const EGG_SOURCE_OPTIONS = [
@@ -191,6 +202,9 @@ const FILTER_DISPLAY_NAMES: Record<string, string> = {
   eggType: "Egg Type",
   location: "Location",
   status: "Status",
+  agencyTwins: "Twins allowed",
+  agencyLgbtq: "LGBTQ+ care",
+  agencyCitizenship: "Accepts my citizenship",
 };
 
 const FILTER_VALUE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
@@ -1410,6 +1424,7 @@ export function MarketplaceFilterBar({
   location,
   onLocationChange,
   hasLocation,
+  agencyParentCountry,
   hideFavorites,
   inlineMode,
   overlayStyle,
@@ -1448,6 +1463,7 @@ export function MarketplaceFilterBar({
   const isSurrogate = providerType === "surrogate";
   const isSperm = providerType === "sperm-donor";
   const isIvf = providerType === "ivf-clinic";
+  const isAgency = providerType === "surrogacy-agency";
   const ivfAgeDisabled = ivfEggSource === "donor" || ivfEggSource === "donated_embryos";
 
   const costFilterKeys = isDonor ? ["donorCompensation", "maxCost"] : isSurrogate ? ["baseCompensation", "maxCost"] : ["maxCost"];
@@ -1461,7 +1477,7 @@ export function MarketplaceFilterBar({
     const fMin = Number(v[0]);
     const fMax = Number(v[1]);
     if (k === "donorCompensation" || k === "baseCompensation" || (k === "maxCost" && isDonor)) return fMin !== 0 || fMax !== 200000;
-    if (k === "maxCost" && isSurrogate) return fMin !== 0 || fMax !== 500000;
+    if (k === "maxCost" && (isSurrogate || isAgency)) return fMin !== 0 || fMax !== 500000;
     if (k === "maxCost" && isSperm) return fMin !== 0 || fMax !== 5000;
     return fMin !== 0 || fMax !== 200000;
   }).length;
@@ -1484,6 +1500,9 @@ export function MarketplaceFilterBar({
 
   const ivfMobileFilterButtons = isIvf ? (
     <>
+      {/* Location lives at the top of the filters drawer (listMode); only the
+          mobile deck overlay needs this inline trigger. */}
+      {!listMode && (
       <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
         <DrawerTrigger asChild>
           <button
@@ -1510,6 +1529,7 @@ export function MarketplaceFilterBar({
           </div>
         </DrawerContent>
       </Drawer>
+      )}
 
       <DrawerNestedRoot open={ivfPatientDrawerOpen} onOpenChange={setIvfPatientDrawerOpen}>
         <DrawerTrigger asChild>
@@ -1578,19 +1598,22 @@ export function MarketplaceFilterBar({
         </DrawerContent>
       </DrawerNestedRoot>
 
-      {/* LGBTQ+ care is a single toggle - no sub-drawer; tapping the row flips it. */}
-      <button
-        type="button"
-        className={tinderLabel(!!ivfLgbtqCare, darkLabels)}
-        style={TINDER_LABEL_STYLE}
-        onClick={() => onIvfLgbtqCareChange?.(!ivfLgbtqCare)}
-        data-testid="filter-btn-ivf-lgbtq"
-        role="switch"
-        aria-checked={!!ivfLgbtqCare}
-      >
-        <span className="filter-row-label">LGBTQ+ care</span>
-        {listMode && <SelectedPillsInTrigger values={ivfLgbtqCare ? ["On"] : []} />}
-      </button>
+      {/* LGBTQ+ care is a single toggle - no sub-drawer; tapping the row flips it.
+          Hidden in listMode (the filters drawer), where it renders as a Yes/No
+          row in the drawer's Quick filters section instead. */}
+      {!listMode && (
+        <button
+          type="button"
+          className={tinderLabel(!!ivfLgbtqCare, darkLabels)}
+          style={TINDER_LABEL_STYLE}
+          onClick={() => onIvfLgbtqCareChange?.(!ivfLgbtqCare)}
+          data-testid="filter-btn-ivf-lgbtq"
+          role="switch"
+          aria-checked={!!ivfLgbtqCare}
+        >
+          <span className="filter-row-label">LGBTQ+ care</span>
+        </button>
+      )}
 
       {ivfShowSpecialty && (
         <DrawerNestedRoot open={ivfSpecialtyDrawerOpen} onOpenChange={setIvfSpecialtyDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
@@ -1650,7 +1673,7 @@ export function MarketplaceFilterBar({
         </>
       )}
 
-      {!isIvf && !hideFavorites && (
+      {(isDonor || isSurrogate || isSperm) && !hideFavorites && (
         <Button
           variant={showExperiencedOnly ? "default" : "outline"}
           size="sm"
@@ -1708,7 +1731,7 @@ export function MarketplaceFilterBar({
         />
       )}
 
-      {!isIvf && (
+      {!isIvf && !listMode && (
         <Drawer open={locationDrawerOpen} onOpenChange={setLocationDrawerOpen} handleOnly repositionInputs={false} snapPoints={[1]} shouldScaleBackground={false} noBodyStyles>
           <DrawerTrigger asChild>
             <button
@@ -1737,7 +1760,7 @@ export function MarketplaceFilterBar({
         </Drawer>
       )}
 
-      {!isIvf && (
+      {(isDonor || isSurrogate || isSperm) && (
         <MobileRangeDrawer label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
 
@@ -1753,7 +1776,7 @@ export function MarketplaceFilterBar({
         <MobileRangeDrawer label="BMI" filterKey="bmi" min={16} max={40} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
 
-      {!isIvf && (
+      {(isDonor || isSurrogate || isSperm) && (
         <>
           <MobileCustomTagDrawer label="Race" filterKey="race" options={RACE_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-race" btnStyle={obs} dark={darkLabels} listMode={listMode} />
           <MobileCustomTagDrawer label="Ethnicity" filterKey="ethnicity" options={ETHNICITY_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-eth" btnStyle={obs} dark={darkLabels} listMode={listMode} />
@@ -1768,9 +1791,12 @@ export function MarketplaceFilterBar({
         <MobileMultiSelectDrawer label="Relationship" filterKey="relationshipStatus" options={RELATIONSHIP_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-rel" btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
 
-      {!isIvf && (
+      {!isIvf && !isAgency && (
         <MobileCostsDrawer isDonor={isDonor} isSurrogate={isSurrogate} isSperm={isSperm} activeFilters={activeFilters} dispatch={dispatch} activeCostCount={activeCostCount} btnStyle={obs} dark={darkLabels} listMode={listMode} />
       )}
+
+      {/* Agency boolean toggles (Twins / LGBTQ+ / Citizenship) render as explicit
+          Yes/No rows in the filters drawer (MarketplaceFiltersDrawer), not here. */}
 
       {isDonor && (
         <>
@@ -1801,6 +1827,7 @@ export function MarketplaceFilterBar({
 
   const ivfDesktopFilterButtons = isIvf ? (
     <>
+      {!listMode && (
       <Popover open={locationPopoverOpen} onOpenChange={setLocationPopoverOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -1831,6 +1858,7 @@ export function MarketplaceFilterBar({
           </div>
         </PopoverContent>
       </Popover>
+      )}
 
       <Popover>
         <PopoverTrigger asChild>
@@ -1898,6 +1926,7 @@ export function MarketplaceFilterBar({
         </PopoverContent>
       </Popover>
 
+      {!listMode && (
       <Button
         variant={ivfLgbtqCare ? "default" : "outline"}
         size="sm"
@@ -1908,6 +1937,7 @@ export function MarketplaceFilterBar({
       >
         LGBTQ+ care
       </Button>
+      )}
 
       {ivfShowSpecialty && (
         <Popover>
@@ -1966,7 +1996,7 @@ export function MarketplaceFilterBar({
         </>
       )}
 
-      {!isIvf && (
+      {(isDonor || isSurrogate || isSperm) && (
         <Button
           variant={showExperiencedOnly ? "default" : "outline"}
           size="sm"
@@ -1993,7 +2023,7 @@ export function MarketplaceFilterBar({
         <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", SOLD_OUT: "Sold Out" }} />
       )}
 
-      {!isIvf && (
+      {!isIvf && !listMode && (
         <Popover open={locationPopoverOpen} onOpenChange={setLocationPopoverOpen}>
           <PopoverTrigger asChild>
             <Button
@@ -2027,7 +2057,7 @@ export function MarketplaceFilterBar({
         </Popover>
       )}
 
-      {!isIvf && (
+      {(isDonor || isSurrogate || isSperm) && (
         <RangePopover label="Age" filterKey="age" min={18} max={45} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
       )}
 
@@ -2043,7 +2073,7 @@ export function MarketplaceFilterBar({
         <RangePopover label="BMI" filterKey="bmi" min={16} max={40} step={1} unit="" activeFilters={activeFilters} dispatch={dispatch} />
       )}
 
-      {!isIvf && (
+      {(isDonor || isSurrogate || isSperm) && (
         <>
           <CustomTagPopover label="Race" filterKey="race" options={RACE_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-race" />
           <CustomTagPopover label="Ethnicity" filterKey="ethnicity" options={ETHNICITY_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-eth" />
@@ -2058,7 +2088,7 @@ export function MarketplaceFilterBar({
         <MultiSelectPopover label="Relationship" filterKey="relationshipStatus" options={RELATIONSHIP_OPTIONS} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-rel" />
       )}
 
-      {!isIvf && (
+      {!isIvf && !(isAgency && listMode) && (
         <Popover>
           <PopoverTrigger asChild>
             <Button
@@ -2090,9 +2120,22 @@ export function MarketplaceFilterBar({
               {isSperm && (
                 <DrawerRangeSlider label="Max Price" filterKey="maxCost" min={0} max={5000} step={100} unit="$" activeFilters={activeFilters} dispatch={dispatch} />
               )}
+              {isAgency && (
+                <DrawerRangeSlider label="Total Cost" filterKey="maxCost" min={0} max={500000} step={10000} unit="$" activeFilters={activeFilters} dispatch={dispatch} />
+              )}
             </div>
           </PopoverContent>
         </Popover>
+      )}
+
+      {isAgency && !listMode && (
+        <>
+          <ToggleFilterButton label="Twins allowed" filterKey="agencyTwins" activeFilters={activeFilters} dispatch={dispatch} />
+          <ToggleFilterButton label="LGBTQ+ care" filterKey="agencyLgbtq" activeFilters={activeFilters} dispatch={dispatch} />
+          {agencyParentCountry && (
+            <ToggleFilterButton label="Accepts my citizenship" filterKey="agencyCitizenship" activeFilters={activeFilters} dispatch={dispatch} />
+          )}
+        </>
       )}
 
       {isDonor && (
@@ -2191,16 +2234,16 @@ export function MarketplaceFilterBar({
   );
 
   const currentSearchValue = isIvf ? (ivfSearch || "") : searchQuery;
-  const currentSearchPlaceholder = isIvf ? "Search by doctor or clinic" : "Search by name, ID, location, education...";
-  const currentSearchPlaceholderMobile = isIvf ? "Search by doctor or clinic" : "Search...";
+  const currentSearchPlaceholder = isIvf ? "Search by doctor or clinic" : isAgency ? "Search agencies..." : "Search by name, ID, location, education...";
+  const currentSearchPlaceholderMobile = isIvf ? "Search by doctor or clinic" : isAgency ? "Search agencies..." : "Search...";
   const handleSearchChange = isIvf
     ? (val: string) => onIvfSearchChange?.(val)
     : (val: string) => dispatch(setMarketplaceSearchQuery(val));
-  const currentSortValue = isIvf ? (ivfSortBy || "highest_success") : sortBy;
+  const currentSortValue = isIvf ? (ivfSortBy || "highest_success") : isAgency ? (sortBy && AGENCY_SORT_OPTIONS.some((o) => o.value === sortBy) ? sortBy : "alphabetical") : sortBy;
   const handleSortChange = isIvf
     ? (val: string) => onIvfSortByChange?.(val)
     : (val: string) => dispatch(setMarketplaceSortBy(val));
-  const currentSortOptions = isIvf ? IVF_SORT_OPTIONS : SORT_OPTIONS;
+  const currentSortOptions = isIvf ? IVF_SORT_OPTIONS : isAgency ? AGENCY_SORT_OPTIONS : SORT_OPTIONS;
 
   if (inlineMode) {
     return <>{mobileFilterButtons}</>;

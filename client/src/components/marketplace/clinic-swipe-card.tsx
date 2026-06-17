@@ -6,8 +6,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
+import { parseInsuranceValue } from "@shared/insurance-data";
 import { SwipeDeckCard } from "./swipe-deck-card";
-import { getClinicTabs } from "./swipe-mappers";
+import { getClinicTabs, buildClinicDoctorTab } from "./swipe-mappers";
 
 /**
  * Shared clinic card - the SINGLE clinic SwipeDeckCard used by BOTH the AI
@@ -56,7 +57,7 @@ export function ClinicSwipeCard({
 }) {
   const [fetchedProvider, setFetchedProvider] = useState<any>(null);
   const provider = providerProp ?? fetchedProvider;
-  const [costItems, setCostItems] = useState<{ label: string }[]>([]);
+  const [costItems, setCostItems] = useState<{ label: string; country?: string | null; programName?: string; subLabel?: string | null; total?: string }[]>([]);
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const parentAccountId = (user as any)?.parentAccountId as string | undefined;
@@ -98,7 +99,8 @@ export function ClinicSwipeCard({
     return () => { cancelled = true; };
   }, [providerId, providerProp]);
 
-  // Parent-matched published cost programs -> a single "Starting at $X" headline.
+  // Parent-matched cost programs -> one Costs row per program (name + total),
+  // cheapest first - same as the agency card.
   useEffect(() => {
     if (!parentAccountId) return;
     let cancelled = false;
@@ -108,17 +110,21 @@ export function ClinicSwipeCard({
         if (!res.ok) return;
         const data = await res.json();
         const programs: any[] = data?.programs || [];
-        const totals = programs.map((p: any) => Number(p.minTotal)).filter((n: number) => Number.isFinite(n) && n > 0);
-        const startingAt = totals.length ? Math.min(...totals) : null;
+        const items = programs
+          .map((p: any) => {
+            const min = Number(p.minTotal);
+            const max = Number(p.maxTotal);
+            if (!Number.isFinite(min) || min <= 0) return null;
+            const cost = Number.isFinite(max) && max > min
+              ? `${formatMoneyDollars(min)} - ${formatMoneyDollars(max)}`
+              : formatMoneyDollars(min);
+            const name = p.programName || p.country || "Program";
+            return { label: `${name}: ${cost}`, country: p.country || null, programName: name, subLabel: p.subTypeLabel || null, total: cost, _min: min };
+          })
+          .filter(Boolean) as { label: string; country: string | null; programName: string; subLabel: string | null; total: string; _min: number }[];
+        items.sort((a, b) => a._min - b._min);
         if (cancelled) return;
-        setCostItems(
-          startingAt != null
-            ? [
-                { label: `Starting at ${formatMoneyDollars(startingAt)}` },
-                ...(programs.length > 1 ? [{ label: `${programs.length} programs available` }] : []),
-              ]
-            : [],
-        );
+        setCostItems(items.map(({ _min, ...rest }) => rest));
       } catch { /* non-critical */ }
     })();
     return () => { cancelled = true; };
@@ -153,49 +159,94 @@ export function ClinicSwipeCard({
   const pct = rates ? Math.round(Number(rates.successRate) * 100) : null;
   const natAvg = rates ? Math.round(Number(rates.nationalAverage) * 100) : null;
   const isTop10 = rates?.top10pct === true;
+  // Matched-context volume: exact cycles (CDC denominator) + babies born for the
+  // SAME journey (cycles x success rate, since the rate is live births / cycles).
+  const matchedCycles = rates && Number(rates.cycleCount) > 0 ? Number(rates.cycleCount) : null;
+  const matchedBabies = matchedCycles != null && rates ? Math.round(Number(rates.successRate) * matchedCycles) : null;
 
   const ageLabel = cardAgeGroup === "under_35" ? "Under 35" : cardAgeGroup === "35_37" ? "35-37" : cardAgeGroup === "38_40" ? "38-40" : "Over 40";
   const contextLabel = cardEggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, cardIsNew ? "First-time IVF" : "Prior cycles"].join(" · ");
 
   const members: any[] = Array.isArray(provider.members) ? provider.members.filter((m: any) => m?.isPublicProfile !== false) : [];
-  // Doctor faces are used as the tab backgrounds (one face per tab). Tabs beyond
-  // the available faces fall back to the cream cover (handled in SwipeDeckCard),
-  // so a tab with no photo matches the clean first-tab background.
-  const photoMembers = members.filter((m: any) => !!getPhotoSrc(m?.photoUrl)).slice(0, 10);
-  const doctorPhotos: string[] = photoMembers.map((m: any) => getPhotoSrc(m.photoUrl) as string);
-  const photoLabels: Record<string, string> = {};
-  photoMembers.forEach((m: any) => {
-    const src = getPhotoSrc(m.photoUrl);
-    if (src && m.name) photoLabels[src] = m.name;
-  });
-  const clinicDoctors = members.filter((m: any) => m?.name).map((m: any) => ({ name: m.name }));
-  const primaryLocation = provider.locations?.[0];
-  const primaryLocationLabel = primaryLocation ? [primaryLocation.city, primaryLocation.state].filter(Boolean).join(", ") : null;
 
-  const tabs = getClinicTabs({
+  // Clinic tabs (Overview / Matched / Costs / Practice / Experience) - all clinic
+  // info, shown on cream (photoless) slides. The per-doctor tabs are appended
+  // after, each carrying that doctor's face + their own Overview info.
+  const clinicTabs = getClinicTabs({
     pct,
     natAvg,
     contextLabel,
     reasons,
+    yearFounded: provider.yearFounded ?? null,
+    about: provider.about ?? null,
+    matchedCycles,
+    matchedBabies,
     locations: provider.locations || [],
-    doctors: clinicDoctors,
     costs: costItems,
+    insurances: Array.from(new Set(
+      (provider.acceptedInsurance || []).map((v: string) => parseInsuranceValue(v).carrier).filter(Boolean),
+    )),
+    matching: {
+      twinsAllowed: provider.ivfTwinsAllowed ?? null,
+      transferFromOtherClinics: provider.ivfTransferFromOtherClinics ?? null,
+      maxAgeIp1: provider.ivfMaxAgeIp1 ?? null,
+      maxAgeIp2: provider.ivfMaxAgeIp2 ?? null,
+      biologicalConnection: provider.ivfBiologicalConnection ?? null,
+      acceptingPatients: Array.isArray(provider.ivfAcceptingPatients) ? provider.ivfAcceptingPatients : null,
+    },
+    // Surrogate Matching Requirements only matter to parents seeking surrogacy.
+    showSurrogateMatching: parentProfile?.needsSurrogate === true
+      || (Array.isArray(parentProfile?.interestedServices) && parentProfile.interestedServices.some((s: string) => /surrogat/i.test(s))),
+    surrogateMatching: {
+      minAge: provider.ivfSurrogateMinAge ?? null,
+      maxAge: provider.ivfSurrogateMaxAge ?? null,
+      minBmi: provider.ivfSurrogateMinBmi ?? null,
+      maxBmi: provider.ivfSurrogateMaxBmi ?? null,
+      maxDeliveries: provider.ivfSurrogateMaxDeliveries ?? null,
+      maxCSections: provider.ivfSurrogateMaxCSections ?? null,
+      maxMiscarriages: provider.ivfSurrogateMaxMiscarriages ?? null,
+      maxAbortions: provider.ivfSurrogateMaxAbortions ?? null,
+      maxYearsFromLastPregnancy: provider.ivfSurrogateMaxYearsFromLastPregnancy ?? null,
+      monthsPostVaginal: provider.ivfSurrogateMonthsPostVaginal ?? null,
+      covidVaccination: provider.ivfSurrogateCovidVaccination ?? false,
+      gdDiet: provider.ivfSurrogateGdDiet ?? false,
+      gdMedication: provider.ivfSurrogateGdMedication ?? false,
+      highBloodPressure: provider.ivfSurrogateHighBloodPressure ?? false,
+      preeclampsia: provider.ivfSurrogatePreeclampsia ?? false,
+      placentaPrevia: provider.ivfSurrogatePlacentaPrevia ?? false,
+      healthHistoryNotes: provider.ivfSurrogateMentalHealthHistory ?? null,
+    },
     compact: isMobile,
     cdcServices: provider.cdcServices || null,
     cdcExperience: provider.cdcExperience || null,
     cdcCycleStats: provider.cdcCycleStats || null,
     patientDiagnoses,
   });
+
+  // One tab per doctor WITH a photo: their face background + their own Overview
+  // (About / Works at this clinic / Locations / Languages) - the exact first tab
+  // the doctor's own card shows.
+  const doctorTabs = members
+    .filter((m: any) => !!getPhotoSrc(m?.highResPhotoUrl || m?.photoUrl) && m?.name)
+    .slice(0, 10)
+    .map((m: any) => buildClinicDoctorTab(
+      { name: m.name, bio: m.bio, languagesSpoken: m.languagesSpoken },
+      provider.name,
+      provider.locations || [],
+      getPhotoSrc(m.highResPhotoUrl || m.photoUrl) || null,
+    ))
+    .filter(Boolean) as any[];
+
+  const tabs = [...clinicTabs, ...doctorTabs];
   const successBadge = isTop10 ? "Top 10%" : null;
   const logoSrc = getPhotoSrc(provider.logoUrl) || null;
 
   return (
     <SwipeDeckCard
       id={providerId}
-      photos={doctorPhotos}
-      photoLabels={photoLabels}
+      photos={[]}
       title={provider.name}
-      pinnedHeader={{ logoUrl: logoSrc, title: provider.name, location: primaryLocationLabel, badge: successBadge }}
+      pinnedHeader={{ logoUrl: logoSrc, title: provider.name, location: null, badge: successBadge }}
       firstSlidePlain
       tabs={tabs}
       disableSwipe={disableSwipe}

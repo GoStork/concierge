@@ -537,17 +537,48 @@ export class ProvidersController {
         id: true,
         name: true,
         logoUrl: true,
+        // Year founded + about feed the Overview section of the card's first tab.
+        about: true,
+        yearFounded: true,
         acceptedInsurance: true,
         ivfAcceptingPatients: true,
+        // IVF matching requirements -> the clinic's "Parents Matching Requirements" tab.
+        ivfTwinsAllowed: true,
+        ivfTransferFromOtherClinics: true,
+        ivfMaxAgeIp1: true,
+        ivfMaxAgeIp2: true,
+        ivfBiologicalConnection: true,
+        ivfEggDonorType: true,
+        // IVF surrogate matching requirements -> the clinic's "Surrogate Matching
+        // Requirements" tab (only shown to parents seeking surrogacy).
+        ivfSurrogateMinAge: true,
+        ivfSurrogateMaxAge: true,
+        ivfSurrogateMinBmi: true,
+        ivfSurrogateMaxBmi: true,
+        ivfSurrogateMaxDeliveries: true,
+        ivfSurrogateMaxCSections: true,
+        ivfSurrogateMaxMiscarriages: true,
+        ivfSurrogateMaxAbortions: true,
+        ivfSurrogateMaxYearsFromLastPregnancy: true,
+        ivfSurrogateMonthsPostVaginal: true,
+        ivfSurrogateCovidVaccination: true,
+        ivfSurrogateGdDiet: true,
+        ivfSurrogateGdMedication: true,
+        ivfSurrogateHighBloodPressure: true,
+        ivfSurrogatePreeclampsia: true,
+        ivfSurrogatePlacentaPrevia: true,
+        ivfSurrogateMentalHealthHistory: true,
         // CDC JSON columns drive the personalized "Experience with your needs" tab.
         cdcServices: true,
         cdcExperience: true,
         cdcCycleStats: true,
         services: { where: { status: "APPROVED" }, select: { status: true, providerType: { select: { name: true } } } },
-        locations: { select: { city: true, state: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+        locations: { select: { city: true, state: true }, orderBy: { sortOrder: "asc" }, take: 8 },
         members: {
           where: { isPublicProfile: true },
-          select: { id: true, name: true, photoUrl: true, isPublicProfile: true },
+          // bio + languages let the clinic card embed each doctor's own Overview
+          // tab (About / Works at / Locations / Languages) on their face slide.
+          select: { id: true, name: true, title: true, photoUrl: true, highResPhotoUrl: true, isPublicProfile: true, bio: true, languagesSpoken: true, sortOrder: true },
           orderBy: { sortOrder: "asc" },
           take: 12,
         },
@@ -651,6 +682,14 @@ export class ProvidersController {
           services: { where: { status: "APPROVED" }, include: { providerType: true } },
           locations: { orderBy: { sortOrder: "asc" } },
           ivfSuccessRates: { where: successRateWhere },
+          // Surrogacy agency cards build their Overview/Screening tabs from this,
+          // and the rotating team-member faces (CEO/Owner/Founder first) from members.
+          surrogacyProfile: { include: { screening: true } },
+          members: {
+            where: { isPublicProfile: true },
+            orderBy: { sortOrder: "asc" },
+            select: { id: true, name: true, title: true, photoUrl: true, highResPhotoUrl: true, isPublicProfile: true, sortOrder: true },
+          },
         },
         orderBy: { createdAt: "desc" },
       });
