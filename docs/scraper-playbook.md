@@ -33,11 +33,14 @@ re-discovering the same problems on every new agency.
 
 ## Login / authentication
 
-- **Candidate-URL fallback.** The engine tries the Source URL, then `/Account/Login`,
-  then `/login` (and `/user/login`). It auto-detects the form `action`, CSRF/verification
-  tokens (`__RequestVerificationToken`, `_token`, `csrf-token`), and email/password fields.
+- **Candidate-URL fallback.** The engine tries the Source URL, then **`/wp-login.php`**
+  (WordPress), `/Account/Login`, then `/login` (and `/user/login`). It auto-detects the form
+  `action`, CSRF/verification tokens (`__RequestVerificationToken`, `_token`, `csrf-token`),
+  and email/password fields.
 - **WordPress login uses `log`/`pwd` field names** (not `email`/`password`). The engine
-  detects `wp-login.php` and switches field names automatically.
+  detects WordPress (by `wp-login.php` URL **or** `name="log"`+`name="pwd"` in the form),
+  switches field names automatically, and satisfies WP's cookie check by sending the
+  `wordpress_test_cookie` cookie plus the `testcookie` / `wp-submit` hidden fields.
   - **Gotcha:** for WordPress sites the **Source URL must be the donor-list page**, not
     `wp-login.php`. (The engine logs into WP, then needs the list page to scrape.)
 - **reCAPTCHA v2** is solved via **token injection** (no headless browser):
@@ -45,6 +48,8 @@ re-discovering the same problems on every new agency.
   (`in.php`/`res.php`), gets a `g-recaptcha-response` token, and adds it to the login POST.
   - Configure with env **`TWOCAPTCHA_API_KEY`** (alias `CAPTCHA_SOLVER_API_KEY`).
   - Symptom in `SyncLog.errors`: `reCAPTCHA required on POST response` / `404 (reCAPTCHA page)`.
+  - **Only reCAPTCHA v2 is auto-solved.** hCaptcha / Cloudflare challenges fail loudly with
+    `... not supported by the captcha solver (only reCAPTCHA is)` rather than POSTing blind.
 - **HTTP 405 on `/Account/Login` is NOT the real error** - it means the *correct* login
   URL (e.g. `/user/login` on JMS/o-jms, `/login` on Symfony) failed transiently and the
   engine fell through to the EDC fallback path, which those non-EDC platforms reject with
@@ -75,6 +80,16 @@ re-discovering the same problems on every new agency.
 - The AI extraction returns **`paginationLinks`** (Next / page 2 / ...). The engine
   discovers **all** listing pages, capped at **100 pages** as a runaway guard (was 10,
   which silently truncated large catalogs).
+- **WordPress (wp-paginate) sites use deterministic `?paged=N` pagination, NOT the AI's
+  `paginationLinks`.** When the listing HTML has `?paged=` or a `wp-paginate` widget
+  (`hasWpPaging`), the engine ignores Gemini's pagination links and crawls `?paged=2,3,...`
+  off the same listing URL itself. It reads the total page count straight from **"Page 1 of
+  N"** on page 1 (no extra fetch) to fix the progress denominator and stop exactly at the
+  last page; if that count is absent it stops after **2 consecutive pages add no new donors**
+  (a `404` past the last page is the normal terminator, 200-page runaway guard). Each page is
+  **streamed straight into the importer** so records + the progress bar fill live during
+  discovery, and its per-card `profileUrl`s are captured (`extractWpDonorCardProfileUrls`)
+  before that page's donors import.
 - **Checkpoint resume** makes long runs safe: each profile's content hash + completeness
   is persisted, so an interrupted sync resumes where it stopped and **skips already-synced
   profiles** instead of restarting. Every restart converges toward completion.
@@ -130,6 +145,11 @@ re-discovering the same problems on every new agency.
   which takes the first string/number candidate and ignores objects/arrays.
 - **Compensation / cost** is often appended to the location field (`"City, ST | $70,000"`);
   strip the `| $...` suffix when reading the city.
+- **Some agencies publish no per-donor compensation at all** (e.g. Eggspecting - their donor
+  pages have zero `$` figures). The scraper correctly stores `null` - **don't hunt for it in
+  the scraper.** The **cost-sheet base-compensation fallback** fills `donorCompensation` /
+  `baseCompensation` / `compensation` from the agency's uploaded cost sheet downstream
+  (`total-cost.utils.ts`, matched by canonical `subTypes[]`), as does `totalCost`.
 
 ## Post-scrape verification - "finished with no errors" ≠ "scraped correctly"
 
@@ -179,6 +199,8 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
 | `Invalid prisma.*.upsert() ... ` on a scalar field (e.g. `education`) | AI section returned a nested object for a String column | `pickScalar` coercion in the section→column mapping |
 | Gallery only partially downloaded (some photos missing) | Image host rate-limited the burst (429) | `persistSinglePhoto` 5x exp backoff + `Retry-After` (`034d8cf`) |
 | WP donor `profileUrl` points at the wrong/404 page | Built the URL from `externalId` instead of the card's `view-more` href | Internal `donor_id` ≠ public number; capture per card (`extractWpDonorCardProfileUrls`) |
+| Compensation / Total Cost blank after a clean scrape | Agency publishes no per-donor comp (e.g. Eggspecting) | Expected; cost-sheet base-comp fallback fills it (`total-cost.utils.ts`, by `subTypes[]`) |
+| WP catalog truncated / only page 1 synced | Relied on Gemini `paginationLinks` instead of `?paged=N` | Deterministic `?paged=N` crawl reading "Page 1 of N" (`hasWpPaging` path) |
 
 ## Platform cheat-sheet
 
@@ -186,11 +208,14 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
   `_DonorProfileHTML`, `_DonorPhotoGalleryHTML`); `/Account/Login`; dynamic `/Photo/Get` URLs.
 - **JMS / o-jms** (e.g. genesis): login at **`/user/login`** (NOT `/Account/Login` → 405);
   `profileData.Location` = `"City ST | $comp"`.
-- **WordPress** (e.g. Eggspecting): `log`/`pwd` login fields; Source URL = donor-list page,
-  not `wp-login.php`; per-card `profileUrl` capture (internal `donor_id` ≠ public donor number -
-  pair `view-more` href with the `old-site-id` number); gallery = **Fotorama** raw `<img>` list
-  on the donor-view page (`extractFotoramaPhotos`, skip `-150x150` thumbs); **skip Gemini section
-  extraction** (donor-view pages time it out); image-host 429s retried in `persistSinglePhoto`.
+- **WordPress** (e.g. Eggspecting): `log`/`pwd` login fields (+ `wordpress_test_cookie` /
+  `testcookie` / `wp-submit`); login candidate `/wp-login.php`; Source URL = donor-list page,
+  not `wp-login.php`; **deterministic `?paged=N` pagination** (read "Page 1 of N", stream each
+  page), NOT Gemini `paginationLinks`; per-card `profileUrl` capture (internal `donor_id` ≠
+  public donor number - pair `view-more` href with the `old-site-id` number); gallery =
+  **Fotorama** raw `<img>` list on the donor-view page (`extractFotoramaPhotos`, skip
+  `-150x150` thumbs); **skip Gemini section extraction** (donor-view pages time it out);
+  image-host 429s retried in `persistSinglePhoto`.
 - **Symfony** (e.g. app.spermbankcalifornia): login at **`/login`**; `/Account/Login` → 405.
 
 ---
