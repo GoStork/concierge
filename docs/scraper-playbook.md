@@ -56,6 +56,51 @@ re-discovering the same problems on every new agency.
   405. The engine now **retries transient auth failures** (commit `f30ddf6`), so a momentary
   `fetch failed` no longer cascades to a bogus 405. If you see 405, check whether the *real*
   login URL had a transient blip first.
+- **Auth failures are diagnostic, not generic** (commit `e506762`, `4d7ac03`). The legacy
+  message `Login failed. Please verify your username and password are correct.` is gone -
+  `SyncLog.errors` now carries the specific reason per candidate URL. Know these shapes
+  so you can read the row:
+  - `redirected back to login page (location="...", status=302)` - POST returned 3xx that
+    looped to the login page (creds rejected, or cookie / CSRF mismatch).
+  - `200 OK with error phrase "<word>": ...<snippet>...` - the page itself named the
+    cause. `invalid` / `incorrect` / `wrong password` ⇒ **bad credentials**;
+    `locked` / `lockout` / `too many` / `rate` / `blocked` / `suspended` ⇒ **rate-limit
+    lockout, NOT a credential issue** (see Per-day dedup below); `expired` /
+    `not authorized` ⇒ account-state.
+  - `<captcha-type> required on POST response (status=200)` - reCAPTCHA / hCaptcha /
+    Cloudflare challenge / "verify you are human" was rendered instead of a session.
+    Only reCAPTCHA v2 is solved; the rest fail loudly with this string.
+  - `unexpected HTTP status NNN (Retry-After: SSS) (body: <200-char snippet>)` - 429 /
+    5xx / etc. The `Retry-After` header + body snippet usually reveal lockout, maintenance,
+    or an anti-bot page.
+  - `exception during auth: fetch failed (cause: ENOTFOUND <host>)` - Node's undici hides
+    DNS/TCP/TLS errors as generic `fetch failed`; the engine extracts `err.cause` so you
+    see the real `ENOTFOUND` / `ECONNRESET` / `ECONNREFUSED` / `UND_ERR_SOCKET` / errno.
+    Treat as an upstream-or-egress issue, NOT credentials.
+  - `auth timed out after 30s (likely Replit egress hung against this site)` - see next.
+  - `still on login page (status=200, ...)` - generic fallthrough; auth POST looped to
+    the same form and no specific error phrase matched (cookies / CSRF likely not accepted).
+- **30s per-attempt auth-fetch timeout** (commit `b2fc975`). Every `fetch()` in
+  `authenticateAndGetCookies` (GET form, POST credentials, follow-redirect) is wrapped in
+  an `AbortController` with a **30s deadline**, retried up to 3 attempts on transient
+  blips (`isTransientFetchError`). Without this, a stalled TLS handshake to certain hosts
+  (we saw it on `genesiseggdonation.o-jms.com` / `app.spermbankcalifornia.com` via Replit
+  Autoscale's egress) held `SyncLog` `"running"` indefinitely; the next container restart
+  then triggered auto-resume which re-hung the same way - a cascading loop that never
+  converged. 30s × 3 caps the cost of "site silently dropping our packets" so the row
+  resolves quickly with `auth timed out after 30s ...`.
+- **Per-day login dedup (20h window in `runNightlySync`)** (commit `e506762`). Some
+  agencies rate-limit / briefly lock the account after the first successful login of the
+  day - Eggceptional Fertility on the **eggdonorconnect.com** platform is the canonical
+  case (one success at 02:00 ET, three rejections later the same morning, all clear by
+  the next day). Replit Autoscale spins up multiple containers, so the in-memory
+  `nightlySyncRunning` flag does NOT stop the in-process cron + GitHub Actions pinger +
+  startup catch-up + post-restart auto-resume from each launching a fresh `runNightlySync`.
+  A DB-level check at the top of `runNightlySync` skips if any `nightly`-source `SyncLog`
+  reached `completed` / `partial` in the last **20h** (admin "Trigger nightly" passes
+  `{force:true}` to override). Net: **one login attempt per agency per day**, regardless
+  of how many triggers fire. Log line `[nightly-sync] Skip - last successful nightly was ...`
+  means the dedup absorbed a duplicate trigger and is working as designed.
 
 ## Profile pages - fetch EVERYTHING, never assume one page
 
@@ -209,6 +254,12 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
 | Symptom in `SyncLog.errors` / log | Cause | Fix / where |
 |---|---|---|
 | `Login failed ... 405 (Method Not Allowed)` | Transient blip on real login URL → bogus EDC fallback | Auth retry (`f30ddf6`); confirm Source URL is the right login/list page |
+| `auth timed out after 30s ...` | TLS/TCP stall from our egress to upstream | Already capped at 30s × 3 (`b2fc975`); if it persists for one host, suspect egress / IP block from that site |
+| `exception during auth: fetch failed (cause: ENOTFOUND ...)` / `ECONNRESET` / `ECONNREFUSED` | Low-level network error; `err.cause` carries the real code (`4d7ac03`) | Upstream / egress issue, not credentials |
+| `200 OK with error phrase "locked"` / `"blocked"` / `"too many"` / `"suspended"` | Site rate-limited or temporarily locked the account (NOT bad creds) | Usually auto-clears in hours; per-day dedup (`e506762`) keeps the rest of today from re-triggering |
+| `200 OK with error phrase "invalid"` / `"incorrect"` / `"wrong password"` | Real credential rejection | Rotate the stored `username` / `password` in the `*SyncConfig` row |
+| `<captcha-type> required on POST response` (hCaptcha / Cloudflare / generic) | Non-reCAPTCHA challenge | Not solvable here; needs a headless-browser path or manual intervention |
+| Log: `[nightly-sync] Skip - last successful nightly was ...` | 20h DB-level dedup absorbed a duplicate trigger | Working as designed; benign |
 | `reCAPTCHA required` / `404 (reCAPTCHA page)` | Site needs captcha solving | Set `TWOCAPTCHA_API_KEY`; `captcha-solver.ts` |
 | `Failed to extract data ... page may not contain profiles` | Login returned a non-list page, or markup changed | Check login succeeded; verify the AJAX/list endpoint + extraction |
 | `(EAUTHTIMEOUT) timeout while waiting for message` | Transient upstream stall (EDC host) | Already retried; re-run if it slips through |
