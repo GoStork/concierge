@@ -111,6 +111,40 @@ re-discovering the same problems on every new agency.
 - **Compensation / cost** is often appended to the location field (`"City, ST | $70,000"`);
   strip the `| $...` suffix when reading the city.
 
+## Post-scrape verification - "finished with no errors" ≠ "scraped correctly"
+
+A run can complete `successful` with zero errors and still be **wrong**. The
+Eggspecting run looked perfect but had captured **only 1 photo per donor** (no
+gallery) and was **missing the `profileUrl`** (so the admin had no "View on
+Provider Site" link). Always verify quality at the end, not just the status.
+
+**The sync report now flags these automatically** (in the same "missing" report
+that lists missing fields - see `getMandatoryFieldChecks` / `analyzeMissingFields`):
+
+- **Photo Gallery (2+ photos)** - donors carrying only the single listing-card
+  thumbnail (gallery not scraped, the Eggspecting bug).
+- **Provider Profile Link** - donors missing `profileUrl` (no "View on Provider Site").
+- plus every per-type field (Age, Location, Race, Compensation, ...).
+
+**Manual end-of-scrape checklist (do this on the first run of any new agency):**
+
+1. **Count sanity** - synced + skipped ≈ the number of profiles visible on the
+   source site. A big shortfall means pagination or list extraction missed pages.
+2. **Open 3-5 random profiles** in the marketplace/detail page and confirm:
+   - **Photos**: a full gallery, not one thumbnail (compare to the source profile).
+   - **"View on Provider Site"** link is present and opens the real source profile.
+   - **Location** shows city + state (not just the state - see Data mapping).
+   - **Costs / compensation** populated where the source has them.
+   - Core fields (age, race, etc.) match the source.
+3. **Read the report's "missing" list** - if "Photo Gallery" or "Provider Profile
+   Link" shows a high count, the run "succeeded" but a whole dimension didn't
+   scrape; fix it in the engine before trusting the data.
+4. **Re-run once** - a clean second run should mostly *skip* (unchanged via
+   cardHash). If it re-does everything, the checkpoint/hash isn't working.
+
+When you add a new quality signal we should check, add it as a `qualityCheck` in
+`getMandatoryFieldChecks` (so it lands in the report) **and** list it here.
+
 ## Troubleshooting - symptom → cause (check `SyncLog.errors` + `/tmp/gostork-server.log`)
 
 | Symptom in `SyncLog.errors` / log | Cause | Fix / where |

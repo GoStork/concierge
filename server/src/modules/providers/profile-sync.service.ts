@@ -3395,6 +3395,22 @@ async function fetchOrchidJmsProfile(
 
 function getMandatoryFieldChecks(type: DonorType): { label: string; check: (d: any) => boolean }[] {
   const has = (val: any) => val != null && val !== "";
+  // How many distinct photos a profile actually has (gallery, not just the
+  // listing-card thumbnail). The Eggspecting bug looked "successful" but had only
+  // 1 photo - this surfaces that as a quality gap in the report.
+  const photoCount = (d: any) => {
+    const direct = Array.isArray(d.photos) ? d.photos.length : 0;
+    const gallery = Array.isArray(d.profileData?.["All Photos"]) ? d.profileData["All Photos"].length : 0;
+    return Math.max(direct, gallery);
+  };
+  // Quality checks that apply to EVERY profile type, appended to each list below.
+  // They show up in the same "missing" report alongside the field checks, so a
+  // run that finished with no errors still flags donors missing a photo gallery
+  // or the "View on Provider Site" link.
+  const qualityChecks: { label: string; check: (d: any) => boolean }[] = [
+    { label: "Photo Gallery (2+ photos)", check: (d) => photoCount(d) >= 2 },
+    { label: "Provider Profile Link", check: (d) => has(d.profileUrl) },
+  ];
   if (type === "egg-donor") {
     return [
       { label: "Age", check: (d) => has(d.age) },
@@ -3413,6 +3429,7 @@ function getMandatoryFieldChecks(type: DonorType): { label: string; check: (d: a
       { label: "Total Compensation", check: (d) => has(d.totalCost) },
       { label: "Weight", check: (d) => has(d.weight) },
       { label: "Blood Type", check: (d) => has(d.bloodType) },
+      ...qualityChecks,
     ];
   } else if (type === "surrogate") {
     return [
@@ -3428,6 +3445,7 @@ function getMandatoryFieldChecks(type: DonorType): { label: string; check: (d: a
       { label: "Miscarriages", check: (d) => has(d.profileData?.["Miscarriages"]) || d.miscarriages != null },
       { label: "Agrees to Twins", check: (d) => d.agreesToTwins != null },
       { label: "Base Compensation", check: (d) => has(d.baseCompensation) },
+      ...qualityChecks,
     ];
   } else {
     return [
@@ -3441,6 +3459,7 @@ function getMandatoryFieldChecks(type: DonorType): { label: string; check: (d: a
       { label: "Eye Color", check: (d) => has(d.eyeColor) },
       { label: "Weight", check: (d) => has(d.weight) },
       { label: "Price", check: (d) => has(d.compensation) },
+      ...qualityChecks,
     ];
   }
 }
