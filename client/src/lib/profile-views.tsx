@@ -19,7 +19,7 @@ interface PendingView {
   profileType: ProfileType;
 }
 
-const QUERY_KEY = ["/api/users/parent-account/profile-views/recent"];
+const QUERY_KEY = ["/api/parent-account/profile-views/recent"];
 const FLUSH_INTERVAL_MS = 1500;
 
 // Module-level so all consumers share the same Set, watermark, and flush
@@ -67,7 +67,7 @@ async function flush(): Promise<void> {
   const batch = Array.from(pendingQueue.values());
   pendingQueue.clear();
   try {
-    await apiRequest("POST", "/api/users/parent-account/profile-views", {
+    await apiRequest("POST", "/api/parent-account/profile-views", {
       views: batch,
     });
   } catch (e) {
