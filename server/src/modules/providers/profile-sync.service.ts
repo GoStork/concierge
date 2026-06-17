@@ -1549,7 +1549,7 @@ async function persistSinglePhoto(
     }
   } catch {}
 
-  const maxAttempts = 3;
+  const maxAttempts = 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const result = await withPhotoFetchSlot(async () => {
@@ -1564,7 +1564,8 @@ async function persistSinglePhoto(
             redirect: "follow",
           });
           if (resp.status === 429 || resp.status === 503 || (resp.status >= 500 && resp.status < 600)) {
-            throw new Error(`transient HTTP ${resp.status}`);
+            const ra = resp.headers.get("retry-after") || "";
+            throw new Error(`transient HTTP ${resp.status}${ra ? ` (retry-after=${ra})` : ""}`);
           }
           if (!resp.ok) {
             console.warn(`[photo-persist] HTTP ${resp.status} fetching photo: ${url.slice(0, 120)}`);
@@ -1603,7 +1604,17 @@ async function persistSinglePhoto(
         console.warn(`[photo-persist] Failed after ${maxAttempts} attempts: ${err.message} for ${url.slice(0, 120)}`);
         return null;
       }
-      const backoffMs = 500 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250);
+      const msg = String(err?.message || "");
+      const is429 = /\b429\b/.test(msg);
+      // Rate-limited sources (e.g. WordPress image hosts) need real breathing
+      // room or every retry re-trips the limiter and the photo is lost. 429s get
+      // an exponential 2s/4s/8s/16s backoff and honour Retry-After; other
+      // transient blips keep the short 500ms/1s/2s/4s schedule.
+      let backoffMs = is429
+        ? 2000 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 500)
+        : 500 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250);
+      const raMatch = msg.match(/retry-after=(\d+)/i);
+      if (raMatch) backoffMs = Math.max(backoffMs, parseInt(raMatch[1], 10) * 1000);
       await new Promise((r) => setTimeout(r, backoffMs));
     }
   }
@@ -1769,8 +1780,19 @@ async function upsertEggDonor(
   if (existing) {
     if (existing.photoUrl && isAlreadyPersisted(existing.photoUrl)) donor.photoUrl = existing.photoUrl;
     const existingPhotos = existing.photos as string[] | undefined;
-    if (existingPhotos?.length && existingPhotos.every(p => isAlreadyPersisted(p))) {
-      const newCount = donor.photoCount ?? extractPhotosArray(donor).length;
+    const freshGalleryLen = extractPhotosArray(donor).length;
+    if (existingPhotos && existingPhotos.length > 1 && freshGalleryLen <= 1) {
+      // This scrape only carries the single listing-card photo (e.g. a hash-skip
+      // that did not re-fetch the donor-view gallery). Preserve the richer
+      // existing gallery instead of clobbering it down to one photo - the gallery
+      // lives on the profile page, not the listing card, and is not part of the
+      // cardHash, so an unchanged listing must never shrink an existing gallery.
+      donor.photos = existingPhotos;
+      donor.photoCount = existingPhotos.length;
+      if (!donor.profileData) donor.profileData = {};
+      donor.profileData["All Photos"] = existingPhotos;
+    } else if (existingPhotos?.length && existingPhotos.every(p => isAlreadyPersisted(p))) {
+      const newCount = donor.photoCount ?? freshGalleryLen;
       if (!newCount || Math.abs(newCount - existingPhotos.length) <= 1) donor.photos = existingPhotos;
     }
   }
@@ -5405,6 +5427,13 @@ async function runSyncJob(
                   console.log(`[donor-sync] Gallery: ${merged.length} photos for ${item.externalId} from ${item.profileUrl}`);
                 }
               }
+              // WP card-list egg sites (e.g. Eggspecting): the gallery is captured
+              // above, and their donor-view pages are large enough to reliably time
+              // out Gemini section extraction (which they don't need). Skip the rest
+              // of the per-donor enrichment for them - the import loop still upserts
+              // the item with its photos. Non-WP egg providers (e.g. Family Creations)
+              // and sperm donors fall through to the section/vialType extraction below.
+              if (hasWpPaging && job.type === "egg-donor") return;
               // Direct extraction of vialTypes from SBC profile HTML.
               // SBC renders: <p class="IUI">Available for: <strong>IUI</strong></p>
               // so we match <p class="..."> with class values ICI/IUI/IVF (primary method).
