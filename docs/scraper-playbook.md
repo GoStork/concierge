@@ -137,6 +137,25 @@ re-discovering the same problems on every new agency.
   `"Bakersfield, CA"`) even when the stored `location` scalar is just the state (`"CA"`).
   The card/detail recover the city for display via `cleanCityState` (commit `dfef635`).
   Keep the raw `location` scalar for filtering/Matched-Preferences.
+- **The provider *website* scraper emits coarse/duplicate `ProviderLocation` rows.** This is
+  `scrape.service.ts` (the provider "Scrape" button that fills company profile + locations +
+  team), **not** the donor-sync engine. The AI extractor returns redundant address-less rows
+  next to real street addresses - a coarse `"Los Angeles, CA"` beside `"…, Woodland Hills, CA"`,
+  or a region label `"Mid-West, USA"`. The engine prunes an address-less row when the **same
+  state (US) or country (international)** already has a street address, and drops region-token
+  "states" (`usa`/`us`/`united states`/…) - the `prunedLocations`/`REGION_STATE_TOKENS` pass.
+  It runs **before** the country-normalization map (which nulls international street addresses)
+  so the "same country" case still sees them. The client mirrors the identical rule in
+  `dedupeProviderLocations()` (`client/src/lib/format-location.ts`) to hide them on the profile
+  + swipe cards.
+  - **Gotcha: that broad state-level rule is for display/scrape suppression ONLY - never for a
+    permanent DB delete.** It also suppresses **legitimate distinct satellite-office cities**
+    that merely lack a scraped street address (an agency with offices in 6 towns of one state
+    but only 1 full address - the broad rule would erase 5 real offices). For a one-time DB
+    cleanup use the **narrow** rule: delete an address-less row only when its **city** duplicates
+    an existing street-address city, plus region-token rows and provider-name-as-city junk
+    (`"Brown Fertility"` stored as a city). In one dry run the broad rule matched ~340 rows
+    (mostly real offices); the narrow rule found 41 genuine junk rows.
 - **Never assume HTML attribute order in regex** - `src` may come before or after `class`.
 - **Coerce section fields to scalars before writing scalar columns.** AI section extraction
   sometimes returns a **nested object** for a field (e.g. an "Education" group of sub-fields),
@@ -201,6 +220,7 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
 | WP donor `profileUrl` points at the wrong/404 page | Built the URL from `externalId` instead of the card's `view-more` href | Internal `donor_id` ≠ public number; capture per card (`extractWpDonorCardProfileUrls`) |
 | Compensation / Total Cost blank after a clean scrape | Agency publishes no per-donor comp (e.g. Eggspecting) | Expected; cost-sheet base-comp fallback fills it (`total-cost.utils.ts`, by `subTypes[]`) |
 | WP catalog truncated / only page 1 synced | Relied on Gemini `paginationLinks` instead of `?paged=N` | Deterministic `?paged=N` crawl reading "Page 1 of N" (`hasWpPaging` path) |
+| Provider profile shows duplicate / region-label locations (`Los Angeles, CA` beside `Woodland Hills, CA`; `Mid-West, USA`) | AI extractor emitted coarse address-less rows next to street addresses | `prunedLocations`/`REGION_STATE_TOKENS` pass in `scrape.service.ts` + client `dedupeProviderLocations`. **Permanent delete: narrow city-dup rule only - the broad state rule erases real satellite offices** |
 
 ## Platform cheat-sheet
 
