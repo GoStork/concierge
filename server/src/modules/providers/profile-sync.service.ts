@@ -1015,6 +1015,40 @@ function tryDirectSpermDonorExtraction(html: string, pageUrl: string): any | nul
   };
 }
 
+/**
+ * Parse a WordPress donor-list page (e.g. Eggspecting's ip-donor-list template)
+ * into a map of public donor number -> that donor's individual profile URL.
+ *
+ * Each card on the listing looks like:
+ *   <div class="donor-card">
+ *     ...
+ *     <div class="old-site-id">Donor ID : 6501</div>            // public number = our externalId
+ *     ...
+ *     <a class="view-more" href="/donor-view?donor_id=353">More Info</a>  // internal donor_id
+ *   </div>
+ *
+ * The internal donor_id in the URL (353) is NOT the public donor number (6501),
+ * so the link cannot be constructed from externalId - it must be captured per
+ * card from the listing HTML and paired with the public number shown on the card.
+ */
+function extractWpDonorCardProfileUrls(html: string, baseUrl: string): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!html || !/donor-card/i.test(html)) return map;
+  // Split on the donor-card container so each block holds exactly one card's
+  // markup (everything from its opening tag up to the next card's opening tag).
+  const blocks = html.split(/<div[^>]*class="[^"]*\bdonor-card\b[^"]*"/i).slice(1);
+  for (const block of blocks) {
+    const idMatch = block.match(/class="[^"]*\bold-site-id\b[^"]*"[^>]*>\s*Donor\s*ID\s*:?\s*(\w+)/i);
+    const linkMatch = block.match(/class="[^"]*\bview-more\b[^"]*"[^>]*href="([^"]+)"/i);
+    if (!idMatch || !linkMatch) continue;
+    const externalId = idMatch[1].trim();
+    let href = linkMatch[1].trim();
+    try { href = new URL(href, baseUrl).href; } catch {}
+    if (externalId && href) map.set(externalId, href);
+  }
+  return map;
+}
+
 async function extractDonorsFromPage(
   html: string,
   pageUrl: string,
@@ -5055,6 +5089,7 @@ async function runSyncJob(
     let allItems = [...items];
     const globalSeen = new Set<string>();      // dedup across every import call this run
     const allScrapedIds = new Set<string>();   // every externalId we imported (for stale detection)
+    const wpProfileUrlMap = new Map<string, string>(); // WP card-list (Eggspecting): public donor # -> per-donor profile URL, captured per page
     let streamed = false;                      // true once we import per-page instead of all-at-once
     let totalIsFixed = false;                  // true when job.total is known upfront (stable bar)
 
@@ -5169,6 +5204,15 @@ async function runSyncJob(
         if (matchingLink) {
           item.profileUrl = matchingLink;
         }
+      }
+      // WordPress card-list sites (e.g. Eggspecting) DO have per-donor pages, but
+      // the URL's donor_id is an internal id that differs from the public donor
+      // number we store as externalId (e.g. "Donor ID : 6501" -> donor_id=353).
+      // The link is captured per card from the listing HTML into wpProfileUrlMap,
+      // keyed by the public number, so assign it here.
+      if (!item.profileUrl && item.externalId && wpProfileUrlMap.size > 0) {
+        const wpUrl = wpProfileUrlMap.get(String(item.externalId));
+        if (wpUrl) item.profileUrl = wpUrl;
       }
       if (item.externalId) allScrapedIds.add(item.externalId);
     }
@@ -5438,6 +5482,8 @@ async function runSyncJob(
       }
 
       job.currentStep = totalPages > 1 ? `Importing donors - page 1 of ${totalPages}...` : "Importing donors - page 1...";
+      // Capture per-donor profile URLs from page 1's card markup before importing.
+      for (const [k, v] of extractWpDonorCardProfileUrls(mainHtml, sourceUrl)) wpProfileUrlMap.set(k, v);
       await enrichAndImportItems(items); // stream page 1 immediately
 
       const lastPage = totalPages > 1 ? totalPages : 200; // 200 = runaway guard when unknown
@@ -5459,6 +5505,8 @@ async function runSyncJob(
           const pageData = await extractDonorsFromPage(pageHtml, pagedUrl, job.type);
           const pageItems =
             job.type === "surrogate" ? pageData?.surrogates || [] : pageData?.donors || [];
+          // Capture this page's per-donor profile URLs before importing its donors.
+          for (const [k, v] of extractWpDonorCardProfileUrls(pageHtml, pagedUrl)) wpProfileUrlMap.set(k, v);
           await enrichAndImportItems(pageItems); // import this page's donors now
         } catch (err: any) {
           // A 404 past the last page is the normal wp-paginate terminator.
