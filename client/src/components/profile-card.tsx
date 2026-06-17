@@ -1,4 +1,4 @@
-import { User, EyeOff, Eye, Pencil, Crown, Award, Trash2 } from "lucide-react";
+import { User, EyeOff, Eye, Pencil, Crown, Award, Trash2, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { getPhotoSrc, getProfileTypeLabel, getProfileCardSummary, getProfileDetails } from "@/lib/profile-utils";
@@ -11,6 +11,9 @@ interface AdminControls {
   onTogglePremium: (profileId: string, premium: boolean) => void;
   onEdit?: (profileId: string) => void;
   onDelete?: (profileId: string) => void;
+  // One-click "Sponsor this" shortcut (adds to a free slot, or routes to the Sponsorship tab).
+  onSponsor?: (profileId: string) => void;
+  sponsored?: boolean;
   isHidden: boolean;
   isPremium: boolean;
 }
@@ -131,6 +134,12 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
               PREMIUM
             </span>
           )}
+          {adminControls?.sponsored && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-accent text-accent-foreground shadow" data-testid={`badge-card-sponsored-${profile.id}`}>
+              <Sparkles className="w-3 h-3" />
+              SPONSORED
+            </span>
+          )}
           {statusStyle && (
             <span
               className={`inline-flex items-center px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading shadow ${statusPillBg}`}
@@ -220,6 +229,20 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
             >
               <Crown className="w-3.5 h-3.5" />
             </button>
+            {adminControls.onSponsor && (
+              <button
+                className={`py-2 px-3 rounded-[var(--radius)] text-xs font-ui border transition-colors ${
+                  adminControls.sponsored
+                    ? "border-accent/50 text-accent bg-accent/10 hover:bg-accent/15"
+                    : "border-primary/30 text-primary hover:bg-primary/10"
+                }`}
+                onClick={(e) => { e.stopPropagation(); adminControls.onSponsor!(profile.id); }}
+                title={adminControls.sponsored ? "Sponsored - manage in the Sponsorship tab" : "Sponsor this profile (boost it in the marketplace)"}
+                data-testid={`btn-sponsor-${type}-${profile.id}`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               className={`py-2 px-3 rounded-[var(--radius)] text-xs font-ui border transition-colors ${
                 isHidden

@@ -1371,6 +1371,31 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
   const canManageProfiles = isAdmin || isProvider;
   const endpoint = TYPE_ENDPOINTS[type];
 
+  // One-click "Sponsor this": add the profile to the provider's first active slot
+  // bundle that has a free slot; if there is none, route to the Sponsorship tab to
+  // start one. The dedicated tab remains the full management surface.
+  const sponsorEntityType = type === "egg-donor" ? "EGG_DONOR" : type === "surrogate" ? "SURROGATE" : "SPERM_DONOR";
+  const sponsorshipTabUrl = isAdmin ? `/admin/providers/${providerId}?tab=sponsorship` : `/account/sponsorship`;
+  const handleSponsor = async (profileId: string) => {
+    try {
+      const listUrl = isAdmin ? `/api/admin/sponsorship?providerId=${providerId}` : `/api/sponsorship/mine`;
+      const list = await (await apiRequest("GET", listUrl)).json();
+      const bundle = (list || []).find((s: any) => s.status === "ACTIVE" && s.productType === "SLOT_BUNDLE" && (s.slotsUsed ?? 0) < (s.slotsTotal ?? 0));
+      if (!bundle) {
+        toast({ title: "No open sponsorship slot", description: "Opening the Sponsorship tab to start or manage a plan." });
+        navigate(sponsorshipTabUrl);
+        return;
+      }
+      const body = isAdmin ? { providerId, entityType: sponsorEntityType, entityId: profileId } : { entityType: sponsorEntityType, entityId: profileId };
+      const itemsUrl = isAdmin ? `/api/admin/sponsorship/${bundle.id}/items` : `/api/sponsorship/${bundle.id}/items`;
+      await apiRequest("POST", itemsUrl, body);
+      queryClient.invalidateQueries({ queryKey: [`/api/providers/${providerId}/${endpoint}`] });
+      toast({ title: "Profile sponsored", description: `Added to ${bundle.plan?.displayName || "your plan"}.`, variant: "success" });
+    } catch (err: any) {
+      toast({ title: "Could not sponsor profile", description: err.message, variant: "destructive" });
+    }
+  };
+
   const toggleVisibilityMutation = useMutation({
     mutationFn: async ({ profileId, hidden }: { profileId: string; hidden: boolean }) => {
       const res = await apiRequest(
@@ -1456,6 +1481,8 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
               : undefined,
             onToggleVisibility: (profileId, hidden) => toggleVisibilityMutation.mutate({ profileId, hidden }),
             onTogglePremium: (profileId, premium) => togglePremiumMutation.mutate({ profileId, premium }),
+            onSponsor: handleSponsor,
+            sponsored: !!d.sponsoredUntil && new Date(d.sponsoredUntil).getTime() > Date.now(),
           } : undefined}
         />
       ))}
