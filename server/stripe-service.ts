@@ -717,6 +717,228 @@ export async function createTransferReversal(params: {
   });
 }
 
+// ─── Profile Sponsorship (provider PAYS GoStork - platform charge, not Connect) ─
+//
+// Two billing modes:
+//   AUTO_RENEW - a monthly Stripe Subscription. The first month confirms via the
+//                Payment Element (we return the latest invoice's PI client secret).
+//   ONE_TIME   - a single-month PaymentIntent (no auto-renew).
+// All objects carry metadata { sponsorshipId, providerId, kind: "sponsorship" }
+// so the webhook handler routes them away from the parent-invoice flow (which
+// keys off metadata.invoiceId, deliberately absent here).
+
+/** Reads the current period end (unix seconds) from a Subscription across API
+ *  versions - newer Stripe moved current_period_end onto the subscription item. */
+function subscriptionPeriodEnd(sub: Stripe.Subscription): number | null {
+  const top = (sub as any).current_period_end;
+  if (typeof top === "number") return top;
+  const item = sub.items?.data?.[0] as any;
+  if (item && typeof item.current_period_end === "number") return item.current_period_end;
+  return null;
+}
+
+/**
+ * Creates a monthly auto-renewing sponsorship Subscription. If the plan has a
+ * pre-provisioned recurring Price we reuse it; otherwise we mint a Product +
+ * recurring Price on the fly (mirrors createPaymentLink). The subscription is
+ * created `incomplete` so the provider confirms month 1 in the Payment Element -
+ * sponsorship stays PENDING_PAYMENT until invoice.payment_succeeded fires.
+ */
+export async function createSponsorshipSubscription(params: {
+  customerId: string;
+  planDisplayName: string;
+  amountCents: number;
+  currency: string;
+  preProvisionedPriceId?: string | null;
+  sponsorshipId: string;
+  providerId: string;
+}): Promise<{
+  subscriptionId: string;
+  priceId: string;
+  latestInvoiceId: string | null;
+  paymentIntentClientSecret: string | null;
+  status: string;
+  currentPeriodEnd: number | null;
+}> {
+  if (!isStripeConfigured()) {
+    return {
+      subscriptionId: `mock_sub_${Date.now()}`,
+      priceId: `mock_price_${Date.now()}`,
+      latestInvoiceId: `mock_in_${Date.now()}`,
+      paymentIntentClientSecret: `mock_secret_${Date.now()}`,
+      status: "incomplete",
+      currentPeriodEnd: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000),
+    };
+  }
+
+  const stripe = getStripe();
+
+  let priceId = params.preProvisionedPriceId || "";
+  if (!priceId) {
+    const product = await stripe.products.create({
+      name: params.planDisplayName,
+      metadata: { kind: "sponsorship", sponsorshipId: params.sponsorshipId, providerId: params.providerId },
+    });
+    const price = await stripe.prices.create({
+      product: product.id,
+      unit_amount: params.amountCents,
+      currency: params.currency.toLowerCase(),
+      recurring: { interval: "month" },
+    });
+    priceId = price.id;
+  }
+
+  const subscription = await stripe.subscriptions.create({
+    customer: params.customerId,
+    items: [{ price: priceId }],
+    payment_behavior: "default_incomplete",
+    payment_settings: {
+      save_default_payment_method: "on_subscription",
+      payment_method_types: ["card"],
+    },
+    expand: ["latest_invoice.payment_intent"],
+    metadata: { kind: "sponsorship", sponsorshipId: params.sponsorshipId, providerId: params.providerId },
+  });
+
+  const latestInvoice = subscription.latest_invoice as Stripe.Invoice | null;
+  const pi = (latestInvoice as any)?.payment_intent as Stripe.PaymentIntent | null;
+
+  return {
+    subscriptionId: subscription.id,
+    priceId,
+    latestInvoiceId: latestInvoice?.id || null,
+    paymentIntentClientSecret: pi?.client_secret || null,
+    status: subscription.status,
+    currentPeriodEnd: subscriptionPeriodEnd(subscription),
+  };
+}
+
+/**
+ * Creates a one-time single-month sponsorship PaymentIntent. Unlike the parent
+ * invoice flow this is not tied to an Invoice row - the sponsorship row holds
+ * the linkage via metadata.sponsorshipId.
+ */
+export async function createSponsorshipOneTimeIntent(params: {
+  customerId?: string | null;
+  amountCents: number;
+  currency: string;
+  description: string;
+  sponsorshipId: string;
+  providerId: string;
+}): Promise<{ clientSecret: string; paymentIntentId: string }> {
+  if (!isStripeConfigured()) {
+    return {
+      clientSecret: `mock_secret_${Date.now()}`,
+      paymentIntentId: `mock_pi_${Date.now()}`,
+    };
+  }
+
+  const stripe = getStripe();
+  const pmcId = await getOrCreateGoStorkPmc();
+  const intent = await stripe.paymentIntents.create({
+    amount: params.amountCents,
+    currency: params.currency.toLowerCase(),
+    capture_method: "automatic",
+    description: params.description,
+    ...(params.customerId ? { customer: params.customerId } : {}),
+    ...(pmcId
+      ? { payment_method_configuration: pmcId }
+      : { payment_method_types: [...US_PAYMENT_METHOD_ORDER] }),
+    metadata: { kind: "sponsorship", sponsorshipId: params.sponsorshipId, providerId: params.providerId },
+  });
+
+  return { clientSecret: intent.client_secret!, paymentIntentId: intent.id };
+}
+
+/**
+ * Cancels a sponsorship Subscription. cancelAtPeriodEnd=true lets the provider
+ * keep the boost through the month they already paid for; false ends it now.
+ */
+export async function cancelSponsorshipSubscription(params: {
+  subscriptionId: string;
+  cancelAtPeriodEnd?: boolean;
+}): Promise<{ status: string; currentPeriodEnd: number | null }> {
+  if (!isStripeConfigured() || params.subscriptionId.startsWith("mock_")) {
+    return { status: "canceled", currentPeriodEnd: null };
+  }
+  const stripe = getStripe();
+  const sub = params.cancelAtPeriodEnd
+    ? await stripe.subscriptions.update(params.subscriptionId, { cancel_at_period_end: true })
+    : await stripe.subscriptions.cancel(params.subscriptionId);
+  return { status: sub.status, currentPeriodEnd: subscriptionPeriodEnd(sub) };
+}
+
+/**
+ * Normalizes a sponsorship-relevant webhook event. Returns null for events that
+ * have nothing to do with sponsorship. The service resolves the Sponsorship row
+ * by whichever identifier is present (sponsorshipId from metadata, else the
+ * subscription id, else the payment-intent id) and no-ops if none match.
+ */
+export function parseSponsorshipEvent(event: Stripe.Event): {
+  type: string;
+  sponsorshipId: string | null;
+  stripeSubscriptionId: string | null;
+  paymentIntentId: string | null;
+  currentPeriodEnd: number | null; // unix seconds
+  cancelAtPeriodEnd: boolean | null;
+  subscriptionStatus: string | null;
+  billingReason: string | null;
+} | null {
+  const t = event.type;
+  const base = {
+    type: t,
+    sponsorshipId: null as string | null,
+    stripeSubscriptionId: null as string | null,
+    paymentIntentId: null as string | null,
+    currentPeriodEnd: null as number | null,
+    cancelAtPeriodEnd: null as boolean | null,
+    subscriptionStatus: null as string | null,
+    billingReason: null as string | null,
+  };
+
+  if (t.startsWith("payment_intent.")) {
+    const intent = event.data.object as Stripe.PaymentIntent;
+    const meta = intent.metadata || {};
+    if (meta.kind !== "sponsorship") return null;
+    return { ...base, sponsorshipId: meta.sponsorshipId || null, paymentIntentId: intent.id };
+  }
+
+  if (t.startsWith("customer.subscription.")) {
+    const sub = event.data.object as Stripe.Subscription;
+    const meta = sub.metadata || {};
+    if (meta.kind !== "sponsorship") return null;
+    return {
+      ...base,
+      sponsorshipId: meta.sponsorshipId || null,
+      stripeSubscriptionId: sub.id,
+      currentPeriodEnd: subscriptionPeriodEnd(sub),
+      cancelAtPeriodEnd: sub.cancel_at_period_end ?? null,
+      subscriptionStatus: sub.status,
+    };
+  }
+
+  if (t === "invoice.payment_succeeded" || t === "invoice.payment_failed") {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subId = typeof (invoice as any).subscription === "string"
+      ? (invoice as any).subscription
+      : (invoice as any).subscription?.id || null;
+    const subMeta = (invoice as any).subscription_details?.metadata || {};
+    if (!subId && subMeta.kind !== "sponsorship") return null;
+    // Period end of the subscription line, if present.
+    const line = invoice.lines?.data?.[0] as any;
+    const periodEnd = line?.period?.end ?? (invoice as any).period_end ?? null;
+    return {
+      ...base,
+      sponsorshipId: subMeta.sponsorshipId || null,
+      stripeSubscriptionId: subId,
+      currentPeriodEnd: typeof periodEnd === "number" ? periodEnd : null,
+      billingReason: (invoice as any).billing_reason || null,
+    };
+  }
+
+  return null;
+}
+
 // ─── Publishable key (safe to expose to frontend) ────────────────────────────
 
 export function getPublishableKey(): string {

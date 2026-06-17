@@ -26,6 +26,7 @@ import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
 import { ProviderBillingTab } from "@/components/provider-billing-tab";
 import { AdminProviderPayoutsView } from "@/components/admin-provider-payouts-view";
+import { SponsorshipDashboard } from "@/components/sponsorship/sponsorship-dashboard";
 import { ProviderLegalIdentityTab } from "@/components/provider-legal-identity-tab";
 import { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import { Switch } from "@/components/ui/switch";
@@ -132,7 +133,7 @@ type ScrapedData = {
   teamMembers: ScrapedTeamMember[];
 };
 
-const VALID_TABS = ["profile", "users", "egg-donors", "surrogates", "sperm-donors", "costs", "legal-identity", "billing", "payouts", "branding"];
+const VALID_TABS = ["profile", "users", "egg-donors", "surrogates", "sperm-donors", "costs", "legal-identity", "billing", "payouts", "sponsorship", "branding"];
 
 export default function AdminProviderEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -746,6 +747,10 @@ export default function AdminProviderEditPage() {
           </TabsTrigger>
           <TabsTrigger value="payouts" className={tabTriggerClass} data-testid="tab-edit-payouts">
             Payouts
+          </TabsTrigger>
+          <TabsTrigger value="sponsorship" className={tabTriggerClass} data-testid="tab-edit-sponsorship">
+            <Sparkles className="w-4 h-4 mr-1.5 inline" />
+            Sponsorship
           </TabsTrigger>
           <TabsTrigger value="branding" className={tabTriggerClass} data-testid="tab-edit-branding">
             <Palette className="w-4 h-4 mr-1.5 inline" />
@@ -1586,6 +1591,10 @@ export default function AdminProviderEditPage() {
 
         <TabsContent value="payouts">
           <AdminProviderPayoutsView providerId={provider.id} />
+        </TabsContent>
+
+        <TabsContent value="sponsorship">
+          <SponsorshipDashboard providerId={provider.id} isAdmin />
         </TabsContent>
 
         <TabsContent value="legal-identity">

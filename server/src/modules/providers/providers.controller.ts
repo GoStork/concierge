@@ -63,6 +63,7 @@ import { searchSartForClinic, mergeTeamMembers, verifyClinicUrl } from "./clinic
 import { Prisma } from "@prisma/client";
 import { type EggSource, type AgeGroup } from "../../lib/ivf-success-rate";
 import { DOCTOR_MEMBER_SELECT, enrichDoctorRows } from "../../lib/doctor-enrichment";
+import { applySponsoredOrdering, SPONSORED_FIRST_ORDER } from "./sponsorship-sort";
 
 const JSON_NULLABLE_FIELDS = ["ivfAcceptingPatients", "surrogacyCitizensNotAllowed", "surrogacyBirthCertificateListing", "partnerProviderIds"] as const;
 
@@ -174,11 +175,12 @@ export class ProvidersController {
         },
       },
       include: { provider: { select: { id: true, name: true, logoUrl: true } } },
-      orderBy: { createdAt: "desc" },
+      orderBy: [SPONSORED_FIRST_ORDER, { createdAt: "desc" }],
     });
     const hasMore = rows.length > PAGE_SIZE;
     const pageRows = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
-    const data = await enrichDonorsAcrossProviders(this.prisma, "egg-donor", pageRows);
+    const enriched = await enrichDonorsAcrossProviders(this.prisma, "egg-donor", pageRows);
+    const data = applySponsoredOrdering(enriched);
     const result = { data, hasMore, nextPage: hasMore ? pageNum + 1 : null };
     setCache(cacheKey, result);
     return result;
@@ -222,11 +224,12 @@ export class ProvidersController {
         },
       },
       include: { provider: { select: { id: true, name: true, logoUrl: true } } },
-      orderBy: { createdAt: "desc" },
+      orderBy: [SPONSORED_FIRST_ORDER, { createdAt: "desc" }],
     });
     const hasMore = rows.length > PAGE_SIZE;
     const pageRows = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
-    const data = await enrichDonorsAcrossProviders(this.prisma, "surrogate", pageRows);
+    const enriched = await enrichDonorsAcrossProviders(this.prisma, "surrogate", pageRows);
+    const data = applySponsoredOrdering(enriched);
     const result = { data, hasMore, nextPage: hasMore ? pageNum + 1 : null };
     setCache(cacheKey, result);
     return result;
@@ -366,11 +369,12 @@ export class ProvidersController {
         },
       },
       include: { provider: { select: { id: true, name: true, logoUrl: true } } },
-      orderBy: { createdAt: "desc" },
+      orderBy: [SPONSORED_FIRST_ORDER, { createdAt: "desc" }],
     });
     const hasMore = rows.length > PAGE_SIZE;
     const pageRows = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
-    const data = await enrichDonorsAcrossProviders(this.prisma, "sperm-donor", pageRows);
+    const enriched = await enrichDonorsAcrossProviders(this.prisma, "sperm-donor", pageRows);
+    const data = applySponsoredOrdering(enriched);
     const result = { data, hasMore, nextPage: hasMore ? pageNum + 1 : null };
     setCache(cacheKey, result);
     return result;
@@ -426,7 +430,7 @@ export class ProvidersController {
     const members = await this.prisma.providerMember.findMany({
       where: memberWhere,
       take: 600,
-      orderBy: [{ isMedicalDirector: "desc" }, { name: "asc" }],
+      orderBy: [SPONSORED_FIRST_ORDER, { isMedicalDirector: "desc" }, { name: "asc" }],
       select: DOCTOR_MEMBER_SELECT,
     });
 
@@ -449,13 +453,14 @@ export class ProvidersController {
     // Dedup + enrich (clinics[] with success rates, matchedSpecialties) via the
     // shared helper - the SAME shaping the search_doctors / resolve_doctor_card
     // MCP tools use, so the card renders identically here and in the AI matcher.
-    return enrichDoctorRows(filtered, {
+    const enrichedDoctors = enrichDoctorRows(filtered, {
       eggSource,
       ageGroup,
       isNewPatient,
       specialtyFilter: query.specialty,
       searchTerms,
-    }).slice(0, 250);
+    });
+    return applySponsoredOrdering(enrichedDoctors).slice(0, 250);
   }
 
   // Lean clinic cards for the marketplace deck. Mirrors marketplace/doctors: one
@@ -532,11 +537,13 @@ export class ProvidersController {
     const rows = await this.prisma.provider.findMany({
       where,
       take: 600,
-      orderBy: { name: "asc" },
+      orderBy: [SPONSORED_FIRST_ORDER, { name: "asc" }],
       select: {
         id: true,
         name: true,
         logoUrl: true,
+        sponsoredUntil: true,
+        sponsorBoostSeed: true,
         // Year founded + about feed the Overview section of the card's first tab.
         about: true,
         yearFounded: true,
@@ -594,11 +601,12 @@ export class ProvidersController {
 
     const insuranceCarrier = query.insurance ? insuranceCarrierOf(query.insurance) : null;
     const wantsLgbtq = query.lgbtq === "true";
-    return rows.filter((p) => {
+    const clinicRows = rows.filter((p) => {
       if (insuranceCarrier && !acceptsInsuranceCarrier(p.acceptedInsurance, insuranceCarrier)) return false;
       if (wantsLgbtq && !(Array.isArray(p.ivfAcceptingPatients) && (p.ivfAcceptingPatients as string[]).includes("gay_couple"))) return false;
       return true;
     });
+    return applySponsoredOrdering(clinicRows);
   }
 
   @Get()

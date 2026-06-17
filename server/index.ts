@@ -18,6 +18,8 @@ import { startCostSheetReminderScheduler } from "./src/modules/billing/cost-shee
 import { startReversalRecoupScheduler } from "./src/modules/billing/reversal-recoup.scheduler";
 import { startWhisperSlaScheduler } from "./src/modules/providers/whisper-sla.scheduler";
 import { startPendingBookingScheduler } from "./src/modules/calendar/pending-booking.scheduler";
+import { startSponsorshipExpiryScheduler } from "./src/modules/sponsorship/sponsorship-expiry.scheduler";
+import { SponsorshipService } from "./src/modules/sponsorship/sponsorship.service";
 import { NotificationService } from "./src/modules/notifications/notification.service";
 import { setNestApp } from "./nest-app-ref";
 import pgSession from "connect-pg-simple";
@@ -215,6 +217,7 @@ export function log(message: string, source = "nestjs") {
   startReversalRecoupScheduler(prismaService);
   startWhisperSlaScheduler(prismaService, notificationService);
   startPendingBookingScheduler(prismaService, notificationService);
+  startSponsorshipExpiryScheduler(prismaService, nestApp.get(SponsorshipService));
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -269,6 +272,25 @@ export function log(message: string, source = "nestjs") {
     if (seeded > 0) log(`Seeded ${seeded} new concierge prompt section(s)`);
   } catch (e: any) {
     log(`Failed to seed prompts: ${e.message}`);
+  }
+
+  // Auto-seed sponsorship plans (create-if-not-exists; admin price edits preserved).
+  try {
+    const db = prismaService.client;
+    const { getSponsorshipPlanDefaults } = await import("./sponsorship-plan-defaults");
+    let seeded = 0;
+    for (const p of getSponsorshipPlanDefaults()) {
+      const existing = await db.sponsorshipPlan.findUnique({
+        where: { productType_tierKey: { productType: p.productType as any, tierKey: p.tierKey } },
+      });
+      if (!existing) {
+        await db.sponsorshipPlan.create({ data: { ...p, productType: p.productType as any } });
+        seeded++;
+      }
+    }
+    if (seeded > 0) log(`Seeded ${seeded} new sponsorship plan(s)`);
+  } catch (e: any) {
+    log(`Failed to seed sponsorship plans: ${e.message}`);
   }
 
   appReady = true;

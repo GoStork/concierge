@@ -231,6 +231,18 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.referralFeeConfig;
   }
 
+  get sponsorshipPlan() {
+    return prisma.sponsorshipPlan;
+  }
+
+  get sponsorship() {
+    return prisma.sponsorship;
+  }
+
+  get sponsorshipItem() {
+    return prisma.sponsorshipItem;
+  }
+
   get $transaction() {
     return prisma.$transaction.bind(prisma);
   }

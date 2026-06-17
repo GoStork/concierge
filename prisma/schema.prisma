@@ -122,6 +122,12 @@ model Provider {
   providerQuotes                        ProviderQuote[]
   bankAccount                           ProviderBankAccount?
   w9                                    ProviderW9?
+  // Profile sponsorship: when sponsoredUntil > now() the provider's own top-level
+  // profile (clinic/agency) is boosted in the marketplace. sponsorBoostSeed is
+  // bumped on each (de)activation to drive the rotating sponsored-order shuffle.
+  sponsoredUntil                        DateTime?
+  sponsorBoostSeed                      Int                         @default(0)
+  sponsorships                          Sponsorship[]
 }
 
 model ProviderType {
@@ -428,12 +434,16 @@ model ProviderMember {
   reviewCount             Int                      @default(0)
   recommendPct            Int? // 0-100 "% would recommend"
   avgOverallScore         Decimal? // 0-10 composite
+  // Sponsorship boost (denormalized from Sponsorship/SponsorshipItem; read-hot marketplace flag)
+  sponsoredUntil          DateTime?
+  sponsorBoostSeed        Int                      @default(0)
   provider                Provider                 @relation(fields: [providerId], references: [id])
   locations               ProviderMemberLocation[]
   reviews                 ProviderReview[]
 
   @@index([personKey])
   @@index([providerId])
+  @@index([sponsoredUntil])
 }
 
 model ProviderMemberLocation {
@@ -780,10 +790,14 @@ model EggDonor {
   isPremium            Boolean                     @default(false)
   isExperienced        Boolean                     @default(false)
   lastFullSyncAt       DateTime?
+  // Sponsorship boost (denormalized from Sponsorship/SponsorshipItem; read-hot marketplace flag)
+  sponsoredUntil       DateTime?
+  sponsorBoostSeed     Int                         @default(0)
   profileEmbedding     Unsupported("vector(768)")?
   provider             Provider                    @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
+  @@index([sponsoredUntil])
 }
 
 model EggDonorSyncConfig {
@@ -851,12 +865,16 @@ model Surrogate {
   // suggest her to other parents.
   reservedByParentId           String?
   reservationExpiresAt         DateTime?
+  // Sponsorship boost (denormalized from Sponsorship/SponsorshipItem; read-hot marketplace flag)
+  sponsoredUntil               DateTime?
+  sponsorBoostSeed             Int                         @default(0)
   profileEmbedding             Unsupported("vector(768)")?
   provider                     Provider                    @relation(fields: [providerId], references: [id])
   reservedByParent             User?                       @relation("SurrogateReservations", fields: [reservedByParentId], references: [id], onDelete: SetNull)
 
   @@unique([providerId, externalId])
   @@index([reservedByParentId])
+  @@index([sponsoredUntil])
 }
 
 model SurrogateSyncConfig {
@@ -914,10 +932,14 @@ model SpermDonor {
   iciCost              Int?
   iuiCost              Int?
   ivfCost              Int?
+  // Sponsorship boost (denormalized from Sponsorship/SponsorshipItem; read-hot marketplace flag)
+  sponsoredUntil       DateTime?
+  sponsorBoostSeed     Int                         @default(0)
   profileEmbedding     Unsupported("vector(768)")?
   provider             Provider                    @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
+  @@index([sponsoredUntil])
 }
 
 model SpermDonorSyncConfig {
@@ -2039,4 +2061,116 @@ model ProviderW9 {
   provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@index([providerId])
+}
+
+// ─── Profile Sponsorship ─────────────────────────────────────────────────────
+// Providers pay GoStork monthly to boost their profiles in the marketplace.
+// Two products: SLOT_BUNDLE (a pool of slots filled with individual sub-profiles
+// - donors/surrogates/sperm donors/doctors) and WHOLE_PROFILE (the provider's own
+// clinic/agency top-level profile, priced per provider type). Source of truth is
+// Sponsorship + SponsorshipItem; the boost is denormalized onto each entity's
+// sponsoredUntil column for cheap marketplace reads.
+
+enum SponsorshipProductType {
+  SLOT_BUNDLE
+  WHOLE_PROFILE
+}
+
+enum SponsorshipBillingMode {
+  AUTO_RENEW
+  ONE_TIME
+}
+
+enum SponsorshipStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  PAST_DUE
+  EXPIRED
+  CANCELED
+}
+
+enum SponsoredEntityType {
+  EGG_DONOR
+  SURROGATE
+  SPERM_DONOR
+  DOCTOR
+  CLINIC_PROFILE
+  AGENCY_PROFILE
+}
+
+// Pricing config (editable by admins without a code change). Seeded from
+// server/sponsorship-plan-defaults.ts using create-if-not-exists (never overwrite).
+model SponsorshipPlan {
+  id              String                 @id @default(uuid())
+  productType     SponsorshipProductType
+  tierKey         String // "starter" | "growth" | "pro" | "whole_profile_ivf" | "whole_profile_surrogacy"
+  displayName     String
+  priceCents      Int
+  currency        String                 @default("USD")
+  slotCount       Int // 5 / 25 / 100 ; 1 for WHOLE_PROFILE
+  stripeProductId String?
+  stripePriceId   String? // pre-provisioned recurring Price (optional; else created on the fly)
+  isActive        Boolean                @default(true)
+  sortOrder       Int                    @default(0)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  sponsorships    Sponsorship[]
+
+  @@unique([productType, tierKey])
+}
+
+// One row per purchase (subscription or one-time month).
+model Sponsorship {
+  id                    String                 @id @default(uuid())
+  providerId            String
+  planId                String
+  productType           SponsorshipProductType
+  billingMode           SponsorshipBillingMode
+  status                SponsorshipStatus      @default(PENDING_PAYMENT)
+  // Pricing snapshot at purchase so later plan edits never retro-reprice this sub.
+  priceCentsSnapshot    Int
+  currency              String                 @default("USD")
+  slotCountSnapshot     Int
+  // Lifecycle windows
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime? // = boost expiry for this period
+  canceledAt            DateTime? // auto-renew turned off; runs out at currentPeriodEnd
+  endedAt               DateTime? // fully expired/terminated
+  // Stripe linkage
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?                @unique // AUTO_RENEW only
+  stripePaymentIntentId String? // ONE_TIME only
+  stripePriceId         String?
+  // Comp + provenance
+  isComped              Boolean                @default(false)
+  compedByUserId        String?
+  compReason            String?
+  createdByAdmin        Boolean                @default(false)
+  createdByUserId       String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  provider Provider          @relation(fields: [providerId], references: [id])
+  plan     SponsorshipPlan   @relation(fields: [planId], references: [id])
+  items    SponsorshipItem[]
+
+  @@index([providerId, status])
+  @@index([status, currentPeriodEnd])
+  @@index([stripeSubscriptionId])
+}
+
+// Each filled slot. entityId is FK-by-convention to the target table's id.
+// WHOLE_PROFILE = a single item with entityType CLINIC_PROFILE|AGENCY_PROFILE, entityId = providerId.
+model SponsorshipItem {
+  id            String              @id @default(uuid())
+  sponsorshipId String
+  entityType    SponsoredEntityType
+  entityId      String
+  addedAt       DateTime            @default(now())
+  removedAt     DateTime? // soft-remove frees the slot, preserves history
+
+  sponsorship Sponsorship @relation(fields: [sponsorshipId], references: [id], onDelete: Cascade)
+
+  @@unique([sponsorshipId, entityType, entityId])
+  @@index([entityType, entityId])
 }

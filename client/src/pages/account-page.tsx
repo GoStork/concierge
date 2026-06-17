@@ -22,6 +22,7 @@ import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
 import { ProviderBillingTab } from "@/components/provider-billing-tab";
 import { ProviderPayoutsTab } from "@/components/provider-payouts-tab";
+import { SponsorshipDashboard } from "@/components/sponsorship/sponsorship-dashboard";
 import { ProviderLegalIdentityTab } from "@/components/provider-legal-identity-tab";
 import { CalendarSettings as CalendarSettingsComponent } from "@/components/calendar/calendar-settings";
 import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
@@ -74,6 +75,7 @@ const allTabs = [
   { to: '/account/legal-identity', label: 'Legal Identity', icon: FileSignature, roles: 'provider' as const },
   { to: '/account/billing', label: 'Billing', icon: DollarSign, roles: 'billing' as const },
   { to: '/account/payouts', label: 'Payouts', icon: Wallet, roles: 'billing' as const },
+  { to: '/account/sponsorship', label: 'Sponsorship', icon: Sparkles, roles: 'billing' as const },
   { to: '/account/branding', label: 'Branding', icon: Palette, roles: 'branding' as const },
   { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
@@ -2187,6 +2189,9 @@ export default function AccountPage() {
         )}
         {(isProvider || isAdmin) && providerId && (
           <Route path="payouts" element={<ProviderPayoutsTab />} />
+        )}
+        {(isProvider || isAdmin) && providerId && (
+          <Route path="sponsorship" element={<SponsorshipDashboard />} />
         )}
         {(isProvider || isAdmin) && (
           <Route path="legal-identity" element={<ProviderLegalIdentityTab />} />

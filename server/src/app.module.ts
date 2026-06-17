@@ -12,6 +12,7 @@ import { CostsModule } from "./modules/costs/costs.module";
 import { KnowledgeModule } from "./modules/knowledge/knowledge.module";
 import { GeoModule } from "./modules/geo/geo.module";
 import { BillingModule } from "./modules/billing/billing.module";
+import { SponsorshipModule } from "./modules/sponsorship/sponsorship.module";
 import { TestRunnerModule } from "./modules/test-runner/test-runner.module";
 
 @Module({
@@ -29,6 +30,7 @@ import { TestRunnerModule } from "./modules/test-runner/test-runner.module";
     KnowledgeModule,
     GeoModule,
     BillingModule,
+    SponsorshipModule,
     TestRunnerModule,
   ],
 })

@@ -10,9 +10,10 @@ import { LegalIdentityController } from "./legal-identity.controller";
 import { CostSheetAutoDraftService } from "./cost-sheet-auto-draft.service";
 import { CostSheetAutoDraftController } from "./cost-sheet-auto-draft.controller";
 import { NotificationModule } from "../notifications/notification.module";
+import { SponsorshipModule } from "../sponsorship/sponsorship.module";
 
 @Module({
-  imports: [NotificationModule],
+  imports: [NotificationModule, SponsorshipModule],
   providers: [BillingService, ConnectService, LegalIdentityService, CostSheetAutoDraftService],
   controllers: [
     BillingController,

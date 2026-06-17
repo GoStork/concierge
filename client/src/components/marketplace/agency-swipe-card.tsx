@@ -176,6 +176,7 @@ export function AgencySwipeCard({
       photoLabels={photoLabels}
       title={provider.name}
       pinnedHeader={{ logoUrl: logoSrc, title: provider.name, location: null, badge: null }}
+      sponsored={!!(provider as any).sponsoredUntil && new Date((provider as any).sponsoredUntil).getTime() > Date.now()}
       firstSlidePlain
       tabs={tabs}
       disableSwipe={disableSwipe}

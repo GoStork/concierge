@@ -2056,6 +2056,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
           frozenLotStatus={swipeProfile.frozenLotStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
+          sponsored={swipeProfile.sponsored}
           tabs={tabs}
           disableSwipe
           chatMode

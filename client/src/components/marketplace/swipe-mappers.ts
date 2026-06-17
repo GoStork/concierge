@@ -12,6 +12,12 @@ import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay, dedupeProviderLocations } from "@/lib/format-location";
 import { getLocationFlag, cleanCityState, getCountryFlag } from "@/lib/country-flag";
 
+// True while the provider is paying to boost this profile (denormalized sponsoredUntil in the future).
+export function isSponsored(row: any): boolean {
+  const until = row?.sponsoredUntil;
+  return !!until && new Date(until).getTime() > Date.now();
+}
+
 // "🇺🇸 California" - location label with its country flag prefixed (no flag -> plain).
 function flaggedLocation(location: string | null | undefined): string {
   const label = formatLocationDisplay(location) || (location ? String(location) : "");
@@ -271,6 +277,8 @@ export interface SwipeDeckProfile {
   totalCostMin: number | null;
   totalCostMax: number | null;
   isPremium: boolean;
+  // Sponsorship: true while the provider is paying to boost this profile.
+  sponsored: boolean;
 }
 
 export interface UserPreference {
@@ -355,6 +363,7 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     totalCostMin: null,
     totalCostMax: null,
     isPremium: !!dbDonor.isPremium,
+    sponsored: isSponsored(dbDonor),
   };
 }
 
@@ -428,6 +437,7 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
     totalCostMin: r.totalCostMin,
     totalCostMax: r.totalCostMax,
     isPremium: !!dbSurrogate.isPremium,
+    sponsored: isSponsored(dbSurrogate),
   };
 }
 
@@ -501,6 +511,7 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
     totalCostMin: null,
     totalCostMax: null,
     isPremium: !!dbSperm.isPremium,
+    sponsored: isSponsored(dbSperm),
   };
 }
 

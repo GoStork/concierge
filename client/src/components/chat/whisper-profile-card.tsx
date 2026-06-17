@@ -83,6 +83,7 @@ export function WhisperProfileCard({ card, brandColor }: WhisperProfileCardProps
           frozenLotStatus={swipeProfile.frozenLotStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
+          sponsored={swipeProfile.sponsored}
           tabs={tabs}
           disableSwipe
           chatMode

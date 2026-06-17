@@ -247,6 +247,7 @@ export function ClinicSwipeCard({
       photos={[]}
       title={provider.name}
       pinnedHeader={{ logoUrl: logoSrc, title: provider.name, location: null, badge: successBadge }}
+      sponsored={!!(provider as any).sponsoredUntil && new Date((provider as any).sponsoredUntil).getTime() > Date.now()}
       firstSlidePlain
       tabs={tabs}
       disableSwipe={disableSwipe}

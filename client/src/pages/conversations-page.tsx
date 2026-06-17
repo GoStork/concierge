@@ -375,6 +375,7 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
           frozenLotStatus={swipeProfile.frozenLotStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
+          sponsored={swipeProfile.sponsored}
           tabs={tabs}
           disableSwipe
           chatMode

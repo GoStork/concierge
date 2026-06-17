@@ -19,6 +19,7 @@ import { Request, Response } from "express";
 import geoip from "geoip-lite";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { BillingService } from "./billing.service";
+import { SponsorshipService } from "../sponsorship/sponsorship.service";
 import * as stripeService from "../../../stripe-service";
 import { prisma } from "../../../db";
 
@@ -102,6 +103,7 @@ export class BillingController {
 
   constructor(
     @Inject(BillingService) private readonly billingService: BillingService,
+    @Inject(SponsorshipService) private readonly sponsorshipService: SponsorshipService,
   ) {}
 
   // ─── Admin: invoice list + stats ──────────────────────────────────────────
@@ -693,6 +695,26 @@ export class BillingController {
         } catch (e: any) {
           this.logger.error(`Refund handler raised for pi=${refund.paymentIntentId}: ${e?.message}`);
           // Still ack so Stripe doesn't retry forever on a logic bug.
+        }
+        // A refunded/disputed sponsorship charge deactivates its boost (no-op for
+        // invoice PIs, which have no matching sponsorship row).
+        try {
+          await this.sponsorshipService.deactivateByPaymentIntent(refund.paymentIntentId);
+        } catch (e: any) {
+          this.logger.error(`Sponsorship refund handler raised for pi=${refund.paymentIntentId}: ${e?.message}`);
+        }
+      }
+
+      // Sponsorship lifecycle (subscriptions, one-time charges, renewals). Routes
+      // away from the invoice flow via metadata.kind="sponsorship"; returns null
+      // for non-sponsorship events.
+      const sponsorshipEvent = stripeService.parseSponsorshipEvent(event);
+      if (sponsorshipEvent) {
+        this.logger.log(`Stripe sponsorship webhook: ${event.type} | sponsorship=${sponsorshipEvent.sponsorshipId || sponsorshipEvent.stripeSubscriptionId || sponsorshipEvent.paymentIntentId}`);
+        try {
+          await this.sponsorshipService.handleStripeWebhook(sponsorshipEvent);
+        } catch (e: any) {
+          this.logger.error(`Sponsorship webhook handler raised for ${event.type}: ${e?.message}`);
         }
       }
 

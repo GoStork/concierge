@@ -40,6 +40,8 @@ export const DOCTOR_MEMBER_SELECT = {
   recommendPct: true,
   avgOverallScore: true,
   isMedicalDirector: true,
+  sponsoredUntil: true,
+  sponsorBoostSeed: true,
   provider: {
     select: {
       id: true,
@@ -125,6 +127,8 @@ export interface EnrichedDoctor {
   successRateLabel: string | null;
   nationalAverage: string | null;
   top10pct: boolean;
+  sponsoredUntil: Date | string | null;
+  sponsorBoostSeed: number;
   clinics: EnrichedDoctorClinic[];
   clinicCount: number;
 }
@@ -219,6 +223,9 @@ export function enrichDoctorRows(rows: any[], ctx: DoctorEnrichmentContext): Enr
       successRateLabel: primary?.successRateLabel || null,
       nationalAverage: primary?.nationalAverage || null,
       top10pct: primary?.top10pct || false,
+      // Sponsorship boost (denormalized) - drives the marketplace "Sponsored" badge + ordering.
+      sponsoredUntil: m.sponsoredUntil ?? null,
+      sponsorBoostSeed: m.sponsorBoostSeed ?? 0,
       clinics,
       clinicCount: clinics.length,
     };

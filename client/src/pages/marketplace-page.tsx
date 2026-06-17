@@ -950,6 +950,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
         frozenLotStatus={profile.frozenLotStatus}
         isExperienced={profile.isExperienced}
         isPremium={profile.isPremium}
+        sponsored={profile.sponsored}
         tabs={tabs}
         disableSwipe={mode !== "active"}
         isSaved={favoritedIds.includes(donor.id)}

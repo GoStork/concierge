@@ -146,6 +146,9 @@ export default function ProfileDatabasePanel({
   const [configUsername, setConfigUsername] = useState("");
   const [configPassword, setConfigPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // First-time setup gate: require the admin to acknowledge the scraper playbook
+  // before the FIRST sync of a brand-new config (one that has never synced).
+  const [setupAck, setSetupAck] = useState(false);
   const persistedState = getPersistent(providerId, type);
   const [activeJobId, setActiveJobId] = useState<string | null>(persistedState.syncJobId);
   const [activePdfJobId, setActivePdfJobId] = useState<string | null>(persistedState.pdfJobId);
@@ -666,6 +669,40 @@ export default function ProfileDatabasePanel({
             </div>
           </div>
         </div>
+        {isAdmin && !configQuery.data?.lastSyncAt && (
+          <div className="rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.3)] bg-[hsl(var(--brand-warning)/0.08)] p-3 space-y-2" data-testid="scraper-setup-gate">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-[hsl(var(--brand-warning))]" />
+              <div className="space-y-1.5 text-xs">
+                <p className="font-heading text-foreground">First-time setup - review the scraper guide before the first run</p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
+                  <li><strong>Source URL</strong> = the donor/surrogate <strong>list page after login</strong> (for WordPress sites, NOT the <code>wp-login.php</code> page).</li>
+                  <li>Sites that present a <strong>reCAPTCHA</strong> need <code>TWOCAPTCHA_API_KEY</code> set in the server environment.</li>
+                  <li>Run <strong>"Sync 10 Profiles"</strong> first and watch the run history before kicking a full sync.</li>
+                </ul>
+                <a
+                  href="https://github.com/GoStork/concierge/blob/main/docs/scraper-playbook.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[hsl(var(--primary))] font-ui underline"
+                  data-testid="scraper-playbook-link"
+                >
+                  Open the full Scraper Playbook
+                </a>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-foreground font-ui cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={setupAck}
+                onChange={(e) => setSetupAck(e.target.checked)}
+                className="w-4 h-4 accent-[hsl(var(--primary))]"
+                data-testid="scraper-setup-ack"
+              />
+              I've reviewed the scraper setup guide
+            </label>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
             <>
@@ -687,7 +724,7 @@ export default function ProfileDatabasePanel({
                 size="sm"
                 onClick={() => startSyncMutation.mutate(undefined)}
                 disabled={
-                  !configUrl || startSyncMutation.isPending || isSyncRunning
+                  !configUrl || startSyncMutation.isPending || isSyncRunning || (!configQuery.data?.lastSyncAt && !setupAck)
                 }
                 data-testid={`btn-start-sync-${type}`}
               >
@@ -704,7 +741,7 @@ export default function ProfileDatabasePanel({
                   variant="outline"
                   onClick={() => startSyncMutation.mutate(10)}
                   disabled={
-                    !configUrl || startSyncMutation.isPending || isSyncRunning
+                    !configUrl || startSyncMutation.isPending || isSyncRunning || (!configQuery.data?.lastSyncAt && !setupAck)
                   }
                   data-testid={`btn-sync-10-${type}`}
                 >

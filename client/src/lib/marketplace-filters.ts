@@ -402,23 +402,37 @@ export function getDonorCost(d: any): number {
   return Number(d.totalCost || d.eggLotCost || d.compensation || d.totalCostMax || d.baseCompensation || 0);
 }
 
+// True while the provider is paying to boost this profile.
+function isSponsoredRow(d: any): boolean {
+  const until = d?.sponsoredUntil ?? d?.sponsored;
+  if (typeof until === "boolean") return until;
+  return !!until && new Date(until).getTime() > Date.now();
+}
+
 export function sortDonors(donors: any[], sortBy: string): any[] {
-  const sorted = [...donors];
-  switch (sortBy) {
-    case "age_asc": return sorted.sort((a, b) => (a.age || 0) - (b.age || 0));
-    case "age_desc": return sorted.sort((a, b) => (b.age || 0) - (a.age || 0));
-    case "height_asc": return sorted.sort((a, b) => parseHeightToInches(a.height) - parseHeightToInches(b.height));
-    case "height_desc": return sorted.sort((a, b) => parseHeightToInches(b.height) - parseHeightToInches(a.height));
-    case "weight_asc": return sorted.sort((a, b) => parseWeight(a.weight) - parseWeight(b.weight));
-    case "weight_desc": return sorted.sort((a, b) => parseWeight(b.weight) - parseWeight(a.weight));
-    case "cost_asc": return sorted.sort((a, b) => getDonorCost(a) - getDonorCost(b));
-    case "cost_desc": return sorted.sort((a, b) => getDonorCost(b) - getDonorCost(a));
-    case "oldest": return sorted.sort((a, b) =>
-      new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
-    );
-    case "newest":
-    default: return sorted.sort((a, b) =>
-      new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-    );
-  }
+  const comparatorFor = (key: string): ((a: any, b: any) => number) => {
+    switch (key) {
+      case "age_asc": return (a, b) => (a.age || 0) - (b.age || 0);
+      case "age_desc": return (a, b) => (b.age || 0) - (a.age || 0);
+      case "height_asc": return (a, b) => parseHeightToInches(a.height) - parseHeightToInches(b.height);
+      case "height_desc": return (a, b) => parseHeightToInches(b.height) - parseHeightToInches(a.height);
+      case "weight_asc": return (a, b) => parseWeight(a.weight) - parseWeight(b.weight);
+      case "weight_desc": return (a, b) => parseWeight(b.weight) - parseWeight(a.weight);
+      case "cost_asc": return (a, b) => getDonorCost(a) - getDonorCost(b);
+      case "cost_desc": return (a, b) => getDonorCost(b) - getDonorCost(a);
+      case "oldest": return (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      case "newest":
+      default: return (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    }
+  };
+  const cmp = comparatorFor(sortBy);
+  // Sponsored profiles stay pinned on top across ANY filter/sort the parent picks
+  // (search-filter pinning). The server already rotates order WITHIN the sponsored
+  // group; a stable sort preserves that incoming order among equal-priority rows.
+  return [...donors].sort((a, b) => {
+    const as = isSponsoredRow(a) ? 1 : 0;
+    const bs = isSponsoredRow(b) ? 1 : 0;
+    if (as !== bs) return bs - as;
+    return cmp(a, b);
+  });
 }

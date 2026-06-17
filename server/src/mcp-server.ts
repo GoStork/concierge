@@ -1039,9 +1039,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         agreesToInternationalParents: true,
         isExperienced: true, ethnicity: true, race: true, liveBirths: true,
         photoUrl: true, religion: true, bmi: true,
-        cSections: true, miscarriages: true, covidVaccinated: true, lastDeliveryYear: true,
+        cSections: true, miscarriages: true, covidVaccinated: true, lastDeliveryYear: true, sponsoredUntil: true,
       };
-      const surrogateSelectCols = `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "agreesToInternationalParents", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion, bmi, "cSections", miscarriages, "covidVaccinated", "lastDeliveryYear"`;
+      const surrogateSelectCols = `id, "providerId", "firstName", "externalId", age, location, "baseCompensation", "agreesToTwins", "agreesToAbortion", "agreesToSelectiveReduction", "openToSameSexCouple", "agreesToInternationalParents", "isExperienced", ethnicity, race, "liveBirths", "photoUrl", religion, bmi, "cSections", miscarriages, "covidVaccinated", "lastDeliveryYear", "sponsoredUntil"`;
 
       // Base WHERE: medical/legal hard limits only (age, BMI, c-sections, miscarriages, max compensation).
       // Preferences that can be relaxed for "close match" presentation are added as softFilters below.
@@ -1129,7 +1129,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
 
       const { candidates, relaxedFilter: surrogateRelaxedFilter } = await searchWithFallback(
-        (w) => prisma.surrogate.findMany({ where: w, orderBy: { createdAt: "desc" }, take: take * 8, select: surrogateSelect }),
+        (w) => prisma.surrogate.findMany({ where: w, orderBy: [{ sponsoredUntil: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }], take: take * 8, select: surrogateSelect }),
         baseWhere, softFilters,
         (cands, relaxedLabel) => {
           // Skip ethnicityPostFilter when ethnicity itself was the relaxed criterion
@@ -1237,13 +1237,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
 
-        const { photoUrl: _photoUrl, matchScore: _ms, unmatchedCriteria: _uc, ...sRest } = s;
+        const { photoUrl: _photoUrl, matchScore: _ms, unmatchedCriteria: _uc, sponsoredUntil, ...sRest } = s;
         return {
           ...sRest,
           displayName: s.firstName || (cleanExternalId(s.externalId) ? `Surrogate #${cleanExternalId(s.externalId)}` : `Surrogate #${s.id.slice(-4)}`),
           baseCompensation: s.baseCompensation ? Number(s.baseCompensation) : null,
           matchScore: s.matchScore ?? 1.0,
           unmatchedCriteria: s.unmatchedCriteria ?? [],
+          sponsored: !!sponsoredUntil && new Date(sponsoredUntil).getTime() > Date.now(),
           ...(Object.keys(profileHighlights).length > 0 ? { profileHighlights } : {}),
         };
       });
@@ -1383,9 +1384,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         eyeColor: true, hairColor: true, height: true, weight: true,
         ethnicity: true, race: true, education: true,
         donorCompensation: true, eggLotCost: true, totalCost: true,
-        isExperienced: true, photoUrl: true, numberOfEggs: true,
+        isExperienced: true, photoUrl: true, numberOfEggs: true, sponsoredUntil: true,
       };
-      const eggDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs"`;
+      const eggDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, "donorCompensation", "eggLotCost", "totalCost", "isExperienced", "photoUrl", "numberOfEggs", "sponsoredUntil"`;
 
       // Base WHERE: absolute requirements that are NEVER relaxed.
       // age and height are medical/physical absolutes; isExperienced and donationType are functional.
@@ -1429,7 +1430,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
 
       const { candidates, relaxedFilter } = await searchWithFallback(
-        (w) => prisma.eggDonor.findMany({ where: w, orderBy: { createdAt: "desc" }, take: 200, select: eggDonorSelect }),
+        (w) => prisma.eggDonor.findMany({ where: w, orderBy: [{ sponsoredUntil: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }], take: 200, select: eggDonorSelect }),
         baseWhere, softFilters, postFilter,
       );
 
@@ -1460,12 +1461,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const results = donors.map((d: any) => {
-        const { photoUrl: _p, ...dRest } = d;
+        const { photoUrl: _p, sponsoredUntil, ...dRest } = d;
         return {
           ...dRest,
           displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`),
           matchScore: d.matchScore ?? 1.0,
           unmatchedCriteria: d.unmatchedCriteria ?? [],
+          sponsored: !!sponsoredUntil && new Date(sponsoredUntil).getTime() > Date.now(),
         };
       });
 
@@ -1485,9 +1487,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
         eyeColor: true, hairColor: true, height: true, weight: true,
         ethnicity: true, race: true, education: true, donorType: true, vialTypes: true,
-        compensation: true, iciCost: true, iuiCost: true, ivfCost: true, totalCost: true, isExperienced: true, photoUrl: true,
+        compensation: true, iciCost: true, iuiCost: true, ivfCost: true, totalCost: true, isExperienced: true, photoUrl: true, sponsoredUntil: true,
       };
-      const spermDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "iciCost", "iuiCost", "ivfCost", "totalCost", "isExperienced", "photoUrl"`;
+      const spermDonorSelectCols = `id, "providerId", "firstName", "externalId", age, location, "eyeColor", "hairColor", height, weight, ethnicity, race, education, compensation, "iciCost", "iuiCost", "ivfCost", "totalCost", "isExperienced", "photoUrl", "sponsoredUntil"`;
 
       // Base WHERE: absolute requirements never relaxed.
       // Sperm donors only have AVAILABLE | SOLD_OUT | INACTIVE. AI concierge
@@ -1516,7 +1518,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
 
       const { candidates, relaxedFilter } = await searchWithFallback(
-        (w) => prisma.spermDonor.findMany({ where: w, orderBy: { createdAt: "desc" }, take: 200, select: spermDonorSelect }),
+        (w) => prisma.spermDonor.findMany({ where: w, orderBy: [{ sponsoredUntil: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }], take: 200, select: spermDonorSelect }),
         baseWhere, softFilters, postFilter,
       );
 
@@ -1546,12 +1548,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const results = donors.map((d: any) => {
-        const { photoUrl: _p, ...dRest } = d;
+        const { photoUrl: _p, sponsoredUntil, ...dRest } = d;
         return {
           ...dRest,
           displayName: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : `Donor #${d.id.slice(-4)}`),
           matchScore: d.matchScore ?? 1.0,
           unmatchedCriteria: d.unmatchedCriteria ?? [],
+          sponsored: !!sponsoredUntil && new Date(sponsoredUntil).getTime() > Date.now(),
         };
       });
 

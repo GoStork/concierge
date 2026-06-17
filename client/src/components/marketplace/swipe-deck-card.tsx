@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ArrowUp, Undo2, X, Heart, Send,
-  Check, Flower2, Crown, Award, TrendingUp, MapPin,
+  Check, Flower2, Crown, Award, TrendingUp, MapPin, Sparkles,
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
@@ -36,6 +36,8 @@ interface SwipeDeckCardProps {
   frozenLotStatus?: "AVAILABLE" | "SOLD_OUT" | null;
   isExperienced?: boolean;
   isPremium?: boolean;
+  // True while the provider is paying to sponsor (boost) this profile.
+  sponsored?: boolean;
   // Always-visible pill in the badge row (e.g. "Top 10%") - used by clinic and
   // doctor cards so a key signal is never hidden behind a tab.
   successBadge?: string | null;
@@ -93,6 +95,7 @@ export function SwipeDeckCard({
   frozenLotStatus,
   isExperienced = false,
   isPremium = false,
+  sponsored = false,
   successBadge = null,
   titleLogoUrl = null,
   pinnedHeader = null,
@@ -558,6 +561,12 @@ export function SwipeDeckCard({
                     <span className="truncate">{formatLocationDisplay(pinnedHeader.location) || pinnedHeader.location}</span>
                   </p>
                 )}
+                {sponsored && (
+                  <Badge className="bg-accent/90 text-accent-foreground font-ui px-2.5 py-1 gap-1 shrink-0" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-sponsored-${id}`}>
+                    <Sparkles className="w-3 h-3" />
+                    Sponsored
+                  </Badge>
+                )}
                 {pinnedHeader.badge && (
                   <Badge className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2.5 py-1 gap-1 shrink-0" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-success-${id}`}>
                     <TrendingUp className="w-3 h-3" />
@@ -636,6 +645,16 @@ export function SwipeDeckCard({
           <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-24 ${readOnly ? "pb-6" : "pb-24"} px-4 z-[35] pointer-events-none transition-opacity duration-200 ${isExpanding ? "opacity-0" : "opacity-100"}`}>
             {!pinnedHeader && (
             <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+              {sponsored && (
+                <Badge
+                  className="bg-accent/90 text-accent-foreground font-ui px-2.5 py-1 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  data-testid={`badge-sponsored-${id}`}
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Sponsored
+                </Badge>
+              )}
               {successBadge && (
                 <Badge
                   className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2.5 py-1 gap-1"

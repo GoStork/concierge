@@ -85,6 +85,7 @@ export function DoctorSwipeCard({
       photoLabels={photoLabels}
       title={doctor.name}
       pinnedHeader={{ logoUrl: logoSrc, title: doctor.name, location: headerLocation, badge: successBadge }}
+      sponsored={!!(doctor as any).sponsoredUntil && new Date((doctor as any).sponsoredUntil).getTime() > Date.now()}
       monogramName={doctor.name}
       firstSlidePlain={firstSlidePlain}
       tabs={tabs}
