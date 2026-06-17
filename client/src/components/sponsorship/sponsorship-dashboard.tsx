@@ -337,7 +337,9 @@ const STATUS_STYLES: Record<string, string> = {
 function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [payment, setPayment] = useState<string | null>(null);
   const isBundle = s.productType === "SLOT_BUNDLE";
+  const isPending = s.status === "PENDING_PAYMENT";
 
   const cancel = async () => {
     setBusy(true);
@@ -345,6 +347,15 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
       const body = isAdmin ? { providerId, immediate: false } : { immediate: false };
       await apiRequest("POST", `${base}/${s.id}/cancel`, body);
       onChanged();
+    } finally { setBusy(false); }
+  };
+
+  // Provider-only: complete payment on a pending (e.g. admin-requested) sponsorship.
+  const completePayment = async () => {
+    setBusy(true);
+    try {
+      const { clientSecret } = await (await apiRequest("POST", `/api/sponsorship/${s.id}/pay`)).json();
+      if (clientSecret) setPayment(clientSecret);
     } finally { setBusy(false); }
   };
 
@@ -360,6 +371,11 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
           {s.canceledAt && <span className="text-xs text-muted-foreground">(auto-renew off)</span>}
         </div>
         <div className="flex gap-2">
+          {isPending && !isAdmin && !payment && (
+            <Button size="sm" onClick={completePayment} disabled={busy} data-testid={`button-complete-payment-${s.id}`}>
+              <CreditCard className="w-3.5 h-3.5 mr-1" /> Complete payment
+            </Button>
+          )}
           {isBundle && (
             <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} data-testid={`button-manage-slots-${s.id}`}>
               Manage slots {expanded ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
@@ -370,6 +386,11 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
           )}
         </div>
       </div>
+      {payment && (
+        <div className="mt-3">
+          <SponsorshipCheckout clientSecret={payment} onDone={() => { setPayment(null); onChanged(); }} onCancel={() => setPayment(null)} />
+        </div>
+      )}
       {expanded && isBundle && (
         <SlotManager s={s} isAdmin={isAdmin} providerId={providerId} base={base} onChanged={onChanged} />
       )}

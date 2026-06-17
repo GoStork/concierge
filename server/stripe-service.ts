@@ -851,6 +851,22 @@ export async function createSponsorshipOneTimeIntent(params: {
 }
 
 /**
+ * Retrieves the client secret of a pending sponsorship Subscription's latest
+ * invoice PaymentIntent, so the provider can complete a payment the admin
+ * initiated ("send payment request"). Returns null if there's nothing to pay
+ * (already active) or the incomplete subscription's window has lapsed.
+ */
+export async function getSponsorshipSubscriptionClientSecret(subscriptionId: string): Promise<string | null> {
+  if (!isStripeConfigured() || subscriptionId.startsWith("mock_")) {
+    return `mock_secret_${Date.now()}`;
+  }
+  const stripe = getStripe();
+  const sub = await stripe.subscriptions.retrieve(subscriptionId, { expand: ["latest_invoice.payment_intent"] });
+  const pi = (sub.latest_invoice as any)?.payment_intent as Stripe.PaymentIntent | null;
+  return pi?.client_secret || null;
+}
+
+/**
  * Cancels a sponsorship Subscription. cancelAtPeriodEnd=true lets the provider
  * keep the boost through the month they already paid for; false ends it now.
  */

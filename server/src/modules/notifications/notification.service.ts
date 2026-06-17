@@ -30,7 +30,11 @@ export type NotificationChannel =
   | "consultation_ended"
   | "billing_admin"
   | "w9_request"
-  | "w9_completed";
+  | "w9_completed"
+  | "sponsorship_payment_request"
+  | "sponsorship_activated"
+  | "sponsorship_past_due"
+  | "sponsorship_ended";
 
 
 const TWILIO_TEMPLATES = {
@@ -502,6 +506,102 @@ export class NotificationService implements OnModuleInit {
         contentSid: TWILIO_TEMPLATES.BOOKING_REQUEST_PROVIDER,
         contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": dateStr, "4": timeStr, "5": manageLink },
       });
+    }
+  }
+
+  /**
+   * Sponsorship lifecycle notification to a provider's billing contacts (email +
+   * in-app). Fired by the SponsorshipService on the meaningful transitions:
+   * a payment request from an admin, activation, a failed renewal (past due),
+   * and the end of a sponsorship. Branded email via buildBrandedEmail per the
+   * no-SendGrid-templates rule.
+   */
+  async sendSponsorshipNotification(params: {
+    providerId: string;
+    kind: "payment_requested" | "activated" | "payment_failed" | "expired" | "canceled";
+    planName: string;
+    currentPeriodEnd?: Date | null;
+  }) {
+    const users = await this.prisma.user.findMany({
+      where: { providerId: params.providerId, roles: { hasSome: ["PROVIDER_ADMIN", "BILLING_MANAGER"] } },
+      select: { id: true, email: true, name: true },
+    });
+    if (!users.length) return;
+
+    const base = getBaseUrl();
+    const manageUrl = `${base}/account/sponsorship`;
+    const brandData = await this.getBrandData();
+    const endStr = params.currentPeriodEnd ? formatDate(new Date(params.currentPeriodEnd), undefined) : null;
+
+    const channelMap: Record<typeof params.kind, NotificationChannel> = {
+      payment_requested: "sponsorship_payment_request",
+      activated: "sponsorship_activated",
+      payment_failed: "sponsorship_past_due",
+      expired: "sponsorship_ended",
+      canceled: "sponsorship_ended",
+    };
+    const eventTypeMap: Record<typeof params.kind, string> = {
+      payment_requested: "SPONSORSHIP_PAYMENT_REQUEST",
+      activated: "SPONSORSHIP_ACTIVE",
+      payment_failed: "SPONSORSHIP_PAST_DUE",
+      expired: "SPONSORSHIP_EXPIRED",
+      canceled: "SPONSORSHIP_CANCELED",
+    };
+
+    const content: Record<typeof params.kind, { title: string; subject: string; body: string; alert?: { text: string; type: "warning" | "success" | "info" | "error" }; button: string }> = {
+      payment_requested: {
+        title: "Complete your sponsorship payment",
+        subject: `Payment requested: ${params.planName} sponsorship`,
+        body: `GoStork has set up a <strong>${esc(params.planName)}</strong> sponsorship for your profiles. Complete payment to activate the boost and your "Sponsored" badge in the marketplace.`,
+        alert: { text: "Your profiles are not boosted until payment is completed.", type: "info" },
+        button: "Complete Payment",
+      },
+      activated: {
+        title: "Your sponsorship is active",
+        subject: `Your ${params.planName} sponsorship is now active`,
+        body: `Your <strong>${esc(params.planName)}</strong> sponsorship is live. Your selected profiles now appear at the top of the marketplace with a "Sponsored" badge and are prioritized by the AI concierge.`,
+        alert: { text: endStr ? `Current period runs through ${endStr}.` : "Boost is active.", type: "success" },
+        button: "Manage Sponsorship",
+      },
+      payment_failed: {
+        title: "Sponsorship payment failed",
+        subject: `Action needed: your ${params.planName} sponsorship payment failed`,
+        body: `We couldn't process the latest payment for your <strong>${esc(params.planName)}</strong> sponsorship. Please update your payment method to keep your boost active.`,
+        alert: { text: "Your boost may pause if payment isn't resolved.", type: "warning" },
+        button: "Update Payment",
+      },
+      expired: {
+        title: "Your sponsorship has ended",
+        subject: `Your ${params.planName} sponsorship has ended`,
+        body: `Your <strong>${esc(params.planName)}</strong> sponsorship has ended and your profiles are no longer boosted. You can renew anytime.`,
+        button: "Renew Sponsorship",
+      },
+      canceled: {
+        title: "Your sponsorship was canceled",
+        subject: `Your ${params.planName} sponsorship was canceled`,
+        body: `Your <strong>${esc(params.planName)}</strong> sponsorship has been canceled and your profiles are no longer boosted. You can start a new sponsorship anytime.`,
+        button: "Start Sponsorship",
+      },
+    };
+
+    const c = content[params.kind];
+    for (const u of users) {
+      if (u.email) {
+        const html = buildBrandedEmail(brandData, {
+          title: c.title,
+          greeting: `Hi ${esc(getFirstName(u.name))},`,
+          body: c.body,
+          ...(c.alert ? { alertBox: c.alert } : {}),
+          buttons: [{ label: c.button, url: manageUrl }],
+        });
+        await this.dispatchNotification({
+          userId: u.id, type: "EMAIL", channel: channelMap[params.kind], recipient: u.email,
+          subject: c.subject, body: html,
+        }).catch((e) => console.error(`[sponsorship-notify] email failed for ${u.id}: ${e.message}`));
+      }
+      await this.prisma.inAppNotification.create({
+        data: { userId: u.id, eventType: eventTypeMap[params.kind], payload: { planName: params.planName, providerId: params.providerId } },
+      }).catch(() => {});
     }
   }
 

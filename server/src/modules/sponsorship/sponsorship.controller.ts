@@ -107,6 +107,12 @@ export class SponsorshipController {
     return this.sponsorship.removeItem({ sponsorshipId: id, providerId, itemId });
   }
 
+  @Post("api/sponsorship/:id/pay")
+  async resumePayment(@Req() req: Request, @Param("id") id: string) {
+    const providerId = this.requireProvider(req);
+    return this.sponsorship.resumePayment({ sponsorshipId: id, providerId });
+  }
+
   @Post("api/sponsorship/:id/cancel")
   async cancel(@Req() req: Request, @Param("id") id: string, @Body() body: { immediate?: boolean }) {
     const providerId = this.requireProvider(req);
