@@ -265,6 +265,10 @@ function isTransientFetchError(err: any): boolean {
   }
   // Upstream gateway errors are worth one more try; other HTTP statuses are not.
   if (/^http (502|503|504)\b/i.test(String(err?.message || ""))) return true;
+  // Rate-limit (429) and request-timeout (408) are inherently retryable after a
+  // pause - a burst of photo downloads can briefly trip a source's rate limiter,
+  // and that must not abort the whole paginated crawl.
+  if (/^http (408|429)\b/i.test(String(err?.message || ""))) return true;
   return false;
 }
 
@@ -282,6 +286,11 @@ async function fetchHtmlOnce(url: string, cookies?: string, timeoutMs = 20000, m
       redirect: "follow",
     });
     if (!response.ok) {
+      // Preserve Retry-After (seconds) so fetchHtml can back off precisely on 429/503.
+      if (response.status === 429 || response.status === 503) {
+        const ra = response.headers.get("retry-after") || "";
+        throw new Error(`HTTP ${response.status}: ${response.statusText}${ra ? ` (retry-after=${ra})` : ""}`);
+      }
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     const html = await response.text();
@@ -312,7 +321,12 @@ async function fetchHtml(url: string, cookies?: string, timeoutMs = 20000, maxCh
       if (attempt >= MAX_ATTEMPTS || !isTransientFetchError(err)) {
         throw err;
       }
-      const backoffMs = 500 * attempt; // 500ms, then 1000ms
+      const msg = String(err?.message || "");
+      const is429 = /\b429\b/.test(msg);
+      // Rate limits need real breathing room; network blips only a brief pause.
+      let backoffMs = is429 ? 5000 * attempt : 500 * attempt; // 429: 5s/10s; net: 500ms/1s
+      const raMatch = msg.match(/retry-after=(\d+)/i);
+      if (raMatch) backoffMs = Math.max(backoffMs, parseInt(raMatch[1], 10) * 1000);
       console.warn(`[donor-sync] Transient fetch error for ${url} (attempt ${attempt}/${MAX_ATTEMPTS}): ${err.message}. Retrying in ${backoffMs}ms`);
       await new Promise((r) => setTimeout(r, backoffMs));
     }
@@ -370,7 +384,7 @@ async function authenticateAndGetCookies(
   // restart killed it. Without timeout, "site slow / silently dropping our
   // packets" is indistinguishable from "sync in progress."
   const AUTH_FETCH_TIMEOUT_MS = 30_000;
-  const timeoutFetch = async (url: string, init: RequestInit) => {
+  const timeoutFetchOnce = async (url: string, init: RequestInit) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), AUTH_FETCH_TIMEOUT_MS);
     try {
@@ -378,6 +392,25 @@ async function authenticateAndGetCookies(
     } finally {
       clearTimeout(timer);
     }
+  };
+  // A transient "fetch failed" / timeout on the CORRECT login URL used to cascade
+  // straight to the wrong fallback paths (/Account/Login -> 405 on non-EDC sites
+  // like genesis o-jms / app.spermbankcalifornia), failing the whole login. Retry
+  // transient blips here the same way fetchHtml does, so a momentary network hiccup
+  // no longer reads as "login failed".
+  const timeoutFetch = async (url: string, init: RequestInit) => {
+    const MAX_ATTEMPTS = 3;
+    let lastErr: any;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        return await timeoutFetchOnce(url, init);
+      } catch (err: any) {
+        lastErr = err;
+        if (attempt >= MAX_ATTEMPTS || !isTransientFetchError(err)) throw err;
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+    }
+    throw lastErr;
   };
   try {
     console.log(`[donor-sync] Attempting login at ${loginPageUrl}`);
@@ -1047,6 +1080,44 @@ function extractWpDonorCardProfileUrls(html: string, baseUrl: string): Map<strin
     if (externalId && href) map.set(externalId, href);
   }
   return map;
+}
+
+/**
+ * Extract every photo URL from a Fotorama gallery on a donor-view page (e.g.
+ * Eggspecting). The raw (pre-JS) markup is a flat list of <img src> tags inside
+ * <div class="fotorama" ...>:
+ *   <div class="fotorama" data-nav="thumbs" ...>
+ *     <img ... src="https://.../wp-content/uploads/2026/05/1.jpeg"/>
+ *     <img ... src="https://.../wp-content/uploads/2026/05/2.jpeg"/>
+ *     ...
+ *   </div>
+ * Listing cards expose only one photo, so the full gallery must be read here.
+ * WordPress-generated small thumbnails (e.g. -150x150) are skipped in favour of
+ * the full-size originals. Returns absolute, de-duplicated, valid image URLs.
+ */
+function extractFotoramaPhotos(html: string, baseUrl: string): string[] {
+  const out: string[] = [];
+  if (!html) return out;
+  const start = html.match(/<div[^>]*class="[^"]*\bfotorama\b[^"]*"[^>]*>/i);
+  if (!start || start.index === undefined) return out;
+  const after = html.slice(start.index + start[0].length);
+  // The raw fotorama container holds only <img> tags, so the first </div> closes it.
+  const endIdx = after.search(/<\/div>/i);
+  const container = endIdx === -1 ? after : after.slice(0, endIdx);
+  const seen = new Set<string>();
+  const imgRe = /<img[^>]+src="([^"]+)"/gi;
+  let m: RegExpExecArray | null;
+  while ((m = imgRe.exec(container)) !== null) {
+    let src = m[1].trim();
+    if (!src) continue;
+    // Skip WordPress small thumbnails (-150x150, -300x200, ...); keep originals/-scaled.
+    if (/-\d{1,3}x\d{1,3}\.(?:jpe?g|png|webp|gif)(?:$|\?)/i.test(src)) continue;
+    try { src = new URL(src, baseUrl).href; } catch {}
+    if (!isValidImageUrl(src) || seen.has(src)) continue;
+    seen.add(src);
+    out.push(src);
+  }
+  return out;
 }
 
 async function extractDonorsFromPage(
@@ -5242,18 +5313,20 @@ async function runSyncJob(
     const existingLastFullSyncAt = new Map<string, Date>();
     const existingVialTypes = new Map<string, string[]>();
     const existingHasSections = new Set<string>(); // tracks which donors already have rich section data
+    const existingPhotoCount = new Map<string, number>(); // egg-donor: existing photo count, to force gallery backfill when <=1
     const externalIds = uniqueItems.map((d: any) => d.externalId).filter(Boolean);
     if (externalIds.length > 0) {
       const dbTable = job.type === "surrogate"
         ? prisma.surrogate.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } })
         : job.type === "sperm-donor"
         ? prisma.spermDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, vialTypes: true, profileData: true } })
-        : prisma.eggDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } });
+        : prisma.eggDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, photos: true } });
       const existing = await dbTable;
       for (const d of existing) {
         if (d.externalId && d.cardHash) existingHashes.set(d.externalId, d.cardHash);
         if (d.externalId && (d as any).lastFullSyncAt) existingLastFullSyncAt.set(d.externalId, (d as any).lastFullSyncAt);
         if (d.externalId && (d as any).vialTypes) existingVialTypes.set(d.externalId, (d as any).vialTypes);
+        if (d.externalId && Array.isArray((d as any).photos)) existingPhotoCount.set(d.externalId, (d as any).photos.length);
         // Mark donors whose profileData already has rich section data (from a previous full profile fetch)
         const pd = (d as any).profileData;
         if (d.externalId && pd && typeof pd === "object" && pd._sections && Object.keys(pd._sections).length > 0) {
@@ -5285,7 +5358,15 @@ async function runSyncJob(
         const needsVialTypes = job.type === "sperm-donor" && (!item.vialTypes || item.vialTypes.length === 0);
         // Force full profile fetch if this donor has never had rich section data extracted
         const needsSections = job.type === "sperm-donor" && !existingHasSections.has(item.externalId || "");
-        if (oldHash && oldHash === item.cardHash && !pricingStale && !needsVialTypes && !needsSections) {
+        // Egg-donor gallery backfill: WP card-list sites (e.g. Eggspecting) carry
+        // only one photo on the listing card; the full gallery lives on the
+        // donor-view page. Force a profile fetch when a donor has a profile URL
+        // but <=1 stored photo. No-ops on non-gallery pages (extractor returns []).
+        const needsEggGallery =
+          job.type === "egg-donor" &&
+          !!item.profileUrl &&
+          (existingPhotoCount.get(item.externalId || "") ?? 0) <= 1;
+        if (oldHash && oldHash === item.cardHash && !pricingStale && !needsVialTypes && !needsSections && !needsEggGallery) {
           // Even on hash-skip, save vialTypes from listing page if DB doesn't have them yet
           if (job.type === "sperm-donor" && item.vialTypes?.length > 0) {
             const dbVt = item.externalId ? existingVialTypes.get(item.externalId) : null;
@@ -5302,10 +5383,28 @@ async function runSyncJob(
           return;
         }
         const hasSections = item.profileData?._sections || item._sections;
-        if ((!hasSections || needsVialTypes) && item.profileUrl) {
+        if (((!hasSections || needsVialTypes) || needsEggGallery) && item.profileUrl) {
           try {
             const profileHtml = await fetchHtml(item.profileUrl, sessionCookies);
             if (profileHtml && !profileHtml.includes('type="password"')) {
+              // Pull the full photo gallery (Fotorama) from the donor-view page.
+              // Listing cards expose only one photo; the gallery lives here. Feed
+              // it through profileData["All Photos"], which extractPhotosArray and
+              // persistPhotoUrls already migrate to GCS and write to the photos[] column.
+              if (job.type === "egg-donor") {
+                const gallery = extractFotoramaPhotos(profileHtml, item.profileUrl);
+                if (gallery.length > 1) {
+                  const merged: string[] = [];
+                  for (const u of [item.photoUrl, ...gallery]) {
+                    if (typeof u === "string" && u && !merged.includes(u)) merged.push(u);
+                  }
+                  if (!item.profileData) item.profileData = {};
+                  item.profileData["All Photos"] = merged;
+                  if (!item.photoUrl) item.photoUrl = gallery[0];
+                  item.photoCount = merged.length;
+                  console.log(`[donor-sync] Gallery: ${merged.length} photos for ${item.externalId} from ${item.profileUrl}`);
+                }
+              }
               // Direct extraction of vialTypes from SBC profile HTML.
               // SBC renders: <p class="IUI">Available for: <strong>IUI</strong></p>
               // so we match <p class="..."> with class values ICI/IUI/IVF (primary method).
@@ -5369,38 +5468,52 @@ async function runSyncJob(
                   }
                   return unique.length > 0 ? unique.join(", ") : null;
                 };
+                // Section fields are sometimes nested objects (e.g. an "Education"
+                // group of sub-fields). The donor table columns are scalars, so
+                // coerce to a clean string and ignore objects/arrays - assigning an
+                // object straight to a String column throws on the Prisma upsert.
+                const scalar = (v: any): string | null => {
+                  if (v === null || v === undefined) return null;
+                  if (typeof v === "string") return v.trim() || null;
+                  if (typeof v === "number" || typeof v === "boolean") return String(v);
+                  return null;
+                };
+                const pickScalar = (...cands: any[]): string | null => {
+                  for (const c of cands) { const s = scalar(c); if (s) return s; }
+                  return null;
+                };
 
                 const ageVal = gc["Age When Donated"] || flatAll["Age When Donated"] || flatAll["Age"];
                 if (ageVal) { const p = parseInt(String(ageVal)); if (!isNaN(p)) item.age = p; }
                 // Always use section data for physical fields (listing-page regex often corrupts them)
-                item.height = gc["Height"] || flatAll["Height"] || item.height || null;
-                item.weight = gc["Weight"] || flatAll["Weight"] || item.weight || null;
-                item.eyeColor = gc["Eye Color"] || flatAll["Eye Color"] || item.eyeColor || null;
-                item.hairColor = gc["Hair Color"] || flatAll["Hair Color"] || item.hairColor || null;
-                item.race = eth["Race"] || flatAll["Race"] || item.race || null;
+                item.height = pickScalar(gc["Height"], flatAll["Height"]) || item.height || null;
+                item.weight = pickScalar(gc["Weight"], flatAll["Weight"]) || item.weight || null;
+                item.eyeColor = pickScalar(gc["Eye Color"], flatAll["Eye Color"]) || item.eyeColor || null;
+                item.hairColor = pickScalar(gc["Hair Color"], flatAll["Hair Color"]) || item.hairColor || null;
+                item.race = pickScalar(eth["Race"], flatAll["Race"]) || item.race || null;
                 // Ethnicity: deduplicate across all origin fields (mother, father, grandparents)
                 const ethnicOrigins = [
                   eth["Mother's Ethnic Origin"], eth["Father's Ethnic Origin"],
                   eth["Maternal Grandmother's Ethnic Origin"], eth["Maternal Grandfather's Ethnic Origin"],
                   eth["Paternal Grandmother's Ethnic Origin"], eth["Paternal Grandfather's Ethnic Origin"],
-                ].filter(Boolean) as string[];
+                ].filter((o): o is string => typeof o === "string" && o.trim().length > 0);
                 // Also split comma-separated values within each origin field before deduping
                 const allOriginParts = ethnicOrigins.flatMap(o => o.split(/[,;]+/).map(s => s.trim())).filter(Boolean);
                 if (allOriginParts.length > 0) {
                   item.ethnicity = dedupeOrigins(allOriginParts);
-                } else if (flatAll["Ethnicity"]) {
+                } else if (typeof flatAll["Ethnicity"] === "string") {
                   item.ethnicity = dedupeOrigins(flatAll["Ethnicity"].split(/[,;]+/)) || item.ethnicity || null;
                 }
-                item.education = ed["Major/Area of Study"] || ed["Education"] || ed["Education Level"]
-                  || flatAll["Major/Area of Study"] || flatAll["Education"] || item.education || null;
-                item.occupation = ed["What is your current or most recent occupation?"]
-                  || ed["Occupation"] || ed["Current Occupation"] || ed["What is your occupation?"]
-                  || flatAll["Occupation"] || flatAll["What is your current or most recent occupation?"] || item.occupation || null;
-                item.religion = relBg["Religion Practiced"] || relBg["Religion Born Into"]
-                  || relBg["Religion"] || flatAll["Religion Practiced"] || flatAll["Religion"] || item.religion || null;
+                item.education = pickScalar(ed["Major/Area of Study"], ed["Education"], ed["Education Level"],
+                  flatAll["Major/Area of Study"], flatAll["Education"]) || item.education || null;
+                item.occupation = pickScalar(ed["What is your current or most recent occupation?"],
+                  ed["Occupation"], ed["Current Occupation"], ed["What is your occupation?"],
+                  flatAll["Occupation"], flatAll["What is your current or most recent occupation?"]) || item.occupation || null;
+                item.religion = pickScalar(relBg["Religion Practiced"], relBg["Religion Born Into"],
+                  relBg["Religion"], flatAll["Religion Practiced"], flatAll["Religion"]) || item.religion || null;
                 // Location: use Place of Birth or Location from sections
                 if (!item.location) {
-                  item.location = gc["Place of Birth"] || gc["Location"] || flatAll["Place of Birth"] || flatAll["Location"] || null;
+                  item.location = pickScalar(gc["Place of Birth"], gc["Location"], flatAll["Place of Birth"], flatAll["Location"]);
                 }
                 // Extract vialTypes from sections response
                 if ((!item.vialTypes || item.vialTypes.length === 0) && Array.isArray(sections.vialTypes) && sections.vialTypes.length > 0) {
