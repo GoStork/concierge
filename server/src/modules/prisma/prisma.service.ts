@@ -243,6 +243,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.sponsorshipItem;
   }
 
+  get parentProfileView() {
+    return prisma.parentProfileView;
+  }
+
   get $transaction() {
     return prisma.$transaction.bind(prisma);
   }
