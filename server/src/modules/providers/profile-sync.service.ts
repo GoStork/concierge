@@ -5837,18 +5837,62 @@ export interface NightlySyncResult {
   providerName: string;
   type: DonorType;
   jobId: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "partial" | "failed";
   succeeded: number;
   failed: number;
   total: number;
   errors: string[];
   startedAt: Date;
   completedAt?: Date;
+  retries?: number;
 }
 
 const nightlySyncResults: NightlySyncResult[] = [];
 let lastNightlySyncAt: Date | null = null;
 let nightlySyncRunning = false;
+
+// ─── Nightly orchestration knobs ────────────────────────────────────────────
+// Logins run a few at a time (not all-at-once) so a single egress blip can't
+// fail every provider simultaneously, and we don't burst rate-limited sites.
+const NIGHTLY_CONCURRENCY = 3;
+// A transient failure (network blip, timeout, benign restart) is retried a
+// couple of times within the same run, so it self-heals before morning instead
+// of greeting you as a red "Failed".
+const NIGHTLY_MAX_RETRIES = 2;
+const NIGHTLY_RETRY_BACKOFF_MS = 5 * 60 * 1000; // 5 min between retry waves
+
+/**
+ * Classify a sync failure: `actionable` = a human must do something (bad creds,
+ * captcha, account lockout) and retrying now won't help (or worsens a lockout);
+ * `transient` = a network/host blip or benign interruption that a retry usually
+ * clears. Used both for the in-run auto-retry and the morning digest triage.
+ * Mirrors `isTransientFetchError` but works on the persisted error strings.
+ */
+export function isActionableSyncError(errors: string[] | undefined): boolean {
+  if (!errors || errors.length === 0) return false;
+  const blob = errors.join(" | ").toLowerCase();
+  // Needs a human - do NOT auto-retry.
+  if (/recaptcha|hcaptcha|captcha|cloudflare|verify you are human/.test(blob)) return true;
+  if (/invalid|incorrect|wrong password|bad credential|unauthorized|not authorized|forbidden/.test(blob)) return true;
+  if (/locked|lockout|too many|suspended|blocked|rate.?limit/.test(blob)) return true;
+  // Everything else (fetch failed, timeout, EAUTHTIMEOUT, ECONN*, 5xx, 405
+  // cascade, "Interrupted - server restarted", empty extract) is transient and
+  // safe to retry - checkpoint resume makes a retry cheap.
+  return false;
+}
+
+/** Run async work over items with a bounded concurrency limit (no extra deps). */
+async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  const queue = [...items];
+  const worker = async (): Promise<void> => {
+    while (queue.length) {
+      const item = queue.shift();
+      if (item === undefined) return;
+      await fn(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+}
 
 export function getNightlySyncStatus() {
   return {
@@ -5881,6 +5925,10 @@ export async function runNightlySync(
       where: {
         source: "nightly",
         status: { in: ["completed", "partial"] },
+        // Only a run that actually did work counts as "today's nightly happened".
+        // A 0-found empty run must NOT anchor the dedup, or one broken provider
+        // silently blocks the whole next nightly for 20h.
+        total: { gt: 0 },
         startedAt: { gt: new Date(Date.now() - 20 * 60 * 60 * 1000) },
       },
       orderBy: { startedAt: "desc" },
@@ -5921,9 +5969,11 @@ export async function runNightlySync(
       allConfigs.push({ providerId: c.providerId, type: "sperm-donor", providerName: c.provider.name });
     }
 
-    console.log(`[nightly-sync] Found ${allConfigs.length} sync configurations - running in parallel`);
+    console.log(`[nightly-sync] Found ${allConfigs.length} sync configurations - running ${NIGHTLY_CONCURRENCY} at a time`);
 
-    const syncPromises = allConfigs.map(async (config) => {
+    // One persistent result object per config; retries update it in place so the
+    // status endpoint and the digest always reflect the latest attempt.
+    const tracked = allConfigs.map((config) => {
       const result: NightlySyncResult = {
         providerId: config.providerId,
         providerName: config.providerName,
@@ -5935,9 +5985,17 @@ export async function runNightlySync(
         total: 0,
         errors: [],
         startedAt: new Date(),
+        retries: 0,
       };
       nightlySyncResults.push(result);
+      return { config, result };
+    });
 
+    // Run a single provider to terminal state, writing into its result object.
+    const runOne = async ({ config, result }: (typeof tracked)[number]) => {
+      result.status = "running";
+      result.errors = [];
+      result.completedAt = undefined;
       try {
         console.log(`[nightly-sync] Syncing ${config.providerName} (${config.type})...`);
         const jobId = await startSync(prisma, config.providerId, config.type, undefined, storageService, "nightly");
@@ -5948,12 +6006,13 @@ export async function runNightlySync(
             const job = getSyncJob(jobId);
             if (!job || job.status !== "running") {
               clearInterval(interval);
+              clearTimeout(timer);
               if (job) {
-                result.status = job.status;
+                result.status = job.status as NightlySyncResult["status"];
                 result.succeeded = job.succeeded;
                 result.failed = job.failed;
                 result.total = job.total;
-                result.errors = job.errors;
+                result.errors = job.errors || [];
                 result.completedAt = job.completedAt;
               } else {
                 result.status = "failed";
@@ -5964,7 +6023,7 @@ export async function runNightlySync(
             }
           }, 5000);
 
-          setTimeout(() => {
+          const timer = setTimeout(() => {
             clearInterval(interval);
             const job = getSyncJob(jobId);
             if (job && job.status === "running") {
@@ -5983,12 +6042,37 @@ export async function runNightlySync(
         result.completedAt = new Date();
         console.error(`[nightly-sync] Error syncing ${config.providerName}:`, err.message);
       }
-    });
+    };
 
-    await Promise.allSettled(syncPromises);
+    // A failed/empty run is worth retrying only if its error is transient (not a
+    // captcha / bad creds / lockout that a human must fix).
+    const needsRetry = ({ result }: (typeof tracked)[number]) =>
+      (result.status === "failed" || (result.status === "partial" && result.succeeded === 0)) &&
+      !isActionableSyncError(result.errors);
+
+    // Pass 1: everyone, bounded concurrency.
+    await runWithConcurrency(tracked, NIGHTLY_CONCURRENCY, runOne);
+
+    // Passes 2..N: only the transient failures, after a backoff, so a 2 AM blip
+    // self-heals instead of surfacing as a morning failure.
+    for (let attempt = 1; attempt <= NIGHTLY_MAX_RETRIES; attempt++) {
+      const retry = tracked.filter(needsRetry);
+      if (retry.length === 0) break;
+      console.log(
+        `[nightly-sync] Auto-retry ${attempt}/${NIGHTLY_MAX_RETRIES} for ${retry.length} transient failure(s) in ${NIGHTLY_RETRY_BACKOFF_MS / 60000}min: ` +
+          retry.map((r) => `${r.config.providerName}/${r.config.type}`).join(", "),
+      );
+      await new Promise((r) => setTimeout(r, NIGHTLY_RETRY_BACKOFF_MS));
+      retry.forEach((r) => (r.result.retries = (r.result.retries || 0) + 1));
+      await runWithConcurrency(retry, NIGHTLY_CONCURRENCY, runOne);
+    }
+
+    const ok = tracked.filter((t) => t.result.status === "completed" || t.result.status === "partial").length;
+    const actionable = tracked.filter((t) => isActionableSyncError(t.result.errors) || t.result.status === "failed").length;
+    console.log(`[nightly-sync] Nightly sync complete - ${ok}/${tracked.length} ok, ${actionable} need attention`);
+    return nightlySyncResults.slice();
   } finally {
     nightlySyncRunning = false;
-    console.log("[nightly-sync] Nightly sync complete");
   }
 }
 
@@ -6015,6 +6099,9 @@ export async function getScrapersSummary(prisma: PrismaService) {
     totalErrors: number;
     latestDonorCreatedAt: Date | null;
     syncProgress?: { total: number; processed: number; succeeded: number; failed: number; currentStep?: string } | null;
+    // For a FAILED row: true = a human must act (creds/captcha/lockout); false =
+    // transient/benign (network blip, server restart) that auto-retries. null = N/A.
+    lastFailureActionable?: boolean | null;
   }[] = [];
 
   for (const p of providers) {
@@ -6087,6 +6174,21 @@ export async function getScrapersSummary(prisma: PrismaService) {
     );
     if (lastNightly) {
       summary.totalErrors = lastNightly.failed;
+    }
+
+    // Classify a FAILED row so the dashboard can show benign/transient failures
+    // (network blip, server restart - the engine auto-retries these nightly) in
+    // amber rather than alarming red reserved for failures that need a human.
+    if (summary.syncStatus === "FAILED") {
+      const lastFailed = await prisma.syncLog.findFirst({
+        where: { providerId: summary.providerId, type: summary.type, status: { in: ["failed", "partial"] } },
+        orderBy: { startedAt: "desc" },
+        select: { errors: true },
+      });
+      const errs = Array.isArray(lastFailed?.errors) ? (lastFailed!.errors as any[]).map(String) : [];
+      summary.lastFailureActionable = isActionableSyncError(errs);
+    } else {
+      summary.lastFailureActionable = null;
     }
 
     const activeJob = getActiveSyncJob(summary.providerId, summary.type);

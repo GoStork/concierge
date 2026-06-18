@@ -30,6 +30,7 @@ interface ScraperSummary {
   totalErrors: number;
   latestDonorCreatedAt: string | null;
   syncProgress?: SyncProgress | null;
+  lastFailureActionable?: boolean | null;
 }
 
 interface SummaryResponse {
@@ -886,12 +887,14 @@ function StatusBadge({
   lastSyncStartedAt,
   lastSyncEndedAt,
   lastSyncAt,
+  lastFailureActionable,
 }: {
   status: string;
   progress?: SyncProgress | null;
   lastSyncStartedAt?: string | null;
   lastSyncEndedAt?: string | null;
   lastSyncAt?: string | null;
+  lastFailureActionable?: boolean | null;
 }) {
   if (progress) {
     return <SyncProgressBar progress={progress} />;
@@ -943,10 +946,21 @@ function StatusBadge({
     );
   }
   if (status === "FAILED") {
+    // Benign/transient failure (network blip, server restart): the nightly engine
+    // auto-retries these, so show amber "Interrupted" rather than alarming red.
+    if (lastFailureActionable === false) {
+      return (
+        <Badge className="bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] hover:bg-[hsl(var(--brand-warning)/0.2)] gap-1 cursor-pointer transition-colors" data-testid="badge-status-interrupted">
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Interrupted
+        </Badge>
+      );
+    }
+    // Real failure that needs a human (bad creds / captcha / lockout).
     return (
       <Badge className="bg-destructive/15 text-destructive hover:bg-destructive/20 gap-1 cursor-pointer transition-colors" data-testid="badge-status-failed">
         <XCircle className="w-3.5 h-3.5" />
-        Failed
+        Needs attention
       </Badge>
     );
   }
@@ -1173,6 +1187,7 @@ function ScraperTypeSection({
                               lastSyncStartedAt={item.lastSyncStartedAt}
                               lastSyncEndedAt={item.lastSyncEndedAt}
                               lastSyncAt={item.lastSyncAt}
+                              lastFailureActionable={item.lastFailureActionable}
                             />
                           </div>
                           <StopSyncButton item={item} />

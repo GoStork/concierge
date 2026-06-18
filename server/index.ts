@@ -210,8 +210,8 @@ export function log(message: string, source = "nestjs") {
   const storageService = nestApp.get(StorageService);
   nightlySyncPrismaRef = prismaService;
   nightlySyncStorageRef = storageService;
-  startNightlySyncScheduler(prismaService, storageService);
-  runCatchUpIfStale(prismaService, storageService);
+  startNightlySyncScheduler(prismaService, storageService, notificationService);
+  runCatchUpIfStale(prismaService, storageService, notificationService);
   startCalendarHealthScheduler(prismaService, notificationService);
   startCostSheetReminderScheduler(prismaService, notificationService);
   startReversalRecoupScheduler(prismaService);

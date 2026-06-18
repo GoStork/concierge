@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatMoneyCents } from "../../lib/format-money";
 import { getBaseUrl } from "../../lib/get-base-url";
+import { isActionableSyncError, type NightlySyncResult } from "../providers/profile-sync.service";
 
 export type NotificationChannel =
   | "booking_submitted"
@@ -1245,6 +1246,77 @@ export class NotificationService implements OnModuleInit {
         });
       }
     }
+  }
+
+  /**
+   * Morning triage digest for the nightly scraper run. Emails GoStork admins
+   * ONLY when a provider genuinely needs a human (bad creds, captcha, lockout,
+   * or a network failure that survived all auto-retries). Transient blips that
+   * self-healed and fully-green nights send nothing - silence means "all good",
+   * so you stop waking up to noise.
+   */
+  async sendNightlySyncDigest(results: NightlySyncResult[] | undefined | void) {
+    if (!results || results.length === 0) return;
+
+    const reasonFor = (errors: string[] | undefined): string => {
+      const blob = (errors || []).join(" | ").toLowerCase();
+      if (/recaptcha|hcaptcha|captcha|cloudflare|verify you are human/.test(blob)) return "Captcha challenge on login - needs a solver key or manual login";
+      if (/invalid|incorrect|wrong password|bad credential|unauthorized|not authorized|forbidden/.test(blob)) return "Login rejected - check the stored username/password";
+      if (/locked|lockout|too many|suspended|blocked|rate.?limit/.test(blob)) return "Account temporarily locked / rate-limited by the site (usually clears on its own)";
+      if (/failed to extract|no profiles|may not contain/.test(blob)) return "Logged in but no profiles extracted - the site markup may have changed";
+      if (/fetch failed|timeout|timed out|eauthtimeout|econn|enotfound|socket hang up|5\d\d|405/.test(blob)) return "Site unreachable after retries - likely a transient network/egress issue";
+      return (errors && errors[0]) ? errors[0].slice(0, 160) : "Unknown failure";
+    };
+
+    // After auto-retries: a row is "needs attention" if it ended failed, or its
+    // error is actionable (captcha/creds/lockout) even on a partial.
+    const needsAttention = results.filter((r) => r.status === "failed" || isActionableSyncError(r.errors));
+    const okCount = results.length - needsAttention.length;
+    const selfHealed = results.filter((r) => (r.retries || 0) > 0 && (r.status === "completed" || r.status === "partial"));
+
+    if (needsAttention.length === 0) {
+      this.logger.log(`[nightly-sync] Digest: all ${results.length} configs OK (${selfHealed.length} self-healed after retry) - no alert sent`);
+      return;
+    }
+
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false },
+      select: { email: true },
+    });
+    const recipients = admins.map((a) => a.email).filter(Boolean);
+    if (recipients.length === 0) {
+      this.logger.warn(`[nightly-sync] Digest: ${needsAttention.length} need attention but no admin emails to notify`);
+      return;
+    }
+
+    const brandData = await this.getBrandData();
+    const base = getBaseUrl();
+    const detailRows = needsAttention.map((r) => ({
+      label: `${esc(r.providerName)} (${r.type})`,
+      value: `${esc(reasonFor(r.errors))}${(r.retries || 0) > 0 ? ` - failed after ${r.retries} retr${r.retries === 1 ? "y" : "ies"}` : ""}`,
+    }));
+    const summaryLine =
+      `${needsAttention.length} provider${needsAttention.length === 1 ? "" : "s"} need attention` +
+      `${okCount > 0 ? `, ${okCount} synced fine` : ""}` +
+      `${selfHealed.length > 0 ? ` (${selfHealed.length} recovered automatically after a transient blip)` : ""}.`;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Nightly Sync - Attention Needed",
+      greeting: "Hi team,",
+      body: `Last night's scraper sync finished. ${esc(summaryLine)} The providers below could not be auto-recovered and need a look:`,
+      detailRows,
+      alertBox: { text: `${needsAttention.length} scraper${needsAttention.length === 1 ? "" : "s"} need attention. Transient/network failures were already retried automatically and are not listed here.`, type: "warning" },
+      buttons: [{ label: "Open Scraper Dashboard", url: `${base}/account/scrapers` }],
+      footer: "You only receive this email when a scraper needs a human. A silent night means everything synced (or self-healed). To re-run one, use Restart on the dashboard.",
+    });
+
+    const subject = `Nightly Sync: ${needsAttention.length} scraper${needsAttention.length === 1 ? "" : "s"} need attention`;
+    for (const to of recipients) {
+      await this.sendRawEmail(to, subject, html).catch((err: any) =>
+        this.logger.warn(`[nightly-sync] Digest email to ${to} failed: ${err.message}`),
+      );
+    }
+    this.logger.log(`[nightly-sync] Digest sent to ${recipients.length} admin(s): ${needsAttention.length} need attention, ${okCount} ok`);
   }
 
   async sendVideoWaitingNotification(params: {

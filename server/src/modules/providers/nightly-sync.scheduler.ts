@@ -1,11 +1,16 @@
 import * as cron from "node-cron";
 import { PrismaService } from "../prisma/prisma.service";
 import type { StorageService } from "../storage/storage.service";
+import type { NotificationService } from "../notifications/notification.service";
 import { runNightlySync, getNightlySyncStatus } from "./profile-sync.service";
 
 let scheduledTask: cron.ScheduledTask | null = null;
 
-export function startNightlySyncScheduler(prisma: PrismaService, storageService?: StorageService | null) {
+export function startNightlySyncScheduler(
+  prisma: PrismaService,
+  storageService?: StorageService | null,
+  notificationService?: NotificationService | null,
+) {
   if (scheduledTask) {
     console.log("[nightly-sync] Scheduler already running");
     return;
@@ -14,7 +19,8 @@ export function startNightlySyncScheduler(prisma: PrismaService, storageService?
   scheduledTask = cron.schedule("0 2 * * *", async () => {
     console.log("[nightly-sync] Cron triggered at", new Date().toISOString());
     try {
-      await runNightlySync(prisma, storageService);
+      const results = await runNightlySync(prisma, storageService);
+      await notificationService?.sendNightlySyncDigest(results);
     } catch (err: any) {
       console.error("[nightly-sync] Cron job error:", err.message);
     }
@@ -43,7 +49,11 @@ export function stopNightlySyncScheduler() {
  */
 const STALE_HOURS = 25;
 
-export async function runCatchUpIfStale(prisma: PrismaService, storageService?: StorageService | null) {
+export async function runCatchUpIfStale(
+  prisma: PrismaService,
+  storageService?: StorageService | null,
+  notificationService?: NotificationService | null,
+) {
   try {
     if (getNightlySyncStatus().isRunning) {
       console.log("[nightly-sync] Catch-up skipped - sync already running");
@@ -68,9 +78,11 @@ export async function runCatchUpIfStale(prisma: PrismaService, storageService?: 
     console.log(`[nightly-sync] Catch-up triggered - last nightly run: ${lastDesc}`);
 
     setTimeout(() => {
-      runNightlySync(prisma, storageService).catch((err: any) => {
-        console.error("[nightly-sync] Catch-up run failed:", err.message);
-      });
+      runNightlySync(prisma, storageService)
+        .then((results) => notificationService?.sendNightlySyncDigest(results))
+        .catch((err: any) => {
+          console.error("[nightly-sync] Catch-up run failed:", err.message);
+        });
     }, 30_000);
   } catch (err: any) {
     console.error("[nightly-sync] Catch-up check failed:", err.message);

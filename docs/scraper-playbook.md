@@ -165,6 +165,35 @@ re-discovering the same problems on every new agency.
 - **`(EAUTHTIMEOUT) timeout while waiting for message` comes from the EDC host/proxy over
   the wire - it is NOT in our code.** It's a transient upstream stall; the retry absorbs it.
 
+## Nightly sync orchestration (the run-level layer)
+
+The nightly is **not a separate scraper** - `runNightlySync` (`profile-sync.service.ts`)
+just loops every `*SyncConfig` row and calls the same `startSync()` engine with
+`source: "nightly"`. So every per-site fix above applies automatically. The
+orchestration layer adds:
+
+- **Bounded concurrency (`NIGHTLY_CONCURRENCY`, default 3)** - logins run a few at a time,
+  not all-at-once, so a single egress blip can't fail every provider simultaneously and we
+  don't burst rate-limited sites. (Pre-fix it was a full `Promise.all` - one blip = a wall
+  of red.)
+- **In-run auto-retry of transient failures** (`NIGHTLY_MAX_RETRIES`=2, 5-min backoff). After
+  the first pass, providers whose error is **transient** (network/timeout/`EAUTHTIMEOUT`/5xx/
+  `405` cascade/"Interrupted - server restarted") are retried; **actionable** ones
+  (captcha / bad creds / lockout - `isActionableSyncError`) are **not** (retrying won't help,
+  and re-login worsens a lockout). A 2 AM blip self-heals before morning instead of greeting
+  you red. This is the run-level analog of `fetchHtml`'s per-request retry.
+- **Morning digest** (`NotificationService.sendNightlySyncDigest`) emails GoStork admins
+  **only when a provider truly needs a human** (survived retries as `failed`, or actionable).
+  Transient/self-healed runs and fully-green nights send **nothing** - silence = all good.
+- **Dashboard triage** (`scrapers-summary-page.tsx`): a `FAILED` row whose last error is
+  transient renders amber **"Interrupted"** (engine auto-retries it), red **"Needs attention"**
+  is reserved for actionable failures. Driven by `lastFailureActionable` from `getScrapersSummary`.
+- **Dedup is global + work-gated**: a `completed`/`partial` nightly within 20h skips re-runs
+  (admin "Trigger nightly" passes `{force:true}`), but **only if it actually did work**
+  (`total > 0`) - a 0-found empty "completed" run must not anchor the dedup and silently
+  block the whole next nightly. The schedule is in-process `node-cron` at 2 AM ET +
+  boot-time catch-up if >25h stale; if the box sleeps through 2 AM, catch-up covers it.
+
 ## Data mapping gotchas
 
 - **Location city lives in `profileData.Location`** (e.g. `"Hemet CA | $70,000"`,
