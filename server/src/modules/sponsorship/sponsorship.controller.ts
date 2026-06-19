@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Delete, Param, Query, Body, Req,
-  UseGuards, ForbiddenException, BadRequestException,
+  UseGuards, ForbiddenException, BadRequestException, Inject,
 } from "@nestjs/common";
 import { Request } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
@@ -14,8 +14,8 @@ const BILLING_ROLES = ["PROVIDER_ADMIN", "BILLING_MANAGER"];
 @UseGuards(SessionOrJwtGuard)
 export class SponsorshipController {
   constructor(
-    private readonly sponsorship: SponsorshipService,
-    private readonly prisma: PrismaService,
+    @Inject(SponsorshipService) private readonly sponsorship: SponsorshipService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   private isAdmin(req: Request): boolean {

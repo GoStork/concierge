@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Injectable, Inject, Logger, BadRequestException, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationService } from "../notifications/notification.service";
 import { invalidateMarketplaceCache } from "../providers/providers.controller";
@@ -32,8 +32,8 @@ export class SponsorshipService {
   private readonly logger = new Logger("Sponsorship");
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly notifications: NotificationService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(NotificationService) private readonly notifications: NotificationService,
   ) {}
 
   // ─── Plans / pricing config ──────────────────────────────────────────────
