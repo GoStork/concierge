@@ -2,7 +2,7 @@ import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatMoneyCents } from "../../lib/format-money";
 import { getBaseUrl } from "../../lib/get-base-url";
-import { isActionableSyncError, type NightlySyncResult } from "../providers/profile-sync.service";
+import { type NightlySyncResult } from "../providers/profile-sync.service";
 
 export type NotificationChannel =
   | "booking_submitted"
@@ -1268,11 +1268,28 @@ export class NotificationService implements OnModuleInit {
       return (errors && errors[0]) ? errors[0].slice(0, 160) : "Unknown failure";
     };
 
-    // After auto-retries: a row is "needs attention" if it ended failed, or its
-    // error is actionable (captcha/creds/lockout) even on a partial.
-    const needsAttention = results.filter((r) => r.status === "failed" || isActionableSyncError(r.errors));
+    // Reconcile against the CURRENT DB status before alarming. The in-memory
+    // results are per-attempt and can be stale: a retry (or a concurrent run)
+    // may have since succeeded for the same provider. Only report providers
+    // whose live config status is still FAILED - never a provider that ended
+    // green, regardless of what an earlier attempt recorded.
+    const [eggCfgs, surCfgs, spermCfgs] = await Promise.all([
+      this.prisma.eggDonorSyncConfig.findMany({ select: { providerId: true, syncStatus: true } }),
+      this.prisma.surrogateSyncConfig.findMany({ select: { providerId: true, syncStatus: true } }),
+      this.prisma.spermDonorSyncConfig.findMany({ select: { providerId: true, syncStatus: true } }),
+    ]);
+    const liveStatus = new Map<string, string>();
+    for (const c of eggCfgs) liveStatus.set(`${c.providerId}:egg-donor`, c.syncStatus);
+    for (const c of surCfgs) liveStatus.set(`${c.providerId}:surrogate`, c.syncStatus);
+    for (const c of spermCfgs) liveStatus.set(`${c.providerId}:sperm-donor`, c.syncStatus);
+
+    const needsAttention = results.filter(
+      (r) => liveStatus.get(`${r.providerId}:${r.type}`) === "FAILED",
+    );
     const okCount = results.length - needsAttention.length;
-    const selfHealed = results.filter((r) => (r.retries || 0) > 0 && (r.status === "completed" || r.status === "partial"));
+    const selfHealed = results.filter(
+      (r) => (r.retries || 0) > 0 && liveStatus.get(`${r.providerId}:${r.type}`) !== "FAILED",
+    );
 
     if (needsAttention.length === 0) {
       this.logger.log(`[nightly-sync] Digest: all ${results.length} configs OK (${selfHealed.length} self-healed after retry) - no alert sent`);

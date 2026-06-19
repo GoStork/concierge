@@ -5872,12 +5872,17 @@ export function isActionableSyncError(errors: string[] | undefined): boolean {
   if (!errors || errors.length === 0) return false;
   const blob = errors.join(" | ").toLowerCase();
   // Needs a human - do NOT auto-retry.
-  if (/recaptcha|hcaptcha|captcha|cloudflare|verify you are human/.test(blob)) return true;
+  // Match SPECIFIC challenge phrases, not a bare "captcha": the generic
+  // empty-import guard ("...any login captcha was solved.") mentions the word
+  // and must NOT be misclassified as a captcha challenge.
+  if (/hcaptcha|cloudflare|not supported by the captcha solver/.test(blob)) return true;
   if (/invalid|incorrect|wrong password|bad credential|unauthorized|not authorized|forbidden/.test(blob)) return true;
   if (/locked|lockout|too many|suspended|blocked|rate.?limit/.test(blob)) return true;
-  // Everything else (fetch failed, timeout, EAUTHTIMEOUT, ECONN*, 5xx, 405
-  // cascade, "Interrupted - server restarted", empty extract) is transient and
-  // safe to retry - checkpoint resume makes a retry cheap.
+  // Everything else is transient/retryable - including **reCAPTCHA** (we have a
+  // 2captcha solver; the solve is probabilistic, so a retry often clears it),
+  // network/timeout/EAUTHTIMEOUT/5xx/405-cascade, "Interrupted - server
+  // restarted", and the generic empty-import blip. Checkpoint resume makes a
+  // retry cheap.
   return false;
 }
 

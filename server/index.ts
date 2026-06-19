@@ -55,6 +55,19 @@ export function log(message: string, source = "nestjs") {
     res.status(200).json({ status: appReady ? "ready" : "starting" });
   });
 
+  // If the port is already taken, a second instance must EXIT - not keep running.
+  // A surviving second process still starts the schedulers below, which means two
+  // in-process nightly crons fire at 2 AM and race on the same logins (one run
+  // imports 0 while the other succeeds), producing false "needs attention" alerts.
+  httpServer.on("error", (err: any) => {
+    if (err?.code === "EADDRINUSE") {
+      log(`FATAL: port ${port} already in use - another server instance is running. Exiting to avoid duplicate schedulers.`);
+    } else {
+      log(`FATAL: httpServer error: ${err?.message || err}`);
+    }
+    process.exit(1);
+  });
+
   httpServer.listen(
     {
       port,
