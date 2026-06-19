@@ -230,6 +230,21 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
   });
   const applicableWholeKeys = new Set((wholeProfilePlansQ.data || []).map((p: any) => p.tierKey));
 
+  // The slot-fillable entity types this provider actually offers (donors,
+  // surrogates, sperm donors, doctors) - drives the dynamic section label.
+  const stUrl = isAdmin ? `${base}/slot-entity-types?providerId=${providerId}` : `/api/sponsorship/slot-entity-types`;
+  const slotTypesQ = useQuery<{ type: string; label: string }[]>({
+    queryKey: [stUrl],
+    queryFn: async () => (await apiRequest("GET", stUrl)).json(),
+    enabled: !isAdmin || !!providerId,
+    retry: false,
+  });
+  const slotLabels = (slotTypesQ.data || []).map((t) => t.label);
+  const slotBundleLabel = slotLabels.length ? `Slot bundles (${slotLabels.join(", ")})` : "Slot bundles";
+  const hasClinic = applicableWholeKeys.has("whole_profile_ivf");
+  const hasAgency = applicableWholeKeys.has("whole_profile_surrogacy");
+  const wholeLabel = `Whole-profile boost (your ${[hasClinic && "clinic", hasAgency && "agency"].filter(Boolean).join(" / ") || "profile"})`;
+
   const bundles = plans.filter((p) => p.productType === "SLOT_BUNDLE");
   const wholeProfiles = plans.filter((p) => p.productType === "WHOLE_PROFILE" && applicableWholeKeys.has(p.tierKey));
 
@@ -257,7 +272,7 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
         {error && <div className="text-sm rounded-lg px-3 py-2" style={{ background: "hsl(var(--brand-error) / 0.1)", color: "hsl(var(--brand-error))" }}>{error}</div>}
 
         <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Slot bundles (donors, surrogates, doctors)</p>
+          <p className="text-base font-semibold text-foreground mb-2">{slotBundleLabel}</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {bundles.map((p) => (
               <PlanCard key={p.id} plan={p} busy={busyPlan === p.id} isAdmin={isAdmin}
@@ -268,7 +283,7 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
 
         {wholeProfiles.length > 0 && (
           <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Whole-profile boost (your clinic/agency)</p>
+            <p className="text-base font-semibold text-foreground mb-2">{wholeLabel}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {wholeProfiles.map((p) => (
                 <PlanCard key={p.id} plan={p} busy={busyPlan === p.id} isAdmin={isAdmin}
@@ -412,12 +427,27 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
 
 function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void }) {
   const [type, setType] = useState<EntityType>("EGG_DONOR");
+
+  // Only show slot-type tabs the provider actually offers.
+  const stUrl = isAdmin ? `${base}/slot-entity-types?providerId=${providerId}` : `/api/sponsorship/slot-entity-types`;
+  const slotTypesQ = useQuery<{ type: string; label: string }[]>({
+    queryKey: [stUrl],
+    queryFn: async () => (await apiRequest("GET", stUrl)).json(),
+    enabled: !isAdmin || !!providerId,
+    retry: false,
+  });
+  const applicableSet = new Set((slotTypesQ.data || []).map((t) => t.type));
+  const tabs = SLOT_ENTITY_TYPES.filter((t) => applicableSet.has(t.type));
+  // Fall back to the first applicable type until the user picks one.
+  const activeType: EntityType = applicableSet.has(type) ? type : ((tabs[0]?.type as EntityType) ?? type);
+
   const eligibleUrl = isAdmin
-    ? `${base}/eligible-entities?providerId=${providerId}&type=${type}`
-    : `/api/sponsorship/eligible-entities?type=${type}`;
+    ? `${base}/eligible-entities?providerId=${providerId}&type=${activeType}`
+    : `/api/sponsorship/eligible-entities?type=${activeType}`;
   const eligibleQ = useQuery<any[]>({
     queryKey: [eligibleUrl],
     queryFn: async () => (await apiRequest("GET", eligibleUrl)).json(),
+    enabled: tabs.length > 0,
   });
   const [busyId, setBusyId] = useState<string | null>(null);
   const filledIds = new Set((s.items || []).map((it: any) => it.entityId));
@@ -426,7 +456,7 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
   const addItem = async (entityId: string) => {
     setBusyId(entityId);
     try {
-      const body = isAdmin ? { providerId, entityType: type, entityId } : { entityType: type, entityId };
+      const body = isAdmin ? { providerId, entityType: activeType, entityId } : { entityType: activeType, entityId };
       await apiRequest("POST", `${base}/${s.id}/items`, body);
       onChanged();
     } finally { setBusyId(null); }
@@ -458,11 +488,11 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
         </div>
       )}
 
-      {/* Add picker */}
+      {/* Add picker - only the provider's applicable types */}
       <div className="flex items-center gap-2 flex-wrap">
-        {SLOT_ENTITY_TYPES.map((t) => (
+        {tabs.map((t) => (
           <button key={t.type} onClick={() => setType(t.type)}
-            className={`px-2.5 py-1 rounded-full text-xs transition-colors ${type === t.type ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground hover:bg-accent/20"}`}>
+            className={`px-2.5 py-1 rounded-full text-xs transition-colors ${activeType === t.type ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground hover:bg-accent/20"}`}>
             {t.label}
           </button>
         ))}

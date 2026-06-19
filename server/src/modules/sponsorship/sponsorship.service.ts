@@ -89,6 +89,27 @@ export class SponsorshipService {
     });
   }
 
+  /**
+   * The slot-fillable entity types this provider actually offers, with display
+   * labels for the "Slot bundles (...)" header. An egg-donor + surrogacy agency
+   * gets donors + surrogates; an IVF clinic gets doctors; a sperm bank gets sperm
+   * donors. Drives both the section label and the slot-picker tabs.
+   */
+  async getApplicableSlotEntityTypes(providerId: string): Promise<{ type: EntityType; label: string }[]> {
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      include: { services: { include: { providerType: true } } },
+    });
+    if (!provider) throw new NotFoundException("Provider not found");
+    const names = (provider.services || []).map((s: any) => (s.providerType?.name || "").toLowerCase());
+    const out: { type: EntityType; label: string }[] = [];
+    if (names.some((n: string) => n.includes("egg donor") || n.includes("egg bank"))) out.push({ type: "EGG_DONOR", label: "donors" });
+    if (names.some((n: string) => n.includes("surrogacy"))) out.push({ type: "SURROGATE", label: "surrogates" });
+    if (names.some((n: string) => n.includes("sperm"))) out.push({ type: "SPERM_DONOR", label: "sperm donors" });
+    if (names.some((n: string) => n.includes("ivf") || n.includes("in vitro"))) out.push({ type: "DOCTOR", label: "doctors" });
+    return out;
+  }
+
   /** Validate + resolve the boost target for a whole-profile plan purchase. */
   private async resolveWholeProfileItem(providerId: string, tierKey: string): Promise<EntityType> {
     const entityType = this.wholeProfileEntityType(tierKey);
