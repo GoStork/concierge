@@ -218,20 +218,20 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
     } finally { setBusyPlan(null); }
   };
 
-  // Resolve the ONE whole-profile plan that matches this provider's type (IVF vs
-  // surrogacy). Providers that are neither (e.g. egg-donor agency, sperm bank)
-  // get no whole-profile option. Errors mean "not applicable" - handled silently.
-  const wpUrl = isAdmin ? `${base}/whole-profile-plan?providerId=${providerId}` : `/api/sponsorship/whole-profile-plan`;
-  const wholeProfilePlanQ = useQuery<any>({
+  // Whole-profile plans applicable to THIS provider's service types. A provider
+  // that is both an IVF clinic and a surrogacy agency gets both; one that is
+  // neither (egg-donor agency, sperm bank) gets none.
+  const wpUrl = isAdmin ? `${base}/whole-profile-plans?providerId=${providerId}` : `/api/sponsorship/whole-profile-plans`;
+  const wholeProfilePlansQ = useQuery<any[]>({
     queryKey: [wpUrl],
     queryFn: async () => (await apiRequest("GET", wpUrl)).json(),
     enabled: !isAdmin || !!providerId,
     retry: false,
   });
-  const applicableWholeTierKey = wholeProfilePlanQ.data?.plan?.tierKey ?? null;
+  const applicableWholeKeys = new Set((wholeProfilePlansQ.data || []).map((p: any) => p.tierKey));
 
   const bundles = plans.filter((p) => p.productType === "SLOT_BUNDLE");
-  const wholeProfiles = plans.filter((p) => p.productType === "WHOLE_PROFILE" && p.tierKey === applicableWholeTierKey);
+  const wholeProfiles = plans.filter((p) => p.productType === "WHOLE_PROFILE" && applicableWholeKeys.has(p.tierKey));
 
   return (
     <Card>

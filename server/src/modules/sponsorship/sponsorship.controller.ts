@@ -79,10 +79,10 @@ export class SponsorshipController {
     return this.sponsorship.getEligibleEntities(providerId, type);
   }
 
-  @Get("api/sponsorship/whole-profile-plan")
-  async wholeProfilePlan(@Req() req: Request) {
+  @Get("api/sponsorship/whole-profile-plans")
+  async wholeProfilePlans(@Req() req: Request) {
     const providerId = this.requireProvider(req);
-    return this.sponsorship.resolveWholeProfilePlan(providerId);
+    return this.sponsorship.getApplicableWholeProfilePlans(providerId);
   }
 
   @Post("api/sponsorship/checkout")
@@ -154,11 +154,11 @@ export class SponsorshipController {
     return this.sponsorship.getEligibleEntities(providerId, type);
   }
 
-  @Get("api/admin/sponsorship/whole-profile-plan")
-  async adminWholeProfilePlan(@Req() req: Request, @Query("providerId") providerId: string) {
+  @Get("api/admin/sponsorship/whole-profile-plans")
+  async adminWholeProfilePlans(@Req() req: Request, @Query("providerId") providerId: string) {
     this.requireAdmin(req);
     if (!providerId) throw new BadRequestException("providerId required");
-    return this.sponsorship.resolveWholeProfilePlan(providerId);
+    return this.sponsorship.getApplicableWholeProfilePlans(providerId);
   }
 
   @Post("api/admin/sponsorship")

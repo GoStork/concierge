@@ -51,26 +51,52 @@ export class SponsorshipService {
     return this.prisma.sponsorshipPlan.update({ where: { id }, data });
   }
 
-  /** Picks the right WHOLE_PROFILE plan from the provider's approved service types. */
-  async resolveWholeProfilePlan(providerId: string) {
+  /** Which marketplace-card profile types a provider has (a provider can be both). */
+  private async providerServiceFlags(providerId: string): Promise<{ isIvf: boolean; isSurrogacy: boolean }> {
     const provider = await this.prisma.provider.findUnique({
       where: { id: providerId },
       include: { services: { include: { providerType: true } } },
     });
     if (!provider) throw new NotFoundException("Provider not found");
     const names = (provider.services || []).map((s: any) => (s.providerType?.name || "").toLowerCase());
-    const isIvf = names.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
-    const isSurrogacy = names.some((n: string) => n.includes("surrogacy"));
-    const tierKey = isIvf ? "whole_profile_ivf" : isSurrogacy ? "whole_profile_surrogacy" : null;
-    if (!tierKey) {
-      throw new BadRequestException("Whole-profile sponsorship is only available for IVF clinics and surrogacy agencies");
-    }
-    const plan = await this.prisma.sponsorshipPlan.findUnique({
-      where: { productType_tierKey: { productType: "WHOLE_PROFILE", tierKey } },
+    return {
+      isIvf: names.some((n: string) => n.includes("ivf") || n.includes("in vitro")),
+      isSurrogacy: names.some((n: string) => n.includes("surrogacy")),
+    };
+  }
+
+  /** Maps a whole-profile plan to the entity type it boosts. */
+  private wholeProfileEntityType(tierKey: string): EntityType | null {
+    if (tierKey === "whole_profile_ivf") return "CLINIC_PROFILE";
+    if (tierKey === "whole_profile_surrogacy") return "AGENCY_PROFILE";
+    return null;
+  }
+
+  /**
+   * Every whole-profile plan applicable to this provider. A provider that is BOTH
+   * an IVF clinic and a surrogacy agency gets both (boost the clinic deck card AND
+   * the agency deck card); a provider that is neither gets an empty list.
+   */
+  async getApplicableWholeProfilePlans(providerId: string) {
+    const flags = await this.providerServiceFlags(providerId);
+    const tierKeys: string[] = [];
+    if (flags.isIvf) tierKeys.push("whole_profile_ivf");
+    if (flags.isSurrogacy) tierKeys.push("whole_profile_surrogacy");
+    if (!tierKeys.length) return [];
+    return this.prisma.sponsorshipPlan.findMany({
+      where: { productType: "WHOLE_PROFILE", tierKey: { in: tierKeys }, isActive: true },
+      orderBy: { sortOrder: "asc" },
     });
-    if (!plan || !plan.isActive) throw new NotFoundException("Whole-profile plan not configured");
-    const entityType: EntityType = isIvf ? "CLINIC_PROFILE" : "AGENCY_PROFILE";
-    return { plan, entityType };
+  }
+
+  /** Validate + resolve the boost target for a whole-profile plan purchase. */
+  private async resolveWholeProfileItem(providerId: string, tierKey: string): Promise<EntityType> {
+    const entityType = this.wholeProfileEntityType(tierKey);
+    if (!entityType) throw new BadRequestException("Unknown whole-profile plan");
+    const flags = await this.providerServiceFlags(providerId);
+    const ok = (entityType === "CLINIC_PROFILE" && flags.isIvf) || (entityType === "AGENCY_PROFILE" && flags.isSurrogacy);
+    if (!ok) throw new BadRequestException("This whole-profile boost does not apply to this provider's services");
+    return entityType;
   }
 
   // ─── Provider-facing reads ──────────────────────────────────────────────
@@ -157,8 +183,9 @@ export class SponsorshipService {
     });
 
     // Whole-profile auto-fills its single slot with the provider's own profile.
+    // The boost target (clinic vs agency deck) comes from the specific plan bought.
     if (plan.productType === "WHOLE_PROFILE") {
-      const { entityType } = await this.resolveWholeProfilePlan(params.providerId);
+      const entityType = await this.resolveWholeProfileItem(params.providerId, plan.tierKey);
       await this.prisma.sponsorshipItem.create({
         data: { sponsorshipId: sponsorship.id, entityType, entityId: params.providerId },
       });
@@ -267,7 +294,7 @@ export class SponsorshipService {
     });
 
     if (plan.productType === "WHOLE_PROFILE") {
-      const { entityType } = await this.resolveWholeProfilePlan(params.providerId);
+      const entityType = await this.resolveWholeProfileItem(params.providerId, plan.tierKey);
       await this.prisma.sponsorshipItem.create({
         data: { sponsorshipId: sponsorship.id, entityType, entityId: params.providerId },
       });
