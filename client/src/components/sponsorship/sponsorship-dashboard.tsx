@@ -6,10 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
 import { formatMoneyCents } from "@/lib/format-money";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { SponsorshipCheckout } from "./sponsorship-checkout";
 import {
   Sparkles, Eye, Heart, MessageCircle, Flame, TrendingUp, Loader2,
-  Plus, X, ChevronDown, ChevronUp, Gift, CreditCard,
+  Plus, X, ChevronDown, ChevronUp, Gift, CreditCard, User,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 
@@ -408,6 +409,16 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
     } finally { setBusy(false); }
   };
 
+  // Discard an unpaid pending sponsorship so the provider can start a fresh one.
+  const discard = async () => {
+    setBusy(true);
+    try {
+      const body = isAdmin ? { providerId, immediate: true } : { immediate: true };
+      await apiRequest("POST", `${base}/${s.id}/cancel`, body);
+      onChanged();
+    } finally { setBusy(false); }
+  };
+
   return (
     <div className="rounded-lg border border-border p-3" data-testid={`sponsorship-${s.id}`}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -424,6 +435,9 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
             <Button size="sm" onClick={completePayment} disabled={busy} data-testid={`button-complete-payment-${s.id}`}>
               <CreditCard className="w-3.5 h-3.5 mr-1" /> Complete payment
             </Button>
+          )}
+          {isPending && (
+            <Button size="sm" variant="ghost" onClick={discard} disabled={busy} data-testid={`button-discard-${s.id}`}>Discard</Button>
           )}
           {isBundle && (
             <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} data-testid={`button-manage-slots-${s.id}`}>
@@ -474,6 +488,7 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
   const [busyId, setBusyId] = useState<string | null>(null);
   const filledIds = new Set((s.items || []).map((it: any) => it.entityId));
   const slotsFull = (s.items?.length || 0) >= s.slotCountSnapshot;
+  const nameById = new Map<string, string>(((eligibleQ.data as any[]) || []).map((e: any) => [e.id, e.displayName]));
 
   const addItem = async (entityId: string) => {
     setBusyId(entityId);
@@ -492,8 +507,6 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
     } finally { setBusyId(null); }
   };
 
-  const nameOf = (e: any) => e.name || `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.id;
-
   return (
     <div className="mt-3 pt-3 border-t border-border space-y-3">
       {/* Filled slots */}
@@ -501,7 +514,7 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
         <div className="flex flex-wrap gap-2">
           {s.items.map((it: any) => (
             <Badge key={it.id} variant="secondary" className="gap-1 pr-1">
-              {it.entityType.replace("_", " ").toLowerCase()}
+              {nameById.get(it.entityId) || it.entityType.replace("_", " ").toLowerCase()}
               <button onClick={() => removeItem(it)} disabled={busyId === it.id} className="ml-1 hover:text-destructive" data-testid={`remove-item-${it.id}`}>
                 <X className="w-3 h-3" />
               </button>
@@ -525,14 +538,25 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
         {eligibleQ.data?.length === 0 && <div className="p-3 text-sm text-muted-foreground">No profiles of this type.</div>}
         {(eligibleQ.data || []).map((e: any) => {
           const filled = filledIds.has(e.id);
-          const sponsored = !!e.sponsoredUntil && new Date(e.sponsoredUntil).getTime() > Date.now();
           return (
-            <div key={e.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm" data-testid={`eligible-${e.id}`}>
-              <span className="truncate">{nameOf(e)}{sponsored && <Sparkles className="w-3 h-3 inline ml-1 text-accent" />}</span>
+            <div key={e.id} className="flex items-center justify-between gap-2 px-3 py-2" data-testid={`eligible-${e.id}`}>
+              <div className="flex items-center gap-2 min-w-0">
+                {e.photoUrl ? (
+                  <img src={getPhotoSrc(e.photoUrl ?? undefined) ?? undefined} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-secondary" loading="lazy" />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0"><User className="w-4 h-4 text-muted-foreground" /></div>
+                )}
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-foreground truncate flex items-center gap-1">
+                    {e.displayName}{e.sponsored && <Sparkles className="w-3 h-3 text-accent shrink-0" />}
+                  </div>
+                  {e.subtitle && <div className="text-xs text-muted-foreground truncate">{e.subtitle}</div>}
+                </div>
+              </div>
               {filled ? (
-                <Badge variant="secondary" className="text-xs">In this bundle</Badge>
+                <Badge variant="secondary" className="text-xs shrink-0">In this bundle</Badge>
               ) : (
-                <Button size="sm" variant="ghost" disabled={busyId === e.id || slotsFull} onClick={() => addItem(e.id)} data-testid={`add-eligible-${e.id}`}>
+                <Button size="sm" variant="ghost" className="shrink-0" disabled={busyId === e.id || slotsFull} onClick={() => addItem(e.id)} data-testid={`add-eligible-${e.id}`}>
                   {busyId === e.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                 </Button>
               )}

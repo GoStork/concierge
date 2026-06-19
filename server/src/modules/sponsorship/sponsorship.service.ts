@@ -143,35 +143,65 @@ export class SponsorshipService {
     }));
   }
 
-  /** The provider's own sub-profiles available to fill slots, with current sponsored state. */
-  async getEligibleEntities(providerId: string, type: EntityType) {
-    if (type === "EGG_DONOR") {
-      return this.prisma.eggDonor.findMany({
+  /**
+   * The provider's own sub-profiles available to fill slots, returned as uniform
+   * cards (photo + display name + subtitle) so the picker shows real profiles
+   * instead of raw ids.
+   */
+  async getEligibleEntities(providerId: string, type: EntityType): Promise<Array<{
+    id: string; displayName: string; photoUrl: string | null; subtitle: string | null; status: string | null; sponsored: boolean;
+  }>> {
+    const isSponsored = (until: any) => !!until && new Date(until).getTime() > Date.now();
+    const subtitleOf = (parts: (string | number | null | undefined)[]) =>
+      parts.map((p) => (p == null || p === "" ? null : String(p))).filter(Boolean).join(" · ") || null;
+    const firstPhoto = (row: any) => row.photoUrl || (Array.isArray(row.photos) && row.photos[0]) || null;
+
+    if (type === "EGG_DONOR" || type === "SPERM_DONOR") {
+      const delegate: any = type === "EGG_DONOR" ? this.prisma.eggDonor : this.prisma.spermDonor;
+      const rows = await delegate.findMany({
         where: { providerId },
-        select: { id: true, firstName: true, lastName: true, photoUrl: true, status: true, sponsoredUntil: true },
+        select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, photoUrl: true, photos: true, status: true, sponsoredUntil: true },
         orderBy: { createdAt: "desc" },
       });
+      const noun = type === "EGG_DONOR" ? "Donor" : "Donor";
+      return rows.map((r: any) => ({
+        id: r.id,
+        displayName: r.firstName || `${noun} #${r.externalId || r.id.slice(-6)}`,
+        photoUrl: firstPhoto(r),
+        subtitle: subtitleOf([r.age ? `${r.age} yrs` : null, r.location, r.ethnicity]),
+        status: r.status || null,
+        sponsored: isSponsored(r.sponsoredUntil),
+      }));
     }
     if (type === "SURROGATE") {
-      return this.prisma.surrogate.findMany({
+      const rows = await this.prisma.surrogate.findMany({
         where: { providerId },
-        select: { id: true, firstName: true, lastName: true, photoUrl: true, status: true, sponsoredUntil: true },
+        select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, photoUrl: true, photos: true, status: true, sponsoredUntil: true },
         orderBy: { createdAt: "desc" },
       });
-    }
-    if (type === "SPERM_DONOR") {
-      return this.prisma.spermDonor.findMany({
-        where: { providerId },
-        select: { id: true, firstName: true, lastName: true, photoUrl: true, status: true, sponsoredUntil: true },
-        orderBy: { createdAt: "desc" },
-      });
+      return rows.map((r: any) => ({
+        id: r.id,
+        displayName: r.firstName || `Surrogate #${r.externalId || r.id.slice(-6)}`,
+        photoUrl: firstPhoto(r),
+        subtitle: subtitleOf([r.age ? `${r.age} yrs` : null, r.location, r.ethnicity]),
+        status: r.status || null,
+        sponsored: isSponsored(r.sponsoredUntil),
+      }));
     }
     if (type === "DOCTOR") {
-      return this.prisma.providerMember.findMany({
+      const rows = await this.prisma.providerMember.findMany({
         where: { providerId, isPublicProfile: true },
-        select: { id: true, name: true, title: true, photoUrl: true, sponsoredUntil: true },
+        select: { id: true, name: true, title: true, photoUrl: true, highResPhotoUrl: true, sponsoredUntil: true },
         orderBy: { sortOrder: "asc" },
       });
+      return rows.map((r: any) => ({
+        id: r.id,
+        displayName: r.name || `Doctor #${r.id.slice(-6)}`,
+        photoUrl: r.highResPhotoUrl || r.photoUrl || null,
+        subtitle: r.title || null,
+        status: null,
+        sponsored: isSponsored(r.sponsoredUntil),
+      }));
     }
     throw new BadRequestException("Unsupported entity type for slot fill");
   }
@@ -187,6 +217,15 @@ export class SponsorshipService {
   }): Promise<{ sponsorshipId: string; clientSecret: string | null; activated: boolean; savedCard: { brand: string | null; last4: string | null } | null }> {
     const plan = await this.prisma.sponsorshipPlan.findUnique({ where: { id: params.planId } });
     if (!plan || !plan.isActive) throw new NotFoundException("Plan not found or inactive");
+
+    // One pending checkout at a time - don't let a provider stack multiple
+    // unpaid sponsorships. They must complete or discard the pending one first.
+    const pending = await this.prisma.sponsorship.findFirst({
+      where: { providerId: params.providerId, status: "PENDING_PAYMENT" },
+    });
+    if (pending) {
+      throw new BadRequestException("You already have a sponsorship awaiting payment. Complete or discard it before starting another.");
+    }
 
     // Provider-level customer so a card saved by one billing user is reused by all.
     const provider = await this.prisma.provider.findUnique({ where: { id: params.providerId }, select: { sponsorStripeCustomerId: true } });
@@ -769,20 +808,24 @@ export class SponsorshipService {
       timeSeries,
       perProfile,
       history: {
-        sponsorships: sponsorships.map((s: any) => ({
-          id: s.id,
-          productType: s.productType,
-          tier: s.plan?.displayName,
-          status: s.status,
-          billingMode: s.billingMode,
-          isComped: s.isComped,
-          priceCents: s.priceCentsSnapshot,
-          currentPeriodStart: s.currentPeriodStart,
-          currentPeriodEnd: s.currentPeriodEnd,
-          slotsUsed: s.items.length,
-          slotsTotal: s.slotCountSnapshot,
-          createdAt: s.createdAt,
-        })),
+        // Only sponsorships that were actually paid/activated at least once -
+        // never-paid pending/abandoned checkouts don't belong in history.
+        sponsorships: sponsorships
+          .filter((s: any) => s.currentPeriodStart != null)
+          .map((s: any) => ({
+            id: s.id,
+            productType: s.productType,
+            tier: s.plan?.displayName,
+            status: s.status,
+            billingMode: s.billingMode,
+            isComped: s.isComped,
+            priceCents: s.priceCentsSnapshot,
+            currentPeriodStart: s.currentPeriodStart,
+            currentPeriodEnd: s.currentPeriodEnd,
+            slotsUsed: s.items.length,
+            slotsTotal: s.slotCountSnapshot,
+            createdAt: s.createdAt,
+          })),
         invoices,
       },
     };
