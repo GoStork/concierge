@@ -128,6 +128,10 @@ model Provider {
   sponsoredUntil                        DateTime?
   sponsorBoostSeed                      Int                         @default(0)
   sponsorships                          Sponsorship[]
+  // Provider-level Stripe customer for sponsorship billing. Shared across the
+  // provider's billing users so a saved card entered once is reused for every
+  // future sponsorship charge (Option B: enter payment method once, auto-charge).
+  sponsorStripeCustomerId               String?
 }
 
 model ProviderType {

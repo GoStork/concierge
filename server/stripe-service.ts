@@ -752,6 +752,9 @@ export async function createSponsorshipSubscription(params: {
   preProvisionedPriceId?: string | null;
   sponsorshipId: string;
   providerId: string;
+  /** When the customer already has a saved card, charge it immediately
+   *  off-session so the provider doesn't re-enter payment (Option B). */
+  defaultPaymentMethod?: string | null;
 }): Promise<{
   subscriptionId: string;
   priceId: string;
@@ -788,10 +791,16 @@ export async function createSponsorshipSubscription(params: {
     priceId = price.id;
   }
 
+  const hasSavedCard = !!params.defaultPaymentMethod;
   const subscription = await stripe.subscriptions.create({
     customer: params.customerId,
     items: [{ price: priceId }],
-    payment_behavior: "default_incomplete",
+    // With a saved card, let Stripe charge the first invoice immediately
+    // off-session; otherwise create incomplete so the client confirms via the
+    // Payment Element. Either way save the method for future renewals/purchases.
+    ...(hasSavedCard
+      ? { default_payment_method: params.defaultPaymentMethod!, off_session: true }
+      : { payment_behavior: "default_incomplete" }),
     payment_settings: {
       save_default_payment_method: "on_subscription",
       payment_method_types: ["card"],
@@ -840,7 +849,7 @@ export async function createSponsorshipOneTimeIntent(params: {
     currency: params.currency.toLowerCase(),
     capture_method: "automatic",
     description: params.description,
-    ...(params.customerId ? { customer: params.customerId } : {}),
+    ...(params.customerId ? { customer: params.customerId, setup_future_usage: "off_session" } : {}),
     ...(pmcId
       ? { payment_method_configuration: pmcId }
       : { payment_method_types: [...US_PAYMENT_METHOD_ORDER] }),
@@ -848,6 +857,105 @@ export async function createSponsorshipOneTimeIntent(params: {
   });
 
   return { clientSecret: intent.client_secret!, paymentIntentId: intent.id };
+}
+
+/**
+ * Provider-level Stripe customer for sponsorship billing. Keyed by providerId so
+ * any of the provider's billing users reuses the same saved card. Reuses the
+ * stored id when valid, else searches by metadata, else creates.
+ */
+export async function getOrCreateSponsorCustomer(params: {
+  providerId: string;
+  email: string;
+  name?: string | null;
+  existingCustomerId?: string | null;
+}): Promise<string> {
+  if (!isStripeConfigured()) {
+    return params.existingCustomerId || `mock_cus_prov_${params.providerId}`;
+  }
+  const stripe = getStripe();
+  if (params.existingCustomerId) {
+    try {
+      const c = await stripe.customers.retrieve(params.existingCustomerId);
+      if (c && !(c as any).deleted) return params.existingCustomerId;
+    } catch { /* recreate */ }
+  }
+  const search = await stripe.customers.search({
+    query: `metadata['gostorkProviderId']:'${params.providerId}'`,
+    limit: 1,
+  }).catch(() => null);
+  const existing = search?.data?.[0];
+  if (existing) return existing.id;
+  const created = await stripe.customers.create({
+    email: params.email,
+    name: params.name || undefined,
+    metadata: { gostorkProviderId: params.providerId, kind: "sponsorship" },
+  });
+  return created.id;
+}
+
+/** The customer's saved default card for sponsorship, or null. */
+export async function getSponsorDefaultPaymentMethod(customerId: string): Promise<{ id: string; brand: string | null; last4: string | null } | null> {
+  if (!isStripeConfigured() || customerId.startsWith("mock_")) return null;
+  const stripe = getStripe();
+  const customer = await stripe.customers.retrieve(customerId, { expand: ["invoice_settings.default_payment_method"] }).catch(() => null);
+  if (!customer || (customer as any).deleted) return null;
+  let pm: any = (customer as any).invoice_settings?.default_payment_method;
+  if (typeof pm === "string") pm = await stripe.paymentMethods.retrieve(pm).catch(() => null);
+  if (!pm) {
+    // Fall back to the most recent card attached to the customer.
+    const list = await stripe.paymentMethods.list({ customer: customerId, type: "card", limit: 1 }).catch(() => null);
+    pm = list?.data?.[0] || null;
+  }
+  if (!pm) return null;
+  return { id: pm.id, brand: pm.card?.brand || null, last4: pm.card?.last4 || null };
+}
+
+/** Sets the customer's default invoice payment method (so future flows reuse it). */
+export async function setSponsorDefaultPaymentMethod(customerId: string, paymentMethodId: string): Promise<void> {
+  if (!isStripeConfigured() || customerId.startsWith("mock_")) return;
+  const stripe = getStripe();
+  await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: paymentMethodId } }).catch(() => {});
+}
+
+/**
+ * Charges a saved card off-session for a one-time sponsorship month. Returns the
+ * outcome: "succeeded" (activate now), "requires_action" (hand the client a
+ * secret to authenticate), or "failed".
+ */
+export async function chargeSponsorshipOffSession(params: {
+  customerId: string;
+  paymentMethodId: string;
+  amountCents: number;
+  currency: string;
+  description: string;
+  sponsorshipId: string;
+  providerId: string;
+}): Promise<{ status: "succeeded" | "requires_action" | "failed"; paymentIntentId: string; clientSecret: string | null }> {
+  if (!isStripeConfigured()) {
+    return { status: "succeeded", paymentIntentId: `mock_pi_${Date.now()}`, clientSecret: null };
+  }
+  const stripe = getStripe();
+  try {
+    const intent = await stripe.paymentIntents.create({
+      amount: params.amountCents,
+      currency: params.currency.toLowerCase(),
+      customer: params.customerId,
+      payment_method: params.paymentMethodId,
+      off_session: true,
+      confirm: true,
+      description: params.description,
+      metadata: { kind: "sponsorship", sponsorshipId: params.sponsorshipId, providerId: params.providerId },
+    });
+    if (intent.status === "succeeded") return { status: "succeeded", paymentIntentId: intent.id, clientSecret: null };
+    if (intent.status === "requires_action") return { status: "requires_action", paymentIntentId: intent.id, clientSecret: intent.client_secret || null };
+    return { status: "failed", paymentIntentId: intent.id, clientSecret: intent.client_secret || null };
+  } catch (e: any) {
+    // Card declined / authentication required surfaces here as a card error.
+    const pi = e?.raw?.payment_intent;
+    if (pi?.status === "requires_action") return { status: "requires_action", paymentIntentId: pi.id, clientSecret: pi.client_secret || null };
+    return { status: "failed", paymentIntentId: pi?.id || "", clientSecret: pi?.client_secret || null };
+  }
 }
 
 /**
@@ -895,6 +1003,7 @@ export function parseSponsorshipEvent(event: Stripe.Event): {
   sponsorshipId: string | null;
   stripeSubscriptionId: string | null;
   paymentIntentId: string | null;
+  paymentMethodId: string | null;
   currentPeriodEnd: number | null; // unix seconds
   cancelAtPeriodEnd: boolean | null;
   subscriptionStatus: string | null;
@@ -906,6 +1015,7 @@ export function parseSponsorshipEvent(event: Stripe.Event): {
     sponsorshipId: null as string | null,
     stripeSubscriptionId: null as string | null,
     paymentIntentId: null as string | null,
+    paymentMethodId: null as string | null,
     currentPeriodEnd: null as number | null,
     cancelAtPeriodEnd: null as boolean | null,
     subscriptionStatus: null as string | null,
@@ -916,7 +1026,8 @@ export function parseSponsorshipEvent(event: Stripe.Event): {
     const intent = event.data.object as Stripe.PaymentIntent;
     const meta = intent.metadata || {};
     if (meta.kind !== "sponsorship") return null;
-    return { ...base, sponsorshipId: meta.sponsorshipId || null, paymentIntentId: intent.id };
+    const pmId = typeof intent.payment_method === "string" ? intent.payment_method : (intent.payment_method as any)?.id || null;
+    return { ...base, sponsorshipId: meta.sponsorshipId || null, paymentIntentId: intent.id, paymentMethodId: pmId };
   }
 
   if (t.startsWith("customer.subscription.")) {

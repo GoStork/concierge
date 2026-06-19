@@ -122,6 +122,14 @@ export class SponsorshipService {
 
   // ─── Provider-facing reads ──────────────────────────────────────────────
 
+  /** The provider's saved sponsorship card (for the "paying with ••••X" hint), or null. */
+  async getSavedCard(providerId: string): Promise<{ brand: string | null; last4: string | null } | null> {
+    const provider = await this.prisma.provider.findUnique({ where: { id: providerId }, select: { sponsorStripeCustomerId: true } });
+    if (!provider?.sponsorStripeCustomerId) return null;
+    const pm = await stripeService.getSponsorDefaultPaymentMethod(provider.sponsorStripeCustomerId);
+    return pm ? { brand: pm.brand, last4: pm.last4 } : null;
+  }
+
   async getProviderSummary(providerId: string) {
     const sponsorships = await this.prisma.sponsorship.findMany({
       where: { providerId },
@@ -176,16 +184,21 @@ export class SponsorshipService {
     billingMode: BillingMode;
     actingUser: { id: string; email: string; name?: string | null; stripeCustomerId?: string | null };
     createdByAdmin?: boolean;
-  }): Promise<{ sponsorshipId: string; clientSecret: string | null }> {
+  }): Promise<{ sponsorshipId: string; clientSecret: string | null; activated: boolean; savedCard: { brand: string | null; last4: string | null } | null }> {
     const plan = await this.prisma.sponsorshipPlan.findUnique({ where: { id: params.planId } });
     if (!plan || !plan.isActive) throw new NotFoundException("Plan not found or inactive");
 
-    const customerId = await stripeService.getOrCreateStripeCustomer({
-      userId: params.actingUser.id,
+    // Provider-level customer so a card saved by one billing user is reused by all.
+    const provider = await this.prisma.provider.findUnique({ where: { id: params.providerId }, select: { sponsorStripeCustomerId: true } });
+    const customerId = await stripeService.getOrCreateSponsorCustomer({
+      providerId: params.providerId,
       email: params.actingUser.email,
       name: params.actingUser.name,
-      existingCustomerId: params.actingUser.stripeCustomerId,
+      existingCustomerId: provider?.sponsorStripeCustomerId,
     });
+    if (provider?.sponsorStripeCustomerId !== customerId) {
+      await this.prisma.provider.update({ where: { id: params.providerId }, data: { sponsorStripeCustomerId: customerId } }).catch(() => {});
+    }
 
     const sponsorship = await this.prisma.sponsorship.create({
       data: {
@@ -212,7 +225,13 @@ export class SponsorshipService {
       });
     }
 
+    // Reuse a previously saved card (Option B). Admin "send payment request"
+    // never auto-charges - it always routes to the provider to confirm.
+    const savedCard = params.createdByAdmin ? null : await stripeService.getSponsorDefaultPaymentMethod(customerId);
+
     let clientSecret: string | null = null;
+    let activated = false;
+
     if (params.billingMode === "AUTO_RENEW") {
       const sub = await stripeService.createSponsorshipSubscription({
         customerId,
@@ -222,12 +241,43 @@ export class SponsorshipService {
         preProvisionedPriceId: plan.stripePriceId,
         sponsorshipId: sponsorship.id,
         providerId: params.providerId,
+        defaultPaymentMethod: savedCard?.id || null,
       });
-      clientSecret = sub.paymentIntentClientSecret;
       await this.prisma.sponsorship.update({
         where: { id: sponsorship.id },
         data: { stripeSubscriptionId: sub.subscriptionId, stripePriceId: sub.priceId },
       });
+      if (savedCard && !sub.paymentIntentClientSecret && ["active", "trialing"].includes(sub.status)) {
+        // Saved card charged the first invoice off-session - activate now.
+        await this.activate(sponsorship.id, sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd * 1000) : addOneMonth(new Date()));
+        activated = true;
+      } else {
+        clientSecret = sub.paymentIntentClientSecret; // no saved card, or auth needed
+      }
+    } else if (savedCard) {
+      // ONE_TIME with a saved card: charge off-session.
+      const charge = await stripeService.chargeSponsorshipOffSession({
+        customerId, paymentMethodId: savedCard.id,
+        amountCents: plan.priceCents, currency: plan.currency,
+        description: `GoStork Sponsorship - ${plan.displayName} (1 month)`,
+        sponsorshipId: sponsorship.id, providerId: params.providerId,
+      });
+      await this.prisma.sponsorship.update({ where: { id: sponsorship.id }, data: { stripePaymentIntentId: charge.paymentIntentId } });
+      if (charge.status === "succeeded") {
+        await this.activate(sponsorship.id, addOneMonth(new Date()));
+        activated = true;
+      } else if (charge.status === "requires_action") {
+        clientSecret = charge.clientSecret;
+      } else {
+        // Saved card failed - fall back to a fresh interactive PaymentIntent.
+        const pi = await stripeService.createSponsorshipOneTimeIntent({
+          customerId, amountCents: plan.priceCents, currency: plan.currency,
+          description: `GoStork Sponsorship - ${plan.displayName} (1 month)`,
+          sponsorshipId: sponsorship.id, providerId: params.providerId,
+        });
+        await this.prisma.sponsorship.update({ where: { id: sponsorship.id }, data: { stripePaymentIntentId: pi.paymentIntentId } });
+        clientSecret = pi.clientSecret;
+      }
     } else {
       const pi = await stripeService.createSponsorshipOneTimeIntent({
         customerId,
@@ -247,6 +297,7 @@ export class SponsorshipService {
     // Mock mode (no Stripe keys): activate immediately so dev can exercise the flow.
     if (!stripeService.isStripeConfigured()) {
       await this.activate(sponsorship.id, addOneMonth(new Date()));
+      activated = true;
     } else if (params.createdByAdmin) {
       // Admin "send payment request": notify the provider's billing contacts so
       // they can complete payment from their dashboard.
@@ -255,7 +306,7 @@ export class SponsorshipService {
       }).catch((e) => this.logger.warn(`payment-request notify failed: ${e.message}`));
     }
 
-    return { sponsorshipId: sponsorship.id, clientSecret };
+    return { sponsorshipId: sponsorship.id, clientSecret, activated, savedCard: savedCard ? { brand: savedCard.brand, last4: savedCard.last4 } : null };
   }
 
   /** Returns a fresh client secret to complete payment on a PENDING sponsorship
@@ -542,7 +593,11 @@ export class SponsorshipService {
 
     switch (parsed.type) {
       case "payment_intent.succeeded":
-        // One-time month paid.
+        // One-time month paid. Remember the card on the provider customer so the
+        // next purchase reuses it without re-entry (Option B).
+        if (parsed.paymentMethodId && sponsorship.stripeCustomerId) {
+          await stripeService.setSponsorDefaultPaymentMethod(sponsorship.stripeCustomerId, parsed.paymentMethodId).catch(() => {});
+        }
         await this.activate(sponsorship.id, addOneMonth(new Date()));
         break;
       case "payment_intent.canceled":

@@ -191,9 +191,20 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
   const [checkout, setCheckout] = useState<{ planId: string; clientSecret: string } | null>(null);
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Saved card (Option B): if present, purchases auto-charge it with no re-entry.
+  const pmUrl = isAdmin ? `${base}/payment-method?providerId=${providerId}` : `/api/sponsorship/payment-method`;
+  const savedCardQ = useQuery<{ brand: string | null; last4: string | null } | null>({
+    queryKey: [pmUrl],
+    queryFn: async () => (await apiRequest("GET", pmUrl)).json(),
+    enabled: !isAdmin || !!providerId,
+    retry: false,
+  });
+  const savedCard = savedCardQ.data;
 
   const startCharge = async (planId: string) => {
-    setError(null); setBusyPlan(planId);
+    setError(null); setNotice(null); setBusyPlan(planId);
     try {
       const body = isAdmin
         ? { providerId, planId, billingMode, mode: "CHARGE" }
@@ -201,8 +212,12 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
       const url = isAdmin ? `${base}` : `${base}/checkout`;
       const res = await apiRequest("POST", url, body);
       const data = await res.json();
-      if (data.clientSecret) setCheckout({ planId, clientSecret: data.clientSecret });
-      else onChanged();
+      if (data.clientSecret) {
+        setCheckout({ planId, clientSecret: data.clientSecret });
+      } else {
+        if (data.activated && data.savedCard?.last4) setNotice(`Charged your saved card ••••${data.savedCard.last4}. Sponsorship is now active.`);
+        onChanged();
+      }
     } catch (e: any) {
       setError(e.message || "Could not start checkout");
     } finally { setBusyPlan(null); }
@@ -269,6 +284,13 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
           </div>
         </div>
 
+        {savedCard?.last4 && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CreditCard className="w-4 h-4" />
+            <span>Paying with your saved card {savedCard.brand ? `${savedCard.brand} ` : ""}••••{savedCard.last4} - no need to re-enter it.</span>
+          </div>
+        )}
+        {notice && <div className="text-sm rounded-lg px-3 py-2" style={{ background: "hsl(var(--brand-success) / 0.1)", color: "hsl(var(--brand-success))" }}>{notice}</div>}
         {error && <div className="text-sm rounded-lg px-3 py-2" style={{ background: "hsl(var(--brand-error) / 0.1)", color: "hsl(var(--brand-error))" }}>{error}</div>}
 
         <div>
@@ -298,7 +320,7 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
             <p className="text-sm font-medium">Complete payment to activate</p>
             <SponsorshipCheckout
               clientSecret={checkout.clientSecret}
-              onDone={() => { setCheckout(null); onChanged(); }}
+              onDone={() => { setCheckout(null); onChanged(); setTimeout(() => savedCardQ.refetch(), 2500); }}
               onCancel={() => setCheckout(null)}
             />
           </div>

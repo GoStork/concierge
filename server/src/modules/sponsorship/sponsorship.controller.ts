@@ -91,6 +91,12 @@ export class SponsorshipController {
     return this.sponsorship.getApplicableSlotEntityTypes(providerId);
   }
 
+  @Get("api/sponsorship/payment-method")
+  async paymentMethod(@Req() req: Request) {
+    const providerId = this.requireProvider(req);
+    return this.sponsorship.getSavedCard(providerId);
+  }
+
   @Post("api/sponsorship/checkout")
   async checkout(@Req() req: Request, @Body() body: { planId: string; billingMode: "AUTO_RENEW" | "ONE_TIME" }) {
     const providerId = this.requireProvider(req);
@@ -172,6 +178,13 @@ export class SponsorshipController {
     this.requireAdmin(req);
     if (!providerId) throw new BadRequestException("providerId required");
     return this.sponsorship.getApplicableSlotEntityTypes(providerId);
+  }
+
+  @Get("api/admin/sponsorship/payment-method")
+  async adminPaymentMethod(@Req() req: Request, @Query("providerId") providerId: string) {
+    this.requireAdmin(req);
+    if (!providerId) throw new BadRequestException("providerId required");
+    return this.sponsorship.getSavedCard(providerId);
   }
 
   @Post("api/admin/sponsorship")
