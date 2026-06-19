@@ -8,8 +8,6 @@ type ProductType = "SLOT_BUNDLE" | "WHOLE_PROFILE";
 type BillingMode = "AUTO_RENEW" | "ONE_TIME";
 type EntityType = "EGG_DONOR" | "SURROGATE" | "SPERM_DONOR" | "DOCTOR" | "CLINIC_PROFILE" | "AGENCY_PROFILE";
 
-const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
-
 function addOneMonth(from: Date): Date {
   // Calendar-month add with timestamp fallback for edge dates.
   const d = new Date(from);
@@ -708,13 +706,15 @@ export class SponsorshipService {
       orderBy: { createdAt: "desc" },
     });
 
-    // Active window start = earliest active period start; fallback last 30 days.
+    // Active window = from the earliest active sponsorship's period start. If the
+    // provider has NO active sponsorship there is no window, and every engagement
+    // metric is 0 - we never count provider-wide activity that wasn't sponsored.
     const active = sponsorships.filter((s: any) => s.status === "ACTIVE");
-    const windowStart = active.reduce<Date | null>((acc, s: any) => {
+    const windowStart: Date | null = active.reduce<Date | null>((acc, s: any) => {
       const start = s.currentPeriodStart ? new Date(s.currentPeriodStart) : null;
       if (!start) return acc;
       return !acc || start < acc ? start : acc;
-    }, null) || new Date(Date.now() - MONTH_MS);
+    }, null);
 
     // Collect sponsored entity ids by type across active sponsorships.
     const idsByType: Record<string, Set<string>> = {};
@@ -731,7 +731,7 @@ export class SponsorshipService {
     const db = this.prisma.client;
 
     // Impressions (ParentProfileView) for any sponsored entity within the window.
-    const views = allEntityIds.length
+    const views = windowStart && allEntityIds.length
       ? await db.parentProfileView.findMany({
           where: { profileId: { in: allEntityIds }, viewedAt: { gte: windowStart } },
           select: { profileId: true, viewedAt: true },
@@ -739,13 +739,13 @@ export class SponsorshipService {
       : [];
 
     // Saves vs passes - donors (UserDonorPreference) + doctors/clinics/agencies (UserProfilePreference).
-    const donorPrefs = donorLikeIds.length
+    const donorPrefs = windowStart && donorLikeIds.length
       ? await db.userDonorPreference.findMany({
           where: { donorId: { in: donorLikeIds }, createdAt: { gte: windowStart } },
           select: { donorId: true, type: true },
         })
       : [];
-    const profilePrefs = profileLikeIds.length
+    const profilePrefs = windowStart && profileLikeIds.length
       ? await db.userProfilePreference.findMany({
           where: { entityId: { in: profileLikeIds }, createdAt: { gte: windowStart } },
           select: { entityId: true, type: true },
@@ -755,9 +755,16 @@ export class SponsorshipService {
     const saves = donorPrefs.filter((p: any) => p.type === "favorite").length + profilePrefs.filter((p: any) => p.type === "favorite").length;
     const passes = donorPrefs.filter((p: any) => p.type === "skip").length + profilePrefs.filter((p: any) => p.type === "skip").length;
 
-    // Inquiries / leads for the provider in the window.
-    const inquiries = await db.silentQuery.count({ where: { providerId, createdAt: { gte: windowStart } } });
-    const hotLeads = await db.intendedParentProfile.count({ where: { hotLeadProviderId: providerId, hotLeadAt: { gte: windowStart } } });
+    // Inquiries: whisper questions about a SPONSORED profile (via the chat
+    // session's subject), within the sponsored window - not provider-wide.
+    const inquiries = windowStart && allEntityIds.length
+      ? await db.silentQuery.count({ where: { providerId, createdAt: { gte: windowStart }, session: { subjectProfileId: { in: allEntityIds } } } })
+      : 0;
+    // Hot leads are a provider-level signal (not tied to one profile); count only
+    // within the sponsored window, so 0 when the provider isn't currently sponsored.
+    const hotLeads = windowStart
+      ? await db.intendedParentProfile.count({ where: { hotLeadProviderId: providerId, hotLeadAt: { gte: windowStart } } })
+      : 0;
 
     // Time series (views per day).
     const byDay = new Map<string, number>();

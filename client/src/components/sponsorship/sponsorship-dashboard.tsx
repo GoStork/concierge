@@ -72,10 +72,13 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
         <KpiCard icon={<Sparkles className="w-4 h-4" />} label="Active sponsorships" value={kpis?.activeSponsorships ?? 0} />
         <KpiCard icon={<Eye className="w-4 h-4" />} label="Impressions" value={kpis?.totalImpressions ?? 0} hint="while sponsored" />
         <KpiCard icon={<Heart className="w-4 h-4" />} label="Saves" value={kpis?.saves ?? 0} />
-        <KpiCard icon={<MessageCircle className="w-4 h-4" />} label="Inquiries" value={kpis?.inquiries ?? 0} />
-        <KpiCard icon={<Flame className="w-4 h-4" />} label="Hot leads" value={kpis?.hotLeads ?? 0} />
+        <KpiCard icon={<MessageCircle className="w-4 h-4" />} label="Inquiries" value={kpis?.inquiries ?? 0} hint="about sponsored profiles" />
+        <KpiCard icon={<Flame className="w-4 h-4" />} label="Hot leads" value={kpis?.hotLeads ?? 0} hint="while sponsored" />
         <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Slots used" value={`${kpis?.slotsUsed ?? 0}/${kpis?.slotsTotal ?? 0}`} />
       </div>
+      <p className="text-xs text-muted-foreground -mt-3">
+        All metrics are measured only while you have an active sponsorship. Impressions, saves and inquiries are for your sponsored profiles; hot leads are an account-level signal during the sponsored period.
+      </p>
 
       {/* Trend + funnel */}
       {a && (a.timeSeries?.length > 0 || (kpis?.totalImpressions ?? 0) > 0) && (
