@@ -4,7 +4,7 @@ import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2, X, CheckCircle2, ChevronLeft } from "lucide-react";
+import { Loader2, X, CheckCircle2, ChevronLeft, ChevronDown } from "lucide-react";
 
 /**
  * Inline (no-modal) Stripe checkout for a sponsorship. Reuses the same
@@ -130,8 +130,11 @@ export function ModalShell({ onClose, children, maxWidth = "sm:max-w-md", onBack
               <ChevronLeft className="w-4 h-4" />
             </button>
           ) : <span />}
-          <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center text-muted-foreground" data-testid="button-modal-close">
-            <X className="w-4 h-4" />
+          {/* Mobile drawer closes with a down-arrow (matches the donor profile
+              sheet); desktop modal keeps the conventional X. */}
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-secondary sm:bg-transparent hover:bg-secondary/80 sm:hover:bg-secondary flex items-center justify-center text-foreground sm:text-muted-foreground" data-testid="button-modal-close">
+            <ChevronDown className="w-5 h-5 sm:hidden" />
+            <X className="w-4 h-4 hidden sm:block" />
           </button>
         </div>
         {children}
