@@ -121,15 +121,19 @@ export function ModalShell({ onClose, children, maxWidth = "sm:max-w-md", onBack
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/50 animate-in fade-in" onClick={onClose} />
       <div className={`relative w-full ${maxWidth} max-h-[92vh] overflow-y-auto bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 animate-in slide-in-from-bottom-6 sm:zoom-in-95`}>
-        {onBack && (
-          <button onClick={onBack} className="absolute top-3 left-3 w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center text-muted-foreground" data-testid="button-modal-back">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        )}
-        <button onClick={onClose} className="absolute top-3 right-3 w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center text-muted-foreground" data-testid="button-modal-close">
-          <X className="w-4 h-4" />
-        </button>
         <div className="sm:hidden mx-auto mb-3 h-1.5 w-10 rounded-full bg-border" />
+        {/* Top bar: Back (left) + Close (right) live in their own row so they are
+            always visible and never overlap the step heading below. */}
+        <div className="flex items-center justify-between mb-3 h-8">
+          {onBack ? (
+            <button onClick={onBack} className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground" data-testid="button-modal-back">
+              <ChevronLeft className="w-4 h-4" /> Back
+            </button>
+          ) : <span />}
+          <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center text-muted-foreground" data-testid="button-modal-close">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
         {children}
       </div>
     </div>
