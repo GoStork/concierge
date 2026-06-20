@@ -238,6 +238,44 @@ function ErrorNote({ text }: { text: string }) {
   return <div className="text-sm rounded-lg px-3 py-2" style={{ background: "hsl(var(--brand-error) / 0.1)", color: "hsl(var(--brand-error))" }}>{text}</div>;
 }
 
+const NOUN_BY_ENTITY: Record<EntityType, string> = {
+  EGG_DONOR: "egg donors", SURROGATE: "surrogates", SPERM_DONOR: "sperm donors", DOCTOR: "doctors",
+};
+
+/**
+ * Emphasized promo card that wraps the Start Sponsorship button. Used on the
+ * Sponsorship tab and atop each profile tab so the call-to-action stands out
+ * with a branded accent background. Pass initialEntityType from a profile tab.
+ */
+export function BoostProfilesCard({ initialEntityType, onChanged, className }: {
+  initialEntityType?: EntityType;
+  onChanged?: () => void;
+  className?: string;
+}) {
+  const noun = initialEntityType ? NOUN_BY_ENTITY[initialEntityType] : null;
+  const desc = noun
+    ? `Sponsor your ${noun} to rank them higher in the marketplace with a "Sponsored" badge and priority in the AI concierge.`
+    : `Sponsor egg donors, surrogates, sperm donors, or your whole profile to rank higher in the marketplace.`;
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/15 via-secondary/50 to-card p-5 ${className || ""}`}>
+      <div className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-accent/15 blur-2xl" />
+      <div className="pointer-events-none absolute -bottom-12 left-12 h-28 w-28 rounded-full bg-primary/10 blur-2xl" />
+      <div className="relative flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/20 text-accent">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="font-heading text-base text-foreground">Boost your {noun || "profiles"}</div>
+            <p className="max-w-xl text-sm text-muted-foreground">{desc}</p>
+          </div>
+        </div>
+        <StartSponsorshipButton initialEntityType={initialEntityType} onChanged={onChanged} />
+      </div>
+    </div>
+  );
+}
+
 /**
  * The single entry point. Renders a "Start Sponsorship" button that opens the
  * wizard. Drop it on the Sponsorship tab and on each profile tab; pass

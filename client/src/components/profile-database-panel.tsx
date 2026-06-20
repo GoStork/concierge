@@ -36,7 +36,7 @@ import { useConfirm } from "@/components/ui/confirm-bar";
 import { useAuth } from "@/hooks/use-auth";
 import { SyncReportFetcher } from "@/components/sync-report-content";
 import { ProfileCard } from "@/components/profile-card";
-import { StartSponsorshipButton } from "@/components/sponsorship/sponsorship-wizard";
+import { BoostProfilesCard } from "@/components/sponsorship/sponsorship-wizard";
 import { typeToUrlSlug } from "@/lib/profile-utils";
 import type { ProfileType } from "@/lib/profile-utils";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
@@ -1137,6 +1137,13 @@ export default function ProfileDatabasePanel({
       )}
 
       {showRecords && <div>
+        {showStartSponsorship && (
+          <BoostProfilesCard
+            initialEntityType={sponsorEntityType as any}
+            onChanged={() => profilesQuery.refetch()}
+            className="mb-4"
+          />
+        )}
         <div className="flex items-center justify-between mb-3">
           <h4
             className="font-heading text-sm"
@@ -1149,31 +1156,22 @@ export default function ProfileDatabasePanel({
               </span>
             )}
           </h4>
-          <div className="flex items-center gap-2">
-            {showStartSponsorship && (
-              <StartSponsorshipButton
-                size="sm"
-                initialEntityType={sponsorEntityType as any}
-                onChanged={() => profilesQuery.refetch()}
+          {profiles.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                profilesQuery.refetch()
+              }
+              disabled={profilesQuery.isFetching}
+              data-testid={`btn-refresh-profiles-${type}`}
+            >
+              <RefreshCw
+                className={`w-4 h-4 mr-1 ${profilesQuery.isFetching ? "animate-spin" : ""}`}
               />
-            )}
-            {profiles.length > 0 && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() =>
-                  profilesQuery.refetch()
-                }
-                disabled={profilesQuery.isFetching}
-                data-testid={`btn-refresh-profiles-${type}`}
-              >
-                <RefreshCw
-                  className={`w-4 h-4 mr-1 ${profilesQuery.isFetching ? "animate-spin" : ""}`}
-                />
-                Refresh
-              </Button>
-            )}
-          </div>
+              Refresh
+            </Button>
+          )}
         </div>
 
         {profiles.length > 0 && (

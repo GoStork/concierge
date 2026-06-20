@@ -9,7 +9,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { formatMoneyCents } from "@/lib/format-money";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { SponsorshipCheckoutOverlay } from "./sponsorship-checkout";
-import { StartSponsorshipButton } from "./sponsorship-wizard";
+import { BoostProfilesCard } from "./sponsorship-wizard";
 import {
   Sparkles, Eye, Heart, MessageCircle, Flame, TrendingUp, Loader2,
   Plus, X, ChevronDown, ChevronUp, Gift, CreditCard, User,
@@ -165,15 +165,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
           onChanged={refetchAll}
         />
       ) : (
-        <Card>
-          <CardContent className="p-5 flex items-center justify-between gap-4 flex-wrap">
-            <div className="min-w-0">
-              <div className="font-heading text-foreground">Boost your profiles</div>
-              <p className="text-sm text-muted-foreground">Sponsor egg donors, surrogates, sperm donors, or your whole profile to rank higher in the marketplace.</p>
-            </div>
-            <StartSponsorshipButton onChanged={refetchAll} />
-          </CardContent>
-        </Card>
+        <BoostProfilesCard onChanged={refetchAll} />
       )}
 
       {/* Active sponsorships + slot fill */}
