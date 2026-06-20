@@ -3,7 +3,7 @@ import {
   Snowflake, HeartHandshake, Baby, Scissors, Users, Award,
   Ruler, Scale, Hash, Globe, Heart, Syringe,
   Video, Stethoscope, UserCheck, ThumbsUp, Star,
-  Calendar, FileText, ShieldCheck,
+  Calendar, FileText, ShieldCheck, Building2, MapPin,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
@@ -880,9 +880,10 @@ export function buildClinicDoctorTab(
       ? [{ providerId: "", providerName: clinicName, location: (clinicLocations[0] ? [clinicLocations[0].city, clinicLocations[0].state].filter(Boolean).join(", ") : null) }]
       : [],
   };
-  // getDoctorTabs[0] is the Overview sections tab (About/Works at/Locations/Languages).
+  // getDoctorTabs[0] is the condensed Overview icon_list tab (Works at /
+  // Locations / Languages as icon rows). Bail only when there's nothing to show.
   const overview = getDoctorTabs(doctorData)[0];
-  if (!overview || overview.layoutType !== "sections" || !overview.groups || overview.groups.length === 0) return null;
+  if (!overview || overview.layoutType !== "icon_list" || overview.items.length === 0) return null;
   return { ...overview, photo: facePhoto, faceLabel: member.name || undefined };
 }
 
@@ -1363,26 +1364,27 @@ export function getDoctorTabs(
   const contextLabel = opts.contextLabel || primary?.successRateLabel || undefined;
 
   // 1) Overview (first tab) - kept SHORT so the face stays visible (like the
-  // egg-donor / surrogate first card): Works at, Locations, Languages only. The
-  // bio (the tall block) lives on its own "About" tab below.
-  const overviewGroups: TabGroup[] = [];
+  // egg-donor / surrogate first card). Condensed to a single icon_list (no
+  // "Works at" / "Locations" / "Languages" headers): each clinic is a Building2
+  // row, each location a MapPin row, each language a Globe row. Reads in far
+  // less vertical space than the old titled-bubble sections. The bio (the tall
+  // block) lives on its own "About" tab below.
+  const overviewItems: TabItem[] = [];
   const seenClinics = new Set<string>();
-  const clinicNames: TabItem[] = clinics
+  clinics
     .map((c) => (c.providerName || "").trim())
     .filter(Boolean)
     .filter((n) => { const k = n.toLowerCase(); if (seenClinics.has(k)) return false; seenClinics.add(k); return true; })
-    .map((n) => ({ label: n, value: "" }));
-  if (clinicNames.length > 0) overviewGroups.push({ title: "Works at", layoutType: "standard_bubbles", items: clinicNames });
+    .forEach((n) => overviewItems.push({ label: n, value: "", icon: Building2 }));
   const seenLoc = new Set<string>();
-  const locItems: TabItem[] = clinics
+  clinics
     .map((c) => (c.location || "").trim())
     .filter(Boolean)
     .filter((l) => { const k = l.toLowerCase(); if (seenLoc.has(k)) return false; seenLoc.add(k); return true; })
-    .map((l) => { const flag = getLocationFlag(l); return { label: flag ? `${flag} ${l}` : l, value: "" }; });
-  if (locItems.length > 0) overviewGroups.push({ title: "Locations", layoutType: "standard_bubbles", items: locItems });
+    .forEach((l) => { const flag = getLocationFlag(l); overviewItems.push({ label: flag ? `${flag} ${l}` : l, value: "", icon: MapPin }); });
   const langs = (doctor.languagesSpoken || []).filter(Boolean);
-  if (langs.length > 0) overviewGroups.push({ title: "Languages", layoutType: "standard_bubbles", items: langs.map((l) => ({ label: l, value: "" })) });
-  if (overviewGroups.length > 0) tabs.push({ layoutType: "sections", items: [], groups: overviewGroups });
+  langs.forEach((l) => overviewItems.push({ label: String(l), value: "", icon: Globe }));
+  if (overviewItems.length > 0) tabs.push({ layoutType: "icon_list", items: overviewItems });
 
   // 1b) About - the bio on its OWN tab (it's the tall block that would otherwise
   // cover the doctor's face on the first tab).

@@ -1708,7 +1708,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   // IVF Clinics deck uses); the matcher just adds chat actions + footer buttons.
   return (
     <div className="w-full" data-testid={`match-card-${card.providerId}`}>
-      <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+      <div className="w-full aspect-[5/8] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
         <ClinicSwipeCard
           providerId={card.providerId}
           eggSource={card.eggSource}
@@ -1764,7 +1764,7 @@ function DoctorMatchCard({ card, brandColor, onAction }: { card: DoctorCard; bra
 
   return (
     <div className="w-full" data-testid={`doctor-card-${card.slug}`}>
-      <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+      <div className="w-full aspect-[5/7] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
         <SwipeDeckCard
           id={card.slug}
           photos={photos}
@@ -4517,7 +4517,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
                   {/* Match cards */}
                   {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
-                    <div className="mb-2 space-y-3 w-[320px] sm:w-[380px]">
+                    <div className="mb-2 space-y-3 w-full max-w-[340px] sm:max-w-[440px]">
                       {msg.matchCards.map((card, ci) => (
                         <MatchCardComponent
                           key={ci}
@@ -4533,7 +4533,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   {/* Doctor cards - same SwipeDeckCard shell as the clinic card's
                       doctor-face tabs, just doctor-specific content. */}
                   {!alignRight && msg.doctorCards && msg.doctorCards.length > 0 && (
-                    <div className="mb-2 space-y-3 w-[320px] sm:w-[380px]">
+                    <div className="mb-2 space-y-3 w-full max-w-[340px] sm:max-w-[440px]">
                       {msg.doctorCards.map((card, ci) => (
                         <DoctorMatchCard
                           key={`doc-${ci}`}

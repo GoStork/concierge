@@ -406,7 +406,7 @@ export function SwipeDeckCard({
                   {/* sections: several titled groups stacked on one tab (e.g. the
                       agency Overview tab = Overview + Services + Locations). */}
                   {currentTab.layoutType === "sections" && currentTab.groups && (
-                    <div className="flex flex-col gap-6 overflow-hidden">
+                    <div className={`flex flex-col ${chatMode ? "gap-4" : "gap-6"} overflow-hidden`}>
                       {currentTab.groups.map((group, gi) => (
                         <div key={`${group.title}-${gi}`}>
                           {group.title && (
@@ -914,7 +914,7 @@ export function SwipeDeckCard({
               )}
 
               {currentTab && currentTab.layoutType === "sections" && currentTab.groups && (
-                <div className="flex flex-col gap-6">
+                <div className={`flex flex-col ${chatMode ? "gap-4" : "gap-6"}`}>
                   {currentTab.groups.map((group, gi) => (
                     <div key={`${group.title}-${gi}`}>
                       {group.title && (
