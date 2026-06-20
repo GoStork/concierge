@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { apiRequest } from "@/lib/queryClient";
 import { formatMoneyCents } from "@/lib/format-money";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { SponsorshipCheckout } from "./sponsorship-checkout";
+import { SponsorshipCheckoutOverlay } from "./sponsorship-checkout";
 import {
   Sparkles, Eye, Heart, MessageCircle, Flame, TrendingUp, Loader2,
   Plus, X, ChevronDown, ChevronUp, Gift, CreditCard, User,
@@ -210,11 +210,10 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
   plans: any[]; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void;
 }) {
   const [billingMode, setBillingMode] = useState<BillingMode>("AUTO_RENEW");
-  const [checkout, setCheckout] = useState<{ planId: string; clientSecret: string } | null>(null);
+  const [checkout, setCheckout] = useState<{ plan: any; clientSecret: string; sponsorshipId: string } | null>(null);
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const checkoutRef = useRef<HTMLDivElement>(null);
 
   // Saved card (Option B): if present, purchases auto-charge it with no re-entry.
   const pmUrl = isAdmin ? `${base}/payment-method?providerId=${providerId}` : `/api/sponsorship/payment-method`;
@@ -226,22 +225,21 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
   });
   const savedCard = savedCardQ.data;
 
-  const startCharge = async (planId: string) => {
-    setError(null); setNotice(null); setBusyPlan(planId);
+  const startCharge = async (plan: any) => {
+    setError(null); setNotice(null); setBusyPlan(plan.id);
     try {
       if (isAdmin) {
         // Admin can't enter the provider's card - this sends them a payment
         // request to complete from their own dashboard.
-        await apiRequest("POST", `${base}`, { providerId, planId, billingMode, mode: "CHARGE" });
+        await apiRequest("POST", `${base}`, { providerId, planId: plan.id, billingMode, mode: "CHARGE" });
         setNotice("Payment request sent. The provider will complete payment from their Sponsorship page, then it activates.");
         onChanged();
         return;
       }
-      const res = await apiRequest("POST", `${base}/checkout`, { planId, billingMode });
+      const res = await apiRequest("POST", `${base}/checkout`, { planId: plan.id, billingMode });
       const data = await res.json();
       if (data.clientSecret) {
-        setCheckout({ planId, clientSecret: data.clientSecret });
-        setTimeout(() => checkoutRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+        setCheckout({ plan, clientSecret: data.clientSecret, sponsorshipId: data.sponsorshipId });
       } else {
         if (data.activated && data.savedCard?.last4) setNotice(`Charged your saved card ••••${data.savedCard.last4}. Sponsorship is now active.`);
         onChanged();
@@ -337,7 +335,7 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {g.tiers.map((p) => (
                 <PlanCard key={p.id} plan={p} busy={busyPlan === p.id} isAdmin={isAdmin}
-                  onCharge={() => startCharge(p.id)} onComp={(months) => grantComp(p.id, months)} />
+                  onCharge={() => startCharge(p)} onComp={(months) => grantComp(p.id, months)} />
               ))}
             </div>
           </div>
@@ -349,23 +347,21 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {wholeProfiles.map((p) => (
                 <PlanCard key={p.id} plan={p} busy={busyPlan === p.id} isAdmin={isAdmin}
-                  onCharge={() => startCharge(p.id)} onComp={(months) => grantComp(p.id, months)} />
+                  onCharge={() => startCharge(p)} onComp={(months) => grantComp(p.id, months)} />
               ))}
             </div>
           </div>
         )}
 
-        {checkout && (
-          <div className="space-y-2 rounded-lg border border-primary/30 bg-secondary/30 p-3 scroll-mt-24" ref={checkoutRef}>
-            <p className="text-sm font-medium">Complete payment to activate</p>
-            <SponsorshipCheckout
-              clientSecret={checkout.clientSecret}
-              onDone={() => { setCheckout(null); onChanged(); setTimeout(() => savedCardQ.refetch(), 2500); }}
-              onCancel={() => setCheckout(null)}
-            />
-          </div>
-        )}
       </CardContent>
+      {checkout && (
+        <SponsorshipCheckoutOverlay
+          plan={checkout.plan}
+          clientSecret={checkout.clientSecret}
+          sponsorshipId={checkout.sponsorshipId}
+          onClose={() => { setCheckout(null); onChanged(); setTimeout(() => savedCardQ.refetch(), 2500); }}
+        />
+      )}
     </Card>
   );
 }
@@ -513,9 +509,7 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
         </div>
       </div>
       {payment && (
-        <div className="mt-3">
-          <SponsorshipCheckout clientSecret={payment} onDone={() => { setPayment(null); onChanged(); }} onCancel={() => setPayment(null)} />
-        </div>
+        <SponsorshipCheckoutOverlay plan={s.plan} clientSecret={payment} sponsorshipId={s.id} onClose={() => { setPayment(null); onChanged(); }} />
       )}
       {expanded && isBundle && (
         <SlotManager s={s} isAdmin={isAdmin} providerId={providerId} base={base} onChanged={onChanged} />

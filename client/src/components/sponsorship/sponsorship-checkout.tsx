@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2 } from "lucide-react";
+import { Loader2, X, CheckCircle2 } from "lucide-react";
 
 /**
  * Inline (no-modal) Stripe checkout for a sponsorship. Reuses the same
@@ -98,6 +99,77 @@ export function SponsorshipCheckout({ clientSecret, onDone, onCancel }: {
       <Elements stripe={stripe} options={{ clientSecret, appearance: { theme: "stripe" } }}>
         <CheckoutForm onDone={onDone} onCancel={onCancel} />
       </Elements>
+    </div>
+  );
+}
+
+const TAB_BY_TYPE: Record<string, string> = { EGG_DONOR: "egg-donors", SURROGATE: "surrogates", SPERM_DONOR: "sperm-donors" };
+const NOUN_BY_TYPE: Record<string, string> = { EGG_DONOR: "egg donors", SPERM_DONOR: "sperm donors", SURROGATE: "surrogates", DOCTOR: "doctors" };
+
+/**
+ * Checkout shown as a centered modal on desktop and a bottom drawer on mobile
+ * (responsive via Tailwind: items-end + rounded-t on small screens, centered on
+ * sm+). After payment it shows a "next step: choose profiles" step that routes
+ * the provider to the right tab to fill their slots.
+ */
+export function SponsorshipCheckoutOverlay({ plan, clientSecret, sponsorshipId, onClose }: {
+  plan: any;
+  clientSecret: string;
+  sponsorshipId: string;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const [paid, setPaid] = useState(false);
+  const isBundle = plan?.productType === "SLOT_BUNDLE";
+  const tab = TAB_BY_TYPE[plan?.slotEntityType];
+  const noun = NOUN_BY_TYPE[plan?.slotEntityType] || "profiles";
+
+  // Lock background scroll while open.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center" role="dialog" aria-modal="true" data-testid="sponsorship-checkout-overlay">
+      <div className="absolute inset-0 bg-black/50 animate-in fade-in" onClick={onClose} />
+      <div className="relative w-full sm:max-w-md max-h-[92vh] overflow-y-auto bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl p-5 animate-in slide-in-from-bottom-6 sm:zoom-in-95">
+        <button onClick={onClose} className="absolute top-3 right-3 w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center text-muted-foreground" data-testid="button-close-checkout">
+          <X className="w-4 h-4" />
+        </button>
+        {/* mobile drag handle */}
+        <div className="sm:hidden mx-auto mb-3 h-1.5 w-10 rounded-full bg-border" />
+
+        {!paid ? (
+          <>
+            <h3 className="font-heading text-lg text-foreground mb-1">{plan?.displayName}</h3>
+            <p className="text-sm text-muted-foreground mb-4">Complete payment to activate your sponsorship.</p>
+            <SponsorshipCheckout clientSecret={clientSecret} onDone={() => setPaid(true)} onCancel={onClose} />
+          </>
+        ) : (
+          <div className="text-center space-y-3 py-3">
+            <CheckCircle2 className="w-12 h-12 mx-auto text-[hsl(var(--brand-success))]" />
+            <h3 className="font-heading text-lg text-foreground">Payment complete</h3>
+            {isBundle && tab ? (
+              <>
+                <p className="text-sm text-muted-foreground">Next step: choose the {noun} you want to sponsor.</p>
+                <Button className="w-full" onClick={() => navigate(`/account/${tab}?sponsor=${sponsorshipId}`)} data-testid="button-select-profiles">
+                  Select {noun}
+                </Button>
+                <button className="text-xs text-muted-foreground hover:text-foreground" onClick={onClose}>I'll do this later</button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {isBundle ? `Manage your sponsored ${noun} on the Sponsorship page.` : "Your profile is now boosted in the marketplace."}
+                </p>
+                <Button className="w-full" onClick={onClose} data-testid="button-checkout-done">Done</Button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
