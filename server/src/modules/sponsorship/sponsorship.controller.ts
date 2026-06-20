@@ -139,10 +139,22 @@ export class SponsorshipController {
     return this.sponsorship.getPlans(false);
   }
 
+  @Post("api/admin/sponsorship/plans")
+  async adminCreatePlan(@Req() req: Request, @Body() body: any) {
+    this.requireAdmin(req);
+    return this.sponsorship.createPlan(body);
+  }
+
   @Patch("api/admin/sponsorship/plans/:id")
   async adminUpdatePlan(@Req() req: Request, @Param("id") id: string, @Body() body: any) {
     this.requireAdmin(req);
     return this.sponsorship.updatePlan(id, body);
+  }
+
+  @Delete("api/admin/sponsorship/plans/:id")
+  async adminDeletePlan(@Req() req: Request, @Param("id") id: string) {
+    this.requireAdmin(req);
+    return this.sponsorship.deletePlan(id);
   }
 
   @Get("api/admin/sponsorship")

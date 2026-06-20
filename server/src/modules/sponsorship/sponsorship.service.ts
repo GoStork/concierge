@@ -46,7 +46,47 @@ export class SponsorshipService {
   async updatePlan(id: string, data: { priceCents?: number; displayName?: string; slotCount?: number; isActive?: boolean; sortOrder?: number }) {
     const plan = await this.prisma.sponsorshipPlan.findUnique({ where: { id } });
     if (!plan) throw new NotFoundException("Plan not found");
-    return this.prisma.sponsorshipPlan.update({ where: { id }, data });
+    // Whole-profile plans always boost a single top-level profile.
+    const safe = { ...data };
+    if (plan.productType === "WHOLE_PROFILE") delete safe.slotCount;
+    return this.prisma.sponsorshipPlan.update({ where: { id }, data: safe });
+  }
+
+  /** Create a new sponsorship program (admin). New slot-bundle tiers are free-form;
+   *  whole-profile plans are limited to the clinic/agency types the boost logic understands. */
+  async createPlan(data: { productType: ProductType; tierKey: string; displayName: string; priceCents: number; slotCount?: number; currency?: string; sortOrder?: number }) {
+    if (!data.tierKey?.trim() || !data.displayName?.trim()) throw new BadRequestException("Tier key and display name are required");
+    if (data.priceCents == null || data.priceCents < 0) throw new BadRequestException("A valid price is required");
+    if (data.productType !== "SLOT_BUNDLE" && data.productType !== "WHOLE_PROFILE") throw new BadRequestException("Invalid product type");
+    if (data.productType === "WHOLE_PROFILE" && !["whole_profile_ivf", "whole_profile_surrogacy"].includes(data.tierKey)) {
+      throw new BadRequestException("Whole-profile plans are limited to the IVF clinic and surrogacy agency types");
+    }
+    const slotCount = data.productType === "WHOLE_PROFILE" ? 1 : Math.floor(data.slotCount || 0);
+    if (data.productType === "SLOT_BUNDLE" && slotCount < 1) throw new BadRequestException("Slot bundles need at least 1 slot");
+    const exists = await this.prisma.sponsorshipPlan.findUnique({
+      where: { productType_tierKey: { productType: data.productType, tierKey: data.tierKey.trim() } },
+    });
+    if (exists) throw new BadRequestException("A plan with this type and key already exists");
+    return this.prisma.sponsorshipPlan.create({
+      data: {
+        productType: data.productType, tierKey: data.tierKey.trim(), displayName: data.displayName.trim(),
+        priceCents: Math.floor(data.priceCents), currency: data.currency || "USD", slotCount,
+        sortOrder: data.sortOrder ?? 99, isActive: true,
+      },
+    });
+  }
+
+  /** Delete a plan if unused; otherwise deactivate it (existing sponsorships reference it). */
+  async deletePlan(id: string) {
+    const plan = await this.prisma.sponsorshipPlan.findUnique({ where: { id } });
+    if (!plan) throw new NotFoundException("Plan not found");
+    const refs = await this.prisma.sponsorship.count({ where: { planId: id } });
+    if (refs > 0) {
+      await this.prisma.sponsorshipPlan.update({ where: { id }, data: { isActive: false } });
+      return { deactivated: true, message: "This plan has existing sponsorships, so it was deactivated (hidden from new purchases) instead of deleted." };
+    }
+    await this.prisma.sponsorshipPlan.delete({ where: { id } });
+    return { deleted: true };
   }
 
   /** Which marketplace-card profile types a provider has (a provider can be both). */

@@ -23,6 +23,7 @@ import ProviderCostsTab from "@/components/provider-costs-tab";
 import { ProviderBillingTab } from "@/components/provider-billing-tab";
 import { ProviderPayoutsTab } from "@/components/provider-payouts-tab";
 import { SponsorshipDashboard } from "@/components/sponsorship/sponsorship-dashboard";
+import { SponsorshipPlanManager } from "@/components/sponsorship/sponsorship-plan-manager";
 import { ProviderLegalIdentityTab } from "@/components/provider-legal-identity-tab";
 import { CalendarSettings as CalendarSettingsComponent } from "@/components/calendar/calendar-settings";
 import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
@@ -75,7 +76,7 @@ const allTabs = [
   { to: '/account/legal-identity', label: 'Legal Identity', icon: FileSignature, roles: 'provider' as const },
   { to: '/account/billing', label: 'Billing', icon: DollarSign, roles: 'billing' as const },
   { to: '/account/payouts', label: 'Payouts', icon: Wallet, roles: 'billing' as const },
-  { to: '/account/sponsorship', label: 'Sponsorship', icon: Sparkles, roles: 'billing' as const },
+  { to: '/account/sponsorship', label: 'Sponsorship', icon: Sparkles, roles: 'sponsorship' as const },
   { to: '/account/branding', label: 'Branding', icon: Palette, roles: 'branding' as const },
   { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
@@ -2094,6 +2095,8 @@ export default function AccountPage() {
     if (tab.roles === 'provider') return isProviderOrAdmin;
     if (tab.roles === 'parent') return isParent;
     if (tab.roles === 'billing') return (isProvider || isAdmin) && !!providerId;
+    // GoStork admins manage global sponsorship programs; providers buy (needs a providerId).
+    if (tab.roles === 'sponsorship') return isAdmin || (isProvider && !!providerId);
     if (tab.roles === 'branding') return showBranding;
     if (tab.roles === 'knowledge') return isProvider && !isAdmin;
     if (tab.roles === 'concierge') return isAdmin || isParent || isProvider;
@@ -2190,8 +2193,8 @@ export default function AccountPage() {
         {(isProvider || isAdmin) && providerId && (
           <Route path="payouts" element={<ProviderPayoutsTab />} />
         )}
-        {(isProvider || isAdmin) && providerId && (
-          <Route path="sponsorship" element={<SponsorshipDashboard />} />
+        {(isAdmin || (isProvider && providerId)) && (
+          <Route path="sponsorship" element={isAdmin ? <SponsorshipPlanManager /> : <SponsorshipDashboard />} />
         )}
         {(isProvider || isAdmin) && (
           <Route path="legal-identity" element={<ProviderLegalIdentityTab />} />
