@@ -36,6 +36,7 @@ import { useConfirm } from "@/components/ui/confirm-bar";
 import { useAuth } from "@/hooks/use-auth";
 import { SyncReportFetcher } from "@/components/sync-report-content";
 import { ProfileCard } from "@/components/profile-card";
+import { StartSponsorshipButton } from "@/components/sponsorship/sponsorship-wizard";
 import { typeToUrlSlug } from "@/lib/profile-utils";
 import type { ProfileType } from "@/lib/profile-utils";
 import { MarketplaceFilterBar } from "@/components/marketplace/MarketplaceFilterBar";
@@ -127,6 +128,14 @@ export default function ProfileDatabasePanel({
   const isProvider = !!((user as any)?.providerId);
   const isAdminOrProvider = isAdmin || isProvider;
   const label = TYPE_LABELS[type];
+
+  // Provider self-serve only: offer the Start Sponsorship wizard from this tab,
+  // pre-targeting this profile type. Hidden in admin and while already picking
+  // profiles for a campaign (?sponsor=).
+  const [panelSearchParams] = useSearchParams();
+  const inCampaignMode = !!panelSearchParams.get("sponsor");
+  const sponsorEntityType = type === "egg-donor" ? "EGG_DONOR" : type === "surrogate" ? "SURROGATE" : "SPERM_DONOR";
+  const showStartSponsorship = isProvider && !isAdmin && !inCampaignMode;
 
   const filterProviderType = type === "egg-donor" ? "egg-donor" : type === "surrogate" ? "surrogate" : "sperm-donor";
 
@@ -1140,22 +1149,31 @@ export default function ProfileDatabasePanel({
               </span>
             )}
           </h4>
-          {profiles.length > 0 && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                profilesQuery.refetch()
-              }
-              disabled={profilesQuery.isFetching}
-              data-testid={`btn-refresh-profiles-${type}`}
-            >
-              <RefreshCw
-                className={`w-4 h-4 mr-1 ${profilesQuery.isFetching ? "animate-spin" : ""}`}
+          <div className="flex items-center gap-2">
+            {showStartSponsorship && (
+              <StartSponsorshipButton
+                size="sm"
+                initialEntityType={sponsorEntityType as any}
+                onChanged={() => profilesQuery.refetch()}
               />
-              Refresh
-            </Button>
-          )}
+            )}
+            {profiles.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  profilesQuery.refetch()
+                }
+                disabled={profilesQuery.isFetching}
+                data-testid={`btn-refresh-profiles-${type}`}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 mr-1 ${profilesQuery.isFetching ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </Button>
+            )}
+          </div>
         </div>
 
         {profiles.length > 0 && (
