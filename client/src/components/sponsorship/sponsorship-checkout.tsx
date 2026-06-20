@@ -126,8 +126,8 @@ export function ModalShell({ onClose, children, maxWidth = "sm:max-w-md", onBack
             always visible and never overlap the step heading below. */}
         <div className="flex items-center justify-between mb-3 h-8">
           {onBack ? (
-            <button onClick={onBack} className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground" data-testid="button-modal-back">
-              <ChevronLeft className="w-4 h-4" /> Back
+            <button onClick={onBack} className="w-8 h-8 rounded-full bg-secondary hover:bg-secondary/80 flex items-center justify-center text-foreground" data-testid="button-modal-back">
+              <ChevronLeft className="w-4 h-4" />
             </button>
           ) : <span />}
           <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center text-muted-foreground" data-testid="button-modal-close">
