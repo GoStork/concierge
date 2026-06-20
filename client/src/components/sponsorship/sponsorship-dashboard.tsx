@@ -170,8 +170,8 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
         />
       )}
 
-      {/* Active sponsorships + slot fill */}
-      <ActiveSponsorships
+      {/* Your sponsorships - current + history in one table with an Actions column */}
+      <SponsorshipsTable
         sponsorships={listQ.data || []}
         loading={listQ.isLoading}
         isAdmin={isAdmin}
@@ -179,9 +179,6 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
         base={base}
         onChanged={refetchAll}
       />
-
-      {/* History */}
-      <HistorySection history={a?.history} />
     </div>
   );
 }
@@ -410,22 +407,42 @@ function PlanCard({ plan, busy, isAdmin, onCharge, onComp }: { plan: any; busy: 
   );
 }
 
-// ─── Active sponsorships + slot fill ─────────────────────────────────────────
+// ─── Your sponsorships (current + history in one table) ──────────────────────
 
-function ActiveSponsorships({ sponsorships, loading, isAdmin, providerId, base, onChanged }: {
+function SponsorshipsTable({ sponsorships, loading, isAdmin, providerId, base, onChanged }: {
   sponsorships: any[]; loading: boolean; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void;
 }) {
-  const active = sponsorships.filter((s) => s.status === "ACTIVE" || s.status === "PENDING_PAYMENT" || s.status === "PAST_DUE");
   if (loading) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>;
-  if (!active.length) return null;
+  // Show current/actionable sponsorships plus any that were ever activated (real
+  // subscriptions). Hide discarded pendings that never activated, so the table
+  // stays clean. Server already orders newest-first.
+  const rows = sponsorships.filter((s) =>
+    ["ACTIVE", "PENDING_PAYMENT", "PAST_DUE"].includes(s.status) || !!s.currentPeriodStart);
+  if (!rows.length) return null;
 
   return (
     <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm font-ui">Your sponsorships</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
-        {active.map((s) => (
-          <SponsorshipRow key={s.id} s={s} isAdmin={isAdmin} providerId={providerId} base={base} onChanged={onChanged} />
-        ))}
+      <CardHeader className="pb-2"><CardTitle className="text-sm font-ui">Your Sponsorships</CardTitle></CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Plan</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Billing</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((s) => (
+                <SponsorshipTableRow key={s.id} s={s} isAdmin={isAdmin} providerId={providerId} base={base} onChanged={onChanged} />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );
@@ -441,17 +458,19 @@ const STATUS_STYLES: Record<string, string> = {
 
 const TAB_BY_TYPE: Record<string, string> = { EGG_DONOR: "egg-donors", SURROGATE: "surrogates", SPERM_DONOR: "sperm-donors", DOCTOR: "doctors" };
 
-function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void }) {
+function SponsorshipTableRow({ s, isAdmin, providerId, base, onChanged }: { s: any; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void }) {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
-  // Providers pick donors/surrogates/sperm donors in their full profile tab
-  // (big cards, filters, search). Doctors and the admin view keep the inline picker.
+  // Providers pick donors/surrogates/sperm donors/doctors in their full profile
+  // tab (big cards, filters, search). The admin view keeps the inline picker.
   const profileTab = TAB_BY_TYPE[s.plan?.slotEntityType as string];
   const useTabPicker = !isAdmin && profileTab;
   const [busy, setBusy] = useState(false);
   const [payment, setPayment] = useState<string | null>(null);
   const isBundle = s.productType === "SLOT_BUNDLE";
   const isPending = s.status === "PENDING_PAYMENT";
+  const isActive = s.status === "ACTIVE";
+  const isAutoRenew = s.billingMode === "AUTO_RENEW";
 
   const cancel = async () => {
     setBusy(true);
@@ -481,48 +500,71 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
     } finally { setBusy(false); }
   };
 
+  const fmtDate = (d: any) => (d ? new Date(d).toLocaleDateString() : null);
+  const period = [fmtDate(s.currentPeriodStart), fmtDate(s.currentPeriodEnd)].filter(Boolean).join(" - ");
+
+  // Actions available on this row (empty for terminal rows -> render a dash).
+  const actions = (
+    <>
+      {isPending && !isAdmin && !payment && (
+        <Button size="sm" onClick={completePayment} disabled={busy} data-testid={`button-complete-payment-${s.id}`}>
+          <CreditCard className="w-3.5 h-3.5 mr-1" /> Complete payment
+        </Button>
+      )}
+      {isPending && (
+        <Button size="sm" variant="ghost" onClick={discard} disabled={busy} data-testid={`button-discard-${s.id}`}>Discard</Button>
+      )}
+      {isBundle && isActive && useTabPicker && (
+        <Button size="sm" variant="ghost" onClick={() => navigate(`/account/${profileTab}?sponsor=${s.id}`)} data-testid={`button-add-profiles-${s.id}`}>
+          Add profiles <ChevronDown className="w-4 h-4 ml-1 -rotate-90" />
+        </Button>
+      )}
+      {isBundle && isActive && !useTabPicker && (
+        <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} data-testid={`button-manage-slots-${s.id}`}>
+          Manage slots {expanded ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
+        </Button>
+      )}
+      {/* Only an auto-renewing, still-active sponsorship has a renewal to cancel. */}
+      {isActive && isAutoRenew && !s.canceledAt && (
+        <Button size="sm" variant="outline" onClick={cancel} disabled={busy} data-testid={`button-cancel-renew-${s.id}`}>Cancel auto-renew</Button>
+      )}
+    </>
+  );
+  const hasActions =
+    (isPending) || (isBundle && isActive) || (isActive && isAutoRenew && !s.canceledAt);
+
   return (
-    <div className="rounded-lg border border-border p-3" data-testid={`sponsorship-${s.id}`}>
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Badge className={STATUS_STYLES[s.status] || ""}>{s.status.replace("_", " ")}</Badge>
-          <span className="font-medium text-foreground">{s.plan?.displayName}</span>
-          {s.isComped && <Badge variant="secondary"><Gift className="w-3 h-3 mr-1" />Complimentary</Badge>}
-          {isBundle && <span className="text-xs text-muted-foreground">{s.slotsUsed}/{s.slotsTotal} slots</span>}
-          {s.currentPeriodEnd && <span className="text-xs text-muted-foreground">renews/ends {new Date(s.currentPeriodEnd).toLocaleDateString()}</span>}
-          {s.canceledAt && <span className="text-xs text-muted-foreground">(auto-renew off)</span>}
-        </div>
-        <div className="flex gap-2">
-          {isPending && !isAdmin && !payment && (
-            <Button size="sm" onClick={completePayment} disabled={busy} data-testid={`button-complete-payment-${s.id}`}>
-              <CreditCard className="w-3.5 h-3.5 mr-1" /> Complete payment
-            </Button>
-          )}
-          {isPending && (
-            <Button size="sm" variant="ghost" onClick={discard} disabled={busy} data-testid={`button-discard-${s.id}`}>Discard</Button>
-          )}
-          {isBundle && useTabPicker && (
-            <Button size="sm" variant="ghost" onClick={() => navigate(`/account/${profileTab}?sponsor=${s.id}`)} data-testid={`button-add-profiles-${s.id}`}>
-              Add profiles <ChevronDown className="w-4 h-4 ml-1 -rotate-90" />
-            </Button>
-          )}
-          {isBundle && !useTabPicker && (
-            <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} data-testid={`button-manage-slots-${s.id}`}>
-              Manage slots {expanded ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
-            </Button>
-          )}
-          {s.status === "ACTIVE" && !s.canceledAt && (
-            <Button size="sm" variant="outline" onClick={cancel} disabled={busy}>Cancel auto-renew</Button>
-          )}
-        </div>
-      </div>
+    <>
+      <TableRow data-testid={`sponsorship-${s.id}`}>
+        <TableCell>
+          <div className="font-medium text-foreground">{s.plan?.displayName}</div>
+          <div className="flex items-center gap-2 mt-0.5">
+            {s.isComped && <Badge variant="secondary" className="text-[11px]"><Gift className="w-3 h-3 mr-1" />Complimentary</Badge>}
+            {isBundle && <span className="text-xs text-muted-foreground">{s.slotsUsed}/{s.slotsTotal} slots</span>}
+          </div>
+        </TableCell>
+        <TableCell><Badge className={STATUS_STYLES[s.status] || ""}>{String(s.status).replace("_", " ")}</Badge></TableCell>
+        <TableCell className="text-xs">
+          {isAutoRenew ? "Auto-renew" : "One month"}
+          {isAutoRenew && s.canceledAt && <div className="text-[11px] text-muted-foreground">(auto-renew off)</div>}
+        </TableCell>
+        <TableCell className="text-right">{s.isComped ? "Free" : formatMoneyCents(s.priceCentsSnapshot ?? s.priceCents)}</TableCell>
+        <TableCell className="text-xs text-muted-foreground">{period || "-"}</TableCell>
+        <TableCell className="text-right">
+          {hasActions ? <div className="flex gap-2 justify-end flex-wrap">{actions}</div> : <span className="text-xs text-muted-foreground">-</span>}
+        </TableCell>
+      </TableRow>
       {payment && (
         <SponsorshipCheckoutOverlay plan={s.plan} clientSecret={payment} sponsorshipId={s.id} onClose={() => { setPayment(null); onChanged(); }} />
       )}
       {expanded && isBundle && (
-        <SlotManager s={s} isAdmin={isAdmin} providerId={providerId} base={base} onChanged={onChanged} />
+        <TableRow>
+          <TableCell colSpan={6} className="bg-secondary/20">
+            <SlotManager s={s} isAdmin={isAdmin} providerId={providerId} base={base} onChanged={onChanged} />
+          </TableCell>
+        </TableRow>
       )}
-    </div>
+    </>
   );
 }
 
@@ -610,37 +652,3 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
   );
 }
 
-// ─── History ─────────────────────────────────────────────────────────────────
-
-function HistorySection({ history }: { history?: { sponsorships: any[]; invoices: any[] } }) {
-  if (!history?.sponsorships?.length) return null;
-  return (
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm font-ui">Sponsorship history</CardTitle></CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Plan</TableHead><TableHead>Status</TableHead><TableHead>Billing</TableHead>
-              <TableHead className="text-right">Amount</TableHead><TableHead>Period</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {history.sponsorships.map((s) => (
-              <TableRow key={s.id} data-testid={`history-${s.id}`}>
-                <TableCell className="font-medium">{s.tier}{s.isComped && <Gift className="w-3 h-3 inline ml-1" />}</TableCell>
-                <TableCell><Badge className={STATUS_STYLES[s.status] || ""}>{String(s.status).replace("_", " ")}</Badge></TableCell>
-                <TableCell className="text-xs">{s.billingMode === "AUTO_RENEW" ? "Auto-renew" : "One month"}</TableCell>
-                <TableCell className="text-right">{s.isComped ? "Free" : formatMoneyCents(s.priceCents)}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {s.currentPeriodStart ? new Date(s.currentPeriodStart).toLocaleDateString() : "-"}
-                  {s.currentPeriodEnd ? ` - ${new Date(s.currentPeriodEnd).toLocaleDateString()}` : ""}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
