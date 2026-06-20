@@ -129,6 +129,7 @@ export function log(message: string, source = "nestjs") {
   // catch-all 404 for unknown /api/* routes. Service refs are late-bound.
   let nightlySyncPrismaRef: PrismaService | null = null;
   let nightlySyncStorageRef: StorageService | null = null;
+  let nightlySyncNotificationRef: NotificationService | null = null;
   app.post("/api/cron/run-nightly-sync", (req: Request, res: Response) => {
     const secret = process.env.NIGHTLY_SYNC_SECRET;
     if (!secret) {
@@ -145,9 +146,11 @@ export function log(message: string, source = "nestjs") {
     if (status.isRunning) {
       return res.status(200).json({ message: "Nightly sync already running", isRunning: true });
     }
-    runNightlySync(nightlySyncPrismaRef, nightlySyncStorageRef).catch((err: any) => {
-      console.error("[nightly-sync] Cron pinger run failed:", err.message);
-    });
+    runNightlySync(nightlySyncPrismaRef, nightlySyncStorageRef)
+      .then((results) => nightlySyncNotificationRef?.sendNightlySyncDigest(results))
+      .catch((err: any) => {
+        console.error("[nightly-sync] Cron pinger run failed:", err.message);
+      });
     return res.status(202).json({ message: "Nightly sync started", isRunning: true });
   });
 
@@ -223,8 +226,21 @@ export function log(message: string, source = "nestjs") {
   const storageService = nestApp.get(StorageService);
   nightlySyncPrismaRef = prismaService;
   nightlySyncStorageRef = storageService;
-  startNightlySyncScheduler(prismaService, storageService, notificationService);
-  runCatchUpIfStale(prismaService, storageService, notificationService);
+  nightlySyncNotificationRef = notificationService;
+  // The nightly is driven by an EXTERNAL pinger (GitHub Actions cron ->
+  // /api/cron/run-nightly-sync) hitting one URL, so the in-process node-cron is
+  // OFF by default. Otherwise every machine that runs this code (dev MacBook,
+  // always-on iMac, each Replit container) fires its own 2 AM cron against the
+  // shared DB and they pile up. Set ENABLE_NIGHTLY_SCHEDULER=true on exactly ONE
+  // host if you ever want the in-process cron instead of the pinger. The atomic
+  // NightlySyncLock is the safety net either way.
+  if (process.env.ENABLE_NIGHTLY_SCHEDULER === "true") {
+    log("[nightly-sync] In-process scheduler ENABLED on this host (ENABLE_NIGHTLY_SCHEDULER=true)");
+    startNightlySyncScheduler(prismaService, storageService, notificationService);
+    runCatchUpIfStale(prismaService, storageService, notificationService);
+  } else {
+    log("[nightly-sync] In-process scheduler OFF - driven by the external pinger at /api/cron/run-nightly-sync");
+  }
   startCalendarHealthScheduler(prismaService, notificationService);
   startCostSheetReminderScheduler(prismaService, notificationService);
   startReversalRecoupScheduler(prismaService);
