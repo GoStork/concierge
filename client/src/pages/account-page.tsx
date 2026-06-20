@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
-import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet, FileSignature } from "lucide-react";
+import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, Stethoscope, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet, FileSignature } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import MembersTable from "@/components/members-table";
 import ImageUploader from "@/components/image-uploader";
 import CompanyTab from "@/components/company-tab";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
+import DoctorsDatabasePanel from "@/components/doctors-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
 import { ProviderBillingTab } from "@/components/provider-billing-tab";
 import { ProviderPayoutsTab } from "@/components/provider-payouts-tab";
@@ -2063,6 +2064,7 @@ export default function AccountPage() {
   const showEggDonors = isProvider && approvedSvcNames.some((n: string) => n.includes("egg donor") || n.includes("egg bank"));
   const showSurrogates = isProvider && approvedSvcNames.some((n: string) => n.includes("surrogacy"));
   const showSpermDonors = isProvider && approvedSvcNames.some((n: string) => n.includes("sperm"));
+  const showDoctors = isProvider && approvedSvcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
 
   const showCosts = isProvider && approvedSvcNames.length > 0;
   const firstApprovedSvcName = (providerQuery.data?.services || [])
@@ -2078,12 +2080,13 @@ export default function AccountPage() {
   if (showEggDonors) donorTabs.push({ to: '/account/egg-donors', label: 'Egg Donors', icon: Egg, roles: 'provider' });
   if (showSurrogates) donorTabs.push({ to: '/account/surrogates', label: 'Surrogates', icon: Baby, roles: 'provider' });
   if (showSpermDonors) donorTabs.push({ to: '/account/sperm-donors', label: 'Sperm Donors', icon: FlaskConical, roles: 'provider' });
+  if (showDoctors) donorTabs.push({ to: '/account/doctors', label: 'Doctors', icon: Stethoscope, roles: 'provider' });
   if (showCosts) donorTabs.push({ to: '/account/costs', label: 'Costs', icon: DollarSign, roles: 'provider' });
 
   const providerTabOrder = [
     '/account', '/account/company', '/account/team', '/account/members',
     '/account/calendar', '/account/costs', '/account/documents',
-    '/account/egg-donors', '/account/surrogates', '/account/sperm-donors',
+    '/account/egg-donors', '/account/surrogates', '/account/sperm-donors', '/account/doctors',
     '/account/knowledge', '/account/concierge', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers',
   ];
 
@@ -2225,6 +2228,9 @@ export default function AccountPage() {
         )}
         {showSpermDonors && providerId && (
           <Route path="sperm-donors" element={<ProfileDatabasePanel providerId={providerId} type="sperm-donor" />} />
+        )}
+        {showDoctors && providerId && (
+          <Route path="doctors" element={<DoctorsDatabasePanel providerId={providerId} />} />
         )}
         {showCosts && providerId && (
           <Route path="costs" element={

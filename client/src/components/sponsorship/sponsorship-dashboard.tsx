@@ -437,7 +437,7 @@ const STATUS_STYLES: Record<string, string> = {
   CANCELED: "bg-muted text-muted-foreground",
 };
 
-const TAB_BY_TYPE: Record<string, string> = { EGG_DONOR: "egg-donors", SURROGATE: "surrogates", SPERM_DONOR: "sperm-donors" };
+const TAB_BY_TYPE: Record<string, string> = { EGG_DONOR: "egg-donors", SURROGATE: "surrogates", SPERM_DONOR: "sperm-donors", DOCTOR: "doctors" };
 
 function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void }) {
   const navigate = useNavigate();

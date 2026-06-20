@@ -103,7 +103,7 @@ export function SponsorshipCheckout({ clientSecret, onDone, onCancel }: {
   );
 }
 
-export const TAB_BY_TYPE: Record<string, string> = { EGG_DONOR: "egg-donors", SURROGATE: "surrogates", SPERM_DONOR: "sperm-donors" };
+export const TAB_BY_TYPE: Record<string, string> = { EGG_DONOR: "egg-donors", SURROGATE: "surrogates", SPERM_DONOR: "sperm-donors", DOCTOR: "doctors" };
 export const NOUN_BY_TYPE: Record<string, string> = { EGG_DONOR: "egg donors", SPERM_DONOR: "sperm donors", SURROGATE: "surrogates", DOCTOR: "doctors" };
 
 /**
