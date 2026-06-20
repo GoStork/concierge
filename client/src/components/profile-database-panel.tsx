@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import type { EggDonor } from "@shared/schema";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import {
   FileUp,
   Upload,
   X,
+  Sparkles,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-bar";
@@ -1371,16 +1372,49 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
   const canManageProfiles = isAdmin || isProvider;
   const endpoint = TYPE_ENDPOINTS[type];
 
-  // One-click "Sponsor this": add the profile to the provider's first active slot
-  // bundle that has a free slot; if there is none, route to the Sponsorship tab to
-  // start one. The dedicated tab remains the full management surface.
   const sponsorEntityType = type === "egg-donor" ? "EGG_DONOR" : type === "surrogate" ? "SURROGATE" : "SPERM_DONOR";
   const sponsorshipTabUrl = isAdmin ? `/admin/providers/${providerId}?tab=sponsorship` : `/account/sponsorship`;
+
+  // Campaign mode (Option B): when the provider arrives from a sponsorship via
+  // ?sponsor=<id>, every card's Sponsor button adds/removes that profile to THAT
+  // specific campaign, with a sticky banner + slot counter.
+  const [searchParams] = useSearchParams();
+  const campaignId = !isAdmin ? searchParams.get("sponsor") : null;
+  const campaignQ = useQuery<any>({
+    queryKey: [`/api/sponsorship/campaign/${campaignId}`],
+    queryFn: async () => (await apiRequest("GET", `/api/sponsorship/campaign/${campaignId}`)).json(),
+    enabled: !!campaignId,
+    retry: false,
+  });
+  const campaign = campaignQ.data && campaignQ.data.slotEntityType === sponsorEntityType ? campaignQ.data : null;
+  const campaignItemByEntity = new Map<string, string>((campaign?.items || []).map((it: any) => [it.entityId, it.id]));
+  const campaignFull = campaign ? (campaign.slotsUsed ?? 0) >= (campaign.slotsTotal ?? 0) : false;
+  const refetchCampaign = () => { campaignQ.refetch(); queryClient.invalidateQueries({ queryKey: [`/api/providers/${providerId}/${endpoint}`] }); };
+
   const handleSponsor = async (profileId: string) => {
+    // Campaign mode: toggle this profile in the specific campaign.
+    if (campaign) {
+      const existingItemId = campaignItemByEntity.get(profileId);
+      try {
+        if (existingItemId) {
+          await apiRequest("DELETE", `/api/sponsorship/${campaign.id}/items/${existingItemId}`);
+          toast({ title: "Removed from sponsorship" });
+        } else {
+          if (campaignFull) { toast({ title: "All slots filled", description: "Remove a profile to add another, or upgrade your tier.", variant: "destructive" }); return; }
+          await apiRequest("POST", `/api/sponsorship/${campaign.id}/items`, { entityType: sponsorEntityType, entityId: profileId });
+          toast({ title: "Added to sponsorship", variant: "success" });
+        }
+        refetchCampaign();
+      } catch (err: any) {
+        toast({ title: "Could not update sponsorship", description: err.message, variant: "destructive" });
+      }
+      return;
+    }
+    // No campaign context: add to the first active bundle with a free slot.
     try {
       const listUrl = isAdmin ? `/api/admin/sponsorship?providerId=${providerId}` : `/api/sponsorship/mine`;
       const list = await (await apiRequest("GET", listUrl)).json();
-      const bundle = (list || []).find((s: any) => s.status === "ACTIVE" && s.productType === "SLOT_BUNDLE" && (s.slotsUsed ?? 0) < (s.slotsTotal ?? 0));
+      const bundle = (list || []).find((s: any) => s.status === "ACTIVE" && s.productType === "SLOT_BUNDLE" && s.plan?.slotEntityType === sponsorEntityType && (s.slotsUsed ?? 0) < (s.slotsTotal ?? 0));
       if (!bundle) {
         toast({ title: "No open sponsorship slot", description: "Opening the Sponsorship tab to start or manage a plan." });
         navigate(sponsorshipTabUrl);
@@ -1453,6 +1487,19 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
   });
 
   return (
+    <>
+      {campaign && (
+        <div className="sticky top-0 z-30 -mx-1 mb-4 flex items-center justify-between gap-3 flex-wrap rounded-lg border border-accent/40 bg-accent/10 px-4 py-2.5 backdrop-blur">
+          <div className="flex items-center gap-2 text-sm">
+            <Sparkles className="w-4 h-4 text-accent" />
+            <span className="text-foreground">Selecting profiles for <strong>{campaign.planName}</strong></span>
+            <Badge variant="secondary">{campaign.slotsUsed}/{campaign.slotsTotal} slots</Badge>
+            {campaignFull && <span className="text-xs text-[hsl(var(--brand-warning))]">All slots filled</span>}
+          </div>
+          <p className="text-xs text-muted-foreground hidden md:block">Tap the ✨ on a card to add or remove it.</p>
+          <Button size="sm" onClick={() => navigate("/account/sponsorship")} data-testid="button-done-selecting">Done</Button>
+        </div>
+      )}
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
       {profiles.map((d: any) => (
         <ProfileCard
@@ -1482,12 +1529,13 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
             onToggleVisibility: (profileId, hidden) => toggleVisibilityMutation.mutate({ profileId, hidden }),
             onTogglePremium: (profileId, premium) => togglePremiumMutation.mutate({ profileId, premium }),
             onSponsor: handleSponsor,
-            sponsored: !!d.sponsoredUntil && new Date(d.sponsoredUntil).getTime() > Date.now(),
+            sponsored: campaign ? campaignItemByEntity.has(d.id) : (!!d.sponsoredUntil && new Date(d.sponsoredUntil).getTime() > Date.now()),
           } : undefined}
         />
       ))}
 
     </div>
+    </>
   );
 }
 

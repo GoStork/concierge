@@ -97,6 +97,12 @@ export class SponsorshipController {
     return this.sponsorship.getSavedCard(providerId);
   }
 
+  @Get("api/sponsorship/campaign/:id")
+  async campaign(@Req() req: Request, @Param("id") id: string) {
+    const providerId = this.requireProvider(req);
+    return this.sponsorship.getCampaign(id, providerId);
+  }
+
   @Post("api/sponsorship/checkout")
   async checkout(@Req() req: Request, @Body() body: { planId: string; billingMode: "AUTO_RENEW" | "ONE_TIME" }) {
     const providerId = this.requireProvider(req);

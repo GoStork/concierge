@@ -168,6 +168,26 @@ export class SponsorshipService {
     return out;
   }
 
+  /** One sponsorship's details for the in-tab profile-selection flow (Option B). */
+  async getCampaign(sponsorshipId: string, providerId: string) {
+    const s = await this.prisma.sponsorship.findUnique({
+      where: { id: sponsorshipId },
+      include: { plan: true, items: { where: { removedAt: null } } },
+    });
+    if (!s) throw new NotFoundException("Sponsorship not found");
+    if (s.providerId !== providerId) throw new ForbiddenException("Not your sponsorship");
+    return {
+      id: s.id,
+      status: s.status,
+      planName: s.plan.displayName,
+      slotEntityType: s.plan.slotEntityType,
+      slotsUsed: s.items.length,
+      slotsTotal: s.slotCountSnapshot,
+      // entityId -> itemId, so the tab can add (POST) or remove (DELETE by itemId).
+      items: s.items.map((it: any) => ({ id: it.id, entityId: it.entityId })),
+    };
+  }
+
   /** Validate + resolve the boost target for a whole-profile plan purchase. */
   private async resolveWholeProfileItem(providerId: string, tierKey: string): Promise<EntityType> {
     const entityType = this.wholeProfileEntityType(tierKey);

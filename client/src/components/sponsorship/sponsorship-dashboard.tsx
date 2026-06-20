@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -434,8 +435,15 @@ const STATUS_STYLES: Record<string, string> = {
   CANCELED: "bg-muted text-muted-foreground",
 };
 
+const TAB_BY_TYPE: Record<string, string> = { EGG_DONOR: "egg-donors", SURROGATE: "surrogates", SPERM_DONOR: "sperm-donors" };
+
 function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void }) {
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
+  // Providers pick donors/surrogates/sperm donors in their full profile tab
+  // (big cards, filters, search). Doctors and the admin view keep the inline picker.
+  const profileTab = TAB_BY_TYPE[s.plan?.slotEntityType as string];
+  const useTabPicker = !isAdmin && profileTab;
   const [busy, setBusy] = useState(false);
   const [payment, setPayment] = useState<string | null>(null);
   const isBundle = s.productType === "SLOT_BUNDLE";
@@ -489,7 +497,12 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
           {isPending && (
             <Button size="sm" variant="ghost" onClick={discard} disabled={busy} data-testid={`button-discard-${s.id}`}>Discard</Button>
           )}
-          {isBundle && (
+          {isBundle && useTabPicker && (
+            <Button size="sm" variant="ghost" onClick={() => navigate(`/account/${profileTab}?sponsor=${s.id}`)} data-testid={`button-add-profiles-${s.id}`}>
+              Add profiles <ChevronDown className="w-4 h-4 ml-1 -rotate-90" />
+            </Button>
+          )}
+          {isBundle && !useTabPicker && (
             <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} data-testid={`button-manage-slots-${s.id}`}>
               Manage slots {expanded ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
             </Button>
