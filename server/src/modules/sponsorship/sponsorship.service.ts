@@ -349,6 +349,7 @@ export class SponsorshipService {
     let clientSecret: string | null = null;
     let activated = false;
 
+    try {
     if (params.billingMode === "AUTO_RENEW") {
       const sub = await stripeService.createSponsorshipSubscription({
         customerId,
@@ -409,6 +410,19 @@ export class SponsorshipService {
         where: { id: sponsorship.id },
         data: { stripePaymentIntentId: pi.paymentIntentId },
       });
+    }
+    } catch (e: any) {
+      // Stripe failed (e.g. a restricted key without subscription permissions).
+      // Roll back the pending row so it doesn't block the provider's next attempt,
+      // log the real error for us, and surface a clean message to the provider.
+      await this.prisma.sponsorshipItem.deleteMany({ where: { sponsorshipId: sponsorship.id } }).catch(() => {});
+      await this.prisma.sponsorship.delete({ where: { id: sponsorship.id } }).catch(() => {});
+      this.logger.error(`Sponsorship checkout failed (provider ${params.providerId}, plan ${plan.tierKey}, ${params.billingMode}): ${e?.message}`);
+      throw new BadRequestException(
+        params.billingMode === "AUTO_RENEW"
+          ? "We couldn't set up the auto-renewing subscription. Please try “One month” billing instead, or contact support."
+          : "We couldn't start the payment. Please try again or contact support.",
+      );
     }
 
     // Mock mode (no Stripe keys): activate immediately so dev can exercise the flow.
