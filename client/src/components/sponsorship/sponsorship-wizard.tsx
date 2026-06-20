@@ -24,7 +24,7 @@ function cleanError(e: any, fallback: string): string {
   return raw.replace(/^\d{3}:\s*/, "") || fallback;
 }
 
-type Step = "category" | "tier" | "payment" | "success";
+type Step = "category" | "tier" | "billing" | "payment" | "success";
 
 /**
  * Guided "Start Sponsorship" flow, used both on the Sponsorship tab and on each
@@ -33,10 +33,11 @@ type Step = "category" | "tier" | "payment" | "success";
  *   -> payment (Stripe) -> success (pick the specific profiles, or confirm).
  * Provider self-serve only; uses /api/sponsorship/* for the logged-in provider.
  */
-export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType }: {
+export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, showManageHint }: {
   onClose: () => void;
   onChanged?: () => void;
   initialEntityType?: EntityType;
+  showManageHint?: boolean;
 }) {
   const plansQ = useQuery<any[]>({ queryKey: ["/api/sponsorship/plans"] });
   const slotTypesQ = useQuery<{ type: string; label: string }[]>({
@@ -94,24 +95,17 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType }
   };
 
   const close = () => { onChanged?.(); onClose(); };
-  const back = step === "tier" && !canPreselect
-    ? () => { setStep("category"); setSelectedType(null); setSelectedPlan(null); setError(null); }
-    : undefined;
-
-  const billingToggle = (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="text-muted-foreground">Billing:</span>
-      <div className="inline-flex rounded-lg border border-border overflow-hidden">
-        {(["AUTO_RENEW", "ONE_TIME"] as BillingMode[]).map((m) => (
-          <button key={m} onClick={() => setBillingMode(m)}
-            className={`px-3 py-1.5 text-sm transition-colors ${billingMode === m ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
-            data-testid={`wizard-billing-${m}`}>
-            {m === "AUTO_RENEW" ? "Auto-renew monthly" : "One month"}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+  const goCategory = () => { setStep("category"); setSelectedType(null); setSelectedPlan(null); setError(null); };
+  // Back nav: tier -> category; billing -> tier (bundle) or category (whole profile).
+  const back = (() => {
+    if (step === "tier" && !canPreselect) return goCategory;
+    if (step === "billing") {
+      const isBundle = selectedPlan?.productType === "SLOT_BUNDLE";
+      if (isBundle) return () => { setStep("tier"); setError(null); };
+      return canPreselect ? undefined : goCategory;
+    }
+    return undefined;
+  })();
 
   const savedCardNote = savedCard?.last4 ? (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -141,8 +135,6 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType }
                 <h3 className="font-heading text-lg text-foreground flex items-center gap-2"><Sparkles className="w-5 h-5 text-accent" /> Start a sponsorship</h3>
                 <p className="text-sm text-muted-foreground mt-0.5">What would you like to sponsor?</p>
               </div>
-              {billingToggle}
-              {savedCardNote}
               {error && <ErrorNote text={error} />}
               <div className="space-y-2">
                 {applicableSlotTypes.map((type) => (
@@ -154,8 +146,8 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType }
                 {wholeProfiles.map((p) => (
                   <CategoryRow key={p.id} icon={<Building2 className="w-5 h-5" />} title={p.displayName}
                     subtitle={`Boost your whole profile · ${formatMoneyCents(p.priceCents, p.currency)}/mo`}
-                    busy={busy && selectedPlan?.id === p.id}
-                    onClick={() => startCheckout(p)} testid={`wizard-category-${p.tierKey}`} />
+                    onClick={() => { setSelectedType(null); setSelectedPlan(p); setStep("billing"); setError(null); }}
+                    testid={`wizard-category-${p.tierKey}`} />
                 ))}
               </div>
             </div>
@@ -168,8 +160,6 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType }
                 <h3 className="font-heading text-lg text-foreground">{CATEGORY_META[selectedType].label} sponsorship</h3>
                 <p className="text-sm text-muted-foreground mt-0.5">Choose how many profiles you want to feature.</p>
               </div>
-              {billingToggle}
-              {savedCardNote}
               {error && <ErrorNote text={error} />}
               <div className="space-y-2">
                 {tiersFor(selectedType).map((p) => {
@@ -192,13 +182,57 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType }
                   );
                 })}
               </div>
-              <Button className="w-full" disabled={!selectedPlan || busy} onClick={() => selectedPlan && startCheckout(selectedPlan)} data-testid="wizard-to-payment">
+              <Button className="w-full" disabled={!selectedPlan} onClick={() => { setStep("billing"); setError(null); }} data-testid="wizard-to-billing">
+                Continue <ChevronRight className="w-4 h-4 ml-1.5" />
+              </Button>
+            </div>
+          )}
+
+          {/* Step 3: billing cadence */}
+          {step === "billing" && selectedPlan && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-heading text-lg text-foreground">Billing</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">Choose how you'd like to be billed for this sponsorship.</p>
+              </div>
+              <div className="rounded-xl border border-border p-4 flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-heading text-foreground">{selectedPlan.displayName}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {selectedPlan.productType === "SLOT_BUNDLE" ? `Up to ${selectedPlan.slotCount} sponsored profiles` : "Boosts your top-level profile"}
+                  </div>
+                </div>
+                <span className="font-ui text-foreground shrink-0">{formatMoneyCents(selectedPlan.priceCents, selectedPlan.currency)}<span className="text-xs text-muted-foreground">/mo</span></span>
+              </div>
+              <div className="space-y-2">
+                {(["AUTO_RENEW", "ONE_TIME"] as BillingMode[]).map((m) => {
+                  const selected = billingMode === m;
+                  return (
+                    <button key={m} onClick={() => setBillingMode(m)}
+                      className={`w-full text-left rounded-xl border p-4 transition-colors ${selected ? "border-primary ring-1 ring-primary bg-secondary/40" : "border-border hover:bg-secondary/40"}`}
+                      data-testid={`wizard-billing-${m}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="font-heading text-foreground">{m === "AUTO_RENEW" ? "Auto-renew monthly" : "One month"}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {m === "AUTO_RENEW" ? "Renews automatically each month until you cancel." : "A single month - it won't renew automatically."}
+                          </div>
+                        </div>
+                        {selected && <Check className="w-4 h-4 text-primary shrink-0" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {savedCardNote}
+              {error && <ErrorNote text={error} />}
+              <Button className="w-full" disabled={busy} onClick={() => startCheckout(selectedPlan)} data-testid="wizard-to-payment">
                 {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CreditCard className="w-4 h-4 mr-1.5" /> Continue to payment</>}
               </Button>
             </div>
           )}
 
-          {/* Step 3: payment */}
+          {/* Step 4: payment */}
           {step === "payment" && clientSecret && (
             <div className="space-y-3">
               <div>
@@ -209,9 +243,9 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType }
             </div>
           )}
 
-          {/* Step 4: success + next step */}
+          {/* Step 5: success + next step */}
           {step === "success" && (
-            <CheckoutSuccessStep plan={selectedPlan} sponsorshipId={sponsorshipId || ""} onClose={close} />
+            <CheckoutSuccessStep plan={selectedPlan} sponsorshipId={sponsorshipId || ""} onClose={close} showManageHint={showManageHint} />
           )}
         </>
       )}
@@ -247,10 +281,11 @@ const NOUN_BY_ENTITY: Record<EntityType, string> = {
  * Sponsorship tab and atop each profile tab so the call-to-action stands out
  * with a branded accent background. Pass initialEntityType from a profile tab.
  */
-export function BoostProfilesCard({ initialEntityType, onChanged, className }: {
+export function BoostProfilesCard({ initialEntityType, onChanged, className, showManageHint }: {
   initialEntityType?: EntityType;
   onChanged?: () => void;
   className?: string;
+  showManageHint?: boolean;
 }) {
   const noun = initialEntityType ? NOUN_BY_ENTITY[initialEntityType] : null;
   const desc = noun
@@ -270,7 +305,7 @@ export function BoostProfilesCard({ initialEntityType, onChanged, className }: {
             <p className="max-w-xl text-sm text-muted-foreground">{desc}</p>
           </div>
         </div>
-        <StartSponsorshipButton initialEntityType={initialEntityType} onChanged={onChanged} />
+        <StartSponsorshipButton initialEntityType={initialEntityType} onChanged={onChanged} showManageHint={showManageHint ?? !!initialEntityType} />
       </div>
     </div>
   );
@@ -281,13 +316,14 @@ export function BoostProfilesCard({ initialEntityType, onChanged, className }: {
  * wizard. Drop it on the Sponsorship tab and on each profile tab; pass
  * initialEntityType from a profile tab to skip straight to that type's tiers.
  */
-export function StartSponsorshipButton({ initialEntityType, label = "Start Sponsorship", onChanged, variant, size, className }: {
+export function StartSponsorshipButton({ initialEntityType, label = "Start Sponsorship", onChanged, variant, size, className, showManageHint }: {
   initialEntityType?: EntityType;
   label?: string;
   onChanged?: () => void;
   variant?: any;
   size?: any;
   className?: string;
+  showManageHint?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -295,7 +331,7 @@ export function StartSponsorshipButton({ initialEntityType, label = "Start Spons
       <Button variant={variant} size={size} className={className} onClick={() => setOpen(true)} data-testid="button-start-sponsorship">
         <Sparkles className="w-4 h-4 mr-1.5" /> {label}
       </Button>
-      {open && <StartSponsorshipWizard initialEntityType={initialEntityType} onClose={() => setOpen(false)} onChanged={onChanged} />}
+      {open && <StartSponsorshipWizard initialEntityType={initialEntityType} onClose={() => setOpen(false)} onChanged={onChanged} showManageHint={showManageHint} />}
     </>
   );
 }

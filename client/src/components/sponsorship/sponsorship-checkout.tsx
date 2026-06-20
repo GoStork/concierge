@@ -136,12 +136,21 @@ export function ModalShell({ onClose, children, maxWidth = "sm:max-w-md", onBack
   );
 }
 
-/** The post-payment "what's next" step, shared by the checkout overlay + wizard. */
-export function CheckoutSuccessStep({ plan, sponsorshipId, onClose }: { plan: any; sponsorshipId: string; onClose: () => void }) {
+/**
+ * The post-payment "what's next" step, shared by the checkout overlay + wizard.
+ * When launched from a profile tab (showManageHint), it reminds the provider
+ * they can manage the sponsorship and see its analytics in the Sponsorship tab.
+ */
+export function CheckoutSuccessStep({ plan, sponsorshipId, onClose, showManageHint }: { plan: any; sponsorshipId: string; onClose: () => void; showManageHint?: boolean }) {
   const navigate = useNavigate();
   const isBundle = plan?.productType === "SLOT_BUNDLE";
   const tab = TAB_BY_TYPE[plan?.slotEntityType];
   const noun = NOUN_BY_TYPE[plan?.slotEntityType] || "profiles";
+  const manageLine = (
+    <p className="text-xs text-muted-foreground">
+      You can manage this sponsorship and track its performance anytime in the <strong className="text-foreground">Sponsorship</strong> tab.
+    </p>
+  );
   return (
     <div className="text-center space-y-3 py-3">
       <CheckCircle2 className="w-12 h-12 mx-auto text-[hsl(var(--brand-success))]" />
@@ -150,6 +159,7 @@ export function CheckoutSuccessStep({ plan, sponsorshipId, onClose }: { plan: an
         <>
           <p className="text-sm text-muted-foreground">Next step: choose the {noun} you want to sponsor.</p>
           <Button className="w-full" onClick={() => navigate(`/account/${tab}?sponsor=${sponsorshipId}`)} data-testid="button-select-profiles">Select {noun}</Button>
+          {showManageHint && manageLine}
           <button className="text-xs text-muted-foreground hover:text-foreground" onClick={onClose}>I'll do this later</button>
         </>
       ) : (
@@ -157,7 +167,12 @@ export function CheckoutSuccessStep({ plan, sponsorshipId, onClose }: { plan: an
           <p className="text-sm text-muted-foreground">
             {isBundle ? `Manage your sponsored ${noun} on the Sponsorship page.` : "Your profile is now boosted in the marketplace."}
           </p>
-          <Button className="w-full" onClick={onClose} data-testid="button-checkout-done">Done</Button>
+          {showManageHint && manageLine}
+          {showManageHint ? (
+            <Button className="w-full" onClick={() => navigate("/account/sponsorship")} data-testid="button-go-sponsorship">Go to Sponsorship tab</Button>
+          ) : (
+            <Button className="w-full" onClick={onClose} data-testid="button-checkout-done">Done</Button>
+          )}
         </>
       )}
     </div>

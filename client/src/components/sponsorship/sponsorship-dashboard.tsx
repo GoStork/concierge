@@ -76,6 +76,10 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
         Boost your profiles to the top of the marketplace with a "Sponsored" badge and priority in the AI concierge.
       </p>
 
+      {/* Start a sponsorship - pinned at the top for providers (admins use the
+          per-plan Charge / Complimentary grid lower down). */}
+      {!isAdmin && <BoostProfilesCard onChanged={refetchAll} />}
+
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard icon={<Sparkles className="w-4 h-4" />} label="Active sponsorships" value={kpis?.activeSponsorships ?? 0} />
@@ -154,9 +158,9 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
         </Card>
       )}
 
-      {/* Start a sponsorship. Providers use the guided wizard; GoStork admins
-          keep the per-plan Charge / Complimentary grid (a different surface). */}
-      {isAdmin ? (
+      {/* GoStork admins charge / comp per plan (a different surface). The
+          provider launcher lives at the top of the page. */}
+      {isAdmin && (
         <PlansSection
           plans={plansQ.data || []}
           isAdmin={isAdmin}
@@ -164,8 +168,6 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
           base={base}
           onChanged={refetchAll}
         />
-      ) : (
-        <BoostProfilesCard onChanged={refetchAll} />
       )}
 
       {/* Active sponsorships + slot fill */}
