@@ -20,6 +20,14 @@ function addOneMonth(from: Date): Date {
   return addMonths(from, 1);
 }
 
+const SLOT_NOUN: Record<string, string> = { EGG_DONOR: "egg donor", SPERM_DONOR: "sperm donor", SURROGATE: "surrogate", DOCTOR: "doctor" };
+/** Human summary of what a plan includes, for emails: "up to 5 egg donor profiles". */
+function planSummary(p: { productType: string; slotCount: number; slotEntityType?: string | null }): string {
+  if (p.productType === "WHOLE_PROFILE") return "your top-level profile";
+  const noun = SLOT_NOUN[p.slotEntityType || ""] || "profile";
+  return `up to ${p.slotCount} ${noun} profile${p.slotCount === 1 ? "" : "s"}`;
+}
+
 /** Maps a SponsoredEntityType to the ParentProfileView.profileType string used by the marketplace view tracker. */
 const ENTITY_TO_VIEW_TYPE: Partial<Record<EntityType, string>> = {
   EGG_DONOR: "egg-donor",
@@ -391,7 +399,7 @@ export class SponsorshipService {
       // Admin "send payment request": notify the provider's billing contacts so
       // they can complete payment from their dashboard.
       await this.notifications.sendSponsorshipNotification({
-        providerId: params.providerId, kind: "payment_requested", planName: plan.displayName,
+        providerId: params.providerId, kind: "payment_requested", planName: plan.displayName, programDetail: planSummary(plan),
       }).catch((e) => this.logger.warn(`payment-request notify failed: ${e.message}`));
     }
 
@@ -402,7 +410,7 @@ export class SponsorshipService {
    *  (e.g. an admin-initiated "payment request" the provider finishes later). */
   async resumePayment(params: { sponsorshipId: string; providerId: string }): Promise<{ clientSecret: string | null }> {
     const sponsorship = await this.prisma.sponsorship.findUnique({
-      where: { id: params.sponsorshipId }, include: { plan: { select: { displayName: true } } },
+      where: { id: params.sponsorshipId }, include: { plan: { select: { displayName: true, productType: true, slotCount: true, slotEntityType: true } } },
     });
     if (!sponsorship) throw new NotFoundException("Sponsorship not found");
     if (sponsorship.providerId !== params.providerId) throw new ForbiddenException("Not your sponsorship");
@@ -557,7 +565,7 @@ export class SponsorshipService {
   async activate(sponsorshipId: string, currentPeriodEnd: Date) {
     const sponsorship = await this.prisma.sponsorship.findUnique({
       where: { id: sponsorshipId },
-      include: { items: { where: { removedAt: null } }, plan: { select: { displayName: true } } },
+      include: { items: { where: { removedAt: null } }, plan: { select: { displayName: true, productType: true, slotCount: true, slotEntityType: true } } },
     });
     if (!sponsorship) return;
     const isFirstActivation = sponsorship.status === "PENDING_PAYMENT";
@@ -579,7 +587,7 @@ export class SponsorshipService {
     // Email + in-app on the first activation only - renewals shouldn't spam the provider.
     if (isFirstActivation) {
       await this.notifications.sendSponsorshipNotification({
-        providerId: sponsorship.providerId, kind: "activated", planName: sponsorship.plan.displayName, currentPeriodEnd,
+        providerId: sponsorship.providerId, kind: "activated", planName: sponsorship.plan.displayName, programDetail: planSummary(sponsorship.plan), currentPeriodEnd,
       }).catch((e) => this.logger.warn(`activate notify failed: ${e.message}`));
     }
     this.logger.log(`Activated sponsorship ${sponsorshipId} until ${currentPeriodEnd.toISOString()}${isFirstActivation ? " (first)" : " (renewal)"}`);
@@ -589,7 +597,7 @@ export class SponsorshipService {
   async deactivate(sponsorshipId: string, status: "EXPIRED" | "CANCELED") {
     const sponsorship = await this.prisma.sponsorship.findUnique({
       where: { id: sponsorshipId },
-      include: { items: { where: { removedAt: null } }, plan: { select: { displayName: true } } },
+      include: { items: { where: { removedAt: null } }, plan: { select: { displayName: true, productType: true, slotCount: true, slotEntityType: true } } },
     });
     if (!sponsorship) return;
     // Don't re-notify (or re-clear) an already-terminated sponsorship.
@@ -607,7 +615,7 @@ export class SponsorshipService {
     invalidateMarketplaceCache("marketplace:");
     if (!alreadyEnded) {
       await this.notifications.sendSponsorshipNotification({
-        providerId: sponsorship.providerId, kind: status === "EXPIRED" ? "expired" : "canceled", planName: sponsorship.plan.displayName,
+        providerId: sponsorship.providerId, kind: status === "EXPIRED" ? "expired" : "canceled", planName: sponsorship.plan.displayName, programDetail: planSummary(sponsorship.plan),
       }).catch((e) => this.logger.warn(`deactivate notify failed: ${e.message}`));
     }
     this.logger.log(`Deactivated sponsorship ${sponsorshipId} (${status})`);
@@ -615,12 +623,12 @@ export class SponsorshipService {
 
   async markPastDue(sponsorshipId: string) {
     const sponsorship = await this.prisma.sponsorship.findUnique({
-      where: { id: sponsorshipId }, include: { plan: { select: { displayName: true } } },
+      where: { id: sponsorshipId }, include: { plan: { select: { displayName: true, productType: true, slotCount: true, slotEntityType: true } } },
     });
     if (!sponsorship || sponsorship.status === "PAST_DUE") return;
     await this.prisma.sponsorship.update({ where: { id: sponsorshipId }, data: { status: "PAST_DUE" } }).catch(() => {});
     await this.notifications.sendSponsorshipNotification({
-      providerId: sponsorship.providerId, kind: "payment_failed", planName: sponsorship.plan.displayName,
+      providerId: sponsorship.providerId, kind: "payment_failed", planName: sponsorship.plan.displayName, programDetail: planSummary(sponsorship.plan),
     }).catch((e) => this.logger.warn(`pastDue notify failed: ${e.message}`));
   }
 

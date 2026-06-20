@@ -521,6 +521,8 @@ export class NotificationService implements OnModuleInit {
     providerId: string;
     kind: "payment_requested" | "activated" | "payment_failed" | "expired" | "canceled";
     planName: string;
+    /** Human summary of what the program includes, e.g. "up to 5 egg donor profiles". */
+    programDetail?: string;
     currentPeriodEnd?: Date | null;
   }) {
     const users = await this.prisma.user.findMany({
@@ -533,6 +535,8 @@ export class NotificationService implements OnModuleInit {
     const manageUrl = `${base}/account/sponsorship`;
     const brandData = await this.getBrandData();
     const endStr = params.currentPeriodEnd ? formatDate(new Date(params.currentPeriodEnd), undefined) : null;
+    const detail = params.programDetail ? esc(params.programDetail) : null;
+    const planLabel = detail ? `${esc(params.planName)} (${detail})` : esc(params.planName);
 
     const channelMap: Record<typeof params.kind, NotificationChannel> = {
       payment_requested: "sponsorship_payment_request",
@@ -552,15 +556,15 @@ export class NotificationService implements OnModuleInit {
     const content: Record<typeof params.kind, { title: string; subject: string; body: string; alert?: { text: string; type: "warning" | "success" | "info" | "error" }; button: string }> = {
       payment_requested: {
         title: "Complete your sponsorship payment",
-        subject: `Payment requested: ${params.planName} sponsorship`,
-        body: `GoStork has set up a <strong>${esc(params.planName)}</strong> sponsorship for your profiles. Complete payment to activate the boost and your "Sponsored" badge in the marketplace.`,
-        alert: { text: "Your profiles are not boosted until payment is completed.", type: "info" },
+        subject: detail ? `Payment requested: ${params.planName} - ${params.programDetail}` : `Payment requested: ${params.planName} sponsorship`,
+        body: `GoStork has set up a <strong>${planLabel}</strong> sponsorship for your profiles. Complete payment to activate the boost and your "Sponsored" badge in the marketplace.`,
+        alert: { text: detail ? `This program sponsors ${detail}. Your profiles are not boosted until payment is completed.` : "Your profiles are not boosted until payment is completed.", type: "info" },
         button: "Complete Payment",
       },
       activated: {
         title: "Your sponsorship is active",
         subject: `Your ${params.planName} sponsorship is now active`,
-        body: `Your <strong>${esc(params.planName)}</strong> sponsorship is live. Your selected profiles now appear at the top of the marketplace with a "Sponsored" badge and are prioritized by the AI concierge.`,
+        body: `Your <strong>${planLabel}</strong> sponsorship is live. Your selected profiles now appear at the top of the marketplace with a "Sponsored" badge and are prioritized by the AI concierge.`,
         alert: { text: endStr ? `Current period runs through ${endStr}.` : "Boost is active.", type: "success" },
         button: "Manage Sponsorship",
       },
