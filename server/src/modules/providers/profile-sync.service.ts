@@ -5907,6 +5907,12 @@ export function getNightlySyncStatus() {
   };
 }
 
+// Singleton row id + how long a claim is considered live. The nightly finishes
+// in well under an hour; 2h covers any retry-heavy run yet auto-frees a claim
+// orphaned by a crashed container so the next day's run isn't blocked forever.
+const NIGHTLY_LOCK_ID = 1;
+const NIGHTLY_CLAIM_TTL_MS = 2 * 60 * 60 * 1000;
+
 export async function runNightlySync(
   prisma: PrismaService,
   storageService?: StorageService | null,
@@ -5917,40 +5923,59 @@ export async function runNightlySync(
     return;
   }
 
-  // DB-level dedup. In-memory `nightlySyncRunning` is per-process and Replit
-  // Autoscale can spin up multiple containers, so concurrent triggers
-  // (in-process cron + GitHub Actions pinger + startup catch-up) each see
-  // their own fresh flag. Without this check, every scheduled hit re-runs the
-  // scrapers and burns each provider's "logins per hour" budget — some sites
-  // (e.g. Eggceptional) rate-limit / lock the account after the first one.
-  // Skip if a completed/partial nightly ran within the last 20h. Manual admin
-  // triggers pass {force:true} to override.
-  if (!opts?.force) {
-    const recent = await prisma.syncLog.findFirst({
-      where: {
-        source: "nightly",
-        status: { in: ["completed", "partial"] },
-        // Only a run that actually did work counts as "today's nightly happened".
-        // A 0-found empty run must NOT anchor the dedup, or one broken provider
-        // silently blocks the whole next nightly for 20h.
-        total: { gt: 0 },
-        startedAt: { gt: new Date(Date.now() - 20 * 60 * 60 * 1000) },
-      },
-      orderBy: { startedAt: "desc" },
-      select: { startedAt: true, status: true },
-    });
-    if (recent) {
-      console.log(`[nightly-sync] Skip - last successful nightly was ${recent.startedAt.toISOString()} (${recent.status})`);
-      return;
-    }
-  }
-
   nightlySyncRunning = true;
-  nightlySyncResults.length = 0;
-  lastNightlySyncAt = new Date();
-  console.log("[nightly-sync] Starting nightly sync for all providers...");
-
+  let claimed = false;
   try {
+    if (!opts?.force) {
+      // 1) Atomic cross-container claim. Replit Autoscale runs MULTIPLE
+      //    containers, each with its own in-memory `nightlySyncRunning` flag,
+      //    so the per-process guard above can't coordinate them. A plain
+      //    "did a nightly already run?" SELECT also races: two containers
+      //    firing their 2 AM cron in the same instant both read "no" before
+      //    either writes a row, so both proceed (proven Jun 19 - two `nightly`
+      //    SyncLog rows per provider ~100ms apart). A single conditional UPDATE
+      //    is atomic: exactly one container flips the row from free/stale to
+      //    claimed, the rest match 0 rows and bail.
+      await prisma.nightlySyncLock.createMany({ data: [{ id: NIGHTLY_LOCK_ID }], skipDuplicates: true });
+      const claim = await prisma.nightlySyncLock.updateMany({
+        where: {
+          id: NIGHTLY_LOCK_ID,
+          OR: [{ claimedAt: null }, { claimedAt: { lt: new Date(Date.now() - NIGHTLY_CLAIM_TTL_MS) } }],
+        },
+        data: { claimedAt: new Date() },
+      });
+      if (claim.count === 0) {
+        console.log("[nightly-sync] Skip - another container already holds the nightly claim");
+        return;
+      }
+      claimed = true;
+
+      // 2) Daily dedup. Even with one container, several triggers fire per day
+      //    (in-process cron + GitHub Actions pinger + startup catch-up). Skip if
+      //    a nightly that actually did work (`total > 0`) completed in the last
+      //    20h - a 0-found empty run must NOT anchor the dedup, or one broken
+      //    provider silently blocks the whole next nightly. {force:true}
+      //    (admin "Trigger nightly") overrides both gates.
+      const recent = await prisma.syncLog.findFirst({
+        where: {
+          source: "nightly",
+          status: { in: ["completed", "partial"] },
+          total: { gt: 0 },
+          startedAt: { gt: new Date(Date.now() - 20 * 60 * 60 * 1000) },
+        },
+        orderBy: { startedAt: "desc" },
+        select: { startedAt: true, status: true },
+      });
+      if (recent) {
+        console.log(`[nightly-sync] Skip - last successful nightly was ${recent.startedAt.toISOString()} (${recent.status})`);
+        return;
+      }
+    }
+
+    nightlySyncResults.length = 0;
+    lastNightlySyncAt = new Date();
+    console.log("[nightly-sync] Starting nightly sync for all providers...");
+
     const allConfigs: { providerId: string; type: DonorType; providerName: string }[] = [];
 
     const eggConfigs = await prisma.eggDonorSyncConfig.findMany({
@@ -6077,6 +6102,14 @@ export async function runNightlySync(
     console.log(`[nightly-sync] Nightly sync complete - ${ok}/${tracked.length} ok, ${actionable} need attention`);
     return nightlySyncResults.slice();
   } finally {
+    // Release the cross-container claim so the next eligible run (e.g. a catch-up
+    // after a fully-failed night) isn't blocked. Same-day re-runs are still gated
+    // by the 20h SyncLog dedup above.
+    if (claimed) {
+      await prisma.nightlySyncLock
+        .updateMany({ where: { id: NIGHTLY_LOCK_ID }, data: { claimedAt: null } })
+        .catch((e: any) => console.error(`[nightly-sync] Failed to release claim: ${e.message}`));
+    }
     nightlySyncRunning = false;
   }
 }

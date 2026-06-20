@@ -984,6 +984,15 @@ model SyncLog {
   @@index([startedAt])
 }
 
+// Single-row cross-container claim for the nightly sync. Replit Autoscale runs
+// multiple containers, each with its own in-memory guard; an atomic conditional
+// UPDATE on this row lets exactly ONE container win the nightly even when two
+// fire their 2 AM cron in the same instant (a SELECT-then-decide check races).
+model NightlySyncLock {
+  id        Int       @id // always 1 (singleton row)
+  claimedAt DateTime? // when a run claimed it; null = free. Stale claims (> TTL) are reclaimable.
+}
+
 model AvailabilityOverride {
   id          String   @id @default(uuid())
   userId      String

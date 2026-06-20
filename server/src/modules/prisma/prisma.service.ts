@@ -247,6 +247,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.parentProfileView;
   }
 
+  get nightlySyncLock() {
+    return prisma.nightlySyncLock;
+  }
+
   get $transaction() {
     return prisma.$transaction.bind(prisma);
   }
