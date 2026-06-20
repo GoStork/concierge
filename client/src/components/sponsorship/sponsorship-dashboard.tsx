@@ -24,6 +24,13 @@ const SLOT_ENTITY_TYPES: { type: EntityType; label: string }[] = [
   { type: "DOCTOR", label: "Doctors" },
 ];
 
+const SLOT_TYPE_HEADERS: Record<string, string> = {
+  EGG_DONOR: "Egg donor slots",
+  SPERM_DONOR: "Sperm donor slots",
+  SURROGATE: "Surrogate slots",
+  DOCTOR: "Doctor slots",
+};
+
 /**
  * Shared sponsorship dashboard + management surface. Mounted standalone in two
  * places: the admin provider-edit "Sponsorship" tab (pass providerId + isAdmin)
@@ -258,13 +265,22 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
     enabled: !isAdmin || !!providerId,
     retry: false,
   });
-  const slotLabels = (slotTypesQ.data || []).map((t) => t.label);
-  const slotBundleLabel = slotLabels.length ? `Slot bundles (${slotLabels.join(", ")})` : "Slot bundles";
+  const applicableSlotTypes = (slotTypesQ.data || []).map((t) => t.type);
   const hasClinic = applicableWholeKeys.has("whole_profile_ivf");
   const hasAgency = applicableWholeKeys.has("whole_profile_surrogacy");
   const wholeLabel = `Whole-profile boost (your ${[hasClinic && "clinic", hasAgency && "agency"].filter(Boolean).join(" / ") || "profile"})`;
 
-  const bundles = plans.filter((p) => p.productType === "SLOT_BUNDLE");
+  // Slot bundles are typed - show one group per sub-profile type the provider
+  // offers, each with that type's tiers (egg/sperm donors are large, surrogates
+  // and doctors small).
+  const allBundles = plans.filter((p) => p.productType === "SLOT_BUNDLE");
+  const bundleGroups = applicableSlotTypes
+    .map((type) => ({
+      type,
+      label: SLOT_TYPE_HEADERS[type] || "Slots",
+      tiers: allBundles.filter((p) => p.slotEntityType === type).sort((a, b) => a.sortOrder - b.sortOrder),
+    }))
+    .filter((g) => g.tiers.length > 0);
   const wholeProfiles = plans.filter((p) => p.productType === "WHOLE_PROFILE" && applicableWholeKeys.has(p.tierKey));
 
   return (
@@ -297,15 +313,17 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
         {notice && <div className="text-sm rounded-lg px-3 py-2" style={{ background: "hsl(var(--brand-success) / 0.1)", color: "hsl(var(--brand-success))" }}>{notice}</div>}
         {error && <div className="text-sm rounded-lg px-3 py-2" style={{ background: "hsl(var(--brand-error) / 0.1)", color: "hsl(var(--brand-error))" }}>{error}</div>}
 
-        <div>
-          <p className="text-base font-semibold text-foreground mb-2">{slotBundleLabel}</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {bundles.map((p) => (
-              <PlanCard key={p.id} plan={p} busy={busyPlan === p.id} isAdmin={isAdmin}
-                onCharge={() => startCharge(p.id)} onComp={() => grantComp(p.id)} />
-            ))}
+        {bundleGroups.map((g) => (
+          <div key={g.type}>
+            <p className="text-base font-semibold text-foreground mb-2">{g.label}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {g.tiers.map((p) => (
+                <PlanCard key={p.id} plan={p} busy={busyPlan === p.id} isAdmin={isAdmin}
+                  onCharge={() => startCharge(p.id)} onComp={() => grantComp(p.id)} />
+              ))}
+            </div>
           </div>
-        </div>
+        ))}
 
         {wholeProfiles.length > 0 && (
           <div>
@@ -465,28 +483,14 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
 }
 
 function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void }) {
-  const [type, setType] = useState<EntityType>("EGG_DONOR");
-
-  // Only show slot-type tabs the provider actually offers.
-  const stUrl = isAdmin ? `${base}/slot-entity-types?providerId=${providerId}` : `/api/sponsorship/slot-entity-types`;
-  const slotTypesQ = useQuery<{ type: string; label: string }[]>({
-    queryKey: [stUrl],
-    queryFn: async () => (await apiRequest("GET", stUrl)).json(),
-    enabled: !isAdmin || !!providerId,
-    retry: false,
-  });
-  const applicableSet = new Set((slotTypesQ.data || []).map((t) => t.type));
-  const tabs = SLOT_ENTITY_TYPES.filter((t) => applicableSet.has(t.type));
-  // Fall back to the first applicable type until the user picks one.
-  const activeType: EntityType = applicableSet.has(type) ? type : ((tabs[0]?.type as EntityType) ?? type);
-
+  // A typed bundle has a single sub-profile type - fill it from that type only.
+  const bundleType: EntityType = (s.plan?.slotEntityType as EntityType) || "EGG_DONOR";
   const eligibleUrl = isAdmin
-    ? `${base}/eligible-entities?providerId=${providerId}&type=${activeType}`
-    : `/api/sponsorship/eligible-entities?type=${activeType}`;
+    ? `${base}/eligible-entities?providerId=${providerId}&type=${bundleType}`
+    : `/api/sponsorship/eligible-entities?type=${bundleType}`;
   const eligibleQ = useQuery<any[]>({
     queryKey: [eligibleUrl],
     queryFn: async () => (await apiRequest("GET", eligibleUrl)).json(),
-    enabled: tabs.length > 0,
   });
   const [busyId, setBusyId] = useState<string | null>(null);
   const filledIds = new Set((s.items || []).map((it: any) => it.entityId));
@@ -496,7 +500,7 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
   const addItem = async (entityId: string) => {
     setBusyId(entityId);
     try {
-      const body = isAdmin ? { providerId, entityType: activeType, entityId } : { entityType: activeType, entityId };
+      const body = isAdmin ? { providerId, entityType: bundleType, entityId } : { entityType: bundleType, entityId };
       await apiRequest("POST", `${base}/${s.id}/items`, body);
       onChanged();
     } finally { setBusyId(null); }
@@ -526,15 +530,6 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
         </div>
       )}
 
-      {/* Add picker - only the provider's applicable types */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {tabs.map((t) => (
-          <button key={t.type} onClick={() => setType(t.type)}
-            className={`px-2.5 py-1 rounded-full text-xs transition-colors ${activeType === t.type ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground hover:bg-accent/20"}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
       {slotsFull && <p className="text-xs text-[hsl(var(--brand-warning))]">All slots filled. Remove one to add another.</p>}
       <div className="max-h-56 overflow-y-auto rounded-lg border border-border divide-y divide-border">
         {eligibleQ.isLoading && <div className="p-3 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Loading...</div>}

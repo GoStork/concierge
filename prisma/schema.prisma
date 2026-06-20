@@ -2116,11 +2116,15 @@ enum SponsoredEntityType {
 model SponsorshipPlan {
   id              String                 @id @default(uuid())
   productType     SponsorshipProductType
-  tierKey         String // "starter" | "growth" | "pro" | "whole_profile_ivf" | "whole_profile_surrogacy"
+  tierKey         String // e.g. "egg_donor_starter" | "surrogate_single" | "doctor_practice" | "whole_profile_ivf"
+  // For SLOT_BUNDLE plans this scopes the bundle to ONE sub-profile type (egg
+  // donors vs surrogates vs sperm donors vs doctors) so tiers can be sized to
+  // each roster. Null for WHOLE_PROFILE plans.
+  slotEntityType  SponsoredEntityType?
   displayName     String
   priceCents      Int
   currency        String                 @default("USD")
-  slotCount       Int // 5 / 25 / 100 ; 1 for WHOLE_PROFILE
+  slotCount       Int // per-type tier size ; 1 for WHOLE_PROFILE
   stripeProductId String?
   stripePriceId   String? // pre-provisioned recurring Price (optional; else created on the fly)
   isActive        Boolean                @default(true)

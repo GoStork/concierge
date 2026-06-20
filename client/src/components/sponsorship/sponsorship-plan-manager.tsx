@@ -8,6 +8,13 @@ import { NumberInput } from "@/components/ui/number-input";
 import { apiRequest } from "@/lib/queryClient";
 import { Sparkles, Plus, Trash2, Loader2, Check } from "lucide-react";
 
+const SLOT_TYPES: { type: string; label: string }[] = [
+  { type: "EGG_DONOR", label: "Egg donors" },
+  { type: "SPERM_DONOR", label: "Sperm donors" },
+  { type: "SURROGATE", label: "Surrogates" },
+  { type: "DOCTOR", label: "Doctors" },
+];
+
 /**
  * GoStork-admin view of /account/sponsorship: manage the sponsorship PROGRAMS
  * (plans + pricing) that apply to every provider. Create/edit/delete slot-bundle
@@ -26,6 +33,7 @@ export function SponsorshipPlanManager() {
   const plans = plansQ.data || [];
   const bundles = plans.filter((p) => p.productType === "SLOT_BUNDLE").sort((a, b) => a.sortOrder - b.sortOrder);
   const wholeProfiles = plans.filter((p) => p.productType === "WHOLE_PROFILE").sort((a, b) => a.sortOrder - b.sortOrder);
+  const bundleGroups = SLOT_TYPES.map((t) => ({ ...t, tiers: bundles.filter((b) => b.slotEntityType === t.type) }));
 
   return (
     <div className="space-y-6" data-testid="sponsorship-plan-manager">
@@ -43,15 +51,23 @@ export function SponsorshipPlanManager() {
       {/* Slot bundles */}
       <Card>
         <CardHeader className="pb-2 flex-row items-center justify-between">
-          <CardTitle className="text-base font-semibold text-foreground">Slot bundles</CardTitle>
+          <div>
+            <CardTitle className="text-base font-semibold text-foreground">Slot bundles</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">Tiers are scoped per sub-profile type, so egg/sperm donor rosters and the much smaller surrogate/doctor rosters can be priced differently.</p>
+          </div>
           <Button size="sm" variant="outline" onClick={() => setAdding((v) => !v)} data-testid="button-add-plan">
             <Plus className="w-4 h-4 mr-1" /> Add tier
           </Button>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           {adding && <NewBundleForm onDone={() => { setAdding(false); refetch(); }} onCancel={() => setAdding(false)} />}
-          {bundles.map((p) => <PlanRow key={p.id} plan={p} onChanged={refetch} />)}
-          {!bundles.length && !plansQ.isLoading && <p className="text-sm text-muted-foreground">No slot-bundle tiers yet.</p>}
+          {bundleGroups.map((g) => (
+            <div key={g.type} className="space-y-2">
+              <p className="text-sm font-medium text-foreground">{g.label}</p>
+              {g.tiers.map((p) => <PlanRow key={p.id} plan={p} onChanged={refetch} />)}
+              {!g.tiers.length && <p className="text-xs text-muted-foreground pl-1">No {g.label.toLowerCase()} tiers.</p>}
+            </div>
+          ))}
         </CardContent>
       </Card>
 
@@ -143,6 +159,7 @@ function PlanRow({ plan, onChanged }: { plan: any; onChanged: () => void }) {
 }
 
 function NewBundleForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+  const [entityType, setEntityType] = useState("EGG_DONOR");
   const [tierKey, setTierKey] = useState("");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -153,9 +170,13 @@ function NewBundleForm({ onDone, onCancel }: { onDone: () => void; onCancel: () 
   const create = async () => {
     setBusy(true); setError(null);
     try {
+      // Type-scope the key so the same tier name can exist across types.
+      const rawKey = tierKey.trim().toLowerCase().replace(/\s+/g, "_");
+      const key = rawKey.startsWith(entityType.toLowerCase()) ? rawKey : `${entityType.toLowerCase()}_${rawKey}`;
       await apiRequest("POST", "/api/admin/sponsorship/plans", {
         productType: "SLOT_BUNDLE",
-        tierKey: tierKey.trim().toLowerCase().replace(/\s+/g, "_"),
+        slotEntityType: entityType,
+        tierKey: key,
         displayName: name.trim(),
         priceCents: Math.round(parseFloat(price || "0") * 100),
         slotCount: parseInt(slots || "0", 10),
@@ -168,7 +189,13 @@ function NewBundleForm({ onDone, onCancel }: { onDone: () => void; onCancel: () 
   return (
     <div className="rounded-lg border border-dashed border-primary/40 bg-secondary/30 p-3 space-y-2">
       <div className="flex items-end gap-3 flex-wrap">
-        <div className="w-32"><label className="text-xs text-muted-foreground">Key</label><Input value={tierKey} onChange={(e) => setTierKey(e.target.value)} placeholder="enterprise" className="h-9" data-testid="new-plan-key" /></div>
+        <div className="w-36">
+          <label className="text-xs text-muted-foreground">Type</label>
+          <select value={entityType} onChange={(e) => setEntityType(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" data-testid="new-plan-type">
+            {SLOT_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
+          </select>
+        </div>
+        <div className="w-28"><label className="text-xs text-muted-foreground">Key</label><Input value={tierKey} onChange={(e) => setTierKey(e.target.value)} placeholder="enterprise" className="h-9" data-testid="new-plan-key" /></div>
         <div className="min-w-[140px]"><label className="text-xs text-muted-foreground">Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enterprise" className="h-9" data-testid="new-plan-name" /></div>
         <div className="w-28"><label className="text-xs text-muted-foreground">Price / mo ($)</label><NumberInput value={price} onChange={setPrice} className="h-9" data-testid="new-plan-price" /></div>
         <div className="w-24"><label className="text-xs text-muted-foreground">Slots</label><NumberInput value={slots} onChange={setSlots} allowDecimal={false} className="h-9" data-testid="new-plan-slots" /></div>

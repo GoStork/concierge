@@ -52,24 +52,33 @@ export class SponsorshipService {
     return this.prisma.sponsorshipPlan.update({ where: { id }, data: safe });
   }
 
-  /** Create a new sponsorship program (admin). New slot-bundle tiers are free-form;
-   *  whole-profile plans are limited to the clinic/agency types the boost logic understands. */
-  async createPlan(data: { productType: ProductType; tierKey: string; displayName: string; priceCents: number; slotCount?: number; currency?: string; sortOrder?: number }) {
+  /** Create a new sponsorship program (admin). Slot bundles are scoped to one
+   *  sub-profile type; whole-profile plans are limited to the two boost types. */
+  async createPlan(data: { productType: ProductType; tierKey: string; slotEntityType?: EntityType | null; displayName: string; priceCents: number; slotCount?: number; currency?: string; sortOrder?: number }) {
     if (!data.tierKey?.trim() || !data.displayName?.trim()) throw new BadRequestException("Tier key and display name are required");
     if (data.priceCents == null || data.priceCents < 0) throw new BadRequestException("A valid price is required");
     if (data.productType !== "SLOT_BUNDLE" && data.productType !== "WHOLE_PROFILE") throw new BadRequestException("Invalid product type");
-    if (data.productType === "WHOLE_PROFILE" && !["whole_profile_ivf", "whole_profile_surrogacy"].includes(data.tierKey)) {
+
+    let slotEntityType: EntityType | null = null;
+    if (data.productType === "SLOT_BUNDLE") {
+      slotEntityType = data.slotEntityType || null;
+      if (!slotEntityType || !["EGG_DONOR", "SPERM_DONOR", "SURROGATE", "DOCTOR"].includes(slotEntityType)) {
+        throw new BadRequestException("A slot bundle must target egg donors, sperm donors, surrogates, or doctors");
+      }
+    } else if (!["whole_profile_ivf", "whole_profile_surrogacy"].includes(data.tierKey)) {
       throw new BadRequestException("Whole-profile plans are limited to the IVF clinic and surrogacy agency types");
     }
+
     const slotCount = data.productType === "WHOLE_PROFILE" ? 1 : Math.floor(data.slotCount || 0);
     if (data.productType === "SLOT_BUNDLE" && slotCount < 1) throw new BadRequestException("Slot bundles need at least 1 slot");
+    const tierKey = data.tierKey.trim();
     const exists = await this.prisma.sponsorshipPlan.findUnique({
-      where: { productType_tierKey: { productType: data.productType, tierKey: data.tierKey.trim() } },
+      where: { productType_tierKey: { productType: data.productType, tierKey } },
     });
     if (exists) throw new BadRequestException("A plan with this type and key already exists");
     return this.prisma.sponsorshipPlan.create({
       data: {
-        productType: data.productType, tierKey: data.tierKey.trim(), displayName: data.displayName.trim(),
+        productType: data.productType, tierKey, slotEntityType: slotEntityType as any, displayName: data.displayName.trim(),
         priceCents: Math.floor(data.priceCents), currency: data.currency || "USD", slotCount,
         sortOrder: data.sortOrder ?? 99, isActive: true,
       },
@@ -458,7 +467,7 @@ export class SponsorshipService {
   async addItem(params: { sponsorshipId: string; providerId: string; entityType: EntityType; entityId: string }) {
     const sponsorship = await this.prisma.sponsorship.findUnique({
       where: { id: params.sponsorshipId },
-      include: { items: { where: { removedAt: null } } },
+      include: { items: { where: { removedAt: null } }, plan: { select: { slotEntityType: true } } },
     });
     if (!sponsorship) throw new NotFoundException("Sponsorship not found");
     if (sponsorship.providerId !== params.providerId) throw new ForbiddenException("Not your sponsorship");
@@ -467,6 +476,10 @@ export class SponsorshipService {
     }
     if (["CLINIC_PROFILE", "AGENCY_PROFILE"].includes(params.entityType)) {
       throw new BadRequestException("Use a whole-profile sponsorship for the provider's own profile");
+    }
+    // A typed slot bundle only accepts its own sub-profile type.
+    if (sponsorship.plan?.slotEntityType && params.entityType !== sponsorship.plan.slotEntityType) {
+      throw new BadRequestException(`This bundle only sponsors ${String(sponsorship.plan.slotEntityType).replace("_", " ").toLowerCase()}s.`);
     }
     if (sponsorship.items.length >= sponsorship.slotCountSnapshot) {
       throw new BadRequestException(`All ${sponsorship.slotCountSnapshot} slots are filled. Remove one or upgrade your tier.`);

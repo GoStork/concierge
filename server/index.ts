@@ -291,13 +291,21 @@ export function log(message: string, source = "nestjs") {
   try {
     const db = prismaService.client;
     const { getSponsorshipPlanDefaults } = await import("./sponsorship-plan-defaults");
+    // Retire legacy shared (untyped) slot bundles - bundles are now scoped per
+    // sub-profile type. Delete the unreferenced ones, deactivate any still in use.
+    const legacy = await db.sponsorshipPlan.findMany({ where: { productType: "SLOT_BUNDLE", slotEntityType: null } });
+    for (const lp of legacy) {
+      const refs = await db.sponsorship.count({ where: { planId: lp.id } });
+      if (refs === 0) await db.sponsorshipPlan.delete({ where: { id: lp.id } });
+      else await db.sponsorshipPlan.update({ where: { id: lp.id }, data: { isActive: false } });
+    }
     let seeded = 0;
     for (const p of getSponsorshipPlanDefaults()) {
       const existing = await db.sponsorshipPlan.findUnique({
         where: { productType_tierKey: { productType: p.productType as any, tierKey: p.tierKey } },
       });
       if (!existing) {
-        await db.sponsorshipPlan.create({ data: { ...p, productType: p.productType as any } });
+        await db.sponsorshipPlan.create({ data: { ...p, productType: p.productType as any, slotEntityType: (p.slotEntityType ?? null) as any } });
         seeded++;
       }
     }
