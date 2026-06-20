@@ -202,13 +202,13 @@ export class SponsorshipController {
   @Post("api/admin/sponsorship")
   async adminCreate(
     @Req() req: Request,
-    @Body() body: { providerId: string; planId: string; billingMode?: "AUTO_RENEW" | "ONE_TIME"; mode: "CHARGE" | "COMP"; compReason?: string },
+    @Body() body: { providerId: string; planId: string; billingMode?: "AUTO_RENEW" | "ONE_TIME"; mode: "CHARGE" | "COMP"; compReason?: string; months?: number },
   ) {
     this.requireAdmin(req);
     const adminUserId = (req.user as any).id;
     if (!body?.providerId || !body?.planId) throw new BadRequestException("providerId and planId required");
     if (body.mode === "COMP") {
-      return this.sponsorship.grantComp({ providerId: body.providerId, planId: body.planId, adminUserId, compReason: body.compReason });
+      return this.sponsorship.grantComp({ providerId: body.providerId, planId: body.planId, adminUserId, compReason: body.compReason, months: body.months });
     }
     // CHARGE: create a pending sponsorship + return the client secret for the provider to pay.
     const adminUser = await this.actingUser(req);

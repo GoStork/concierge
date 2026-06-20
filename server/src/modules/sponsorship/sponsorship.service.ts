@@ -8,13 +8,16 @@ type ProductType = "SLOT_BUNDLE" | "WHOLE_PROFILE";
 type BillingMode = "AUTO_RENEW" | "ONE_TIME";
 type EntityType = "EGG_DONOR" | "SURROGATE" | "SPERM_DONOR" | "DOCTOR" | "CLINIC_PROFILE" | "AGENCY_PROFILE";
 
-function addOneMonth(from: Date): Date {
+function addMonths(from: Date, n: number): Date {
   // Calendar-month add with timestamp fallback for edge dates.
   const d = new Date(from);
   const day = d.getDate();
-  d.setMonth(d.getMonth() + 1);
+  d.setMonth(d.getMonth() + n);
   if (d.getDate() < day) d.setDate(0); // clamp e.g. Jan 31 -> Feb 28
   return d;
+}
+function addOneMonth(from: Date): Date {
+  return addMonths(from, 1);
 }
 
 /** Maps a SponsoredEntityType to the ParentProfileView.profileType string used by the marketplace view tracker. */
@@ -428,9 +431,12 @@ export class SponsorshipService {
     planId: string;
     adminUserId: string;
     compReason?: string;
+    months?: number;
   }): Promise<{ sponsorshipId: string }> {
     const plan = await this.prisma.sponsorshipPlan.findUnique({ where: { id: params.planId } });
     if (!plan || !plan.isActive) throw new NotFoundException("Plan not found or inactive");
+    // Admin chooses how long the complimentary sponsorship runs (1-36 months).
+    const months = Math.min(36, Math.max(1, Math.floor(params.months || 1)));
 
     const now = new Date();
     const sponsorship = await this.prisma.sponsorship.create({
@@ -458,7 +464,7 @@ export class SponsorshipService {
       });
     }
 
-    await this.activate(sponsorship.id, addOneMonth(now));
+    await this.activate(sponsorship.id, addMonths(now, months));
     return { sponsorshipId: sponsorship.id };
   }
 

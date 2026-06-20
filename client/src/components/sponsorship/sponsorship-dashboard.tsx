@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -203,6 +203,7 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const checkoutRef = useRef<HTMLDivElement>(null);
 
   // Saved card (Option B): if present, purchases auto-charge it with no re-entry.
   const pmUrl = isAdmin ? `${base}/payment-method?providerId=${providerId}` : `/api/sponsorship/payment-method`;
@@ -217,14 +218,19 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
   const startCharge = async (planId: string) => {
     setError(null); setNotice(null); setBusyPlan(planId);
     try {
-      const body = isAdmin
-        ? { providerId, planId, billingMode, mode: "CHARGE" }
-        : { planId, billingMode };
-      const url = isAdmin ? `${base}` : `${base}/checkout`;
-      const res = await apiRequest("POST", url, body);
+      if (isAdmin) {
+        // Admin can't enter the provider's card - this sends them a payment
+        // request to complete from their own dashboard.
+        await apiRequest("POST", `${base}`, { providerId, planId, billingMode, mode: "CHARGE" });
+        setNotice("Payment request sent. The provider will complete payment from their Sponsorship page, then it activates.");
+        onChanged();
+        return;
+      }
+      const res = await apiRequest("POST", `${base}/checkout`, { planId, billingMode });
       const data = await res.json();
       if (data.clientSecret) {
         setCheckout({ planId, clientSecret: data.clientSecret });
+        setTimeout(() => checkoutRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
       } else {
         if (data.activated && data.savedCard?.last4) setNotice(`Charged your saved card ••••${data.savedCard.last4}. Sponsorship is now active.`);
         onChanged();
@@ -234,13 +240,14 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
     } finally { setBusyPlan(null); }
   };
 
-  const grantComp = async (planId: string) => {
-    setError(null); setBusyPlan(planId);
+  const grantComp = async (planId: string, months: number) => {
+    setError(null); setNotice(null); setBusyPlan(planId);
     try {
-      await apiRequest("POST", `${base}`, { providerId, planId, mode: "COMP" });
+      await apiRequest("POST", `${base}`, { providerId, planId, mode: "COMP", months });
+      setNotice(`Complimentary sponsorship granted free for ${months} month${months > 1 ? "s" : ""}.`);
       onChanged();
     } catch (e: any) {
-      setError(e.message || "Could not grant comp");
+      setError(e.message || "Could not grant complimentary sponsorship");
     } finally { setBusyPlan(null); }
   };
 
@@ -319,7 +326,7 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {g.tiers.map((p) => (
                 <PlanCard key={p.id} plan={p} busy={busyPlan === p.id} isAdmin={isAdmin}
-                  onCharge={() => startCharge(p.id)} onComp={() => grantComp(p.id)} />
+                  onCharge={() => startCharge(p.id)} onComp={(months) => grantComp(p.id, months)} />
               ))}
             </div>
           </div>
@@ -331,14 +338,14 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {wholeProfiles.map((p) => (
                 <PlanCard key={p.id} plan={p} busy={busyPlan === p.id} isAdmin={isAdmin}
-                  onCharge={() => startCharge(p.id)} onComp={() => grantComp(p.id)} />
+                  onCharge={() => startCharge(p.id)} onComp={(months) => grantComp(p.id, months)} />
               ))}
             </div>
           </div>
         )}
 
         {checkout && (
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-lg border border-primary/30 bg-secondary/30 p-3 scroll-mt-24" ref={checkoutRef}>
             <p className="text-sm font-medium">Complete payment to activate</p>
             <SponsorshipCheckout
               clientSecret={checkout.clientSecret}
@@ -352,7 +359,9 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
   );
 }
 
-function PlanCard({ plan, busy, isAdmin, onCharge, onComp }: { plan: any; busy: boolean; isAdmin: boolean; onCharge: () => void; onComp: () => void }) {
+function PlanCard({ plan, busy, isAdmin, onCharge, onComp }: { plan: any; busy: boolean; isAdmin: boolean; onCharge: () => void; onComp: (months: number) => void }) {
+  const [comping, setComping] = useState(false);
+  const [months, setMonths] = useState(1);
   return (
     <div className="rounded-xl border border-border p-4 flex flex-col gap-2 bg-card" data-testid={`plan-${plan.tierKey}`}>
       <div className="flex items-baseline justify-between">
@@ -367,11 +376,21 @@ function PlanCard({ plan, busy, isAdmin, onCharge, onComp }: { plan: any; busy: 
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CreditCard className="w-3.5 h-3.5 mr-1" /> {isAdmin ? "Charge" : "Sponsor"}</>}
         </Button>
         {isAdmin && (
-          <Button size="sm" variant="outline" onClick={onComp} disabled={busy} data-testid={`button-comp-${plan.tierKey}`}>
-            <Gift className="w-3.5 h-3.5 mr-1" /> Comp
+          <Button size="sm" variant="outline" onClick={() => setComping((v) => !v)} disabled={busy} data-testid={`button-comp-${plan.tierKey}`}>
+            <Gift className="w-3.5 h-3.5 mr-1" /> Complimentary
           </Button>
         )}
       </div>
+      {isAdmin && comping && (
+        <div className="mt-2 pt-2 border-t border-border flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground">Free for</span>
+          <select value={months} onChange={(e) => setMonths(parseInt(e.target.value, 10))} className="h-8 rounded-md border border-input bg-background px-2 text-sm" data-testid={`comp-months-${plan.tierKey}`}>
+            {[1, 2, 3, 6, 12].map((m) => <option key={m} value={m}>{m} month{m > 1 ? "s" : ""}</option>)}
+          </select>
+          <Button size="sm" onClick={() => { onComp(months); setComping(false); }} disabled={busy} data-testid={`comp-grant-${plan.tierKey}`}>Grant free</Button>
+          <Button size="sm" variant="ghost" onClick={() => setComping(false)}>Cancel</Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -446,7 +465,7 @@ function SponsorshipRow({ s, isAdmin, providerId, base, onChanged }: { s: any; i
         <div className="flex items-center gap-2">
           <Badge className={STATUS_STYLES[s.status] || ""}>{s.status.replace("_", " ")}</Badge>
           <span className="font-medium text-foreground">{s.plan?.displayName}</span>
-          {s.isComped && <Badge variant="secondary"><Gift className="w-3 h-3 mr-1" />Comped</Badge>}
+          {s.isComped && <Badge variant="secondary"><Gift className="w-3 h-3 mr-1" />Complimentary</Badge>}
           {isBundle && <span className="text-xs text-muted-foreground">{s.slotsUsed}/{s.slotsTotal} slots</span>}
           {s.currentPeriodEnd && <span className="text-xs text-muted-foreground">renews/ends {new Date(s.currentPeriodEnd).toLocaleDateString()}</span>}
           {s.canceledAt && <span className="text-xs text-muted-foreground">(auto-renew off)</span>}
