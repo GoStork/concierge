@@ -274,7 +274,7 @@ export class SponsorshipService {
       where: { providerId: params.providerId, status: "PENDING_PAYMENT" },
     });
     if (pending) {
-      throw new BadRequestException("You already have a sponsorship awaiting payment. Complete or discard it before starting another.");
+      throw new BadRequestException("There's already a sponsorship awaiting payment. Discard or complete it (under “Your sponsorships” below) before starting another.");
     }
 
     // Provider-level customer so a card saved by one billing user is reused by all.

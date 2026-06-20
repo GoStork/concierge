@@ -193,6 +193,16 @@ function EmptyHint({ text }: { text: string }) {
   return <div className="h-full flex items-center justify-center text-sm text-muted-foreground">{text}</div>;
 }
 
+/** apiRequest throws errors like `400: {"message":"..."}`; surface just the message. */
+function cleanError(e: any, fallback: string): string {
+  const raw = e?.message || "";
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (m) {
+    try { const j = JSON.parse(m[0]); if (j?.message) return String(j.message); } catch { /* ignore */ }
+  }
+  return raw.replace(/^\d{3}:\s*/, "") || fallback;
+}
+
 // ─── Plans + checkout ────────────────────────────────────────────────────────
 
 function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
@@ -236,7 +246,7 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
         onChanged();
       }
     } catch (e: any) {
-      setError(e.message || "Could not start checkout");
+      setError(cleanError(e, "Could not start checkout"));
     } finally { setBusyPlan(null); }
   };
 
@@ -247,7 +257,7 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
       setNotice(`Complimentary sponsorship granted free for ${months} month${months > 1 ? "s" : ""}.`);
       onChanged();
     } catch (e: any) {
-      setError(e.message || "Could not grant complimentary sponsorship");
+      setError(cleanError(e, "Could not grant complimentary sponsorship"));
     } finally { setBusyPlan(null); }
   };
 
