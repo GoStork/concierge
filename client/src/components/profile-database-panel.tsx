@@ -1416,7 +1416,8 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
           await apiRequest("DELETE", `/api/sponsorship/${campaign.id}/items/${existingItemId}`);
           toast({ title: "Removed from sponsorship" });
         } else {
-          if (campaignFull) { toast({ title: "All slots filled", description: "Remove a profile to add another, or upgrade your tier.", variant: "destructive" }); return; }
+          // Slots full: the sticky banner already explains this - don't fire a toast.
+          if (campaignFull) return;
           await apiRequest("POST", `/api/sponsorship/${campaign.id}/items`, { entityType: sponsorEntityType, entityId: profileId });
           toast({ title: "Added to sponsorship", variant: "success" });
         }
@@ -1510,9 +1511,12 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
             <Sparkles className="w-4 h-4 text-accent" />
             <span className="text-foreground">Selecting profiles for <strong>{campaign.planName}</strong></span>
             <Badge variant="secondary">{campaign.slotsUsed}/{campaign.slotsTotal} slots</Badge>
-            {campaignFull && <span className="text-xs text-[hsl(var(--brand-warning))]">All slots filled</span>}
           </div>
-          <p className="text-xs text-muted-foreground hidden md:block">Tap the ✨ on a card to add or remove it.</p>
+          <p className="text-xs hidden md:block">
+            {campaignFull
+              ? <span className="text-[hsl(var(--brand-warning))]">All slots filled - remove a profile to add another, or upgrade your tier.</span>
+              : <span className="text-muted-foreground">Tap the ✨ on a card to add or remove it.</span>}
+          </p>
           <Button size="sm" onClick={() => navigate("/account/sponsorship")} data-testid="button-done-selecting">Done</Button>
         </div>
       )}

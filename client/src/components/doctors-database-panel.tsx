@@ -129,7 +129,8 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
           await apiRequest("DELETE", `/api/sponsorship/${campaign.id}/items/${existingItemId}`);
           toast({ title: "Removed from sponsorship" });
         } else {
-          if (campaignFull) { toast({ title: "All slots filled", description: "Remove a doctor to add another, or upgrade your tier.", variant: "destructive" }); return; }
+          // Slots full: the sticky banner already explains this - don't fire a toast.
+          if (campaignFull) return;
           await apiRequest("POST", `/api/sponsorship/${campaign.id}/items`, { entityType: "DOCTOR", entityId: doctorId });
           toast({ title: "Added to sponsorship", variant: "success" });
         }
@@ -170,9 +171,12 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
             <Sparkles className="w-4 h-4 text-accent" />
             <span className="text-foreground">Selecting doctors for <strong>{campaign.planName}</strong></span>
             <Badge variant="secondary">{campaign.slotsUsed}/{campaign.slotsTotal} slots</Badge>
-            {campaignFull && <span className="text-xs text-[hsl(var(--brand-warning))]">All slots filled</span>}
           </div>
-          <p className="text-xs text-muted-foreground hidden md:block">Tap the ✨ on a card to add or remove it.</p>
+          <p className="text-xs hidden md:block">
+            {campaignFull
+              ? <span className="text-[hsl(var(--brand-warning))]">All slots filled - remove a doctor to add another, or upgrade your tier.</span>
+              : <span className="text-muted-foreground">Tap the ✨ on a card to add or remove it.</span>}
+          </p>
           <Button size="sm" onClick={() => navigate("/account/sponsorship")} data-testid="button-done-selecting">Done</Button>
         </div>
       )}
@@ -270,12 +274,14 @@ function DoctorRecordCard({ doctor, sponsored, busy, campaignMode, onSponsor }: 
   const loc = doctor.locations?.[0]?.location;
   const locLabel = loc?.city && loc?.state ? `${loc.city}, ${loc.state}` : loc?.state || loc?.city;
   return (
-    <div className={`relative overflow-hidden rounded-2xl border bg-card flex flex-col ${sponsored ? "border-accent ring-1 ring-accent/40" : "border-border"}`} data-testid={`doctor-card-${doctor.id}`}>
-      <div className="aspect-[4/3] bg-secondary relative">
+    <div className={`relative overflow-hidden rounded-2xl border bg-card flex flex-col h-full ${sponsored ? "border-accent ring-1 ring-accent/40" : "border-border"}`} data-testid={`doctor-card-${doctor.id}`}>
+      {/* Fixed square box via inline aspect-ratio + absolute image, so every card
+          gets an identical photo height regardless of the source image's shape. */}
+      <div className="relative w-full shrink-0 overflow-hidden bg-secondary" style={{ aspectRatio: "1 / 1" }}>
         {photo ? (
-          <img src={photo} alt={doctor.name} className="w-full h-full object-cover" loading="lazy" />
+          <img src={photo} alt={doctor.name} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center"><User className="w-10 h-10 text-muted-foreground" /></div>
+          <div className="absolute inset-0 flex items-center justify-center"><User className="w-10 h-10 text-muted-foreground" /></div>
         )}
         {sponsored && (
           <Badge className="absolute top-2 left-2 bg-accent text-accent-foreground gap-1"><Sparkles className="w-3 h-3" /> Sponsored</Badge>

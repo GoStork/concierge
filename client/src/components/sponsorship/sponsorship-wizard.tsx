@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
@@ -95,17 +95,26 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
   };
 
   const close = () => { onChanged?.(); onClose(); };
-  const goCategory = () => { setStep("category"); setSelectedType(null); setSelectedPlan(null); setError(null); };
-  // Back nav: tier -> category; billing -> tier (bundle) or category (whole profile).
-  const back = (() => {
-    if (step === "tier" && !canPreselect) return goCategory;
-    if (step === "billing") {
-      const isBundle = selectedPlan?.productType === "SLOT_BUNDLE";
-      if (isBundle) return () => { setStep("tier"); setError(null); };
-      return canPreselect ? undefined : goCategory;
+
+  // Navigation history stack: every forward move records the step we came from,
+  // so the modal's top-left Back arrow always returns to the exact previous page
+  // (regardless of whether the type was preselected from a profile tab).
+  const [history, setHistory] = useState<Step[]>([]);
+  const go = (next: Step) => { setHistory((h) => [...h, step]); setStep(next); setError(null); };
+  const back = history.length > 0 && step !== "payment" && step !== "success"
+    ? () => { setStep(history[history.length - 1]); setHistory((h) => h.slice(0, -1)); setError(null); }
+    : undefined;
+
+  // When a profile tab preselects a type but the plans load after mount, jump
+  // straight to that type's tiers - once, and only if the user hasn't navigated.
+  const jumped = useRef(false);
+  useEffect(() => {
+    if (!jumped.current && history.length === 0 && step === "category" && canPreselect && !selectedPlan && initialEntityType) {
+      jumped.current = true;
+      setSelectedType(initialEntityType);
+      setStep("tier");
     }
-    return undefined;
-  })();
+  }, [canPreselect, history.length, step, selectedPlan, initialEntityType]);
 
   const savedCardNote = savedCard?.last4 ? (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -140,13 +149,13 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
                 {applicableSlotTypes.map((type) => (
                   <CategoryRow key={type} icon={CATEGORY_META[type].icon} title={CATEGORY_META[type].label}
                     subtitle={CATEGORY_META[type].subtitle}
-                    onClick={() => { setSelectedType(type); setSelectedPlan(null); setStep("tier"); setError(null); }}
+                    onClick={() => { setSelectedType(type); setSelectedPlan(null); go("tier"); }}
                     testid={`wizard-category-${type}`} />
                 ))}
                 {wholeProfiles.map((p) => (
                   <CategoryRow key={p.id} icon={<Building2 className="w-5 h-5" />} title={p.displayName}
                     subtitle={`Boost your whole profile · ${formatMoneyCents(p.priceCents, p.currency)}/mo`}
-                    onClick={() => { setSelectedType(null); setSelectedPlan(p); setStep("billing"); setError(null); }}
+                    onClick={() => { setSelectedType(null); setSelectedPlan(p); go("billing"); }}
                     testid={`wizard-category-${p.tierKey}`} />
                 ))}
               </div>
@@ -182,7 +191,7 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
                   );
                 })}
               </div>
-              <Button className="w-full" disabled={!selectedPlan} onClick={() => { setStep("billing"); setError(null); }} data-testid="wizard-to-billing">
+              <Button className="w-full" disabled={!selectedPlan} onClick={() => go("billing")} data-testid="wizard-to-billing">
                 Continue <ChevronRight className="w-4 h-4 ml-1.5" />
               </Button>
             </div>
@@ -194,15 +203,6 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
               <div>
                 <h3 className="font-heading text-lg text-foreground">Billing</h3>
                 <p className="text-sm text-muted-foreground mt-0.5">Choose how you'd like to be billed for this sponsorship.</p>
-              </div>
-              <div className="rounded-xl border border-border p-4 flex items-center justify-between gap-2">
-                <div>
-                  <div className="font-heading text-foreground">{selectedPlan.displayName}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {selectedPlan.productType === "SLOT_BUNDLE" ? `Up to ${selectedPlan.slotCount} sponsored profiles` : "Boosts your top-level profile"}
-                  </div>
-                </div>
-                <span className="font-ui text-foreground shrink-0">{formatMoneyCents(selectedPlan.priceCents, selectedPlan.currency)}<span className="text-xs text-muted-foreground">/mo</span></span>
               </div>
               <div className="space-y-2">
                 {(["AUTO_RENEW", "ONE_TIME"] as BillingMode[]).map((m) => {
