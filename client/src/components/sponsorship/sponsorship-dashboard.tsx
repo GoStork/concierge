@@ -516,7 +516,7 @@ function SponsorshipTableRow({ s, isAdmin, providerId, base, onChanged }: { s: a
       )}
       {isBundle && isActive && useTabPicker && (
         <Button size="sm" variant="ghost" onClick={() => navigate(`/account/${profileTab}?sponsor=${s.id}`)} data-testid={`button-add-profiles-${s.id}`}>
-          Add profiles <ChevronDown className="w-4 h-4 ml-1 -rotate-90" />
+          {(s.slotsUsed ?? 0) >= (s.slotsTotal ?? 0) ? "Manage profiles" : "Add profiles"} <ChevronDown className="w-4 h-4 ml-1 -rotate-90" />
         </Button>
       )}
       {isBundle && isActive && !useTabPicker && (

@@ -36,7 +36,7 @@ import { useMarketplaceViewContext, recordProfileView, useScrollPastView } from 
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   getPhotoList, getMatchedPreferences, buildTitle, buildStatusLabel,
-  getDonorTabs, getSurrogateTabs,
+  getDonorTabs, getSurrogateTabs, isSponsored,
   mapDatabaseDonorToSwipeProfile, mapDatabaseSurrogateToSwipeProfile, mapDatabaseSpermDonorToSwipeProfile,
   type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
@@ -279,6 +279,10 @@ function IvfClinicGrid({ providers, eggSource, ageGroup, isNewPatient, sortBy, o
     }));
 
     withRates.sort((a, b) => {
+      // Sponsored clinics stay pinned on top regardless of the chosen sort.
+      const aSp = isSponsored(a.provider) ? 1 : 0;
+      const bSp = isSponsored(b.provider) ? 1 : 0;
+      if (aSp !== bSp) return bSp - aSp;
       const aRate = a.rate ? Number(a.rate.successRate) : -1;
       const bRate = b.rate ? Number(b.rate.successRate) : -1;
       const aCycles = a.rate?.cycleCount || 0;
@@ -371,6 +375,10 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
     });
     const withRates = visible.map((p) => ({ provider: p, rate: pickMatchedRate((p as any).ivfSuccessRates, eggSource) }));
     withRates.sort((a, b) => {
+      // Sponsored clinics stay pinned on top regardless of the chosen sort.
+      const aSp = isSponsored(a.provider) ? 1 : 0;
+      const bSp = isSponsored(b.provider) ? 1 : 0;
+      if (aSp !== bSp) return bSp - aSp;
       const aRate = a.rate ? Number(a.rate.successRate) : -1;
       const bRate = b.rate ? Number(b.rate.successRate) : -1;
       const aCycles = a.rate?.cycleCount || 0;
