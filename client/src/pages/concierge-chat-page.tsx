@@ -4517,7 +4517,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
                   {/* Match cards */}
                   {!alignRight && msg.matchCards && msg.matchCards.length > 0 && (
-                    <div className="mb-2 space-y-3 w-full max-w-[340px] sm:max-w-[440px]">
+                    <div className="mb-2 space-y-3 w-full max-w-[340px] sm:max-w-[380px]">
                       {msg.matchCards.map((card, ci) => (
                         <MatchCardComponent
                           key={ci}
@@ -4533,7 +4533,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   {/* Doctor cards - same SwipeDeckCard shell as the clinic card's
                       doctor-face tabs, just doctor-specific content. */}
                   {!alignRight && msg.doctorCards && msg.doctorCards.length > 0 && (
-                    <div className="mb-2 space-y-3 w-full max-w-[340px] sm:max-w-[440px]">
+                    <div className="mb-2 space-y-3 w-full max-w-[340px] sm:max-w-[380px]">
                       {msg.doctorCards.map((card, ci) => (
                         <DoctorMatchCard
                           key={`doc-${ci}`}
