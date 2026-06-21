@@ -1708,7 +1708,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
   // IVF Clinics deck uses); the matcher just adds chat actions + footer buttons.
   return (
     <div className="w-full" data-testid={`match-card-${card.providerId}`}>
-      <div className="w-full aspect-[5/8] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+      <div className="w-full aspect-[5/8] sm:aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
         <ClinicSwipeCard
           providerId={card.providerId}
           eggSource={card.eggSource}
@@ -1764,7 +1764,7 @@ function DoctorMatchCard({ card, brandColor, onAction }: { card: DoctorCard; bra
 
   return (
     <div className="w-full" data-testid={`doctor-card-${card.slug}`}>
-      <div className="w-full aspect-[5/7] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+      <div className="w-full aspect-[5/7] sm:aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
         <SwipeDeckCard
           id={card.slug}
           photos={photos}
