@@ -50,8 +50,12 @@ Then follow the install steps below.
 1. Make sure the clone is current and the env is set:
    ```bash
    cd ~/Documents/GitHub-iMac/concierge
-   git fetch origin && git reset --hard origin/main   # it was 16 commits behind
+   git pull origin main --ff-only   # safe fast-forward; refuses rather than clobbers
    ```
+   This clone doubles as the dev workspace, so do NOT `git reset --hard` here - it
+   would silently discard uncommitted local work. Commit or stash first if the tree
+   is dirty, then `--ff-only`. (`run-server.sh` self-`git pull --rebase`s on each
+   restart, which needs a clean tree, so keep this clone tidy.)
    The iMac's `.env` must have `DATABASE_URL` (prod), GCS creds, and scraper
    settings. **Do NOT** add `ENABLE_NIGHTLY_SCHEDULER` to `.env` or the shell -
    the launchd wrapper sets it, so this one launchd process is the sole scheduler.
