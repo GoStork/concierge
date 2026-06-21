@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchDAEMON for the always-on iMac that hosts the GoStork nightly scraper sync.
+
+  This replaces the earlier LaunchAGENT (com.gostork.nightly-sync.plist). A daemon
+  starts at BOOT, before/without anyone logging in, so a reboot or power-failure
+  restart brings the server back automatically - no manual login required.
+
+  Runs as the user (UserName=eranamir), NOT root: root's HOME is /var/root and
+  macOS TCC blocks even root from ~/Documents, so as root it could not read the
+  repo, .env, or git/npm credentials. UserName + an explicit HOME fixes that.
+
+  Install location: /Library/LaunchDaemons/ (owned root:wheel, mode 644).
+  See README.md for the exact install commands.
+
+  EDIT the paths below if the iMac repo is not at GitHub-iMac/concierge.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gostork.nightly-sync</string>
+
+  <!-- Run as the user so HOME/.env/repo/git creds resolve (NOT root). -->
+  <key>UserName</key>
+  <string>eranamir</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/eranamir/Documents/GitHub-iMac/concierge/ops/imac-nightly-sync/run-server.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Daemons do not inherit a user HOME; set it so git/npm/.env resolve. -->
+    <key>HOME</key>
+    <string>/Users/eranamir</string>
+    <key>GOSTORK_REPO_DIR</key>
+    <string>/Users/eranamir/Documents/GitHub-iMac/concierge</string>
+    <!-- launchd's minimal PATH lacks node/npm/git; include where node lives
+         (`which node` on the iMac). -->
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Don't hammer-restart on a crash loop; wait 30s between relaunches. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/gostork-server.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/gostork-server.log</string>
+</dict>
+</plist>

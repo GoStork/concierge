@@ -19,7 +19,27 @@ enabled on the iMac via `ENABLE_NIGHTLY_SCHEDULER=true`.
 The atomic `NightlySyncLock` row remains the cross-host safety net, so even if a
 stray trigger fires elsewhere it cannot double-run.
 
-## One-time install on the iMac
+The server runs as a **LaunchDaemon** (`com.gostork.nightly-sync.daemon.plist`),
+not a LaunchAgent, so it starts at boot - before/without login - and survives a
+reboot or power-failure restart unattended. It runs as the user (`UserName`), not
+root, because root's HOME is `/var/root` and macOS TCC blocks even root from
+`~/Documents`, so as root it could not read the repo/.env/git creds.
+
+## Converting from the old LaunchAgent (if one is installed)
+
+If you previously installed the LaunchAgent at
+`~/Library/LaunchAgents/com.gostork.nightly-sync.plist`, remove it first so it
+does not fight the daemon for port 5001:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.gostork.nightly-sync.plist 2>/dev/null
+rm -f ~/Library/LaunchAgents/com.gostork.nightly-sync.plist
+lsof -ti tcp:5001 | xargs kill 2>/dev/null   # free the port the agent held
+```
+
+Then follow the install steps below.
+
+## One-time install on the iMac (LaunchDaemon)
 
 > The iMac's actual working clone is **`~/Documents/GitHub-iMac/concierge`**, not
 > `~/Documents/GitHub/concierge`. The committed plist + `run-server.sh` already
@@ -55,26 +75,37 @@ stray trigger fires elsewhere it cannot double-run.
    The committed plist already sets `PATH=/usr/local/bin:/opt/homebrew/bin:...`;
    adjust if node is elsewhere.
 
-5. Install and start the agent. **Edit the INSTALLED copy** in `~/Library/
-   LaunchAgents/`, not the repo file - `run-server.sh` self-`git pull`s, so any
-   edit to the repo plist would be reverted on the next restart anyway:
+5. Install the daemon. A LaunchDaemon lives in `/Library/LaunchDaemons/`, must be
+   owned `root:wheel` mode `644`, and is loaded with `sudo` into the `system`
+   domain. The installed filename should be `com.gostork.nightly-sync.plist`:
    ```bash
    chmod +x ops/imac-nightly-sync/run-server.sh
-   cp ops/imac-nightly-sync/com.gostork.nightly-sync.plist ~/Library/LaunchAgents/
-   # verify the paths in the installed copy point at GitHub-iMac:
-   #   ~/Library/LaunchAgents/com.gostork.nightly-sync.plist
-   launchctl unload ~/Library/LaunchAgents/com.gostork.nightly-sync.plist 2>/dev/null
-   launchctl load  ~/Library/LaunchAgents/com.gostork.nightly-sync.plist
+   sudo cp ops/imac-nightly-sync/com.gostork.nightly-sync.daemon.plist \
+           /Library/LaunchDaemons/com.gostork.nightly-sync.plist
+   sudo chown root:wheel /Library/LaunchDaemons/com.gostork.nightly-sync.plist
+   sudo chmod 644        /Library/LaunchDaemons/com.gostork.nightly-sync.plist
+   sudo launchctl bootstrap system /Library/LaunchDaemons/com.gostork.nightly-sync.plist
+   # (older macOS syntax: sudo launchctl load -w /Library/LaunchDaemons/com.gostork.nightly-sync.plist)
    ```
+   The daemon plist points at the repo `run-server.sh` directly (the path is
+   absolute), so unlike the old agent there is no "edit the installed copy"
+   gotcha - though `run-server.sh` still self-`git pull`s on each restart, so the
+   plist itself is only re-read when you reload the daemon.
 
 6. Verify it is running and scheduled:
    ```bash
-   launchctl list | grep gostork                       # shows a PID, not just "-"
+   sudo launchctl print system/com.gostork.nightly-sync | grep -E "state|pid" | head
    grep "In-process scheduler ENABLED" /tmp/gostork-server.log
    ```
-   You should see `[nightly-sync] In-process scheduler ENABLED on this host` and
-   `Scheduler started - runs daily at 2:00 AM ET`. The iMac's public tunnel is
-   `polygynous-vergie-coyly-imac.ngrok-free.dev` -> 5001.
+   You should see the service `running` with a pid, plus
+   `[nightly-sync] In-process scheduler ENABLED on this host` and
+   `Scheduler started - runs daily at 2:00 AM ET` in the log. The iMac's public
+   tunnel is `polygynous-vergie-coyly-imac.ngrok-free.dev` -> 5001 (the tunnel is
+   only for the dashboard; the nightly sync itself needs just DB + outbound HTTP).
+
+   If the log shows permission errors reading `~/Documents`, re-grant **Full Disk
+   Access to `/bin/bash`** (step 2) - the daemon runs the same `/bin/bash`, so the
+   existing grant should carry over, but a fresh grant fixes it if not.
 
 ## Keeping the Mac awake
 
@@ -90,7 +121,12 @@ long as the last successful nightly is older than 25h.
 
 ## Operating
 
-- **Restart the host:** `launchctl kickstart -k gui/$(id -u)/com.gostork.nightly-sync`
-- **Stop driving the nightly here:** `launchctl unload ~/Library/LaunchAgents/com.gostork.nightly-sync.plist`
+The daemon lives in the `system` domain, so its `launchctl` commands need `sudo`:
+
+- **Restart the server:** `sudo launchctl kickstart -k system/com.gostork.nightly-sync`
+- **Status:** `sudo launchctl print system/com.gostork.nightly-sync | head -30`
+- **Stop / disable:** `sudo launchctl bootout system/com.gostork.nightly-sync`
+  (re-enable with the `bootstrap` command from install step 5)
+- **After editing the plist:** `bootout` then `bootstrap` again to re-read it.
 - **Manually trigger a run:** admin UI "Trigger nightly", or `POST /api/scrapers/trigger-nightly`.
 - **Logs:** `/tmp/gostork-server.log`
