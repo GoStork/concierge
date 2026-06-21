@@ -21,30 +21,60 @@ stray trigger fires elsewhere it cannot double-run.
 
 ## One-time install on the iMac
 
-1. Make sure the iMac's `.env` has `DATABASE_URL` (prod), GCS creds, and scraper
-   settings - same as the dev env. **Do NOT** add `ENABLE_NIGHTLY_SCHEDULER`
-   there; the launchd wrapper sets it (so only this launchd-managed process is
-   the scheduler).
+> The iMac's actual working clone is **`~/Documents/GitHub-iMac/concierge`**, not
+> `~/Documents/GitHub/concierge`. The committed plist + `run-server.sh` already
+> point at `GitHub-iMac`. The notes below are the steps that actually worked on
+> Jun 21 2026 - the earlier "happy path" missed four macOS specifics (TCC, PATH,
+> which plist copy to edit, port 5001).
 
-2. Edit paths if the repo is not at `~/Documents/GitHub/concierge`:
-   - `ops/imac-nightly-sync/run-server.sh` -> `REPO_DIR` / `GOSTORK_REPO_DIR`
-   - `ops/imac-nightly-sync/com.gostork.nightly-sync.plist` -> the `run-server.sh`
-     path and `GOSTORK_REPO_DIR`
+1. Make sure the clone is current and the env is set:
+   ```bash
+   cd ~/Documents/GitHub-iMac/concierge
+   git fetch origin && git reset --hard origin/main   # it was 16 commits behind
+   ```
+   The iMac's `.env` must have `DATABASE_URL` (prod), GCS creds, and scraper
+   settings. **Do NOT** add `ENABLE_NIGHTLY_SCHEDULER` to `.env` or the shell -
+   the launchd wrapper sets it, so this one launchd process is the sole scheduler.
 
-3. Install and start the agent:
+2. **Grant Full Disk Access to `/bin/bash`** (System Settings -> Privacy &
+   Security -> Full Disk Access). launchd jobs are blocked by macOS TCC from
+   reading `~/Documents`, so without this the wrapper can't even `cd` into the
+   repo and the agent silently fails.
+
+3. **Free port 5001** - stop any existing `npm run dev` / dev server so the
+   launchd-managed production server can bind:
+   ```bash
+   lsof -ti tcp:5001 | xargs kill 2>/dev/null
+   ```
+
+4. Confirm where node lives and that the plist's `PATH` includes it - launchd
+   starts with a minimal PATH that lacks node/npm/git:
+   ```bash
+   which node   # e.g. /usr/local/bin/node or /opt/homebrew/bin/node
+   ```
+   The committed plist already sets `PATH=/usr/local/bin:/opt/homebrew/bin:...`;
+   adjust if node is elsewhere.
+
+5. Install and start the agent. **Edit the INSTALLED copy** in `~/Library/
+   LaunchAgents/`, not the repo file - `run-server.sh` self-`git pull`s, so any
+   edit to the repo plist would be reverted on the next restart anyway:
    ```bash
    chmod +x ops/imac-nightly-sync/run-server.sh
    cp ops/imac-nightly-sync/com.gostork.nightly-sync.plist ~/Library/LaunchAgents/
+   # verify the paths in the installed copy point at GitHub-iMac:
+   #   ~/Library/LaunchAgents/com.gostork.nightly-sync.plist
    launchctl unload ~/Library/LaunchAgents/com.gostork.nightly-sync.plist 2>/dev/null
    launchctl load  ~/Library/LaunchAgents/com.gostork.nightly-sync.plist
    ```
 
-4. Verify it is running and scheduled:
+6. Verify it is running and scheduled:
    ```bash
-   launchctl list | grep gostork
+   launchctl list | grep gostork                       # shows a PID, not just "-"
    grep "In-process scheduler ENABLED" /tmp/gostork-server.log
    ```
-   You should see `[nightly-sync] In-process scheduler ENABLED on this host`.
+   You should see `[nightly-sync] In-process scheduler ENABLED on this host` and
+   `Scheduler started - runs daily at 2:00 AM ET`. The iMac's public tunnel is
+   `polygynous-vergie-coyly-imac.ngrok-free.dev` -> 5001.
 
 ## Keeping the Mac awake
 

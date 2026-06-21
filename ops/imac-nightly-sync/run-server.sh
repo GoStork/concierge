@@ -12,8 +12,9 @@
 # - Runs the PRODUCTION build (dist/index.cjs). Rebuild after pulling new code.
 set -euo pipefail
 
-# Absolute path to the repo on the iMac. EDIT THIS to match the iMac checkout.
-REPO_DIR="${GOSTORK_REPO_DIR:-$HOME/Documents/GitHub/concierge}"
+# Absolute path to the repo on the iMac. The iMac's working clone is GitHub-iMac
+# (NOT plain GitHub). Override with GOSTORK_REPO_DIR from the plist if it moves.
+REPO_DIR="${GOSTORK_REPO_DIR:-$HOME/Documents/GitHub-iMac/concierge}"
 cd "$REPO_DIR"
 
 export NODE_ENV=production

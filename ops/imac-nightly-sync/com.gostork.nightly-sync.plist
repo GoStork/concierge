@@ -20,13 +20,18 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/eranamir/Documents/GitHub/concierge/ops/imac-nightly-sync/run-server.sh</string>
+    <string>/Users/eranamir/Documents/GitHub-iMac/concierge/ops/imac-nightly-sync/run-server.sh</string>
   </array>
 
   <key>EnvironmentVariables</key>
   <dict>
     <key>GOSTORK_REPO_DIR</key>
-    <string>/Users/eranamir/Documents/GitHub/concierge</string>
+    <string>/Users/eranamir/Documents/GitHub-iMac/concierge</string>
+    <!-- launchd starts with a minimal PATH that lacks node/npm/git, so the
+         wrapper's `npm run build` / `git pull` / `node` fail without this.
+         Include the dir where node lives (`which node` on the iMac). -->
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
 
   <key>RunAtLoad</key>
