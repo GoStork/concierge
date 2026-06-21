@@ -1,22 +1,21 @@
-name: Nightly Sync Pinger
+name: Nightly Sync Pinger (DISABLED - manual only)
 
-# Wakes the Replit Autoscale container and triggers the nightly scraper sync.
-# The in-process node-cron schedule cannot fire when the container is asleep,
-# so we ping it from GitHub Actions instead. The endpoint itself is idempotent
-# (returns 200 "already running" on duplicate calls) so DST overlap is safe.
+# DISABLED as the nightly driver as of Jun 2026. The nightly scraper sync now
+# runs on the always-on iMac (a long-lived process with ENABLE_NIGHTLY_SCHEDULER
+# =true), NOT on Replit. Replit Autoscale is request-scoped: it reaps the
+# container as soon as the triggering HTTP request returns, which killed the
+# fire-and-forget sync mid-run (the Jun 21 "server restarted" failures). A
+# long-lived host is required for a job that runs well over an hour.
 #
-# GitHub Actions cron is UTC-only, so we fire twice to cover both DST states:
-#   - 06:05 UTC = 02:05 EDT (Mar-Nov, UTC-4)
-#   - 07:05 UTC = 02:05 EST (Nov-Mar, UTC-5)
-# Whichever of the two matches local 02:05 ET starts the sync; the other call
-# hits the 20h DB dedup in runNightlySync and is a no-op.
+# The scheduled crons below are intentionally removed so Replit is no longer
+# pinged at 2 AM ET. Only `workflow_dispatch` remains, as a manual emergency
+# trigger (e.g. if the iMac is down): run this workflow by hand to fire the
+# Replit endpoint once. The atomic NightlySyncLock still prevents a manual ping
+# from colliding with the iMac's run.
 #
 # Requires repo secret NIGHTLY_SYNC_SECRET (same value set in Replit Secrets).
 
 on:
-  schedule:
-    - cron: "5 6 * * *"
-    - cron: "5 7 * * *"
   workflow_dispatch:
 
 jobs:

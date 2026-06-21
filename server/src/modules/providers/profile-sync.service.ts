@@ -231,6 +231,10 @@ export interface SyncJob {
   stepProgress?: number;
   syncLogId?: string;
   source?: string;
+  // Set true once the terminal SyncLog row has been durably written, so the
+  // success path, the catch path, and the finally safety-net never write it
+  // twice (and so a failed write CAN be retried by the finally).
+  finalized?: boolean;
 }
 
 const syncJobs = new Map<string, SyncJob>();
@@ -2514,10 +2518,33 @@ export async function startSync(
     ? { username: config.username, password: config.encryptedPassword }
     : undefined;
 
-  runSyncJob(prisma, job, config.databaseUrl, credentials, profileLimit, storageService || null).catch((err) => {
-    job.status = "failed";
+  runSyncJob(prisma, job, config.databaseUrl, credentials, profileLimit, storageService || null).catch(async (err) => {
+    // A rejection here means runSyncJob threw OUTSIDE its own try/catch (e.g. an
+    // EAUTHTIMEOUT propagating before the try), so neither its config write nor
+    // its SyncLog finalize ran. Without persisting terminal state the config
+    // end-time stays null and the SyncLog stays "running" - exactly what left
+    // Asian Egg Bank looking interrupted on Jun 21. Finalize both, awaited.
+    const savedSomething = job.succeeded > 0;
+    job.status = savedSomething ? "partial" : "failed";
     job.errors.push(`Fatal error: ${err.message}`);
     job.completedAt = new Date();
+    try {
+      const failUpdate = { lastSyncAt: new Date(), lastSyncEndedAt: new Date(), syncStatus: savedSomething ? "PARTIAL" : "FAILED" };
+      switch (job.type) {
+        case "egg-donor":
+          await prisma.eggDonorSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
+          break;
+        case "surrogate":
+          await prisma.surrogateSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
+          break;
+        case "sperm-donor":
+          await prisma.spermDonorSyncConfig.update({ where: { providerId: job.providerId }, data: failUpdate });
+          break;
+      }
+    } catch (dbErr: any) {
+      console.error(`[donor-sync] Failed to finalize config after runSyncJob reject: ${dbErr.message}`);
+    }
+    await finalizeSyncLog(prisma, job);
   });
 
   return jobId;
@@ -4436,6 +4463,47 @@ async function markStaleProfiles(
   return staleProfiles.length;
 }
 
+/**
+ * Durably write the terminal SyncLog row for a finished job. Idempotent via
+ * job.finalized so it can be called from the success path, the catch path, the
+ * startSync reject handler, and the finally safety-net without double-writing.
+ *
+ * Critically this is AWAITED by every caller. The old code issued this update
+ * fire-and-forget from `finally` AFTER the awaited config write + several
+ * seconds of post-processing, so a process killed in that window left the
+ * config marked SUCCESS while the SyncLog stayed "running" - which a later boot
+ * then reaped as "Interrupted - server restarted", making a successful run look
+ * failed in the dashboard and digest. Writing it awaited, co-located with the
+ * config terminal write, keeps the two records consistent whenever the process
+ * is alive. (`job.finalized` is only set after the write resolves, so a
+ * transient DB error leaves it false and the finally retries.)
+ */
+async function finalizeSyncLog(prisma: PrismaService, job: SyncJob): Promise<void> {
+  if (job.finalized || !job.syncLogId) return;
+  const skippedCount = (job.total - job.succeeded - job.failed) || 0;
+  const finalProcessed = job.total > 0 ? Math.min(job.processed, job.total) : job.processed;
+  try {
+    await prisma.syncLog.update({
+      where: { id: job.syncLogId },
+      data: {
+        status: job.status === "running" ? "failed" : job.status,
+        completedAt: job.completedAt || new Date(),
+        total: job.total,
+        processed: finalProcessed,
+        succeeded: job.succeeded,
+        failed: job.failed,
+        skipped: skippedCount > 0 ? skippedCount : 0,
+        newProfiles: job.newProfiles,
+        staleMarked: job.staleProfilesMarked,
+        errors: job.errors.length > 0 ? job.errors : undefined,
+      },
+    });
+    job.finalized = true;
+  } catch (err: any) {
+    console.error(`[donor-sync] Failed to update SyncLog ${job.syncLogId}: ${err.message}`);
+  }
+}
+
 async function runSyncJob(
   prisma: PrismaService,
   job: SyncJob,
@@ -5753,6 +5821,17 @@ async function runSyncJob(
         break;
     }
 
+    // Decide terminal status and durably write BOTH the config (above) and the
+    // SyncLog terminal row NOW, awaited - before the best-effort post-processing
+    // below. This keeps the two records consistent: a kill during post-processing
+    // can no longer leave config=SUCCESS while the SyncLog is still "running".
+    if (!isJobCancelled(job.id)) {
+      job.status = "completed";
+      job.completedAt = new Date();
+    }
+    cancelledJobs.delete(job.id);
+    await finalizeSyncLog(prisma, job);
+
     try {
       job.missingFields = await analyzeMissingFields(prisma, job.providerId, job.type);
     } catch (e: any) {
@@ -5766,11 +5845,6 @@ async function runSyncJob(
       console.error(`[donor-sync] Total cost recalc error: ${e.message}`);
     }
 
-    if (!isJobCancelled(job.id)) {
-      job.status = "completed";
-      job.completedAt = new Date();
-    }
-    cancelledJobs.delete(job.id);
     console.log(
       `[donor-sync] Sync complete: ${job.succeeded} succeeded, ${job.failed} failed, ${job.staleProfilesMarked} marked inactive out of ${job.total}`,
     );
@@ -5806,29 +5880,15 @@ async function runSyncJob(
     } catch (dbErr: any) {
       console.error(`[donor-sync] Failed to update sync config after error: ${dbErr.message}`);
     }
+
+    // Durable terminal SyncLog write for the failure path, awaited and consistent
+    // with the config fail-update above.
+    await finalizeSyncLog(prisma, job);
   } finally {
-    // Persist final sync result to SyncLog for durable history
-    if (job.syncLogId) {
-      const skippedCount = (job.total - job.succeeded - job.failed) || 0;
-      const finalProcessed = job.total > 0 ? Math.min(job.processed, job.total) : job.processed;
-      prisma.syncLog.update({
-        where: { id: job.syncLogId },
-        data: {
-          status: job.status === "running" ? "failed" : job.status,
-          completedAt: job.completedAt || new Date(),
-          total: job.total,
-          processed: finalProcessed,
-          succeeded: job.succeeded,
-          failed: job.failed,
-          skipped: skippedCount > 0 ? skippedCount : 0,
-          newProfiles: job.newProfiles,
-          staleMarked: job.staleProfilesMarked,
-          errors: job.errors.length > 0 ? job.errors : undefined,
-        },
-      }).catch((err: any) => {
-        console.error(`[donor-sync] Failed to update SyncLog ${job.syncLogId}: ${err.message}`);
-      });
-    }
+    // Safety-net: covers early returns (e.g. the login-failed abort) and any path
+    // that did not already finalize. Awaited so the row is durably terminal before
+    // runSyncJob resolves; idempotent via job.finalized.
+    await finalizeSyncLog(prisma, job);
   }
 }
 

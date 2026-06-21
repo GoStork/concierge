@@ -67,9 +67,9 @@ export class ScrapersController {
   }
 
   private async resumeInterruptedProcesses() {
-    await this.closeOrphanedSyncLogs();
+    const reaped = await this.closeOrphanedSyncLogs();
     await this.resumeInterruptedEnrichments();
-    await this.resumeInterruptedDonorSyncs();
+    await this.resumeInterruptedDonorSyncs(reaped);
   }
 
   /**
@@ -80,9 +80,18 @@ export class ScrapersController {
    * block the next manual/nightly/auto-resume run. Must run BEFORE
    * resumeInterruptedDonorSyncs so auto-resume isn't blocked by the stale log.
    */
-  private async closeOrphanedSyncLogs() {
+  private async closeOrphanedSyncLogs(): Promise<{ providerId: string; type: string }[]> {
     try {
-      const res = await this.prisma.syncLog.updateMany({
+      // Capture WHICH provider/type each orphan belongs to BEFORE closing them.
+      // This is the authoritative "genuinely killed mid-run" set - the only
+      // reliable resume signal. (A cleanly-finished run now writes its terminal
+      // SyncLog awaited, so it is never "running" here; see finalizeSyncLog.)
+      const orphaned = await this.prisma.syncLog.findMany({
+        where: { status: "running" },
+        select: { providerId: true, type: true },
+      });
+      if (orphaned.length === 0) return [];
+      await this.prisma.syncLog.updateMany({
         where: { status: "running" },
         data: {
           status: "failed",
@@ -90,11 +99,13 @@ export class ScrapersController {
           errors: ["Interrupted - server restarted while sync was running"],
         },
       });
-      if (res.count > 0) {
-        console.log(`[Donor Sync] Closed ${res.count} orphaned "running" SyncLog entr${res.count === 1 ? "y" : "ies"} on startup`);
-      }
+      console.log(`[Donor Sync] Closed ${orphaned.length} orphaned "running" SyncLog entr${orphaned.length === 1 ? "y" : "ies"} on startup`);
+      return orphaned
+        .filter((o): o is { providerId: string; type: string } => !!o.providerId)
+        .map((o) => ({ providerId: o.providerId, type: o.type }));
     } catch {
       /* SyncLog table may not exist yet on first migration */
+      return [];
     }
   }
 
@@ -130,40 +141,52 @@ export class ScrapersController {
     }
   }
 
-  private async resumeInterruptedDonorSyncs() {
+  private async resumeInterruptedDonorSyncs(reaped: { providerId: string; type: string }[] = []) {
     try {
       const syncTypes: { table: "eggDonorSyncConfig" | "surrogateSyncConfig" | "spermDonorSyncConfig"; type: DonorType }[] = [
         { table: "eggDonorSyncConfig", type: "egg-donor" },
         { table: "surrogateSyncConfig", type: "surrogate" },
         { table: "spermDonorSyncConfig", type: "sperm-donor" },
       ];
+      const donorTypes = new Set<string>(syncTypes.map((s) => s.type));
 
-      // Checkpoint resume: auto-resume EVERY interrupted sync, no matter how long
-      // ago it started, as long as it's within the 24h safety bound. Resuming is
-      // cheap and idempotent because the per-profile content checkpoint (each
-      // donor's cardHash + lastFullSyncAt + section completeness, persisted on the
-      // donor record) makes startSync SKIP every profile already fully synced and
-      // only re-fetch the ones that were never reached or written incompletely.
-      // So a sync interrupted at profile 51/90 picks up at 51 and finishes - it
-      // does NOT start over. Each restart converges toward completion.
+      // Checkpoint resume. The set of syncs to resume is exactly the SyncLog rows
+      // that were still "running" at boot - i.e. genuinely killed mid-run (just
+      // closed by closeOrphanedSyncLogs). We key off that, NOT the config's
+      // lastSyncEndedAt: that field gets stamped on completed-with-failure runs
+      // too, so the old `lastSyncEndedAt = null` filter SKIPPED real kills (Jun 21:
+      // Eggspecting / Family Creations had an end-time but their SyncLog was still
+      // running, so they were never resumed). Resuming is cheap and idempotent -
+      // the per-profile content checkpoint (cardHash + lastFullSyncAt + section
+      // completeness on each donor record) makes startSync SKIP every profile
+      // already fully synced and re-fetch only the ones never reached, so a sync
+      // killed at profile 51/90 picks up at 51 and converges toward completion.
       const staleThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-      for (const { table, type } of syncTypes) {
-        const interrupted = await (this.prisma[table] as any).findMany({
-          where: {
-            lastSyncStartedAt: { gt: staleThreshold },
-            lastSyncEndedAt: null,
-          },
-          select: { providerId: true, lastSyncStartedAt: true, syncStatus: true, lastSyncAt: true, provider: { select: { name: true } } },
-        });
+      // De-dupe the reaped set to one resume per provider+type.
+      const toResume = new Map<string, { providerId: string; type: DonorType }>();
+      for (const r of reaped) {
+        if (!donorTypes.has(r.type)) continue; // ignore enrichment/CDC SyncLogs
+        toResume.set(`${r.type}:${r.providerId}`, { providerId: r.providerId, type: r.type as DonorType });
+      }
 
-        for (const config of interrupted) {
-          const ageMin = Math.round((Date.now() - config.lastSyncStartedAt.getTime()) / 60000);
-          console.log(`[Donor Sync] Checkpoint-resuming ${type} sync for "${config.provider?.name || config.providerId}" (interrupted ${ageMin}min ago) - already-synced profiles will be skipped`);
-          startSync(this.prisma, config.providerId, type, undefined, this.storageService, "auto-resume").catch((err: any) => {
-            console.error(`[Donor Sync] Failed to auto-resume ${type} sync for ${config.providerId}:`, err.message);
-          });
+      for (const { providerId, type } of toResume.values()) {
+        // Respect the 24h bound: a kill older than that is stale - let the next
+        // nightly do a clean run instead of resuming a possibly-changed catalog.
+        const config = await (this.prisma[syncTypes.find((s) => s.type === type)!.table] as any).findUnique({
+          where: { providerId },
+          select: { lastSyncStartedAt: true, provider: { select: { name: true } } },
+        }).catch(() => null);
+        const startedAt: Date | null = config?.lastSyncStartedAt ?? null;
+        if (startedAt && startedAt < staleThreshold) {
+          console.log(`[Donor Sync] Skipping resume of ${type} "${config?.provider?.name || providerId}" - interrupted >24h ago; next nightly will re-run`);
+          continue;
         }
+        const ageMin = startedAt ? Math.round((Date.now() - startedAt.getTime()) / 60000) : null;
+        console.log(`[Donor Sync] Checkpoint-resuming ${type} sync for "${config?.provider?.name || providerId}"${ageMin != null ? ` (interrupted ${ageMin}min ago)` : ""} - already-synced profiles will be skipped`);
+        startSync(this.prisma, providerId, type, undefined, this.storageService, "auto-resume").catch((err: any) => {
+          console.error(`[Donor Sync] Failed to auto-resume ${type} sync for ${providerId}:`, err.message);
+        });
       }
 
       // Mark anything older than the 24h bound as ended so the DB stays clean and

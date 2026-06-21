@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent for the always-on iMac that hosts the GoStork nightly scraper sync.
+
+  KeepAlive    -> restarts the server if it crashes or exits.
+  RunAtLoad    -> starts at login (and after reboot once logged in).
+  The wrapped run-server.sh runs `caffeinate -is`, so the Mac stays awake while
+  the server runs and node-cron can fire at 2 AM ET.
+
+  EDIT the two paths below to match the iMac before installing:
+    - ProgramArguments path to run-server.sh
+    - StandardOut/Error log paths (and GOSTORK_REPO_DIR if the repo is elsewhere)
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gostork.nightly-sync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/eranamir/Documents/GitHub/concierge/ops/imac-nightly-sync/run-server.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>GOSTORK_REPO_DIR</key>
+    <string>/Users/eranamir/Documents/GitHub/concierge</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Don't hammer-restart on a crash loop; wait 30s between relaunches. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/gostork-server.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/gostork-server.log</string>
+</dict>
+</plist>
