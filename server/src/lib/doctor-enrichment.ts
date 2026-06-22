@@ -226,6 +226,8 @@ export function enrichDoctorRows(rows: any[], ctx: DoctorEnrichmentContext): Enr
       // Sponsorship boost (denormalized) - drives the marketplace "Sponsored" badge + ordering.
       sponsoredUntil: m.sponsoredUntil ?? null,
       sponsorBoostSeed: m.sponsorBoostSeed ?? 0,
+      // Convenience boolean the AI concierge keys off for its sponsored tiebreaker.
+      sponsored: !!m.sponsoredUntil && new Date(m.sponsoredUntil).getTime() > Date.now(),
       clinics,
       clinicCount: clinics.length,
     };

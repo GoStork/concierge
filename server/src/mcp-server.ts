@@ -1577,7 +1577,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const targetEggSource = eggSource || "own_eggs";
       const take = Math.min(rawLimit || 5, 10);
       const clinicSelect = {
-        id: true, name: true, logoUrl: true, about: true,
+        id: true, name: true, logoUrl: true, about: true, sponsoredUntil: true,
         locations: { select: { city: true, state: true, address: true }, orderBy: { sortOrder: "asc" as const } },
         members: { select: { name: true, title: true, bio: true, isMedicalDirector: true }, orderBy: { sortOrder: "asc" as const }, take: 10 },
         ivfSuccessRates: {
@@ -1734,13 +1734,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           top10pct: sr.top10pct,
           cycleCount: sr.cycleCount,
           successRatesByAge: sr.successRatesByAge,
+          sponsored: !!c.sponsoredUntil && new Date(c.sponsoredUntil).getTime() > Date.now(),
         };
       });
 
-      // Sort by success rate descending
+      // Sort by success rate, with sponsorship as a TIEBREAKER ONLY: among clinics
+      // whose success rate rounds to the same percentage for this parent's profile
+      // (i.e. an equally good fit), the sponsored one is surfaced first. Sponsorship
+      // never up-ranks a clinic with a lower rate.
       results.sort((a: any, b: any) => {
         const aRate = a.successRate ? parseFloat(a.successRate) : 0;
         const bRate = b.successRate ? parseFloat(b.successRate) : 0;
+        const roundDelta = Math.round(bRate) - Math.round(aRate);
+        if (roundDelta !== 0) return roundDelta;
+        const spDelta = (b.sponsored ? 1 : 0) - (a.sponsored ? 1 : 0);
+        if (spDelta !== 0) return spDelta;
         return bRate - aRate;
       });
 
@@ -1835,7 +1843,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (photoDelta !== 0) return photoDelta;
           const rateA = a2.successRate ? parseInt(a2.successRate) : -1;
           const rateB = b2.successRate ? parseInt(b2.successRate) : -1;
-          return rateB - rateA;
+          if (rateB !== rateA) return rateB - rateA;
+          // Sponsorship is a TIEBREAKER ONLY: among equally-ranked doctors (same
+          // photo presence + same clinic success rate), surface the sponsored one
+          // first. It never up-ranks a worse-fit doctor.
+          return ((b2 as any).sponsored ? 1 : 0) - ((a2 as any).sponsored ? 1 : 0);
         });
 
       const results = doctors.slice(0, limit);
