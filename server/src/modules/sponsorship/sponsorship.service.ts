@@ -896,6 +896,55 @@ export class SponsorshipService {
 
     const perProfile = await this.labelEntities(active, impressionsById, savesById, inquiriesById);
 
+    // Consultations booked while sponsored - the bottom-of-funnel business
+    // outcome (provider-level, like hot leads): an AI chat session that reached
+    // CONSULTATION_BOOKED / PROVIDER_CONNECTED is a parent who moved to actually
+    // engage the provider.
+    const consultations = windowStart
+      ? await db.aiChatSession.count({
+          where: { providerId, status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] }, createdAt: { gte: windowStart } },
+        })
+      : 0;
+
+    // Monthly spend across active, non-comped sponsorships (drives cost-per-result).
+    const monthlySpendCents = active.reduce((n: number, s: any) => n + (s.isComped ? 0 : (s.priceCentsSnapshot || 0)), 0);
+
+    // Lift: do sponsored profiles outperform this provider's NON-sponsored ones?
+    // Only donor/surrogate/sperm are view-tracked (ParentProfileView), so the
+    // comparison is scoped to those types. This is the headline ROI proof.
+    const VIEW_TYPES: Array<[string, any]> = [
+      ["EGG_DONOR", this.prisma.eggDonor],
+      ["SURROGATE", this.prisma.surrogate],
+      ["SPERM_DONOR", this.prisma.spermDonor],
+    ];
+    let lift: { sponsoredAvg: number; baselineAvg: number; multiple: number | null; sponsoredCount: number; baselineCount: number } | null = null;
+    if (windowStart) {
+      const sponsoredViewIds = Array.from(new Set(VIEW_TYPES.flatMap(([t]) => setToArr(t))));
+      if (sponsoredViewIds.length) {
+        const ownedIds: string[] = [];
+        for (const [type, delegate] of VIEW_TYPES) {
+          if (!idsByType[type]?.size) continue; // only types the provider actually sponsors
+          const rows = await delegate.findMany({ where: { providerId }, select: { id: true } });
+          ownedIds.push(...rows.map((r: any) => r.id));
+        }
+        const sponsoredSet = new Set(sponsoredViewIds);
+        const baselineIds = ownedIds.filter((id) => !sponsoredSet.has(id));
+        const sponsoredImpr = sponsoredViewIds.reduce((n, id) => n + (impressionsById.get(id) || 0), 0);
+        const baselineImpr = baselineIds.length
+          ? await db.parentProfileView.count({ where: { profileId: { in: baselineIds }, viewedAt: { gte: windowStart } } })
+          : 0;
+        const sponsoredAvg = sponsoredImpr / sponsoredViewIds.length;
+        const baselineAvg = baselineIds.length ? baselineImpr / baselineIds.length : 0;
+        lift = {
+          sponsoredAvg,
+          baselineAvg,
+          multiple: baselineAvg > 0 ? sponsoredAvg / baselineAvg : null,
+          sponsoredCount: sponsoredViewIds.length,
+          baselineCount: baselineIds.length,
+        };
+      }
+    }
+
     // Sponsorship + invoicing history.
     const invoices = await db.invoice.findMany({
       where: { providerId },
@@ -911,16 +960,20 @@ export class SponsorshipService {
         saves,
         passes,
         inquiries,
+        consultations,
         hotLeads,
         activeSponsorships: active.length,
         slotsUsed: active.reduce((n: number, s: any) => n + s.items.length, 0),
         slotsTotal: active.reduce((n: number, s: any) => n + s.slotCountSnapshot, 0),
+        monthlySpendCents,
         windowStart,
       },
+      lift,
       funnel: [
         { stage: "Impressions", value: totalImpressions },
         { stage: "Saves", value: saves },
         { stage: "Inquiries", value: inquiries },
+        { stage: "Consultations", value: consultations },
         { stage: "Hot leads", value: hotLeads },
       ],
       timeSeries,

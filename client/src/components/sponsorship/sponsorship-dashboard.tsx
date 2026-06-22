@@ -12,7 +12,7 @@ import { SponsorshipCheckoutOverlay } from "./sponsorship-checkout";
 import { BoostProfilesCard } from "./sponsorship-wizard";
 import {
   Sparkles, Eye, Heart, MessageCircle, Flame, TrendingUp, Loader2,
-  Plus, X, ChevronDown, ChevronUp, Gift, CreditCard, User,
+  Plus, X, ChevronDown, ChevronUp, Gift, CreditCard, User, CalendarCheck, DollarSign,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 
@@ -70,6 +70,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
 
   const a = analyticsQ.data;
   const kpis = a?.kpis;
+  const saveRate = kpis?.totalImpressions ? `${((kpis.saves / kpis.totalImpressions) * 100).toFixed(1)}% save rate` : undefined;
 
   return (
     <div className="space-y-6" data-testid="sponsorship-dashboard">
@@ -85,17 +86,55 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
           per-plan Charge / Complimentary grid lower down). */}
       {!isAdmin && <BoostProfilesCard onChanged={refetchAll} />}
 
+      {/* Lift hero - the ROI proof: sponsored vs the provider's non-sponsored profiles. */}
+      {a?.lift?.multiple != null && (
+        <Card className="border-accent/40 bg-accent/5">
+          <CardContent className="p-5 flex items-center gap-4 flex-wrap" data-testid="lift-hero">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent"><TrendingUp className="w-6 h-6" /></div>
+            <div className="min-w-0">
+              <div className="text-2xl font-heading text-foreground">
+                {a.lift.multiple.toFixed(1)}× more impressions <span className="text-base font-body text-muted-foreground">than your non-sponsored profiles</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Your sponsored profiles average <strong className="text-foreground">{a.lift.sponsoredAvg.toFixed(1)}</strong> views each vs <strong className="text-foreground">{a.lift.baselineAvg.toFixed(1)}</strong> for your {a.lift.baselineCount} non-sponsored profiles, this period.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <KpiCard icon={<Sparkles className="w-4 h-4" />} label="Active sponsorships" value={kpis?.activeSponsorships ?? 0} />
         <KpiCard icon={<Eye className="w-4 h-4" />} label="Impressions" value={kpis?.totalImpressions ?? 0} hint="while sponsored" />
-        <KpiCard icon={<Heart className="w-4 h-4" />} label="Saves" value={kpis?.saves ?? 0} />
+        <KpiCard icon={<Heart className="w-4 h-4" />} label="Saves" value={kpis?.saves ?? 0} hint={saveRate} />
         <KpiCard icon={<MessageCircle className="w-4 h-4" />} label="Inquiries" value={kpis?.inquiries ?? 0} hint="about sponsored profiles" />
+        <KpiCard icon={<CalendarCheck className="w-4 h-4" />} label="Consultations" value={kpis?.consultations ?? 0} hint="booked while sponsored" />
         <KpiCard icon={<Flame className="w-4 h-4" />} label="Hot leads" value={kpis?.hotLeads ?? 0} hint="while sponsored" />
         <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Slots used" value={`${kpis?.slotsUsed ?? 0}/${kpis?.slotsTotal ?? 0}`} />
       </div>
+
+      {/* Cost-per-result - what the spend is buying. */}
+      {(kpis?.monthlySpendCents ?? 0) > 0 && (
+        <Card>
+          <CardContent className="p-4 flex items-center justify-between gap-4 flex-wrap" data-testid="cost-strip">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Monthly spend</span>
+              <span className="font-heading text-foreground text-lg">{formatMoneyCents(kpis.monthlySpendCents)}</span>
+            </div>
+            <div className="flex gap-5 flex-wrap">
+              <CostStat label="per impression" spendCents={kpis.monthlySpendCents} count={kpis.totalImpressions} />
+              <CostStat label="per save" spendCents={kpis.monthlySpendCents} count={kpis.saves} />
+              <CostStat label="per inquiry" spendCents={kpis.monthlySpendCents} count={kpis.inquiries} />
+              <CostStat label="per consultation" spendCents={kpis.monthlySpendCents} count={kpis.consultations} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <p className="text-xs text-muted-foreground -mt-3">
-        All metrics are measured only while you have an active sponsorship. Impressions, saves and inquiries are for your sponsored profiles; hot leads are an account-level signal during the sponsored period.
+        All metrics are measured only while you have an active sponsorship. Impressions, saves, inquiries and consultations are for your sponsored profiles; hot leads are an account-level signal during the sponsored period. Lift compares your sponsored donor/surrogate profiles against your own non-sponsored ones.
       </p>
 
       {/* Trend + funnel */}
@@ -119,12 +158,18 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm font-ui">Engagement funnel</CardTitle></CardHeader>
             <CardContent className="space-y-2 pt-2">
-              {(a.funnel || []).map((f: any) => {
-                const max = a.funnel[0]?.value || 1;
-                const pct = Math.max(2, Math.round((f.value / max) * 100));
+              {(a.funnel || []).map((f: any, i: number) => {
+                const top = a.funnel[0]?.value || 0;
+                const pct = Math.max(2, Math.round((f.value / (top || 1)) * 100));
+                // Conversion vs impressions (top of funnel), shown for every stage but the first.
+                const rate = i > 0 && top > 0 ? (f.value / top) * 100 : null;
+                const rateLabel = rate == null ? null : rate > 0 && rate < 1 ? rate.toFixed(1) : Math.round(rate).toString();
                 return (
                   <div key={f.stage}>
-                    <div className="flex justify-between text-xs mb-1"><span>{f.stage}</span><span className="font-ui">{f.value}</span></div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span>{f.stage}{rateLabel != null && <span className="text-muted-foreground ml-1">· {rateLabel}% of impressions</span>}</span>
+                      <span className="font-ui">{f.value}</span>
+                    </div>
                     <div className="h-2 rounded-full bg-secondary overflow-hidden">
                       <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
                     </div>
@@ -211,6 +256,16 @@ function KpiCard({ icon, label, value, hint }: { icon: React.ReactNode; label: s
         {hint && <div className="text-[11px] text-muted-foreground">{hint}</div>}
       </CardContent>
     </Card>
+  );
+}
+
+/** Cost efficiency stat: spend / count, or a dash when there's no result yet. */
+function CostStat({ label, spendCents, count }: { label: string; spendCents: number; count: number }) {
+  return (
+    <div className="text-sm">
+      <span className="font-heading text-foreground">{count > 0 ? formatMoneyCents(Math.round(spendCents / count)) : "-"}</span>
+      <span className="text-muted-foreground ml-1">{label}</span>
+    </div>
   );
 }
 
