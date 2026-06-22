@@ -135,6 +135,11 @@ function resolveLocationValue(donor: any): string {
 export function matchesFilter(donor: any, key: string, values: string[]): boolean {
   if (!values || values.length === 0) return true;
 
+  // GoStork-admin "Provider" filter: keep only donors owned by a selected provider.
+  if (key === "providerId") {
+    return values.includes(String(donor.providerId));
+  }
+
   if (key === "age") {
     const age = donor.age;
     if (age == null) return true;
@@ -293,6 +298,12 @@ export function agencyMatchesFilters(
 ): boolean {
   for (const [key, values] of Object.entries(filters)) {
     if (!values || values.length === 0) continue;
+
+    // GoStork-admin "Provider" filter: the agency itself is the provider.
+    if (key === "providerId") {
+      if (!values.includes(String(agency.id))) return false;
+      continue;
+    }
 
     if (key === "location") {
       const locs: string[] = (agency.locations || [])

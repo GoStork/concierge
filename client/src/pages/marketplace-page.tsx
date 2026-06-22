@@ -1797,6 +1797,9 @@ export default function MarketplacePage() {
   // Lean clinic cards (mirrors marketplace/doctors): one capped, success-rate-
   // scoped query that the deck + ClinicSwipeCard render from directly, with NO
   // per-card /api/providers/:id refetch - what made the Clinics tab lag before.
+  // GoStork-admin "Provider" filter (activeFilters.providerId) - narrows the
+  // clinics/doctors decks to specific providers server-side.
+  const providerIdFilter = (activeFilters.providerId || []).join(",");
   const clinicQueryParams = new URLSearchParams(
     Object.entries({
       search: ivfSearch,
@@ -1806,10 +1809,11 @@ export default function MarketplacePage() {
       eggSource,
       ageGroup,
       ivfHistory: isNewPatient === "false" ? "false" : "",
+      providerId: providerIdFilter,
     }).filter(([, v]) => v) as [string, string][],
   ).toString();
   const { data: clinics, isLoading: clinicsLoading } = useQuery<any[]>({
-    queryKey: ["/api/providers/marketplace/clinics", ivfSearch, ivfLocation, insuranceFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient],
+    queryKey: ["/api/providers/marketplace/clinics", ivfSearch, ivfLocation, insuranceFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient, providerIdFilter],
     queryFn: async () => {
       const res = await fetch(`/api/providers/marketplace/clinics${clinicQueryParams ? `?${clinicQueryParams}` : ""}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch clinics");
@@ -1829,10 +1833,11 @@ export default function MarketplacePage() {
       eggSource,
       ageGroup,
       ivfHistory: isNewPatient === "false" ? "false" : "",
+      providerId: providerIdFilter,
     }).filter(([, v]) => v) as [string, string][],
   ).toString();
   const { data: doctors, isLoading: doctorsLoading } = useQuery<any[]>({
-    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation, insuranceFilter, specialtyFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient],
+    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation, insuranceFilter, specialtyFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient, providerIdFilter],
     queryFn: async () => {
       const res = await fetch(`/api/providers/marketplace/doctors${doctorQueryParams ? `?${doctorQueryParams}` : ""}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch doctors");

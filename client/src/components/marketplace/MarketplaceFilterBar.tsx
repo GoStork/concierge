@@ -216,6 +216,9 @@ function formatFilterPills(filters: Record<string, string[]>): { key: string; la
   const SINGLE_VALUE_KEYS = new Set(["maxCSections", "maxMiscarriages", "maxAbortions", "lastDeliveryYear"]);
   for (const [key, vals] of Object.entries(filters)) {
     if (!vals || vals.length === 0) continue;
+    // providerId stores raw UUIDs (admin Provider filter). The Provider button
+    // shows its own (N) count + Clear, so skip emitting unreadable UUID pills.
+    if (key === "providerId") continue;
     const displayName = FILTER_DISPLAY_NAMES[key] || key;
     if (SINGLE_VALUE_KEYS.has(key)) {
       if (key === "lastDeliveryYear") {
@@ -1397,6 +1400,157 @@ function MobileAgreesToDrawer({ activeFilters, dispatch, btnStyle, dark, listMod
   );
 }
 
+// GoStork-admin-only "Provider" filter. Lists the APPROVED providers for the
+// active tab/type ({id, name}) and narrows the marketplace to the selected ones
+// via activeFilters.providerId. Searchable because a type can have many providers.
+function useProviderOptions(providerType: ProviderType, enabled: boolean) {
+  const { data, isLoading } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/providers/marketplace/provider-options", providerType],
+    queryFn: async () => {
+      const res = await fetch(`/api/providers/marketplace/provider-options?type=${providerType}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+  return { options: data || [], isLoading: enabled && isLoading };
+}
+
+function ProviderOptionList({ providerType, activeFilters, dispatch }: {
+  providerType: ProviderType;
+  activeFilters: Record<string, string[]>;
+  dispatch: any;
+}) {
+  const { options, isLoading } = useProviderOptions(providerType, true);
+  const [search, setSearch] = useState("");
+  const selected = activeFilters.providerId || [];
+  const filtered = search
+    ? options.filter((o) => o.name.toLowerCase().includes(search.toLowerCase()))
+    : options;
+
+  const toggle = (id: string) => {
+    const next = selected.includes(id) ? selected.filter((v) => v !== id) : [...selected, id];
+    dispatch(setFilter({ key: "providerId", values: next }));
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search providers..."
+          className="pl-8 h-9"
+          data-testid="input-provider-search"
+        />
+      </div>
+      <div className="max-h-64 overflow-y-auto -mx-1 px-1">
+        {filtered.length === 0 ? (
+          <p className="text-muted-foreground py-3 text-center" style={{ fontSize: 'var(--badge-text-size, 13px)' }}>
+            {isLoading ? "Loading providers..." : options.length === 0 ? "No approved providers" : "No matches"}
+          </p>
+        ) : filtered.map((o) => {
+          const on = selected.includes(o.id);
+          return (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => toggle(o.id)}
+              className={`w-full flex items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${on ? 'bg-secondary' : 'hover:bg-muted'}`}
+              data-testid={`provider-opt-${o.id}`}
+            >
+              <span className={`shrink-0 w-4 h-4 rounded border flex items-center justify-center ${on ? 'bg-primary border-primary' : 'border-muted-foreground/40'}`}>
+                {on && <Check className="w-3 h-3 text-primary-foreground" strokeWidth={3} />}
+              </span>
+              <span className="font-ui truncate" style={{ fontSize: 'var(--badge-text-size, 13px)' }}>{o.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProviderFilterPopover({ providerType, activeFilters, dispatch }: {
+  providerType: ProviderType;
+  activeFilters: Record<string, string[]>;
+  dispatch: any;
+}) {
+  const selected = activeFilters.providerId || [];
+  const isActive = selected.length > 0;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant={isActive ? "default" : "outline"}
+          size="sm"
+          className="shrink-0 h-9 font-ui rounded-full gap-1 px-3.5" style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+          data-testid="filter-btn-provider"
+        >
+          <Award className="w-3.5 h-3.5" />
+          Provider
+          {isActive && <span className="font-normal opacity-80">({selected.length})</span>}
+          <ChevronDown className="w-3.5 h-3.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-3" align="start">
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="font-ui" style={{ fontSize: 'var(--filter-label-size, 18px)' }}>Provider</span>
+            {isActive && (
+              <Button variant="ghost" size="sm" className="h-auto py-0.5" style={{ fontSize: 'calc(var(--drawer-body-size, 16px) * 0.75)' }}
+                onClick={() => dispatch(setFilter({ key: "providerId", values: [] }))}
+                data-testid="clear-provider"
+              >Clear</Button>
+            )}
+          </div>
+          <ProviderOptionList providerType={providerType} activeFilters={activeFilters} dispatch={dispatch} />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function MobileProviderDrawer({ providerType, activeFilters, dispatch, dark, listMode }: {
+  providerType: ProviderType;
+  activeFilters: Record<string, string[]>;
+  dispatch: any;
+  dark?: boolean;
+  listMode?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = activeFilters.providerId || [];
+  const isActive = selected.length > 0;
+
+  return (
+    <Drawer open={open} onOpenChange={setOpen}>
+      <DrawerTrigger asChild>
+        <button className={tinderLabel(isActive, dark)} style={TINDER_LABEL_STYLE} data-testid="filter-btn-provider">
+          <span className="filter-row-label">Provider</span>
+          {listMode && isActive && <SelectedPillsInTrigger values={[`${selected.length} selected`]} />}
+        </button>
+      </DrawerTrigger>
+      <DrawerContent data-testid="drawer-provider">
+        <DrawerHeaderActions title="Provider" onClose={() => setOpen(false)} />
+        {isActive && (
+          <div className="px-6 -mt-2 mb-2 flex justify-end">
+            <Button variant="ghost" size="sm" className="h-auto py-0.5"
+              onClick={() => dispatch(setFilter({ key: "providerId", values: [] }))}
+              data-testid="clear-provider"
+            >Clear</Button>
+          </div>
+        )}
+        <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto">
+          <ProviderOptionList providerType={providerType} activeFilters={activeFilters} dispatch={dispatch} />
+        </div>
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
 export function MarketplaceFilterBar({
   providerType,
   ivfLocation,
@@ -1433,6 +1587,11 @@ export function MarketplaceFilterBar({
 }: MarketplaceFilterBarProps) {
   const dispatch = useAppDispatch();
   const isMobile = useIsMobile();
+  const { user } = useAuth();
+  // GoStork team only - the Provider filter is an internal admin tool.
+  const isGoStorkAdmin = (((user as any)?.roles as string[]) || []).some(
+    (r) => r === "GOSTORK_ADMIN" || r === "GOSTORK_DEVELOPER",
+  );
   const searchQuery = useAppSelector((state) => state.ui.marketplaceSearchQuery);
   const sortBy = useAppSelector((state) => state.ui.marketplaceSortBy);
   const activeFilters = useAppSelector((state) => state.ui.activeFilters);
@@ -1458,6 +1617,17 @@ export function MarketplaceFilterBar({
     const remaining = (activeFilters[key] || []).filter((x) => x !== value);
     dispatch(setFilter({ key, values: remaining }));
   };
+
+  // The Provider filter holds provider IDs scoped to one type. Switching tabs
+  // would otherwise leave a stale ID that matches nothing, zeroing the new tab -
+  // so clear it whenever the active type changes (not on first mount).
+  const prevProviderTypeRef = useRef(providerType);
+  useEffect(() => {
+    if (prevProviderTypeRef.current !== providerType) {
+      prevProviderTypeRef.current = providerType;
+      dispatch(setFilter({ key: "providerId", values: [] }));
+    }
+  }, [providerType, dispatch]);
 
   const isDonor = providerType === "egg-donor";
   const isSurrogate = providerType === "surrogate";
@@ -1688,6 +1858,10 @@ export function MarketplaceFilterBar({
       )}
 
       {isIvf && ivfMobileFilterButtons}
+
+      {isGoStorkAdmin && (
+        <MobileProviderDrawer providerType={providerType} activeFilters={activeFilters} dispatch={dispatch} dark={darkLabels} listMode={listMode} />
+      )}
 
       {isDonor && (
         <MobileMultiSelectDrawer
@@ -2010,6 +2184,10 @@ export function MarketplaceFilterBar({
       )}
 
       {isIvf && ivfDesktopFilterButtons}
+
+      {isGoStorkAdmin && (
+        <ProviderFilterPopover providerType={providerType} activeFilters={activeFilters} dispatch={dispatch} />
+      )}
 
       {isDonor && (
         <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED", "SOLD_OUT"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched", SOLD_OUT: "Sold Out" }} />

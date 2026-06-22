@@ -400,6 +400,12 @@ export class ProvidersController {
     // surrogates / sperm-donors self-visibility filtering (multi-tenant isolation).
     if (isProviderUser && user?.providerId) {
       memberWhere.provider.id = user.providerId;
+    } else if (query.providerId) {
+      // GoStork admin "Provider" filter: narrow the directory to specific clinics.
+      // Only honored for non-self-scoped (admin/parent) callers; provider users
+      // stay locked to their own clinic above.
+      const ids = String(query.providerId).split(",").map((s) => s.trim()).filter(Boolean);
+      if (ids.length) memberWhere.provider.id = { in: ids };
     }
 
     if (query.location) {
@@ -484,6 +490,11 @@ export class ProvidersController {
     // sperm-donors self-visibility filtering (multi-tenant isolation).
     if (isProviderUser && user?.providerId) {
       where.id = user.providerId;
+    } else if (query.providerId) {
+      // GoStork admin "Provider" filter: narrow the deck to specific clinics.
+      // Only honored for non-self-scoped (admin/parent) callers.
+      const ids = String(query.providerId).split(",").map((s) => s.trim()).filter(Boolean);
+      if (ids.length) where.id = { in: ids };
     }
 
     if (query.location) {
@@ -750,6 +761,41 @@ export class ProvidersController {
       orderBy,
     });
     return applyMarketplaceFilters(rows);
+  }
+
+  // Lightweight {id, name} list of APPROVED providers for a given marketplace
+  // tab type. Powers the GoStork-admin-only "Provider" filter in the marketplace
+  // (narrow any tab to specific providers). Admin/dev only.
+  @Get("marketplace/provider-options")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "List approved providers for a marketplace tab type (GoStork admin only)" })
+  async marketplaceProviderOptions(@Req() req: Request, @Query("type") type: string) {
+    const user = req.user as any;
+    if (!user?.roles?.includes("GOSTORK_ADMIN") && !user?.roles?.includes("GOSTORK_DEVELOPER")) {
+      throw new ForbiddenException("Forbidden");
+    }
+    // Map the marketplace tab/bar type to the underlying provider type name(s).
+    // ivf-clinic covers both the Clinics and Doctors tabs (same provider set).
+    const TYPE_MAP: Record<string, string[]> = {
+      "egg-donor": ["Egg Donor Agency", "Egg Bank"],
+      surrogate: ["Surrogacy Agency"],
+      "sperm-donor": ["Sperm Bank"],
+      "ivf-clinic": ["IVF Clinic"],
+      "surrogacy-agency": ["Surrogacy Agency"],
+    };
+    const names = TYPE_MAP[type];
+    if (!names) return [];
+    return this.prisma.provider.findMany({
+      where: {
+        // GoStork is the platform-owner account (it hosts demo content across
+        // several types), not a real marketplace provider - never list it.
+        NOT: { name: { equals: "GoStork", mode: "insensitive" } },
+        services: { some: { status: "APPROVED", providerType: { name: { in: names } } } },
+      },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
   }
 
   @Get("by-type/ivf-clinic")
