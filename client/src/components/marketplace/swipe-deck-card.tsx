@@ -301,6 +301,22 @@ export function SwipeDeckCard({
                   stay in the exact same place when cycling tabs - only the content
                   below changes. */}
               <div className="shrink-0 flex flex-col items-center text-center gap-2 pt-2">
+                {/* The plain cover has neither badge-render path (no photo overlay,
+                    and it has a pinnedHeader), so render Sponsored + success here. */}
+                {(sponsored || pinnedHeader.badge) && (
+                  <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                    {sponsored && (
+                      <Badge className="bg-accent/90 text-accent-foreground font-ui px-2.5 py-1 gap-1" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-sponsored-${id}`}>
+                        <Sparkles className="w-3 h-3" /> Sponsored
+                      </Badge>
+                    )}
+                    {pinnedHeader.badge && (
+                      <Badge className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2.5 py-1 gap-1" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-success-${id}`}>
+                        <TrendingUp className="w-3 h-3" /> {pinnedHeader.badge}
+                      </Badge>
+                    )}
+                  </div>
+                )}
                 {monogramInitials && !currentPhoto ? (
                   // Photo-less doctor: brand initials avatar instead of the clinic
                   // logo, so the cover reads as a person, not a clinic.
