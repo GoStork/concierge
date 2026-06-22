@@ -285,13 +285,21 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
 
   return (
     <Card>
-      <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 space-y-0">
+      <CardHeader className="pb-2 flex flex-row items-center justify-between gap-3 flex-wrap space-y-0">
         <CardTitle className="text-sm font-ui">Sponsored profile performance</CardTitle>
         {types.length > 1 && (
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs" data-testid="perprofile-type-filter">
-            <option value="all">All types</option>
-            {types.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Type</span>
+            <div className="inline-flex rounded-lg border border-border overflow-hidden flex-wrap" data-testid="perprofile-type-filter">
+              {(["all", ...types] as string[]).map((t) => (
+                <button key={t} onClick={() => setTypeFilter(t)}
+                  className={`px-3 py-1.5 text-sm transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+                  data-testid={`perprofile-type-${t}`}>
+                  {t === "all" ? "All types" : t}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
       </CardHeader>
       <CardContent>
