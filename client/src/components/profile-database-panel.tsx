@@ -1506,7 +1506,7 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
   return (
     <>
       {campaign && (
-        <div className="sticky top-0 md:top-16 z-40 -mx-1 mb-4 flex items-center justify-between gap-3 flex-wrap rounded-lg border border-accent/40 bg-accent/10 px-4 py-2.5 backdrop-blur">
+        <div className="sticky top-0 md:top-16 z-40 -mx-1 mb-4 flex items-center justify-between gap-3 flex-wrap rounded-lg border border-accent/40 bg-secondary shadow-md px-4 py-2.5">
           <div className="flex items-center gap-2 text-sm">
             <Sparkles className="w-4 h-4 text-accent" />
             <span className="text-foreground">Selecting profiles for <strong>{campaign.planName}</strong></span>
