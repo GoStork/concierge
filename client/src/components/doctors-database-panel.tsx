@@ -176,12 +176,12 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
               <span className="text-foreground">Selecting doctors for <strong>{campaign.planName}</strong></span>
               <Badge variant="secondary">{campaign.slotsUsed}/{campaign.slotsTotal} slots</Badge>
             </div>
-            <p className="text-xs hidden md:block">
+            <p className="text-sm hidden md:block">
               {campaignFull
                 ? <span className="text-[hsl(var(--brand-warning))]">All slots filled - remove a doctor to add another, or upgrade your tier.</span>
-                : <span className="text-muted-foreground inline-flex items-center gap-1">
+                : <span className="text-foreground inline-flex items-center gap-1.5">
                     Tap the
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius)] border border-accent/50 bg-accent/10 text-accent"><Sparkles className="w-3 h-3" /></span>
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-[var(--radius)] border border-primary/30 bg-primary/10 text-primary"><Sparkles className="w-3 h-3" /></span>
                     on a card to add or remove it.
                   </span>}
             </p>
@@ -301,7 +301,7 @@ function DoctorRecordCard({ doctor, sponsored, busy, campaignMode, onSponsor }: 
         )}
         <button onClick={(e) => { e.stopPropagation(); onSponsor(); }} disabled={busy} data-testid={`button-sponsor-doctor-${doctor.id}`}
           title={campaignMode ? (sponsored ? "Remove from sponsorship" : "Add to sponsorship") : "Sponsor this doctor"}
-          className={`absolute top-2 right-2 w-9 h-9 rounded-full flex items-center justify-center shadow-sm transition-colors ${sponsored ? "bg-accent text-accent-foreground" : "bg-card/90 text-foreground hover:bg-card"}`}>
+          className={`absolute top-2 right-2 w-9 h-9 rounded-full flex items-center justify-center shadow-sm transition-colors ${sponsored ? "bg-accent text-accent-foreground" : "bg-card/90 text-primary hover:bg-card"}`}>
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
         </button>
       </div>
