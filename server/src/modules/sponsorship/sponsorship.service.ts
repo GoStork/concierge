@@ -912,7 +912,20 @@ export class SponsorshipService {
       if (pid) inquiriesById.set(pid, (inquiriesById.get(pid) || 0) + 1);
     }
 
-    const perProfile = await this.labelEntities(active, impressionsById, savesById, inquiriesById);
+    // Per-profile daily impression series (aligned to the global timeSeries
+    // days) so each row can render a sparkline.
+    const dayIndex = new Map(timeSeries.map((t, i) => [t.date, i]));
+    const seriesById = new Map<string, number[]>();
+    for (const v of views) {
+      const idx = dayIndex.get(new Date(v.viewedAt).toISOString().slice(0, 10));
+      if (idx == null) continue;
+      let arr = seriesById.get(v.profileId);
+      if (!arr) { arr = new Array(timeSeries.length).fill(0); seriesById.set(v.profileId, arr); }
+      arr[idx]++;
+    }
+
+    const perProfile = (await this.labelEntities(active, impressionsById, savesById, inquiriesById))
+      .map((p) => ({ ...p, series: seriesById.get(p.id) || [] }));
 
     // Consultations booked while sponsored - the bottom-of-funnel business
     // outcome (provider-level, like hot leads): an AI chat session that reached

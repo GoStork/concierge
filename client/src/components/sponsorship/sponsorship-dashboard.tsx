@@ -12,7 +12,7 @@ import { SponsorshipCheckoutOverlay } from "./sponsorship-checkout";
 import { BoostProfilesCard } from "./sponsorship-wizard";
 import {
   Sparkles, Eye, Heart, MessageCircle, Flame, TrendingUp, Loader2,
-  Plus, X, ChevronDown, ChevronUp, Gift, CreditCard, User, CalendarCheck, DollarSign,
+  Plus, X, ChevronDown, ChevronUp, Gift, CreditCard, User, CalendarCheck, DollarSign, Download,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 
@@ -168,6 +168,17 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
         All metrics are measured only while you have an active sponsorship. Impressions, saves, inquiries and consultations are for your sponsored profiles; hot leads are an account-level signal during the sponsored period. Lift compares your sponsored donor/surrogate profiles against your own non-sponsored ones.
       </p>
 
+      {/* Encouraging empty state: active sponsorship but no engagement yet. */}
+      {a && kpis?.windowStart && (kpis?.totalImpressions ?? 0) === 0 && (
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 flex items-start gap-3" data-testid="empty-state">
+          <Sparkles className="w-5 h-5 text-accent shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <span className="font-heading text-foreground">Your sponsorship is live - data is on its way.</span>
+            <p className="text-muted-foreground mt-0.5">Impressions, saves and inquiries accrue as parents browse the marketplace. Sponsored profiles usually see their first impressions within 24-48 hours, and your numbers fill in here automatically.</p>
+          </div>
+        </div>
+      )}
+
       {/* Trend + funnel */}
       {a && (a.timeSeries?.length > 0 || (kpis?.totalImpressions ?? 0) > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -303,20 +314,25 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
     <Card>
       <CardHeader className="pb-2 flex flex-row items-center justify-between gap-3 flex-wrap space-y-0">
         <CardTitle className="text-sm font-ui">Sponsored profile performance</CardTitle>
-        {types.length > 1 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Type</span>
-            <div className="inline-flex rounded-lg border border-border overflow-hidden flex-wrap" data-testid="perprofile-type-filter">
-              {(["all", ...types] as string[]).map((t) => (
-                <button key={t} onClick={() => setTypeFilter(t)}
-                  className={`px-3 py-1.5 text-sm transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
-                  data-testid={`perprofile-type-${t}`}>
-                  {t === "all" ? "All types" : t}
-                </button>
-              ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          {types.length > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Type</span>
+              <div className="inline-flex rounded-lg border border-border overflow-hidden flex-wrap" data-testid="perprofile-type-filter">
+                {(["all", ...types] as string[]).map((t) => (
+                  <button key={t} onClick={() => setTypeFilter(t)}
+                    className={`px-3 py-1.5 text-sm transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+                    data-testid={`perprofile-type-${t}`}>
+                    {t === "all" ? "All types" : t}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+          <Button size="sm" variant="outline" onClick={() => downloadCsv(sorted, "sponsored-profile-performance.csv")} data-testid="export-csv">
+            <Download className="w-3.5 h-3.5 mr-1.5" /> Export CSV
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {byType.length > 1 && (
@@ -337,7 +353,9 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
               <TableHead>Profile</TableHead><TableHead>Type</TableHead>
               <SortHead k="impressions">Impressions</SortHead>
               <SortHead k="saves">Saves</SortHead>
+              <TableHead className="text-right">Save rate</TableHead>
               <SortHead k="inquiries">Inquiries</SortHead>
+              <TableHead className="text-right">Trend</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -359,7 +377,9 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
                   <TableCell><Badge variant="secondary">{p.type}</Badge></TableCell>
                   <TableCell className="text-right">{p.impressions}</TableCell>
                   <TableCell className="text-right">{p.saves}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{p.impressions ? `${((p.saves / p.impressions) * 100).toFixed(1)}%` : "-"}</TableCell>
                   <TableCell className="text-right">{p.inquiries ?? 0}</TableCell>
+                  <TableCell className="text-right"><div className="flex justify-end"><Sparkline data={p.series} /></div></TableCell>
                 </TableRow>
               );
             })}
@@ -371,6 +391,33 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
       </CardContent>
     </Card>
   );
+}
+
+/** Tiny inline impressions sparkline (no chart lib) for a per-profile row. */
+function Sparkline({ data }: { data?: number[] }) {
+  if (!data || data.length < 2 || data.every((v) => v === 0)) return <span className="text-xs text-muted-foreground">-</span>;
+  const w = 64, h = 18, max = Math.max(...data, 1);
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - (v / max) * (h - 2) - 1}`).join(" ");
+  return (
+    <svg width={w} height={h} className="inline-block align-middle" aria-hidden>
+      <polyline points={pts} fill="none" stroke="hsl(var(--accent))" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Client-side CSV download of the (filtered + sorted) per-profile rows. */
+function downloadCsv(rows: any[], filename: string) {
+  const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [["Profile", "Type", "Impressions", "Saves", "Save rate", "Inquiries"].join(",")];
+  for (const r of rows) {
+    const rate = r.impressions ? `${((r.saves / r.impressions) * 100).toFixed(1)}%` : "-";
+    lines.push([r.name, r.type, r.impressions ?? 0, r.saves ?? 0, rate, r.inquiries ?? 0].map(esc).join(","));
+  }
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
 }
 
 function EmptyHint({ text }: { text: string }) {
