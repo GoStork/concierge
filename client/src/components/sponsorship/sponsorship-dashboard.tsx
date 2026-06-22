@@ -47,15 +47,20 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
 
   const plansQ = useQuery<any[]>({ queryKey: ["/api/sponsorship/plans"] });
   const listKey = isAdmin ? [`${base}`, providerId] : ["/api/sponsorship/mine"];
+  // The global query client uses staleTime: Infinity, so without this a remount
+  // (navigating back from the profile picker after adding slots) would serve a
+  // stale cache and only update on a full page refresh. Always refetch on mount.
   const listQ = useQuery<any[]>({
     queryKey: listKey,
     queryFn: async () => (await apiRequest("GET", isAdmin ? `${base}${withProvider()}` : "/api/sponsorship/mine")).json(),
     enabled: !isAdmin || !!providerId,
+    refetchOnMount: "always",
   });
   const analyticsQ = useQuery<any>({
     queryKey: [`${base}/analytics`, providerId],
     queryFn: async () => (await apiRequest("GET", `${base}/analytics${withProvider()}`)).json(),
     enabled: !isAdmin || !!providerId,
+    refetchOnMount: "always",
   });
 
   const refetchAll = () => {
