@@ -296,6 +296,25 @@ model ProfileInquiry {
   @@index([profileId, createdAt])
 }
 
+// Append-only ad-funnel event log for marketplace profiles. Unlike
+// ParentProfileView (which is deduped per parent and powers the "New" badge),
+// this is NOT deduped - it records every display and every click so the
+// sponsorship dashboard can report true impressions (Google-style: counted
+// each time a profile is shown) plus unique reach (distinct parentAccountId)
+// and click-through (eventType = "VIEW"). profileType spans every marketplace
+// entity: egg-donor | surrogate | sperm-donor | doctor | clinic | agency.
+model ProfileEvent {
+  id              String   @id @default(uuid())
+  parentAccountId String
+  profileId       String
+  profileType     String
+  eventType       String // "IMPRESSION" (shown) | "VIEW" (opened full profile)
+  createdAt       DateTime @default(now())
+
+  @@index([profileId, eventType, createdAt])
+  @@index([profileId, createdAt])
+}
+
 model User {
   id                     String                 @id @default(uuid())
   email                  String                 @unique

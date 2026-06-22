@@ -1902,4 +1902,34 @@ export class UsersController {
     });
     return { recorded: result.count };
   }
+
+  @Post("parent-account/profile-events")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Record ad-funnel events (IMPRESSION = shown, VIEW = opened) for the current parent account. Append-only and NOT deduped - powers true impressions, unique reach, and click-through on the sponsorship dashboard. Batched client-side." })
+  async recordProfileEvents(@Body() body: { events: Array<{ profileId: string; profileType: string; eventType: string }> }, @Req() req: Request) {
+    const user = req.user as any;
+    const accountId = await this.ensureParentAccountForEthnicities(user.id);
+    if (!accountId) throw new NotFoundException("No account found");
+    const events = Array.isArray(body?.events) ? body.events : [];
+    if (events.length === 0) return { recorded: 0 };
+    const ALLOWED_EVENT_TYPES = ["IMPRESSION", "VIEW"];
+    // Cap to prevent a buggy / malicious client flooding the table in one call.
+    const capped = events.slice(0, 1000);
+    const rows: { parentAccountId: string; profileId: string; profileType: string; eventType: string }[] = [];
+    for (const e of capped) {
+      if (!e?.profileId || typeof e.profileId !== "string") continue;
+      const profileType = (e.profileType || "").toLowerCase();
+      if (!this.ALLOWED_PROFILE_TYPES.includes(profileType)) continue;
+      const eventType = (e.eventType || "").toUpperCase();
+      if (!ALLOWED_EVENT_TYPES.includes(eventType)) continue;
+      rows.push({ parentAccountId: accountId, profileId: e.profileId, profileType, eventType });
+    }
+    if (rows.length === 0) return { recorded: 0 };
+    // Append-only: every display / open is its own row (Google-style impression
+    // counting). Dedup of repeats is intentionally NOT done here.
+    const result = await this.prisma.profileEvent.createMany({ data: rows });
+    return { recorded: result.count };
+  }
 }

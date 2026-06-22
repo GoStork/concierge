@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { recordProfileView, recordProfileOpen } from "@/lib/profile-views";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProfileSection } from "@/components/ui/profile-section";
@@ -48,6 +50,15 @@ export default function DoctorProfilePage() {
     },
     enabled: !!slug,
   });
+
+  // Opening a doctor's full profile is an impression (doctors are keyed by
+  // slug in the marketplace/analytics). Idempotent + deduped server-side.
+  useEffect(() => {
+    if (!slug) return;
+    if (window.location.pathname.startsWith("/admin/")) return;
+    recordProfileView(slug, "doctor" as any);
+    recordProfileOpen(slug, "doctor"); // click-through (VIEW) event
+  }, [slug]);
 
   if (isLoading) {
     return (

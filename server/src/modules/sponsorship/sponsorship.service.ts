@@ -881,13 +881,24 @@ export class SponsorshipService {
     const viewIds = [...allEntityIds, ...doctorSlugs];
     const profilePrefIds = [...profileLikeIds, ...doctorSlugs];
 
-    // Impressions (ParentProfileView) for any sponsored entity within the window.
-    const views = effStart && allEntityIds.length
-      ? await db.parentProfileView.findMany({
-          where: { profileId: { in: viewIds }, viewedAt: { gte: effStart, lt: effEnd } },
-          select: { profileId: true, viewedAt: true },
+    // Ad-funnel events (ProfileEvent, append-only) for any sponsored entity in
+    // the window. IMPRESSION = the profile was shown (every display, Google-
+    // style); VIEW = the parent opened the full profile (the click-through).
+    const eventRows = effStart && viewIds.length
+      ? await db.profileEvent.findMany({
+          where: { profileId: { in: viewIds }, createdAt: { gte: effStart, lt: effEnd } },
+          select: { profileId: true, parentAccountId: true, eventType: true, createdAt: true },
         })
       : [];
+    const impressionRows = eventRows.filter((e: any) => e.eventType === "IMPRESSION");
+    const viewEventRows = eventRows.filter((e: any) => e.eventType === "VIEW");
+    // `views` keeps the { profileId, viewedAt } shape so the time-series and
+    // per-profile breakdown below are unchanged - it now means IMPRESSIONS
+    // (displays). uniqueReach = distinct parents who saw it; profileViews =
+    // click-throughs (opens).
+    const views = impressionRows.map((e: any) => ({ profileId: e.profileId, viewedAt: e.createdAt }));
+    const uniqueReach = new Set(impressionRows.map((e: any) => e.parentAccountId)).size;
+    const profileViews = viewEventRows.length;
 
     // Saves vs passes - donors (UserDonorPreference) + doctors/clinics/agencies (UserProfilePreference).
     const donorPrefs = effStart && donorLikeIds.length
@@ -933,9 +944,11 @@ export class SponsorshipService {
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, impressions]) => ({ date, impressions }));
 
-    // Per-profile impression/save breakdown.
+    // Per-profile impression/view/save breakdown.
     const impressionsById = new Map<string, number>();
     for (const v of views) { const k = norm(v.profileId); impressionsById.set(k, (impressionsById.get(k) || 0) + 1); }
+    const viewsById = new Map<string, number>();
+    for (const e of viewEventRows) { const k = norm((e as any).profileId); viewsById.set(k, (viewsById.get(k) || 0) + 1); }
     const savesById = new Map<string, number>();
     for (const p of donorPrefs) if (p.type === "favorite") savesById.set(p.donorId, (savesById.get(p.donorId) || 0) + 1);
     for (const p of profilePrefs) if (p.type === "favorite") { const k = norm(p.entityId); savesById.set(k, (savesById.get(k) || 0) + 1); }
@@ -957,7 +970,7 @@ export class SponsorshipService {
       arr[idx]++;
     }
 
-    const perProfile = (await this.labelEntities(active, impressionsById, savesById, inquiriesById))
+    const perProfile = (await this.labelEntities(active, impressionsById, viewsById, savesById, inquiriesById))
       .map((p) => ({ ...p, series: seriesById.get(p.id) || [] }));
 
     // Consultations booked while sponsored - the bottom-of-funnel business
@@ -995,7 +1008,7 @@ export class SponsorshipService {
         const baselineIds = ownedIds.filter((id) => !sponsoredSet.has(id));
         const sponsoredImpr = sponsoredViewIds.reduce((n, id) => n + (impressionsById.get(id) || 0), 0);
         const baselineImpr = baselineIds.length
-          ? await db.parentProfileView.count({ where: { profileId: { in: baselineIds }, viewedAt: { gte: effStart, lt: effEnd } } })
+          ? await db.profileEvent.count({ where: { profileId: { in: baselineIds }, eventType: "IMPRESSION", createdAt: { gte: effStart, lt: effEnd } } })
           : 0;
         const sponsoredAvg = sponsoredImpr / sponsoredViewIds.length;
         const baselineAvg = baselineIds.length ? baselineImpr / baselineIds.length : 0;
@@ -1016,8 +1029,9 @@ export class SponsorshipService {
       const priorStart = new Date(effStart.getTime() - (effEnd.getTime() - effStart.getTime()));
       if (priorStart.getTime() >= windowStart.getTime() && allEntityIds.length) {
         const win = { gte: priorStart, lt: effStart };
-        const [pImpr, pDonorFav, pProfileFav, pInq, pCons] = await Promise.all([
-          db.parentProfileView.count({ where: { profileId: { in: viewIds }, viewedAt: win } }),
+        const [pImpr, pViews, pDonorFav, pProfileFav, pInq, pCons] = await Promise.all([
+          db.profileEvent.count({ where: { profileId: { in: viewIds }, eventType: "IMPRESSION", createdAt: win } }),
+          db.profileEvent.count({ where: { profileId: { in: viewIds }, eventType: "VIEW", createdAt: win } }),
           donorLikeIds.length ? db.userDonorPreference.count({ where: { donorId: { in: donorLikeIds }, type: "favorite", createdAt: win } }) : Promise.resolve(0),
           profileLikeIds.length ? db.userProfilePreference.count({ where: { entityId: { in: profilePrefIds }, type: "favorite", createdAt: win } }) : Promise.resolve(0),
           db.profileInquiry.count({ where: { profileId: { in: viewIds }, createdAt: win } }),
@@ -1027,6 +1041,7 @@ export class SponsorshipService {
         const mk = (cur: number, prior: number) => ({ prior, pct: prior > 0 ? Math.round(((cur - prior) / prior) * 100) : null });
         deltas = {
           impressions: mk(views.length, pImpr),
+          profileViews: mk(profileViews, pViews),
           saves: mk(saves, priorSaves),
           inquiries: mk(inquiries, pInq),
           consultations: mk(consultations, pCons),
@@ -1073,6 +1088,8 @@ export class SponsorshipService {
     return {
       kpis: {
         totalImpressions,
+        uniqueReach,
+        profileViews,
         saves,
         passes,
         inquiries,
@@ -1094,6 +1111,7 @@ export class SponsorshipService {
       // step a saved profile flows into - it stays a KPI tile, not a funnel stage).
       funnel: [
         { stage: "Impressions", value: totalImpressions },
+        { stage: "Profile views", value: profileViews },
         { stage: "Saves", value: saves },
         { stage: "Inquiries", value: inquiries },
         { stage: "Consultations", value: consultations },
@@ -1125,7 +1143,7 @@ export class SponsorshipService {
   }
 
   /** Resolve human-readable labels (readable name + thumbnail) for the per-profile breakdown. */
-  private async labelEntities(activeSponsorships: any[], impressionsById: Map<string, number>, savesById: Map<string, number>, inquiriesById: Map<string, number>) {
+  private async labelEntities(activeSponsorships: any[], impressionsById: Map<string, number>, viewsById: Map<string, number>, savesById: Map<string, number>, inquiriesById: Map<string, number>) {
     const byType: Record<string, Set<string>> = {};
     for (const s of activeSponsorships) for (const it of s.items) (byType[it.entityType] ||= new Set()).add(it.entityId);
 
@@ -1155,6 +1173,7 @@ export class SponsorshipService {
         type: labels.get(id)?.type || "Profile",
         photoUrl: labels.get(id)?.photoUrl || null,
         impressions: impressionsById.get(id) || 0,
+        views: viewsById.get(id) || 0,
         saves: savesById.get(id) || 0,
         inquiries: inquiriesById.get(id) || 0,
       }))

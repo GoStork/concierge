@@ -13,7 +13,7 @@ import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
-import { useMarketplaceViewContext, recordProfileView } from "@/lib/profile-views";
+import { useMarketplaceViewContext, recordProfileView, recordImpression } from "@/lib/profile-views";
 import { formatMoneyCents, formatMoneyDollars } from "@/lib/format-money";
 import { getCountryFlag } from "@/lib/country-flag";
 import { formatLocationDisplay } from "@/lib/format-location";
@@ -1762,6 +1762,12 @@ function DoctorMatchCard({ card, brandColor, onAction }: { card: DoctorCard; bra
   const goToProfile = () => navigate(`/doctors/${card.slug}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } });
   const clinicName = primary?.providerName || "their clinic";
 
+  // Eva surfacing a doctor card in chat is an impression (keyed by slug, like
+  // the marketplace doctor deck and analytics).
+  useEffect(() => {
+    if (card.slug) recordImpression(card.slug, "doctor");
+  }, [card.slug]);
+
   return (
     <div className="w-full" data-testid={`doctor-card-${card.slug}`}>
       <div className="w-full aspect-[5/7] sm:aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
@@ -2001,6 +2007,19 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   useEffect(() => {
     if (profileId) recordProfileView(profileId, profileTypeForView);
   }, [profileId, profileTypeForView]);
+
+  // Eva surfacing a profile card in chat is an impression (the profile was
+  // shown to the parent). Keyed by the entity id (card.providerId) so it fires
+  // immediately on mount, independent of the photo-profile fetch above. Covers
+  // donors/surrogates/sperm AND clinics/agencies; country programs aren't a
+  // single sponsorable profile, so they're skipped.
+  useEffect(() => {
+    const t = cardType.toLowerCase();
+    if (t === "countryprogram" || t === "country program") return;
+    const imprType = isClinic ? "clinic" : isAgency ? "agency"
+      : t === "surrogate" ? "surrogate" : t === "sperm donor" ? "sperm-donor" : "egg-donor";
+    if (card.providerId) recordImpression(card.providerId, imprType);
+  }, [card.providerId, cardType, isClinic, isAgency]);
 
   if (isClinic) {
     return <ClinicMatchCard card={card} brandColor={brandColor} onAction={onAction} onViewProfile={onViewProfile} />;

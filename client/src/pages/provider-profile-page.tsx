@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from "react-router-dom";
+import { recordProfileView, recordProfileOpen } from "@/lib/profile-views";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +65,19 @@ export default function ProviderProfilePage() {
     if (!provider?.services) return [];
     return provider.services.filter((s: any) => s.status === "APPROVED");
   }, [provider]);
+
+  // Opening a provider's full profile is an impression. Surrogacy agencies
+  // and IVF clinics share this page, so key the view by the right type
+  // (analytics matches by profileId, but the type keeps the record honest).
+  // Idempotent + deduped server-side; admin views have no parent account.
+  useEffect(() => {
+    if (!id || !provider) return;
+    if (window.location.pathname.startsWith("/admin/")) return;
+    const svcNames = (provider.services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");
+    const viewType = svcNames.some((n: string) => n.includes("surrogacy")) ? "agency" : "clinic";
+    recordProfileView(id, viewType as any);
+    recordProfileOpen(id, viewType); // click-through (VIEW) event
+  }, [id, provider]);
 
   const surrogacyProfile = provider?.surrogacyProfile;
   const screening = surrogacyProfile?.screening;

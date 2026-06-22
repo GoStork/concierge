@@ -99,6 +99,52 @@ export function recordProfileView(profileId: string, profileType: ProfileType): 
   scheduleFlush();
 }
 
+// ─── Ad-funnel events (impressions + clicks) ─────────────────────────────
+// Separate, append-only stream from the "viewed" Set above. Powers the
+// sponsorship dashboard's true-impression / unique-reach / click-through
+// funnel. NOT deduped (every display is its own event, Google-style), and
+// spans every marketplace entity type (donors, doctors, clinics, agencies).
+type EventType = "IMPRESSION" | "VIEW";
+interface PendingEvent {
+  profileId: string;
+  profileType: string;
+  eventType: EventType;
+}
+const eventQueue: PendingEvent[] = [];
+let eventFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function flushEvents(): Promise<void> {
+  eventFlushTimer = null;
+  if (eventQueue.length === 0) return;
+  const batch = eventQueue.splice(0, eventQueue.length);
+  try {
+    await apiRequest("POST", "/api/parent-account/profile-events", { events: batch });
+  } catch (e) {
+    // Best-effort analytics - a dropped batch just means a few un-counted
+    // impressions, never a user-facing failure.
+    console.warn("[profile-events] batch flush failed", e);
+  }
+}
+
+function recordProfileEvent(profileId: string, profileType: string, eventType: EventType): void {
+  if (!profileId || !profileType) return;
+  eventQueue.push({ profileId, profileType, eventType });
+  if (eventFlushTimer === null) {
+    eventFlushTimer = setTimeout(() => { flushEvents(); }, FLUSH_INTERVAL_MS);
+  }
+}
+
+// A profile was shown to the parent (deck card became visible/active, or a
+// recommendation card rendered in the AI chat). Counts as one impression.
+export function recordImpression(profileId: string, profileType: string): void {
+  recordProfileEvent(profileId, profileType, "IMPRESSION");
+}
+
+// A profile's full page was opened (the click-through). Counts as one view.
+export function recordProfileOpen(profileId: string, profileType: string): void {
+  recordProfileEvent(profileId, profileType, "VIEW");
+}
+
 // React hook returning the marketplace view context: the Set of viewed
 // profile IDs + previousVisitAt watermark. Components use:
 //   const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
@@ -168,6 +214,7 @@ export function useScrollPastView(
                 if (!recordedRef.current) {
                   recordedRef.current = true;
                   recordProfileView(profileId, profileType);
+                  recordImpression(profileId, profileType);
                   if (observerRef.current && elementRef.current) {
                     observerRef.current.unobserve(elementRef.current);
                   }

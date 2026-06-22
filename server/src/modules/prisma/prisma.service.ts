@@ -251,6 +251,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.profileInquiry;
   }
 
+  get profileEvent() {
+    return prisma.profileEvent;
+  }
+
   get parentProfileView() {
     return prisma.parentProfileView;
   }

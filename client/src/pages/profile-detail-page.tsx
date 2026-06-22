@@ -17,7 +17,7 @@ import { DonorPhotoFallback } from "@/components/marketplace/donor-photo-fallbac
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAppDispatch, useAppSelector } from "@/store";
 import { toggleFavoriteDonor, passDonor } from "@/store/uiSlice";
-import { recordProfileView } from "@/lib/profile-views";
+import { recordProfileView, recordProfileOpen } from "@/lib/profile-views";
 import {
   ArrowLeft,
   ArrowDown,
@@ -1818,6 +1818,19 @@ export default function DonorProfilePage() {
     ? deckList![Math.min(idx, deckList!.length - 1)]
     : { id: donorId || "", providerId: providerId || "", photoUrl: navState?.initialPhotoUrl };
   const next: DeckEntry | null = useDeck && idx + 1 < deckList!.length ? deckList![idx + 1] : null;
+
+  // Opening a full profile is the strongest "impression" signal there is -
+  // stronger than scrolling past a deck card. Record it on mount (and on
+  // swipe-to in the mobile deck, when current.id changes). Idempotent and
+  // deduped server-side, so this is safe alongside the like/pass/message
+  // records below. Skipped for admin/provider routes, which have no parent
+  // account and are rejected by the backend anyway.
+  useEffect(() => {
+    if (!type || !current.id) return;
+    if (window.location.pathname.startsWith("/admin/")) return;
+    recordProfileView(current.id, type);
+    recordProfileOpen(current.id, type); // click-through (VIEW) event
+  }, [type, current.id]);
 
   const commit = useCallback((dir: "like" | "pass", id: string) => {
     if (!type || !id) return;

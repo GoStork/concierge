@@ -32,7 +32,7 @@ import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
 import { DoctorSwipeCard } from "@/components/marketplace/doctor-swipe-card";
 import { AgencySwipeCard } from "@/components/marketplace/agency-swipe-card";
-import { useMarketplaceViewContext, recordProfileView, useScrollPastView } from "@/lib/profile-views";
+import { useMarketplaceViewContext, recordProfileView, recordImpression, useScrollPastView } from "@/lib/profile-views";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   getPhotoList, getMatchedPreferences, buildTitle, buildStatusLabel,
@@ -445,6 +445,10 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
       onSave={onSave}
       onPass={onPass}
       onUndo={onUndo}
+      onActiveChange={(p) => recordImpression(p.id, "clinic")}
+      renderGridItem={(item, card, key) => (
+        <GridDwellItem profileId={key} profileType="clinic" testId={`clinic-card-container-${key}`}>{card}</GridDwellItem>
+      )}
       resetDeps={[showFavoritesOnly, showSkippedOnly, providers]}
       dim={showSkippedOnly}
       emptyTitle="No clinics found"
@@ -546,6 +550,10 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
       onSave={onSave}
       onPass={onPass}
       onUndo={onUndo}
+      onActiveChange={(d) => recordImpression(d.slug, "doctor")}
+      renderGridItem={(item, card, key) => (
+        <GridDwellItem profileId={key} profileType="doctor" testId={`doctor-card-container-${key}`}>{card}</GridDwellItem>
+      )}
       resetDeps={[showFavoritesOnly, showSkippedOnly, doctors]}
       dim={showSkippedOnly}
       emptyTitle="No doctors found"
@@ -795,6 +803,25 @@ function DonorGridItem({ donor, type, dim, children }: {
   );
 }
 
+// Generic desktop-grid dwell wrapper for clinics/doctors. Same Intersection
+// observer as DonorGridItem (>=1s on screen -> impression + cleared "New"
+// badge), wired through SwipeDeck's `renderGridItem` hook so it ONLY runs on
+// the desktop grid - the mobile deck records impressions via `onActiveChange`,
+// so this can't double-count. profileType is "clinic" | "doctor".
+function GridDwellItem({ profileId, profileType, testId, children }: {
+  profileId: string;
+  profileType: string;
+  testId: string;
+  children: ReactNode;
+}) {
+  const setScrollRef = useScrollPastView(profileId, profileType as any);
+  return (
+    <div ref={setScrollRef} className="h-[600px]" data-testid={testId}>
+      {children}
+    </div>
+  );
+}
+
 function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore, hasNextPage, isFetchingMore }: {
   donors: any[] | undefined;
   searchQuery: string;
@@ -925,6 +952,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   // preload the next few cards' photos, and paginate near the end.
   const handleActiveChange = useCallback((donor: any, index: number) => {
     recordProfileView(donor.id, type);
+    recordImpression(donor.id, type);
     const toPreload = (filtered || []).slice(index, index + 3);
     for (const d of toPreload) {
       const p = type === "surrogate" ? mapDatabaseSurrogateToSwipeProfile(d) : type === "sperm-donor" ? mapDatabaseSpermDonorToSwipeProfile(d) : mapDatabaseDonorToSwipeProfile(d);
