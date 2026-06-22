@@ -1526,7 +1526,10 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
 
     const sessionTitle = "AI Concierge Chat";
     const session = await prisma.aiChatSession.create({
-      data: { userId, title: sessionTitle, matchmakerId },
+      // Stamp the subject profile when the parent starts a chat focused on a
+      // specific donor/surrogate (the marketplace "ask about this profile" flow),
+      // so engagement (inquiries) attributes to that sponsored profile.
+      data: { userId, title: sessionTitle, matchmakerId, ...(donorId ? { subjectProfileId: donorId, subjectType: donorType || donorLabel || null } : {}) },
     });
 
     let greetingUiCardData: any = undefined;
