@@ -260,7 +260,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
           </Card>
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm font-ui">Engagement funnel</CardTitle></CardHeader>
-            <CardContent className="space-y-2.5 pt-2">
+            <CardContent className="space-y-3 pt-2">
               {(a.funnel || []).map((f: any, i: number) => {
                 const top = a.funnel[0]?.value || 0;
                 // Centered, value-proportional bar: honest width (no triangle
@@ -273,12 +273,15 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
                 // One brand color per stage (brand palette only, no hardcoded hues).
                 const color = ["hsl(var(--primary))", "hsl(var(--accent))", "hsl(var(--brand-success))", "hsl(var(--brand-warning))"][i % 4];
                 return (
-                  <div key={f.stage}>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span>{f.stage}{stepLabel != null && prev && <span className="text-muted-foreground ml-1">· {stepLabel}% of {String(prev.stage).toLowerCase()}</span>}</span>
-                      <span className="font-ui">{f.value}</span>
+                  <div key={f.stage} className="flex items-center gap-3 text-xs">
+                    <div className="w-40 shrink-0">
+                      <span className="text-foreground">{f.stage}</span>
+                      {stepLabel != null && prev && <span className="text-muted-foreground"> · {stepLabel}% of {String(prev.stage).toLowerCase()}</span>}
                     </div>
-                    <div className="h-2.5 rounded-full mx-auto" style={{ width: `${widthPct}%`, background: color }} />
+                    <div className="flex-1 flex justify-center min-w-0">
+                      <div className="h-2.5 rounded-full" style={{ width: `${widthPct}%`, background: color }} />
+                    </div>
+                    <span className="w-8 shrink-0 text-right font-ui text-foreground">{f.value}</span>
                   </div>
                 );
               })}
