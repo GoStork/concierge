@@ -939,22 +939,28 @@ export class SponsorshipService {
     };
   }
 
-  /** Resolve human-readable labels for the per-profile breakdown. */
+  /** Resolve human-readable labels (readable name + thumbnail) for the per-profile breakdown. */
   private async labelEntities(activeSponsorships: any[], impressionsById: Map<string, number>, savesById: Map<string, number>) {
     const byType: Record<string, Set<string>> = {};
     for (const s of activeSponsorships) for (const it of s.items) (byType[it.entityType] ||= new Set()).add(it.entityId);
 
-    const labels = new Map<string, { name: string; type: string }>();
-    const load = async (ids: string[], delegate: any, type: string, nameFn: (r: any) => string, select: any) => {
+    const photoOf = (r: any) => r.photoUrl || (Array.isArray(r.photos) && r.photos[0]) || null;
+    // Donors/surrogates are scraped and usually have no real name - fall back to a
+    // readable "<noun> #<externalId>" (matching the marketplace card), never the UUID.
+    const idLabel = (noun: string) => (r: any) => (r.firstName?.trim() || `${noun} #${r.externalId || r.id.slice(-6)}`);
+
+    const labels = new Map<string, { name: string; type: string; photoUrl: string | null }>();
+    const load = async (ids: string[], delegate: any, type: string, nameFn: (r: any) => string, photoFn: (r: any) => string | null, select: any) => {
       if (!ids.length) return;
       const rows = await delegate.findMany({ where: { id: { in: ids } }, select });
-      for (const r of rows) labels.set(r.id, { name: nameFn(r), type });
+      for (const r of rows) labels.set(r.id, { name: nameFn(r), type, photoUrl: photoFn(r) });
     };
-    await load(Array.from(byType["EGG_DONOR"] || []), this.prisma.eggDonor, "Egg donor", (r) => `${r.firstName || ""} ${r.lastName || ""}`.trim() || r.id, { id: true, firstName: true, lastName: true });
-    await load(Array.from(byType["SURROGATE"] || []), this.prisma.surrogate, "Surrogate", (r) => `${r.firstName || ""} ${r.lastName || ""}`.trim() || r.id, { id: true, firstName: true, lastName: true });
-    await load(Array.from(byType["SPERM_DONOR"] || []), this.prisma.spermDonor, "Sperm donor", (r) => `${r.firstName || ""} ${r.lastName || ""}`.trim() || r.id, { id: true, firstName: true, lastName: true });
-    await load(Array.from(byType["DOCTOR"] || []), this.prisma.providerMember, "Doctor", (r) => r.name || r.id, { id: true, name: true });
-    await load(Array.from(new Set([...Array.from(byType["CLINIC_PROFILE"] || []), ...Array.from(byType["AGENCY_PROFILE"] || [])])), this.prisma.provider, "Profile", (r) => r.name || r.id, { id: true, name: true });
+    const subProfileSelect = { id: true, firstName: true, externalId: true, photoUrl: true, photos: true };
+    await load(Array.from(byType["EGG_DONOR"] || []), this.prisma.eggDonor, "Egg donor", idLabel("Egg Donor"), photoOf, subProfileSelect);
+    await load(Array.from(byType["SURROGATE"] || []), this.prisma.surrogate, "Surrogate", idLabel("Surrogate"), photoOf, subProfileSelect);
+    await load(Array.from(byType["SPERM_DONOR"] || []), this.prisma.spermDonor, "Sperm donor", idLabel("Sperm Donor"), photoOf, subProfileSelect);
+    await load(Array.from(byType["DOCTOR"] || []), this.prisma.providerMember, "Doctor", (r) => r.name || `Doctor #${r.id.slice(-6)}`, (r) => r.highResPhotoUrl || r.photoUrl || null, { id: true, name: true, photoUrl: true, highResPhotoUrl: true });
+    await load(Array.from(new Set([...Array.from(byType["CLINIC_PROFILE"] || []), ...Array.from(byType["AGENCY_PROFILE"] || [])])), this.prisma.provider, "Profile", (r) => r.name || `Profile #${r.id.slice(-6)}`, (r) => r.logoUrl || null, { id: true, name: true, logoUrl: true });
 
     const allIds = Array.from(new Set(Object.values(byType).flatMap((s) => Array.from(s))));
     return allIds
@@ -962,6 +968,7 @@ export class SponsorshipService {
         id,
         name: labels.get(id)?.name || id,
         type: labels.get(id)?.type || "Profile",
+        photoUrl: labels.get(id)?.photoUrl || null,
         impressions: impressionsById.get(id) || 0,
         saves: savesById.get(id) || 0,
       }))

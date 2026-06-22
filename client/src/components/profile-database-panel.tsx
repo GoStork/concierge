@@ -1506,7 +1506,7 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
   return (
     <>
       {campaign && (
-        <div className="sticky top-0 z-30 -mx-1 mb-4 flex items-center justify-between gap-3 flex-wrap rounded-lg border border-accent/40 bg-accent/10 px-4 py-2.5 backdrop-blur">
+        <div className="sticky top-0 md:top-16 z-40 -mx-1 mb-4 flex items-center justify-between gap-3 flex-wrap rounded-lg border border-accent/40 bg-accent/10 px-4 py-2.5 backdrop-blur">
           <div className="flex items-center gap-2 text-sm">
             <Sparkles className="w-4 h-4 text-accent" />
             <span className="text-foreground">Selecting profiles for <strong>{campaign.planName}</strong></span>
@@ -1528,7 +1528,9 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
           type={type}
           variant="admin"
           showNewBadge={d.status === "AVAILABLE"}
-          onNavigate={isAdmin
+          onNavigate={campaign
+            ? () => handleSponsor(d.id)
+            : isAdmin
             ? () => navigate(`/admin/providers/${providerId}/${typeToUrlSlug(type)}/${d.id}`)
             : () => navigate(`/${typeToUrlSlug(type)}/${providerId}/${d.id}`)}
           adminControls={canManageProfiles ? {

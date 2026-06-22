@@ -146,7 +146,16 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
               <TableBody>
                 {a.perProfile.slice(0, 20).map((p: any) => (
                   <TableRow key={p.id} data-testid={`perprofile-${p.id}`}>
-                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {p.photoUrl ? (
+                          <img src={getPhotoSrc(p.photoUrl) ?? undefined} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-secondary" loading="lazy" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0"><User className="w-4 h-4 text-muted-foreground" /></div>
+                        )}
+                        <span className="font-medium truncate">{p.name}</span>
+                      </div>
+                    </TableCell>
                     <TableCell><Badge variant="secondary">{p.type}</Badge></TableCell>
                     <TableCell className="text-right">{p.impressions}</TableCell>
                     <TableCell className="text-right">{p.saves}</TableCell>

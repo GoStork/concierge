@@ -166,7 +166,7 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
       )}
 
       {campaign && (
-        <div className="sticky top-0 z-30 -mx-1 mb-4 flex items-center justify-between gap-3 flex-wrap rounded-lg border border-accent/40 bg-accent/10 px-4 py-2.5 backdrop-blur">
+        <div className="sticky top-0 md:top-16 z-40 -mx-1 mb-4 flex items-center justify-between gap-3 flex-wrap rounded-lg border border-accent/40 bg-accent/10 px-4 py-2.5 backdrop-blur">
           <div className="flex items-center gap-2 text-sm">
             <Sparkles className="w-4 h-4 text-accent" />
             <span className="text-foreground">Selecting doctors for <strong>{campaign.planName}</strong></span>
@@ -274,7 +274,11 @@ function DoctorRecordCard({ doctor, sponsored, busy, campaignMode, onSponsor }: 
   const loc = doctor.locations?.[0]?.location;
   const locLabel = loc?.city && loc?.state ? `${loc.city}, ${loc.state}` : loc?.state || loc?.city;
   return (
-    <div className={`relative overflow-hidden rounded-2xl border bg-card flex flex-col h-full ${sponsored ? "border-accent ring-1 ring-accent/40" : "border-border"}`} data-testid={`doctor-card-${doctor.id}`}>
+    <div
+      onClick={campaignMode ? onSponsor : undefined}
+      className={`relative overflow-hidden rounded-2xl border bg-card flex flex-col h-full ${campaignMode ? "cursor-pointer" : ""} ${sponsored ? "border-accent ring-1 ring-accent/40" : "border-border"}`}
+      data-testid={`doctor-card-${doctor.id}`}
+    >
       {/* Fixed square box via inline aspect-ratio + absolute image, so every card
           gets an identical photo height regardless of the source image's shape. */}
       <div className="relative w-full shrink-0 overflow-hidden bg-secondary" style={{ aspectRatio: "1 / 1" }}>
@@ -286,7 +290,7 @@ function DoctorRecordCard({ doctor, sponsored, busy, campaignMode, onSponsor }: 
         {sponsored && (
           <Badge className="absolute top-2 left-2 bg-accent text-accent-foreground gap-1"><Sparkles className="w-3 h-3" /> Sponsored</Badge>
         )}
-        <button onClick={onSponsor} disabled={busy} data-testid={`button-sponsor-doctor-${doctor.id}`}
+        <button onClick={(e) => { e.stopPropagation(); onSponsor(); }} disabled={busy} data-testid={`button-sponsor-doctor-${doctor.id}`}
           title={campaignMode ? (sponsored ? "Remove from sponsorship" : "Add to sponsorship") : "Sponsor this doctor"}
           className={`absolute top-2 right-2 w-9 h-9 rounded-full flex items-center justify-center shadow-sm transition-colors ${sponsored ? "bg-accent text-accent-foreground" : "bg-card/90 text-foreground hover:bg-card"}`}>
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
