@@ -254,6 +254,101 @@ function CostStat({ label, spendCents, count }: { label: string; spendCents: num
   );
 }
 
+// Per-profile performance: type filter, sortable columns, top-performer highlight,
+// and an impressions-by-type breakdown bar.
+function PerformanceSection({ perProfile }: { perProfile: any[] }) {
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<"impressions" | "saves" | "inquiries">("impressions");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+
+  const types = Array.from(new Set(perProfile.map((p) => p.type)));
+  const filtered = perProfile.filter((p) => typeFilter === "all" || p.type === typeFilter);
+  const sorted = [...filtered].sort((a, b) => {
+    const d = ((b[sortKey] ?? 0) as number) - ((a[sortKey] ?? 0) as number);
+    return sortDir === "desc" ? d : -d;
+  });
+  const topImpr = perProfile.reduce((m, p) => Math.max(m, p.impressions ?? 0), 0);
+  const byType = types
+    .map((t) => ({ type: t, impressions: perProfile.filter((p) => p.type === t).reduce((n, p) => n + (p.impressions ?? 0), 0) }))
+    .sort((a, b) => b.impressions - a.impressions);
+  const maxTypeImpr = byType.reduce((m, t) => Math.max(m, t.impressions), 1);
+
+  const toggleSort = (k: typeof sortKey) => {
+    if (sortKey === k) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    else { setSortKey(k); setSortDir("desc"); }
+  };
+  const SortHead = ({ k, children }: { k: typeof sortKey; children: React.ReactNode }) => (
+    <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort(k)} data-testid={`sort-${k}`}>
+      <span className="inline-flex items-center gap-1">{children}{sortKey === k && (sortDir === "desc" ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />)}</span>
+    </TableHead>
+  );
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle className="text-sm font-ui">Sponsored profile performance</CardTitle>
+        {types.length > 1 && (
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs" data-testid="perprofile-type-filter">
+            <option value="all">All types</option>
+            {types.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+      </CardHeader>
+      <CardContent>
+        {byType.length > 1 && (
+          <div className="mb-4 space-y-1.5">
+            <div className="text-xs text-muted-foreground">Impressions by type</div>
+            {byType.map((t) => (
+              <div key={t.type} className="flex items-center gap-2 text-xs">
+                <span className="w-28 shrink-0 truncate">{t.type}</span>
+                <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden"><div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(2, Math.round((t.impressions / maxTypeImpr) * 100))}%` }} /></div>
+                <span className="w-8 text-right font-ui">{t.impressions}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Profile</TableHead><TableHead>Type</TableHead>
+              <SortHead k="impressions">Impressions</SortHead>
+              <SortHead k="saves">Saves</SortHead>
+              <SortHead k="inquiries">Inquiries</SortHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.slice(0, 50).map((p) => {
+              const isTop = topImpr > 0 && (p.impressions ?? 0) === topImpr;
+              return (
+                <TableRow key={p.id} data-testid={`perprofile-${p.id}`} className={isTop ? "bg-accent/5" : ""}>
+                  <TableCell>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {p.photoUrl ? (
+                        <img src={getPhotoSrc(p.photoUrl) ?? undefined} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-secondary" loading="lazy" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0"><User className="w-4 h-4 text-muted-foreground" /></div>
+                      )}
+                      <span className="font-medium truncate">{p.name}</span>
+                      {isTop && <Badge className="bg-accent/15 text-accent text-[10px] shrink-0">Top</Badge>}
+                    </div>
+                  </TableCell>
+                  <TableCell><Badge variant="secondary">{p.type}</Badge></TableCell>
+                  <TableCell className="text-right">{p.impressions}</TableCell>
+                  <TableCell className="text-right">{p.saves}</TableCell>
+                  <TableCell className="text-right">{p.inquiries ?? 0}</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        <p className="text-xs text-muted-foreground mt-3">
+          Hot leads aren't shown per profile - a hot lead is an account-level signal (a high-intent parent for your whole account, not tied to one profile). See the Hot leads KPI above.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function EmptyHint({ text }: { text: string }) {
   return <div className="h-full flex items-center justify-center text-sm text-muted-foreground">{text}</div>;
 }

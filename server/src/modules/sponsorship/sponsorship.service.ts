@@ -840,7 +840,7 @@ export class SponsorshipService {
     const db = this.prisma.client;
 
     // Impressions (ParentProfileView) for any sponsored entity within the window.
-    const views = windowStart && allEntityIds.length
+    const views = effStart && allEntityIds.length
       ? await db.parentProfileView.findMany({
           where: { profileId: { in: allEntityIds }, viewedAt: { gte: effStart } },
           select: { profileId: true, viewedAt: true },
@@ -848,13 +848,13 @@ export class SponsorshipService {
       : [];
 
     // Saves vs passes - donors (UserDonorPreference) + doctors/clinics/agencies (UserProfilePreference).
-    const donorPrefs = windowStart && donorLikeIds.length
+    const donorPrefs = effStart && donorLikeIds.length
       ? await db.userDonorPreference.findMany({
           where: { donorId: { in: donorLikeIds }, createdAt: { gte: effStart } },
           select: { donorId: true, type: true },
         })
       : [];
-    const profilePrefs = windowStart && profileLikeIds.length
+    const profilePrefs = effStart && profileLikeIds.length
       ? await db.userProfilePreference.findMany({
           where: { entityId: { in: profileLikeIds }, createdAt: { gte: effStart } },
           select: { entityId: true, type: true },
@@ -867,7 +867,7 @@ export class SponsorshipService {
     // Inquiries: whisper questions about a SPONSORED profile (via the chat
     // session's subject), within the sponsored window - not provider-wide. Fetched
     // (not just counted) so we can also break inquiries down per profile.
-    const inquiryRows = windowStart && allEntityIds.length
+    const inquiryRows = effStart && allEntityIds.length
       ? await db.silentQuery.findMany({
           where: { providerId, createdAt: { gte: effStart }, session: { subjectProfileId: { in: allEntityIds } } },
           select: { session: { select: { subjectProfileId: true } } },
@@ -876,7 +876,7 @@ export class SponsorshipService {
     const inquiries = inquiryRows.length;
     // Hot leads are a provider-level signal (not tied to one profile); count only
     // within the sponsored window, so 0 when the provider isn't currently sponsored.
-    const hotLeads = windowStart
+    const hotLeads = effStart
       ? await db.intendedParentProfile.count({ where: { hotLeadProviderId: providerId, hotLeadAt: { gte: effStart } } })
       : 0;
 
@@ -908,7 +908,7 @@ export class SponsorshipService {
     // outcome (provider-level, like hot leads): an AI chat session that reached
     // CONSULTATION_BOOKED / PROVIDER_CONNECTED is a parent who moved to actually
     // engage the provider.
-    const consultations = windowStart
+    const consultations = effStart
       ? await db.aiChatSession.count({
           where: { providerId, status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] }, createdAt: { gte: effStart } },
         })
@@ -926,7 +926,7 @@ export class SponsorshipService {
       ["SPERM_DONOR", this.prisma.spermDonor],
     ];
     let lift: { sponsoredAvg: number; baselineAvg: number; multiple: number | null; sponsoredCount: number; baselineCount: number } | null = null;
-    if (windowStart) {
+    if (effStart) {
       const sponsoredViewIds = Array.from(new Set(VIEW_TYPES.flatMap(([t]) => setToArr(t))));
       if (sponsoredViewIds.length) {
         const ownedIds: string[] = [];
