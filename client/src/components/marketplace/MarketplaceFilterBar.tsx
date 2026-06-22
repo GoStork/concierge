@@ -1815,7 +1815,7 @@ export function MarketplaceFilterBar({
 
   const mobileFilterButtons = (
     <>
-      {!isIvf && !hideFavorites && (
+      {!hideFavorites && (
         <>
           <Button
             variant={showFavoritesOnly ? "default" : "outline"}
@@ -2142,18 +2142,16 @@ export function MarketplaceFilterBar({
     <>
       {!hideFavorites && (
         <>
-          {!isIvf && (
-            <Button
-              variant={showFavoritesOnly ? "default" : "outline"}
-              size="sm"
-              className="shrink-0 h-9 w-9 p-0 rounded-full"
-              onClick={() => dispatch(setShowFavoritesOnly(!showFavoritesOnly))}
-              data-testid="button-favorites"
-              title="Favorites only"
-            >
-              <Heart className="w-3.5 h-3.5" fill={showFavoritesOnly ? "currentColor" : "none"} />
-            </Button>
-          )}
+          <Button
+            variant={showFavoritesOnly ? "default" : "outline"}
+            size="sm"
+            className="shrink-0 h-9 w-9 p-0 rounded-full"
+            onClick={() => dispatch(setShowFavoritesOnly(!showFavoritesOnly))}
+            data-testid="button-favorites"
+            title="Favorites only"
+          >
+            <Heart className="w-3.5 h-3.5" fill={showFavoritesOnly ? "currentColor" : "none"} />
+          </Button>
 
           {/* Skipped/passed filter - available for ALL types including IVF
               clinics + doctors. Sits to the left of the Location filter. */}
