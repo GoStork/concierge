@@ -19,6 +19,7 @@ import { startReversalRecoupScheduler } from "./src/modules/billing/reversal-rec
 import { startWhisperSlaScheduler } from "./src/modules/providers/whisper-sla.scheduler";
 import { startPendingBookingScheduler } from "./src/modules/calendar/pending-booking.scheduler";
 import { startSponsorshipExpiryScheduler } from "./src/modules/sponsorship/sponsorship-expiry.scheduler";
+import { startRankSnapshotScheduler } from "./src/modules/sponsorship/rank-snapshot.scheduler";
 import { SponsorshipService } from "./src/modules/sponsorship/sponsorship.service";
 import { NotificationService } from "./src/modules/notifications/notification.service";
 import { setNestApp } from "./nest-app-ref";
@@ -247,6 +248,7 @@ export function log(message: string, source = "nestjs") {
   startWhisperSlaScheduler(prismaService, notificationService);
   startPendingBookingScheduler(prismaService, notificationService);
   startSponsorshipExpiryScheduler(prismaService, nestApp.get(SponsorshipService));
+  startRankSnapshotScheduler(prismaService);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

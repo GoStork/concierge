@@ -1001,6 +1001,30 @@ export class SponsorshipService {
       }
     }
 
+    // Search visibility (ranking): boosted vs organic deck position, from the
+    // periodic SponsoredRankSnapshot job. The headline is the lift - how many
+    // spots the boost moves a profile up vs where it would rank organically.
+    const rankRows = effStart
+      ? await db.sponsoredRankSnapshot.findMany({
+          where: { providerId, createdAt: { gte: effStart, lt: effEnd } },
+          select: { position: true, organicPosition: true },
+        })
+      : [];
+    let ranking: { samples: number; avgPosition: number; avgOrganicPosition: number; lift: number; topFiveRate: number } | null = null;
+    if (rankRows.length) {
+      const n = rankRows.length;
+      const avgPosition = rankRows.reduce((a: number, r: any) => a + r.position, 0) / n;
+      const avgOrganic = rankRows.reduce((a: number, r: any) => a + r.organicPosition, 0) / n;
+      const topFive = rankRows.filter((r: any) => r.position <= 5).length / n;
+      ranking = {
+        samples: n,
+        avgPosition: Math.round(avgPosition * 10) / 10,
+        avgOrganicPosition: Math.round(avgOrganic * 10) / 10,
+        lift: Math.round((avgOrganic - avgPosition) * 10) / 10,
+        topFiveRate: Math.round(topFive * 100),
+      };
+    }
+
     // Sponsorship + invoicing history.
     const invoices = await db.invoice.findMany({
       where: { providerId },
@@ -1025,6 +1049,7 @@ export class SponsorshipService {
         windowStart,
       },
       lift,
+      ranking,
       deltas,
       rangeDays: rangeDays ?? null,
       funnel: [

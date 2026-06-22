@@ -264,6 +264,23 @@ model ParentProfileView {
   @@index([parentAccountId, viewedAt])
 }
 
+// Periodic "search visibility" snapshot: where a sponsored profile ranks in its
+// marketplace deck WITH the boost (position) vs where it would rank organically
+// (organicPosition). Written by a scheduled job, not the live request path, so it
+// never touches the hot marketplace read path. Powers the dashboard lift metric.
+model SponsoredRankSnapshot {
+  id              String   @id @default(uuid())
+  providerId      String
+  profileId       String
+  entityType      String // EGG_DONOR | SURROGATE | SPERM_DONOR | DOCTOR
+  position        Int // boosted (actual) deck position, 1-based
+  organicPosition Int // position without the sponsorship boost, 1-based
+  poolSize        Int // total marketplace-visible profiles of this type
+  createdAt       DateTime @default(now())
+
+  @@index([providerId, createdAt])
+}
+
 model User {
   id                     String                 @id @default(uuid())
   email                  String                 @unique

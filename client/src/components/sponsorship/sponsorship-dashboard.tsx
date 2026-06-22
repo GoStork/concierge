@@ -12,7 +12,7 @@ import { SponsorshipCheckoutOverlay } from "./sponsorship-checkout";
 import { BoostProfilesCard } from "./sponsorship-wizard";
 import {
   Sparkles, Eye, Heart, MessageCircle, Flame, TrendingUp, Loader2,
-  Plus, X, ChevronDown, ChevronUp, Gift, CreditCard, User, CalendarCheck, DollarSign, Download,
+  Plus, X, ChevronDown, ChevronUp, Gift, CreditCard, User, CalendarCheck, DollarSign, Download, Search,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 
@@ -130,6 +130,42 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
                 Your sponsored profiles average <strong className="text-foreground">{a.lift.sponsoredAvg.toFixed(1)}</strong> views each vs <strong className="text-foreground">{a.lift.baselineAvg.toFixed(1)}</strong> for your {a.lift.baselineCount} non-sponsored profiles, this period.
               </p>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Search visibility - boosted vs organic deck position (the non-circular
+          proof: sponsorship is a paid placement, this shows how far up it moves you). */}
+      {a?.ranking && (
+        <Card className="border-accent/40 bg-accent/5">
+          <CardContent className="p-5" data-testid="ranking-card">
+            <div className="flex items-center gap-2 mb-3">
+              <Search className="w-4 h-4 text-accent" />
+              <span className="font-heading text-foreground">Search visibility</span>
+            </div>
+            <div className="flex items-center gap-x-8 gap-y-3 flex-wrap">
+              <div>
+                <div className="text-2xl font-heading text-foreground">#{a.ranking.avgPosition}</div>
+                <div className="text-xs text-muted-foreground">avg position (boosted)</div>
+              </div>
+              <span className="text-muted-foreground text-sm">vs</span>
+              <div>
+                <div className="text-2xl font-heading text-muted-foreground">#{a.ranking.avgOrganicPosition}</div>
+                <div className="text-xs text-muted-foreground">organic (without boost)</div>
+              </div>
+              <div className="h-8 w-px bg-border hidden sm:block" />
+              <div>
+                <div className="text-2xl font-heading text-[hsl(var(--brand-success))]">▲ {a.ranking.lift}</div>
+                <div className="text-xs text-muted-foreground">spots higher</div>
+              </div>
+              <div>
+                <div className="text-2xl font-heading text-foreground">{a.ranking.topFiveRate}%</div>
+                <div className="text-xs text-muted-foreground">in the top 5</div>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              Sponsorship moves your donor / surrogate / doctor profiles about <strong className="text-foreground">{a.ranking.lift} spots</strong> up the marketplace deck (from ~#{a.ranking.avgOrganicPosition} organically to ~#{a.ranking.avgPosition}), across {a.ranking.samples} periodic ranking checks this period.
+            </p>
           </CardContent>
         </Card>
       )}
