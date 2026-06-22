@@ -10,11 +10,17 @@ import { PrismaService } from "../prisma/prisma.service";
 type EntityType = "EGG_DONOR" | "SURROGATE" | "SPERM_DONOR" | "DOCTOR" | "CLINIC_PROFILE" | "AGENCY_PROFILE";
 const BILLING_ROLES = ["PROVIDER_ADMIN", "BILLING_MANAGER"];
 
-/** Analytics date-range query -> number of days (undefined = whole sponsored period). */
-function parseRangeDays(range?: string): number | undefined {
-  if (range === "7") return 7;
-  if (range === "30") return 30;
-  return undefined;
+/** Analytics date-range query -> options. Explicit from/to wins over a preset range. */
+function parseAnalyticsOpts(range?: string, from?: string, to?: string): { rangeDays?: number; from?: Date; to?: Date } {
+  const parseDate = (s?: string) => {
+    if (!s) return undefined;
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? undefined : d;
+  };
+  const f = parseDate(from);
+  const t = parseDate(to);
+  if (f || t) return { from: f, to: t };
+  return { rangeDays: range === "7" ? 7 : range === "30" ? 30 : undefined };
 }
 
 @Controller()
@@ -75,9 +81,9 @@ export class SponsorshipController {
   }
 
   @Get("api/sponsorship/analytics")
-  async analytics(@Req() req: Request, @Query("range") range?: string) {
+  async analytics(@Req() req: Request, @Query("range") range?: string, @Query("from") from?: string, @Query("to") to?: string) {
     const providerId = this.requireProvider(req);
-    return this.sponsorship.getAnalytics(providerId, parseRangeDays(range));
+    return this.sponsorship.getAnalytics(providerId, parseAnalyticsOpts(range, from, to));
   }
 
   @Get("api/sponsorship/eligible-entities")
@@ -178,10 +184,10 @@ export class SponsorshipController {
   }
 
   @Get("api/admin/sponsorship/analytics")
-  async adminAnalytics(@Req() req: Request, @Query("providerId") providerId: string, @Query("range") range?: string) {
+  async adminAnalytics(@Req() req: Request, @Query("providerId") providerId: string, @Query("range") range?: string, @Query("from") from?: string, @Query("to") to?: string) {
     this.requireAdmin(req);
     if (!providerId) throw new BadRequestException("providerId required");
-    return this.sponsorship.getAnalytics(providerId, parseRangeDays(range));
+    return this.sponsorship.getAnalytics(providerId, parseAnalyticsOpts(range, from, to));
   }
 
   @Get("api/admin/sponsorship/eligible-entities")

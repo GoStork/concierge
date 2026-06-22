@@ -56,10 +56,15 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
     enabled: !isAdmin || !!providerId,
     refetchOnMount: "always",
   });
-  const [range, setRange] = useState<"all" | "30" | "7">("all");
+  const [range, setRange] = useState<"all" | "30" | "7" | "custom">("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const analyticsQs = range === "custom"
+    ? [customFrom && `from=${customFrom}`, customTo && `to=${customTo}`].filter(Boolean).join("&")
+    : range !== "all" ? `range=${range}` : "";
   const analyticsQ = useQuery<any>({
-    queryKey: [`${base}/analytics`, providerId, range],
-    queryFn: async () => (await apiRequest("GET", `${base}/analytics${withProvider(range !== "all" ? `range=${range}` : "")}`)).json(),
+    queryKey: [`${base}/analytics`, providerId, range, customFrom, customTo],
+    queryFn: async () => (await apiRequest("GET", `${base}/analytics${withProvider(analyticsQs)}`)).json(),
     enabled: !isAdmin || !!providerId,
     refetchOnMount: "always",
   });
@@ -90,14 +95,25 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
       {/* Date range - scopes every metric below; deltas compare vs the prior period. */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-sm font-heading text-foreground">Performance</span>
-        <div className="inline-flex rounded-lg border border-border overflow-hidden">
-          {([["all", "All time"], ["30", "Last 30 days"], ["7", "Last 7 days"]] as const).map(([v, label]) => (
-            <button key={v} onClick={() => setRange(v)}
-              className={`px-3 py-1.5 text-sm transition-colors ${range === v ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
-              data-testid={`range-${v}`}>
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex rounded-lg border border-border overflow-hidden">
+            {([["all", "All time"], ["30", "Last 30 days"], ["7", "Last 7 days"], ["custom", "Custom"]] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setRange(v)}
+                className={`px-3 py-1.5 text-sm transition-colors ${range === v ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+                data-testid={`range-${v}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {range === "custom" && (
+            <div className="flex items-center gap-1.5 text-sm">
+              <input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm" data-testid="range-from" />
+              <span className="text-muted-foreground">to</span>
+              <input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm" data-testid="range-to" />
+            </div>
+          )}
         </div>
       </div>
 
