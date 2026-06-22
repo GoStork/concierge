@@ -1801,7 +1801,7 @@ export class UsersController {
     return { tags: allTags };
   }
 
-  private readonly ALLOWED_PROFILE_TYPES = ["egg-donor", "surrogate", "sperm-donor"];
+  private readonly ALLOWED_PROFILE_TYPES = ["egg-donor", "surrogate", "sperm-donor", "doctor", "clinic", "agency"];
   private readonly MARKETPLACE_SESSION_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
   // Returns the marketplace view context for the current parent account:

@@ -405,11 +405,13 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
   };
 
   const onSave = (id: string) => {
+    recordProfileView(id, "clinic" as any);
     const fav = favoritedClinics.includes(id);
     dispatch(toggleFavoriteClinic(id));
     syncPref("favorite", id, fav ? "remove" : "add");
   };
   const onPass = (id: string) => {
+    recordProfileView(id, "clinic" as any);
     dispatch(passClinic(id));
     syncPref("skip", id, "add");
   };
@@ -431,7 +433,7 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
       onSave={api.onSave}
       onPass={api.onPass}
       onUndo={mode === "active" ? api.onUndo : (passedClinics.includes(p.id) ? () => onUndo(p.id) : undefined)}
-      onViewProfile={() => goToProfile(p.id)}
+      onViewProfile={() => { recordProfileView(p.id, "clinic" as any); goToProfile(p.id); }}
     />
   );
 
@@ -498,11 +500,13 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
   }, [doctors, showFavoritesOnly, favoritedSlugs, showSkippedOnly, passedSlugs]);
 
   const onSave = (slug: string) => {
+    recordProfileView(slug, "doctor" as any);
     const isFav = favoritedSlugs.includes(slug);
     dispatch(toggleFavoriteDoctor(slug));
     syncPref("favorite", slug, isFav ? "remove" : "add");
   };
   const onPass = (slug: string) => {
+    recordProfileView(slug, "doctor" as any);
     dispatch(passDoctor(slug));
     syncPref("skip", slug, "add");
   };
@@ -522,7 +526,7 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
       onSave={api.onSave}
       onPass={api.onPass}
       onUndo={mode === "active" ? api.onUndo : (passedSlugs.includes(doctor.slug) ? () => onUndo(doctor.slug) : undefined)}
-      onViewProfile={() => navigate(`/doctors/${doctor.slug}`)}
+      onViewProfile={() => { recordProfileView(doctor.slug, "doctor" as any); navigate(`/doctors/${doctor.slug}`); }}
     />
   );
 

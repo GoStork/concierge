@@ -867,10 +867,24 @@ export class SponsorshipService {
 
     const db = this.prisma.client;
 
+    // Doctors are tracked (views + saves) by their public `slug`, but sponsored
+    // doctors are matched by member id - resolve the mapping so engagement keyed
+    // by EITHER id or slug attributes to the right sponsored doctor.
+    const doctorIds = setToArr("DOCTOR");
+    const doctorRows = doctorIds.length
+      ? await db.providerMember.findMany({ where: { id: { in: doctorIds } }, select: { id: true, slug: true } })
+      : [];
+    const idBySlug = new Map<string, string>();
+    for (const r of doctorRows) if (r.slug) idBySlug.set(r.slug, r.id);
+    const doctorSlugs = Array.from(idBySlug.keys());
+    const norm = (pid: string) => idBySlug.get(pid) || pid; // slug -> member id
+    const viewIds = [...allEntityIds, ...doctorSlugs];
+    const profilePrefIds = [...profileLikeIds, ...doctorSlugs];
+
     // Impressions (ParentProfileView) for any sponsored entity within the window.
     const views = effStart && allEntityIds.length
       ? await db.parentProfileView.findMany({
-          where: { profileId: { in: allEntityIds }, viewedAt: { gte: effStart, lt: effEnd } },
+          where: { profileId: { in: viewIds }, viewedAt: { gte: effStart, lt: effEnd } },
           select: { profileId: true, viewedAt: true },
         })
       : [];
@@ -884,7 +898,7 @@ export class SponsorshipService {
       : [];
     const profilePrefs = effStart && profileLikeIds.length
       ? await db.userProfilePreference.findMany({
-          where: { entityId: { in: profileLikeIds }, createdAt: { gte: effStart, lt: effEnd } },
+          where: { entityId: { in: profilePrefIds }, createdAt: { gte: effStart, lt: effEnd } },
           select: { entityId: true, type: true },
         })
       : [];
@@ -897,7 +911,7 @@ export class SponsorshipService {
     // (not just counted) so we can also break inquiries down per profile.
     const inquiryRows = effStart && allEntityIds.length
       ? await db.silentQuery.findMany({
-          where: { providerId, createdAt: { gte: effStart, lt: effEnd }, session: { subjectProfileId: { in: allEntityIds } } },
+          where: { providerId, createdAt: { gte: effStart, lt: effEnd }, session: { subjectProfileId: { in: viewIds } } },
           select: { session: { select: { subjectProfileId: true } } },
         })
       : [];
@@ -920,14 +934,14 @@ export class SponsorshipService {
 
     // Per-profile impression/save breakdown.
     const impressionsById = new Map<string, number>();
-    for (const v of views) impressionsById.set(v.profileId, (impressionsById.get(v.profileId) || 0) + 1);
+    for (const v of views) { const k = norm(v.profileId); impressionsById.set(k, (impressionsById.get(k) || 0) + 1); }
     const savesById = new Map<string, number>();
     for (const p of donorPrefs) if (p.type === "favorite") savesById.set(p.donorId, (savesById.get(p.donorId) || 0) + 1);
-    for (const p of profilePrefs) if (p.type === "favorite") savesById.set(p.entityId, (savesById.get(p.entityId) || 0) + 1);
+    for (const p of profilePrefs) if (p.type === "favorite") { const k = norm(p.entityId); savesById.set(k, (savesById.get(k) || 0) + 1); }
     const inquiriesById = new Map<string, number>();
     for (const r of inquiryRows) {
       const pid = (r as any).session?.subjectProfileId;
-      if (pid) inquiriesById.set(pid, (inquiriesById.get(pid) || 0) + 1);
+      if (pid) { const k = norm(pid); inquiriesById.set(k, (inquiriesById.get(k) || 0) + 1); }
     }
 
     // Per-profile daily impression series (aligned to the global timeSeries
@@ -1002,10 +1016,10 @@ export class SponsorshipService {
       if (priorStart.getTime() >= windowStart.getTime() && allEntityIds.length) {
         const win = { gte: priorStart, lt: effStart };
         const [pImpr, pDonorFav, pProfileFav, pInq, pCons] = await Promise.all([
-          db.parentProfileView.count({ where: { profileId: { in: allEntityIds }, viewedAt: win } }),
+          db.parentProfileView.count({ where: { profileId: { in: viewIds }, viewedAt: win } }),
           donorLikeIds.length ? db.userDonorPreference.count({ where: { donorId: { in: donorLikeIds }, type: "favorite", createdAt: win } }) : Promise.resolve(0),
-          profileLikeIds.length ? db.userProfilePreference.count({ where: { entityId: { in: profileLikeIds }, type: "favorite", createdAt: win } }) : Promise.resolve(0),
-          db.silentQuery.count({ where: { providerId, createdAt: win, session: { subjectProfileId: { in: allEntityIds } } } }),
+          profileLikeIds.length ? db.userProfilePreference.count({ where: { entityId: { in: profilePrefIds }, type: "favorite", createdAt: win } }) : Promise.resolve(0),
+          db.silentQuery.count({ where: { providerId, createdAt: win, session: { subjectProfileId: { in: viewIds } } } }),
           db.aiChatSession.count({ where: { providerId, status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] }, createdAt: win } }),
         ]);
         const priorSaves = pDonorFav + pProfileFav;
