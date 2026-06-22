@@ -1053,12 +1053,13 @@ export class SponsorshipService {
       ranking,
       deltas,
       rangeDays: rangeDays ?? null,
+      // True sequential funnel only (Hot leads is an account-level signal, not a
+      // step a saved profile flows into - it stays a KPI tile, not a funnel stage).
       funnel: [
         { stage: "Impressions", value: totalImpressions },
         { stage: "Saves", value: saves },
         { stage: "Inquiries", value: inquiries },
         { stage: "Consultations", value: consultations },
-        { stage: "Hot leads", value: hotLeads },
       ],
       timeSeries,
       perProfile,

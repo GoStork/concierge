@@ -235,22 +235,25 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
           </Card>
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm font-ui">Engagement funnel</CardTitle></CardHeader>
-            <CardContent className="space-y-2 pt-2">
+            <CardContent className="space-y-2.5 pt-2">
               {(a.funnel || []).map((f: any, i: number) => {
                 const top = a.funnel[0]?.value || 0;
-                const pct = Math.max(2, Math.round((f.value / (top || 1)) * 100));
-                // Conversion vs impressions (top of funnel), shown for every stage but the first.
-                const rate = i > 0 && top > 0 ? (f.value / top) * 100 : null;
-                const rateLabel = rate == null ? null : rate > 0 && rate < 1 ? rate.toFixed(1) : Math.round(rate).toString();
+                // Centered, value-proportional bar: honest width (no triangle
+                // distortion) but the centering gives a descending-funnel taper.
+                const widthPct = Math.max(2, Math.round((f.value / (top || 1)) * 100));
+                // Step-over-step conversion: this stage vs the one directly above.
+                const prev = i > 0 ? a.funnel[i - 1] : null;
+                const stepRate = prev && prev.value > 0 ? (f.value / prev.value) * 100 : null;
+                const stepLabel = stepRate == null ? null : stepRate > 0 && stepRate < 1 ? stepRate.toFixed(1) : Math.round(stepRate).toString();
+                // One brand color per stage (brand palette only, no hardcoded hues).
+                const color = ["hsl(var(--primary))", "hsl(var(--accent))", "hsl(var(--brand-success))", "hsl(var(--brand-warning))"][i % 4];
                 return (
                   <div key={f.stage}>
                     <div className="flex justify-between text-xs mb-1">
-                      <span>{f.stage}{rateLabel != null && <span className="text-muted-foreground ml-1">· {rateLabel}% of impressions</span>}</span>
+                      <span>{f.stage}{stepLabel != null && prev && <span className="text-muted-foreground ml-1">· {stepLabel}% of {String(prev.stage).toLowerCase()}</span>}</span>
                       <span className="font-ui">{f.value}</span>
                     </div>
-                    <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                      <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
-                    </div>
+                    <div className="h-2.5 rounded-full mx-auto" style={{ width: `${widthPct}%`, background: color }} />
                   </div>
                 );
               })}
