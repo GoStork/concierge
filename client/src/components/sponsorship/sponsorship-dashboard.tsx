@@ -164,7 +164,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-3">
-              Sponsorship moves your donor / surrogate / doctor profiles about <strong className="text-foreground">{a.ranking.lift} spots</strong> up the marketplace deck (from ~#{a.ranking.avgOrganicPosition} organically to ~#{a.ranking.avgPosition}), across {a.ranking.samples} periodic ranking checks this period.
+              Sponsorship moves your {rankingNouns(a.ranking.types)} profiles about <strong className="text-foreground">{a.ranking.lift} spots</strong> up the marketplace deck (from ~#{a.ranking.avgOrganicPosition} organically to ~#{a.ranking.avgPosition}), across {a.ranking.samples} periodic ranking checks this period.
             </p>
           </CardContent>
         </Card>
@@ -427,6 +427,13 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
       </CardContent>
     </Card>
   );
+}
+
+/** "donor / surrogate" - only the entity types that actually have ranking data. */
+function rankingNouns(types?: string[]): string {
+  const map: Record<string, string> = { EGG_DONOR: "donor", SURROGATE: "surrogate", SPERM_DONOR: "sperm donor", DOCTOR: "doctor" };
+  const nouns = (types || []).map((t) => map[t]).filter(Boolean);
+  return nouns.length ? nouns.join(" / ") : "sponsored";
 }
 
 /** Tiny inline impressions sparkline (no chart lib) for a per-profile row. */

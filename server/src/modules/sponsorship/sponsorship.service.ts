@@ -1007,10 +1007,10 @@ export class SponsorshipService {
     const rankRows = effStart
       ? await db.sponsoredRankSnapshot.findMany({
           where: { providerId, createdAt: { gte: effStart, lt: effEnd } },
-          select: { position: true, organicPosition: true },
+          select: { position: true, organicPosition: true, entityType: true },
         })
       : [];
-    let ranking: { samples: number; avgPosition: number; avgOrganicPosition: number; lift: number; topFiveRate: number } | null = null;
+    let ranking: { samples: number; avgPosition: number; avgOrganicPosition: number; lift: number; topFiveRate: number; types: string[] } | null = null;
     if (rankRows.length) {
       const n = rankRows.length;
       const avgPosition = rankRows.reduce((a: number, r: any) => a + r.position, 0) / n;
@@ -1022,6 +1022,7 @@ export class SponsorshipService {
         avgOrganicPosition: Math.round(avgOrganic * 10) / 10,
         lift: Math.round((avgOrganic - avgPosition) * 10) / 10,
         topFiveRate: Math.round(topFive * 100),
+        types: Array.from(new Set(rankRows.map((r: any) => r.entityType))),
       };
     }
 
