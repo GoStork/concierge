@@ -83,7 +83,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
 
   const a = analyticsQ.data;
   const kpis = a?.kpis;
-  const saveRate = kpis?.totalImpressions ? `${((kpis.saves / kpis.totalImpressions) * 100).toFixed(1)}% save rate` : undefined;
+  const saveRate = kpis?.totalImpressions ? `${Math.round((kpis.saves / kpis.totalImpressions) * 100)}% save rate` : undefined;
 
   return (
     <div className="space-y-6" data-testid="sponsorship-dashboard">
@@ -427,7 +427,7 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
                   <TableCell><Badge variant="secondary">{p.type}</Badge></TableCell>
                   <TableCell className="text-right">{p.impressions}</TableCell>
                   <TableCell className="text-right">{p.saves}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{p.impressions ? `${((p.saves / p.impressions) * 100).toFixed(1)}%` : "-"}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{p.impressions ? `${Math.round((p.saves / p.impressions) * 100)}%` : "-"}</TableCell>
                   <TableCell className="text-right">{p.inquiries ?? 0}</TableCell>
                   <TableCell className="text-right"><div className="flex justify-end"><Sparkline data={p.series} /></div></TableCell>
                 </TableRow>
@@ -467,7 +467,7 @@ function downloadCsv(rows: any[], filename: string) {
   const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [["Profile", "Type", "Impressions", "Saves", "Save rate", "Inquiries"].join(",")];
   for (const r of rows) {
-    const rate = r.impressions ? `${((r.saves / r.impressions) * 100).toFixed(1)}%` : "-";
+    const rate = r.impressions ? `${Math.round((r.saves / r.impressions) * 100)}%` : "-";
     lines.push([r.name, r.type, r.impressions ?? 0, r.saves ?? 0, rate, r.inquiries ?? 0].map(esc).join(","));
   }
   const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
