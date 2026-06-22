@@ -141,6 +141,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
                 <TableRow>
                   <TableHead>Profile</TableHead><TableHead>Type</TableHead>
                   <TableHead className="text-right">Impressions</TableHead><TableHead className="text-right">Saves</TableHead>
+                  <TableHead className="text-right">Inquiries</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -159,10 +160,14 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
                     <TableCell><Badge variant="secondary">{p.type}</Badge></TableCell>
                     <TableCell className="text-right">{p.impressions}</TableCell>
                     <TableCell className="text-right">{p.saves}</TableCell>
+                    <TableCell className="text-right">{p.inquiries ?? 0}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            <p className="text-xs text-muted-foreground mt-3">
+              Hot leads aren't shown per profile - a hot lead is an account-level signal (a high-intent parent for your whole account, not tied to one profile). See the Hot leads KPI above.
+            </p>
           </CardContent>
         </Card>
       )}

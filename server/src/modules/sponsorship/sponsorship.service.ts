@@ -857,10 +857,15 @@ export class SponsorshipService {
     const passes = donorPrefs.filter((p: any) => p.type === "skip").length + profilePrefs.filter((p: any) => p.type === "skip").length;
 
     // Inquiries: whisper questions about a SPONSORED profile (via the chat
-    // session's subject), within the sponsored window - not provider-wide.
-    const inquiries = windowStart && allEntityIds.length
-      ? await db.silentQuery.count({ where: { providerId, createdAt: { gte: windowStart }, session: { subjectProfileId: { in: allEntityIds } } } })
-      : 0;
+    // session's subject), within the sponsored window - not provider-wide. Fetched
+    // (not just counted) so we can also break inquiries down per profile.
+    const inquiryRows = windowStart && allEntityIds.length
+      ? await db.silentQuery.findMany({
+          where: { providerId, createdAt: { gte: windowStart }, session: { subjectProfileId: { in: allEntityIds } } },
+          select: { session: { select: { subjectProfileId: true } } },
+        })
+      : [];
+    const inquiries = inquiryRows.length;
     // Hot leads are a provider-level signal (not tied to one profile); count only
     // within the sponsored window, so 0 when the provider isn't currently sponsored.
     const hotLeads = windowStart
@@ -883,8 +888,13 @@ export class SponsorshipService {
     const savesById = new Map<string, number>();
     for (const p of donorPrefs) if (p.type === "favorite") savesById.set(p.donorId, (savesById.get(p.donorId) || 0) + 1);
     for (const p of profilePrefs) if (p.type === "favorite") savesById.set(p.entityId, (savesById.get(p.entityId) || 0) + 1);
+    const inquiriesById = new Map<string, number>();
+    for (const r of inquiryRows) {
+      const pid = (r as any).session?.subjectProfileId;
+      if (pid) inquiriesById.set(pid, (inquiriesById.get(pid) || 0) + 1);
+    }
 
-    const perProfile = await this.labelEntities(active, impressionsById, savesById);
+    const perProfile = await this.labelEntities(active, impressionsById, savesById, inquiriesById);
 
     // Sponsorship + invoicing history.
     const invoices = await db.invoice.findMany({
@@ -940,7 +950,7 @@ export class SponsorshipService {
   }
 
   /** Resolve human-readable labels (readable name + thumbnail) for the per-profile breakdown. */
-  private async labelEntities(activeSponsorships: any[], impressionsById: Map<string, number>, savesById: Map<string, number>) {
+  private async labelEntities(activeSponsorships: any[], impressionsById: Map<string, number>, savesById: Map<string, number>, inquiriesById: Map<string, number>) {
     const byType: Record<string, Set<string>> = {};
     for (const s of activeSponsorships) for (const it of s.items) (byType[it.entityType] ||= new Set()).add(it.entityId);
 
@@ -971,6 +981,7 @@ export class SponsorshipService {
         photoUrl: labels.get(id)?.photoUrl || null,
         impressions: impressionsById.get(id) || 0,
         saves: savesById.get(id) || 0,
+        inquiries: inquiriesById.get(id) || 0,
       }))
       .sort((a, b) => b.impressions - a.impressions);
   }
