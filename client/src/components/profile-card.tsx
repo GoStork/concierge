@@ -84,6 +84,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
   const typeLabel = getProfileTypeLabel(type);
   const isHidden = adminControls?.isHidden ?? false;
   const isMarketplace = variant === "marketplace";
+  const sponsored = adminControls?.sponsored ?? false;
 
   // Resolve the same headline status the parent marketplace card shows
   // (swipe-deck-card), so providers/admins see PENDING / MATCHED / SOLD_OUT
@@ -103,7 +104,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
   return (
     <Card
       data-testid={isMarketplace ? `card-profile-${profile.id}` : `card-${type}-${profile.id}`}
-      className="group relative cursor-pointer hover:shadow-lg hover:border-primary/30 transition-all duration-200 flex flex-col"
+      className={`group relative cursor-pointer hover:shadow-lg transition-all duration-200 flex flex-col ${sponsored ? "border-accent ring-1 ring-accent/40" : "hover:border-primary/30"}`}
       onClick={onNavigate}
     >
       {showNewBadge && <NewBadge profileId={profile.id} />}
