@@ -2137,7 +2137,10 @@ export default function MarketplacePage() {
 
 
       <div className={isAdmin ? "pt-6" : ""}>
-        {!showFavoritesOnly && (
+        {/* Parents get a clean, pills-only saved view; admins/providers keep the
+            full filter bar in saved mode (mirrors the skipped/hidden view) so they
+            don't lose the tab + filter controls when toggling favorites. */}
+        {(!showFavoritesOnly || !isParentOnly) && (
           <div className="mb-4" data-testid="marketplace-filter-bar-wrapper">
             <MarketplaceFilterBar
               providerType={currentProviderType}
