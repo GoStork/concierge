@@ -247,6 +247,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.sponsoredRankSnapshot;
   }
 
+  get profileInquiry() {
+    return prisma.profileInquiry;
+  }
+
   get parentProfileView() {
     return prisma.parentProfileView;
   }

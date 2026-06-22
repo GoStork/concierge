@@ -1719,6 +1719,23 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }
     }
 
+    // Per-profile inquiry: the parent just engaged about whatever profile is on
+    // screen (the latest match card). Fire-and-forget; deduped per (session,
+    // profile); the sponsorship dashboard filters this to the sponsored subset.
+    if (currentSessionId && savedUserMsg) {
+      const sid = currentSessionId;
+      findLatestMatchCard(sid)
+        .then((mc: any) => {
+          if (!mc?.providerId) return;
+          return prisma.profileInquiry.upsert({
+            where: { sessionId_profileId: { sessionId: sid, profileId: mc.providerId } },
+            create: { sessionId: sid, profileId: mc.providerId, entityType: String(mc.type || "") },
+            update: {},
+          });
+        })
+        .catch(() => {});
+    }
+
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
       select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true },

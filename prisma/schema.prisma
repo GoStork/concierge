@@ -281,6 +281,21 @@ model SponsoredRankSnapshot {
   @@index([providerId, createdAt])
 }
 
+// One row per chat session in which the parent actively engaged (sent a message)
+// about a specific profile - the profile on screen (latest match card) when they
+// messaged. Captures mid-conversation inquiries per profile; analytics filters to
+// the sponsored subset. Deduped per (session, profile).
+model ProfileInquiry {
+  id         String   @id @default(uuid())
+  sessionId  String
+  profileId  String
+  entityType String
+  createdAt  DateTime @default(now())
+
+  @@unique([sessionId, profileId])
+  @@index([profileId, createdAt])
+}
+
 model User {
   id                     String                 @id @default(uuid())
   email                  String                 @unique

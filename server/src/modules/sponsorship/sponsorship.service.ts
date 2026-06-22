@@ -906,17 +906,14 @@ export class SponsorshipService {
     const saves = donorPrefs.filter((p: any) => p.type === "favorite").length + profilePrefs.filter((p: any) => p.type === "favorite").length;
     const passes = donorPrefs.filter((p: any) => p.type === "skip").length + profilePrefs.filter((p: any) => p.type === "skip").length;
 
-    // Inquiries: a parent chat about a SPONSORED profile where the parent actually
-    // engaged (sent a message), within the window. One row per such session, so we
-    // can break inquiries down per profile. Covers concierge donor/surrogate Q&A
-    // (the AI answers directly - no whisper) as well as provider whisper threads.
+    // Inquiries: ProfileInquiry events - a parent engaged (messaged) about a
+    // sponsored profile in chat, attributed to whatever profile was on screen at
+    // the time (so mid-conversation inquiries about different sponsored profiles
+    // each get credited). Covers concierge donor/surrogate Q&A and whisper threads.
     const inquiryRows = effStart && allEntityIds.length
-      ? await db.aiChatSession.findMany({
-          where: {
-            subjectProfileId: { in: viewIds },
-            messages: { some: { role: "user", createdAt: { gte: effStart, lt: effEnd } } },
-          },
-          select: { subjectProfileId: true },
+      ? await db.profileInquiry.findMany({
+          where: { profileId: { in: viewIds }, createdAt: { gte: effStart, lt: effEnd } },
+          select: { profileId: true },
         })
       : [];
     const inquiries = inquiryRows.length;
@@ -944,7 +941,7 @@ export class SponsorshipService {
     for (const p of profilePrefs) if (p.type === "favorite") { const k = norm(p.entityId); savesById.set(k, (savesById.get(k) || 0) + 1); }
     const inquiriesById = new Map<string, number>();
     for (const r of inquiryRows) {
-      const pid = (r as any).subjectProfileId;
+      const pid = (r as any).profileId;
       if (pid) { const k = norm(pid); inquiriesById.set(k, (inquiriesById.get(k) || 0) + 1); }
     }
 
@@ -1023,7 +1020,7 @@ export class SponsorshipService {
           db.parentProfileView.count({ where: { profileId: { in: viewIds }, viewedAt: win } }),
           donorLikeIds.length ? db.userDonorPreference.count({ where: { donorId: { in: donorLikeIds }, type: "favorite", createdAt: win } }) : Promise.resolve(0),
           profileLikeIds.length ? db.userProfilePreference.count({ where: { entityId: { in: profilePrefIds }, type: "favorite", createdAt: win } }) : Promise.resolve(0),
-          db.aiChatSession.count({ where: { subjectProfileId: { in: viewIds }, messages: { some: { role: "user", createdAt: win } } } }),
+          db.profileInquiry.count({ where: { profileId: { in: viewIds }, createdAt: win } }),
           db.aiChatSession.count({ where: { providerId, status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] }, createdAt: win } }),
         ]);
         const priorSaves = pDonorFav + pProfileFav;
