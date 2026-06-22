@@ -1506,18 +1506,23 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
   return (
     <>
       {campaign && (
-        <div className="sticky top-0 md:top-16 z-40 -mx-1 mb-4 flex items-center justify-between gap-3 flex-wrap rounded-lg border border-accent/40 bg-secondary shadow-md px-4 py-2.5">
-          <div className="flex items-center gap-2 text-sm">
-            <Sparkles className="w-4 h-4 text-accent" />
-            <span className="text-foreground">Selecting profiles for <strong>{campaign.planName}</strong></span>
-            <Badge variant="secondary">{campaign.slotsUsed}/{campaign.slotsTotal} slots</Badge>
+        <div className="sticky top-0 md:top-16 z-40 -mx-1 mb-4 relative overflow-hidden rounded-lg border border-accent/40 bg-card shadow-md">
+          {/* Opaque card base + accent tint overlay = readable light-purple bar
+              that the scrolling cards underneath can't bleed through. */}
+          <div className="pointer-events-none absolute inset-0 bg-accent/10" />
+          <div className="relative flex items-center justify-between gap-3 flex-wrap px-4 py-2.5">
+            <div className="flex items-center gap-2 text-sm">
+              <Sparkles className="w-4 h-4 text-accent" />
+              <span className="text-foreground">Selecting profiles for <strong>{campaign.planName}</strong></span>
+              <Badge variant="secondary">{campaign.slotsUsed}/{campaign.slotsTotal} slots</Badge>
+            </div>
+            <p className="text-xs hidden md:block">
+              {campaignFull
+                ? <span className="text-[hsl(var(--brand-warning))]">All slots filled - remove a profile to add another, or upgrade your tier.</span>
+                : <span className="text-muted-foreground">Tap the ✨ on a card to add or remove it.</span>}
+            </p>
+            <Button size="sm" onClick={() => navigate("/account/sponsorship")} data-testid="button-done-selecting">Done</Button>
           </div>
-          <p className="text-xs hidden md:block">
-            {campaignFull
-              ? <span className="text-[hsl(var(--brand-warning))]">All slots filled - remove a profile to add another, or upgrade your tier.</span>
-              : <span className="text-muted-foreground">Tap the ✨ on a card to add or remove it.</span>}
-          </p>
-          <Button size="sm" onClick={() => navigate("/account/sponsorship")} data-testid="button-done-selecting">Done</Button>
         </div>
       )}
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
