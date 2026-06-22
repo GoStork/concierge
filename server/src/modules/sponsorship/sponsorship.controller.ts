@@ -10,6 +10,13 @@ import { PrismaService } from "../prisma/prisma.service";
 type EntityType = "EGG_DONOR" | "SURROGATE" | "SPERM_DONOR" | "DOCTOR" | "CLINIC_PROFILE" | "AGENCY_PROFILE";
 const BILLING_ROLES = ["PROVIDER_ADMIN", "BILLING_MANAGER"];
 
+/** Analytics date-range query -> number of days (undefined = whole sponsored period). */
+function parseRangeDays(range?: string): number | undefined {
+  if (range === "7") return 7;
+  if (range === "30") return 30;
+  return undefined;
+}
+
 @Controller()
 @UseGuards(SessionOrJwtGuard)
 export class SponsorshipController {
@@ -68,9 +75,9 @@ export class SponsorshipController {
   }
 
   @Get("api/sponsorship/analytics")
-  async analytics(@Req() req: Request) {
+  async analytics(@Req() req: Request, @Query("range") range?: string) {
     const providerId = this.requireProvider(req);
-    return this.sponsorship.getAnalytics(providerId);
+    return this.sponsorship.getAnalytics(providerId, parseRangeDays(range));
   }
 
   @Get("api/sponsorship/eligible-entities")
@@ -171,10 +178,10 @@ export class SponsorshipController {
   }
 
   @Get("api/admin/sponsorship/analytics")
-  async adminAnalytics(@Req() req: Request, @Query("providerId") providerId: string) {
+  async adminAnalytics(@Req() req: Request, @Query("providerId") providerId: string, @Query("range") range?: string) {
     this.requireAdmin(req);
     if (!providerId) throw new BadRequestException("providerId required");
-    return this.sponsorship.getAnalytics(providerId);
+    return this.sponsorship.getAnalytics(providerId, parseRangeDays(range));
   }
 
   @Get("api/admin/sponsorship/eligible-entities")

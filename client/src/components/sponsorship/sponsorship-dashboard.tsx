@@ -56,9 +56,10 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
     enabled: !isAdmin || !!providerId,
     refetchOnMount: "always",
   });
+  const [range, setRange] = useState<"all" | "30" | "7">("all");
   const analyticsQ = useQuery<any>({
-    queryKey: [`${base}/analytics`, providerId],
-    queryFn: async () => (await apiRequest("GET", `${base}/analytics${withProvider()}`)).json(),
+    queryKey: [`${base}/analytics`, providerId, range],
+    queryFn: async () => (await apiRequest("GET", `${base}/analytics${withProvider(range !== "all" ? `range=${range}` : "")}`)).json(),
     enabled: !isAdmin || !!providerId,
     refetchOnMount: "always",
   });
@@ -86,6 +87,20 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
           per-plan Charge / Complimentary grid lower down). */}
       {!isAdmin && <BoostProfilesCard onChanged={refetchAll} />}
 
+      {/* Date range - scopes every metric below; deltas compare vs the prior period. */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-sm font-heading text-foreground">Performance</span>
+        <div className="inline-flex rounded-lg border border-border overflow-hidden">
+          {([["all", "All time"], ["30", "Last 30 days"], ["7", "Last 7 days"]] as const).map(([v, label]) => (
+            <button key={v} onClick={() => setRange(v)}
+              className={`px-3 py-1.5 text-sm transition-colors ${range === v ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+              data-testid={`range-${v}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Lift hero - the ROI proof: sponsored vs the provider's non-sponsored profiles. */}
       {a?.lift?.multiple != null && (
         <Card className="border-accent/40 bg-accent/5">
@@ -106,10 +121,10 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
       {/* KPIs - all in one row on desktop */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         <KpiCard icon={<Sparkles className="w-4 h-4" />} label="Active sponsorships" value={kpis?.activeSponsorships ?? 0} />
-        <KpiCard icon={<Eye className="w-4 h-4" />} label="Impressions" value={kpis?.totalImpressions ?? 0} hint="while sponsored" />
-        <KpiCard icon={<Heart className="w-4 h-4" />} label="Saves" value={kpis?.saves ?? 0} hint={saveRate} />
-        <KpiCard icon={<MessageCircle className="w-4 h-4" />} label="Inquiries" value={kpis?.inquiries ?? 0} hint="about sponsored profiles" />
-        <KpiCard icon={<CalendarCheck className="w-4 h-4" />} label="Consultations" value={kpis?.consultations ?? 0} hint="booked while sponsored" />
+        <KpiCard icon={<Eye className="w-4 h-4" />} label="Impressions" value={kpis?.totalImpressions ?? 0} hint="while sponsored" delta={a?.deltas?.impressions} />
+        <KpiCard icon={<Heart className="w-4 h-4" />} label="Saves" value={kpis?.saves ?? 0} hint={saveRate} delta={a?.deltas?.saves} />
+        <KpiCard icon={<MessageCircle className="w-4 h-4" />} label="Inquiries" value={kpis?.inquiries ?? 0} hint="about sponsored profiles" delta={a?.deltas?.inquiries} />
+        <KpiCard icon={<CalendarCheck className="w-4 h-4" />} label="Consultations" value={kpis?.consultations ?? 0} hint="booked while sponsored" delta={a?.deltas?.consultations} />
         <KpiCard icon={<Flame className="w-4 h-4" />} label="Hot leads" value={kpis?.hotLeads ?? 0} hint="while sponsored" />
         <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Slots used" value={`${kpis?.slotsUsed ?? 0}/${kpis?.slotsTotal ?? 0}`} />
       </div>
@@ -181,46 +196,8 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
         </div>
       )}
 
-      {/* Per-profile breakdown */}
-      {a?.perProfile?.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-ui">Sponsored profile performance</CardTitle></CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Profile</TableHead><TableHead>Type</TableHead>
-                  <TableHead className="text-right">Impressions</TableHead><TableHead className="text-right">Saves</TableHead>
-                  <TableHead className="text-right">Inquiries</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {a.perProfile.slice(0, 20).map((p: any) => (
-                  <TableRow key={p.id} data-testid={`perprofile-${p.id}`}>
-                    <TableCell>
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {p.photoUrl ? (
-                          <img src={getPhotoSrc(p.photoUrl) ?? undefined} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-secondary" loading="lazy" />
-                        ) : (
-                          <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0"><User className="w-4 h-4 text-muted-foreground" /></div>
-                        )}
-                        <span className="font-medium truncate">{p.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell><Badge variant="secondary">{p.type}</Badge></TableCell>
-                    <TableCell className="text-right">{p.impressions}</TableCell>
-                    <TableCell className="text-right">{p.saves}</TableCell>
-                    <TableCell className="text-right">{p.inquiries ?? 0}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            <p className="text-xs text-muted-foreground mt-3">
-              Hot leads aren't shown per profile - a hot lead is an account-level signal (a high-intent parent for your whole account, not tied to one profile). See the Hot leads KPI above.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {/* Per-profile breakdown: filter by type, sort, top-performer highlight */}
+      {a?.perProfile?.length > 0 && <PerformanceSection perProfile={a.perProfile} />}
 
       {/* GoStork admins charge / comp per plan (a different surface). The
           provider launcher lives at the top of the page. */}
@@ -247,12 +224,20 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
   );
 }
 
-function KpiCard({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: React.ReactNode; hint?: string }) {
+function KpiCard({ icon, label, value, hint, delta }: { icon: React.ReactNode; label: string; value: React.ReactNode; hint?: string; delta?: { pct: number | null } | null }) {
+  const pct = delta?.pct;
   return (
     <Card>
       <CardContent className="p-3">
         <div className="flex items-center gap-1.5 text-muted-foreground text-xs mb-1">{icon}<span>{label}</span></div>
-        <div className="text-2xl font-heading text-foreground">{value}</div>
+        <div className="flex items-baseline gap-1.5">
+          <div className="text-2xl font-heading text-foreground">{value}</div>
+          {pct != null && (
+            <span className={`text-xs font-ui ${pct > 0 ? "text-[hsl(var(--brand-success))]" : pct < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+              {pct > 0 ? "▲" : pct < 0 ? "▼" : ""}{Math.abs(pct)}%
+            </span>
+          )}
+        </div>
         {hint && <div className="text-[11px] text-muted-foreground">{hint}</div>}
       </CardContent>
     </Card>
