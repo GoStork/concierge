@@ -702,7 +702,7 @@ export class UsersController {
     }
     const users = await this.prisma.user.findMany({
       select: {
-        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, mobileNumberDisplay: true, city: true, state: true, country: true, roles: true, providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true,
+        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, mobileNumberDisplay: true, city: true, state: true, country: true, roles: true, providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true, isDisabled: true,
         provider: { select: { id: true, name: true } },
         assignedLocations: { include: { location: true } },
         calendarConnections: { select: { id: true, provider: true, email: true, label: true, tokenValid: true, connected: true }, orderBy: { createdAt: "desc" } },
@@ -731,7 +731,7 @@ export class UsersController {
       where: { id },
       select: {
         id: true, email: true, name: true, photoUrl: true, mobileNumber: true, mobileNumberDisplay: true, city: true, state: true, country: true, roles: true,
-        providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true, parentAccountRole: true,
+        providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true, parentAccountRole: true, isDisabled: true,
         provider: { select: { id: true, name: true } },
         assignedLocations: { include: { location: true } },
         calendarConnections: { select: { id: true, provider: true, email: true, label: true, tokenValid: true, connected: true }, orderBy: { createdAt: "desc" } },
@@ -1148,7 +1148,7 @@ export class UsersController {
       where: { providerId },
       select: {
         id: true, email: true, name: true, photoUrl: true, mobileNumber: true, roles: true, providerId: true,
-        allLocations: true, dailyRoomUrl: true, calendarLink: true,
+        allLocations: true, dailyRoomUrl: true, calendarLink: true, isDisabled: true,
         assignedLocations: { include: { location: true } },
         calendarConnections: { select: { id: true, provider: true, email: true, label: true, tokenValid: true, connected: true }, orderBy: { createdAt: "desc" } },
         scheduleConfig: { select: { bookingPageSlug: true } },
@@ -1319,6 +1319,7 @@ export class UsersController {
     if (body.allLocations !== undefined) {
       updateData.allLocations = body.allLocations;
     }
+    if (body.isDisabled !== undefined) updateData.isDisabled = !!body.isDisabled;
     if (body.calendarLink !== undefined) updateData.calendarLink = body.calendarLink || null;
 
     if (Array.isArray(body.locationIds)) {

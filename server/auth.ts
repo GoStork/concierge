@@ -53,7 +53,7 @@ export function setupAuth(app: Express) {
       async (email, password, done) => {
         try {
           const user = await storage.getUserByEmail(email);
-          if (!user || !user.password || !(await comparePasswords(password, user.password))) {
+          if (!user || !user.password || user.isDisabled || !(await comparePasswords(password, user.password))) {
             return done(null, false);
           } else {
             return done(null, user);
@@ -69,6 +69,8 @@ export function setupAuth(app: Express) {
   passport.deserializeUser(async (id: string, done) => {
     try {
       const user = await storage.getUser(id);
+      // Drop the session if the account was disabled after login.
+      if (user?.isDisabled) return done(null, false);
       done(null, user);
     } catch (err) {
       done(err);

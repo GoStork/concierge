@@ -15,6 +15,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
 
   async validate(payload: { sub: string; email: string }) {
     const user = await this.authService.getUserById(payload.sub);
+    // A disabled account must not authenticate even with a still-valid token.
+    if (!user || user.isDisabled) return null;
     return user;
   }
 }

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { Plus, Trash2, Pencil, Loader2, Phone, MapPin, Video, Calendar, Copy, Check } from "lucide-react";
+import { Plus, Trash2, Pencil, Loader2, Phone, MapPin, Video, Calendar, Copy, Check, Ban, UserCheck } from "lucide-react";
 
 function CopyButton({ value, testId }: { value: string; testId: string }) {
   const [copied, setCopied] = useState(false);
@@ -78,6 +78,7 @@ type MemberData = {
   state?: string | null;
   country?: string | null;
   parentAccountRole?: string;
+  isDisabled?: boolean;
   assignedLocations?: { id: string; locationId: string; location: { id: string; city: string; state: string; address?: string; zip?: string } }[];
 };
 
@@ -184,6 +185,24 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
     },
   });
 
+  // Disable/enable a team member's login. Mirrors the delete endpoint routing:
+  // GoStork admins hit the global /api/users/:id, provider admins hit their
+  // scoped /api/providers/:providerId/users/:id. Both PUTs accept isDisabled.
+  const toggleDisabledMutation = useMutation({
+    mutationFn: async (member: MemberData) => {
+      const url = isAdmin ? `/api/users/${member.id}` : `/api/providers/${providerId}/users/${member.id}`;
+      await apiRequest("PUT", url, { isDisabled: !member.isDisabled });
+      return !member.isDisabled;
+    },
+    onSuccess: (nowDisabled) => {
+      queryClient.invalidateQueries({ queryKey });
+      toast({ title: nowDisabled ? "Team member disabled" : "Team member enabled", description: nowDisabled ? "They can no longer log in." : "They can log in again.", variant: "success" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
 
   const members = rawMembers || [];
   const baseSorted = [...members].sort((a, b) => {
@@ -222,6 +241,16 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
     if (!canManage) return false;
     if (member.id === currentUserId) return false;
     if (context === "parent") return member.parentAccountRole !== "INTENDED_PARENT_1";
+    return true;
+  };
+
+  // Disable/enable login is a provider/gostork team action only - parent
+  // account sub-members don't have their own login to gate here. You can't
+  // disable yourself, and only managers can toggle.
+  const canToggleMember = (member: MemberData) => {
+    if (context === "parent") return false;
+    if (!canManage) return false;
+    if (member.id === currentUserId) return false;
     return true;
   };
 
@@ -269,15 +298,15 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
               const isSelf = member.id === currentUserId;
 
               return (
-                <TableRow key={member.id} data-testid={`row-member-${member.id}`} className={`cursor-pointer ${isSelf ? "bg-primary/5" : ""}`} onClick={() => canEditMember(member) && handleEdit(member)}>
+                <TableRow key={member.id} data-testid={`row-member-${member.id}`} className={`cursor-pointer ${isSelf ? "bg-primary/5" : ""} ${member.isDisabled ? "opacity-60" : ""}`} onClick={() => canEditMember(member) && handleEdit(member)}>
                   <TableCell className="font-ui">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       {member.photoUrl ? (
                         <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-7 h-7 rounded-[var(--radius)] object-cover shrink-0" />
                       ) : (
                         <DoctorMonogram name={member.name} size={28} rounded="var(--radius)" />
                       )}
-                      <div className="truncate flex items-center gap-1">
+                      <div className="truncate flex items-center gap-1 min-w-0">
                         {canEditMember(member) ? (
                           <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); handleEdit(member); }} data-testid={`link-member-name-${member.id}`}>{member.name || "-"}</button>
                         ) : (
@@ -286,6 +315,9 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                         {member.name && <CopyButton value={member.name} testId={`btn-copy-name-${member.id}`} />}
                         {isSelf && <span className="text-xs text-muted-foreground ml-1">(you)</span>}
                       </div>
+                      {member.isDisabled && (
+                        <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-member-${member.id}`}>Disabled</span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-sm whitespace-nowrap hidden sm:table-cell" data-testid={`text-member-email-${member.id}`}>
@@ -384,6 +416,19 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                         {canEditMember(member) && (
                           <Button variant="ghost" size="sm" onClick={() => handleEdit(member)} data-testid={`button-edit-member-${member.id}`}>
                             <Pencil className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {canToggleMember(member) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={member.isDisabled ? "text-success hover:text-success" : "text-warning hover:text-warning"}
+                            onClick={() => toggleDisabledMutation.mutate(member)}
+                            disabled={toggleDisabledMutation.isPending}
+                            title={member.isDisabled ? "Enable login" : "Disable login"}
+                            data-testid={`button-toggle-disabled-member-${member.id}`}
+                          >
+                            {member.isDisabled ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
                           </Button>
                         )}
                         {canDeleteMember(member) && (

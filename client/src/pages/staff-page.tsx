@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check, CheckCircle2 } from "lucide-react";
+import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check, CheckCircle2, Ban, UserCheck } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
@@ -35,6 +35,7 @@ type StaffMember = {
   createdAt?: string;
   provider?: { id: string; name: string } | null;
   assignedLocations?: any[];
+  isDisabled?: boolean;
 };
 
 function CopyButton({ value, testId }: { value: string; testId: string }) {
@@ -161,6 +162,20 @@ function GostorkAdminUsersView() {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setDeleteMember(null);
       toast({ title: "User removed", variant: "success" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleDisabledMutation = useMutation({
+    mutationFn: async (member: StaffMember) => {
+      await apiRequest("PUT", `/api/users/${member.id}`, { isDisabled: !member.isDisabled });
+      return !member.isDisabled;
+    },
+    onSuccess: (nowDisabled) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: nowDisabled ? "Parent disabled" : "Parent enabled", description: nowDisabled ? "They can no longer log in." : "They can log in again.", variant: "success" });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -312,7 +327,7 @@ function GostorkAdminUsersView() {
           </TableHeader>
           <TableBody>
             {sortedUsers.length > 0 ? sortedUsers.map((member) => (
-              <TableRow key={member.id} data-testid={`row-staff-${member.id}`} className="cursor-pointer" onClick={() => navigate(`/users/${member.id}`)}>
+              <TableRow key={member.id} data-testid={`row-staff-${member.id}`} className={`cursor-pointer ${member.isDisabled ? "opacity-60" : ""}`} onClick={() => navigate(`/users/${member.id}`)}>
                 <TableCell className="pl-4 w-10" onClick={(e) => e.stopPropagation()}>
                   <Checkbox
                     checked={selectedIds.has(member.id)}
@@ -330,6 +345,9 @@ function GostorkAdminUsersView() {
                     )}
                     <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/users/${member.id}`); }} data-testid={`link-user-name-${member.id}`}>{member.name || "-"}</button>
                     {member.name && <CopyButton value={member.name} testId={`btn-copy-name-${member.id}`} />}
+                    {member.isDisabled && (
+                      <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-${member.id}`}>Disabled</span>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell" data-testid={`text-email-${member.id}`}>
@@ -355,6 +373,17 @@ function GostorkAdminUsersView() {
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end gap-1">
                     <Button variant="ghost" size="sm" onClick={() => navigate(`/users/${member.id}`)} data-testid={`button-edit-${member.id}`}><Pencil className="w-4 h-4" /></Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={member.isDisabled ? "text-success hover:text-success" : "text-warning hover:text-warning"}
+                      onClick={() => toggleDisabledMutation.mutate(member)}
+                      disabled={toggleDisabledMutation.isPending}
+                      title={member.isDisabled ? "Enable login" : "Disable login"}
+                      data-testid={`button-toggle-disabled-${member.id}`}
+                    >
+                      {member.isDisabled ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                    </Button>
                     <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteMember(member)} data-testid={`button-delete-${member.id}`}><Trash2 className="w-4 h-4" /></Button>
                   </div>
                 </TableCell>
