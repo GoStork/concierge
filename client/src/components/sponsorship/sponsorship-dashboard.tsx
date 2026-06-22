@@ -16,6 +16,10 @@ import {
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 
+const TYPE_LABELS: Record<string, string> = {
+  EGG_DONOR: "Egg donors", SURROGATE: "Surrogates", SPERM_DONOR: "Sperm donors", DOCTOR: "Doctors", PROFILE: "Whole profile",
+};
+
 type BillingMode = "AUTO_RENEW" | "ONE_TIME";
 type EntityType = "EGG_DONOR" | "SURROGATE" | "SPERM_DONOR" | "DOCTOR";
 
@@ -59,11 +63,14 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
   const [range, setRange] = useState<"all" | "30" | "7" | "custom">("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const analyticsQs = range === "custom"
-    ? [customFrom && `from=${customFrom}`, customTo && `to=${customTo}`].filter(Boolean).join("&")
-    : range !== "all" ? `range=${range}` : "";
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const qsParts: string[] = [];
+  if (range === "custom") { if (customFrom) qsParts.push(`from=${customFrom}`); if (customTo) qsParts.push(`to=${customTo}`); }
+  else if (range !== "all") qsParts.push(`range=${range}`);
+  if (typeFilter !== "all") qsParts.push(`type=${typeFilter}`);
+  const analyticsQs = qsParts.join("&");
   const analyticsQ = useQuery<any>({
-    queryKey: [`${base}/analytics`, providerId, range, customFrom, customTo],
+    queryKey: [`${base}/analytics`, providerId, range, customFrom, customTo, typeFilter],
     queryFn: async () => (await apiRequest("GET", `${base}/analytics${withProvider(analyticsQs)}`)).json(),
     enabled: !isAdmin || !!providerId,
     refetchOnMount: "always",
@@ -116,6 +123,24 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
           )}
         </div>
       </div>
+
+      {/* Page-level type filter: scopes every type-attributable metric below.
+          Hot leads + Consultations stay account-level (tagged). Only shown when
+          the provider sponsors more than one type. */}
+      {(a?.availableTypes?.length ?? 0) > 1 && (
+        <div className="flex items-center gap-2 flex-wrap -mt-2">
+          <span className="text-sm text-muted-foreground">Profile type</span>
+          <div className="inline-flex rounded-lg border border-border overflow-hidden flex-wrap" data-testid="page-type-filter">
+            {(["all", ...a.availableTypes] as string[]).map((t) => (
+              <button key={t} onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1.5 text-sm transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+                data-testid={`page-type-${t}`}>
+                {t === "all" ? "All types" : TYPE_LABELS[t] || t}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Lift hero - the ROI proof: sponsored vs the provider's non-sponsored profiles. */}
       {a?.lift?.multiple != null && (
@@ -176,8 +201,8 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
         <KpiCard icon={<Eye className="w-4 h-4" />} label="Impressions" value={kpis?.totalImpressions ?? 0} hint="while sponsored" delta={a?.deltas?.impressions} />
         <KpiCard icon={<Heart className="w-4 h-4" />} label="Saves" value={kpis?.saves ?? 0} hint={saveRate} delta={a?.deltas?.saves} />
         <KpiCard icon={<MessageCircle className="w-4 h-4" />} label="Inquiries" value={kpis?.inquiries ?? 0} hint="about sponsored profiles" delta={a?.deltas?.inquiries} />
-        <KpiCard icon={<CalendarCheck className="w-4 h-4" />} label="Consultations" value={kpis?.consultations ?? 0} hint="booked while sponsored" delta={a?.deltas?.consultations} />
-        <KpiCard icon={<Flame className="w-4 h-4" />} label="Hot leads" value={kpis?.hotLeads ?? 0} hint="while sponsored" />
+        <KpiCard icon={<CalendarCheck className="w-4 h-4" />} label="Consultations" value={kpis?.consultations ?? 0} hint={typeFilter !== "all" ? "booked · account-level" : "booked while sponsored"} delta={a?.deltas?.consultations} />
+        <KpiCard icon={<Flame className="w-4 h-4" />} label="Hot leads" value={kpis?.hotLeads ?? 0} hint={typeFilter !== "all" ? "while sponsored · account-level" : "while sponsored"} />
         <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Slots used" value={`${kpis?.slotsUsed ?? 0}/${kpis?.slotsTotal ?? 0}`} />
       </div>
 
@@ -323,13 +348,12 @@ function CostStat({ label, spendCents, count }: { label: string; spendCents: num
 // Per-profile performance: type filter, sortable columns, top-performer highlight,
 // and an impressions-by-type breakdown bar.
 function PerformanceSection({ perProfile }: { perProfile: any[] }) {
-  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<"impressions" | "saves" | "inquiries">("impressions");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
 
+  // Type filtering is now page-level (perProfile arrives already scoped).
   const types = Array.from(new Set(perProfile.map((p) => p.type)));
-  const filtered = perProfile.filter((p) => typeFilter === "all" || p.type === typeFilter);
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = [...perProfile].sort((a, b) => {
     const d = ((b[sortKey] ?? 0) as number) - ((a[sortKey] ?? 0) as number);
     return sortDir === "desc" ? d : -d;
   });
@@ -353,25 +377,9 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
     <Card>
       <CardHeader className="pb-2 flex flex-row items-center justify-between gap-3 flex-wrap space-y-0">
         <CardTitle className="text-sm font-ui">Sponsored profile performance</CardTitle>
-        <div className="flex items-center gap-2 flex-wrap">
-          {types.length > 1 && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Type</span>
-              <div className="inline-flex rounded-lg border border-border overflow-hidden flex-wrap" data-testid="perprofile-type-filter">
-                {(["all", ...types] as string[]).map((t) => (
-                  <button key={t} onClick={() => setTypeFilter(t)}
-                    className={`px-3 py-1.5 text-sm transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
-                    data-testid={`perprofile-type-${t}`}>
-                    {t === "all" ? "All types" : t}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          <Button size="sm" variant="outline" onClick={() => downloadCsv(sorted, "sponsored-profile-performance.csv")} data-testid="export-csv">
-            <Download className="w-3.5 h-3.5 mr-1.5" /> Export CSV
-          </Button>
-        </div>
+        <Button size="sm" variant="outline" onClick={() => downloadCsv(sorted, "sponsored-profile-performance.csv")} data-testid="export-csv">
+          <Download className="w-3.5 h-3.5 mr-1.5" /> Export CSV
+        </Button>
       </CardHeader>
       <CardContent>
         {byType.length > 1 && (

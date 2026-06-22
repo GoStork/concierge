@@ -800,7 +800,7 @@ export class SponsorshipService {
 
   // ─── Analytics ─────────────────────────────────────────────────────────────
 
-  async getAnalytics(providerId: string, opts?: { rangeDays?: number; from?: Date; to?: Date }) {
+  async getAnalytics(providerId: string, opts?: { rangeDays?: number; from?: Date; to?: Date; entityType?: string }) {
     const rangeDays = opts?.rangeDays;
     const sponsorships = await this.prisma.sponsorship.findMany({
       where: { providerId },
@@ -808,10 +808,28 @@ export class SponsorshipService {
       orderBy: { createdAt: "desc" },
     });
 
+    // Active sponsorships, optionally narrowed to one profile type (the page-level
+    // Type filter). availableTypes lists every type the provider sponsors (computed
+    // before narrowing) so the client can render the pills. Whole-profile clinic +
+    // agency are grouped under "PROFILE".
+    const allActive = sponsorships.filter((s: any) => s.status === "ACTIVE");
+    const PROFILE_TYPES = ["CLINIC_PROFILE", "AGENCY_PROFILE"];
+    const availSet = new Set<string>();
+    for (const s of allActive) {
+      if (s.productType === "WHOLE_PROFILE") availSet.add("PROFILE");
+      for (const it of s.items) availSet.add(PROFILE_TYPES.includes(it.entityType) ? "PROFILE" : it.entityType);
+    }
+    const availableTypes = Array.from(availSet);
+    const typeFilter = opts?.entityType && availableTypes.includes(opts.entityType) ? opts.entityType : null;
+    const sponsorshipPasses = (s: any) =>
+      !typeFilter || (typeFilter === "PROFILE" ? s.productType === "WHOLE_PROFILE" : s.plan?.slotEntityType === typeFilter);
+
     // Active window = from the earliest active sponsorship's period start. If the
     // provider has NO active sponsorship there is no window, and every engagement
     // metric is 0 - we never count provider-wide activity that wasn't sponsored.
-    const active = sponsorships.filter((s: any) => s.status === "ACTIVE");
+    // (Hot leads + consultations stay account-level: they query by providerId, not
+    // the entity set, so the type filter never narrows them.)
+    const active = typeFilter ? allActive.filter(sponsorshipPasses) : allActive;
     const windowStart: Date | null = active.reduce<Date | null>((acc, s: any) => {
       const start = s.currentPeriodStart ? new Date(s.currentPeriodStart) : null;
       if (!start) return acc;
@@ -1004,9 +1022,11 @@ export class SponsorshipService {
     // Search visibility (ranking): boosted vs organic deck position, from the
     // periodic SponsoredRankSnapshot job. The headline is the lift - how many
     // spots the boost moves a profile up vs where it would rank organically.
-    const rankRows = effStart
+    // Whole-profile (PROFILE) has no deck-ranking snapshots; a specific slot type
+    // filters the snapshot rows to that type.
+    const rankRows = effStart && typeFilter !== "PROFILE"
       ? await db.sponsoredRankSnapshot.findMany({
-          where: { providerId, createdAt: { gte: effStart, lt: effEnd } },
+          where: { providerId, createdAt: { gte: effStart, lt: effEnd }, ...(typeFilter ? { entityType: typeFilter } : {}) },
           select: { position: true, organicPosition: true, entityType: true },
         })
       : [];
@@ -1052,6 +1072,8 @@ export class SponsorshipService {
       lift,
       ranking,
       deltas,
+      availableTypes,
+      entityType: typeFilter,
       rangeDays: rangeDays ?? null,
       // True sequential funnel only (Hot leads is an account-level signal, not a
       // step a saved profile flows into - it stays a KPI tile, not a funnel stage).

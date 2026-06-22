@@ -81,9 +81,9 @@ export class SponsorshipController {
   }
 
   @Get("api/sponsorship/analytics")
-  async analytics(@Req() req: Request, @Query("range") range?: string, @Query("from") from?: string, @Query("to") to?: string) {
+  async analytics(@Req() req: Request, @Query("range") range?: string, @Query("from") from?: string, @Query("to") to?: string, @Query("type") type?: string) {
     const providerId = this.requireProvider(req);
-    return this.sponsorship.getAnalytics(providerId, parseAnalyticsOpts(range, from, to));
+    return this.sponsorship.getAnalytics(providerId, { ...parseAnalyticsOpts(range, from, to), entityType: type || undefined });
   }
 
   @Get("api/sponsorship/eligible-entities")
@@ -184,10 +184,10 @@ export class SponsorshipController {
   }
 
   @Get("api/admin/sponsorship/analytics")
-  async adminAnalytics(@Req() req: Request, @Query("providerId") providerId: string, @Query("range") range?: string, @Query("from") from?: string, @Query("to") to?: string) {
+  async adminAnalytics(@Req() req: Request, @Query("providerId") providerId: string, @Query("range") range?: string, @Query("from") from?: string, @Query("to") to?: string, @Query("type") type?: string) {
     this.requireAdmin(req);
     if (!providerId) throw new BadRequestException("providerId required");
-    return this.sponsorship.getAnalytics(providerId, parseAnalyticsOpts(range, from, to));
+    return this.sponsorship.getAnalytics(providerId, { ...parseAnalyticsOpts(range, from, to), entityType: type || undefined });
   }
 
   @Get("api/admin/sponsorship/eligible-entities")
