@@ -814,6 +814,26 @@ async function findLatestMatchCard(sessionId: string): Promise<any | null> {
   return null;
 }
 
+// Latest card the parent is looking at, across BOTH card storage paths:
+// matchCards (egg/sperm donors, surrogates, IVF clinics, surrogacy agencies) and
+// doctorCards (doctors, keyed by slug). Used to attribute per-profile inquiries.
+async function findLatestChatSubject(sessionId: string): Promise<{ profileId: string; type: string } | null> {
+  const messages = await prisma.aiChatMessage.findMany({
+    where: { sessionId, NOT: { uiCardData: { equals: null } } },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+    select: { uiCardData: true },
+  });
+  for (const msg of messages) {
+    const data = msg.uiCardData as any;
+    const mc = data?.matchCards?.[0];
+    if (mc?.providerId && mc?.type) return { profileId: String(mc.providerId), type: String(mc.type) };
+    const dc = data?.doctorCards?.[0];
+    if (dc?.slug) return { profileId: String(dc.slug), type: "doctor" };
+  }
+  return null;
+}
+
 // Extract search keywords from parent's question with synonym expansion
 function extractSearchKeywords(question: string): string[] {
   const q = question.toLowerCase().replace(/[?!.,]/g, "");
@@ -1724,12 +1744,12 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     // profile); the sponsorship dashboard filters this to the sponsored subset.
     if (currentSessionId && savedUserMsg) {
       const sid = currentSessionId;
-      findLatestMatchCard(sid)
-        .then((mc: any) => {
-          if (!mc?.providerId) return;
+      findLatestChatSubject(sid)
+        .then((subj) => {
+          if (!subj) return;
           return prisma.profileInquiry.upsert({
-            where: { sessionId_profileId: { sessionId: sid, profileId: mc.providerId } },
-            create: { sessionId: sid, profileId: mc.providerId, entityType: String(mc.type || "") },
+            where: { sessionId_profileId: { sessionId: sid, profileId: subj.profileId } },
+            create: { sessionId: sid, profileId: subj.profileId, entityType: subj.type },
             update: {},
           });
         })
