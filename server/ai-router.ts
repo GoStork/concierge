@@ -6347,6 +6347,28 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     finalContent = finalContent.replace(/\[\[DOCTOR_CARD:[\s\S]*?\]\]/g, "").trim();
     let doctorCards: any[] = [];
 
+    // COMPARE_CARD: parse side-by-side comparison tags ({entityType, entities[],
+    // dimensions}) and strip them here. RESOLVED below via resolve_comparison so
+    // every number/value rendered is DB-truth, never model output.
+    const compareCardTags: { entityType: string; entities: string[]; dimensions: any }[] = [];
+    const compareCardRegex = /\[\[COMPARE_CARD:([\s\S]*?)\]\]/g;
+    let cmpTagMatch;
+    while ((cmpTagMatch = compareCardRegex.exec(finalContent)) !== null) {
+      try {
+        const parsed = JSON.parse(cmpTagMatch[1]);
+        const entities = Array.isArray(parsed?.entities) ? parsed.entities.map((e: any) => String(e)).filter(Boolean) : [];
+        if (parsed?.entityType && entities.length >= 2) {
+          compareCardTags.push({ entityType: String(parsed.entityType), entities, dimensions: parsed.dimensions ?? "all" });
+        } else {
+          console.warn("[ai-router] COMPARE_CARD missing entityType or <2 entities, skipping:", parsed);
+        }
+      } catch (e) {
+        console.error("Failed to parse COMPARE_CARD:", e);
+      }
+    }
+    finalContent = finalContent.replace(/\[\[COMPARE_CARD:[\s\S]*?\]\]/g, "").trim();
+    let comparisonCards: any[] = [];
+
     // CLINIC CARD GUARD: a clinic MATCH_CARD's providerId MUST belong to a clinic
     // search_clinics actually returned this turn. The model sometimes emits the
     // id of a clinic the parent mentioned earlier (e.g. their CURRENT clinic)
@@ -7228,9 +7250,62 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
+    // COMPARE_CARD resolution. Mirrors the MATCH_CARD/DOCTOR_CARD pipeline: the
+    // AI emits only {entityType, entities, dimensions}; resolve_comparison fetches
+    // the real DB data so every value on the comparison card is authoritative.
+    // Success-rate context (eggSource/ageGroup/isNewPatient) is derived the same
+    // way the doctor cards derive it - from the last clinic/doctor search args,
+    // falling back to the parent's saved profile.
+    if (compareCardTags.length > 0 && mcpClient) {
+      const cmpSearchArgs: any =
+        lastSearchToolResults.find((r) => r.toolName === "search_doctors")?.toolArgs ||
+        lastSearchToolResults.find((r) => r.toolName === "search_clinics")?.toolArgs ||
+        {};
+      const profileEgg = (profile?.eggSource || "").toLowerCase();
+      const cmpEggSource =
+        cmpSearchArgs.eggSource === "donor" || profileEgg.includes("donor") || profile?.needsEggDonor === true
+          ? "donor"
+          : "own_eggs";
+      const cmpAgeGroup = cmpSearchArgs.ageGroup || profile?.clinicAgeGroup || "under_35";
+      const cmpIsNew =
+        typeof cmpSearchArgs.isNewPatient === "boolean"
+          ? cmpSearchArgs.isNewPatient
+          : profile?.isFirstIvf == null
+            ? true
+            : !!profile.isFirstIvf;
+      // One comparison card per turn (one-at-a-time, like the other cards).
+      const tag = compareCardTags[0];
+      try {
+        const resolveResult: any = await mcpClient.callTool({
+          name: "resolve_comparison",
+          arguments: {
+            entityType: tag.entityType,
+            entities: tag.entities,
+            dimensions: tag.dimensions ?? "all",
+            eggSource: cmpEggSource,
+            ageGroup: cmpAgeGroup,
+            isNewPatient: cmpIsNew,
+          },
+        });
+        const text = Array.isArray(resolveResult?.content) ? resolveResult.content[0]?.text : null;
+        const card = text ? JSON.parse(text) : null;
+        if (card && !card.error && Array.isArray(card.entities) && card.entities.length >= 2 && Array.isArray(card.groups) && card.groups.length > 0) {
+          comparisonCards = [card];
+        } else {
+          console.warn(`[ai-router] COMPARE_CARD did not resolve (${card?.error || "no comparable data"}) - dropping card`);
+        }
+      } catch (e) {
+        console.error("[ai-router] resolve_comparison failed:", e);
+      }
+      if (compareCardTags.length > 1) {
+        console.warn(`[ai-router] AI returned ${compareCardTags.length} comparison cards - enforcing one-at-a-time, kept first only`);
+      }
+    }
+
     const uiExtras: Record<string, any> = {};
     if (matchCards.length > 0) uiExtras.matchCards = matchCards;
     if (doctorCards.length > 0) uiExtras.doctorCards = doctorCards;
+    if (comparisonCards.length > 0) uiExtras.comparisonCards = comparisonCards;
     if (consultationCard) uiExtras.consultationCard = consultationCard;
     if (meetingCards.length > 0) uiExtras.meetingCards = meetingCards;
     if (sendPrepDoc) uiExtras.prepDoc = true;
@@ -7272,6 +7347,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       showCuration: showCuration || undefined,
       matchCards: matchCards.length > 0 ? matchCards : undefined,
       doctorCards: doctorCards.length > 0 ? doctorCards : undefined,
+      comparisonCards: comparisonCards.length > 0 ? comparisonCards : undefined,
       prepDoc: sendPrepDoc || undefined,
       humanNeeded: humanNeeded || undefined,
       consultationCard: consultationCard || undefined,
