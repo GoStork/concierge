@@ -7184,7 +7184,14 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             },
           });
           if (booking) {
-            meetingCards.push(booking);
+            // Normalize to plain JSON (Date -> ISO string) BEFORE it lands in the
+            // Json `uiCardData` column. Prisma serializes embedded JS Date values
+            // inside a Json field as {"$type":"DateTime","value":"..."}; on history
+            // reload the client then gets that wrapped object and `new Date(...)`
+            // yields an Invalid Date, which crashes the booking card (date-fns
+            // format throws "Invalid time value"). A JSON round-trip flattens every
+            // Date field to a plain ISO string so the persisted and live shapes match.
+            meetingCards.push(JSON.parse(JSON.stringify(booking)));
           } else {
             console.warn(`[MEETING_CARD] booking ${bookingId} not found or not owned by parent ${userId} - dropping card`);
           }
