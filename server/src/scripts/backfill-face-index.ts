@@ -16,6 +16,7 @@ import {
   indexEntityPhotos,
   deleteEntityFaces,
   isFaceMatchingConfigured,
+  photoSetHash,
   type FaceEntityType,
 } from "../modules/face/face-recognition.service";
 
@@ -49,8 +50,9 @@ async function processRow(table: "EggDonor" | "Surrogate" | "SpermDonor", row: a
     }
     const faceIds = await indexEntityPhotos(TYPE_OF[table], row.id, photoUrls);
     await prisma.$executeRawUnsafe(
-      `UPDATE "${table}" SET "rekognitionFaceIds" = $1, "faceIndexedAt" = NOW() WHERE id = $2`,
+      `UPDATE "${table}" SET "rekognitionFaceIds" = $1, "faceIndexedAt" = NOW(), "facePhotoHash" = $2 WHERE id = $3`,
       faceIds,
+      photoSetHash(photoUrls),
       row.id,
     );
     return faceIds.length > 0 ? "faces" : "nofaces";
@@ -117,7 +119,7 @@ async function pruneUnauthorized(table: "EggDonor" | "Surrogate" | "SpermDonor")
     for (const r of rows) {
       await deleteEntityFaces(r.rekognitionFaceIds).catch(() => {});
       await prisma.$executeRawUnsafe(
-        `UPDATE "${table}" SET "rekognitionFaceIds" = ARRAY[]::text[], "faceIndexedAt" = NULL WHERE id = $1`,
+        `UPDATE "${table}" SET "rekognitionFaceIds" = ARRAY[]::text[], "faceIndexedAt" = NULL, "facePhotoHash" = NULL WHERE id = $1`,
         r.id,
       );
       removed++;
@@ -127,7 +129,41 @@ async function pruneUnauthorized(table: "EggDonor" | "Surrogate" | "SpermDonor")
   console.log(`[${table}] prune done. removed=${removed}`);
 }
 
+// DB-only: backfill facePhotoHash for already-indexed rows from their current
+// photos (no AWS calls). Lets the sync hook's photo-change guard skip them
+// instead of re-indexing every donor once more.
+async function hashExisting(table: "EggDonor" | "Surrogate" | "SpermDonor") {
+  let updated = 0;
+  while (true) {
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT id, "photoUrl", "photos" FROM "${table}"
+       WHERE "faceIndexedAt" IS NOT NULL AND "facePhotoHash" IS NULL LIMIT $1`,
+      BATCH_SIZE,
+    );
+    if (rows.length === 0) break;
+    for (const r of rows) {
+      const photoUrls: string[] = [
+        ...(r.photoUrl ? [r.photoUrl] : []),
+        ...(Array.isArray(r.photos) ? r.photos : []),
+      ].filter(Boolean);
+      await prisma.$executeRawUnsafe(
+        `UPDATE "${table}" SET "facePhotoHash" = $1 WHERE id = $2`,
+        photoSetHash(photoUrls),
+        r.id,
+      );
+      updated++;
+    }
+  }
+  console.log(`[${table}] hash-existing done. updated=${updated}`);
+}
+
 async function main() {
+  if (process.argv.includes("--hash-existing")) {
+    await hashExisting("EggDonor");
+    await hashExisting("SpermDonor");
+    await hashExisting("Surrogate");
+    return;
+  }
   if (!isFaceMatchingConfigured()) {
     console.error("Face matching is not configured. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION (and optionally REKOGNITION_COLLECTION_ID).");
     process.exit(1);

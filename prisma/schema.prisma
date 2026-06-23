@@ -861,6 +861,9 @@ model EggDonor {
   // holds the returned FaceIds so they can be deleted on re-index/removal.
   faceIndexedAt        DateTime?
   rekognitionFaceIds   String[]                    @default([])
+  // sha1 of the (capped) photo URL set last indexed; lets the sync hook skip
+  // re-indexing donors whose photos have not changed.
+  facePhotoHash        String?
   provider             Provider                    @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
@@ -939,6 +942,7 @@ model Surrogate {
   // AWS Rekognition look-alike face index (see EggDonor.faceIndexedAt).
   faceIndexedAt                DateTime?
   rekognitionFaceIds           String[]                    @default([])
+  facePhotoHash                String?
   provider                     Provider                    @relation(fields: [providerId], references: [id])
   reservedByParent             User?                       @relation("SurrogateReservations", fields: [reservedByParentId], references: [id], onDelete: SetNull)
 
@@ -1009,6 +1013,7 @@ model SpermDonor {
   // AWS Rekognition look-alike face index (see EggDonor.faceIndexedAt).
   faceIndexedAt        DateTime?
   rekognitionFaceIds   String[]                    @default([])
+  facePhotoHash        String?
   provider             Provider                    @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])

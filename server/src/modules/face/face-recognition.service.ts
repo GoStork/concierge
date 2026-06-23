@@ -23,6 +23,7 @@ import {
 import sharp from "sharp";
 import { promises as fs } from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { StorageService } from "../storage/storage.service";
 
 export type FaceEntityType = "Egg Donor" | "Sperm Donor" | "Surrogate";
@@ -153,6 +154,16 @@ export async function fetchImageBytes(url: string): Promise<Buffer | null> {
 // plus a couple of alternates is plenty. Indexing all of them is ~10x slower and
 // costlier for no real gain (search dedupes by entity anyway).
 const MAX_PHOTOS_PER_ENTITY = Number(process.env.REKOGNITION_MAX_PHOTOS_PER_ENTITY ?? 3);
+
+/**
+ * Stable hash of the photo URLs that would actually be indexed (the capped,
+ * ordered set). Used to detect when a donor's photos have changed so the sync
+ * hook can skip re-indexing unchanged donors.
+ */
+export function photoSetHash(photoUrls: string[]): string {
+  const used = (photoUrls || []).filter(Boolean).slice(0, MAX_PHOTOS_PER_ENTITY);
+  return createHash("sha1").update(used.join("\n")).digest("hex");
+}
 
 /**
  * Index up to MAX_PHOTOS_PER_ENTITY photos for one entity (primary first).

@@ -5,7 +5,7 @@ import * as path from "path";
 import { PrismaService } from "../prisma/prisma.service";
 import { recalcAndPersistTotalCostsForProvider } from "../costs/total-cost.utils";
 import type { StorageService } from "../storage/storage.service";
-import { indexEntityPhotos, deleteEntityFaces, isFaceMatchingConfigured, type FaceEntityType } from "../face/face-recognition.service";
+import { indexEntityPhotos, deleteEntityFaces, isFaceMatchingConfigured, photoSetHash, type FaceEntityType } from "../face/face-recognition.service";
 import {
   captchaSolverConfigured,
   extractRecaptchaSitekey,
@@ -209,11 +209,31 @@ const FACE_TYPE_MAP: Record<string, FaceEntityType> = {
   Surrogate: "Surrogate",
 };
 
+// Bound how many face (re)indexes run at once. The sync fires indexEntityFaces
+// fire-and-forget for every upserted donor, which without a cap would launch
+// hundreds of concurrent IndexFaces calls (Rekognition throttling + DB/collection
+// drift). Slots are handed to waiters FIFO.
+const FACE_HOOK_CONCURRENCY = Number(process.env.FACE_HOOK_CONCURRENCY ?? 4);
+let faceActive = 0;
+const faceWaiters: Array<() => void> = [];
+function acquireFaceSlot(): Promise<void> {
+  return new Promise((resolve) => {
+    if (faceActive < FACE_HOOK_CONCURRENCY) { faceActive++; resolve(); }
+    else faceWaiters.push(resolve);
+  });
+}
+function releaseFaceSlot(): void {
+  const next = faceWaiters.shift();
+  if (next) next();        // hand the slot to the next waiter (active unchanged)
+  else faceActive--;       // no waiter - free the slot
+}
+
 /**
  * (Re)index an entity's photos in the AWS Rekognition look-alike face
  * collection. Best-effort and fire-and-forget at call sites - never blocks a
- * profile save. No-ops when face matching is not configured OR when the
- * owning agency has not authorized biometric matching (donor-consent gate).
+ * profile save. No-ops when face matching is not configured, when the owning
+ * agency has not authorized biometric matching (donor-consent gate), or when
+ * the donor's photos are unchanged since the last index (photo-hash guard).
  */
 export async function indexEntityFaces(
   prisma: PrismaService,
@@ -222,32 +242,41 @@ export async function indexEntityFaces(
 ): Promise<void> {
   if (!isFaceMatchingConfigured()) return;
   try {
+    // Cheap pre-checks (no AWS, no slot): auth gate + photo-change guard.
     const rows: any[] = await prisma.$queryRawUnsafe(
-      `SELECT e."photoUrl", e."photos", e."rekognitionFaceIds", p."biometricMatchingAuthorized" AS authorized
+      `SELECT e."photoUrl", e."photos", e."rekognitionFaceIds", e."faceIndexedAt", e."facePhotoHash", p."biometricMatchingAuthorized" AS authorized
        FROM "${table}" e JOIN "Provider" p ON p.id = e."providerId" WHERE e.id = $1`,
       id,
     );
     const row = rows?.[0];
     if (!row) return;
-    // Donor-consent gate: only index faces for agencies that have attested.
-    if (!row.authorized) return;
+    if (!row.authorized) return; // donor-consent gate
     const photoUrls: string[] = [
       ...(row.photoUrl ? [row.photoUrl] : []),
       ...(Array.isArray(row.photos) ? row.photos : []),
     ].filter(Boolean);
     if (photoUrls.length === 0) return;
 
-    // Drop any prior faces so a photo change does not leave stale vectors.
-    if (Array.isArray(row.rekognitionFaceIds) && row.rekognitionFaceIds.length > 0) {
-      await deleteEntityFaces(row.rekognitionFaceIds).catch(() => {});
-    }
+    const hash = photoSetHash(photoUrls);
+    // Skip when already indexed with the same photo set - no AWS calls.
+    if (row.faceIndexedAt && row.facePhotoHash === hash) return;
 
-    const faceIds = await indexEntityPhotos(FACE_TYPE_MAP[table], id, photoUrls);
-    await prisma.$executeRawUnsafe(
-      `UPDATE "${table}" SET "rekognitionFaceIds" = $1, "faceIndexedAt" = NOW() WHERE id = $2`,
-      faceIds,
-      id,
-    );
+    await acquireFaceSlot();
+    try {
+      // Drop any prior faces so a photo change does not leave stale vectors.
+      if (Array.isArray(row.rekognitionFaceIds) && row.rekognitionFaceIds.length > 0) {
+        await deleteEntityFaces(row.rekognitionFaceIds).catch(() => {});
+      }
+      const faceIds = await indexEntityPhotos(FACE_TYPE_MAP[table], id, photoUrls);
+      await prisma.$executeRawUnsafe(
+        `UPDATE "${table}" SET "rekognitionFaceIds" = $1, "faceIndexedAt" = NOW(), "facePhotoHash" = $2 WHERE id = $3`,
+        faceIds,
+        hash,
+        id,
+      );
+    } finally {
+      releaseFaceSlot();
+    }
   } catch (e: any) {
     console.error(`[face] indexEntityFaces failed for ${table} ${id}:`, e?.message || e);
   }
@@ -283,7 +312,7 @@ export async function applyProviderFaceAuthorization(
         for (const r of rows) {
           await deleteEntityFaces(r.rekognitionFaceIds).catch(() => {});
           await prisma.$executeRawUnsafe(
-            `UPDATE "${table}" SET "rekognitionFaceIds" = ARRAY[]::text[], "faceIndexedAt" = NULL WHERE id = $1`,
+            `UPDATE "${table}" SET "rekognitionFaceIds" = ARRAY[]::text[], "faceIndexedAt" = NULL, "facePhotoHash" = NULL WHERE id = $1`,
             r.id,
           );
         }
