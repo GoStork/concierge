@@ -434,6 +434,7 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
       onPass={api.onPass}
       onUndo={mode === "active" ? api.onUndo : (passedClinics.includes(p.id) ? () => onUndo(p.id) : undefined)}
       onViewProfile={() => { recordProfileView(p.id, "clinic" as any); goToProfile(p.id); }}
+      onMessage={() => { recordProfileView(p.id, "clinic" as any); navigate(`/concierge?donorId=${p.id}&donorType=clinic&providerId=${p.id}`); }}
     />
   );
 
@@ -531,6 +532,7 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
       onPass={api.onPass}
       onUndo={mode === "active" ? api.onUndo : (passedSlugs.includes(doctor.slug) ? () => onUndo(doctor.slug) : undefined)}
       onViewProfile={() => { recordProfileView(doctor.slug, "doctor" as any); navigate(`/doctors/${doctor.slug}`); }}
+      onMessage={() => { recordProfileView(doctor.slug, "doctor" as any); navigate(`/concierge?donorId=${doctor.slug}&donorType=doctor`, { state: { doctorCard: doctor } }); }}
     />
   );
 
@@ -673,6 +675,7 @@ function AgencyDeck({ providers, searchQuery }: {
       onPass={api.onPass}
       onUndo={mode === "active" ? api.onUndo : (passedAgencies.includes(p.id) ? () => onUndo(p.id) : undefined)}
       onViewProfile={() => navigate(`/providers/${p.id}`)}
+      onMessage={() => { recordProfileView(p.id, "agency" as any); navigate(`/concierge?donorId=${p.id}&donorType=agency&providerId=${p.id}`); }}
     />
   );
 

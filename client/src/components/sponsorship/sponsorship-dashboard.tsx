@@ -81,6 +81,10 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
     // React Query pauses the interval while the tab is hidden (no background
     // refetch), so this adds no load when nobody's watching.
     refetchInterval: 10000,
+    // Keep polling even when the dashboard sits in a background/unfocused tab,
+    // so numbers stay live while the provider tests saves/inquiries in another
+    // window. One provider's 10s analytics poll is negligible load.
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
   });
 

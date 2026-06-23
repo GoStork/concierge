@@ -41,6 +41,7 @@ export function AgencySwipeCard({
   onSave,
   onUndo,
   onViewProfile,
+  onMessage,
 }: {
   providerId: string;
   // Pre-fetched provider row (marketplace deck). When omitted (AI chat card) the
@@ -55,6 +56,8 @@ export function AgencySwipeCard({
   onSave: () => void;
   onUndo?: () => void;
   onViewProfile: () => void;
+  // Opens an AI concierge chat about this agency (the airplane button).
+  onMessage?: () => void;
 }) {
   const [fetchedProvider, setFetchedProvider] = useState<any>(null);
   const provider = providerProp ?? fetchedProvider;
@@ -187,6 +190,7 @@ export function AgencySwipeCard({
       onSave={onSave}
       onUndo={onUndo}
       onViewFullProfile={onViewProfile}
+      onMessage={onMessage}
     />
   );
 }

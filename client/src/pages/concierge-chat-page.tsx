@@ -5,7 +5,7 @@ import { ChatPlusDrawer, type ChatPlusAction } from "@/components/chat/chat-plus
 import { InvoicePaymentPanel } from "@/components/chat/invoice-payment-panel";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { createPortal } from "react-dom";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -2574,6 +2574,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const donorProviderIdParam = searchParams.get("providerId");
   const donorPhotoParam = searchParams.get("photoUrl");
   const navigate = useNavigate();
+  const routerLocation = useLocation();
+  // Doctors open via the airplane carry their full card object in nav state, so
+  // the optimistic greeting can render the doctor card (doctorCards path) before
+  // the server resolves it for persistence.
+  const doctorCardParam = (routerLocation.state as any)?.doctorCard || null;
 
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
@@ -3474,14 +3479,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     if (donorIdParam) {
       const u = user as any;
       const firstName = u.firstName || u.name?.split(" ")[0] || "there";
-      const donorLabel = donorTypeParam === "surrogate" ? "Surrogate" : donorTypeParam === "sperm-donor" ? "Sperm Donor" : "Egg Donor";
+      const donorLabel = donorTypeParam === "surrogate" ? "Surrogate" : donorTypeParam === "sperm-donor" ? "Sperm Donor" : donorTypeParam === "clinic" ? "Clinic" : donorTypeParam === "agency" ? "Surrogacy Agency" : donorTypeParam === "doctor" ? "Doctor" : "Egg Donor";
       const greeting = `Hi ${firstName}! I see you're interested in learning more about a ${donorLabel} profile. I'd love to help you with any questions you have. Do you have a specific question about this ${donorLabel.toLowerCase()}?`;
-      const greetingMatchCards: MatchCard[] = [{
-        name: donorLabel, type: donorLabel, providerId: donorIdParam,
-        ownerProviderId: donorProviderIdParam || undefined,
-        photo: donorPhotoParam || undefined, reasons: [],
-      }];
-      setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString(), matchCards: greetingMatchCards }]);
+      // Doctors render through the doctorCards path (keyed by slug); everything
+      // else uses matchCards. For doctors we render the card carried in nav state.
+      if (donorTypeParam === "doctor") {
+        const greetingDoctorCards: DoctorCard[] = [doctorCardParam && doctorCardParam.slug ? doctorCardParam : ({ slug: donorIdParam, name: "Doctor" } as any)];
+        setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString(), doctorCards: greetingDoctorCards }]);
+      } else {
+        const greetingMatchCards: MatchCard[] = [{
+          name: donorLabel, type: donorLabel, providerId: donorIdParam,
+          ownerProviderId: donorProviderIdParam || undefined,
+          photo: donorPhotoParam || undefined, reasons: [],
+        }];
+        setMessages([{ role: "assistant", content: greeting, createdAt: new Date().toISOString(), matchCards: greetingMatchCards }]);
+      }
       (async () => {
         try {
           const res = await fetch("/api/ai-concierge/init-session", {

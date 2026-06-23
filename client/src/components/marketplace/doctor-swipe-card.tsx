@@ -25,6 +25,7 @@ export function DoctorSwipeCard({
   onSave,
   onUndo,
   onViewProfile,
+  onMessage,
 }: {
   doctor: DoctorCardData;
   contextLabel?: string | null;
@@ -38,6 +39,8 @@ export function DoctorSwipeCard({
   onSave: () => void;
   onUndo?: () => void;
   onViewProfile: () => void;
+  // Opens an AI concierge chat about this doctor (the airplane button).
+  onMessage?: () => void;
 }) {
   const { user } = useAuth();
   const parentAccountId = (user as any)?.parentAccountId as string | undefined;
@@ -97,6 +100,7 @@ export function DoctorSwipeCard({
       onSave={onSave}
       onUndo={onUndo}
       onViewFullProfile={onViewProfile}
+      onMessage={onMessage}
     />
   );
 }

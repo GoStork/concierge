@@ -1460,8 +1460,29 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
     });
 
     const donorLabel = donorId
-      ? (donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : "Egg Donor")
+      ? (donorType === "surrogate" ? "Surrogate" : donorType === "sperm-donor" ? "Sperm Donor" : donorType === "clinic" ? "Clinic" : donorType === "agency" ? "Surrogacy Agency" : donorType === "doctor" ? "Doctor" : "Egg Donor")
       : null;
+
+    // Build the greeting card for the opened subject. Doctors render through the
+    // separate doctorCards path (keyed by slug), so resolve the full doctor by
+    // slug here - that way the PERSISTED greeting renders correctly on reload,
+    // not just in the optimistic client card. Everything else uses matchCards.
+    const isDoctorSubject = donorType === "doctor";
+    let subjectGreetingCard: any = null;
+    if (donorId) {
+      if (isDoctorSubject) {
+        let doctor: any = null;
+        if (mcpClient) {
+          try {
+            const r: any = await mcpClient.callTool({ name: "resolve_doctor_card", arguments: { slug: donorId } });
+            doctor = JSON.parse((r.content as any)?.[0]?.text || "{}");
+          } catch {}
+        }
+        subjectGreetingCard = { doctorCards: [doctor && doctor.slug ? doctor : { slug: donorId, name: donorLabel || "Doctor" }] };
+      } else {
+        subjectGreetingCard = { matchCards: [{ name: donorLabel, type: donorLabel, providerId: donorId, ownerProviderId: req.body.ownerProviderId || undefined, reasons: [] }] };
+      }
+    }
 
     // Build greeting server-side using matchmaker template + user profile (eliminates client timing issues)
     const [matchmakerRecord, userForGreeting] = await Promise.all([
@@ -1509,15 +1530,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
 
     if (existing) {
       if (donorId) {
-        const matchCardData = {
-          matchCards: [{
-            name: donorLabel,
-            type: donorLabel,
-            providerId: donorId,
-            ownerProviderId: req.body.ownerProviderId || undefined,
-            reasons: [],
-          }],
-        };
+        const matchCardData = subjectGreetingCard;
         const greetingMsg = await prisma.aiChatMessage.create({
           data: {
             sessionId: existing.id,
@@ -1543,7 +1556,9 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
           update: {},
         }).catch(() => {});
         res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, greeting: builtGreeting, greetingQuickReplies, reused: true });
-        if (mcpClient) {
+        // Background name resolve only applies to the matchCards path (doctors
+        // are already fully resolved by slug above).
+        if (mcpClient && !isDoctorSubject && matchCardData?.matchCards?.[0]) {
           mcpClient.callTool({ name: "resolve_match_card", arguments: { entityId: donorId, entityType: donorLabel } })
             .then((resolveResult: any) => {
               const resolved = JSON.parse((resolveResult.content as any)?.[0]?.text || "{}");
@@ -1585,18 +1600,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       }).catch(() => {});
     }
 
-    let greetingUiCardData: any = undefined;
-    if (donorId) {
-      greetingUiCardData = {
-        matchCards: [{
-          name: donorLabel,
-          type: donorLabel,
-          providerId: donorId,
-          ownerProviderId: req.body.ownerProviderId || undefined,
-          reasons: [],
-        }],
-      };
-    }
+    let greetingUiCardData: any = donorId ? subjectGreetingCard : undefined;
 
     const greetingMsg = await prisma.aiChatMessage.create({
       data: {

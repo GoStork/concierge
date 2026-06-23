@@ -35,6 +35,7 @@ export function ClinicSwipeCard({
   onSave,
   onUndo,
   onViewProfile,
+  onMessage,
 }: {
   providerId: string;
   // Pre-fetched lean clinic row (from /api/providers/marketplace/clinics). When
@@ -54,6 +55,9 @@ export function ClinicSwipeCard({
   onSave: () => void;
   onUndo?: () => void;
   onViewProfile: () => void;
+  // Opens an AI concierge chat about this clinic (the airplane button). Omitted
+  // in chatMode (the card is already inside a chat).
+  onMessage?: () => void;
 }) {
   const [fetchedProvider, setFetchedProvider] = useState<any>(null);
   const provider = providerProp ?? fetchedProvider;
@@ -258,6 +262,7 @@ export function ClinicSwipeCard({
       onSave={onSave}
       onUndo={onUndo}
       onViewFullProfile={onViewProfile}
+      onMessage={onMessage}
     />
   );
 }
