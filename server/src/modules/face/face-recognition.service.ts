@@ -167,13 +167,21 @@ export async function fetchImageBytes(url: string): Promise<Buffer | null> {
 const MAX_PHOTOS_PER_ENTITY = Number(process.env.REKOGNITION_MAX_PHOTOS_PER_ENTITY ?? 3);
 
 /**
- * Stable hash of the photo URLs that would actually be indexed (the capped,
- * ordered set). Used to detect when a donor's photos have changed so the sync
- * hook can skip re-indexing unchanged donors.
+ * The distinct photo URLs we actually index for an entity: de-duplicated (the
+ * scraper often repeats the primary photo into the photos[] array) then capped.
+ * Deduping first means the cap selects DISTINCT images - better face coverage,
+ * no duplicate face IDs, and no wasted re-indexing of the same image.
+ */
+function indexablePhotos(photoUrls: string[]): string[] {
+  return [...new Set((photoUrls || []).filter(Boolean))].slice(0, MAX_PHOTOS_PER_ENTITY);
+}
+
+/**
+ * Stable hash of the photos that would actually be indexed. Used to detect when
+ * a donor's photos have changed so the sync hook can skip unchanged donors.
  */
 export function photoSetHash(photoUrls: string[]): string {
-  const used = (photoUrls || []).filter(Boolean).slice(0, MAX_PHOTOS_PER_ENTITY);
-  return createHash("sha1").update(used.join("\n")).digest("hex");
+  return createHash("sha1").update(indexablePhotos(photoUrls).join("\n")).digest("hex");
 }
 
 /**
@@ -187,7 +195,7 @@ export async function indexEntityPhotos(
   photoUrls: string[],
 ): Promise<string[]> {
   const faceIds: string[] = [];
-  for (const url of photoUrls.slice(0, MAX_PHOTOS_PER_ENTITY)) {
+  for (const url of indexablePhotos(photoUrls)) {
     if (!url) continue;
     const bytes = await fetchImageBytes(url);
     if (!bytes) continue;
@@ -210,7 +218,7 @@ export async function indexEntityPhotos(
       console.error(`[face] IndexFaces failed for ${type} ${id} (${url}):`, e?.message || e);
     }
   }
-  return faceIds;
+  return [...new Set(faceIds)];
 }
 
 export async function deleteEntityFaces(faceIds: string[]): Promise<void> {
