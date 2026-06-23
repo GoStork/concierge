@@ -11,6 +11,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { computeClinicSuccessRate, type EggSource, type AgeGroup } from "./lib/ivf-success-rate.js";
 import { DOCTOR_MEMBER_SELECT, enrichDoctorRows } from "./lib/doctor-enrichment.js";
 import { resolveCompensationAndTotalCost, getMatchedCostSheetItems } from "./modules/costs/total-cost.utils.js";
+import { fetchImageBytes, searchByImage, type FaceEntityType } from "./modules/face/face-recognition.service.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -945,6 +946,35 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "find_lookalike_matches",
+        description:
+          "Find egg donors, sperm donors, or surrogates whose face RESEMBLES a photo the parent uploaded earlier in this chat. Use ONLY when the parent has uploaded a photo AND asks to find someone who looks like them (or like a reference person). The parent's photo is supplied automatically by the system - you do NOT pass it. Results are ranked by facial resemblance (0-100). Use the returned IDs in MATCH_CARDs with the matching type and mention the resemblance in your introduction. IMPORTANT: face matching processes biometric data, so you MUST first get the parent's explicit consent in conversation, then call this with consentGranted=true.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            entityType: {
+              type: "string",
+              enum: ["Egg Donor", "Sperm Donor", "Surrogate"],
+              description: "Which inventory to search for look-alikes. Pick based on the conversation (e.g. an intended mother looking for a resembling egg donor -> 'Egg Donor').",
+            },
+            consentGranted: {
+              type: "boolean",
+              description: "Set true ONLY after the parent has explicitly agreed, in the conversation, to have their photo's facial features analyzed for matching. Leave false/omitted if you have not yet obtained consent - the tool will tell you to ask first.",
+            },
+            limit: {
+              type: "number",
+              description: "Number of look-alike results to return (default 3, max 5)",
+            },
+            excludeIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "IDs to exclude (already-presented profiles)",
+            },
+          },
+          required: ["entityType"],
+        },
+      },
+      {
         name: "search_clinics",
         description:
           "Search the database for IVF fertility clinics using semantic vector search across ALL profile data including success rates, services, team members, and specializations. Returns real clinic profiles with their IDs, logos, and locations. Use the 'query' parameter to search by ANY attribute. Use the returned IDs in MATCH_CARDs with type 'Clinic'.",
@@ -1754,6 +1784,85 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const relaxedNote = relaxedFilter ? ` NOTE: No 100% match found. Search was broadened by relaxing "${relaxedFilter}" - present the best available result and clearly tell the parent which property differs from their request.` : "";
       return {
         content: [{ type: "text", text: `Found ${results.length} egg donors:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "Egg Donor" in your MATCH_CARDs. Use the "displayName" as the name. Results sorted by matchScore (1.0 = all criteria matched). If unmatchedCriteria is non-empty, tell the parent which criteria differ before showing the MATCH_CARD.${relaxedNote}` }],
+      };
+    }
+
+    if (name === "find_lookalike_matches") {
+      const { entityType, consentGranted, limit: rawLimit, excludeIds, userId, photoUrl } = args as any;
+      const type = entityType as FaceEntityType;
+      const take = Math.min(rawLimit || 3, 5);
+      const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
+
+      // photoUrl is injected by the AI router from the session's last upload -
+      // never model-supplied. No photo => the parent hasn't uploaded one yet.
+      if (!photoUrl || typeof photoUrl !== "string") {
+        return { content: [{ type: "text", text: `NO_PHOTO: The parent has not uploaded a photo in this chat. Ask them to upload a clear, front-facing photo of themselves (via the + button or by dragging it into the chat), then try again. Do NOT show any MATCH_CARD.` }] };
+      }
+
+      // Biometric consent gate (BIPA-style). Stamp on first explicit consent.
+      let parentProfileId: string | null = null;
+      let alreadyConsented = false;
+      if (userId) {
+        const u = await prisma.user.findUnique({ where: { id: String(userId) }, select: { parentAccount: { select: { intendedParentProfile: { select: { id: true, faceMatchConsentAt: true } } } } } });
+        const ipp = u?.parentAccount?.intendedParentProfile;
+        parentProfileId = ipp?.id ?? null;
+        alreadyConsented = !!ipp?.faceMatchConsentAt;
+      }
+      if (!alreadyConsented) {
+        if (consentGranted !== true) {
+          return { content: [{ type: "text", text: `CONSENT_REQUIRED: Before running a face match, briefly explain that this analyzes the facial features in their uploaded photo (biometric data) solely to find resembling profiles, is not shared, and ask for their explicit okay. Once they agree, call find_lookalike_matches again with consentGranted=true. Do NOT show any MATCH_CARD yet.` }] };
+        }
+        if (parentProfileId) {
+          await prisma.intendedParentProfile.update({ where: { id: parentProfileId }, data: { faceMatchConsentAt: new Date() } }).catch(() => {});
+        }
+      }
+
+      const bytes = await fetchImageBytes(photoUrl);
+      if (!bytes) {
+        return { content: [{ type: "text", text: `PHOTO_UNREADABLE: I couldn't read the uploaded image. Ask the parent to re-upload a clear JPEG/PNG photo. Do NOT show any MATCH_CARD.` }] };
+      }
+
+      const search = await searchByImage(bytes, { types: [type], limit: take });
+      if (!search.ok) {
+        const msg = search.reason === "no_face"
+          ? `NO_FACE: No face was detected in the uploaded photo. Ask the parent to upload a clear, front-facing photo where their face is clearly visible. Do NOT show any MATCH_CARD.`
+          : `FACE_SEARCH_ERROR: The face match service is temporarily unavailable. Apologize and suggest trying again shortly, or searching by attributes (hair/eye color, ethnicity) instead. Do NOT fabricate any MATCH_CARD.`;
+        return { content: [{ type: "text", text: msg }] };
+      }
+
+      const matchList = search.matches.filter((m) => !excludeSet.has(m.entityId));
+      if (matchList.length === 0) {
+        return { content: [{ type: "text", text: `NO_LOOKALIKE: No close ${type} look-alikes were found for this photo. Tell the parent honestly that no strong facial matches came up, and offer to search by attributes instead (hair color, eye color, ethnicity, etc.). Do NOT fabricate any MATCH_CARD.` }] };
+      }
+
+      const ids = matchList.map((m) => m.entityId);
+      const simById = new Map(matchList.map((m) => [m.entityId, m.similarity]));
+      const availWhere = { id: { in: ids }, hiddenFromSearch: { not: true }, NOT: { status: "INACTIVE" } };
+      let rows: any[] = [];
+      if (type === "Egg Donor") {
+        rows = await prisma.eggDonor.findMany({ where: availWhere, select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, race: true, eyeColor: true, hairColor: true } });
+      } else if (type === "Sperm Donor") {
+        rows = await prisma.spermDonor.findMany({ where: availWhere, select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, race: true, eyeColor: true, hairColor: true } });
+      } else {
+        rows = await prisma.surrogate.findMany({ where: availWhere, select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, race: true } });
+      }
+
+      const prefix = type === "Surrogate" ? "Surrogate" : "Donor";
+      const results = rows
+        .map((r: any) => ({
+          id: r.id,
+          displayName: r.firstName || `${prefix} #${cleanExternalId(r.externalId) || r.id.slice(-4)}`,
+          age: r.age ?? null,
+          location: r.location ?? null,
+          ethnicity: r.ethnicity ?? r.race ?? null,
+          eyeColor: r.eyeColor ?? null,
+          hairColor: r.hairColor ?? null,
+          resemblance: Math.round(simById.get(r.id) ?? 0),
+        }))
+        .sort((a, b) => b.resemblance - a.resemblance);
+
+      return {
+        content: [{ type: "text", text: `Found ${results.length} ${type} look-alikes (ranked by facial resemblance):\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Use the "id" field as "providerId" and set type to "${type}" in your MATCH_CARDs. Use "displayName" as the name. In each card's reasons and your intro, mention the facial resemblance naturally (e.g. "strong resemblance to your photo"). Do NOT state a raw percentage as a guarantee - describe it qualitatively (strong/notable resemblance). ALWAYS include a MATCH_CARD for every result.` }],
       };
     }
 

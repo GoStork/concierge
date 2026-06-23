@@ -5,6 +5,7 @@ import * as path from "path";
 import { PrismaService } from "../prisma/prisma.service";
 import { recalcAndPersistTotalCostsForProvider } from "../costs/total-cost.utils";
 import type { StorageService } from "../storage/storage.service";
+import { indexEntityPhotos, deleteEntityFaces, isFaceMatchingConfigured, type FaceEntityType } from "../face/face-recognition.service";
 import {
   captchaSolverConfigured,
   extractRecaptchaSitekey,
@@ -199,6 +200,51 @@ export async function updateProfileEmbedding(
     );
   } catch (e: any) {
     console.error(`Failed to save embedding for ${table} ${id}:`, e.message);
+  }
+}
+
+/**
+ * (Re)index an entity's photos in the AWS Rekognition look-alike face
+ * collection. Best-effort and fire-and-forget at call sites - never blocks a
+ * profile save, and silently no-ops when face matching is not configured.
+ */
+export async function indexEntityFaces(
+  prisma: PrismaService,
+  table: "EggDonor" | "Surrogate" | "SpermDonor",
+  id: string,
+): Promise<void> {
+  if (!isFaceMatchingConfigured()) return;
+  const typeMap: Record<string, FaceEntityType> = {
+    EggDonor: "Egg Donor",
+    SpermDonor: "Sperm Donor",
+    Surrogate: "Surrogate",
+  };
+  try {
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT "photoUrl", "photos", "rekognitionFaceIds" FROM "${table}" WHERE id = $1`,
+      id,
+    );
+    const row = rows?.[0];
+    if (!row) return;
+    const photoUrls: string[] = [
+      ...(row.photoUrl ? [row.photoUrl] : []),
+      ...(Array.isArray(row.photos) ? row.photos : []),
+    ].filter(Boolean);
+    if (photoUrls.length === 0) return;
+
+    // Drop any prior faces so a photo change does not leave stale vectors.
+    if (Array.isArray(row.rekognitionFaceIds) && row.rekognitionFaceIds.length > 0) {
+      await deleteEntityFaces(row.rekognitionFaceIds).catch(() => {});
+    }
+
+    const faceIds = await indexEntityPhotos(typeMap[table], id, photoUrls);
+    await prisma.$executeRawUnsafe(
+      `UPDATE "${table}" SET "rekognitionFaceIds" = $1, "faceIndexedAt" = NOW() WHERE id = $2`,
+      faceIds,
+      id,
+    );
+  } catch (e: any) {
+    console.error(`[face] indexEntityFaces failed for ${table} ${id}:`, e?.message || e);
   }
 }
 
@@ -1899,6 +1945,7 @@ async function upsertEggDonor(
   await migrateLocalPhotosToGcs(prisma, "eggDonor", providerId, extId, storageService || null).catch(() => {});
 
   updateProfileEmbedding(prisma, "EggDonor", upsertedDonor.id, mergedProfile).catch(() => {});
+  indexEntityFaces(prisma, "EggDonor", upsertedDonor.id).catch(() => {});
   return { isNew };
 }
 
@@ -2082,6 +2129,7 @@ async function upsertSurrogate(
   await migrateLocalPhotosToGcs(prisma, "surrogate", providerId, extId, storageService || null).catch(() => {});
 
   updateProfileEmbedding(prisma, "Surrogate", upsertedSurrogate.id, mergedProfile).catch(() => {});
+  indexEntityFaces(prisma, "Surrogate", upsertedSurrogate.id).catch(() => {});
   return { isNew };
 }
 
@@ -2239,6 +2287,7 @@ async function upsertSpermDonor(
   await migrateLocalPhotosToGcs(prisma, "spermDonor", providerId, extId, storageService || null).catch(() => {});
 
   updateProfileEmbedding(prisma, "SpermDonor", upsertedSpermDonor.id, mergedProfile).catch(() => {});
+  indexEntityFaces(prisma, "SpermDonor", upsertedSpermDonor.id).catch(() => {});
   return { isNew };
 }
 

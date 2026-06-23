@@ -849,6 +849,11 @@ model EggDonor {
   sponsoredUntil       DateTime?
   sponsorBoostSeed     Int                         @default(0)
   profileEmbedding     Unsupported("vector(768)")?
+  // AWS Rekognition look-alike face index: faceIndexedAt stamps when this
+  // donor's photos were registered in the face collection; rekognitionFaceIds
+  // holds the returned FaceIds so they can be deleted on re-index/removal.
+  faceIndexedAt        DateTime?
+  rekognitionFaceIds   String[]                    @default([])
   provider             Provider                    @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
@@ -924,6 +929,9 @@ model Surrogate {
   sponsoredUntil               DateTime?
   sponsorBoostSeed             Int                         @default(0)
   profileEmbedding             Unsupported("vector(768)")?
+  // AWS Rekognition look-alike face index (see EggDonor.faceIndexedAt).
+  faceIndexedAt                DateTime?
+  rekognitionFaceIds           String[]                    @default([])
   provider                     Provider                    @relation(fields: [providerId], references: [id])
   reservedByParent             User?                       @relation("SurrogateReservations", fields: [reservedByParentId], references: [id], onDelete: SetNull)
 
@@ -991,6 +999,9 @@ model SpermDonor {
   sponsoredUntil       DateTime?
   sponsorBoostSeed     Int                         @default(0)
   profileEmbedding     Unsupported("vector(768)")?
+  // AWS Rekognition look-alike face index (see EggDonor.faceIndexedAt).
+  faceIndexedAt        DateTime?
+  rekognitionFaceIds   String[]                    @default([])
   provider             Provider                    @relation(fields: [providerId], references: [id])
 
   @@unique([providerId, externalId])
@@ -1473,6 +1484,10 @@ model AiChatSession {
   // the agreement is fully signed, signalling GoStork's portion of the
   // workflow is complete and the provider has taken over.
   handoffCompletedAt DateTime?
+  // Most recent image the parent uploaded in this chat. The look-alike face
+  // matcher (find_lookalike_matches) searches against this photo; the AI
+  // router injects it into the tool args (never trusts a model-supplied URL).
+  lastUploadedPhotoUrl String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -1517,6 +1532,10 @@ model AiChatMessage {
 model IntendedParentProfile {
   id              String @id @default(uuid())
   parentAccountId String @unique
+
+  // Stamped the first time the parent consents to biometric (face) processing
+  // for look-alike donor/surrogate matching. Gates find_lookalike_matches.
+  faceMatchConsentAt DateTime?
 
   interestedServices     String[] @default([])
   journeyStage           String?

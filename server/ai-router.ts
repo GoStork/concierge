@@ -291,6 +291,7 @@ async function callTier2Claude(
   forceToolUse = false,
   parentAccountId: string | null = null,
   authUserId: string | null = null,
+  lookalikePhotoUrl: string | null = null,
 ): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
   const hasTools = openAiTools.length > 0;
 
@@ -299,6 +300,16 @@ async function callTier2Claude(
   const injectAuthUser = (fc: { name: string; args: any }) => {
     if (authUserId && fc.name === "get_parent_meetings") {
       fc.args = { ...(fc.args || {}), userId: authUserId };
+    }
+    // Look-alike face match: both the parent identity and the photo to match
+    // are server-supplied (never trust model-supplied values). photoUrl is the
+    // session's most recent upload.
+    if (fc.name === "find_lookalike_matches") {
+      fc.args = {
+        ...(fc.args || {}),
+        ...(authUserId ? { userId: authUserId } : {}),
+        ...(lookalikePhotoUrl ? { photoUrl: lookalikePhotoUrl } : {}),
+      };
     }
   };
 
@@ -346,7 +357,7 @@ async function callTier2Claude(
   let toolCallsExecuted = false;
   const searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
   const t0 = Date.now();
-  const searchToolNames = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics"];
+  const searchToolNames = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics", "find_lookalike_matches"];
   console.log(`[TIER2] start: history=${chatHistory.length} turns, system=${fullSystem.length} chars, tools=${openAiTools.length}`);
 
   // After search_surrogacy_agencies returns, reorder the agency list cheapest-first
@@ -1789,6 +1800,15 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }
     }
 
+    // Remember the parent's most recent uploaded image so the look-alike face
+    // matcher (find_lookalike_matches) can search against it on a later turn.
+    // Only images - documents (PDFs etc.) are not face-matchable.
+    if (currentSessionId && attachmentData?.mimeType?.startsWith?.("image/") && attachmentData?.url) {
+      await prisma.aiChatSession
+        .update({ where: { id: currentSessionId }, data: { lastUploadedPhotoUrl: String(attachmentData.url) } })
+        .catch(() => {});
+    }
+
     // Per-profile inquiry: the parent just engaged about whatever profile is on
     // screen (the latest match card). Fire-and-forget; deduped per (session,
     // profile); the sponsorship dashboard filters this to the sponsored subset.
@@ -1808,7 +1828,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
-      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true },
+      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true },
     });
 
     // If a GoStork human concierge has joined and not yet concluded, silence the AI
@@ -4091,6 +4111,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         forceToolUseForSearch,
         userRecord?.parentAccountId ?? null,
         userId,
+        currentSession?.lastUploadedPhotoUrl ?? null,
       );
       // If Claude executed a search tool but returned empty text, retry once with an explicit
       // instruction to present the results. This happens when Claude calls the tool successfully
