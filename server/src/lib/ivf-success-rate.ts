@@ -18,6 +18,11 @@ export type AgeGroup = "under_35" | "35_37" | "38_40" | "over_40";
 export interface IvfRateRow {
   profileType: string; // "own_eggs" | "donor"
   metricCode: string;
+  // For donor metrics, the embryo/egg combination, e.g. "frozen_embryos",
+  // "fresh_embryos_fresh_eggs", "fresh_embryos_frozen_eggs", "donated_embryos".
+  // The donor live-birth rate must be read from the frozen-embryo submetric (the
+  // modern donor-egg path); the others are frequently 0 for a given clinic.
+  submetric?: string | null;
   ageGroup?: string | null;
   isNewPatient?: boolean;
   successRate: number | string | { toString(): string };
@@ -73,9 +78,24 @@ export function computeClinicSuccessRate(
 
   let primaryRate: IvfRateRow | null = null;
   if (eggSource === "donor") {
-    // Donor egg rates are not age-specific.
+    // Donor egg rates are not age-specific, but the metric has several submetrics
+    // (frozen_embryos / fresh_embryos_fresh_eggs / fresh_embryos_frozen_eggs /
+    // donated_embryos). The real donor-egg live-birth rate lives in the
+    // frozen-embryo submetric (modern donor-egg IVF); the others are commonly 0
+    // for a given clinic, so picking the first row blindly shows a false 0%.
+    const donorRows = rows.filter(
+      (r) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor",
+    );
     primaryRate =
-      rows.find((r) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor") || null;
+      // Canonical: frozen-embryo donor metric, when the clinic actually has cycles.
+      donorRows.find((r) => r.submetric === "frozen_embryos" && (r.cycleCount ?? 0) > 0) ||
+      // Frozen has no cycles -> fall back to any submetric that does and is non-zero.
+      donorRows.find((r) => (r.cycleCount ?? 0) > 0 && Number(r.successRate) > 0) ||
+      // Otherwise still prefer frozen (a genuine reported 0% with cycles), then any.
+      donorRows.find((r) => r.submetric === "frozen_embryos") ||
+      donorRows.find((r) => Number(r.successRate) > 0) ||
+      donorRows[0] ||
+      null;
   } else {
     // Own eggs: prefer the new-patient metric when first-time IVF, then fall back.
     if (isNewPatient) {
@@ -130,9 +150,13 @@ export function computeClinicSuccessRate(
       if (!ratesByAge[label]) ratesByAge[label] = Math.round(Number(r.successRate) * 100);
     }
   }
-  const donorRate = rows.find(
+  const donorRatesAll = rows.filter(
     (r) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor",
   );
+  const donorRate =
+    donorRatesAll.find((r) => r.submetric === "frozen_embryos") ||
+    donorRatesAll.find((r) => Number(r.successRate) > 0) ||
+    donorRatesAll[0];
   if (donorRate) ratesByAge["Donor eggs"] = Math.round(Number(donorRate.successRate) * 100);
 
   const rateLabel = eggSource === "donor" ? "Donor eggs" : `Own eggs, ${ageLabelOf(ageGroup)}`;

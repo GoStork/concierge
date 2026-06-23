@@ -1,4 +1,7 @@
-import { PrismaService } from "../prisma/prisma.service";
+// Type-only import: PrismaService is used purely as a parameter type here, so
+// importing the type (erased at compile time) lets the standalone MCP process
+// reuse these cost utils without pulling in the NestJS service / a 2nd Prisma client.
+import type { PrismaService } from "../prisma/prisma.service";
 
 const DONOR_TYPE_SERVICE_NAMES: Record<string, string[]> = {
   "egg-donor": ["Egg Donor Agency", "Egg Bank"],
@@ -156,6 +159,40 @@ export async function resolveCompensationAndTotalCost(
   return {
     resolvedCompensation,
     calculatedTotalCost: { min: minTotal, max: maxTotal },
+  };
+}
+
+// Return the LINE ITEMS of the cost sheet that resolveCompensationAndTotalCost
+// would total for this donor type - same most-specific-sheet selection - so a
+// caller can render a full per-line cost-sheet breakdown (e.g. a side-by-side
+// donor cost-sheet comparison) instead of only the summed total. Returns null
+// when the provider has no matching approved sheet.
+export async function getMatchedCostSheetItems(
+  prisma: PrismaService,
+  providerId: string,
+  donorType: string,
+  subType?: string | null,
+  sheetStatuses: string[] = ["APPROVED"],
+): Promise<{ items: { category: string; key: string; minValue: number | null; maxValue: number | null; isIncluded: boolean; isTier: boolean }[] } | null> {
+  const leaf = canonicalSubTypeLeaf(donorType, subType);
+  const baseWhere: any = { providerId, parentClientId: null, status: { in: sheetStatuses } };
+  const sheetWhere: any = leaf ? { ...baseWhere, subTypes: { has: leaf } } : baseWhere;
+  const candidateSheets = await prisma.providerCostSheet.findMany({
+    where: sheetWhere,
+    include: { items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] } },
+    orderBy: { version: "desc" },
+  });
+  const sheet = pickMostSpecificSheet(candidateSheets, serviceLeavesForDonorType(donorType));
+  if (!sheet || sheet.items.length === 0) return null;
+  return {
+    items: sheet.items.map((i: any) => ({
+      category: i.category,
+      key: i.key,
+      minValue: i.minValue,
+      maxValue: i.maxValue,
+      isIncluded: i.isIncluded,
+      isTier: i.isTier === true,
+    })),
   };
 }
 

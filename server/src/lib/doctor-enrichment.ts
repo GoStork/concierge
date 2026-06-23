@@ -66,6 +66,7 @@ export const DOCTOR_MEMBER_SELECT = {
           ageGroup: true,
           isNewPatient: true,
           metricCode: true,
+          submetric: true,
           top10pct: true,
           cycleCount: true,
           profileType: true,

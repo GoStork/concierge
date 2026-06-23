@@ -45,7 +45,7 @@ import {
   type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
 import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
-import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera } from "lucide-react";
+import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera, UploadCloud } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { ReadinessPromptCard } from "@/components/readiness-prompt-card";
@@ -2680,6 +2680,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [parentUploading, setParentUploading] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [parentPlusOpen, setParentPlusOpen] = useState(false);
+  // Drag-and-drop file attach onto the whole chat column. dragDepthRef counts
+  // enter/leave across nested children so the overlay doesn't flicker when the
+  // cursor moves over message bubbles.
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const dragDepthRef = useRef(0);
   // Embedded Stripe payment panel - opened when the parent clicks "Pay Now
   // Securely" on an invoice card. Holds the paymentToken of the invoice
   // being paid; null = panel closed.
@@ -2800,6 +2805,46 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const removeStagedFile = useCallback((index: number) => {
     setStagedFiles(prev => prev.filter((_, i) => i !== index));
   }, []);
+
+  // Only react to actual file drags (ignore dragging text, links, or cards
+  // around inside the chat).
+  const isFileDrag = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer?.types || []).includes("Files");
+
+  const handleChatDragEnter = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDraggingFile(true);
+  }, []);
+
+  const handleChatDragOver = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const handleChatDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    dragDepthRef.current -= 1;
+    if (dragDepthRef.current <= 0) {
+      dragDepthRef.current = 0;
+      setIsDraggingFile(false);
+    }
+  }, []);
+
+  const handleChatDrop = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingFile(false);
+    if (parentUploading) return;
+    const dropped = Array.from(e.dataTransfer.files || []);
+    if (dropped.length === 0) return;
+    // Stage them in the same tray the "+" button feeds; the existing send flow
+    // uploads via /api/chat-upload, which validates type/size server-side.
+    setStagedFiles(prev => [...prev, ...dropped]);
+  }, [parentUploading]);
 
   const uploadAndSendFiles = useCallback(async (filesToUpload: File[], messageText: string) => {
     if (filesToUpload.length === 0) return;
@@ -4304,6 +4349,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     }
   };
 
+  // Paste-to-attach: pasting a screenshot/image (Cmd+V) stages it like a drop.
+  // Plain text paste falls through to the textarea's default behavior.
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const files = items
+      .filter(it => it.kind === "file")
+      .map(it => it.getAsFile())
+      .filter((f): f is File => !!f);
+    if (files.length === 0) return;
+    e.preventDefault();
+    if (parentUploading) return;
+    setStagedFiles(prev => [...prev, ...files]);
+  }, [parentUploading]);
+
   useEffect(() => {
     const el = chatInputRef.current;
     if (!el) return;
@@ -4354,7 +4413,30 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         className={`flex ${isInline ? "flex-1 min-h-0 min-w-0" : "h-dvh"} overflow-hidden${!isEmbedded && !isInline && !(providerInChat && (sessionBookings?.length ?? 0) > 0) ? " max-w-3xl mx-auto" : ""}`}
         data-testid="concierge-chat-page"
       >
-        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        <div
+          className="flex flex-col flex-1 min-w-0 overflow-hidden relative"
+          onDragEnter={handleChatDragEnter}
+          onDragOver={handleChatDragOver}
+          onDragLeave={handleChatDragLeave}
+          onDrop={handleChatDrop}
+        >
+        {isDraggingFile && (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
+            style={{ backgroundColor: `${brandColor}14`, backdropFilter: "blur(2px)" }}
+            data-testid="concierge-drop-overlay"
+          >
+            <div
+              className="flex flex-col items-center gap-3 rounded-[var(--radius)] border-2 border-dashed bg-background/90 px-10 py-8 shadow-lg"
+              style={{ borderColor: brandColor }}
+            >
+              <UploadCloud className="w-9 h-9" style={{ color: brandColor }} />
+              <div className="text-sm font-medium font-ui" style={{ color: brandColor }}>
+                Drop files to attach
+              </div>
+            </div>
+          </div>
+        )}
         {!isEmbedded && !isInline && <div
           className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
           data-testid="concierge-chat-header"
@@ -5235,6 +5317,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               disabled={sending || parentUploading || !isOnline}
               className="flex-1 border border-input bg-background text-foreground placeholder:text-muted-foreground rounded-full shadow-sm resize-none overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:opacity-50"
               style={{

@@ -10,6 +10,7 @@ import pg from "pg";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { computeClinicSuccessRate, type EggSource, type AgeGroup } from "./lib/ivf-success-rate.js";
 import { DOCTOR_MEMBER_SELECT, enrichDoctorRows } from "./lib/doctor-enrichment.js";
+import { resolveCompensationAndTotalCost, getMatchedCostSheetItems } from "./modules/costs/total-cost.utils.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -543,6 +544,30 @@ async function buildProviderCostPrograms(providerId: string): Promise<Array<{ pr
   return out;
 }
 
+// Fetch a provider's approved cost programs WITH their raw line items (the most
+// recent approved sheet per program). Powers the clinic/agency line-item
+// cost-sheet comparison - the donor path uses getMatchedCostSheetItems instead.
+async function fetchProviderProgramsWithItems(providerId: string): Promise<Array<{ name: string; subTypes: string[]; tab: string | null; items: any[] }>> {
+  const programs = await prisma.costProgram.findMany({
+    where: { providerId },
+    include: {
+      costSheets: {
+        where: { status: "APPROVED", parentClientId: null },
+        orderBy: { version: "desc" },
+        include: { items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] } },
+      },
+    },
+  });
+  return (programs as any[])
+    .map((p) => ({
+      name: p.name,
+      subTypes: p.subTypes || [],
+      tab: p.tab,
+      items: (p.costSheets[0]?.items || []).map((i: any) => ({ category: i.category, key: i.key, minValue: i.minValue, maxValue: i.maxValue, isIncluded: i.isIncluded, isTier: i.isTier === true })),
+    }))
+    .filter((p) => p.items.length > 0);
+}
+
 // Assemble a single provider's FULL profile (clinic / egg-donor agency /
 // surrogacy agency / egg bank / sperm bank / legal). Reused by
 // get_provider_profile AND resolve_comparison so the two never drift.
@@ -567,7 +592,7 @@ async function buildProviderProfile(providerId: string): Promise<any | null> {
       surrogacyProfile: { select: { numberOfBabiesBorn: true, timeToMatch: true, familiesPerCoordinator: true, screening: true } },
       ivfSuccessRates: {
         where: { metricCode: { in: ["pct_new_patients_live_birth_after_1_retrieval", "pct_intended_retrievals_live_births", "pct_transfers_live_births_donor"] } },
-        select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, top10pct: true, cycleCount: true, profileType: true },
+        select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, submetric: true, top10pct: true, cycleCount: true, profileType: true },
       },
     },
   });
@@ -605,6 +630,51 @@ async function buildProviderProfile(providerId: string): Promise<any | null> {
     ivf: { twinsAllowed: p.ivfTwinsAllowed, transferFromOtherClinics: p.ivfTransferFromOtherClinics, acceptingPatients: p.ivfAcceptingPatients || null },
     sponsored: !!p.sponsoredUntil && new Date(p.sponsoredUntil).getTime() > Date.now(),
   };
+}
+
+// Resolve a provider identifier that may be a UUID OR a name/abbreviation the AI
+// passed straight into a COMPARE_CARD (so it doesn't have to burn tool rounds
+// searching for IDs first). Cascade: exact id -> whole-name contains -> all
+// significant tokens contained -> semantic vector search (handles abbreviations
+// like "RMA of Southern California" -> "Reproductive Medicine Associates ...").
+const PROVIDER_NAME_STOP = new Set(["the", "of", "and", "for", "inc", "llc", "pllc", "center", "centre", "clinic", "fertility", "medical", "group", "associates", "los", "san"]);
+// Significant lowercase word tokens (>=4 chars, not boilerplate) used to confirm a
+// fuzzy/vector hit is actually the same clinic and not a loose semantic neighbor.
+function providerNameTokens(s: string): string[] {
+  return (s || "").toLowerCase().split(/[\s,()\-_.]+/).filter((t) => t.length >= 4 && !PROVIDER_NAME_STOP.has(t));
+}
+async function resolveProviderId(idOrName: string): Promise<string | null> {
+  if (!idOrName) return null;
+  // 1. Exact UUID.
+  const byId = await prisma.provider.findUnique({ where: { id: idOrName }, select: { id: true } }).catch(() => null);
+  if (byId) return byId.id;
+  // 2. Whole-string name contains.
+  const byName = await prisma.provider.findFirst({ where: { name: { contains: idOrName.trim(), mode: "insensitive" } }, select: { id: true } });
+  if (byName) return byName.id;
+  // 3. All significant tokens contained (handles word-order / extra words in a full name).
+  const tokens = idOrName.split(/[\s,()\-_.]+/).filter((t) => t.length > 2 && !PROVIDER_NAME_STOP.has(t.toLowerCase()));
+  if (tokens.length > 0) {
+    const byTokens = await prisma.provider.findFirst({
+      where: { AND: tokens.map((t) => ({ name: { contains: t, mode: "insensitive" as const } })) },
+      select: { id: true },
+    });
+    if (byTokens) return byTokens.id;
+  }
+  // 4. Semantic fallback for abbreviations (e.g. "RMA of Southern California").
+  // GUARDED: only accept a vector hit that shares a significant word with the
+  // query, so a loose neighbor (a different clinic in the same region) is rejected
+  // instead of silently substituted.
+  const queryTokens = new Set(providerNameTokens(idOrName));
+  if (queryTokens.size > 0) {
+    const vs = await vectorSearch("Provider", idOrName, 8, undefined, `"Provider".id, "Provider".name`);
+    if (vs) {
+      for (const r of vs) {
+        if (!r?.id) continue;
+        if (providerNameTokens(r.name).some((t) => queryTokens.has(t))) return r.id;
+      }
+    }
+  }
+  return null;
 }
 
 const server = new Server(
@@ -1792,7 +1862,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         members: { select: { name: true, title: true, bio: true, isMedicalDirector: true }, orderBy: { sortOrder: "asc" as const }, take: 10 },
         ivfSuccessRates: {
           where: { metricCode: { in: ["pct_new_patients_live_birth_after_1_retrieval", "pct_intended_retrievals_live_births", "pct_transfers_live_births_donor"] } },
-          select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, top10pct: true, cycleCount: true, profileType: true },
+          select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, submetric: true, top10pct: true, cycleCount: true, profileType: true },
         },
         ivfTwinsAllowed: true,
         ivfTransferFromOtherClinics: true,
@@ -2191,14 +2261,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     if (name === "get_provider_profile") {
       const { providerId, providerName } = args as any;
-      let id = providerId as string | undefined;
-      if (!id && providerName) {
-        const found = await prisma.provider.findFirst({
-          where: { name: { contains: String(providerName).trim(), mode: "insensitive" } },
-          select: { id: true },
-        });
-        id = found?.id;
-      }
+      let id: string | null = null;
+      if (providerId) id = await resolveProviderId(String(providerId));
+      if (!id && providerName) id = await resolveProviderId(String(providerName));
       if (!id) {
         return { content: [{ type: "text", text: "Error: Provide a providerId, or a providerName that matches a provider." }] };
       }
@@ -2261,6 +2326,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         ageGroup: (["under_35", "35_37", "38_40", "over_40"].includes(a.ageGroup) ? a.ageGroup : "under_35") as AgeGroup,
         isNewPatient: a.isNewPatient === false ? false : true,
       };
+      // The parent's eligible cost-program subtypes (from CostsService, passed by
+      // ai-router). When present, the cost dimension is narrowed to the programs
+      // that actually apply to this parent's journey - e.g. a parent who already
+      // has embryos sees only transfer (FET) programs, not embryo-creation ones.
+      const costSubtypes: string[] = Array.isArray(a.costSubtypes) ? a.costSubtypes.map((x: any) => String(x)).filter(Boolean) : [];
       if (uniqueIds.length < 2) {
         return { content: [{ type: "text", text: JSON.stringify({ error: "Need at least 2 distinct entities to compare." }) }] };
       }
@@ -2274,11 +2344,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         : rawType === "surrogate" ? "surrogate"
         : "provider"; // surrogacy agency, egg bank, sperm bank, provider, legal, agency
       const KNOWN_DIMS: Record<string, string[]> = {
-        clinic: ["successRates", "cost", "services", "specialties", "practices", "team", "reviews", "location"],
-        provider: ["services", "cost", "requirements", "reviews", "location"],
+        clinic: ["successRates", "cost", "costSheet", "services", "specialties", "practices", "team", "reviews", "location"],
+        provider: ["services", "cost", "costSheet", "requirements", "reviews", "location"],
         doctor: ["specialties", "experience", "clinics", "reviews", "languages"],
-        donor: ["physical", "ethnicity", "education", "health", "cost"],
-        surrogate: ["experience", "pregnancyHistory", "compensation", "preferences", "location"],
+        donor: ["physical", "ethnicity", "education", "health", "cost", "costSheet"],
+        surrogate: ["experience", "pregnancyHistory", "compensation", "preferences", "location", "costSheet"],
       };
       if (Array.isArray(dims) && !dims.some((d) => KNOWN_DIMS[bucket].includes(d))) dims = "all";
 
@@ -2306,18 +2376,76 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return rows;
       };
 
+      // Narrow a clinic's cost programs to the ones relevant to THIS parent's
+      // journey STAGE. We intersect only on IVF stage leaves (ivf_cycle_* /
+      // embryo_creation_* / fet_* / shipping_* / egg_freezing_*) - NOT the broad
+      // service tags (surrogacy / egg_donor_* / sperm_donor), which every
+      // surrogacy program carries and so would never narrow. Example: a parent who
+      // already has embryos has stage leaf "fet_to_surrogate", which keeps the FET
+      // program and drops the embryo-creation programs. Falls back to ivf-ish
+      // (clinic) or all (agency) when the parent's stage scope is unknown/matches none.
+      const IVF_STAGE_PREFIXES = ["ivf_cycle", "embryo_creation", "fet_", "shipping_embryos", "shipping_eggs", "egg_freezing"];
+      const isStageLeaf = (s: string) => IVF_STAGE_PREFIXES.some((p) => s.startsWith(p));
+      const scopeCostPrograms = (programs: any[], ivfFallback: boolean) => {
+        const all = programs || [];
+        const stageScope = costSubtypes.filter(isStageLeaf);
+        if (stageScope.length > 0) {
+          const scoped = all.filter((c: any) => (c.subTypes || []).some((s: string) => isStageLeaf(s) && stageScope.includes(s)));
+          if (scoped.length > 0) return scoped;
+        }
+        if (!ivfFallback) return all;
+        return all.filter((c: any) => !c.tab || c.tab === "ivf_cycle" || (c.subTypes || []).some((s: string) => s.startsWith("ivf_") || s.startsWith("fet") || s.startsWith("embryo")));
+      };
+
       let groups: any[] = [];
       let entities: any[] = [];
       let title = "Comparison";
 
+      // Line-item cost-sheet comparison for clinics/agencies: pick each provider's
+      // program relevant to the parent's journey stage (cheapest scoped program),
+      // then lay out its line items - including pricing tiers, which ARE the price
+      // for clinic programs - unioned across providers. A "Program" row names which
+      // program each column reflects (providers may have different relevant ones).
+      const buildProviderCostSheetGroup = async (loadedProviders: any[], ivfFallback: boolean) => {
+        const programsPer = await Promise.all(loadedProviders.map((p: any) => fetchProviderProgramsWithItems(p.id)));
+        const stageScope = costSubtypes.filter(isStageLeaf);
+        const chosenPer = programsPer.map((progs: any[]) => {
+          let cand = progs;
+          if (stageScope.length > 0) {
+            const sc = progs.filter((pr) => (pr.subTypes || []).some((s: string) => isStageLeaf(s) && stageScope.includes(s)));
+            if (sc.length) cand = sc;
+          } else if (ivfFallback) {
+            const sc = progs.filter((pr) => !pr.tab || pr.tab === "ivf_cycle" || (pr.subTypes || []).some((s: string) => s.startsWith("ivf_") || s.startsWith("fet") || s.startsWith("embryo")));
+            if (sc.length) cand = sc;
+          }
+          if (!cand.length) return null;
+          const baseTotal = (pr: any) => pr.items.filter((i: any) => i.isIncluded && !i.isTier).reduce((sum: number, i: any) => sum + (i.minValue ?? 0), 0);
+          return [...cand].sort((a, b) => baseTotal(a) - baseTotal(b))[0];
+        });
+        const seen = new Set<string>(); const labels: string[] = [];
+        for (const pr of chosenPer) if (pr) for (const it of pr.items) { if (!seen.has(it.key)) { seen.add(it.key); labels.push(it.key); } }
+        if (!labels.length) return;
+        const rows: any[] = [];
+        pushRow(rows, row("Program", chosenPer.map((pr: any) => ({ display: pr?.name || "-" }))));
+        for (const label of labels) {
+          const values = chosenPer.map((pr: any) => {
+            const it = pr?.items.find((x: any) => x.key === label);
+            if (!it) return { display: "-" };
+            if (it.isIncluded === false) return { display: "Not included" };
+            const min = it.minValue ?? 0, max = it.maxValue ?? min;
+            if (min === 0 && max === 0) return { display: "Included" };
+            return { display: min === max ? fmtMoney(min) : `${fmtMoney(min)} - ${fmtMoney(max)}` };
+          });
+          pushRow(rows, row(label, values));
+        }
+        if (rows.length > 1) groups.push({ key: "costSheet", label: "Cost sheet", rows });
+      };
+
       if (bucket === "clinic" || bucket === "provider") {
         const loaded: any[] = [];
         for (const idOrName of uniqueIds) {
-          let prof = await buildProviderProfile(idOrName);
-          if (!prof) {
-            const found = await prisma.provider.findFirst({ where: { name: { contains: idOrName, mode: "insensitive" } }, select: { id: true } });
-            if (found) prof = await buildProviderProfile(found.id);
-          }
+          const pid = await resolveProviderId(idOrName);
+          const prof = pid ? await buildProviderProfile(pid) : null;
           if (prof) loaded.push(prof);
         }
         if (loaded.length < 2) return { content: [{ type: "text", text: JSON.stringify({ error: "Could not resolve at least 2 providers to compare." }) }] };
@@ -2327,24 +2455,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           title = "Clinic comparison";
           if (wantDim("successRates")) {
             const rows: any[] = [];
-            for (const band of ["Under 35", "35-37", "38-40", "Over 40"]) {
-              pushRow(rows, row(`Live birth rate · ${band}`, loaded.map((p) => { const e = p.successRates?.ownEggsByAge?.[band]; return { display: e?.rate || "-", raw: e?.successPct ?? null }; }), "high"));
+            if (ctx.eggSource === "donor") {
+              // Donor-egg journey: own-egg age bands are irrelevant. Show the
+              // donor-egg live-birth rate (frozen-embryo metric) + its context.
+              pushRow(rows, row("Live birth rate · donor eggs", loaded.map((p) => { const d = p.successRates?.donorEggs; return { display: d?.rate || "-", raw: d?.successPct ?? null }; }), "high"));
+              pushRow(rows, row("National average", loaded.map((p) => { const d = p.successRates?.donorEggs; return { display: d?.nationalAverage || "-", raw: numFromPct(d?.nationalAverage) }; })));
+              pushRow(rows, row("Top 10% nationally", loaded.map((p) => { const d = p.successRates?.donorEggs; return { display: d ? yesNo(d.top10pct) : "-" }; })));
+              pushRow(rows, row("Cycles (sample size)", loaded.map((p) => { const d = p.successRates?.donorEggs; return { display: d?.cycleCount != null ? String(d.cycleCount) : "-", raw: d?.cycleCount ?? null }; }), "high"));
+            } else {
+              // Own-egg journey: live-birth rate by age band + the parent's age-band context.
+              for (const band of ["Under 35", "35-37", "38-40", "Over 40"]) {
+                pushRow(rows, row(`Live birth rate · ${band}`, loaded.map((p) => { const e = p.successRates?.ownEggsByAge?.[band]; return { display: e?.rate || "-", raw: e?.successPct ?? null }; }), "high"));
+              }
+              const ctxEntry = (p: any) => p.successRates?.ownEggsByAge?.[COMPARE_AGE_LABELS[ctx.ageGroup]];
+              pushRow(rows, row("National average", loaded.map((p) => { const e = ctxEntry(p); return { display: e?.nationalAverage || "-", raw: numFromPct(e?.nationalAverage) }; })));
+              pushRow(rows, row("Top 10% nationally", loaded.map((p) => { const e = ctxEntry(p); return { display: e ? yesNo(e.top10pct) : "-" }; })));
+              pushRow(rows, row("Cycles (sample size)", loaded.map((p) => { const e = ctxEntry(p); return { display: e?.cycleCount != null ? String(e.cycleCount) : "-", raw: e?.cycleCount ?? null }; }), "high"));
             }
-            pushRow(rows, row("Live birth rate · donor eggs", loaded.map((p) => { const d = p.successRates?.donorEggs; return { display: d?.rate || "-", raw: d?.successPct ?? null }; }), "high"));
-            const ctxEntry = (p: any) => (ctx.eggSource === "donor" ? p.successRates?.donorEggs : p.successRates?.ownEggsByAge?.[COMPARE_AGE_LABELS[ctx.ageGroup]]);
-            pushRow(rows, row("National average", loaded.map((p) => { const e = ctxEntry(p); return { display: e?.nationalAverage || "-", raw: numFromPct(e?.nationalAverage) }; })));
-            pushRow(rows, row("Top 10% nationally", loaded.map((p) => { const e = ctxEntry(p); return { display: e ? yesNo(e.top10pct) : "-" }; })));
-            pushRow(rows, row("Cycles (sample size)", loaded.map((p) => { const e = ctxEntry(p); return { display: e?.cycleCount != null ? String(e.cycleCount) : "-", raw: e?.cycleCount ?? null }; }), "high"));
             if (rows.length) groups.push({ key: "successRates", label: "Success rates", rows });
           }
           if (wantDim("cost")) {
             const rows: any[] = [];
-            const ivfPrograms = (p: any) => (p.costPrograms || []).filter((c: any) => !c.tab || c.tab === "ivf_cycle" || (c.subTypes || []).some((s: string) => s.startsWith("ivf_") || s.startsWith("fet") || s.startsWith("embryo")));
-            pushRow(rows, row("Starting price", loaded.map((p) => { const mins = ivfPrograms(p).map((c: any) => c.minTotal).filter((n: number) => n > 0); const m = mins.length ? Math.min(...mins) : null; return { display: fmtMoney(m), raw: m }; }), "low"));
-            pushRow(rows, row("Price range", loaded.map((p) => { const cp = ivfPrograms(p); const mins = cp.map((c: any) => c.minTotal).filter((n: number) => n > 0); const maxs = cp.map((c: any) => c.maxTotal).filter((n: number) => n > 0); if (!mins.length) return { display: "-" }; return { display: `${fmtMoney(Math.min(...mins))} - ${fmtMoney(Math.max(...maxs))}` }; })));
-            pushRow(rows, row("Programs offered", loaded.map((p) => { const n = ivfPrograms(p).length; return { display: n ? String(n) : "-", raw: n || null }; })));
+            const cpFor = (p: any) => scopeCostPrograms(p.costPrograms || [], true);
+            pushRow(rows, row("Starting price", loaded.map((p) => { const mins = cpFor(p).map((c: any) => c.minTotal).filter((n: number) => n > 0); const m = mins.length ? Math.min(...mins) : null; return { display: fmtMoney(m), raw: m }; }), "low"));
+            pushRow(rows, row("Price range", loaded.map((p) => { const cp = cpFor(p); const mins = cp.map((c: any) => c.minTotal).filter((n: number) => n > 0); const maxs = cp.map((c: any) => c.maxTotal).filter((n: number) => n > 0); if (!mins.length) return { display: "-" }; return { display: `${fmtMoney(Math.min(...mins))} - ${fmtMoney(Math.max(...maxs))}` }; })));
+            pushRow(rows, row("Programs offered", loaded.map((p) => { const n = cpFor(p).length; return { display: n ? String(n) : "-", raw: n || null }; })));
             if (rows.length) groups.push({ key: "cost", label: "Cost", rows });
           }
+          if (wantDim("costSheet")) await buildProviderCostSheetGroup(loaded, true);
           if (wantDim("services")) {
             const rows: any[] = [];
             const svc = (p: any, k: string) => (p.cdc?.services && typeof p.cdc.services === "object" ? p.cdc.services[k] : undefined);
@@ -2394,10 +2532,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
           if (wantDim("cost")) {
             const rows: any[] = [];
-            pushRow(rows, row("Starting price", loaded.map((p) => { const mins = (p.costPrograms || []).map((c: any) => c.minTotal).filter((n: number) => n > 0); const m = mins.length ? Math.min(...mins) : null; return { display: fmtMoney(m), raw: m }; }), "low"));
-            pushRow(rows, row("Price range", loaded.map((p) => { const mins = (p.costPrograms || []).map((c: any) => c.minTotal).filter((n: number) => n > 0); const maxs = (p.costPrograms || []).map((c: any) => c.maxTotal).filter((n: number) => n > 0); if (!mins.length) return { display: "-" }; return { display: `${fmtMoney(Math.min(...mins))} - ${fmtMoney(Math.max(...maxs))}` }; })));
+            const cpFor = (p: any) => scopeCostPrograms(p.costPrograms || [], false);
+            pushRow(rows, row("Starting price", loaded.map((p) => { const mins = cpFor(p).map((c: any) => c.minTotal).filter((n: number) => n > 0); const m = mins.length ? Math.min(...mins) : null; return { display: fmtMoney(m), raw: m }; }), "low"));
+            pushRow(rows, row("Price range", loaded.map((p) => { const cp = cpFor(p); const mins = cp.map((c: any) => c.minTotal).filter((n: number) => n > 0); const maxs = cp.map((c: any) => c.maxTotal).filter((n: number) => n > 0); if (!mins.length) return { display: "-" }; return { display: `${fmtMoney(Math.min(...mins))} - ${fmtMoney(Math.max(...maxs))}` }; })));
             if (rows.length) groups.push({ key: "cost", label: "Cost", rows });
           }
+          if (wantDim("costSheet")) await buildProviderCostSheetGroup(loaded, false);
           if (wantDim("requirements")) {
             const rows: any[] = [];
             pushRow(rows, row("Carries twins", loaded.map((p) => ({ display: yesNo(p.surrogacy?.twinsAllowed) }))));
@@ -2445,10 +2585,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const loaded: any[] = [];
         for (const idOrExt of uniqueIds) {
           const where: any = { OR: [{ id: idOrExt }, { externalId: idOrExt }] };
-          const d = isEgg
-            ? await prisma.eggDonor.findFirst({ where, select: { id: true, externalId: true, firstName: true, age: true, location: true, eyeColor: true, hairColor: true, height: true, weight: true, ethnicity: true, race: true, education: true, occupation: true, bloodType: true, donorCompensation: true, totalCost: true, photoUrl: true } })
-            : await prisma.spermDonor.findFirst({ where, select: { id: true, externalId: true, firstName: true, age: true, location: true, eyeColor: true, hairColor: true, height: true, weight: true, ethnicity: true, race: true, education: true, occupation: true, compensation: true, totalCost: true, photoUrl: true } });
-          if (d) loaded.push(d);
+          const d: any = isEgg
+            ? await prisma.eggDonor.findFirst({ where, select: { id: true, providerId: true, externalId: true, firstName: true, age: true, location: true, eyeColor: true, hairColor: true, height: true, weight: true, ethnicity: true, race: true, education: true, occupation: true, bloodType: true, donorType: true, donorCompensation: true, totalCost: true, photoUrl: true } })
+            : await prisma.spermDonor.findFirst({ where, select: { id: true, providerId: true, externalId: true, firstName: true, age: true, location: true, eyeColor: true, hairColor: true, height: true, weight: true, ethnicity: true, race: true, education: true, occupation: true, donorType: true, compensation: true, totalCost: true, photoUrl: true } });
+          if (!d) continue;
+          // Compute the real total cost the same way the donor profile card does -
+          // from the agency's approved cost sheet (the EggDonor.totalCost column is
+          // frequently null because the upload-first flow computes it on demand).
+          try {
+            const comp = isEgg
+              ? (d.donorCompensation != null ? Number(d.donorCompensation) : null)
+              : (d.compensation != null ? Number(d.compensation) : null);
+            const subType = isEgg ? ((String(d.donorType || "").toLowerCase().includes("frozen")) ? "frozen" : "fresh") : null;
+            const res = await resolveCompensationAndTotalCost(prisma as any, d.providerId, isEgg ? "egg-donor" : "sperm-donor", comp, ["APPROVED"], subType);
+            if (res?.resolvedCompensation != null) d._resolvedComp = res.resolvedCompensation;
+            if (res?.calculatedTotalCost) { d._totalMin = res.calculatedTotalCost.min; d._totalMax = res.calculatedTotalCost.max; }
+          } catch { /* no cost sheet -> fall back to stored totalCost below */ }
+          loaded.push(d);
         }
         if (loaded.length < 2) return { content: [{ type: "text", text: JSON.stringify({ error: "Could not resolve at least 2 donors to compare." }) }] };
         entities = loaded.map((d: any) => ({
@@ -2485,17 +2638,73 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         if (wantDim("cost")) {
           const rows: any[] = [];
-          pushRow(rows, row("Compensation", loaded.map((d: any) => { const c = isEgg ? d.donorCompensation : d.compensation; const n = c != null ? Number(c) : null; return { display: fmtMoney(n), raw: n }; }), "low"));
-          pushRow(rows, row("Estimated total cost", loaded.map((d: any) => { const n = d.totalCost != null ? Number(d.totalCost) : null; return { display: fmtMoney(n), raw: n }; }), "low"));
+          pushRow(rows, row("Compensation", loaded.map((d: any) => { const c = d._resolvedComp != null ? d._resolvedComp : (isEgg ? d.donorCompensation : d.compensation); const n = c != null ? Number(c) : null; return { display: fmtMoney(n), raw: n }; }), "low"));
+          pushRow(rows, row("Estimated total cost", loaded.map((d: any) => {
+            // Prefer the cost-sheet-computed range; fall back to the stored total.
+            if (d._totalMin != null && d._totalMax != null && (d._totalMin > 0 || d._totalMax > 0)) {
+              const min = Number(d._totalMin), max = Number(d._totalMax);
+              const display = min === max ? fmtMoney(min) : `${fmtMoney(min)} - ${fmtMoney(max)}`;
+              return { display, raw: min };
+            }
+            const n = d.totalCost != null ? Number(d.totalCost) : null;
+            return { display: fmtMoney(n), raw: n };
+          }), "low"));
           if (rows.length) groups.push({ key: "cost", label: "Cost", rows });
+        }
+        if (wantDim("costSheet")) {
+          // Full line-item cost-sheet comparison: pull each donor's matched agency
+          // cost sheet (same selection as the total) and lay every line item out
+          // side-by-side, unioned across both donors. The compensation line is
+          // overridden with each specific donor's comp.
+          const subTypeOf = (d: any) => (isEgg ? (String(d.donorType || "").toLowerCase().includes("frozen") ? "frozen" : "fresh") : null);
+          const sheets: any[][] = await Promise.all(loaded.map(async (d: any) => {
+            try { const r = await getMatchedCostSheetItems(prisma as any, d.providerId, isEgg ? "egg-donor" : "sperm-donor", subTypeOf(d)); return r?.items || []; }
+            catch { return []; }
+          }));
+          const isCompItem = (it: any) => { const c = (it.category || "").toLowerCase(); const k = (it.key || "").toLowerCase(); return c === "compensation" || k.includes("compensation"); };
+          const fmtItem = (it: any, donor: any) => {
+            if (it.isIncluded === false) return "Not included";
+            if (isCompItem(it) && donor._resolvedComp != null) return fmtMoney(Number(donor._resolvedComp));
+            const min = it.minValue ?? 0, max = it.maxValue ?? min;
+            if (min === 0 && max === 0) return "Included";
+            return min === max ? fmtMoney(min) : `${fmtMoney(min)} - ${fmtMoney(max)}`;
+          };
+          // Union of line-item labels, in first-seen order (skip pricing-tier rows).
+          const seen = new Set<string>(); const labels: string[] = [];
+          for (const items of sheets) for (const it of items) { if (it.isTier) continue; if (!seen.has(it.key)) { seen.add(it.key); labels.push(it.key); } }
+          const rows: any[] = [];
+          for (const label of labels) {
+            const values = loaded.map((d: any, di: number) => {
+              const it = (sheets[di] || []).find((x: any) => x.key === label && !x.isTier);
+              return it ? { display: fmtItem(it, d) } : { display: "-" };
+            });
+            pushRow(rows, row(label, values));
+          }
+          // Total row last (best = lower).
+          pushRow(rows, row("Estimated total cost", loaded.map((d: any) => {
+            if (d._totalMin != null && d._totalMax != null && (d._totalMin > 0 || d._totalMax > 0)) {
+              const min = Number(d._totalMin), max = Number(d._totalMax);
+              return { display: min === max ? fmtMoney(min) : `${fmtMoney(min)} - ${fmtMoney(max)}`, raw: min };
+            }
+            const n = d.totalCost != null ? Number(d.totalCost) : null;
+            return { display: fmtMoney(n), raw: n };
+          }), "low"));
+          if (rows.length) groups.push({ key: "costSheet", label: "Cost sheet", rows });
         }
       } else if (bucket === "surrogate") {
         title = "Surrogate comparison";
         const loaded: any[] = [];
         for (const idOrExt of uniqueIds) {
           const where: any = { OR: [{ id: idOrExt }, { externalId: idOrExt }] };
-          const s = await prisma.surrogate.findFirst({ where, select: { id: true, externalId: true, firstName: true, age: true, location: true, baseCompensation: true, agreesToTwins: true, agreesToAbortion: true, openToSameSexCouple: true, isExperienced: true, liveBirths: true, ethnicity: true, race: true, photoUrl: true } });
-          if (s) loaded.push(s);
+          const s: any = await prisma.surrogate.findFirst({ where, select: { id: true, providerId: true, externalId: true, firstName: true, age: true, location: true, baseCompensation: true, agreesToTwins: true, agreesToAbortion: true, openToSameSexCouple: true, isExperienced: true, liveBirths: true, ethnicity: true, race: true, photoUrl: true } });
+          if (!s) continue;
+          try {
+            const comp = s.baseCompensation != null ? Number(s.baseCompensation) : null;
+            const res = await resolveCompensationAndTotalCost(prisma as any, s.providerId, "surrogate", comp, ["APPROVED"], null);
+            if (res?.resolvedCompensation != null) s._resolvedComp = res.resolvedCompensation;
+            if (res?.calculatedTotalCost) { s._totalMin = res.calculatedTotalCost.min; s._totalMax = res.calculatedTotalCost.max; }
+          } catch { /* no cost sheet */ }
+          loaded.push(s);
         }
         if (loaded.length < 2) return { content: [{ type: "text", text: JSON.stringify({ error: "Could not resolve at least 2 surrogates to compare." }) }] };
         entities = loaded.map((s: any) => ({
@@ -2515,6 +2724,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (rows.length) groups.push({ key: "preferences", label: "Preferences", rows });
         }
         if (wantDim("location")) { const rows: any[] = []; pushRow(rows, row("Location", loaded.map((s: any) => ({ display: s.location || "-" })))); if (rows.length) groups.push({ key: "location", label: "Location", rows }); }
+        if (wantDim("costSheet")) {
+          const sheets: any[][] = await Promise.all(loaded.map(async (s: any) => {
+            try { const r = await getMatchedCostSheetItems(prisma as any, s.providerId, "surrogate", null); return r?.items || []; }
+            catch { return []; }
+          }));
+          const isCompItem = (it: any) => { const c = (it.category || "").toLowerCase(); const k = (it.key || "").toLowerCase(); return c === "compensation" || k.includes("compensation"); };
+          const fmtItem = (it: any, ent: any) => {
+            if (it.isIncluded === false) return "Not included";
+            if (isCompItem(it) && ent._resolvedComp != null) return fmtMoney(Number(ent._resolvedComp));
+            const min = it.minValue ?? 0, max = it.maxValue ?? min;
+            if (min === 0 && max === 0) return "Included";
+            return min === max ? fmtMoney(min) : `${fmtMoney(min)} - ${fmtMoney(max)}`;
+          };
+          const seen = new Set<string>(); const labels: string[] = [];
+          for (const items of sheets) for (const it of items) { if (it.isTier) continue; if (!seen.has(it.key)) { seen.add(it.key); labels.push(it.key); } }
+          const rows: any[] = [];
+          for (const label of labels) {
+            const values = loaded.map((s: any, si: number) => { const it = (sheets[si] || []).find((x: any) => x.key === label && !x.isTier); return it ? { display: fmtItem(it, s) } : { display: "-" }; });
+            pushRow(rows, row(label, values));
+          }
+          pushRow(rows, row("Estimated total cost", loaded.map((s: any) => {
+            if (s._totalMin != null && s._totalMax != null && (s._totalMin > 0 || s._totalMax > 0)) { const min = Number(s._totalMin), max = Number(s._totalMax); return { display: min === max ? fmtMoney(min) : `${fmtMoney(min)} - ${fmtMoney(max)}`, raw: min }; }
+            return { display: "-" };
+          }), "low"));
+          if (rows.length) groups.push({ key: "costSheet", label: "Cost sheet", rows });
+        }
       } else {
         return { content: [{ type: "text", text: JSON.stringify({ error: `Unsupported entityType for comparison: ${a.entityType}` }) }] };
       }

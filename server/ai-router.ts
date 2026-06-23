@@ -430,8 +430,10 @@ async function callTier2Claude(
   let currentMessage: any = userMessage;
   // Multi-step tool chain support. Gemini frequently chains 2-4 tool calls before
   // producing the final text (e.g. search_surrogates -> resolve_match_card ->
-  // search_knowledge_base -> text). Hard cap to prevent infinite loops.
-  const MAX_TOOL_ROUNDS = 6;
+  // search_knowledge_base -> text). A comparison turn can need a few more (resolve
+  // 2+ entities, then emit the tag), so the cap is 8 to leave room to actually emit
+  // the card after the lookups. Hard cap to prevent infinite loops.
+  const MAX_TOOL_ROUNDS = 8;
   let toolRoundCount = 0;
 
   while (true) {
@@ -6370,23 +6372,38 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     let comparisonCards: any[] = [];
 
     // CLINIC CARD GUARD: a clinic MATCH_CARD's providerId MUST belong to a clinic
-    // search_clinics actually returned this turn. The model sometimes emits the
-    // id of a clinic the parent mentioned earlier (e.g. their CURRENT clinic)
-    // while the prose recommends a different, real search result - so the parent
-    // sees a card for the wrong (often far worse) clinic than the one described.
-    // Validate every clinic card against the search results and repair it to the
-    // clinic named in the prose (falling back to the top result).
+    // the AI actually looked up this turn - either via search_clinics OR via
+    // get_provider_profile (a profile Q&A like "what are X's success rates?").
+    // The model sometimes answers correctly in prose about clinic A while emitting
+    // a card whose providerId is clinic B (a clinic mentioned earlier, or simply
+    // hallucinated) - so the parent sees the wrong clinic's card. Validate every
+    // clinic card against the looked-up clinics and repair it to the clinic named
+    // in the prose (falling back to the single looked-up clinic / top result).
     if (matchCards.some((c) => String(c.type || "").toLowerCase() === "clinic")) {
-      let clinicResults: any[] = [];
+      const clinicResults: any[] = [];
       for (const sr of lastSearchToolResults) {
-        if (sr.toolName !== "search_clinics") continue;
-        try {
-          const body: string = sr.resultText || "";
-          const s = body.indexOf("[");
-          const e = body.lastIndexOf("]");
-          const arr = s !== -1 && e !== -1 ? JSON.parse(body.substring(s, e + 1)) : [];
-          if (Array.isArray(arr) && arr.length > 0) { clinicResults = arr; break; }
-        } catch { /* ignore */ }
+        if (sr.toolName === "search_clinics") {
+          try {
+            const body: string = sr.resultText || "";
+            const s = body.indexOf("[");
+            const e = body.lastIndexOf("]");
+            const arr = s !== -1 && e !== -1 ? JSON.parse(body.substring(s, e + 1)) : [];
+            if (Array.isArray(arr)) clinicResults.push(...arr);
+          } catch { /* ignore */ }
+        } else if (sr.toolName === "get_provider_profile") {
+          // get_provider_profile returns a single JSON object (not an array).
+          // Parse it so the clinic the parent asked about counts as valid AND
+          // becomes the repair target for a mis-emitted card.
+          try {
+            const body: string = sr.resultText || "";
+            const s = body.indexOf("{");
+            const e = body.lastIndexOf("}");
+            const obj = s !== -1 && e !== -1 ? JSON.parse(body.substring(s, e + 1)) : null;
+            if (obj && obj.id) {
+              clinicResults.push({ id: obj.id, name: obj.name, location: Array.isArray(obj.locations) ? obj.locations[0] : undefined });
+            }
+          } catch { /* ignore */ }
+        }
       }
       if (clinicResults.length > 0) {
         const validIds = new Set(clinicResults.map((c: any) => String(c.id || c.providerId)));
@@ -6401,7 +6418,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             }) || clinicResults[0];
           const newId = String(repaired.id || repaired.providerId || "");
           if (!newId) continue;
-          console.warn(`[ai-router] CLINIC CARD GUARD: card providerId ${card.providerId} (${card.name}) is NOT in this turn's search_clinics results - repairing to ${repaired.name} (${newId})`);
+          console.warn(`[ai-router] CLINIC CARD GUARD: card providerId ${card.providerId} (${card.name}) is NOT a clinic looked up this turn - repairing to ${repaired.name} (${newId})`);
           card.providerId = newId;
           card.ownerProviderId = newId;
           card.name = repaired.name || repaired.displayName || card.name;
@@ -7269,8 +7286,13 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         lastSearchToolResults.find((r) => r.toolName === "search_clinics")?.toolArgs ||
         {};
       const profileEgg = (profile?.eggSource || "").toLowerCase();
+      // Detect a donor-egg intent in the parent's actual message (e.g. "compare ...
+      // for patients using an egg donor"), so the comparison frames donor-egg rates
+      // even if the model didn't run a donor-scoped search this turn.
+      const cmpMsg = String(req.body.message || "").toLowerCase();
+      const msgWantsDonor = /donor egg|egg donor|donated egg|donor-egg/.test(cmpMsg);
       const cmpEggSource =
-        cmpSearchArgs.eggSource === "donor" || profileEgg.includes("donor") || profile?.needsEggDonor === true
+        cmpSearchArgs.eggSource === "donor" || msgWantsDonor || profileEgg.includes("donor") || profile?.needsEggDonor === true
           ? "donor"
           : "own_eggs";
       const cmpAgeGroup = cmpSearchArgs.ageGroup || profile?.clinicAgeGroup || "under_35";
@@ -7282,6 +7304,28 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             : !!profile.isFirstIvf;
       // One comparison card per turn (one-at-a-time, like the other cards).
       const tag = compareCardTags[0];
+      // For clinic/agency comparisons, narrow the COST dimension to the cost
+      // programs that actually apply to THIS parent's journey (e.g. a parent who
+      // already has embryos should see only transfer/FET program prices, not
+      // embryo-creation). Reuse CostsService.getMatchingSubtypesForParent - the
+      // same personalization the direct cost Q&A and the parent cost page use.
+      let cmpCostSubtypes: string[] = [];
+      const cmpTypeLc = String(tag.entityType || "").toLowerCase();
+      const isProviderCompare = ["clinic", "surrogacy agency", "provider", "egg bank", "sperm bank", "agency"].includes(cmpTypeLc);
+      if (isProviderCompare && userRecord?.parentAccountId) {
+        try {
+          const { getNestApp } = await import("./nest-app-ref");
+          const nestApp = getNestApp();
+          const { CostsService } = await import("./src/modules/costs/costs.service");
+          const costsService: any = nestApp?.get(CostsService);
+          if (costsService) {
+            const r = await costsService.getMatchingSubtypesForParent(userRecord.parentAccountId);
+            if (Array.isArray(r?.subtypes)) cmpCostSubtypes = r.subtypes;
+          }
+        } catch (e: any) {
+          console.warn("[ai-router] comparison cost-subtype fetch failed:", e?.message);
+        }
+      }
       try {
         const resolveResult: any = await mcpClient.callTool({
           name: "resolve_comparison",
@@ -7292,6 +7336,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             eggSource: cmpEggSource,
             ageGroup: cmpAgeGroup,
             isNewPatient: cmpIsNew,
+            costSubtypes: cmpCostSubtypes,
           },
         });
         const text = Array.isArray(resolveResult?.content) ? resolveResult.content[0]?.text : null;
@@ -7306,6 +7351,21 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
       if (compareCardTags.length > 1) {
         console.warn(`[ai-router] AI returned ${compareCardTags.length} comparison cards - enforcing one-at-a-time, kept first only`);
+      }
+    }
+
+    // A comparison card already renders every entity side-by-side, so any single
+    // MATCH_CARD / DOCTOR_CARD the model also emitted this turn is redundant (and
+    // frequently the wrong entity - e.g. a same-named-but-different clinic). Drop
+    // them so the parent sees only the comparison card.
+    if (comparisonCards.length > 0) {
+      if (matchCards.length > 0) {
+        console.warn(`[ai-router] COMPARE_CARD present - dropping ${matchCards.length} stray MATCH_CARD(s) this turn`);
+        matchCards = [];
+      }
+      if (doctorCards.length > 0) {
+        console.warn(`[ai-router] COMPARE_CARD present - dropping ${doctorCards.length} stray DOCTOR_CARD(s) this turn`);
+        doctorCards = [];
       }
     }
 

@@ -2336,8 +2336,8 @@ function SingleCostsTab({
                           {showDiffView ? (
                             <div className="flex items-center gap-2">
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium" data-testid={`text-key-${item._editIdx}`}>
+                                <div className="flex items-start gap-2 min-w-0">
+                                  <span className="text-sm font-medium break-words min-w-0" data-testid={`text-key-${item._editIdx}`}>
                                     {item.key}
                                   </span>
                                   {item.isCustom && (
@@ -2401,8 +2401,8 @@ function SingleCostsTab({
                                     data-testid={`input-key-${item._editIdx}`}
                                   />
                                 ) : (
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium" data-testid={`text-key-${item._editIdx}`}>
+                                  <div className="flex items-start gap-2 min-w-0">
+                                    <span className="text-sm font-medium break-words min-w-0" data-testid={`text-key-${item._editIdx}`}>
                                       {item.key}
                                     </span>
                                     {item.isCustom && (
