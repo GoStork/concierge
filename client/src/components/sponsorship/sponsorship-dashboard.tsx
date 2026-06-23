@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,14 +42,23 @@ const SLOT_TYPE_HEADERS: Record<string, string> = {
  * places: the admin provider-edit "Sponsorship" tab (pass providerId + isAdmin)
  * and the provider self-serve /account/sponsorship page (no providerId).
  */
-export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "sponsorship" }: { providerId?: string; isAdmin?: boolean; mode?: "sponsorship" | "performance" }) {
+export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "sponsorship" }: { providerId?: string; isAdmin?: boolean; mode?: "sponsorship" | "performance" | "manage" }) {
   const qc = useQueryClient();
-  // "performance" mode = the all-profiles analytics surface (a separate top-level
-  // tab). It reuses this whole component but drops the sponsorship management bits
-  // and adds an All-profiles / Sponsored-only scope toggle. "sponsorship" mode is
-  // the original sponsor dashboard (always sponsored scope).
+  // Three surfaces, one component:
+  //  - "performance": the all-profiles analytics tab (scope toggle, no management).
+  //  - "manage": the provider self-serve Sponsorship tab - management only (Boost
+  //    bar + Your Sponsorships) plus the lift hero as an ROI teaser; the full
+  //    analytics live in the Performance tab.
+  //  - "sponsorship" (default): the admin provider-edit view - full analytics.
   const isPerformance = mode === "performance";
-  const [scope, setScope] = useState<"all" | "sponsored">(isPerformance ? "all" : "sponsored");
+  const isManage = mode === "manage";
+  const showFullAnalytics = !isManage; // manage hides the detailed analytics
+  // The Performance tab honors ?scope=sponsored (the lift-hero "See full
+  // analytics" link deep-links to the sponsored view).
+  const [searchParams] = useSearchParams();
+  const [scope, setScope] = useState<"all" | "sponsored">(
+    isPerformance ? (searchParams.get("scope") === "sponsored" ? "sponsored" : "all") : "sponsored",
+  );
 
   // URL builders: admin routes carry ?providerId; provider self-serve is implicit.
   const base = isAdmin ? "/api/admin/sponsorship" : "/api/sponsorship";
@@ -138,6 +147,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
       )}
 
       {/* Date range - scopes every metric below; deltas compare vs the prior period. */}
+      {showFullAnalytics && (
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-sm font-heading text-foreground">Performance</span>
         <div className="flex items-center gap-2 flex-wrap">
@@ -161,11 +171,12 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
           )}
         </div>
       </div>
+      )}
 
       {/* Page-level type filter: scopes every type-attributable metric below.
           Hot leads + Consultations stay account-level (tagged). Only shown when
           the provider sponsors more than one type. */}
-      {(a?.availableTypes?.length ?? 0) > 1 && (
+      {showFullAnalytics && (a?.availableTypes?.length ?? 0) > 1 && (
         <div className="flex items-center gap-2 flex-wrap -mt-2">
           <span className="text-sm text-muted-foreground">Profile type</span>
           <div className="inline-flex rounded-lg border border-border overflow-hidden flex-wrap" data-testid="page-type-filter">
@@ -193,10 +204,18 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
                 Your sponsored profiles average <strong className="text-foreground">{a.lift.sponsoredAvg.toFixed(1)}</strong> views each vs <strong className="text-foreground">{a.lift.baselineAvg.toFixed(1)}</strong> for your {a.lift.baselineCount} non-sponsored profiles, this period.
               </p>
             </div>
+            {isManage && (
+              <Link to="/performance?scope=sponsored" className="ml-auto shrink-0 text-sm font-ui text-primary hover:underline whitespace-nowrap" data-testid="see-full-analytics">
+                See full analytics →
+              </Link>
+            )}
           </CardContent>
         </Card>
       )}
 
+      {/* Detailed analytics block - hidden in the management view (manage), where
+          it's replaced by the Performance tab + the lift-hero teaser above. */}
+      {showFullAnalytics && (<>
       {/* Search visibility - boosted vs organic deck position (the non-circular
           proof: sponsorship is a paid placement, this shows how far up it moves you). */}
       {a?.ranking && (
@@ -336,6 +355,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
 
       {/* Per-profile breakdown: filter by type, sort, top-performer highlight */}
       {a?.perProfile?.length > 0 && <PerformanceSection perProfile={a.perProfile} />}
+      </>)}
 
       {/* GoStork admins charge / comp per plan (a different surface). The
           provider launcher lives at the top of the page. Management surfaces are

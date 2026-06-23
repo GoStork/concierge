@@ -2197,7 +2197,7 @@ export default function AccountPage() {
           <Route path="payouts" element={<ProviderPayoutsTab />} />
         )}
         {(isAdmin || (isProvider && providerId)) && (
-          <Route path="sponsorship" element={isAdmin ? <SponsorshipPlanManager /> : <SponsorshipDashboard />} />
+          <Route path="sponsorship" element={isAdmin ? <SponsorshipPlanManager /> : <SponsorshipDashboard mode="manage" />} />
         )}
         {(isProvider || isAdmin) && (
           <Route path="legal-identity" element={<ProviderLegalIdentityTab />} />
