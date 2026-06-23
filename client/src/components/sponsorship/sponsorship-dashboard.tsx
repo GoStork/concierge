@@ -59,6 +59,8 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
     queryFn: async () => (await apiRequest("GET", isAdmin ? `${base}${withProvider()}` : "/api/sponsorship/mine")).json(),
     enabled: !isAdmin || !!providerId,
     refetchOnMount: "always",
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   });
   const [range, setRange] = useState<"all" | "30" | "7" | "custom">("all");
   const [customFrom, setCustomFrom] = useState("");
@@ -74,6 +76,12 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
     queryFn: async () => (await apiRequest("GET", `${base}/analytics${withProvider(analyticsQs)}`)).json(),
     enabled: !isAdmin || !!providerId,
     refetchOnMount: "always",
+    // Live updates: poll every 15s and refetch when the provider tabs back in,
+    // so impressions/clicks/saves/inquiries climb without a manual refresh.
+    // React Query pauses the interval while the tab is hidden (no background
+    // refetch), so this adds no load when nobody's watching.
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
   });
 
   const refetchAll = () => {

@@ -1689,6 +1689,20 @@ function buildMatchTabs(profile: any, cardType: string, reasons: string[]): TabS
   return baseTabs;
 }
 
+// Actually persist a favorite when the parent taps the heart on an in-chat
+// match card. Previously the heart only sent a "Save as favorite" message and
+// the AI *claimed* it saved - nothing was written, so the Saved page stayed
+// empty. This writes to the same endpoints the marketplace uses, so chat saves
+// show up in Saved (and count toward sponsorship "Saves"). Donors/surrogates/
+// sperm share /donor-preferences; clinics/doctors/agencies use /profile-preferences.
+function persistChatFavorite(kind: "donor" | "clinic" | "doctor" | "agency", id?: string | null) {
+  if (!id) return;
+  const url = kind === "donor"
+    ? `/api/donor-preferences/favorite/${id}`
+    : `/api/profile-preferences/${kind}/favorite/${id}`;
+  fetch(url, { method: "POST", credentials: "include" }).catch(() => {});
+}
+
 function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
   const navigate = useNavigate();
   const clinicName = card.name || "this clinic";
@@ -1718,7 +1732,7 @@ function ClinicMatchCard({ card, brandColor, onAction, onViewProfile }: { card: 
           disableSwipe
           chatMode
           onPass={() => onAction(`I'm not interested in ${clinicName}. Show me another option.`)}
-          onSave={() => onAction(`I like ${clinicName}! Save as favorite. ❤️`)}
+          onSave={() => { persistChatFavorite("clinic", card.providerId); onAction(`I like ${clinicName}! Save as favorite. ❤️`); }}
           onViewProfile={goToProfile}
         />
       </div>
@@ -1783,7 +1797,7 @@ function DoctorMatchCard({ card, brandColor, onAction }: { card: DoctorCard; bra
           disableSwipe
           chatMode
           onPass={() => onAction(`I'm not interested in ${card.name}. Show me another doctor.`)}
-          onSave={() => onAction(`I like ${card.name}! Save as favorite. ❤️`)}
+          onSave={() => { persistChatFavorite("doctor", card.slug); onAction(`I like ${card.name}! Save as favorite. ❤️`); }}
           onViewFullProfile={goToProfile}
         />
       </div>
@@ -1949,7 +1963,7 @@ function AgencyMatchCard({ card, brandColor, onAction }: { card: MatchCard; bran
           disableSwipe
           chatMode
           onPass={() => onAction(`I'm not interested in ${agencyName}. Show me another option.`)}
-          onSave={() => onAction(`I like ${agencyName}! Save as favorite. ❤️`)}
+          onSave={() => { persistChatFavorite("agency", card.providerId); onAction(`I like ${agencyName}! Save as favorite. ❤️`); }}
           onViewProfile={goToProfile}
         />
       </div>
@@ -2080,7 +2094,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
           disableSwipe
           chatMode
           onPass={() => onAction(`I'm not interested in ${card.name || title}. Show me another option.`)}
-          onSave={() => onAction(`I like ${card.name || title}! Save as favorite. ❤️`)}
+          onSave={() => { persistChatFavorite("donor", card.providerId); onAction(`I like ${card.name || title}! Save as favorite. ❤️`); }}
           onViewFullProfile={() => onViewProfile({ ...card, ownerProviderId: card.ownerProviderId || profile?.providerId })}
         />
       </div>
