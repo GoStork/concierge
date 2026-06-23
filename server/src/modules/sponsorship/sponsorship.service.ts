@@ -862,7 +862,11 @@ export class SponsorshipService {
     }
     const setToArr = (k: string) => Array.from(idsByType[k] || []);
     const allEntityIds = Array.from(new Set(Object.values(idsByType).flatMap((s) => Array.from(s))));
-    const donorLikeIds = Array.from(new Set([...setToArr("EGG_DONOR"), ...setToArr("SPERM_DONOR")]));
+    // Egg donors, surrogates and sperm donors are all saved through the same
+    // donor-favorites table (UserDonorPreference, keyed by the profile id), so
+    // their saves come from one query. SURROGATE was previously omitted here,
+    // which silently zeroed surrogate save counts on the dashboard.
+    const donorLikeIds = Array.from(new Set([...setToArr("EGG_DONOR"), ...setToArr("SURROGATE"), ...setToArr("SPERM_DONOR")]));
     const profileLikeIds = Array.from(new Set([...setToArr("DOCTOR"), ...setToArr("CLINIC_PROFILE"), ...setToArr("AGENCY_PROFILE")]));
 
     const db = this.prisma.client;
