@@ -870,13 +870,22 @@ export class SponsorshipService {
         this.prisma.providerMember.findMany({ where: { providerId, isPublicProfile: true }, select: { id: true } }),
         this.prisma.provider.findUnique({ where: { id: providerId }, select: { services: { select: { providerType: { select: { name: true } } } } } }),
       ]);
+      // Scope the available profile types to what the provider's services
+      // actually are - a surrogacy agency has no doctors, an egg-donor agency
+      // has no whole-clinic profile, etc.
+      const svcNames = (prov?.services || []).map((s: any) => (s.providerType?.name || "").toLowerCase());
+      const isClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
+      const isAgency = svcNames.some((n: string) => n.includes("surrogacy"));
       allProfileIdsByType = {};
       if (eggs.length) allProfileIdsByType.EGG_DONOR = new Set(eggs.map((r: any) => r.id));
       if (surrs.length) allProfileIdsByType.SURROGATE = new Set(surrs.map((r: any) => r.id));
       if (sperms.length) allProfileIdsByType.SPERM_DONOR = new Set(sperms.map((r: any) => r.id));
-      if (members.length) allProfileIdsByType.DOCTOR = new Set(members.map((r: any) => r.id));
-      const isAgency = (prov?.services || []).some((s: any) => (s.providerType?.name || "").toLowerCase().includes("surrogacy"));
-      allProfileIdsByType[isAgency ? "AGENCY_PROFILE" : "CLINIC_PROFILE"] = new Set([providerId]);
+      // Doctors only exist for IVF clinics; other providers' public team members
+      // are not marketplace "doctor" profiles.
+      if (isClinic && members.length) allProfileIdsByType.DOCTOR = new Set(members.map((r: any) => r.id));
+      // The whole-profile marketplace card only exists for clinics + surrogacy agencies.
+      if (isClinic) allProfileIdsByType.CLINIC_PROFILE = new Set([providerId]);
+      else if (isAgency) allProfileIdsByType.AGENCY_PROFILE = new Set([providerId]);
 
       const availAll = new Set<string>();
       for (const k of Object.keys(allProfileIdsByType)) availAll.add(PROFILE_TYPES.includes(k) ? "PROFILE" : k);
