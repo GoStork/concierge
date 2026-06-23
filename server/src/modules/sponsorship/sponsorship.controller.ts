@@ -81,9 +81,9 @@ export class SponsorshipController {
   }
 
   @Get("api/sponsorship/analytics")
-  async analytics(@Req() req: Request, @Query("range") range?: string, @Query("from") from?: string, @Query("to") to?: string, @Query("type") type?: string) {
+  async analytics(@Req() req: Request, @Query("range") range?: string, @Query("from") from?: string, @Query("to") to?: string, @Query("type") type?: string, @Query("scope") scope?: string) {
     const providerId = this.requireProvider(req);
-    return this.sponsorship.getAnalytics(providerId, { ...parseAnalyticsOpts(range, from, to), entityType: type || undefined });
+    return this.sponsorship.getAnalytics(providerId, { ...parseAnalyticsOpts(range, from, to), entityType: type || undefined, scope: scope === "all" ? "all" : "sponsored" });
   }
 
   @Get("api/sponsorship/eligible-entities")

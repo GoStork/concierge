@@ -42,6 +42,7 @@ import VideoRoomPage from "@/pages/video-room-page";
 import RecordingPage from "@/pages/recording-page";
 import ProviderProfilePage from "@/pages/provider-profile-page";
 import DoctorProfilePage from "@/pages/doctor-profile-page";
+import PerformancePage from "@/pages/performance-page";
 import ParentNewAppointmentPage from "@/pages/parent-new-appointment-page";
 import CdcClinicSuccessRatesPage from "@/pages/cdc-clinic-success-rates-page";
 import ForgotPasswordPage from "@/pages/forgot-password-page";
@@ -131,6 +132,7 @@ function AppRoutes() {
         <Route path="/onboarding/ai-ready" element={<OnboardingGuard><OnboardingAiReadyPage /></OnboardingGuard>} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardRoute /></ProtectedRoute>} />
         <Route path="/marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
+        <Route path="/performance" element={<ProtectedRoute><PerformancePage /></ProtectedRoute>} />
         <Route path="/providers/:id" element={<ProtectedRoute><ProviderProfilePage /></ProtectedRoute>} />
         <Route path="/doctors/:slug" element={<ProtectedRoute><DoctorProfilePage /></ProtectedRoute>} />
         <Route path="/admin/providers/new" element={<ProtectedRoute><AdminProviderAddPage /></ProtectedRoute>} />

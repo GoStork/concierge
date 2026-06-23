@@ -800,8 +800,13 @@ export class SponsorshipService {
 
   // ─── Analytics ─────────────────────────────────────────────────────────────
 
-  async getAnalytics(providerId: string, opts?: { rangeDays?: number; from?: Date; to?: Date; entityType?: string }) {
+  async getAnalytics(providerId: string, opts?: { rangeDays?: number; from?: Date; to?: Date; entityType?: string; scope?: "all" | "sponsored" }) {
     const rangeDays = opts?.rangeDays;
+    // "sponsored" (default): scope every metric to the provider's sponsored slots
+    // and the sponsored window. "all": the same engagement funnel across EVERY
+    // marketplace profile the provider owns, with no sponsorship-only cards
+    // (lift / ranking / cost) and no window clamp. Same code, different id set.
+    const scope: "all" | "sponsored" = opts?.scope === "all" ? "all" : "sponsored";
     const sponsorships = await this.prisma.sponsorship.findMany({
       where: { providerId },
       include: { plan: true, items: { where: { removedAt: null } } },
@@ -819,8 +824,8 @@ export class SponsorshipService {
       if (s.productType === "WHOLE_PROFILE") availSet.add("PROFILE");
       for (const it of s.items) availSet.add(PROFILE_TYPES.includes(it.entityType) ? "PROFILE" : it.entityType);
     }
-    const availableTypes = Array.from(availSet);
-    const typeFilter = opts?.entityType && availableTypes.includes(opts.entityType) ? opts.entityType : null;
+    let availableTypes = Array.from(availSet);
+    let typeFilter = opts?.entityType && availableTypes.includes(opts.entityType) ? opts.entityType : null;
     const sponsorshipPasses = (s: any) =>
       !typeFilter || (typeFilter === "PROFILE" ? s.productType === "WHOLE_PROFILE" : s.plan?.slotEntityType === typeFilter);
 
@@ -830,7 +835,7 @@ export class SponsorshipService {
     // (Hot leads + consultations stay account-level: they query by providerId, not
     // the entity set, so the type filter never narrows them.)
     const active = typeFilter ? allActive.filter(sponsorshipPasses) : allActive;
-    const windowStart: Date | null = active.reduce<Date | null>((acc, s: any) => {
+    let windowStart: Date | null = active.reduce<Date | null>((acc, s: any) => {
       const start = s.currentPeriodStart ? new Date(s.currentPeriodStart) : null;
       if (!start) return acc;
       return !acc || start < acc ? start : acc;
@@ -853,11 +858,53 @@ export class SponsorshipService {
       if (effEnd.getTime() <= effStart.getTime()) effStart = null; // empty / invalid window -> no data
     }
 
-    // Collect sponsored entity ids by type across active sponsorships.
+    // "all" scope: enumerate EVERY marketplace profile the provider owns, ignore
+    // the sponsorship window (measure over all data, or the selected range), and
+    // recompute availableTypes / typeFilter / effStart against that set.
+    let allProfileIdsByType: Record<string, Set<string>> | null = null;
+    if (scope === "all") {
+      const [eggs, surrs, sperms, members, prov] = await Promise.all([
+        this.prisma.eggDonor.findMany({ where: { providerId }, select: { id: true } }),
+        this.prisma.surrogate.findMany({ where: { providerId }, select: { id: true } }),
+        this.prisma.spermDonor.findMany({ where: { providerId }, select: { id: true } }),
+        this.prisma.providerMember.findMany({ where: { providerId, isPublicProfile: true }, select: { id: true } }),
+        this.prisma.provider.findUnique({ where: { id: providerId }, select: { services: { select: { providerType: { select: { name: true } } } } } }),
+      ]);
+      allProfileIdsByType = {};
+      if (eggs.length) allProfileIdsByType.EGG_DONOR = new Set(eggs.map((r: any) => r.id));
+      if (surrs.length) allProfileIdsByType.SURROGATE = new Set(surrs.map((r: any) => r.id));
+      if (sperms.length) allProfileIdsByType.SPERM_DONOR = new Set(sperms.map((r: any) => r.id));
+      if (members.length) allProfileIdsByType.DOCTOR = new Set(members.map((r: any) => r.id));
+      const isAgency = (prov?.services || []).some((s: any) => (s.providerType?.name || "").toLowerCase().includes("surrogacy"));
+      allProfileIdsByType[isAgency ? "AGENCY_PROFILE" : "CLINIC_PROFILE"] = new Set([providerId]);
+
+      const availAll = new Set<string>();
+      for (const k of Object.keys(allProfileIdsByType)) availAll.add(PROFILE_TYPES.includes(k) ? "PROFILE" : k);
+      availableTypes = Array.from(availAll);
+      typeFilter = opts?.entityType && availableTypes.includes(opts.entityType) ? opts.entityType : null;
+
+      // No sponsorship clamp: all-time means "since the beginning". A finite range
+      // still zooms in (effStart was computed against windowStart above).
+      windowStart = new Date(0);
+      if (fromDate) effStart = fromDate;
+      else if (rangeDays) effStart = new Date(now.getTime() - rangeDays * DAY);
+      else effStart = windowStart;
+      if (effEnd.getTime() <= effStart.getTime()) effStart = null;
+    }
+
+    // Entity ids by type. Sponsored scope uses the sponsored slots; "all" scope
+    // uses every owned profile (narrowed by the page-level type filter).
     const idsByType: Record<string, Set<string>> = {};
-    for (const s of active) {
-      for (const it of s.items) {
-        (idsByType[it.entityType] ||= new Set()).add(it.entityId);
+    if (scope === "all" && allProfileIdsByType) {
+      for (const [type, ids] of Object.entries(allProfileIdsByType)) {
+        const keep = !typeFilter || (typeFilter === "PROFILE" ? PROFILE_TYPES.includes(type) : type === typeFilter);
+        if (keep && ids.size) idsByType[type] = new Set(ids);
+      }
+    } else {
+      for (const s of active) {
+        for (const it of s.items) {
+          (idsByType[it.entityType] ||= new Set()).add(it.entityId);
+        }
       }
     }
     const setToArr = (k: string) => Array.from(idsByType[k] || []);
@@ -977,7 +1024,7 @@ export class SponsorshipService {
       arr[idx]++;
     }
 
-    const perProfile = (await this.labelEntities(active, impressionsById, viewsById, savesById, inquiriesById))
+    const perProfile = (await this.labelEntities(idsByType, impressionsById, viewsById, savesById, inquiriesById))
       .map((p) => ({ ...p, series: seriesById.get(p.id) || [] }));
 
     // Consultations booked while sponsored - the bottom-of-funnel business
@@ -991,7 +1038,8 @@ export class SponsorshipService {
       : 0;
 
     // Monthly spend across active, non-comped sponsorships (drives cost-per-result).
-    const monthlySpendCents = active.reduce((n: number, s: any) => n + (s.isComped ? 0 : (s.priceCentsSnapshot || 0)), 0);
+    // Not applicable to the all-profiles view (no spend tied to non-sponsored profiles).
+    const monthlySpendCents = scope === "all" ? 0 : active.reduce((n: number, s: any) => n + (s.isComped ? 0 : (s.priceCentsSnapshot || 0)), 0);
 
     // Lift: do sponsored profiles outperform this provider's NON-sponsored ones?
     // Only donor/surrogate/sperm are view-tracked (ParentProfileView), so the
@@ -1002,7 +1050,7 @@ export class SponsorshipService {
       ["SPERM_DONOR", this.prisma.spermDonor],
     ];
     let lift: { sponsoredAvg: number; baselineAvg: number; multiple: number | null; sponsoredCount: number; baselineCount: number } | null = null;
-    if (effStart) {
+    if (effStart && scope === "sponsored") {
       const sponsoredViewIds = Array.from(new Set(VIEW_TYPES.flatMap(([t]) => setToArr(t))));
       if (sponsoredViewIds.length) {
         const ownedIds: string[] = [];
@@ -1061,7 +1109,7 @@ export class SponsorshipService {
     // spots the boost moves a profile up vs where it would rank organically.
     // Whole-profile (PROFILE) has no deck-ranking snapshots; a specific slot type
     // filters the snapshot rows to that type.
-    const rankRows = effStart && typeFilter !== "PROFILE"
+    const rankRows = effStart && scope === "sponsored" && typeFilter !== "PROFILE"
       ? await db.sponsoredRankSnapshot.findMany({
           where: { providerId, createdAt: { gte: effStart, lt: effEnd }, ...(typeFilter ? { entityType: typeFilter } : {}) },
           select: { position: true, organicPosition: true, entityType: true },
@@ -1102,12 +1150,13 @@ export class SponsorshipService {
         inquiries,
         consultations,
         hotLeads,
-        activeSponsorships: active.length,
-        slotsUsed: active.reduce((n: number, s: any) => n + s.items.length, 0),
-        slotsTotal: active.reduce((n: number, s: any) => n + s.slotCountSnapshot, 0),
+        activeSponsorships: scope === "all" ? 0 : active.length,
+        slotsUsed: scope === "all" ? 0 : active.reduce((n: number, s: any) => n + s.items.length, 0),
+        slotsTotal: scope === "all" ? 0 : active.reduce((n: number, s: any) => n + s.slotCountSnapshot, 0),
         monthlySpendCents,
-        windowStart,
+        windowStart: scope === "all" ? null : windowStart,
       },
+      scope,
       lift,
       ranking,
       deltas,
@@ -1150,9 +1199,7 @@ export class SponsorshipService {
   }
 
   /** Resolve human-readable labels (readable name + thumbnail) for the per-profile breakdown. */
-  private async labelEntities(activeSponsorships: any[], impressionsById: Map<string, number>, viewsById: Map<string, number>, savesById: Map<string, number>, inquiriesById: Map<string, number>) {
-    const byType: Record<string, Set<string>> = {};
-    for (const s of activeSponsorships) for (const it of s.items) (byType[it.entityType] ||= new Set()).add(it.entityId);
+  private async labelEntities(byType: Record<string, Set<string>>, impressionsById: Map<string, number>, viewsById: Map<string, number>, savesById: Map<string, number>, inquiriesById: Map<string, number>) {
 
     const photoOf = (r: any) => r.photoUrl || (Array.isArray(r.photos) && r.photos[0]) || null;
     // Donors/surrogates are scraped and usually have no real name - fall back to a

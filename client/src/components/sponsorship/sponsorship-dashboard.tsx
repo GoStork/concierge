@@ -42,8 +42,14 @@ const SLOT_TYPE_HEADERS: Record<string, string> = {
  * places: the admin provider-edit "Sponsorship" tab (pass providerId + isAdmin)
  * and the provider self-serve /account/sponsorship page (no providerId).
  */
-export function SponsorshipDashboard({ providerId, isAdmin = false }: { providerId?: string; isAdmin?: boolean }) {
+export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "sponsorship" }: { providerId?: string; isAdmin?: boolean; mode?: "sponsorship" | "performance" }) {
   const qc = useQueryClient();
+  // "performance" mode = the all-profiles analytics surface (a separate top-level
+  // tab). It reuses this whole component but drops the sponsorship management bits
+  // and adds an All-profiles / Sponsored-only scope toggle. "sponsorship" mode is
+  // the original sponsor dashboard (always sponsored scope).
+  const isPerformance = mode === "performance";
+  const [scope, setScope] = useState<"all" | "sponsored">(isPerformance ? "all" : "sponsored");
 
   // URL builders: admin routes carry ?providerId; provider self-serve is implicit.
   const base = isAdmin ? "/api/admin/sponsorship" : "/api/sponsorship";
@@ -70,9 +76,10 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
   if (range === "custom") { if (customFrom) qsParts.push(`from=${customFrom}`); if (customTo) qsParts.push(`to=${customTo}`); }
   else if (range !== "all") qsParts.push(`range=${range}`);
   if (typeFilter !== "all") qsParts.push(`type=${typeFilter}`);
+  if (scope === "all") qsParts.push("scope=all");
   const analyticsQs = qsParts.join("&");
   const analyticsQ = useQuery<any>({
-    queryKey: [`${base}/analytics`, providerId, range, customFrom, customTo, typeFilter],
+    queryKey: [`${base}/analytics`, providerId, range, customFrom, customTo, typeFilter, scope],
     queryFn: async () => (await apiRequest("GET", `${base}/analytics${withProvider(analyticsQs)}`)).json(),
     enabled: !isAdmin || !!providerId,
     refetchOnMount: "always",
@@ -101,15 +108,34 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
     <div className="space-y-6" data-testid="sponsorship-dashboard">
       <div className="flex items-center gap-2">
         <Sparkles className="w-5 h-5 text-accent" />
-        <h2 className="text-xl font-heading text-foreground">Profile Sponsorship</h2>
+        <h2 className="text-xl font-heading text-foreground">{isPerformance ? "Performance" : "Profile Sponsorship"}</h2>
       </div>
       <p className="text-sm text-muted-foreground -mt-4">
-        Boost your profiles to the top of the marketplace with a "Sponsored" badge and priority in the AI concierge.
+        {isPerformance
+          ? "Engagement and conversions across all your marketplace profiles - impressions, clicks, saves, inquiries and consultations."
+          : 'Boost your profiles to the top of the marketplace with a "Sponsored" badge and priority in the AI concierge.'}
       </p>
 
       {/* Start a sponsorship - pinned at the top for providers (admins use the
-          per-plan Charge / Complimentary grid lower down). */}
-      {!isAdmin && <BoostProfilesCard onChanged={refetchAll} />}
+          per-plan Charge / Complimentary grid lower down). Hidden in the
+          performance (all-profiles) view, which is analytics-only. */}
+      {!isAdmin && !isPerformance && <BoostProfilesCard onChanged={refetchAll} />}
+
+      {/* Scope toggle (performance tab only): all profiles vs sponsored only. */}
+      {isPerformance && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-muted-foreground">Showing</span>
+          <div className="inline-flex rounded-lg border border-border overflow-hidden">
+            {([["all", "All profiles"], ["sponsored", "Sponsored only"]] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setScope(v)}
+                className={`px-3 py-1.5 text-sm transition-colors ${scope === v ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+                data-testid={`scope-${v}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Date range - scopes every metric below; deltas compare vs the prior period. */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -207,16 +233,17 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
         </Card>
       )}
 
-      {/* KPIs - all in one row on desktop */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-        <KpiCard icon={<Sparkles className="w-4 h-4" />} label="Active sponsorships" value={kpis?.activeSponsorships ?? 0} />
+      {/* KPIs - all in one row on desktop. The all-profiles view drops the two
+          sponsorship-only tiles (Active sponsorships, Slots used). */}
+      <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 ${scope === "all" ? "lg:grid-cols-6" : "lg:grid-cols-8"}`}>
+        {scope !== "all" && <KpiCard icon={<Sparkles className="w-4 h-4" />} label="Active sponsorships" value={kpis?.activeSponsorships ?? 0} />}
         <KpiCard icon={<Eye className="w-4 h-4" />} label="Impressions" value={kpis?.totalImpressions ?? 0} hint={`${kpis?.uniqueReach ?? 0} parents reached`} delta={a?.deltas?.impressions} />
         <KpiCard icon={<MousePointerClick className="w-4 h-4" />} label="Clicks" value={kpis?.profileViews ?? 0} hint="opened full profile" delta={a?.deltas?.profileViews} />
         <KpiCard icon={<Heart className="w-4 h-4" />} label="Saves" value={kpis?.saves ?? 0} hint={saveRate} delta={a?.deltas?.saves} />
-        <KpiCard icon={<MessageCircle className="w-4 h-4" />} label="Inquiries" value={kpis?.inquiries ?? 0} hint="about sponsored profiles" delta={a?.deltas?.inquiries} />
-        <KpiCard icon={<CalendarCheck className="w-4 h-4" />} label="Consultations" value={kpis?.consultations ?? 0} hint={typeFilter !== "all" ? "booked · account-level" : "booked while sponsored"} delta={a?.deltas?.consultations} />
-        <KpiCard icon={<Flame className="w-4 h-4" />} label="Hot leads" value={kpis?.hotLeads ?? 0} hint={typeFilter !== "all" ? "while sponsored · account-level" : "while sponsored"} />
-        <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Slots used" value={`${kpis?.slotsUsed ?? 0}/${kpis?.slotsTotal ?? 0}`} />
+        <KpiCard icon={<MessageCircle className="w-4 h-4" />} label="Inquiries" value={kpis?.inquiries ?? 0} hint={scope === "all" ? "about your profiles" : "about sponsored profiles"} delta={a?.deltas?.inquiries} />
+        <KpiCard icon={<CalendarCheck className="w-4 h-4" />} label="Consultations" value={kpis?.consultations ?? 0} hint={scope === "all" ? "booked · account-level" : (typeFilter !== "all" ? "booked · account-level" : "booked while sponsored")} delta={a?.deltas?.consultations} />
+        <KpiCard icon={<Flame className="w-4 h-4" />} label="Hot leads" value={kpis?.hotLeads ?? 0} hint={scope === "all" ? "account-level" : (typeFilter !== "all" ? "while sponsored · account-level" : "while sponsored")} />
+        {scope !== "all" && <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Slots used" value={`${kpis?.slotsUsed ?? 0}/${kpis?.slotsTotal ?? 0}`} />}
       </div>
 
       {/* Cost-per-result - what the spend is buying. */}
@@ -240,7 +267,9 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
       )}
 
       <p className="text-xs text-muted-foreground -mt-3">
-        All metrics are measured only while you have an active sponsorship. Impressions count every time a sponsored profile is shown (with unique parents reached shown beneath); clicks are click-throughs that opened the full profile; saves, inquiries and consultations are deeper engagement on your sponsored profiles. Hot leads are an account-level signal during the sponsored period. Lift compares your sponsored donor/surrogate profiles against your own non-sponsored ones.
+        {scope === "all"
+          ? "Engagement across every marketplace profile you own. Impressions count every time a profile is shown (with unique parents reached shown beneath); clicks are click-throughs that opened the full profile; saves, inquiries and consultations are deeper engagement. Hot leads and consultations are account-level signals. Switch to \"Sponsored only\" to see your sponsorship ROI (lift, ranking, cost-per-result)."
+          : 'All metrics are measured only while you have an active sponsorship. Impressions count every time a sponsored profile is shown (with unique parents reached shown beneath); clicks are click-throughs that opened the full profile; saves, inquiries and consultations are deeper engagement on your sponsored profiles. Hot leads are an account-level signal during the sponsored period. Lift compares your sponsored donor/surrogate profiles against your own non-sponsored ones.'}
       </p>
 
       {/* Encouraging empty state: active sponsorship but no engagement yet. */}
@@ -309,8 +338,9 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
       {a?.perProfile?.length > 0 && <PerformanceSection perProfile={a.perProfile} />}
 
       {/* GoStork admins charge / comp per plan (a different surface). The
-          provider launcher lives at the top of the page. */}
-      {isAdmin && (
+          provider launcher lives at the top of the page. Management surfaces are
+          hidden in the performance (all-profiles) view, which is analytics-only. */}
+      {isAdmin && !isPerformance && (
         <PlansSection
           plans={plansQ.data || []}
           isAdmin={isAdmin}
@@ -321,14 +351,16 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
       )}
 
       {/* Your sponsorships - current + history in one table with an Actions column */}
-      <SponsorshipsTable
-        sponsorships={listQ.data || []}
-        loading={listQ.isLoading}
-        isAdmin={isAdmin}
-        providerId={providerId}
-        base={base}
-        onChanged={refetchAll}
-      />
+      {!isPerformance && (
+        <SponsorshipsTable
+          sponsorships={listQ.data || []}
+          loading={listQ.isLoading}
+          isAdmin={isAdmin}
+          providerId={providerId}
+          base={base}
+          onChanged={refetchAll}
+        />
+      )}
     </div>
   );
 }

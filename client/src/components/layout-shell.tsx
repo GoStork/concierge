@@ -12,6 +12,7 @@ import {
   Baby,
   User,
   LayoutDashboard,
+  BarChart3,
   Search,
   Building2,
   Users,
@@ -798,6 +799,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge', badge: conciergeUnread, fillOnActive: false },
     { show: isAdmin, to: '/admin/test-runner', icon: FlaskConical, label: 'Test Runner', mobileLabel: 'Tests', fillOnActive: false },
     { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents', fillOnActive: false },
+    // Provider-only: all-profiles engagement + conversion analytics (reuses the
+    // sponsorship dashboard in "performance" mode).
+    { show: isProvider && !isAdmin, to: '/performance', icon: BarChart3, label: 'Performance', mobileLabel: 'Stats', fillOnActive: false },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Calendar', mobileLabel: 'Calendar', badge: isProvider ? pendingMeetings : undefined, fillOnActive: false },
     { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true, fillOnActive: false },
   ];
