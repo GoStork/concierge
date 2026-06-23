@@ -34,8 +34,16 @@ export function ChatBookingCard({ booking, onUpdate, readOnly }: ChatBookingCard
   const isRescheduled = booking?.status === "RESCHEDULED";
 
   const start = new Date(booking.scheduledAt);
-  const end = new Date(start.getTime() + (booking.duration || 30) * 60 * 1000);
-  const isPast = new Date() > end;
+  // Guard against an invalid scheduledAt - date-fns format() throws "Invalid time
+  // value" on an invalid Date, which the root ErrorBoundary turns into a full-page
+  // crash. Degrade gracefully and log loudly so the data bug stays diagnosable.
+  const startValid = !isNaN(start.getTime());
+  if (!startValid) {
+    // eslint-disable-next-line no-console
+    console.warn(`[ChatBookingCard] booking ${booking?.id} has an invalid scheduledAt:`, booking?.scheduledAt);
+  }
+  const end = startValid ? new Date(start.getTime() + (booking.duration || 30) * 60 * 1000) : null;
+  const isPast = end ? new Date() > end : false;
 
   const confirmMutation = useMutation({
     mutationFn: async () => {
@@ -133,7 +141,7 @@ export function ChatBookingCard({ booking, onUpdate, readOnly }: ChatBookingCard
       <div>
         <p className="text-sm font-ui truncate">{attendeeName || "Meeting Request"}</p>
         <p className="text-xs text-muted-foreground">
-          {format(start, "EEE, MMM d")} · {format(start, "h:mm a")} · {booking.duration || 30}min
+          {startValid ? `${format(start, "EEE, MMM d")} · ${format(start, "h:mm a")} · ` : ""}{booking.duration || 30}min
         </p>
         <p className="text-xs text-muted-foreground truncate mt-0.5">{subject}</p>
       </div>

@@ -95,8 +95,18 @@ export function InlineBookingNotification({
 
   if (!booking) return null;
   const start = new Date(booking.scheduledAt);
-  const end = new Date(start.getTime() + (booking.duration || 30) * 60 * 1000);
-  const hasPassed = new Date() > end;
+  // A single bad/unparseable scheduledAt must never crash the whole chat page:
+  // date-fns format() throws "Invalid time value" on an invalid Date, which the
+  // root ErrorBoundary turns into a full-page "Something went wrong". Detect it,
+  // log loudly so the underlying data bug stays diagnosable, and degrade the
+  // date display gracefully instead of taking down the app.
+  const startValid = !isNaN(start.getTime());
+  if (!startValid) {
+    // eslint-disable-next-line no-console
+    console.warn(`[InlineBookingNotification] booking ${booking.id} has an invalid scheduledAt:`, booking.scheduledAt);
+  }
+  const end = startValid ? new Date(start.getTime() + (booking.duration || 30) * 60 * 1000) : null;
+  const hasPassed = end ? new Date() > end : false;
   const parentJoined = !!booking.parentJoinedMeetingAt;
   const providerJoined = !!booking.providerJoinedMeetingAt;
   const wasCompleted = hasPassed && isConfirmed && parentJoined && providerJoined;
@@ -290,11 +300,11 @@ export function InlineBookingNotification({
             })()}
             <div className="flex items-center gap-2 text-sm">
               <CalendarClock className="w-4 h-4 text-muted-foreground shrink-0" />
-              <span>{format(start, "EEEE, MMMM d, yyyy")}</span>
+              <span>{startValid ? format(start, "EEEE, MMMM d, yyyy") : "Date to be confirmed"}</span>
             </div>
             <div className="flex items-center gap-2 text-sm">
               <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
-              <span>{format(start, "h:mm a")} ({booking.duration} min)</span>
+              <span>{startValid ? `${format(start, "h:mm a")} (${booking.duration} min)` : `${booking.duration || 30} min`}</span>
             </div>
           </div>
 

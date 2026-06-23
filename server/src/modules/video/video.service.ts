@@ -6,6 +6,17 @@ import { NotificationService } from "../notifications/notification.service";
 
 const DAILY_API_BASE = "https://api.daily.co/v1";
 
+// Daily.co's POST /v1/webhooks requires an explicit `eventTypes` array. If it
+// is omitted the webhook is created but subscribed to NOTHING - Daily never
+// delivers a single event (lastMomentPushed stays null), so recordings pile up
+// in Daily's cloud and are never downloaded/transcribed. These are exactly the
+// events handleWebhook() in video.controller.ts acts on.
+const DAILY_WEBHOOK_EVENTS = [
+  "meeting.started",
+  "meeting.ended",
+  "recording.ready-to-download",
+];
+
 @Injectable()
 export class VideoService implements OnModuleInit {
   private readonly logger = new Logger(VideoService.name);
@@ -40,11 +51,25 @@ export class VideoService implements OnModuleInit {
         return;
       }
 
-      for (const wh of existing) {
-        if (wh.url === webhookUrl) {
-          this.logger.log(`Daily.co webhook already registered: ${webhookUrl}`);
+      // A webhook with the right URL is NOT enough - it must also be subscribed
+      // to the events we handle. A webhook created without `eventTypes` (the old
+      // bug) matches by URL but delivers nothing, so we must verify the event
+      // subscription and recreate if it's missing/incomplete rather than
+      // early-returning on a URL match.
+      const existingMatch = existing.find((wh) => wh.url === webhookUrl);
+      if (existingMatch) {
+        const subscribed: string[] = Array.isArray(existingMatch.eventTypes)
+          ? existingMatch.eventTypes
+          : [];
+        const hasAllEvents = DAILY_WEBHOOK_EVENTS.every((e) => subscribed.includes(e));
+        if (hasAllEvents) {
+          this.logger.log(`Daily.co webhook already registered with correct events: ${webhookUrl}`);
           return;
         }
+        this.logger.warn(
+          `Daily.co webhook ${existingMatch.uuid || existingMatch.id} is missing event subscriptions ` +
+          `(has: ${subscribed.join(", ") || "none"}) - recreating with [${DAILY_WEBHOOK_EVENTS.join(", ")}]`,
+        );
       }
 
       try {
@@ -57,7 +82,10 @@ export class VideoService implements OnModuleInit {
         }
 
         const result = await this.registerWebhook(webhookUrl, hmacSecret);
-        this.logger.log(`Daily.co webhook auto-registered: ${webhookUrl} (id: ${result?.uuid || result?.id})`);
+        this.logger.log(
+          `Daily.co webhook auto-registered with events [${DAILY_WEBHOOK_EVENTS.join(", ")}]: ` +
+          `${webhookUrl} (id: ${result?.uuid || result?.id})`,
+        );
       } catch (regErr: any) {
         const msg = regErr.message || "";
         if (msg.includes("only 1 webhook") || msg.includes("already")) {
@@ -590,9 +618,16 @@ export class VideoService implements OnModuleInit {
     return Array.isArray(data) ? data : (data.data || []);
   }
 
-  async registerWebhook(webhookUrl: string, hmacSecret?: string): Promise<any> {
+  async registerWebhook(
+    webhookUrl: string,
+    hmacSecret?: string,
+    eventTypes: string[] = DAILY_WEBHOOK_EVENTS,
+  ): Promise<any> {
     const body: Record<string, any> = {
       url: webhookUrl,
+      // Without this, Daily subscribes the webhook to zero events and never
+      // delivers meeting/recording callbacks. See DAILY_WEBHOOK_EVENTS above.
+      eventTypes,
     };
 
     if (hmacSecret) {
