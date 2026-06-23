@@ -1472,7 +1472,11 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
 
       // Show the provider their answer + a confirmation so they can see what
       // was sent. If they attached a file, render it as an attachment card so
-      // they get the same visual confirmation the parent receives.
+      // they get the same visual confirmation the parent receives. This message
+      // is for the PROVIDER ONLY - it must never render in the parent's chat.
+      // The attachment card type is already excluded by the parent's filter;
+      // the plain-text (no-attachment) variant must be explicitly tagged
+      // "provider_only" or it leaks through as a generic system notice.
       const providerConfirmText = hasAttachment
         ? `You answered: "${content.trim()}"\n\nFile attached: ${attachment!.originalName || "attachment"}\n\nThis has been relayed to the parent by the AI concierge. Thank you!`
         : `You answered: "${content.trim()}"\n\nThis has been relayed to the parent by the AI concierge. Thank you!`;
@@ -1483,7 +1487,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
           content: providerConfirmText,
           senderType: "system",
           senderName: "System",
-          ...(hasAttachment ? { uiCardType: "attachment", uiCardData: attachment as any } : {}),
+          ...(hasAttachment ? { uiCardType: "attachment", uiCardData: attachment as any } : { uiCardType: "provider_only" }),
         },
       });
 

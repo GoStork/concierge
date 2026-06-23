@@ -275,10 +275,21 @@ export default function VideoRoomPage() {
   }, [bookingId, navigate, isGuest, guestEmail, guestName, user, isProviderOrAdmin, consentStep]);
 
   useEffect(() => {
-    if ((consentStep === "consented" || consentStep === "declined") && callState === "idle" && isReady) {
+    // Only auto-join once the booking has loaded and is CONFIRMED - that is the
+    // render where the #daily-container div is mounted and containerRef is set.
+    // Triggering earlier (e.g. when ?consent= pre-sets consentStep before the
+    // booking query resolves) makes joinCall bail on its null-container guard
+    // and never retry, leaving a blank page with no video. Depending on
+    // bookingQuery.data here is what re-fires the effect after the container exists.
+    if (
+      (consentStep === "consented" || consentStep === "declined") &&
+      callState === "idle" &&
+      isReady &&
+      bookingQuery.data?.status === "CONFIRMED"
+    ) {
       joinCall();
     }
-  }, [consentStep, isReady]);
+  }, [consentStep, isReady, callState, bookingQuery.data?.status, joinCall]);
 
   useEffect(() => {
     return () => {

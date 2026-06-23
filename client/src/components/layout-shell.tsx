@@ -638,8 +638,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     const providerUnread = (providerChatSessions || []).reduce((sum, s) => {
       return sum + (s.unreadCount || 0) + (s.pendingQuestions || 0);
     }, 0);
-    return parentUnread + providerUnread;
-  }, [chatSessions, providerChatSessions]);
+    // The /chat page renders exactly ONE inbox per role: a provider sees their
+    // provider inbox (providerChatSessions), everyone else sees their own
+    // concierge chats (chatSessions). Count the badge from the inbox that is
+    // actually reachable from /chat, otherwise a provider who also used the
+    // concierge as a user carries a phantom unread they have no way to clear.
+    return isProvider ? providerUnread : parentUnread;
+  }, [chatSessions, providerChatSessions, isProvider]);
   const pendingMeetings = providerPendingBookings?.count || 0;
 
   // Admin: fetch concierge sessions to compute badge count
