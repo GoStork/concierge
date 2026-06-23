@@ -12,6 +12,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import {
   ensureCollection,
+  deleteCollection,
   collectionFaceCount,
   indexEntityPhotos,
   deleteEntityFaces,
@@ -168,7 +169,22 @@ async function main() {
     console.error("Face matching is not configured. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION (and optionally REKOGNITION_COLLECTION_ID).");
     process.exit(1);
   }
-  await ensureCollection();
+  // Clean rebuild: drop the whole collection + clear all DB face bookkeeping,
+  // then index every authorized donor fresh. Removes orphan/duplicate faces so
+  // the collection count and DB face IDs reconcile exactly.
+  if (process.argv.includes("--rebuild")) {
+    console.log(`Rebuilding: deleting collection (had ${await collectionFaceCount().catch(() => "?")} faces)...`);
+    await deleteCollection();
+    await ensureCollection();
+    for (const t of ["EggDonor", "SpermDonor", "Surrogate"]) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "${t}" SET "rekognitionFaceIds" = ARRAY[]::text[], "faceIndexedAt" = NULL, "facePhotoHash" = NULL WHERE "faceIndexedAt" IS NOT NULL OR array_length("rekognitionFaceIds",1) > 0`,
+      );
+    }
+    console.log("Collection recreated empty + DB face bookkeeping cleared. Indexing fresh...");
+  } else {
+    await ensureCollection();
+  }
   const prune = process.argv.includes("--prune-unauthorized");
   console.log(`Collection ready. Faces before: ${await collectionFaceCount()} (force=${FORCE}, prune=${prune})`);
   if (prune) {

@@ -15,6 +15,7 @@ import {
   RekognitionClient,
   CreateCollectionCommand,
   DescribeCollectionCommand,
+  DeleteCollectionCommand,
   IndexFacesCommand,
   SearchFacesByImageCommand,
   DeleteFacesCommand,
@@ -103,6 +104,16 @@ export async function ensureCollection(): Promise<void> {
     if (e?.name !== "ResourceNotFoundException") throw e;
   }
   await client().send(new CreateCollectionCommand({ CollectionId: COLLECTION_ID }));
+}
+
+/** Delete the entire collection (used for a clean rebuild). Needs the
+ * rekognition:DeleteCollection IAM permission. */
+export async function deleteCollection(): Promise<void> {
+  try {
+    await client().send(new DeleteCollectionCommand({ CollectionId: COLLECTION_ID }));
+  } catch (e: any) {
+    if (e?.name !== "ResourceNotFoundException") throw e;
+  }
 }
 
 export async function collectionFaceCount(): Promise<number> {
