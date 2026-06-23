@@ -290,8 +290,17 @@ async function callTier2Claude(
   mcpClientRef: Client | null,
   forceToolUse = false,
   parentAccountId: string | null = null,
+  authUserId: string | null = null,
 ): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
   const hasTools = openAiTools.length > 0;
+
+  // Tools whose userId arg MUST be the authenticated parent (never trust the
+  // model-supplied value) so a parent can only ever read their own data.
+  const injectAuthUser = (fc: { name: string; args: any }) => {
+    if (authUserId && fc.name === "get_parent_meetings") {
+      fc.args = { ...(fc.args || {}), userId: authUserId };
+    }
+  };
 
   // Collect inline system messages and merge into one prompt (strip the cache marker - not needed for Gemini)
   const inlineSystemParts: string[] = [];
@@ -456,6 +465,7 @@ async function callTier2Claude(
           if (mcpClientRef) {
             const tMcp = Date.now();
             try {
+              injectAuthUser(fc as any);
               const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> }, undefined, { timeout: 180_000 });
               let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
               resultText = await maybeReorderCountryPrograms(fc.name, resultText);
@@ -519,6 +529,7 @@ async function callTier2Claude(
           if (mcpClientRef) {
             const tMcp = Date.now();
             try {
+              injectAuthUser(fc as any);
               const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> }, undefined, { timeout: 180_000 });
               let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
               resultText = await maybeReorderCountryPrograms(fc.name, resultText);
@@ -4077,6 +4088,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         mcpClient,
         forceToolUseForSearch,
         userRecord?.parentAccountId ?? null,
+        userId,
       );
       // If Claude executed a search tool but returned empty text, retry once with an explicit
       // instruction to present the results. This happens when Claude calls the tool successfully
@@ -7115,6 +7127,52 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
+    // Resolve [[MEETING_CARD:<bookingId>]] tags into hydrated Booking objects so
+    // the parent can join/reschedule/cancel an existing meeting inline. The AI
+    // emits only the bookingId (from get_parent_meetings); the server re-fetches
+    // the booking from DB truth, scoped to the parent-account members, and drops
+    // any id that isn't theirs (defense in depth on top of the userId injection).
+    let meetingCards: any[] = [];
+    const meetingCardTags = [...finalContent.matchAll(/\[\[MEETING_CARD:([\s\S]*?)\]\]/g)];
+    if (meetingCardTags.length > 0) {
+      try {
+        const meAcct = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+        const meetingMemberIds = meAcct?.parentAccountId
+          ? (await prisma.user.findMany({
+              where: { parentAccountId: meAcct.parentAccountId, isDisabled: false },
+              select: { id: true },
+            })).map((u) => u.id)
+          : [userId];
+        const seenBookingIds = new Set<string>();
+        for (const m of meetingCardTags) {
+          const bookingId = (m[1] || "").trim();
+          if (!bookingId || seenBookingIds.has(bookingId)) continue;
+          seenBookingIds.add(bookingId);
+          const booking = await prisma.booking.findFirst({
+            where: { id: bookingId, parentUserId: { in: meetingMemberIds } },
+            include: {
+              providerUser: {
+                select: {
+                  id: true, name: true, email: true, photoUrl: true, dailyRoomUrl: true,
+                  provider: { select: { id: true, name: true, logoUrl: true } },
+                  scheduleConfig: { select: { bookingPageSlug: true } },
+                },
+              },
+              parentUser: { select: { id: true, name: true, email: true, photoUrl: true, parentAccountId: true } },
+            },
+          });
+          if (booking) {
+            meetingCards.push(booking);
+          } else {
+            console.warn(`[MEETING_CARD] booking ${bookingId} not found or not owned by parent ${userId} - dropping card`);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to process MEETING_CARD:", e);
+      }
+      finalContent = finalContent.replace(/\[\[MEETING_CARD:[\s\S]*?\]\]/g, "").trim();
+    }
+
     // If all AI tiers failed, tell the client to silently retry rather than saving an error message
     if (needsRetry) {
       console.warn("[AI Router] All tiers failed - sending retry_needed to client");
@@ -7174,6 +7232,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     if (matchCards.length > 0) uiExtras.matchCards = matchCards;
     if (doctorCards.length > 0) uiExtras.doctorCards = doctorCards;
     if (consultationCard) uiExtras.consultationCard = consultationCard;
+    if (meetingCards.length > 0) uiExtras.meetingCards = meetingCards;
     if (sendPrepDoc) uiExtras.prepDoc = true;
     if (quickReplies.length > 0) uiExtras.quickReplies = quickReplies;
     if (multiSelect) uiExtras.multiSelect = true;
@@ -7216,6 +7275,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       prepDoc: sendPrepDoc || undefined,
       humanNeeded: humanNeeded || undefined,
       consultationCard: consultationCard || undefined,
+      meetingCards: meetingCards.length > 0 ? meetingCards : undefined,
     });
   } catch (error: any) {
     console.error("AI Router Error:", error);

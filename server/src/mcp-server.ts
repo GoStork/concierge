@@ -952,6 +952,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
         },
       },
+      {
+        name: "get_parent_meetings",
+        description:
+          "Look up the parent's OWN scheduled meetings/consultations/calls (the Booking records). Use this WHENEVER the parent asks about an existing or upcoming meeting with a specific provider or person - its time, date, day, timezone, location, or video/join link - or asks to reschedule, move, or cancel it. Optionally filter by providerName (fuzzy, e.g. 'PFCLA' or 'Pacific Fertility'). Returns each booking with bookingId, providerName, scheduledAt (ISO), bookerTimezone, duration, status, meetingType, joinPath (in-app link for confirmed video calls), bookingPageSlug, and publicToken. After answering, ALWAYS emit a [[MEETING_CARD:<bookingId>]] tag so the interactive card (join/reschedule/cancel) renders. The userId is supplied automatically by the server - do not ask the parent for it.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            userId: { type: "string", description: "The authenticated parent's user ID (injected by the server)." },
+            providerName: { type: "string", description: "Optional fuzzy provider/person name filter (e.g. 'PFCLA', 'Pacific Fertility', a doctor's name)." },
+            status: {
+              type: "string",
+              enum: ["upcoming", "past", "all"],
+              description: "Which meetings to return. 'upcoming' (default) = active future/recent bookings excluding cancelled/rescheduled; 'past' = already-happened; 'all' = everything.",
+            },
+          },
+          required: ["userId"],
+        },
+      },
     ],
   };
 });
@@ -1976,6 +1994,86 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       return {
         content: [{ type: "text", text: provider ? JSON.stringify(provider) : '{"error":"not found"}' }],
+      };
+    }
+
+    if (name === "get_parent_meetings") {
+      const userId = String(args?.userId || "");
+      const providerNameFilter = (args as any)?.providerName ? String((args as any).providerName).trim() : "";
+      const statusFilter = ((args as any)?.status as string) || "upcoming";
+      if (!userId) {
+        return { content: [{ type: "text", text: '{"error":"userId required"}' }] };
+      }
+
+      // Scope to all members of the parent's shared account (mirrors
+      // getParentAccountMemberIds in calendar.controller.ts) so a booking made
+      // by any account member is visible.
+      const me = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+      const memberIds = me?.parentAccountId
+        ? (await prisma.user.findMany({
+            where: { parentAccountId: me.parentAccountId, isDisabled: false },
+            select: { id: true },
+          })).map((u) => u.id)
+        : [userId];
+
+      const where: any = { parentUserId: { in: memberIds } };
+      const now = new Date();
+      if (statusFilter === "upcoming") {
+        // Active bookings (not cancelled/rescheduled) that have not yet ended.
+        // Use a 2h grace so an in-progress or just-finished call still answers.
+        where.status = { notIn: ["CANCELLED", "RESCHEDULED", "EXPIRED"] };
+        where.scheduledAt = { gte: new Date(now.getTime() - 2 * 60 * 60 * 1000) };
+      } else if (statusFilter === "past") {
+        where.scheduledAt = { lt: now };
+      }
+
+      let bookings = await prisma.booking.findMany({
+        where,
+        include: {
+          providerUser: {
+            select: {
+              id: true,
+              name: true,
+              dailyRoomUrl: true,
+              provider: { select: { id: true, name: true } },
+              scheduleConfig: { select: { bookingPageSlug: true } },
+            },
+          },
+        },
+        orderBy: { scheduledAt: "asc" },
+        take: 25,
+      });
+
+      if (providerNameFilter) {
+        const needle = providerNameFilter.toLowerCase();
+        bookings = bookings.filter((b: any) => {
+          const provName = (b.providerUser?.provider?.name || "").toLowerCase();
+          const userName = (b.providerUser?.name || "").toLowerCase();
+          const subj = (b.subject || "").toLowerCase();
+          return provName.includes(needle) || userName.includes(needle) || subj.includes(needle);
+        });
+      }
+
+      const results = bookings.map((b: any) => ({
+        bookingId: b.id,
+        providerName: b.providerUser?.provider?.name || b.providerUser?.name || "Provider",
+        contactName: b.providerUser?.name || null,
+        scheduledAt: b.scheduledAt?.toISOString?.() || b.scheduledAt,
+        bookerTimezone: b.bookerTimezone || null,
+        duration: b.duration || 30,
+        status: b.status,
+        meetingType: b.meetingType || "video",
+        subject: b.subject || null,
+        // In-app join link, valid once the booking is CONFIRMED and is a video call.
+        joinPath: b.status === "CONFIRMED" && b.meetingType !== "phone" ? `/room/${b.id}` : null,
+        bookingPageSlug: b.providerUser?.scheduleConfig?.bookingPageSlug || null,
+        publicToken: b.publicToken || null,
+      }));
+
+      return {
+        content: [{
+          type: "text",
+          text: `Found ${results.length} meeting(s) for this parent${providerNameFilter ? ` matching "${providerNameFilter}"` : ""}:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Answer the parent's question (time, date, timezone, link, etc.) directly using these fields. Times are stored in UTC (scheduledAt) - present them in the booking's bookerTimezone when given. For EACH relevant meeting, emit a [[MEETING_CARD:<bookingId>]] tag (using the exact bookingId) so the interactive join/reschedule/cancel card renders. If the list is empty, tell the parent you don't see a scheduled meeting matching that and offer to book one - never invent a time or link.` }],
       };
     }
 

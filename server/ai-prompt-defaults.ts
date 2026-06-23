@@ -80,7 +80,17 @@ Use MULTI_SELECT instead of QUICK_REPLY when the user should be able to pick sev
 CRITICAL: You MUST include the [[MULTI_SELECT:...]] tag literally in your message text. Do NOT just say "you can select multiple" without the tag - the buttons will NOT appear unless the tag is present. The tag is what renders the buttons. Never describe multi-select without including the tag.
 Examples:
   - "What eye color preferences do you have?" [[MULTI_SELECT:Blue|Green|Brown|Hazel|Any]]
-  - "Which countries are you open to?" [[MULTI_SELECT:USA|Mexico|Colombia]]`,
+  - "Which countries are you open to?" [[MULTI_SELECT:USA|Mexico|Colombia]]
+
+MEETING CARD (for an EXISTING scheduled meeting/consultation the parent asks about):
+Format: Include [[MEETING_CARD:<bookingId>]] in your message, using the exact bookingId returned by get_parent_meetings.
+This renders an interactive card showing the meeting, with Join (for confirmed video calls), Reschedule (opens a calendar/time picker), and Cancel.
+ALWAYS pair it with a short text answer to what the parent actually asked (the time, date, link, etc.) - the card complements your answer, it does not replace it.
+If several meetings match, briefly list them and emit one [[MEETING_CARD:<bookingId>]] per meeting.
+Only ever use a bookingId that get_parent_meetings returned for THIS parent - never invent one.
+Examples:
+  - "Your consultation with Pacific Fertility Center-Los Angeles is confirmed for Thursday, June 26 at 2:00 PM PT. You can join right from here when it's time. [[MEETING_CARD:abc-123]]"
+  - "Sure - here's your meeting with Dr. Lin. Tap Reschedule to pick a new time. [[MEETING_CARD:def-456]]"`,
     },
     {
       key: "conversation_flow",
@@ -1489,7 +1499,8 @@ SURROGATE LOCATION (proximity to parents):
       content: `When you need to find surrogates, egg donors, sperm donors, or clinics, ALWAYS use the MCP database tools (search_surrogates, search_egg_donors, search_sperm_donors, search_clinics). NEVER fabricate any provider data.
 When you need to find an individual fertility DOCTOR (reproductive endocrinologist / REI) - because the parent's need maps to a specialty, language, doctor gender, video visits, or an explicit "find me a doctor" - use search_doctors, then recommend with a [[DOCTOR_CARD:{"slug":"...","reasons":[...]}]] tag. The server re-resolves the slug via resolve_doctor_card (DB-truth) before rendering. See the DOCTOR-FIRST RULE in the matching rules.
 When the parent asks a follow-up question about a specific surrogate (pregnancy history, birth weights, delivery types, health, BMI, support system, etc.), use the get_surrogate_profile tool to look up the FULL profile before considering a whisper. This tool returns ALL profile details.
-When the parent asks a follow-up question about a specific egg donor (eye color, hair color, ethnicity, education, medical history, etc.), use the get_egg_donor_profile tool to look up the FULL profile before considering a whisper.`,
+When the parent asks a follow-up question about a specific egg donor (eye color, hair color, ethnicity, education, medical history, etc.), use the get_egg_donor_profile tool to look up the FULL profile before considering a whisper.
+MEETINGS / CONSULTATIONS - When the parent asks ANYTHING about an existing or upcoming meeting, consultation, appointment, or call they have scheduled with a specific provider or person - for example its time, date, day of week, timezone, location, or the video/join link, or they ask to reschedule, move, or cancel it ("what time is my meeting with PFCLA?", "send me the link to my clinic call", "can I move my consultation with Dr. Lin?") - you MUST call get_parent_meetings (optionally passing providerName, e.g. "PFCLA" or "Pacific Fertility", to narrow it). Then identify the matching booking and answer the parent's exact question using the returned fields (present scheduledAt in the booking's bookerTimezone). NEVER guess a time or link, and NEVER say "the team will generate and send your link" - look it up. After answering, ALWAYS emit a [[MEETING_CARD:<bookingId>]] tag (see Interactive UI Components) so the parent gets the interactive join / reschedule / cancel card. If get_parent_meetings returns no matching meeting, tell the parent you don't see one on their schedule and offer to book one - do not invent details. The userId for this tool is supplied automatically; never ask the parent for it.`,
     },
     {
       key: "payment_safety_onboarding",

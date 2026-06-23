@@ -102,6 +102,8 @@ interface ChatMessage {
   doctorCards?: DoctorCard[];
   prepDoc?: boolean;
   consultationCard?: ConsultationCardData;
+  /** Hydrated Booking objects for existing-meeting questions (join/reschedule/cancel). */
+  meetingCards?: any[];
   agreementCard?: { agreementId: string; status: string; viewUrl: string | null };
   senderType?: string;
   senderName?: string;
@@ -2853,6 +2855,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               quickReplies: aiData.quickReplies,
               matchCards: aiData.matchCards,
               doctorCards: aiData.doctorCards,
+              meetingCards: aiData.meetingCards ?? aiData.message?.uiCardData?.meetingCards,
               senderType: aiData.message.senderType,
               senderName: aiData.message.senderName,
             };
@@ -3042,6 +3045,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             senderName: m.senderName,
             matchCards: extras.matchCards,
             doctorCards: extras.doctorCards,
+            meetingCards: extras.meetingCards,
             prepDoc: extras.prepDoc,
             consultationCard: extras.consultationCard,
             agreementCard: extras.agreementCard,
@@ -3121,6 +3125,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   senderName: m.senderName,
                   matchCards: extras.matchCards,
                   doctorCards: extras.doctorCards,
+                  meetingCards: extras.meetingCards,
                   prepDoc: extras.prepDoc,
                   consultationCard: extras.consultationCard,
                   quickReplies: idx === msgs.length - 1 ? extras.quickReplies : undefined,
@@ -3386,6 +3391,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 senderName: m.senderName || (m.senderType === "human" ? "GoStork Expert" : m.senderType === "provider" ? m.senderName : undefined),
                 matchCards: extras.matchCards,
                 doctorCards: extras.doctorCards,
+                meetingCards: extras.meetingCards,
                 prepDoc: extras.prepDoc,
                 consultationCard: extras.consultationCard,
                 agreementCard: extras.agreementCard,
@@ -3786,6 +3792,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               multiSelect: data.multiSelect,
               matchCards: data.matchCards,
               doctorCards: data.doctorCards,
+              meetingCards: data.meetingCards,
               prepDoc: data.prepDoc,
               consultationCard: data.consultationCard,
               agreementCard: data.agreementCard,
@@ -4190,6 +4197,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 multiSelect: data.multiSelect,
                 matchCards: data.matchCards,
                 doctorCards: data.doctorCards,
+                meetingCards: data.meetingCards,
                 prepDoc: data.prepDoc,
                 consultationCard: data.consultationCard,
                 agreementCard: data.agreementCard,
@@ -4586,6 +4594,40 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           brandColor={brandColor}
                           onAction={handleQuickReply}
                         />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Meeting cards - existing bookings the parent asked about.
+                      Reuses InlineBookingCalendar (same component as the standalone
+                      session booking) so join/reschedule/cancel work identically.
+                      slug comes from each booking's OWN provider so the reschedule
+                      picker hits the right calendar regardless of which provider. */}
+                  {!alignRight && msg.meetingCards && msg.meetingCards.length > 0 && (
+                    <div className="mb-2 space-y-3 w-full" data-testid={`meeting-cards-${i}`}>
+                      {msg.meetingCards.map((booking: any) => (
+                        <div
+                          key={`meeting-${booking.id}`}
+                          className="w-full overflow-hidden border border-border bg-card"
+                          style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
+                        >
+                          <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+                            <div className="flex items-center gap-2 px-3 py-1.5">
+                              <CalendarCheck className="w-4 h-4 text-primary-foreground" />
+                              <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
+                                {`Meeting with ${booking.providerUser?.provider?.name || booking.providerUser?.name || "Provider"}`}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="px-4 pb-4">
+                            <InlineBookingCalendar
+                              slug={booking.providerUser?.scheduleConfig?.bookingPageSlug || "__none__"}
+                              memberName={booking.providerUser?.name || "Provider"}
+                              brandColor={brandColor}
+                              existingBooking={booking}
+                            />
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
