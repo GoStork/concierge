@@ -4,6 +4,7 @@ import { CostSheetParentAck } from "@/components/chat/special-message-card";
 import { ChatPlusDrawer, type ChatPlusAction } from "@/components/chat/chat-plus-drawer";
 import { InvoicePaymentPanel } from "@/components/chat/invoice-payment-panel";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
+import { ComparisonCard } from "@/components/chat/comparison-card";
 import { createPortal } from "react-dom";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -74,6 +75,25 @@ export interface DoctorCard extends DoctorCardData {
   isNewPatient?: boolean;
 }
 
+// A side-by-side comparison card resolved server-side (DB-truth) for 2-4
+// entities of the same type (clinics, donors, surrogates, doctors, agencies).
+// Data-driven: one ComparisonCard renders any entity type via its grouped rows.
+export interface ComparisonCardCellValue {
+  display: string;
+  best?: boolean;
+}
+export interface ComparisonCardData {
+  entityType: string;
+  title?: string;
+  dimensions?: string[] | "all";
+  entities: { id: string; name: string; photo?: string | null; subtitle?: string | null }[];
+  groups: {
+    key: string;
+    label: string;
+    rows: { label: string; values: ComparisonCardCellValue[] }[];
+  }[];
+}
+
 export interface ConsultationCardData {
   providerId: string;
   providerName: string;
@@ -100,6 +120,7 @@ interface ChatMessage {
   multiSelect?: boolean;
   matchCards?: MatchCard[];
   doctorCards?: DoctorCard[];
+  comparisonCards?: ComparisonCardData[];
   prepDoc?: boolean;
   consultationCard?: ConsultationCardData;
   /** Hydrated Booking objects for existing-meeting questions (join/reschedule/cancel). */
@@ -112,6 +133,52 @@ interface ChatMessage {
   deliveredAt?: string | null;
   readAt?: string | null;
   createdAt?: string;
+}
+
+// Render a single line of AI/chat text: **bold** plus clickable links. The AI
+// sometimes emits a join link (a full URL or an in-app /room/<id> path), often
+// wrapped in `backticks` - this makes those clickable and strips the code
+// backticks (the bubble does not support markdown code spans).
+function linkifyTextNode(text: string, keyPrefix: string): React.ReactNode[] {
+  const cleaned = text.replace(/`/g, "");
+  const re = /(https?:\/\/[^\s)]+|\/room\/[A-Za-z0-9-]+)/g;
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let idx = 0;
+  while ((m = re.exec(cleaned)) !== null) {
+    if (m.index > last) nodes.push(<Fragment key={`${keyPrefix}-t${idx}`}>{cleaned.slice(last, m.index)}</Fragment>);
+    const href = m[0];
+    nodes.push(
+      <a
+        key={`${keyPrefix}-a${idx}`}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline"
+        style={{ color: "inherit", textUnderlineOffset: "2px" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {href}
+      </a>,
+    );
+    last = m.index + m[0].length;
+    idx++;
+  }
+  if (last < cleaned.length) nodes.push(<Fragment key={`${keyPrefix}-t${idx}`}>{cleaned.slice(last)}</Fragment>);
+  return nodes;
+}
+
+function renderRichLine(line: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  line.split(/(\*\*[^*]+\*\*)/g).forEach((part, pi) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      out.push(<strong key={`b${pi}`}>{part.slice(2, -2)}</strong>);
+    } else if (part) {
+      out.push(...linkifyTextNode(part, `p${pi}`));
+    }
+  });
+  return out;
 }
 
 function chatDateLabel(dateStr: string): string {
@@ -2855,6 +2922,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               quickReplies: aiData.quickReplies,
               matchCards: aiData.matchCards,
               doctorCards: aiData.doctorCards,
+              comparisonCards: aiData.comparisonCards ?? aiData.message?.uiCardData?.comparisonCards,
               meetingCards: aiData.meetingCards ?? aiData.message?.uiCardData?.meetingCards,
               senderType: aiData.message.senderType,
               senderName: aiData.message.senderName,
@@ -3045,6 +3113,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             senderName: m.senderName,
             matchCards: extras.matchCards,
             doctorCards: extras.doctorCards,
+            comparisonCards: extras.comparisonCards,
             meetingCards: extras.meetingCards,
             prepDoc: extras.prepDoc,
             consultationCard: extras.consultationCard,
@@ -3125,6 +3194,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   senderName: m.senderName,
                   matchCards: extras.matchCards,
                   doctorCards: extras.doctorCards,
+                  comparisonCards: extras.comparisonCards,
                   meetingCards: extras.meetingCards,
                   prepDoc: extras.prepDoc,
                   consultationCard: extras.consultationCard,
@@ -3391,6 +3461,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 senderName: m.senderName || (m.senderType === "human" ? "GoStork Expert" : m.senderType === "provider" ? m.senderName : undefined),
                 matchCards: extras.matchCards,
                 doctorCards: extras.doctorCards,
+                comparisonCards: extras.comparisonCards,
                 meetingCards: extras.meetingCards,
                 prepDoc: extras.prepDoc,
                 consultationCard: extras.consultationCard,
@@ -3792,6 +3863,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               multiSelect: data.multiSelect,
               matchCards: data.matchCards,
               doctorCards: data.doctorCards,
+              comparisonCards: data.comparisonCards,
               meetingCards: data.meetingCards,
               prepDoc: data.prepDoc,
               consultationCard: data.consultationCard,
@@ -4197,6 +4269,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 multiSelect: data.multiSelect,
                 matchCards: data.matchCards,
                 doctorCards: data.doctorCards,
+                comparisonCards: data.comparisonCards,
                 meetingCards: data.meetingCards,
                 prepDoc: data.prepDoc,
                 consultationCard: data.consultationCard,
@@ -4598,36 +4671,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     </div>
                   )}
 
-                  {/* Meeting cards - existing bookings the parent asked about.
-                      Reuses InlineBookingCalendar (same component as the standalone
-                      session booking) so join/reschedule/cancel work identically.
-                      slug comes from each booking's OWN provider so the reschedule
-                      picker hits the right calendar regardless of which provider. */}
-                  {!alignRight && msg.meetingCards && msg.meetingCards.length > 0 && (
-                    <div className="mb-2 space-y-3 w-full" data-testid={`meeting-cards-${i}`}>
-                      {msg.meetingCards.map((booking: any) => (
-                        <div
-                          key={`meeting-${booking.id}`}
-                          className="w-full overflow-hidden border border-border bg-card"
-                          style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
-                        >
-                          <div className="p-1.5" style={{ backgroundColor: brandColor }}>
-                            <div className="flex items-center gap-2 px-3 py-1.5">
-                              <CalendarCheck className="w-4 h-4 text-primary-foreground" />
-                              <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-                                {`Meeting with ${booking.providerUser?.provider?.name || booking.providerUser?.name || "Provider"}`}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="px-4 pb-4">
-                            <InlineBookingCalendar
-                              slug={booking.providerUser?.scheduleConfig?.bookingPageSlug || "__none__"}
-                              memberName={booking.providerUser?.name || "Provider"}
-                              brandColor={brandColor}
-                              existingBooking={booking}
-                            />
-                          </div>
-                        </div>
+                  {/* Comparison cards - side-by-side comparison of 2-4 entities
+                      (clinics, donors, surrogates, doctors, agencies). Wider than
+                      the match-card column; scrolls horizontally on small screens. */}
+                  {!alignRight && msg.comparisonCards && msg.comparisonCards.length > 0 && (
+                    <div className="mb-2 space-y-3 w-full max-w-[460px] sm:max-w-[560px]">
+                      {msg.comparisonCards.map((card, ci) => (
+                        <ComparisonCard key={`cmp-${ci}`} card={card} brandColor={brandColor} />
                       ))}
                     </div>
                   )}
@@ -4684,19 +4734,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                       data-testid={`chat-message-${msg.role}-${i}`}
                     >
                       <span style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
-                        {displayContent.split("\n").map((line, li) => {
-                          const parts = line.split(/(\*\*[^*]+\*\*)/g);
-                          return (
-                            <Fragment key={li}>
-                              {li > 0 && <br />}
-                              {parts.map((part, pi) =>
-                                part.startsWith("**") && part.endsWith("**")
-                                  ? <strong key={pi}>{part.slice(2, -2)}</strong>
-                                  : <Fragment key={pi}>{part}</Fragment>
-                              )}
-                            </Fragment>
-                          );
-                        })}
+                        {displayContent.split("\n").map((line, li) => (
+                          <Fragment key={li}>
+                            {li > 0 && <br />}
+                            {renderRichLine(line)}
+                          </Fragment>
+                        ))}
                       </span>
                       {/* Quick replies - inside bubble */}
                       {msg.quickReplies && msg.quickReplies.length > 0 && i === messages.length - 1 && (() => {
@@ -4797,6 +4840,41 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
                       )}
                     </span>
+                  )}
+
+                  {/* Meeting cards - existing bookings the parent asked about.
+                      Rendered AFTER the text bubble so the AI's answer comes first,
+                      then the card. Reuses InlineBookingCalendar (same component as
+                      the standalone session booking) so join/reschedule/cancel work
+                      identically. slug comes from each booking's OWN provider so the
+                      reschedule picker hits the right calendar. */}
+                  {!alignRight && msg.meetingCards && msg.meetingCards.length > 0 && (
+                    <div className="mt-3 space-y-3 w-full" data-testid={`meeting-cards-${i}`}>
+                      {msg.meetingCards.map((booking: any) => (
+                        <div
+                          key={`meeting-${booking.id}`}
+                          className="w-full overflow-hidden border border-border bg-card"
+                          style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
+                        >
+                          <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+                            <div className="flex items-center gap-2 px-3 py-1.5">
+                              <CalendarCheck className="w-4 h-4 text-primary-foreground" />
+                              <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
+                                {`Meeting with ${booking.providerUser?.provider?.name || booking.providerUser?.name || "Provider"}`}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="px-4 pb-4">
+                            <InlineBookingCalendar
+                              slug={booking.providerUser?.scheduleConfig?.bookingPageSlug || "__none__"}
+                              memberName={booking.providerUser?.name || "Provider"}
+                              brandColor={brandColor}
+                              existingBooking={booking}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
 
                   {/* PrepDoc */}

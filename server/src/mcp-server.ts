@@ -456,6 +456,157 @@ async function searchWithFallback(
   return { candidates: [], relaxedFilter: null };
 }
 
+// ---------------------------------------------------------------------------
+// Full-profile + comparison helpers.
+//
+// These power get_provider_profile, get_sperm_donor_profile and
+// resolve_comparison so the AI concierge can answer ANY question about a
+// specific provider/profile and render comparison cards. Every value is
+// DB-truth - never fabricated.
+// ---------------------------------------------------------------------------
+
+// Expand a donor/surrogate profileData JSON blob into clean sections + top-level
+// details, the same way get_egg_donor_profile / get_surrogate_profile do.
+function expandProfileData(pd: any): { profileSections: Record<string, any>; additionalDetails: Record<string, any> } {
+  const sections = pd?._sections || {};
+  const profileSections: Record<string, any> = {};
+  const skipSections = new Set(["Photos"]);
+  for (const [sectionName, sectionData] of Object.entries(sections)) {
+    if (skipSections.has(sectionName) || !sectionData) continue;
+    profileSections[sectionName] = sectionData;
+  }
+  const additionalDetails: Record<string, any> = {};
+  if (pd && typeof pd === "object") {
+    for (const [key, value] of Object.entries(pd)) {
+      if (key === "_sections" || key === "Photos" || key === "SKIP") continue;
+      if (value !== undefined && value !== null && value !== "") additionalDetails[key] = value;
+    }
+  }
+  return { profileSections, additionalDetails };
+}
+
+// Age-band display labels (mirrors the private map in ivf-success-rate.ts).
+const COMPARE_AGE_LABELS: Record<string, string> = {
+  under_35: "Under 35", "35_37": "35-37", "38_40": "38-40", over_40: "Over 40",
+};
+
+// Items that count units (retrievals/transfers) rather than add dollars - kept
+// out of cost totals, same as costs.service.getParentCostProgramsForProvider.
+const COUNTED_ONLY_COST_KEYS = new Set([
+  "Number of Egg Retrievals Included",
+  "Number of Sperm Collections Included",
+  "Number of Transfers Included",
+]);
+
+// Cost-program totals for a provider (clinics, agencies, banks). Mirrors the
+// baseline + pricing-tier summation in
+// costs.service.getParentCostProgramsForProvider (kept local because that method
+// is NestJS-bound and the MCP runs as a standalone process). Returns one priced
+// entry per program, or per tier when a program defines pricing tiers.
+async function buildProviderCostPrograms(providerId: string): Promise<Array<{ programName: string; country: string | null; tab: string | null; subTypes: string[]; minTotal: number; maxTotal: number }>> {
+  const programs = await prisma.costProgram.findMany({
+    where: { providerId },
+    include: {
+      costSheets: {
+        where: { status: "APPROVED", parentClientId: null },
+        orderBy: { version: "desc" },
+        include: { items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] } },
+      },
+    },
+  });
+  const out: Array<{ programName: string; country: string | null; tab: string | null; subTypes: string[]; minTotal: number; maxTotal: number }> = [];
+  for (const p of programs as any[]) {
+    const sheet = p.costSheets[0];
+    if (!sheet || sheet.items.length === 0) continue;
+    const tierItems = sheet.items.filter((i: any) => i.isTier === true);
+    const baselineItems = sheet.items.filter((i: any) => i.isTier !== true);
+    let baseMin = 0, baseMax = 0;
+    for (const item of baselineItems) {
+      if (!item.isIncluded) continue;
+      const baseKey = item.key.replace(/\s*\((?:Standard|Variant \d+)\)$/, "");
+      if (COUNTED_ONLY_COST_KEYS.has(baseKey)) continue;
+      const min = item.minValue ?? 0;
+      const max = item.maxValue ?? min;
+      baseMin += min;
+      baseMax += max === 0 && min > 0 ? min : max;
+    }
+    if (tierItems.length === 0) {
+      out.push({ programName: p.name, country: p.country, tab: p.tab, subTypes: p.subTypes || [], minTotal: baseMin, maxTotal: baseMax });
+    } else {
+      for (const tier of tierItems) {
+        const tierMin = tier.minValue ?? 0;
+        const tierMax = tier.maxValue ?? tierMin;
+        out.push({ programName: `${p.name} · ${tier.key}`, country: p.country, tab: p.tab, subTypes: p.subTypes || [], minTotal: baseMin + tierMin, maxTotal: baseMax + (tierMax === 0 && tierMin > 0 ? tierMin : tierMax) });
+      }
+    }
+  }
+  return out;
+}
+
+// Assemble a single provider's FULL profile (clinic / egg-donor agency /
+// surrogacy agency / egg bank / sperm bank / legal). Reused by
+// get_provider_profile AND resolve_comparison so the two never drift.
+async function buildProviderProfile(providerId: string): Promise<any | null> {
+  const p: any = await prisma.provider.findUnique({
+    where: { id: providerId },
+    select: {
+      id: true, name: true, about: true, logoUrl: true, websiteUrl: true,
+      email: true, phone: true, yearFounded: true,
+      acceptedInsurance: true, lgbtqCare: true, offersVideoVisits: true,
+      reviewCount: true, recommendPct: true, avgOverallScore: true, statesLicensedIn: true,
+      cdcServices: true, cdcExperience: true, cdcCycleStats: true, cdcMedicalDirector: true,
+      ivfTwinsAllowed: true, ivfTransferFromOtherClinics: true, ivfAcceptingPatients: true,
+      surrogacyTwinsAllowed: true, surrogacyCitizensNotAllowed: true, surrogacyStayAfterBirthMonths: true,
+      sponsoredUntil: true,
+      services: { select: { status: true, providerType: { select: { name: true } } } },
+      locations: { select: { city: true, state: true, address: true }, orderBy: { sortOrder: "asc" } },
+      members: {
+        where: { isPublicProfile: true }, orderBy: { sortOrder: "asc" }, take: 30,
+        select: { name: true, title: true, slug: true, isMedicalDirector: true, specialties: true, languagesSpoken: true, reviewCount: true, recommendPct: true, avgOverallScore: true },
+      },
+      surrogacyProfile: { select: { numberOfBabiesBorn: true, timeToMatch: true, familiesPerCoordinator: true, screening: true } },
+      ivfSuccessRates: {
+        where: { metricCode: { in: ["pct_new_patients_live_birth_after_1_retrieval", "pct_intended_retrievals_live_births", "pct_transfers_live_births_donor"] } },
+        select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, top10pct: true, cycleCount: true, profileType: true },
+      },
+    },
+  });
+  if (!p) return null;
+
+  const approvedServices = (p.services || []).filter((s: any) => s.status === "APPROVED").map((s: any) => s.providerType?.name).filter(Boolean);
+  const locations = (p.locations || []).map((l: any) => [l.city, l.state].filter(Boolean).join(", ")).filter(Boolean);
+  const costPrograms = await buildProviderCostPrograms(p.id);
+
+  // Success-rate breakdown across all age bands (own eggs) + donor eggs.
+  const ownEggsByAge: Record<string, any> = {};
+  for (const ag of ["under_35", "35_37", "38_40", "over_40"] as AgeGroup[]) {
+    const sr = computeClinicSuccessRate(p.ivfSuccessRates as any, { eggSource: "own_eggs", ageGroup: ag, isNewPatient: false });
+    if (sr.successRate) ownEggsByAge[COMPARE_AGE_LABELS[ag]] = { rate: sr.successRate, successPct: sr.successPct, nationalAverage: sr.nationalAverage, top10pct: sr.top10pct, cycleCount: sr.cycleCount };
+  }
+  const donorSr = computeClinicSuccessRate(p.ivfSuccessRates as any, { eggSource: "donor", ageGroup: "under_35", isNewPatient: false });
+
+  return {
+    id: p.id, name: p.name, about: p.about, websiteUrl: p.websiteUrl, email: p.email, phone: p.phone,
+    yearFounded: p.yearFounded, logoUrl: p.logoUrl,
+    services: approvedServices, locations,
+    acceptedInsurance: p.acceptedInsurance, lgbtqCare: p.lgbtqCare, offersVideoVisits: p.offersVideoVisits,
+    statesLicensedIn: p.statesLicensedIn,
+    reviews: { reviewCount: p.reviewCount, recommendPct: p.recommendPct, avgOverallScore: p.avgOverallScore != null ? Number(p.avgOverallScore) : null },
+    doctors: (p.members || []).map((m: any) => ({ name: m.name, title: m.title, slug: m.slug, isMedicalDirector: m.isMedicalDirector, specialties: m.specialties, languagesSpoken: m.languagesSpoken, reviewCount: m.reviewCount, recommendPct: m.recommendPct, avgOverallScore: m.avgOverallScore != null ? Number(m.avgOverallScore) : null })),
+    medicalDirector: p.cdcMedicalDirector || (p.members || []).find((m: any) => m.isMedicalDirector)?.name || null,
+    cdc: { services: p.cdcServices || null, experience: p.cdcExperience || null, cycleStats: p.cdcCycleStats || null },
+    successRates: {
+      ownEggsByAge: Object.keys(ownEggsByAge).length ? ownEggsByAge : null,
+      donorEggs: donorSr.successRate ? { rate: donorSr.successRate, successPct: donorSr.successPct, nationalAverage: donorSr.nationalAverage, top10pct: donorSr.top10pct, cycleCount: donorSr.cycleCount } : null,
+    },
+    costPrograms,
+    surrogacyProfile: p.surrogacyProfile || null,
+    surrogacy: { twinsAllowed: p.surrogacyTwinsAllowed, citizensNotAllowed: p.surrogacyCitizensNotAllowed || null, stayAfterBirthMonths: p.surrogacyStayAfterBirthMonths },
+    ivf: { twinsAllowed: p.ivfTwinsAllowed, transferFromOtherClinics: p.ivfTransferFromOtherClinics, acceptingPatients: p.ivfAcceptingPatients || null },
+    sponsored: !!p.sponsoredUntil && new Date(p.sponsoredUntil).getTime() > Date.now(),
+  };
+}
+
 const server = new Server(
   {
     name: "gostork-database-mcp",
@@ -868,6 +1019,47 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             providerId: { type: "string", description: "The provider UUID" },
             providerName: { type: "string", description: "Partial name match (used if providerId not provided)" },
           },
+        },
+      },
+      {
+        name: "get_provider_profile",
+        description:
+          "Look up a specific PROVIDER's FULL profile by ID or name - works for IVF clinics, egg-donor agencies, surrogacy agencies, egg banks, sperm banks, and legal firms. Returns EVERYTHING about the provider: about/website/contact, approved services, locations, doctors/team (with specialties, languages, reviews), provider review aggregates, IVF success rates broken down by age band AND egg source, CDC data (services offered, most-common diagnoses seen, lab practice patterns like PGT/ICSI rates, medical director), and cost programs with price ranges. Use this whenever a parent asks ANY question about a specific clinic or agency (its costs, success rates, specialties, services, who works there, etc.) - answer DIRECTLY from the returned data, never fabricate.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            providerId: { type: "string", description: "The provider's UUID (from a previous search result or MATCH_CARD)." },
+            providerName: { type: "string", description: "Provider name (partial match) - used if providerId is not available." },
+          },
+        },
+      },
+      {
+        name: "get_sperm_donor_profile",
+        description:
+          "Look up a specific sperm donor's FULL profile by ID or external ID. Returns complete physical traits, ethnicity, education, health/family history, vial types, costs, personality, and all other profile sections. Use this when a parent asks follow-up questions about a specific sperm donor's details - answer DIRECTLY from the returned data.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            donorId: { type: "string", description: "The sperm donor's UUID (id field) from a previous search result or MATCH_CARD." },
+            externalId: { type: "string", description: "The sperm donor's external ID. Use this if you don't have the UUID." },
+          },
+        },
+      },
+      {
+        name: "resolve_comparison",
+        description:
+          "Internal tool: Build a side-by-side comparison of 2-4 entities of the SAME type (clinics, egg donors, sperm donors, surrogates, doctors, or surrogacy agencies/banks). Returns a normalized, DB-truth comparison payload (entities[] + grouped attribute rows with the best value per numeric row flagged). The AI emits a [[COMPARE_CARD]] tag; the server calls this to resolve the real data so numbers are never fabricated. Pass dimensions to focus the comparison (e.g. ['successRates'] or ['cost']) or 'all' for a full comparison.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            entityType: { type: "string", description: "One of: Clinic, Egg Donor, Sperm Donor, Surrogate, Doctor, Surrogacy Agency, Provider." },
+            entities: { type: "array", items: { type: "string" }, description: "2-4 entity identifiers: UUIDs (clinics/donors/surrogates/agencies) or slugs (doctors). External IDs and names are accepted as a fallback." },
+            dimensions: { description: "Array of focus keys to compare ONLY what the parent asked about, or the string 'all' for a full comparison. Clinic keys: successRates, cost, services, specialties, practices, team, reviews, location. Doctor: specialties, experience, clinics, reviews, languages. Egg/Sperm Donor: physical, ethnicity, education, health, cost. Surrogate: experience, pregnancyHistory, compensation, preferences, location. Agency/Provider: services, cost, location, reviews, requirements." },
+            eggSource: { type: "string", enum: ["own_eggs", "donor"], description: "Clinic/doctor success-rate framing. Default own_eggs." },
+            ageGroup: { type: "string", enum: ["under_35", "35_37", "38_40", "over_40"], description: "Clinic/doctor success-rate framing. Default under_35." },
+            isNewPatient: { type: "boolean", description: "First-time IVF patient framing for clinic/doctor success rates." },
+          },
+          required: ["entityType", "entities"],
         },
       },
       {
@@ -1997,6 +2189,339 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    if (name === "get_provider_profile") {
+      const { providerId, providerName } = args as any;
+      let id = providerId as string | undefined;
+      if (!id && providerName) {
+        const found = await prisma.provider.findFirst({
+          where: { name: { contains: String(providerName).trim(), mode: "insensitive" } },
+          select: { id: true },
+        });
+        id = found?.id;
+      }
+      if (!id) {
+        return { content: [{ type: "text", text: "Error: Provide a providerId, or a providerName that matches a provider." }] };
+      }
+      const profile = await buildProviderProfile(id);
+      if (!profile) {
+        return { content: [{ type: "text", text: `No provider found for ${providerId ? "ID " + providerId : "name " + providerName}.` }] };
+      }
+      return {
+        content: [{ type: "text", text: `Full profile for ${profile.name}:\n${JSON.stringify(profile, null, 2)}\n\nThis is the COMPLETE provider profile (approved services, IVF success rates by age band + egg source, CDC data: services offered / most-common diagnoses / lab practice patterns, cost programs with price ranges, doctors/team, and review aggregates). Use this data to answer the parent's question DIRECTLY. NEVER fabricate costs, rates, services, or specialties - if a field is null/empty, tell the parent the information isn't available rather than guessing.` }],
+      };
+    }
+
+    if (name === "get_sperm_donor_profile") {
+      const { donorId, externalId } = args as any;
+      if (!donorId && !externalId) {
+        return { content: [{ type: "text", text: "Error: Provide either donorId (UUID) or externalId." }] };
+      }
+      const where: any = {};
+      if (donorId) where.id = donorId;
+      else if (externalId) where.externalId = externalId;
+
+      const donor = await prisma.spermDonor.findFirst({
+        where,
+        select: {
+          id: true, providerId: true, externalId: true, firstName: true, age: true, location: true,
+          donorType: true, eyeColor: true, hairColor: true, height: true, weight: true,
+          ethnicity: true, race: true, religion: true, education: true, occupation: true,
+          relationshipStatus: true, compensation: true, totalCost: true, iciCost: true, iuiCost: true, ivfCost: true,
+          isExperienced: true, photoUrl: true, vialTypes: true, profileData: true,
+        },
+      });
+      if (!donor) {
+        return { content: [{ type: "text", text: `No sperm donor found with ${donorId ? "ID " + donorId : "external ID " + externalId}.` }] };
+      }
+      const { profileData, ...basic } = donor as any;
+      const { profileSections, additionalDetails } = expandProfileData(profileData);
+      const result = {
+        ...basic,
+        compensation: basic.compensation != null ? Number(basic.compensation) : null,
+        displayName: basic.firstName || (cleanExternalId(basic.externalId) ? `Donor #${cleanExternalId(basic.externalId)}` : `Donor`),
+        profileSections,
+        additionalDetails,
+      };
+      return {
+        content: [{ type: "text", text: `Full profile for ${result.displayName}:\n${JSON.stringify(result, null, 2)}\n\nThis profile contains COMPLETE data (physical traits, ethnicity, education, health/family history, vial types, costs, and all profile sections). Use this data to answer the parent's questions DIRECTLY - do NOT whisper unless the answer is truly not in this profile.` }],
+      };
+    }
+
+    if (name === "resolve_comparison") {
+      const a = args as any;
+      const rawType = String(a.entityType || "").toLowerCase().trim();
+      const rawIds: string[] = Array.isArray(a.entities) ? a.entities.map((x: any) => String(x)).filter(Boolean) : [];
+      const uniqueIds = [...new Set(rawIds)].slice(0, 4);
+      let dims: string[] | "all" = a.dimensions === "all" || a.dimensions == null
+        ? "all"
+        : Array.isArray(a.dimensions) ? a.dimensions.map((d: any) => String(d).trim()).filter(Boolean) : [String(a.dimensions).trim()];
+      if (Array.isArray(dims) && dims.length === 0) dims = "all";
+      const ctx = {
+        eggSource: (a.eggSource === "donor" ? "donor" : "own_eggs") as EggSource,
+        ageGroup: (["under_35", "35_37", "38_40", "over_40"].includes(a.ageGroup) ? a.ageGroup : "under_35") as AgeGroup,
+        isNewPatient: a.isNewPatient === false ? false : true,
+      };
+      if (uniqueIds.length < 2) {
+        return { content: [{ type: "text", text: JSON.stringify({ error: "Need at least 2 distinct entities to compare." }) }] };
+      }
+
+      // Map the entity type to a builder bucket + its known dimension keys, so a
+      // focused request that names no valid key safely falls back to everything.
+      const bucket =
+        rawType === "clinic" ? "clinic"
+        : rawType === "doctor" ? "doctor"
+        : rawType === "egg donor" || rawType === "sperm donor" ? "donor"
+        : rawType === "surrogate" ? "surrogate"
+        : "provider"; // surrogacy agency, egg bank, sperm bank, provider, legal, agency
+      const KNOWN_DIMS: Record<string, string[]> = {
+        clinic: ["successRates", "cost", "services", "specialties", "practices", "team", "reviews", "location"],
+        provider: ["services", "cost", "requirements", "reviews", "location"],
+        doctor: ["specialties", "experience", "clinics", "reviews", "languages"],
+        donor: ["physical", "ethnicity", "education", "health", "cost"],
+        surrogate: ["experience", "pregnancyHistory", "compensation", "preferences", "location"],
+      };
+      if (Array.isArray(dims) && !dims.some((d) => KNOWN_DIMS[bucket].includes(d))) dims = "all";
+
+      // ---- shared cell/row helpers ----
+      const fmtMoney = (n: any) => (typeof n === "number" && n > 0 ? `$${Math.round(n).toLocaleString("en-US")}` : "-");
+      const numFromPct = (s: any) => { const m = String(s ?? "").match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : null; };
+      const yesNo = (b: any) => (b === true ? "Yes" : b === false ? "No" : "-");
+      const wantDim = (k: string) => dims === "all" || (dims as string[]).includes(k);
+      const cmpRow = (values: Array<{ display: string; raw?: number | null }>, dir?: "high" | "low") => {
+        if (!dir) return values;
+        const nums = values.map((v) => (typeof v.raw === "number" && !isNaN(v.raw) ? v.raw : null));
+        const valid = nums.filter((n): n is number => n !== null);
+        if (valid.length < 2 || valid.every((n) => n === valid[0])) return values;
+        const target = dir === "high" ? Math.max(...valid) : Math.min(...valid);
+        return values.map((v, i) => (nums[i] === target ? { ...v, best: true } : v));
+      };
+      const row = (label: string, values: Array<{ display: string; raw?: number | null }>, dir?: "high" | "low") => ({ label, values: cmpRow(values, dir) });
+      const hasData = (values: Array<{ display: string }>) => values.some((v) => v.display && v.display !== "-");
+      const pushRow = (rows: any[], r: { label: string; values: any[] }) => { if (hasData(r.values)) rows.push(r); };
+      const reviewRows = (revs: any[]) => {
+        const rows: any[] = [];
+        pushRow(rows, row("% would recommend", revs.map((r) => ({ display: r?.recommendPct != null ? `${r.recommendPct}%` : "-", raw: r?.recommendPct ?? null })), "high"));
+        pushRow(rows, row("Avg score (/10)", revs.map((r) => ({ display: r?.avgOverallScore != null ? Number(r.avgOverallScore).toFixed(1) : "-", raw: r?.avgOverallScore != null ? Number(r.avgOverallScore) : null })), "high"));
+        pushRow(rows, row("Reviews", revs.map((r) => ({ display: r?.reviewCount != null ? String(r.reviewCount) : "-", raw: r?.reviewCount ?? null })), "high"));
+        return rows;
+      };
+
+      let groups: any[] = [];
+      let entities: any[] = [];
+      let title = "Comparison";
+
+      if (bucket === "clinic" || bucket === "provider") {
+        const loaded: any[] = [];
+        for (const idOrName of uniqueIds) {
+          let prof = await buildProviderProfile(idOrName);
+          if (!prof) {
+            const found = await prisma.provider.findFirst({ where: { name: { contains: idOrName, mode: "insensitive" } }, select: { id: true } });
+            if (found) prof = await buildProviderProfile(found.id);
+          }
+          if (prof) loaded.push(prof);
+        }
+        if (loaded.length < 2) return { content: [{ type: "text", text: JSON.stringify({ error: "Could not resolve at least 2 providers to compare." }) }] };
+        entities = loaded.map((p) => ({ id: p.id, name: p.name, photo: p.logoUrl || null, subtitle: p.locations?.[0] || p.services?.[0] || null }));
+
+        if (bucket === "clinic") {
+          title = "Clinic comparison";
+          if (wantDim("successRates")) {
+            const rows: any[] = [];
+            for (const band of ["Under 35", "35-37", "38-40", "Over 40"]) {
+              pushRow(rows, row(`Live birth rate · ${band}`, loaded.map((p) => { const e = p.successRates?.ownEggsByAge?.[band]; return { display: e?.rate || "-", raw: e?.successPct ?? null }; }), "high"));
+            }
+            pushRow(rows, row("Live birth rate · donor eggs", loaded.map((p) => { const d = p.successRates?.donorEggs; return { display: d?.rate || "-", raw: d?.successPct ?? null }; }), "high"));
+            const ctxEntry = (p: any) => (ctx.eggSource === "donor" ? p.successRates?.donorEggs : p.successRates?.ownEggsByAge?.[COMPARE_AGE_LABELS[ctx.ageGroup]]);
+            pushRow(rows, row("National average", loaded.map((p) => { const e = ctxEntry(p); return { display: e?.nationalAverage || "-", raw: numFromPct(e?.nationalAverage) }; })));
+            pushRow(rows, row("Top 10% nationally", loaded.map((p) => { const e = ctxEntry(p); return { display: e ? yesNo(e.top10pct) : "-" }; })));
+            pushRow(rows, row("Cycles (sample size)", loaded.map((p) => { const e = ctxEntry(p); return { display: e?.cycleCount != null ? String(e.cycleCount) : "-", raw: e?.cycleCount ?? null }; }), "high"));
+            if (rows.length) groups.push({ key: "successRates", label: "Success rates", rows });
+          }
+          if (wantDim("cost")) {
+            const rows: any[] = [];
+            const ivfPrograms = (p: any) => (p.costPrograms || []).filter((c: any) => !c.tab || c.tab === "ivf_cycle" || (c.subTypes || []).some((s: string) => s.startsWith("ivf_") || s.startsWith("fet") || s.startsWith("embryo")));
+            pushRow(rows, row("Starting price", loaded.map((p) => { const mins = ivfPrograms(p).map((c: any) => c.minTotal).filter((n: number) => n > 0); const m = mins.length ? Math.min(...mins) : null; return { display: fmtMoney(m), raw: m }; }), "low"));
+            pushRow(rows, row("Price range", loaded.map((p) => { const cp = ivfPrograms(p); const mins = cp.map((c: any) => c.minTotal).filter((n: number) => n > 0); const maxs = cp.map((c: any) => c.maxTotal).filter((n: number) => n > 0); if (!mins.length) return { display: "-" }; return { display: `${fmtMoney(Math.min(...mins))} - ${fmtMoney(Math.max(...maxs))}` }; })));
+            pushRow(rows, row("Programs offered", loaded.map((p) => { const n = ivfPrograms(p).length; return { display: n ? String(n) : "-", raw: n || null }; })));
+            if (rows.length) groups.push({ key: "cost", label: "Cost", rows });
+          }
+          if (wantDim("services")) {
+            const rows: any[] = [];
+            const svc = (p: any, k: string) => (p.cdc?.services && typeof p.cdc.services === "object" ? p.cdc.services[k] : undefined);
+            pushRow(rows, row("Donor eggs", loaded.map((p) => ({ display: yesNo(svc(p, "donorEgg")) }))));
+            pushRow(rows, row("Gestational carrier", loaded.map((p) => ({ display: yesNo(svc(p, "gestationalCarrier")) }))));
+            pushRow(rows, row("Egg freezing", loaded.map((p) => ({ display: yesNo(svc(p, "eggCryo")) }))));
+            pushRow(rows, row("Embryo cryopreservation", loaded.map((p) => ({ display: yesNo(svc(p, "embryoCryo")) }))));
+            pushRow(rows, row("Single women", loaded.map((p) => ({ display: yesNo(svc(p, "singleWomen")) }))));
+            pushRow(rows, row("Female couples", loaded.map((p) => ({ display: yesNo(svc(p, "femaleCouple")) }))));
+            if (rows.length) groups.push({ key: "services", label: "Services", rows });
+          }
+          if (wantDim("specialties")) {
+            const rows: any[] = [];
+            pushRow(rows, row("Most common diagnoses", loaded.map((p) => {
+              const exp = p.cdc?.experience;
+              if (!exp || typeof exp !== "object") return { display: "-" };
+              const top = Object.entries(exp).map(([k, v]) => [k, Number(v)] as [string, number]).filter(([, v]) => !isNaN(v)).sort((x, y) => y[1] - x[1]).slice(0, 3);
+              return { display: top.length ? top.map(([k, v]) => `${k} (${Math.round(v)}%)`).join(", ") : "-" };
+            })));
+            if (rows.length) groups.push({ key: "specialties", label: "Patient experience", rows });
+          }
+          if (wantDim("practices")) {
+            const rows: any[] = [];
+            const cs = (p: any, k: string) => { const v = p.cdc?.cycleStats && typeof p.cdc.cycleStats === "object" ? p.cdc.cycleStats[k] : undefined; return v == null ? null : Number(v); };
+            const pctRow = (label: string, k: string) => pushRow(rows, row(label, loaded.map((p) => { const v = cs(p, k); return { display: v == null ? "-" : `${Math.round(v)}%`, raw: v }; })));
+            pctRow("PGT genetic testing", "pgtPct");
+            pctRow("ICSI", "icsiPct");
+            pctRow("Single embryo transfer", "singleEmbryoPct");
+            pctRow("Frozen embryo transfers", "frozenPct");
+            if (rows.length) groups.push({ key: "practices", label: "Lab practices", rows });
+          }
+          if (wantDim("team")) {
+            const rows: any[] = [];
+            pushRow(rows, row("Doctors listed", loaded.map((p) => ({ display: (p.doctors?.length || 0) ? String(p.doctors.length) : "-", raw: p.doctors?.length || null })), "high"));
+            pushRow(rows, row("Medical director", loaded.map((p) => ({ display: p.medicalDirector || "-" }))));
+            if (rows.length) groups.push({ key: "team", label: "Team", rows });
+          }
+          if (wantDim("reviews")) { const rows = reviewRows(loaded.map((p) => p.reviews)); if (rows.length) groups.push({ key: "reviews", label: "Reviews", rows }); }
+          if (wantDim("location")) { const rows: any[] = []; pushRow(rows, row("Location(s)", loaded.map((p) => ({ display: (p.locations || []).join("; ") || "-" })))); if (rows.length) groups.push({ key: "location", label: "Location", rows }); }
+        } else {
+          title = "Provider comparison";
+          if (wantDim("services")) {
+            const rows: any[] = [];
+            pushRow(rows, row("Services offered", loaded.map((p) => ({ display: (p.services || []).join(", ") || "-" }))));
+            pushRow(rows, row("LGBTQ+ care", loaded.map((p) => ({ display: yesNo(p.lgbtqCare) }))));
+            if (rows.length) groups.push({ key: "services", label: "Services", rows });
+          }
+          if (wantDim("cost")) {
+            const rows: any[] = [];
+            pushRow(rows, row("Starting price", loaded.map((p) => { const mins = (p.costPrograms || []).map((c: any) => c.minTotal).filter((n: number) => n > 0); const m = mins.length ? Math.min(...mins) : null; return { display: fmtMoney(m), raw: m }; }), "low"));
+            pushRow(rows, row("Price range", loaded.map((p) => { const mins = (p.costPrograms || []).map((c: any) => c.minTotal).filter((n: number) => n > 0); const maxs = (p.costPrograms || []).map((c: any) => c.maxTotal).filter((n: number) => n > 0); if (!mins.length) return { display: "-" }; return { display: `${fmtMoney(Math.min(...mins))} - ${fmtMoney(Math.max(...maxs))}` }; })));
+            if (rows.length) groups.push({ key: "cost", label: "Cost", rows });
+          }
+          if (wantDim("requirements")) {
+            const rows: any[] = [];
+            pushRow(rows, row("Carries twins", loaded.map((p) => ({ display: yesNo(p.surrogacy?.twinsAllowed) }))));
+            pushRow(rows, row("Babies born", loaded.map((p) => ({ display: p.surrogacyProfile?.numberOfBabiesBorn != null ? String(p.surrogacyProfile.numberOfBabiesBorn) : "-", raw: p.surrogacyProfile?.numberOfBabiesBorn ?? null })), "high"));
+            pushRow(rows, row("Typical time to match", loaded.map((p) => ({ display: p.surrogacyProfile?.timeToMatch || "-" }))));
+            if (rows.length) groups.push({ key: "requirements", label: "Program details", rows });
+          }
+          if (wantDim("reviews")) { const rows = reviewRows(loaded.map((p) => p.reviews)); if (rows.length) groups.push({ key: "reviews", label: "Reviews", rows }); }
+          if (wantDim("location")) { const rows: any[] = []; pushRow(rows, row("Location(s)", loaded.map((p) => ({ display: (p.locations || []).join("; ") || "-" })))); if (rows.length) groups.push({ key: "location", label: "Location", rows }); }
+        }
+      } else if (bucket === "doctor") {
+        title = "Doctor comparison";
+        const loaded: any[] = [];
+        for (const slugOrName of uniqueIds) {
+          let identity = await prisma.providerMember.findFirst({ where: { slug: slugOrName, isPublicProfile: true }, select: { id: true, personKey: true } });
+          if (!identity) identity = await prisma.providerMember.findFirst({ where: { name: { contains: slugOrName, mode: "insensitive" }, isPublicProfile: true, slug: { not: null } }, select: { id: true, personKey: true } });
+          if (!identity) continue;
+          const personRows = await prisma.providerMember.findMany({ where: identity.personKey ? { personKey: identity.personKey } : { id: identity.id }, select: DOCTOR_MEMBER_SELECT as any });
+          const enriched = enrichDoctorRows(personRows, { eggSource: ctx.eggSource, ageGroup: ctx.ageGroup, isNewPatient: ctx.isNewPatient });
+          const doc = enriched.find((d) => d.slug === slugOrName) || enriched[0];
+          if (doc) loaded.push(doc);
+        }
+        if (loaded.length < 2) return { content: [{ type: "text", text: JSON.stringify({ error: "Could not resolve at least 2 doctors to compare." }) }] };
+        entities = loaded.map((d) => ({ id: d.slug, name: d.name, photo: d.photoUrl || null, subtitle: [d.credential, d.providerName].filter(Boolean).join(" · ") || null }));
+        if (wantDim("specialties")) { const rows: any[] = []; pushRow(rows, row("Specialties", loaded.map((d) => ({ display: (d.specialties || []).join(", ") || "-" })))); if (rows.length) groups.push({ key: "specialties", label: "Specialties", rows }); }
+        if (wantDim("experience")) {
+          const rows: any[] = [];
+          pushRow(rows, row("Years experience", loaded.map((d) => ({ display: d.yearsExperience != null ? `${d.yearsExperience} yrs` : "-", raw: d.yearsExperience ?? null })), "high"));
+          pushRow(rows, row("Credential", loaded.map((d) => ({ display: d.credential || "-" }))));
+          pushRow(rows, row("Board certifications", loaded.map((d) => ({ display: (d.boardCertifications || []).join(", ") || "-" }))));
+          if (rows.length) groups.push({ key: "experience", label: "Experience", rows });
+        }
+        if (wantDim("clinics")) {
+          const rows: any[] = [];
+          pushRow(rows, row("Practices at", loaded.map((d) => ({ display: (d.clinics || []).map((c: any) => c.providerName).join("; ") || d.providerName || "-" }))));
+          pushRow(rows, row("Best clinic live-birth rate", loaded.map((d) => ({ display: d.successRate || "-", raw: numFromPct(d.successRate) })), "high"));
+          pushRow(rows, row("National average", loaded.map((d) => ({ display: d.nationalAverage || "-" }))));
+          if (rows.length) groups.push({ key: "clinics", label: "Clinics", rows });
+        }
+        if (wantDim("languages")) { const rows: any[] = []; pushRow(rows, row("Languages", loaded.map((d) => ({ display: (d.languagesSpoken || []).join(", ") || "-" })))); if (rows.length) groups.push({ key: "languages", label: "Languages", rows }); }
+        if (wantDim("reviews")) { const rows = reviewRows(loaded.map((d) => ({ recommendPct: d.recommendPct, avgOverallScore: d.avgOverallScore, reviewCount: d.reviewCount }))); if (rows.length) groups.push({ key: "reviews", label: "Reviews", rows }); }
+      } else if (bucket === "donor") {
+        const isEgg = rawType === "egg donor";
+        title = isEgg ? "Egg donor comparison" : "Sperm donor comparison";
+        const loaded: any[] = [];
+        for (const idOrExt of uniqueIds) {
+          const where: any = { OR: [{ id: idOrExt }, { externalId: idOrExt }] };
+          const d = isEgg
+            ? await prisma.eggDonor.findFirst({ where, select: { id: true, externalId: true, firstName: true, age: true, location: true, eyeColor: true, hairColor: true, height: true, weight: true, ethnicity: true, race: true, education: true, occupation: true, bloodType: true, donorCompensation: true, totalCost: true, photoUrl: true } })
+            : await prisma.spermDonor.findFirst({ where, select: { id: true, externalId: true, firstName: true, age: true, location: true, eyeColor: true, hairColor: true, height: true, weight: true, ethnicity: true, race: true, education: true, occupation: true, compensation: true, totalCost: true, photoUrl: true } });
+          if (d) loaded.push(d);
+        }
+        if (loaded.length < 2) return { content: [{ type: "text", text: JSON.stringify({ error: "Could not resolve at least 2 donors to compare." }) }] };
+        entities = loaded.map((d: any) => ({
+          id: d.id,
+          name: d.firstName || (cleanExternalId(d.externalId) ? `Donor #${cleanExternalId(d.externalId)}` : "Donor"),
+          photo: d.photoUrl || null,
+          subtitle: [d.age != null ? `${d.age} yrs` : null, d.location].filter(Boolean).join(" · ") || null,
+        }));
+        if (wantDim("physical")) {
+          const rows: any[] = [];
+          pushRow(rows, row("Age", loaded.map((d: any) => ({ display: d.age != null ? `${d.age}` : "-", raw: d.age ?? null }))));
+          pushRow(rows, row("Height", loaded.map((d: any) => ({ display: d.height || "-" }))));
+          pushRow(rows, row("Weight", loaded.map((d: any) => ({ display: d.weight || "-" }))));
+          pushRow(rows, row("Eye color", loaded.map((d: any) => ({ display: d.eyeColor || "-" }))));
+          pushRow(rows, row("Hair color", loaded.map((d: any) => ({ display: d.hairColor || "-" }))));
+          if (rows.length) groups.push({ key: "physical", label: "Physical", rows });
+        }
+        if (wantDim("ethnicity")) {
+          const rows: any[] = [];
+          pushRow(rows, row("Ethnicity", loaded.map((d: any) => ({ display: d.ethnicity || "-" }))));
+          pushRow(rows, row("Race", loaded.map((d: any) => ({ display: d.race || "-" }))));
+          if (rows.length) groups.push({ key: "ethnicity", label: "Ethnicity", rows });
+        }
+        if (wantDim("education")) {
+          const rows: any[] = [];
+          pushRow(rows, row("Education", loaded.map((d: any) => ({ display: d.education || "-" }))));
+          pushRow(rows, row("Occupation", loaded.map((d: any) => ({ display: d.occupation || "-" }))));
+          if (rows.length) groups.push({ key: "education", label: "Education", rows });
+        }
+        if (wantDim("health") && isEgg) {
+          const rows: any[] = [];
+          pushRow(rows, row("Blood type", loaded.map((d: any) => ({ display: d.bloodType || "-" }))));
+          if (rows.length) groups.push({ key: "health", label: "Health", rows });
+        }
+        if (wantDim("cost")) {
+          const rows: any[] = [];
+          pushRow(rows, row("Compensation", loaded.map((d: any) => { const c = isEgg ? d.donorCompensation : d.compensation; const n = c != null ? Number(c) : null; return { display: fmtMoney(n), raw: n }; }), "low"));
+          pushRow(rows, row("Estimated total cost", loaded.map((d: any) => { const n = d.totalCost != null ? Number(d.totalCost) : null; return { display: fmtMoney(n), raw: n }; }), "low"));
+          if (rows.length) groups.push({ key: "cost", label: "Cost", rows });
+        }
+      } else if (bucket === "surrogate") {
+        title = "Surrogate comparison";
+        const loaded: any[] = [];
+        for (const idOrExt of uniqueIds) {
+          const where: any = { OR: [{ id: idOrExt }, { externalId: idOrExt }] };
+          const s = await prisma.surrogate.findFirst({ where, select: { id: true, externalId: true, firstName: true, age: true, location: true, baseCompensation: true, agreesToTwins: true, agreesToAbortion: true, openToSameSexCouple: true, isExperienced: true, liveBirths: true, ethnicity: true, race: true, photoUrl: true } });
+          if (s) loaded.push(s);
+        }
+        if (loaded.length < 2) return { content: [{ type: "text", text: JSON.stringify({ error: "Could not resolve at least 2 surrogates to compare." }) }] };
+        entities = loaded.map((s: any) => ({
+          id: s.id,
+          name: s.firstName || (cleanExternalId(s.externalId) ? `Surrogate #${cleanExternalId(s.externalId)}` : "Surrogate"),
+          photo: s.photoUrl || null,
+          subtitle: [s.age != null ? `${s.age} yrs` : null, s.location].filter(Boolean).join(" · ") || null,
+        }));
+        if (wantDim("experience")) { const rows: any[] = []; pushRow(rows, row("Experienced surrogate", loaded.map((s: any) => ({ display: yesNo(s.isExperienced) })))); if (rows.length) groups.push({ key: "experience", label: "Experience", rows }); }
+        if (wantDim("pregnancyHistory")) { const rows: any[] = []; pushRow(rows, row("Prior live births", loaded.map((s: any) => ({ display: s.liveBirths != null ? String(s.liveBirths) : "-", raw: s.liveBirths ?? null })))); if (rows.length) groups.push({ key: "pregnancyHistory", label: "Pregnancy history", rows }); }
+        if (wantDim("compensation")) { const rows: any[] = []; pushRow(rows, row("Base compensation", loaded.map((s: any) => { const n = s.baseCompensation != null ? Number(s.baseCompensation) : null; return { display: fmtMoney(n), raw: n }; }), "low")); if (rows.length) groups.push({ key: "compensation", label: "Compensation", rows }); }
+        if (wantDim("preferences")) {
+          const rows: any[] = [];
+          pushRow(rows, row("Carries twins", loaded.map((s: any) => ({ display: yesNo(s.agreesToTwins) }))));
+          pushRow(rows, row("Pro-choice", loaded.map((s: any) => ({ display: yesNo(s.agreesToAbortion) }))));
+          pushRow(rows, row("Open to same-sex couples", loaded.map((s: any) => ({ display: yesNo(s.openToSameSexCouple) }))));
+          if (rows.length) groups.push({ key: "preferences", label: "Preferences", rows });
+        }
+        if (wantDim("location")) { const rows: any[] = []; pushRow(rows, row("Location", loaded.map((s: any) => ({ display: s.location || "-" })))); if (rows.length) groups.push({ key: "location", label: "Location", rows }); }
+      } else {
+        return { content: [{ type: "text", text: JSON.stringify({ error: `Unsupported entityType for comparison: ${a.entityType}` }) }] };
+      }
+
+      return { content: [{ type: "text", text: JSON.stringify({ entityType: a.entityType, title, dimensions: dims, entities, groups }) }] };
+    }
+
     if (name === "get_parent_meetings") {
       const userId = String(args?.userId || "");
       const providerNameFilter = (args as any)?.providerName ? String((args as any).providerName).trim() : "";
@@ -2073,7 +2598,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return {
         content: [{
           type: "text",
-          text: `Found ${results.length} meeting(s) for this parent${providerNameFilter ? ` matching "${providerNameFilter}"` : ""}:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Answer the parent's question (time, date, timezone, link, etc.) directly using these fields. Times are stored in UTC (scheduledAt) - present them in the booking's bookerTimezone when given. For EACH relevant meeting, emit a [[MEETING_CARD:<bookingId>]] tag (using the exact bookingId) so the interactive join/reschedule/cancel card renders. If the list is empty, tell the parent you don't see a scheduled meeting matching that and offer to book one - never invent a time or link.` }],
+          text: `Found ${results.length} meeting(s) for this parent${providerNameFilter ? ` matching "${providerNameFilter}"` : ""}:\n${JSON.stringify(results, null, 2)}\n\nIMPORTANT: Answer the parent's question (time, date, timezone, link, etc.) directly using these fields. Times are stored in UTC (scheduledAt) - present them in the booking's bookerTimezone when given. For EACH relevant meeting, emit a [[MEETING_CARD:<bookingId>]] tag (using the exact bookingId) so the interactive join/reschedule/cancel card renders. If you mention the joinPath, write it as a plain link WITHOUT backticks or code formatting so it renders clickable (e.g. "you can join here: /room/<id>"), or simply tell the parent to tap the Join Meeting button on the card. If the list is empty, tell the parent you don't see a scheduled meeting matching that and offer to book one - never invent a time or link.` }],
       };
     }
 
