@@ -233,7 +233,7 @@ export default function CompanyTab() {
       setAcceptedInsurance(provider.acceptedInsurance || []);
       setLgbtqCare(provider.lgbtqCare || false);
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
-      setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? false);
+      setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? true);
       setLocations(
         (provider.locations || []).map((l: any) => ({
           id: l.id,
@@ -859,7 +859,7 @@ export default function CompanyTab() {
             <ScanFace className="w-5 h-5 text-primary" /> Look-Alike Face Matching
           </h2>
           <p className="text-sm text-muted-foreground">
-            When enabled, GoStork creates a faceprint from your donors' / surrogates' profile photos (processed via AWS Rekognition) so intended parents can find profiles that resemble them. This is biometric processing. You must have obtained the necessary consent from your donors and surrogates before enabling it.
+            GoStork creates a faceprint from your donors' / surrogates' profile photos (processed via AWS Rekognition) so intended parents can find profiles that resemble them. This is biometric processing and is enabled by default under your agency agreement. If you have not obtained the necessary biometric consent from your donors and surrogates, turn it off - your profiles will then be excluded and their faceprints removed.
           </p>
           <label className="flex items-start gap-3 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-4">
             <Checkbox
@@ -870,10 +870,10 @@ export default function CompanyTab() {
               data-testid="checkbox-biometric-authorized"
             />
             <span>
-              I confirm that {name || "our agency"} has obtained all consents required to allow GoStork to generate and store faceprints of our donors and surrogates for look-alike matching, and I authorize GoStork to do so.
+              {name || "Our agency"} has obtained the consents required for GoStork to generate and store faceprints of our donors and surrogates for look-alike matching.
               {biometricMatchingAuthorized
-                ? " Turning this off removes all of our profiles' faceprints from the matching index."
-                : " Profiles are not included in look-alike matching until this is enabled."}
+                ? " (Enabled) Turning this off removes all of our profiles' faceprints from the matching index."
+                : " (Disabled) Our profiles are excluded from look-alike matching."}
             </span>
           </label>
         </Card>

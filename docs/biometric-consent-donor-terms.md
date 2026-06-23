@@ -54,10 +54,15 @@ GoStork account). Therefore:
 ## 3. Product enforcement (built)
 
 - **Per-agency authorization flag** `Provider.biometricMatchingAuthorized`
-  (default **false**). An agency enables it from its **Company** settings tab
-  (a card shown only to agencies with donor/surrogate services); GoStork admins
-  can also set it on the admin provider-edit page. `biometricMatchingAuthorizedAt`
-  records when.
+  (default **true / opt-out**, backed by the agency agreement biometric
+  rep/warranty in 2a). An agency turns it **off** from its **Company** settings
+  tab (a card shown only to agencies with donor/surrogate services) if it lacks
+  donor consent; GoStork admins can also set it on the admin provider-edit page.
+  `biometricMatchingAuthorizedAt` records when.
+  > NOTE FOR COUNSEL: opt-out (default-on) relies entirely on the agency
+  > agreement's rep/warranty being in force. If counsel requires affirmative
+  > opt-in, change the column default back to false and require agencies to
+  > enable it.
 - **Indexing is gated on it**: `indexEntityFaces` and the backfill only index an
   agency's faces when the flag is true. Flipping it on indexes that agency's
   donors; flipping it off deletes their faceprints (`applyProviderFaceAuthorization`

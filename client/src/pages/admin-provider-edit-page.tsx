@@ -261,7 +261,7 @@ export default function AdminProviderEditPage() {
       setAcceptedInsurance(provider.acceptedInsurance || []);
       setLgbtqCare(provider.lgbtqCare || false);
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
-      setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? false);
+      setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? true);
       setEditWebsite(provider.websiteUrl || "");
       setEditEmail(provider.email || "");
       setEditPhone(provider.phone || "");
