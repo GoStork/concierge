@@ -969,8 +969,11 @@ export class SponsorshipService {
     for (const v of views) {
       const idx = dayIndex.get(new Date(v.viewedAt).toISOString().slice(0, 10));
       if (idx == null) continue;
-      let arr = seriesById.get(v.profileId);
-      if (!arr) { arr = new Array(timeSeries.length).fill(0); seriesById.set(v.profileId, arr); }
+      // Key by norm(profileId) so doctor series (stored by slug) align with the
+      // per-profile rows (keyed by member id), matching impressionsById.
+      const k = norm(v.profileId);
+      let arr = seriesById.get(k);
+      if (!arr) { arr = new Array(timeSeries.length).fill(0); seriesById.set(k, arr); }
       arr[idx]++;
     }
 
