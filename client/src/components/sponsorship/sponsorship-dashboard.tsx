@@ -199,7 +199,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         <KpiCard icon={<Sparkles className="w-4 h-4" />} label="Active sponsorships" value={kpis?.activeSponsorships ?? 0} />
         <KpiCard icon={<Eye className="w-4 h-4" />} label="Impressions" value={kpis?.totalImpressions ?? 0} hint={`${kpis?.uniqueReach ?? 0} parents reached`} delta={a?.deltas?.impressions} />
-        <KpiCard icon={<MousePointerClick className="w-4 h-4" />} label="Profile views" value={kpis?.profileViews ?? 0} hint="opened full profile" delta={a?.deltas?.profileViews} />
+        <KpiCard icon={<MousePointerClick className="w-4 h-4" />} label="Clicks" value={kpis?.profileViews ?? 0} hint="opened full profile" delta={a?.deltas?.profileViews} />
         <KpiCard icon={<Heart className="w-4 h-4" />} label="Saves" value={kpis?.saves ?? 0} hint={saveRate} delta={a?.deltas?.saves} />
         <KpiCard icon={<MessageCircle className="w-4 h-4" />} label="Inquiries" value={kpis?.inquiries ?? 0} hint="about sponsored profiles" delta={a?.deltas?.inquiries} />
         <KpiCard icon={<CalendarCheck className="w-4 h-4" />} label="Consultations" value={kpis?.consultations ?? 0} hint={typeFilter !== "all" ? "booked · account-level" : "booked while sponsored"} delta={a?.deltas?.consultations} />
@@ -218,7 +218,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
             </div>
             <div className="flex gap-5 flex-wrap">
               <CostStat label="per impression" spendCents={kpis.monthlySpendCents} count={kpis.totalImpressions} />
-              <CostStat label="per view" spendCents={kpis.monthlySpendCents} count={kpis.profileViews} />
+              <CostStat label="per click" spendCents={kpis.monthlySpendCents} count={kpis.profileViews} />
               <CostStat label="per save" spendCents={kpis.monthlySpendCents} count={kpis.saves} />
               <CostStat label="per inquiry" spendCents={kpis.monthlySpendCents} count={kpis.inquiries} />
               <CostStat label="per consultation" spendCents={kpis.monthlySpendCents} count={kpis.consultations} />
@@ -228,7 +228,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
       )}
 
       <p className="text-xs text-muted-foreground -mt-3">
-        All metrics are measured only while you have an active sponsorship. Impressions count every time a sponsored profile is shown (with unique parents reached shown beneath); profile views are click-throughs that opened the full profile; saves, inquiries and consultations are deeper engagement on your sponsored profiles. Hot leads are an account-level signal during the sponsored period. Lift compares your sponsored donor/surrogate profiles against your own non-sponsored ones.
+        All metrics are measured only while you have an active sponsorship. Impressions count every time a sponsored profile is shown (with unique parents reached shown beneath); clicks are click-throughs that opened the full profile; saves, inquiries and consultations are deeper engagement on your sponsored profiles. Hot leads are an account-level signal during the sponsored period. Lift compares your sponsored donor/surrogate profiles against your own non-sponsored ones.
       </p>
 
       {/* Encouraging empty state: active sponsorship but no engagement yet. */}
@@ -277,7 +277,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false }: { provider
                 const color = palette[i % palette.length];
                 return (
                   <div key={f.stage} className="flex items-center gap-3 text-xs">
-                    <div className="w-40 shrink-0">
+                    <div className="w-56 shrink-0 whitespace-nowrap">
                       <span className="text-foreground">{f.stage}</span>
                       {stepLabel != null && prev && <span className="text-muted-foreground"> · {stepLabel}% of {String(prev.stage).toLowerCase()}</span>}
                     </div>
@@ -405,7 +405,7 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
             <TableRow>
               <TableHead>Profile</TableHead><TableHead>Type</TableHead>
               <SortHead k="impressions">Impressions</SortHead>
-              <SortHead k="views">Views</SortHead>
+              <SortHead k="views">Clicks</SortHead>
               <SortHead k="saves">Saves</SortHead>
               <TableHead className="text-right">Save rate</TableHead>
               <SortHead k="inquiries">Inquiries</SortHead>
@@ -470,7 +470,7 @@ function Sparkline({ data }: { data?: number[] }) {
 /** Client-side CSV download of the (filtered + sorted) per-profile rows. */
 function downloadCsv(rows: any[], filename: string) {
   const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const lines = [["Profile", "Type", "Impressions", "Views", "Saves", "Save rate", "Inquiries"].join(",")];
+  const lines = [["Profile", "Type", "Impressions", "Clicks", "Saves", "Save rate", "Inquiries"].join(",")];
   for (const r of rows) {
     const rate = r.impressions ? `${Math.round((r.saves / r.impressions) * 100)}%` : "-";
     lines.push([r.name, r.type, r.impressions ?? 0, r.views ?? 0, r.saves ?? 0, rate, r.inquiries ?? 0].map(esc).join(","));

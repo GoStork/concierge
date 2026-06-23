@@ -1111,7 +1111,7 @@ export class SponsorshipService {
       // step a saved profile flows into - it stays a KPI tile, not a funnel stage).
       funnel: [
         { stage: "Impressions", value: totalImpressions },
-        { stage: "Profile views", value: profileViews },
+        { stage: "Clicks", value: profileViews },
         { stage: "Saves", value: saves },
         { stage: "Inquiries", value: inquiries },
         { stage: "Consultations", value: consultations },

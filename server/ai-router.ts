@@ -831,6 +831,18 @@ async function findLatestChatSubject(sessionId: string): Promise<{ profileId: st
     const dc = data?.doctorCards?.[0];
     if (dc?.slug) return { profileId: String(dc.slug), type: "doctor" };
   }
+  // Fallback: the session's opening subject. When a parent opens a specific
+  // profile directly (e.g. "ask about this donor" from the marketplace), the
+  // card comes from the session greeting - which is not persisted as a
+  // MATCH_CARD message - so the loop above finds nothing. The session itself
+  // records subjectProfileId/subjectType, which is the profile being inquired about.
+  const session = await prisma.aiChatSession.findUnique({
+    where: { id: sessionId },
+    select: { subjectProfileId: true, subjectType: true },
+  });
+  if (session?.subjectProfileId) {
+    return { profileId: String(session.subjectProfileId), type: String(session.subjectType || "egg-donor") };
+  }
   return null;
 }
 
@@ -1518,8 +1530,18 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
         });
         await prisma.aiChatSession.update({
           where: { id: existing.id },
-          data: { updatedAt: new Date(), title: "AI Concierge Chat" },
+          // Re-point the reused session at the profile the parent just opened, so
+          // typed-message attribution + photo enrichment track the current subject.
+          data: { updatedAt: new Date(), title: "AI Concierge Chat", subjectProfileId: donorId, subjectType: donorType || donorLabel || null },
         });
+        // Opening a chat about a specific profile (the marketplace "message" icon /
+        // "ask about this donor") IS an inquiry - record it now, without waiting for
+        // the parent to type. Deduped per (session, profile).
+        prisma.profileInquiry.upsert({
+          where: { sessionId_profileId: { sessionId: existing.id, profileId: donorId } },
+          create: { sessionId: existing.id, profileId: donorId, entityType: donorType || donorLabel || "egg-donor" },
+          update: {},
+        }).catch(() => {});
         res.json({ sessionId: existing.id, greetingMessageId: greetingMsg.id, greeting: builtGreeting, greetingQuickReplies, reused: true });
         if (mcpClient) {
           mcpClient.callTool({ name: "resolve_match_card", arguments: { entityId: donorId, entityType: donorLabel } })
@@ -1551,6 +1573,17 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
       // so engagement (inquiries) attributes to that sponsored profile.
       data: { userId, title: sessionTitle, matchmakerId, ...(donorId ? { subjectProfileId: donorId, subjectType: donorType || donorLabel || null } : {}) },
     });
+
+    // Opening a chat about a specific profile IS an inquiry (the marketplace
+    // "message" icon / "ask about this donor"). Record it on session open, not
+    // only when the parent types. Deduped per (session, profile).
+    if (donorId) {
+      prisma.profileInquiry.upsert({
+        where: { sessionId_profileId: { sessionId: session.id, profileId: donorId } },
+        create: { sessionId: session.id, profileId: donorId, entityType: donorType || donorLabel || "egg-donor" },
+        update: {},
+      }).catch(() => {});
+    }
 
     let greetingUiCardData: any = undefined;
     if (donorId) {
