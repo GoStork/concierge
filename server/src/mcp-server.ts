@@ -1837,7 +1837,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const ids = matchList.map((m) => m.entityId);
       const simById = new Map(matchList.map((m) => [m.entityId, m.similarity]));
-      const availWhere = { id: { in: ids }, hiddenFromSearch: { not: true }, NOT: { status: "INACTIVE" } };
+      // Defense-in-depth: only surface donors whose agency still authorizes
+      // biometric matching, even if a stale face lingers in the collection.
+      const availWhere = { id: { in: ids }, hiddenFromSearch: { not: true }, NOT: { status: "INACTIVE" }, provider: { is: { biometricMatchingAuthorized: true } } };
       let rows: any[] = [];
       if (type === "Egg Donor") {
         rows = await prisma.eggDonor.findMany({ where: availWhere, select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, race: true, eyeColor: true, hairColor: true } });

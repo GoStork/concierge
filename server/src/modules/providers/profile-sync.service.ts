@@ -203,10 +203,17 @@ export async function updateProfileEmbedding(
   }
 }
 
+const FACE_TYPE_MAP: Record<string, FaceEntityType> = {
+  EggDonor: "Egg Donor",
+  SpermDonor: "Sperm Donor",
+  Surrogate: "Surrogate",
+};
+
 /**
  * (Re)index an entity's photos in the AWS Rekognition look-alike face
  * collection. Best-effort and fire-and-forget at call sites - never blocks a
- * profile save, and silently no-ops when face matching is not configured.
+ * profile save. No-ops when face matching is not configured OR when the
+ * owning agency has not authorized biometric matching (donor-consent gate).
  */
 export async function indexEntityFaces(
   prisma: PrismaService,
@@ -214,18 +221,16 @@ export async function indexEntityFaces(
   id: string,
 ): Promise<void> {
   if (!isFaceMatchingConfigured()) return;
-  const typeMap: Record<string, FaceEntityType> = {
-    EggDonor: "Egg Donor",
-    SpermDonor: "Sperm Donor",
-    Surrogate: "Surrogate",
-  };
   try {
     const rows: any[] = await prisma.$queryRawUnsafe(
-      `SELECT "photoUrl", "photos", "rekognitionFaceIds" FROM "${table}" WHERE id = $1`,
+      `SELECT e."photoUrl", e."photos", e."rekognitionFaceIds", p."biometricMatchingAuthorized" AS authorized
+       FROM "${table}" e JOIN "Provider" p ON p.id = e."providerId" WHERE e.id = $1`,
       id,
     );
     const row = rows?.[0];
     if (!row) return;
+    // Donor-consent gate: only index faces for agencies that have attested.
+    if (!row.authorized) return;
     const photoUrls: string[] = [
       ...(row.photoUrl ? [row.photoUrl] : []),
       ...(Array.isArray(row.photos) ? row.photos : []),
@@ -237,7 +242,7 @@ export async function indexEntityFaces(
       await deleteEntityFaces(row.rekognitionFaceIds).catch(() => {});
     }
 
-    const faceIds = await indexEntityPhotos(typeMap[table], id, photoUrls);
+    const faceIds = await indexEntityPhotos(FACE_TYPE_MAP[table], id, photoUrls);
     await prisma.$executeRawUnsafe(
       `UPDATE "${table}" SET "rekognitionFaceIds" = $1, "faceIndexedAt" = NOW() WHERE id = $2`,
       faceIds,
@@ -246,6 +251,48 @@ export async function indexEntityFaces(
   } catch (e: any) {
     console.error(`[face] indexEntityFaces failed for ${table} ${id}:`, e?.message || e);
   }
+}
+
+/**
+ * Apply a provider's biometric-matching authorization change to the face
+ * collection: when enabled, index all the agency's donors/surrogates; when
+ * disabled, delete their faces. Fire-and-forget from the settings save.
+ */
+export async function applyProviderFaceAuthorization(
+  prisma: PrismaService,
+  providerId: string,
+  enabled: boolean,
+): Promise<void> {
+  if (!isFaceMatchingConfigured()) return;
+  const tables: Array<"EggDonor" | "Surrogate" | "SpermDonor"> = ["EggDonor", "SpermDonor", "Surrogate"];
+  for (const table of tables) {
+    try {
+      if (enabled) {
+        const rows: any[] = await prisma.$queryRawUnsafe(
+          `SELECT id FROM "${table}" WHERE "providerId" = $1 AND "hiddenFromSearch" IS NOT TRUE
+             AND (status IS NULL OR status <> 'INACTIVE')
+             AND ("photoUrl" IS NOT NULL OR array_length(photos,1) > 0)`,
+          providerId,
+        );
+        for (const r of rows) await indexEntityFaces(prisma, table, r.id);
+      } else {
+        const rows: any[] = await prisma.$queryRawUnsafe(
+          `SELECT id, "rekognitionFaceIds" FROM "${table}" WHERE "providerId" = $1 AND array_length("rekognitionFaceIds",1) > 0`,
+          providerId,
+        );
+        for (const r of rows) {
+          await deleteEntityFaces(r.rekognitionFaceIds).catch(() => {});
+          await prisma.$executeRawUnsafe(
+            `UPDATE "${table}" SET "rekognitionFaceIds" = ARRAY[]::text[], "faceIndexedAt" = NULL WHERE id = $1`,
+            r.id,
+          );
+        }
+      }
+    } catch (e: any) {
+      console.error(`[face] applyProviderFaceAuthorization(${enabled}) failed for ${table} provider ${providerId}:`, e?.message || e);
+    }
+  }
+  console.log(`[face] provider ${providerId} face authorization ${enabled ? "ENABLED - indexed" : "DISABLED - removed"} its donor/surrogate faces`);
 }
 
 export type DonorType = "egg-donor" | "surrogate" | "sperm-donor";

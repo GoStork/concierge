@@ -25,7 +25,7 @@ import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { insertProviderSchema } from "@shared/schema";
 import { hasProviderRole, isProviderWriteRestricted } from "@shared/roles";
 import { enrichDonorsWithPendingCosts, enrichDonorsAcrossProviders } from "../costs/total-cost.utils";
-import { updateProfileEmbedding } from "./profile-sync.service";
+import { updateProfileEmbedding, applyProviderFaceAuthorization } from "./profile-sync.service";
 import { z } from "zod";
 
 const marketplaceCache = new Map<string, { data: any; expiry: number }>();
@@ -1184,12 +1184,25 @@ export class ProvidersController {
     }
     try {
       const input = insertProviderSchema.partial().parse(body);
+      // Biometric-matching authorization transition: stamp the attestation time
+      // and (re)index or remove this agency's donor/surrogate faces.
+      let bioTransition: boolean | null = null;
+      if (typeof input.biometricMatchingAuthorized === "boolean") {
+        const cur = await this.prisma.provider.findUnique({ where: { id }, select: { biometricMatchingAuthorized: true } });
+        if (!!cur?.biometricMatchingAuthorized !== input.biometricMatchingAuthorized) {
+          bioTransition = input.biometricMatchingAuthorized;
+          (input as any).biometricMatchingAuthorizedAt = input.biometricMatchingAuthorized ? new Date() : null;
+        }
+      }
       const provider = await this.prisma.provider.update({
         where: { id },
         data: coerceJsonNullFields(input) as any,
       });
       if (input.about !== undefined || input.name !== undefined) {
         updateProfileEmbedding(this.prisma, "Provider", id, null).catch(() => {});
+      }
+      if (bioTransition !== null) {
+        applyProviderFaceAuthorization(this.prisma, id, bioTransition).catch(() => {});
       }
       return provider;
     } catch (err) {

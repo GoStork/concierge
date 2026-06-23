@@ -206,6 +206,7 @@ export default function AdminProviderEditPage() {
   const [acceptedInsurance, setAcceptedInsurance] = useState<string[]>([]);
   const [lgbtqCare, setLgbtqCare] = useState(false);
   const [clinicOffersVideo, setClinicOffersVideo] = useState(false);
+  const [biometricMatchingAuthorized, setBiometricMatchingAuthorized] = useState(false);
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editYearFounded, setEditYearFounded] = useState("");
@@ -260,6 +261,7 @@ export default function AdminProviderEditPage() {
       setAcceptedInsurance(provider.acceptedInsurance || []);
       setLgbtqCare(provider.lgbtqCare || false);
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
+      setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? false);
       setEditWebsite(provider.websiteUrl || "");
       setEditEmail(provider.email || "");
       setEditPhone(provider.phone || "");
@@ -342,7 +344,7 @@ export default function AdminProviderEditPage() {
     }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, acceptedInsurance, lgbtqCare, clinicOffersVideo, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, partnerProviderIds, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, acceptedInsurance, lgbtqCare, clinicOffersVideo, biometricMatchingAuthorized, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, partnerProviderIds, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   const editScrapeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -375,6 +377,7 @@ export default function AdminProviderEditPage() {
       websiteUrl: editWebsite || null,
       acceptedInsurance,
       offersVideoVisits: clinicOffersVideo,
+      biometricMatchingAuthorized,
       email: editEmail || null,
       phone: editPhone || null,
       yearFounded: editYearFounded ? parseInt(editYearFounded) : null,
@@ -813,6 +816,14 @@ export default function AdminProviderEditPage() {
                 <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} data-testid="checkbox-edit-video" />
                 Offers video visits
               </label>
+              {(showEggDonors || showSpermDonors || showSurrogates) && (
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
+                  <Checkbox className="mt-0.5" checked={biometricMatchingAuthorized} onCheckedChange={(v) => setBiometricMatchingAuthorized(!!v)} data-testid="checkbox-edit-biometric" />
+                  <span>
+                    <span className="font-ui">Look-alike face matching authorized</span> - agency has obtained donor/surrogate biometric consent; GoStork indexes their faceprints for parent resemblance search. Turning off removes this agency's faceprints from the index.
+                  </span>
+                </label>
+              )}
               <div className="space-y-2">
                 <Label>Phone</Label>
                 <div className="relative">

@@ -71,12 +71,15 @@ async function backfillTable(table: "EggDonor" | "Surrogate" | "SpermDonor") {
     // filter, so only skipped+failed rows reappear -> offset = skipped+failed.
     // FORCE: no filter, every row reappears -> offset = all consumed so far.
     const offset = FORCE ? processed + skipped + failed : skipped + failed;
+    // Donor-consent gate: only index donors of agencies that have authorized
+    // biometric matching (Provider.biometricMatchingAuthorized = true).
     const rows: any[] = await prisma.$queryRawUnsafe(
-      `SELECT id, "photoUrl", "photos", "rekognitionFaceIds" FROM "${table}"
-       WHERE "hiddenFromSearch" IS NOT TRUE
-         AND ("status" IS NULL OR "status" <> 'INACTIVE')
-         ${FORCE ? "" : `AND "faceIndexedAt" IS NULL`}
-       ORDER BY "createdAt" DESC
+      `SELECT e.id, e."photoUrl", e."photos", e."rekognitionFaceIds" FROM "${table}" e
+       JOIN "Provider" p ON p.id = e."providerId" AND p."biometricMatchingAuthorized" = true
+       WHERE e."hiddenFromSearch" IS NOT TRUE
+         AND (e."status" IS NULL OR e."status" <> 'INACTIVE')
+         ${FORCE ? "" : `AND e."faceIndexedAt" IS NULL`}
+       ORDER BY e."createdAt" DESC
        LIMIT $1 OFFSET $2`,
       BATCH_SIZE,
       offset,
@@ -97,13 +100,46 @@ async function backfillTable(table: "EggDonor" | "Surrogate" | "SpermDonor") {
   console.log(`[${table}] done. indexed=${processed} (faces found: ${withFaces}), skipped(no photo)=${skipped}, failed=${failed}`);
 }
 
+// Delete faces for entities whose agency has NOT authorized biometric matching
+// (e.g. cleaning up records indexed before the donor-consent gate existed).
+async function pruneUnauthorized(table: "EggDonor" | "Surrogate" | "SpermDonor") {
+  let removed = 0;
+  while (true) {
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT e.id, e."rekognitionFaceIds" FROM "${table}" e
+       JOIN "Provider" p ON p.id = e."providerId"
+       WHERE COALESCE(p."biometricMatchingAuthorized", false) = false
+         AND array_length(e."rekognitionFaceIds",1) > 0
+       LIMIT $1`,
+      BATCH_SIZE,
+    );
+    if (rows.length === 0) break;
+    for (const r of rows) {
+      await deleteEntityFaces(r.rekognitionFaceIds).catch(() => {});
+      await prisma.$executeRawUnsafe(
+        `UPDATE "${table}" SET "rekognitionFaceIds" = ARRAY[]::text[], "faceIndexedAt" = NULL WHERE id = $1`,
+        r.id,
+      );
+      removed++;
+    }
+    console.log(`[${table}] pruned ${removed} unauthorized so far...`);
+  }
+  console.log(`[${table}] prune done. removed=${removed}`);
+}
+
 async function main() {
   if (!isFaceMatchingConfigured()) {
     console.error("Face matching is not configured. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION (and optionally REKOGNITION_COLLECTION_ID).");
     process.exit(1);
   }
   await ensureCollection();
-  console.log(`Collection ready. Faces before: ${await collectionFaceCount()} (force=${FORCE})`);
+  const prune = process.argv.includes("--prune-unauthorized");
+  console.log(`Collection ready. Faces before: ${await collectionFaceCount()} (force=${FORCE}, prune=${prune})`);
+  if (prune) {
+    await pruneUnauthorized("EggDonor");
+    await pruneUnauthorized("SpermDonor");
+    await pruneUnauthorized("Surrogate");
+  }
   await backfillTable("EggDonor");
   await backfillTable("SpermDonor");
   await backfillTable("Surrogate");

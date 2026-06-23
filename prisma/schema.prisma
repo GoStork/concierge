@@ -48,6 +48,12 @@ model Provider {
   agreementTemplateOriginalName         String?
   pandaDocTemplateId                    String?
   pandaDocRoles                         String? // JSON array of role names in signing order, e.g. ["Client","Client2","Agency"]
+  // Look-alike face matching: the agency attests it has obtained biometric
+  // consent from its donors/surrogates for face-based matching. GoStork only
+  // indexes an agency's faces while this is true; flipping it off removes them.
+  // See docs/biometric-consent-donor-terms.md and [[project_lookalike_face_matching]].
+  biometricMatchingAuthorized           Boolean                     @default(false)
+  biometricMatchingAuthorizedAt         DateTime?
   // Legal Services Phase 1: states the firm is licensed in (USPS codes,
   // e.g. ["CA","NY"]). Drives Stage 3a state-match check for LAWYER
   // providers and Eva's lawyer-introduction filter.

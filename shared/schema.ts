@@ -270,6 +270,9 @@ export const insertProviderSchema = z.object({
   acceptedInsurance: z.array(z.string()).optional(),
   lgbtqCare: z.boolean().optional(),
   offersVideoVisits: z.boolean().optional(),
+  // Look-alike face matching authorization (agency attests donor biometric consent)
+  biometricMatchingAuthorized: z.boolean().optional(),
+  biometricMatchingAuthorizedAt: z.union([z.string(), z.date()]).nullable().optional(),
   // IVF Clinic matching requirements
   ivfTwinsAllowed: z.boolean().optional(),
   ivfTransferFromOtherClinics: z.boolean().optional(),

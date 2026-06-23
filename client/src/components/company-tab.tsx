@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import {
   Building2, Loader2, Globe, Phone, Calendar, Plus, MapPin,
-  Check, X, Upload, Pencil, Save, ImageIcon, User, GripVertical, Eye, Settings,
+  Check, X, Upload, Pencil, Save, ImageIcon, User, GripVertical, Eye, Settings, ScanFace,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -151,6 +151,7 @@ export default function CompanyTab() {
   const [acceptedInsurance, setAcceptedInsurance] = useState<string[]>([]);
   const [lgbtqCare, setLgbtqCare] = useState(false);
   const [clinicOffersVideo, setClinicOffersVideo] = useState(false);
+  const [biometricMatchingAuthorized, setBiometricMatchingAuthorized] = useState(false);
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [teamMembers, setTeamMembers] = useState<MemberData[]>([]);
   const [editingMemberIdx, setEditingMemberIdx] = useState<number | null>(null);
@@ -232,6 +233,7 @@ export default function CompanyTab() {
       setAcceptedInsurance(provider.acceptedInsurance || []);
       setLgbtqCare(provider.lgbtqCare || false);
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
+      setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? false);
       setLocations(
         (provider.locations || []).map((l: any) => ({
           id: l.id,
@@ -343,6 +345,7 @@ export default function CompanyTab() {
         // Clinic marketplace self-entry
         acceptedInsurance,
         offersVideoVisits: clinicOffersVideo,
+        ...(hasDonorServices ? { biometricMatchingAuthorized } : {}),
         // IVF Parents Matching Requirements
         ivfTwinsAllowed,
         ivfTransferFromOtherClinics,
@@ -434,6 +437,11 @@ export default function CompanyTab() {
   const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
   const isSurrogacyAgency = svcNames.some((n: string) => n.includes("surrogacy"));
   const ivfOffersEggDonors = svcNames.some((n: string) => n.includes("egg donor") || n.includes("egg bank"));
+  // Agencies that actually have donors/surrogates - the only ones for whom the
+  // biometric face-matching authorization is relevant (hidden for pure clinics).
+  const hasDonorServices = svcNames.some((n: string) =>
+    n.includes("egg donor") || n.includes("egg bank") || n.includes("sperm") || n.includes("surrogacy"),
+  );
 
   return (
     <>
@@ -842,6 +850,32 @@ export default function CompanyTab() {
               </div>
             </div>
           )}
+        </Card>
+      )}
+
+      {hasDonorServices && (
+        <Card className="p-6 space-y-4">
+          <h2 className="text-lg font-heading flex items-center gap-2">
+            <ScanFace className="w-5 h-5 text-primary" /> Look-Alike Face Matching
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            When enabled, GoStork creates a faceprint from your donors' / surrogates' profile photos (processed via AWS Rekognition) so intended parents can find profiles that resemble them. This is biometric processing. You must have obtained the necessary consent from your donors and surrogates before enabling it.
+          </p>
+          <label className="flex items-start gap-3 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-4">
+            <Checkbox
+              className="mt-0.5"
+              checked={biometricMatchingAuthorized}
+              onCheckedChange={(v) => { if (!readOnly) setBiometricMatchingAuthorized(!!v); }}
+              disabled={readOnly}
+              data-testid="checkbox-biometric-authorized"
+            />
+            <span>
+              I confirm that {name || "our agency"} has obtained all consents required to allow GoStork to generate and store faceprints of our donors and surrogates for look-alike matching, and I authorize GoStork to do so.
+              {biometricMatchingAuthorized
+                ? " Turning this off removes all of our profiles' faceprints from the matching index."
+                : " Profiles are not included in look-alike matching until this is enabled."}
+            </span>
+          </label>
         </Card>
       )}
 
