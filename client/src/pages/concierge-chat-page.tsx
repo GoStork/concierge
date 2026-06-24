@@ -1734,7 +1734,8 @@ function getProfileUrlSlug(type: string): string {
 }
 
 
-function buildMatchTabs(profile: any, cardType: string, reasons: string[]): TabSection[] {
+function buildMatchTabs(profile: any, cardType: string, reasons: string[] = []): TabSection[] {
+  reasons = reasons || [];
   const t = cardType.toLowerCase();
   const isSurrogate = t === "surrogate";
 
@@ -2144,7 +2145,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
     const photos = getPhotoList(swipeProfile);
     const title = buildTitle(swipeProfile);
     const statusLabel = buildStatusLabel(swipeProfile, viewedIds, previousVisitAt);
-    const tabs = buildMatchTabs(profile, card.type, card.reasons);
+    const tabs = buildMatchTabs(profile, card.type, card.reasons || []);
 
     return (
       <div
