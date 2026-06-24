@@ -1,4 +1,5 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { getFileTypeMeta } from "@/lib/file-type-icon";
 import { formatMoneyCents } from "@/lib/format-money";
 import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine, Check, MessageSquare, Pencil, X } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
@@ -112,7 +113,10 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
   }
 
   if (msg.uiCardType === "attachment") {
-    const isImage = data.mimeType?.startsWith("image/");
+    const { Icon: FileTypeIcon, label: fileTypeLabel, isImage } = getFileTypeMeta(
+      data.originalName,
+      data.mimeType,
+    );
     const fileUrl = getPhotoSrc(data.url) || data.url;
     return (
       <div className="mt-1" data-testid="attachment-card">
@@ -126,7 +130,15 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
             download={data.originalName}
             className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border bg-background hover:bg-muted transition-colors"
           >
-            <FileText className="w-5 h-5 shrink-0" style={{ color: brandColor }} />
+            <span
+              className="flex items-center gap-1 px-2 py-1.5 rounded-[calc(var(--radius)-2px)] bg-muted/60 shrink-0"
+              style={{ color: brandColor }}
+            >
+              <FileTypeIcon className="w-5 h-5 shrink-0" />
+              {fileTypeLabel && (
+                <span className="font-semibold tracking-wide text-[10px]">{fileTypeLabel}</span>
+              )}
+            </span>
             <span className="text-sm font-medium truncate">{data.originalName || "File"}</span>
             <Download className="w-4 h-4 shrink-0 text-muted-foreground" />
           </a>
