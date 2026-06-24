@@ -13,6 +13,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { getFileTypeMeta } from "@/lib/file-type-icon";
+import { StagedFileChip } from "@/components/chat/staged-file-chip";
 import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
 import { useMarketplaceViewContext, recordProfileView, recordImpression } from "@/lib/profile-views";
 import { formatMoneyCents, formatMoneyDollars } from "@/lib/format-money";
@@ -2265,7 +2267,10 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
   if (!data) return null;
 
   if (msg.uiCardType === "attachment") {
-    const isImage = data.mimeType?.startsWith("image/");
+    const { Icon: FileTypeIcon, label: fileTypeLabel, isImage } = getFileTypeMeta(
+      data.originalName,
+      data.mimeType,
+    );
     const fileUrl = getPhotoSrc(data.url) || data.url;
     return (
       <div data-testid="concierge-attachment-card">
@@ -2279,7 +2284,15 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
             download={data.originalName}
             className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border bg-background hover:bg-muted transition-colors"
           >
-            <FileText className="w-5 h-5 shrink-0" style={{ color: brandColor }} />
+            <span
+              className="flex items-center gap-1 px-2 py-1.5 rounded-[calc(var(--radius)-2px)] bg-muted/60 shrink-0"
+              style={{ color: brandColor }}
+            >
+              <FileTypeIcon className="w-5 h-5 shrink-0" />
+              {fileTypeLabel && (
+                <span className="font-semibold tracking-wide text-[10px]">{fileTypeLabel}</span>
+              )}
+            </span>
             <span className="text-sm font-medium truncate">{data.originalName || "File"}</span>
             <Download className="w-4 h-4 shrink-0 text-muted-foreground" />
           </a>
@@ -5242,13 +5255,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           {stagedFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
               {stagedFiles.map((file, i) => (
-                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--radius)] border bg-muted/50 text-xs">
-                  <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} />
-                  <span className="truncate max-w-[140px]">{file.name}</span>
-                  <button onClick={() => removeStagedFile(i)} className="ml-0.5 hover:text-destructive">
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
+                <StagedFileChip
+                  key={i}
+                  file={file}
+                  brandColor={brandColor}
+                  onRemove={() => removeStagedFile(i)}
+                />
               ))}
             </div>
           )}

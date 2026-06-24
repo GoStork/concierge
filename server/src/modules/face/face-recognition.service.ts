@@ -279,7 +279,7 @@ export async function searchByImage(
     }
     const matches = Array.from(bestByEntity.values())
       .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, Math.min(opts.limit ?? 3, 5));
+      .slice(0, Math.min(opts.limit ?? 3, 50));
     return { ok: true, matches };
   } catch (e: any) {
     // Rekognition throws InvalidParameterException when it finds no face.
