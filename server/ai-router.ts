@@ -6509,7 +6509,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                 search_sperm_donors: "Sperm Donor",
                 search_clinics: "Clinic",
               };
-              const cardType = toolTypeMap[searchResult.toolName] || "Surrogate";
+              // find_lookalike_matches has no fixed type - it carries the entity
+              // type in its args (Egg Donor / Sperm Donor / Surrogate).
+              const cardType = searchResult.toolName === "find_lookalike_matches"
+                ? (searchResult.toolArgs?.entityType || "Egg Donor")
+                : (toolTypeMap[searchResult.toolName] || "Surrogate");
 
               let matched = results[0];
               if (mentionedNameMatch) {
@@ -6536,6 +6540,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               const locationField = matched.location || "";
 
               const reasons: string[] = [];
+              if (searchResult.toolName === "find_lookalike_matches") {
+                reasons.push("Strong facial resemblance");
+                if (matched.eyeColor) reasons.push(`${matched.eyeColor} eyes`);
+                if (matched.hairColor) reasons.push(`${matched.hairColor} hair`);
+              }
               if (matched.agreesToTwins) reasons.push("Open to twins");
               if (matched.agreesToAbortion || matched.agreesToSelectiveReduction) reasons.push("Pro-choice");
               if (matched.isExperienced) reasons.push("Previous surrogacy experience");
