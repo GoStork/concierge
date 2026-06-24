@@ -52,7 +52,7 @@ Never end a turn saying "you may need to restart" or "run the build yourself" - 
 
 **Technical Implementations & Design Choices:**
 - **Backend:** NestJS, Prisma ORM, PostgreSQL.
-- **Authentication:** Dual-mode (Passport.js/JWT), Redis for sessions, multi-role RBAC.
+- **Authentication:** Dual-mode (Passport.js/JWT), PostgreSQL-backed sessions (`express-session` + `connect-pg-simple`), multi-role RBAC. (Redis is no longer used - removed in favor of Postgres-backed sessions.)
 - **Calendar & Scheduling:** Calendly-like system with Google, Microsoft, and Apple Calendar integrations, timezone-aware slots. Includes bi-directional sync: events deleted from external calendars (Google/Outlook) are automatically detected every 5 minutes, triggering cancellation in GoStork with full notifications to all parties.
 - **Notification System:** SendGrid for email delivery, Twilio for SMS. All emails use `buildBrandedEmail()` (no SendGrid dynamic templates). SMS uses Twilio Content Templates.
 - **AI-Powered Data Management:** Google Gemini for scraping, syncing, and bulk PDF uploads with multimodal OCR fallback. Dynamic cost sheet parsing with admin approval.
@@ -82,8 +82,7 @@ Never end a turn saying "you may need to restart" or "run the build yourself" - 
 
 ## External Dependencies
 
-- **PostgreSQL (Supabase):** Primary database.
-- **Redis:** Session store.
+- **PostgreSQL (Supabase):** Primary database; also the session store (`connect-pg-simple`). (Redis was removed - no longer a dependency.)
 - **Google Gemini 3.5 Flash:** AI for scraping, data extraction, OCR, cost-sheet parsing+classification, and the concierge AI router. Replaced the prior Gemini 2.0/2.5 Flash usage across the codebase. All `model: "..."` calls in `server/` should use `gemini-3.5-flash` unless there's a specific reason for an older version.
 - **SendGrid:** Email notifications.
 - **Twilio:** SMS notifications.
