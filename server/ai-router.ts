@@ -292,6 +292,7 @@ async function callTier2Claude(
   parentAccountId: string | null = null,
   authUserId: string | null = null,
   lookalikePhotoUrl: string | null = null,
+  freshPhotoUpload: boolean = false,
 ): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
   const hasTools = openAiTools.length > 0;
 
@@ -309,6 +310,10 @@ async function callTier2Claude(
         ...(fc.args || {}),
         ...(authUserId ? { userId: authUserId } : {}),
         ...(lookalikePhotoUrl ? { photoUrl: lookalikePhotoUrl } : {}),
+        // A freshly uploaded photo is a NEW search intent - return the BEST
+        // matches for it, ignoring any "already shown" exclusions the model
+        // carried over from earlier in this (single, persistent) session.
+        ...(freshPhotoUpload ? { excludeIds: [] } : {}),
       };
     }
   };
@@ -4118,6 +4123,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         userRecord?.parentAccountId ?? null,
         userId,
         currentSession?.lastUploadedPhotoUrl ?? null,
+        !!(attachmentData?.mimeType?.startsWith?.("image/")),
       );
       // If Claude executed a search tool but returned empty text, retry once with an explicit
       // instruction to present the results. This happens when Claude calls the tool successfully
