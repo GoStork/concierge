@@ -244,7 +244,6 @@ export function ChatInputBar({
             <StagedFileChip
               key={i}
               file={file}
-              brandColor={brandColor}
               onRemove={() => removeStagedFile(i)}
             />
           ))}

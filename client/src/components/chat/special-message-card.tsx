@@ -1,5 +1,5 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { getFileTypeMeta } from "@/lib/file-type-icon";
+import { AttachmentMessageCard } from "./attachment-message-card";
 import { formatMoneyCents } from "@/lib/format-money";
 import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine, Check, MessageSquare, Pencil, X } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
@@ -113,38 +113,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
   }
 
   if (msg.uiCardType === "attachment") {
-    const { Icon: FileTypeIcon, label: fileTypeLabel, isImage } = getFileTypeMeta(
-      data.originalName,
-      data.mimeType,
-    );
-    const fileUrl = getPhotoSrc(data.url) || data.url;
-    return (
-      <div className="mt-1" data-testid="attachment-card">
-        {isImage ? (
-          <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-            <img src={fileUrl} alt={data.originalName} className="max-w-[240px] rounded-[var(--radius)] border" />
-          </a>
-        ) : (
-          <a
-            href={fileUrl}
-            download={data.originalName}
-            className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border bg-background hover:bg-muted transition-colors"
-          >
-            <span
-              className="flex items-center gap-1 px-2 py-1.5 rounded-[calc(var(--radius)-2px)] bg-muted/60 shrink-0"
-              style={{ color: brandColor }}
-            >
-              <FileTypeIcon className="w-5 h-5 shrink-0" />
-              {fileTypeLabel && (
-                <span className="font-semibold tracking-wide text-[10px]">{fileTypeLabel}</span>
-              )}
-            </span>
-            <span className="text-sm font-medium truncate">{data.originalName || "File"}</span>
-            <Download className="w-4 h-4 shrink-0 text-muted-foreground" />
-          </a>
-        )}
-      </div>
-    );
+    return <AttachmentMessageCard data={data} />;
   }
 
   if (msg.uiCardType === "video_invite") {
