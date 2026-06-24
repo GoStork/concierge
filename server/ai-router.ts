@@ -3626,7 +3626,13 @@ ${ragContext}${answeredWhispersContext}${alreadyPresentedContext}`;
     const umLower = userMessage.toLowerCase();
     const surrogateAdvisories: string[] = [];
 
-    if (needsSurrogate) {
+    // Look-alike face search is resemblance-first and explicitly requested by the
+    // parent - don't let the clinical advisories (age/BMI/etc.) hijack the turn
+    // and suppress the resemblance result. Eligibility can be raised afterward.
+    const isLookAlikeTurn = !!(currentSession?.lastUploadedPhotoUrl)
+      && /look(s|ed|ing)?\s+like|resembl|similar\s+to|like\s+(me|this|that|the\s+(photo|picture|image|attach))/i.test(userMessage);
+
+    if (needsSurrogate && !isLookAlikeTurn) {
       // --- 1. AGE: maxAge < 36 ---
       const ageMaxMatch = userMessage.match(
         /(?:not\s+older\s+than|no\s+older\s+than|young\w*\s+than|under\s+(?:age\s+)?|at\s+most\s+(?:age\s+)?|max(?:imum)?\s*(?:age\s*)?|no\s+more\s+than\s+|below\s+(?:age\s+)?|less\s+than\s+(?:age\s+)?|age(?:d)?\s+(?:of\s+)?)(\d+)/i
