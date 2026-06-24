@@ -1858,7 +1858,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const uploadedEth = (attrs.ethnicity || "").toLowerCase().trim();
 
       // Pull a WIDE geometric pool, then re-rank by coloring + geometry.
-      const search = await searchByImage(bytes, { types: [type], limit: 40 });
+      const search = await searchByImage(bytes, { types: [type], limit: 120 });
       if (!search.ok) {
         const msg = search.reason === "no_face"
           ? `NO_FACE: No face was detected in the uploaded photo. Ask the parent to upload a clear, front-facing photo where their face is clearly visible. Do NOT show any MATCH_CARD.`
@@ -1885,23 +1885,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         rows = await prisma.surrogate.findMany({ where: availWhere, select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, race: true } });
       }
 
-      // Combined score = facial geometry + strong coloring match. A big hair
-      // boost ensures e.g. a red-haired donor outranks a closer-geometry donor
-      // with the wrong hair (which reads as "not me" to a human).
-      const HAIR_BOOST = 45;
-      const ETH_BOOST = 15;
+      // Combined score = facial geometry + coloring. A big hair-FAMILY boost
+      // ensures a same-color donor outranks a closer-geometry donor with the
+      // wrong hair (reads as "not me" to a human). An exact-color bonus ranks a
+      // literal "Red" above an "Auburn" when the photo is red. Ethnicity is NOT
+      // boosted - the string match was unreliable and promoted weak matches.
+      const detHair = (attrs.hairColor || "").toLowerCase().trim();
+      const HAIR_FAMILY_BOOST = 45;
+      const HAIR_EXACT_BONUS = 12;
       const scored = rows.map((r: any) => {
         const face = simById.get(r.id) ?? 0;
         const hairMatch = uploadedHair !== "other" && hairFamily(r.hairColor) === uploadedHair;
-        const ethMatch = !!uploadedEth && `${r.ethnicity || ""} ${r.race || ""}`.toLowerCase().includes(uploadedEth);
-        return { r, face, hairMatch, ethMatch, combined: face + (hairMatch ? HAIR_BOOST : 0) + (ethMatch ? ETH_BOOST : 0) };
+        const exactHair = !!detHair && (r.hairColor || "").toLowerCase().includes(detHair);
+        return { r, face, hairMatch, combined: face + (hairMatch ? HAIR_FAMILY_BOOST : 0) + (exactHair ? HAIR_EXACT_BONUS : 0) };
       }).sort((a, b) => b.combined - a.combined);
 
       const top = scored.slice(0, take);
       // Honesty floor: if the best candidate is a weak facial match AND shares no
-      // coloring, there is no real look-alike - say so rather than overclaim.
+      // hair color, there is no real look-alike - say so rather than overclaim.
       const best = top[0];
-      if (!best || (best.face < 30 && !best.hairMatch && !best.ethMatch)) {
+      if (!best || (best.face < 30 && !best.hairMatch)) {
         return { content: [{ type: "text", text: `NO_LOOKALIKE: I could not find a ${type} who genuinely resembles this photo (no strong facial or coloring match). Tell the parent honestly, and offer to search by specific attributes instead (hair color, eye color, ethnicity, etc.). Do NOT show a MATCH_CARD and do NOT claim a resemblance.` }] };
       }
 

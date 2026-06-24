@@ -256,8 +256,9 @@ export async function searchByImage(
       new SearchFacesByImageCommand({
         CollectionId: COLLECTION_ID,
         Image: { Bytes: bytes },
-        // Pull a wide pool, then filter/dedupe/rank in code.
-        MaxFaces: 50,
+        // Pull a wide pool, then filter/dedupe/rank in code (coloring re-rank
+        // needs enough same-color candidates, even at low geometry).
+        MaxFaces: 200,
         FaceMatchThreshold: opts.threshold ?? DEFAULT_MATCH_THRESHOLD,
         QualityFilter: QualityFilter.AUTO,
       }),
@@ -279,7 +280,7 @@ export async function searchByImage(
     }
     const matches = Array.from(bestByEntity.values())
       .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, Math.min(opts.limit ?? 3, 50));
+      .slice(0, Math.min(opts.limit ?? 3, 200));
     return { ok: true, matches };
   } catch (e: any) {
     // Rekognition throws InvalidParameterException when it finds no face.
