@@ -19,6 +19,8 @@ Never end a turn saying "you may need to restart" or "run the build yourself" - 
 
 **Always create migration files with schema changes:** Any time `prisma/schema.prisma` is modified (new field, new model, changed type, etc.), immediately create a matching migration SQL file at `prisma/migrations/YYYYMMDD_description/migration.sql` using `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements. Do this in the same commit as the schema change - never push a schema change without its migration file.
 
+**Always keep `docs/tech-stack.md` current when tech changes:** The dependency inventory in `docs/tech-stack.md` is auto-generated from `package.json` by `npm run tech-stack` (the local pre-commit hook also runs it when `package.json` is staged). Whenever you add, remove, or upgrade a dependency, or wire up a new external service/integration, run `npm run tech-stack` AND update the hand-written curated sections (Frontend / Backend / AI / Integrations / Infrastructure, etc.) to match - in the same commit. The git hook only exists on local machines, so do not rely on it; treat updating this doc as part of any dependency/integration change.
+
 **Never use em dashes:** Never use em dashes or en dashes. Always use a hyphen-minus (-) instead, everywhere - code, UI text, comments, prompts, and all generated content.
 
 **No dialogs/modals/popups:** Always use full pages or inline expandable sections instead of dialogs, modals, or popups. The app is designed with future native mobile apps in mind, where modals don't translate well. Dialogs are only acceptable for simple destructive-action confirmations (e.g., "Are you sure you want to delete?").

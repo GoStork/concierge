@@ -10,7 +10,8 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "decision-tree": "node scripts/generate-decision-tree.mjs",
-    "decision-tree:watch": "node scripts/watch-decision-tree.mjs"
+    "decision-tree:watch": "node scripts/watch-decision-tree.mjs",
+    "tech-stack": "node scripts/generate-tech-stack.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
