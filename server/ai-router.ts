@@ -3733,7 +3733,7 @@ After the parent responds to the advisory, then continue with any unanswered mat
       console.log(`[LOOK-ALIKE] Fresh photo upload - directing top-match presentation`);
       messages.push({
         role: "system" as const,
-        content: `LOOK-ALIKE SEARCH (new photo just uploaded): Call find_lookalike_matches for the entity type the parent asked about and present the SINGLE TOP result (the highest-resemblance match it returns) as a [[MATCH_CARD]]. This is a fresh search for the NEW photo - present the top match EVEN IF that exact profile was shown earlier in this chat. Do NOT skip it as "already shown", do NOT say "another", and do NOT pass excludeIds. If the parent later asks to see a different option, then you may show the next match.`,
+        content: `LOOK-ALIKE SEARCH (new photo just uploaded): Call find_lookalike_matches for the entity type the parent asked about and present the SINGLE TOP result (the highest-resemblance match it returns) as a [[MATCH_CARD]]. This is a fresh search for the NEW photo - present the top match EVEN IF that exact profile was shown earlier in this chat. Do NOT skip it as "already shown", do NOT say "another", and do NOT pass excludeIds. Keep your blurb short and generic about the resemblance; do NOT state any specific donor ID/number in your text (the card displays it). If the parent later asks to see a different option, then you may show the next match.`,
       });
     }
 
@@ -6617,8 +6617,16 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               reasons: laReasons.slice(0, 4),
               providerId: top.id,
             }];
-            const token = (top.displayName || "").split("#")[1]?.trim();
-            if (!token || !finalContent.includes(token)) {
+            // Only rewrite the blurb when the model named a DIFFERENT specific
+            // profile (conflict with the forced card). A generic blurb is fine
+            // and left untouched, so the streamed text is not jarringly swapped.
+            const cleanTok = ((top.displayName || "").split("#")[1] || "").replace(/[^0-9A-Za-z]/g, "").toLowerCase();
+            const donorRefs = finalContent.match(/#\s*[A-Za-z]?\d{2,}/g) || [];
+            const mentionsConflicting = donorRefs.some((ref) => {
+              const r = ref.replace(/[^0-9A-Za-z]/g, "").toLowerCase();
+              return cleanTok ? !(r.includes(cleanTok) || cleanTok.includes(r)) : true;
+            });
+            if (mentionsConflicting) {
               const bits = [top.age ? `${top.age}` : null, top.ethnicity || null, top.location || null].filter(Boolean).join(", ");
               finalContent = `I found a strong facial resemblance to the photo you uploaded - meet ${top.displayName}${bits ? ` (${bits})` : ""}. Would you like to schedule a free consultation to learn more, or see another option?`;
             }
