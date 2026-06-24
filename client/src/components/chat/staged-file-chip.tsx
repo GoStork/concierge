@@ -44,7 +44,7 @@ export function StagedFileChip({
           <img
             src={previewUrl}
             alt={file.name}
-            className="w-full h-full object-cover rounded-[var(--radius)] border"
+            className="w-full h-full object-cover border"
           />
         )}
         {removeBtn}
@@ -53,7 +53,7 @@ export function StagedFileChip({
   }
 
   return (
-    <div className="relative w-[88px] h-[72px] shrink-0 flex flex-col items-center justify-center gap-1.5 px-2 rounded-[var(--radius)] border bg-muted/40">
+    <div className="relative w-[72px] h-[72px] shrink-0 flex flex-col items-center justify-center gap-1.5 px-1.5 border bg-muted/40">
       <FileTypeGlyph name={file.name} mimeType={file.type} className="w-8 h-10" />
       <span className="w-full text-[11px] leading-tight text-center truncate">{file.name}</span>
       {removeBtn}
