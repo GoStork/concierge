@@ -3730,8 +3730,12 @@ After the parent responds to the advisory, then continue with any unanswered mat
     // otherwise skips profiles already shown earlier in this (single, persistent)
     // session and presents "another" - but for a new photo the parent wants the
     // BEST resemblance, even if that profile appeared before.
+    // A face photo uploaded THIS turn alongside any find/resemblance/donor intent
+    // is a look-alike search. Keep the intent regex broad - phrasings like "find
+    // me a similar egg donor to the attached one" must count, or exclusions from
+    // earlier turns drop the very profile they're searching for.
     const isFreshLookalikeUpload = !!(attachmentData?.mimeType?.startsWith?.("image/"))
-      && /look(s|ed|ing)?\s+like|resembl|similar\s+to|like\s+(me|this|that|the\s+(photo|picture|image|attach))/i.test(userMessage);
+      && /look|resembl|similar|\blike\b|match|\bfind\b|attach|donor|surrogate|egg|sperm/i.test(userMessage);
     if (isFreshLookalikeUpload) {
       console.log(`[LOOK-ALIKE] Fresh photo upload - directing top-match presentation`);
       messages.push({

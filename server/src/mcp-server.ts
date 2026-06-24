@@ -1885,19 +1885,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         rows = await prisma.surrogate.findMany({ where: availWhere, select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, race: true } });
       }
 
-      // Combined score = facial geometry + coloring. A big hair-FAMILY boost
-      // ensures a same-color donor outranks a closer-geometry donor with the
-      // wrong hair (reads as "not me" to a human). An exact-color bonus ranks a
-      // literal "Red" above an "Auburn" when the photo is red. Ethnicity is NOT
-      // boosted - the string match was unreliable and promoted weak matches.
+      // Two regimes:
+      //  - STRONG geometry (>= 85%) means this is almost certainly the actual
+      //    person (or a true near-twin) - trust geometry, ignore coloring. (Hair
+      //    labels are noisy: a "Brown" donor can read as "Black" in a photo, and
+      //    a flat color boost must never bury a near-exact facial match.)
+      //  - Otherwise no true look-alike exists, so coloring dominates: a big hair-
+      //    FAMILY boost surfaces same-color donors (red->red, not red->black), and
+      //    an exact-color bonus ranks literal "Red" above "Auburn".
+      // Ethnicity is NOT boosted - the string match was unreliable.
+      const STRONG_FACE = 85;
       const detHair = (attrs.hairColor || "").toLowerCase().trim();
       const HAIR_FAMILY_BOOST = 45;
       const HAIR_EXACT_BONUS = 12;
+      const geometryFirst = (simById.size > 0) && Math.max(...simById.values()) >= STRONG_FACE;
       const scored = rows.map((r: any) => {
         const face = simById.get(r.id) ?? 0;
         const hairMatch = uploadedHair !== "other" && hairFamily(r.hairColor) === uploadedHair;
         const exactHair = !!detHair && (r.hairColor || "").toLowerCase().includes(detHair);
-        return { r, face, hairMatch, combined: face + (hairMatch ? HAIR_FAMILY_BOOST : 0) + (exactHair ? HAIR_EXACT_BONUS : 0) };
+        const combined = geometryFirst
+          ? face
+          : face + (hairMatch ? HAIR_FAMILY_BOOST : 0) + (exactHair ? HAIR_EXACT_BONUS : 0);
+        return { r, face, hairMatch, combined };
       }).sort((a, b) => b.combined - a.combined);
 
       const top = scored.slice(0, take);
