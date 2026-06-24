@@ -463,7 +463,7 @@ async function callTier2Claude(
         for await (const chunk of result.stream) {
           if (firstEventMs === null) firstEventMs = Date.now() - tStream;
           const text = chunk.text();
-          if (text) { fullText += text; sse.sendToken(text); }
+          if (text) { fullText += text; if (!freshPhotoUpload) sse.sendToken(text); }
         }
         console.log(`[TIER2] DONE (no tools) in ${Date.now() - t0}ms`);
         return { content: fullText, toolCallsExecuted: false, searchToolResults };
@@ -511,7 +511,7 @@ async function callTier2Claude(
         // Model chose text instead of calling tools - fake-stream the buffered text
         const text = response.response.text();
         const words = text.split(" ");
-        for (const word of words) { sse.sendToken(word + " "); await new Promise((r) => setTimeout(r, 0)); }
+        if (!freshPhotoUpload) for (const word of words) { sse.sendToken(word + " "); await new Promise((r) => setTimeout(r, 0)); }
         console.log(`[TIER2] DONE (text w/ tools enabled) in ${Date.now() - t0}ms`);
         return { content: text, toolCallsExecuted: false, searchToolResults };
       }
@@ -575,9 +575,12 @@ async function callTier2Claude(
       const textContent = response.response.text();
       let fullText = textContent || "";
       if (fullText) {
-        // Fake-stream the text - we used non-streaming sendMessage to detect chained tool calls
+        // Fake-stream the text - we used non-streaming sendMessage to detect chained tool calls.
+        // Suppressed on a fresh look-alike upload: the model often drafts a blurb about a
+        // not-yet-shown donor, which the server then overrides; streaming it first causes a
+        // visible swap. Hold the tokens and let the corrected final message arrive at once.
         const words = fullText.split(" ");
-        for (const word of words) { sse.sendToken(word + " "); await new Promise((r) => setTimeout(r, 0)); }
+        if (!freshPhotoUpload) for (const word of words) { sse.sendToken(word + " "); await new Promise((r) => setTimeout(r, 0)); }
       } else {
         // Truly empty after no more tool calls. Diagnostic log so the next dev knows why.
         const candidates = (response.response as any)?.candidates || [];
@@ -4137,7 +4140,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         userRecord?.parentAccountId ?? null,
         userId,
         currentSession?.lastUploadedPhotoUrl ?? null,
-        !!(attachmentData?.mimeType?.startsWith?.("image/")),
+        isFreshLookalikeUpload,
       );
       // If Claude executed a search tool but returned empty text, retry once with an explicit
       // instruction to present the results. This happens when Claude calls the tool successfully
