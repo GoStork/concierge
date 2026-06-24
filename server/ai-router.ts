@@ -3723,6 +3723,20 @@ After the parent responds to the advisory, then continue with any unanswered mat
       });
     }
 
+    // Fresh look-alike upload: a newly uploaded photo is a NEW search. The model
+    // otherwise skips profiles already shown earlier in this (single, persistent)
+    // session and presents "another" - but for a new photo the parent wants the
+    // BEST resemblance, even if that profile appeared before.
+    const isFreshLookalikeUpload = !!(attachmentData?.mimeType?.startsWith?.("image/"))
+      && /look(s|ed|ing)?\s+like|resembl|similar\s+to|like\s+(me|this|that|the\s+(photo|picture|image|attach))/i.test(userMessage);
+    if (isFreshLookalikeUpload) {
+      console.log(`[LOOK-ALIKE] Fresh photo upload - directing top-match presentation`);
+      messages.push({
+        role: "system" as const,
+        content: `LOOK-ALIKE SEARCH (new photo just uploaded): Call find_lookalike_matches for the entity type the parent asked about and present the SINGLE TOP result (the highest-resemblance match it returns) as a [[MATCH_CARD]]. This is a fresh search for the NEW photo - present the top match EVEN IF that exact profile was shown earlier in this chat. Do NOT skip it as "already shown", do NOT say "another", and do NOT pass excludeIds. If the parent later asks to see a different option, then you may show the next match.`,
+      });
+    }
+
     // Advisory confirmation handler: parent confirms age after the advisory
     const advisorySearchUpToMatch = userMessage.match(/^search up to\s+(\d+)$/i);
     const advisoryStickWithMatch = userMessage.match(/^stick with\s+(\d+)$/i);
