@@ -6591,6 +6591,45 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
+    // Deterministic top match for a fresh look-alike upload. The model tends to
+    // skip profiles shown earlier in this (single, persistent) session and
+    // present "another", but a NEW photo should surface the STRONGEST
+    // resemblance. Force the top tool result as the card, and rewrite the blurb
+    // if the model wrote about a different profile so text and card agree.
+    if (isFreshLookalikeUpload) {
+      const laResult = lastSearchToolResults.find((r) => r.toolName === "find_lookalike_matches");
+      if (laResult) {
+        try {
+          const js = laResult.resultText.indexOf("[");
+          const je = laResult.resultText.lastIndexOf("]");
+          const arr = js !== -1 && je !== -1 ? JSON.parse(laResult.resultText.substring(js, je + 1)) : [];
+          if (Array.isArray(arr) && arr.length > 0) {
+            const top = arr[0];
+            const laType = laResult.toolArgs?.entityType || "Egg Donor";
+            const laReasons = ["Strong facial resemblance"];
+            if (top.eyeColor) laReasons.push(`${top.eyeColor} eyes`);
+            if (top.hairColor) laReasons.push(`${top.hairColor} hair`);
+            matchCards = [{
+              name: top.displayName || (laType === "Surrogate" ? "Surrogate" : "Donor"),
+              type: laType,
+              location: top.location || "",
+              photo: "",
+              reasons: laReasons.slice(0, 4),
+              providerId: top.id,
+            }];
+            const token = (top.displayName || "").split("#")[1]?.trim();
+            if (!token || !finalContent.includes(token)) {
+              const bits = [top.age ? `${top.age}` : null, top.ethnicity || null, top.location || null].filter(Boolean).join(", ");
+              finalContent = `I found a strong facial resemblance to the photo you uploaded - meet ${top.displayName}${bits ? ` (${bits})` : ""}. Would you like to schedule a free consultation to learn more, or see another option?`;
+            }
+            console.log(`[LOOK-ALIKE] Forced top-resemblance card ${top.displayName} (${top.id})`);
+          }
+        } catch (e) {
+          console.error("[LOOK-ALIKE] top-match override failed:", e);
+        }
+      }
+    }
+
     if (matchCards.length > 1) {
       console.warn(`[ai-router] AI returned ${matchCards.length} match cards - enforcing one-at-a-time rule, keeping first only`);
       matchCards = [matchCards[0]];
