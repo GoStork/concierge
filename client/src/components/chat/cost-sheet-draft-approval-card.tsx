@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Receipt } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -20,7 +21,7 @@ interface DraftMsg {
     candidates?: Array<{ costSheetId: string; category: string | null; matchedRuleCount: number }>;
     autoDraftedAt?: string;
     resolvedAt?: string | null;
-    resolvedAs?: "approved" | "rejected" | null;
+    resolvedAs?: "approved" | "rejected" | "superseded" | null;
     rejectionReason?: string | null;
     resultingQuoteId?: string | null;
   };
@@ -38,13 +39,20 @@ export interface CostSheetDraftApprovalCardProps {
 export function CostSheetDraftApprovalCard({ msg, sessionId, onEdit }: CostSheetDraftApprovalCardProps) {
   const { toast } = useToast();
   const data = msg.uiCardData || {};
+  const d = data as any;
   const lineItems = Array.isArray(data.lineItems) ? data.lineItems : [];
   const total = typeof data.totalCostCents === "number" ? data.totalCostCents : 0;
+  // Any resolvedAt that isn't an approval renders as dismissed-style:
+  // "rejected" (provider clicked Reject) or "superseded" (a fresh manual
+  // regenerate replaced this card).
   const status: "pending" | "approved" | "rejected" = data.resolvedAs === "approved"
     ? "approved"
-    : data.resolvedAs === "rejected"
+    : data.resolvedAt
       ? "rejected"
       : "pending";
+  // Attach the original uploaded cost-sheet document to the quote sent
+  // to the parent. Default ON - provider can uncheck before approving.
+  const [attachFile, setAttachFile] = useState(true);
 
   const approveMutation = useMutation({
     mutationFn: async () =>
@@ -52,6 +60,7 @@ export function CostSheetDraftApprovalCard({ msg, sessionId, onEdit }: CostSheet
         totalCostCents: total,
         notes: data.notes ?? undefined,
         lineItems,
+        attachFile,
       }),
     onSuccess: () => {
       toast({ title: "Cost sheet sent", description: "The parent has been notified by email + SMS." });
@@ -79,22 +88,31 @@ export function CostSheetDraftApprovalCard({ msg, sessionId, onEdit }: CostSheet
   const isSubmitting = approveMutation.isPending || rejectMutation.isPending;
 
   const metadata = [] as Array<{ label: string; value: string }>;
-  if (typeof data.matchedRuleCount === "number") {
-    metadata.push({ label: "Matched rules", value: String(data.matchedRuleCount) });
-  }
-  if (Array.isArray(data.candidates) && data.candidates.length > 1) {
-    metadata.push({ label: "Other candidates", value: String(data.candidates.length - 1) });
+  if (typeof d.siblingSheetCount === "number" && d.siblingSheetCount > 1) {
+    metadata.push({ label: "Matching programs", value: `${d.siblingSheetCount} - approve the right one(s), reject the rest` });
   }
 
-  const subtitle = data.sourceCostSheetCategory
-    ? `Auto-picked from: ${data.sourceCostSheetCategory}`
+  // Subtitle names the source program + service so the provider can tell
+  // sibling drafts apart when several programs match one booking.
+  const subtitleParts: string[] = [];
+  if (d.programName) subtitleParts.push(d.programName);
+  if (d.sourceCostSheetSubTypeLabel) subtitleParts.push(d.sourceCostSheetSubTypeLabel);
+  else if (data.sourceCostSheetCategory) subtitleParts.push(data.sourceCostSheetCategory);
+  const subtitle = subtitleParts.length > 0
+    ? subtitleParts.join(" - ")
     : "Auto-drafted by Eva from your cost sheet library";
 
-  const resolvedLabel = status === "approved" ? "Sent ✓" : status === "rejected" ? "Dismissed" : undefined;
+  const resolvedLabel = status === "approved"
+    ? "Sent ✓"
+    : data.resolvedAs === "superseded"
+      ? "Superseded"
+      : status === "rejected"
+        ? "Dismissed"
+        : undefined;
 
   return (
     <ApprovalCard
-      title="Auto-drafted Cost Sheet"
+      title={d.programName ? `Auto-drafted: ${d.programName}` : "Auto-drafted Cost Sheet"}
       subtitle={subtitle}
       icon={<Receipt className="h-4 w-4" />}
       amountCents={total}
@@ -117,6 +135,11 @@ export function CostSheetDraftApprovalCard({ msg, sessionId, onEdit }: CostSheet
       onReject={status === "pending" ? () => rejectMutation.mutate() : undefined}
       isSubmitting={isSubmitting}
       testId={`cost-sheet-draft-${msg.id}`}
+      attachOption={
+        d.fileName && d.fileUrl
+          ? { fileName: d.fileName, checked: attachFile, onChange: setAttachFile }
+          : undefined
+      }
     />
   );
 }

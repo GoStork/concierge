@@ -1088,6 +1088,41 @@ const sendMessageMutation = useMutation({
   // Seeded by "Edit & Resend" on a sent cost-sheet card; cleared when the
   // panel closes so the next "Send Cost Sheet" click starts blank.
   const [costSheetEditPrefill, setCostSheetEditPrefill] = useState<{ totalCostCents: number; notes: string | null } | null>(null);
+  // Phase 2 unification: the "+ -> Cost Sheet" button and "Edit & Resend"
+  // both run the SAME draft engine as the booking auto-draft, dropping
+  // approval cards in the chat. The legacy manual form only opens as a
+  // fallback when no cost sheet matches this session's context.
+  const generateCostSheetDraftsMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await apiRequest("POST", `/api/sessions/${sessionId}/cost-sheet-draft/generate`, {});
+      return (await res.json()) as { status: "drafted" | "skipped"; reason?: string };
+    },
+    onSuccess: (result, sessionId) => {
+      if (result.status === "drafted") {
+        toast({ title: "Cost sheet drafted", description: "Review the draft card(s) below and Approve & Send." });
+        queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", sessionId] });
+      } else if (
+        // Only fall back to the legacy manual form when the provider
+        // genuinely has NOTHING to auto-draft from. Other skip reasons
+        // (already-pending, zero totals) are transient states the draft
+        // cards themselves communicate.
+        result.reason === "no_matching_approved_sheets" ||
+        result.reason === "no_matching_subtypes" ||
+        result.reason === "no_parent_account" ||
+        result.reason === "no_intended_parent_profile"
+      ) {
+        toast({ title: "No matching cost sheet found", description: "Opening the manual form instead." });
+        setCostSheetEditPrefill(null);
+        setProviderInlinePanel("costSheet");
+      } else {
+        toast({ title: "Nothing new to draft", description: result.reason ? `Reason: ${result.reason}` : undefined });
+        queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", sessionId] });
+      }
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to draft cost sheet", description: err?.message || "Try again.", variant: "destructive" });
+    },
+  });
   // Seeded by "Edit & Resend" on a sent invoice card. The invoice panel reads
   // these to pre-fill the form and cancels this invoice on successful resend.
   const [invoiceEditPrefill, setInvoiceEditPrefill] = useState<{
@@ -2556,9 +2591,8 @@ const sendMessageMutation = useMutation({
                 onBookingUpdate={() => sessionBookingsQuery.refetch()}
                 msgTestIdPrefix="provider-msg"
                 onEditCostSheet={(hasJoined || isConsultationBooked)
-                  ? (initial) => {
-                      setCostSheetEditPrefill(initial);
-                      setProviderInlinePanel("costSheet");
+                  ? () => {
+                      if (selectedSessionId) generateCostSheetDraftsMutation.mutate(selectedSessionId);
                     }
                   : undefined}
                 onEditInvoice={(hasJoined || isConsultationBooked) ? editInvoiceFromCard : undefined}
@@ -2582,7 +2616,9 @@ const sendMessageMutation = useMutation({
                 enableFileUpload
                 testIdPrefix="provider"
                 onMeetingClick={handleProviderMeeting}
-                onCostSheetClick={(hasJoined || isConsultationBooked) ? () => { setCostSheetEditPrefill(null); setProviderInlinePanel("costSheet"); } : undefined}
+                onCostSheetClick={(hasJoined || isConsultationBooked) ? () => {
+                  if (selectedSessionId) generateCostSheetDraftsMutation.mutate(selectedSessionId);
+                } : undefined}
                 onInvoiceClick={(hasJoined || isConsultationBooked) ? () => { setInvoiceEditPrefill(null); setProviderInlinePanel("invoice"); } : undefined}
                 onAgreementClick={(hasJoined || isConsultationBooked) ? () => setProviderInlinePanel("agreement") : undefined}
                 inlinePanel={

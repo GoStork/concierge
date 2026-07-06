@@ -211,6 +211,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.conciergePromptSection;
   }
 
+  get providerQuote() {
+    return prisma.providerQuote;
+  }
+
   get journeyPreferences() {
     return prisma.journeyPreferences;
   }

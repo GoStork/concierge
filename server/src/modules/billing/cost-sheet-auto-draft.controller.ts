@@ -15,6 +15,7 @@ import {
 import { Request } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { NotificationService } from "../notifications/notification.service";
+import { CostSheetAutoDraftService } from "./cost-sheet-auto-draft.service";
 import { prisma } from "../../../db";
 import { formatMoneyCents } from "../../lib/format-money";
 import { canSendProviderMessage } from "../../../../shared/roles";
@@ -47,7 +48,25 @@ export class CostSheetAutoDraftController {
 
   constructor(
     @Inject(NotificationService) private readonly notifications: NotificationService,
+    @Inject(CostSheetAutoDraftService) private readonly autoDraft: CostSheetAutoDraftService,
   ) {}
+
+  // ─── Generate drafts on demand ─────────────────────────────────────────────
+  // Powers the provider's "+ -> Cost Sheet" button and "Edit & Resend".
+  // Same draft engine as the booking trigger, but explicit provider intent
+  // bypasses the feature gates and the quote-exists check.
+
+  @Post("api/sessions/:sessionId/cost-sheet-draft/generate")
+  @UseGuards(SessionOrJwtGuard)
+  async generate(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+  ) {
+    const user = req.user as any;
+    await this.loadSessionForProvider(sessionId, user);
+    const result = await this.autoDraft.draftForSession(sessionId);
+    return result;
+  }
 
   // ─── Auth helpers ──────────────────────────────────────────────────────────
 
@@ -94,7 +113,7 @@ export class CostSheetAutoDraftController {
     @Req() req: Request,
     @Param("sessionId") sessionId: string,
     @Param("messageId") messageId: string,
-    @Body() body: { totalCostCents?: number; notes?: string; lineItems?: LineItem[] },
+    @Body() body: { totalCostCents?: number; notes?: string; lineItems?: LineItem[]; attachFile?: boolean },
   ) {
     const user = req.user as any;
     const { session } = await this.loadSessionForProvider(sessionId, user);
@@ -105,12 +124,19 @@ export class CostSheetAutoDraftController {
     const totalCostCents =
       typeof body.totalCostCents === "number" && body.totalCostCents > 0
         ? body.totalCostCents
-        : lineItems.reduce((sum, li) => sum + (Number(li.amountCents) || 0), 0) ||
+        : lineItems.filter((li: any) => !li.excluded).reduce((sum, li) => sum + (Number(li.amountCents) || 0), 0) ||
           Number(data.totalCostCents) || 0;
     if (totalCostCents <= 0) {
       throw new HttpException("totalCostCents must be a positive number", HttpStatus.BAD_REQUEST);
     }
     const notes = typeof body.notes === "string" ? body.notes.trim() || null : data.notes ?? null;
+
+    // Attach the original uploaded cost-sheet document unless the provider
+    // unchecked the box. Uses the same quote fields the manual flow uses,
+    // so the parent card's existing signed-URL download route just works.
+    const attachFile = body.attachFile !== false;
+    const costSheetFileUrl = attachFile ? (data.fileUrl || null) : null;
+    const costSheetFileName = attachFile ? (data.fileName || null) : null;
 
     // Supersede prior active quotes for this session, then create the new one.
     const quote = await this.db.$transaction(async tx => {
@@ -124,8 +150,8 @@ export class CostSheetAutoDraftController {
           providerId: session.providerId!,
           parentUserId: session.userId,
           totalCostCents,
-          costSheetFileUrl: null,
-          costSheetFileName: null,
+          costSheetFileUrl,
+          costSheetFileName,
           notes,
           source: "AUTO_DRAFT_APPROVED",
           createdByUserId: user.id || null,
@@ -149,8 +175,8 @@ export class CostSheetAutoDraftController {
           quoteId: quote.id,
           providerName: session.provider?.name || null,
           totalCostCents,
-          costSheetFileUrl: null,
-          costSheetFileName: null,
+          costSheetFileUrl,
+          costSheetFileName,
           notes: quote.notes,
           lineItems,
           parentAcknowledgedAt: null,

@@ -13,6 +13,18 @@ export interface ApprovalCardLineItem {
   amountCents: number;
   editable?: boolean;
   source?: string;
+  // Zero-amount items covered by the package price - rendered as
+  // "Included" (mirrors the donor-profile Costs section).
+  includedInPackage?: boolean;
+  // Items the cost sheet marks as NOT covered - rendered grayed under a
+  // "Not included" divider, never counted in the total.
+  excluded?: boolean;
+}
+
+export interface ApprovalCardAttachOption {
+  fileName: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
 }
 
 export interface ApprovalCardMetadata {
@@ -35,6 +47,9 @@ export interface ApprovalCardProps {
   onReject?: () => void;
   isSubmitting?: boolean;
   testId: string;
+  // Optional "attach original document" checkbox shown above the action
+  // buttons while pending (cost-sheet PDF attach, Phase 2).
+  attachOption?: ApprovalCardAttachOption;
 }
 
 export function ApprovalCard({
@@ -52,9 +67,12 @@ export function ApprovalCard({
   onReject,
   isSubmitting,
   testId,
+  attachOption,
 }: ApprovalCardProps) {
   const isPending = status === "pending";
   const isApproved = status === "approved";
+  const includedItems = (lineItems || []).filter(li => !li.excluded);
+  const excludedItems = (lineItems || []).filter(li => li.excluded);
 
   return (
     <Card
@@ -95,15 +113,50 @@ export function ApprovalCard({
           </div>
         )}
 
-        {Array.isArray(lineItems) && lineItems.length > 0 && (
+        {includedItems.length > 0 && (
           <div className="space-y-1 text-sm">
-            {lineItems.map((li, idx) => (
+            {includedItems.map((li, idx) => (
               <div key={idx} className="flex justify-between gap-3">
                 <span className="text-foreground">{li.label}</span>
-                <span className="text-foreground tabular-nums">{formatMoneyCents(li.amountCents || 0)}</span>
+                {li.includedInPackage ? (
+                  <span className="text-muted-foreground">Included</span>
+                ) : (
+                  <span className="text-foreground tabular-nums">{formatMoneyCents(li.amountCents || 0)}</span>
+                )}
               </div>
             ))}
           </div>
+        )}
+
+        {/* Excluded items - shown for transparency (what the price does
+            NOT cover), grayed, never in the total. Mirrors the donor
+            profile's Costs section. */}
+        {excludedItems.length > 0 && (
+          <div className="border-t border-border pt-2">
+            <p className="text-[11px] uppercase tracking-wide font-medium text-muted-foreground mb-1">Not included</p>
+            <div className="space-y-1 text-sm">
+              {excludedItems.map((li, idx) => (
+                <div key={idx} className="flex justify-between gap-3 text-muted-foreground/70">
+                  <span>{li.label}</span>
+                  <span className="tabular-nums">{formatMoneyCents(li.amountCents || 0)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Attach-original-document checkbox (pending only). */}
+        {isPending && attachOption && (
+          <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none border-t border-border pt-2">
+            <input
+              type="checkbox"
+              checked={attachOption.checked}
+              onChange={e => attachOption.onChange(e.target.checked)}
+              className="accent-[hsl(var(--primary))]"
+              data-testid={`${testId}-attach-file`}
+            />
+            Attach original cost sheet ({attachOption.fileName})
+          </label>
         )}
 
         {notes && (

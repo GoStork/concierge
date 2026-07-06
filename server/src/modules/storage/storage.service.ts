@@ -172,4 +172,12 @@ export class StorageService {
   isConfigured(): boolean {
     return !!this.storage;
   }
+
+  // Canonical public-style URL for a GCS object path. Matches the format
+  // uploadBufferPublic returns and the format the cost-sheet download
+  // route parses back into an object path for signing - so callers can
+  // store this for objects that were uploaded via filePath-only flows.
+  publicUrlFor(objectPath: string): string {
+    return `https://storage.googleapis.com/${this.bucketName}/${objectPath}`;
+  }
 }
