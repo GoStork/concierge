@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { Button } from "@/components/ui/button";
@@ -662,7 +663,7 @@ export default function BookingPage() {
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate" style={{ fontFamily: fontBody }}>{ae.name || ae.email}</p>
                                 {ae.name && <p className="text-xs text-muted-foreground truncate">{ae.email}</p>}
-                                {ae.phone && <p className="text-xs text-muted-foreground">{ae.phone}</p>}
+                                {ae.phone && <p className="text-xs text-muted-foreground">{formatPhoneDisplay(ae.phone)}</p>}
                               </div>
                               <button
                                 type="button"
@@ -707,7 +708,7 @@ export default function BookingPage() {
                                   <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium truncate" style={{ fontFamily: fontBody }}>{ae.name || ae.email}</p>
                                     {ae.name && <p className="text-xs text-muted-foreground truncate">{ae.email}</p>}
-                                    {ae.phone && <p className="text-xs text-muted-foreground">{ae.phone}</p>}
+                                    {ae.phone && <p className="text-xs text-muted-foreground">{formatPhoneDisplay(ae.phone)}</p>}
                                   </div>
                                   <button
                                     type="button"

@@ -1,6 +1,7 @@
 import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatMoneyCents } from "../../lib/format-money";
+import { formatPhoneDisplay } from "../../lib/format-phone";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { type NightlySyncResult } from "../providers/profile-sync.service";
 
@@ -424,7 +425,7 @@ export class NotificationService implements OnModuleInit {
           { label: "Location", value: location },
           { label: "Client", value: esc(attendeeName) },
           ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
-          ...(booking.parentUser?.mobileNumber ? [{ label: "Phone", value: esc(booking.parentUser.mobileNumber) }] : []),
+          ...(booking.parentUser?.mobileNumber ? [{ label: "Phone", value: esc(formatPhoneDisplay(booking.parentUser.mobileNumber)) }] : []),
           ...(booking.notes ? [{ label: "Notes", value: esc(booking.notes) }] : []),
         ],
         alertBox: { text: "This meeting requires your confirmation. Please confirm, decline, or suggest a new time.", type: "warning" },

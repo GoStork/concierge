@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -329,7 +330,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                   <TableCell className="whitespace-nowrap hidden md:table-cell" data-testid={`text-member-mobile-${member.id}`}>
                     {member.mobileNumber ? (
                       <span className="flex items-center gap-1 text-sm">
-                        <Phone className="w-3 h-3 text-muted-foreground" />{member.mobileNumber}
+                        <Phone className="w-3 h-3 text-muted-foreground" />{formatPhoneDisplay(member.mobileNumber)}
                         <CopyButton value={member.mobileNumber} testId={`btn-copy-mobile-${member.id}`} />
                       </span>
                     ) : <span className="text-muted-foreground text-sm">-</span>}

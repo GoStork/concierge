@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { useCompanyName } from "@/hooks/use-brand-settings";
+import { formatPhoneDisplay } from "@/lib/phone-countries";
 
 export default function BookingManagePage() {
   const { token } = useParams<{ token: string }>();
@@ -251,7 +252,7 @@ export default function BookingManagePage() {
               {booking.attendeePhone && (
                 <div className="flex items-center gap-2 text-sm">
                   <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span className="text-muted-foreground">{booking.attendeePhone}</span>
+                  <span className="text-muted-foreground">{formatPhoneDisplay(booking.attendeePhone)}</span>
                 </div>
               )}
               {booking.notes && (

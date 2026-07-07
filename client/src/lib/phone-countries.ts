@@ -1,5 +1,20 @@
-import { getCountries, getCountryCallingCode, getExampleNumber, type CountryCode } from "libphonenumber-js";
+import { getCountries, getCountryCallingCode, getExampleNumber, parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 import examples from "libphonenumber-js/mobile/examples";
+
+/**
+ * Format a stored phone number (E.164 or any international string) for display,
+ * as calling code + the number's own national grouping, e.g. "+1 (917) 224-7761".
+ * This matches the display string PhoneInput builds (mobileNumberDisplay), so
+ * the same number renders identically everywhere. Falls back to the raw value
+ * when it can't be parsed. Every place the app SHOWS a phone number must go
+ * through this - never render the raw E.164.
+ */
+export function formatPhoneDisplay(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const parsed = parsePhoneNumberFromString(raw);
+  if (!parsed) return raw;
+  return `+${parsed.countryCallingCode} ${parsed.formatNational()}`;
+}
 
 export interface PhoneCountry {
   isoCode: string;

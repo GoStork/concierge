@@ -272,7 +272,6 @@ export interface SwipeDeckProfile {
   openToSameSexCouple: boolean | null;
   agreesToInternationalParents: boolean | null;
   miscarriages: number | null;
-  occupation: string | null;
   baseCompensation: number | null;
   totalCostMin: number | null;
   totalCostMax: number | null;
@@ -360,8 +359,8 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     agreesToInternationalParents: null,
     miscarriages: null,
     baseCompensation: null,
-    totalCostMin: null,
-    totalCostMax: null,
+    totalCostMin: r.calculatedTotalCost?.min != null ? Number(r.calculatedTotalCost.min) : null,
+    totalCostMax: r.calculatedTotalCost?.max != null ? Number(r.calculatedTotalCost.max) : null,
     isPremium: !!dbDonor.isPremium,
     sponsored: isSponsored(dbDonor),
   };
@@ -539,6 +538,21 @@ function isValidAge(val: any): boolean {
 function formatCurrency(val: number | null): string | null {
   if (val == null) return null;
   return formatMoneyDollars(Number(val));
+}
+
+// Total journey cost for egg donors: prefer the raw scraped totalCost column,
+// else fall back to the cost-sheet-resolved calculatedTotalCost range
+// (carried on the profile as totalCostMin/totalCostMax) - same precedence as
+// the full profile page.
+function formatTotalJourneyCost(profile: SwipeDeckProfile): string | null {
+  if (profile.totalCost != null) return formatCurrency(profile.totalCost);
+  const min = profile.totalCostMin;
+  const max = profile.totalCostMax;
+  if (min != null && max != null && Number(min) !== Number(max)) {
+    return `${formatCurrency(min)} - ${formatCurrency(max)}`;
+  }
+  if (min != null) return formatCurrency(min);
+  return null;
 }
 
 function boolLabel(val: boolean | null | undefined): string {
@@ -777,10 +791,12 @@ export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPre
     } else if (isFreshAndFrozen) {
       if (isNonEmpty(profile.eggLotCost)) costItems.push({ label: `Egg Lot Cost: ${formatCurrency(profile.eggLotCost)}`, value: "", icon: Wallet });
       if (isNonEmpty(profile.donorCompensation)) costItems.push({ label: `Compensation: ${formatCurrency(profile.donorCompensation)}`, value: "", icon: DollarSign });
-      if (isNonEmpty(profile.totalCost)) costItems.push({ label: `Total Journey Cost: ${formatCurrency(profile.totalCost)}`, value: "", icon: Wallet });
+      const totalJourneyCost = formatTotalJourneyCost(profile);
+      if (totalJourneyCost) costItems.push({ label: `Total Journey Cost: ${totalJourneyCost}`, value: "", icon: Wallet });
     } else {
       if (isNonEmpty(profile.donorCompensation)) costItems.push({ label: `Compensation: ${formatCurrency(profile.donorCompensation)}`, value: "", icon: DollarSign });
-      if (isNonEmpty(profile.totalCost)) costItems.push({ label: `Total Journey Cost: ${formatCurrency(profile.totalCost)}`, value: "", icon: Wallet });
+      const totalJourneyCost = formatTotalJourneyCost(profile);
+      if (totalJourneyCost) costItems.push({ label: `Total Journey Cost: ${totalJourneyCost}`, value: "", icon: Wallet });
     }
   }
   if (costItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Journey Costs", items: costItems });
@@ -1572,7 +1588,8 @@ export function buildSidebarSections(profile: SwipeDeckProfile, isSpermDonor = f
     if (profile.numberOfEggs != null && profile.numberOfEggs > 0) costs.push({ label: "Available Eggs", value: String(profile.numberOfEggs) });
     if (profile.eggLotCost != null) costs.push({ label: "Egg Lot Cost", value: fmtCurrency(profile.eggLotCost) });
     if (profile.donorCompensation != null) costs.push({ label: "Compensation", value: fmtCurrency(profile.donorCompensation) });
-    if (profile.totalCost != null) costs.push({ label: "Total Journey Cost", value: fmtCurrency(profile.totalCost) });
+    const totalJourneyCost = formatTotalJourneyCost(profile);
+    if (totalJourneyCost) costs.push({ label: "Total Journey Cost", value: totalJourneyCost });
   }
   if (costs.length > 0) sections.push({ title: "Journey Costs", rows: costs });
 

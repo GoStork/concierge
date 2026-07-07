@@ -13,12 +13,7 @@ import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Cale
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
-import { parsePhoneNumber } from "libphonenumber-js";
-
-function formatPhone(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  try { return parsePhoneNumber(raw).formatInternational(); } catch { return raw; }
-}
+import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { useToast } from "@/hooks/use-toast";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import MembersTable from "@/components/members-table";
@@ -360,7 +355,7 @@ function GostorkAdminUsersView() {
                   {member.mobileNumber ? (
                     <div className="flex items-center gap-1 text-sm">
                       <Phone className="w-3 h-3 text-muted-foreground" />
-                      <span>{formatPhone(member.mobileNumber)}</span>
+                      <span>{formatPhoneDisplay(member.mobileNumber)}</span>
                       <CopyButton value={member.mobileNumber} testId={`btn-copy-mobile-${member.id}`} />
                     </div>
                   ) : <span className="text-muted-foreground text-sm">-</span>}
@@ -532,7 +527,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                   {row.mobileNumber ? (
                     <div className="flex items-center gap-1 text-sm">
                       <Phone className="w-3 h-3 text-muted-foreground shrink-0" />
-                      <span className="whitespace-nowrap">{formatPhone(row.mobileNumber)}</span>
+                      <span className="whitespace-nowrap">{formatPhoneDisplay(row.mobileNumber)}</span>
                       <CopyButton value={row.mobileNumber} testId={`btn-copy-mobile-${row.rowId}`} />
                     </div>
                   ) : <span className="text-muted-foreground text-sm">-</span>}

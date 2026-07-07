@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { useQuery, useMutation } from "@tanstack/react-query";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import MembersTable from "@/components/members-table";
 import ImageUploader from "@/components/image-uploader";
@@ -1052,7 +1053,7 @@ function AccountTab() {
               </div>
               <div className="space-y-2">
                 <Label>Mobile Number</Label>
-                <Input disabled value={mobileNumberDisplay || mobileNumber || ""} placeholder="-- Not specified --" data-testid="text-account-mobile" />
+                <Input disabled value={mobileNumberDisplay || formatPhoneDisplay(mobileNumber)} placeholder="-- Not specified --" data-testid="text-account-mobile" />
               </div>
               {!isProviderUser && (
                 <>

@@ -15,6 +15,7 @@ import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-sec
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getCountryFlag } from "@/lib/country-flag";
 import { dedupeProviderLocations } from "@/lib/format-location";
+import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileCloseButton } from "@/components/mobile-profile-close-header";
 
@@ -159,7 +160,7 @@ export default function ProviderProfilePage() {
           <div className="grid grid-cols-2 gap-x-12 gap-y-3">
             <FieldItem label="Provider Name" value={provider.name} />
             <FieldItem label="Year Founded" value={provider.yearFounded ? String(provider.yearFounded) : null} />
-            <FieldItem label="Phone" value={provider.phone} />
+            <FieldItem label="Phone" value={provider.phone ? formatPhoneDisplay(provider.phone) : null} />
             <FieldItem label="Email" value={provider.email} />
             {provider.websiteUrl && <FieldItem label="Website" value={provider.websiteUrl} />}
           </div>

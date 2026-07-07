@@ -1,5 +1,6 @@
 import { User } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { formatPhoneDisplay } from "@/lib/phone-countries";
 import type { SessionUser } from "@/components/chat/chat-types";
 
 interface ParentProfileCardProps {
@@ -43,7 +44,7 @@ interface BasicInfo {
 
 function buildBasics(user: SessionUser): BasicInfo {
   return {
-    phone: nonEmpty(user.mobileNumber),
+    phone: nonEmpty(formatPhoneDisplay(user.mobileNumber)),
     age: computeAge(user.dateOfBirth),
     relationshipStatus: nonEmpty(user.relationshipStatus),
     partnerName: nonEmpty(user.partnerFirstName),
