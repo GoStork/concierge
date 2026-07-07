@@ -24,9 +24,12 @@ interface SessionInvoiceRow {
 export function InvoiceHistorySidebarSection({
   sessionId,
   brandColor,
+  canPay = true,
 }: {
   sessionId: string;
   brandColor: string;
+  /** Parents get a Pay-now link on pending invoices; provider viewers don't. */
+  canPay?: boolean;
 }) {
   const { data } = useQuery<{ invoices: SessionInvoiceRow[] }>({
     queryKey: ["/api/sessions/invoices", sessionId],
@@ -49,7 +52,7 @@ export function InvoiceHistorySidebarSection({
       </div>
       <div className="space-y-1.5">
         {invoices.map(inv => {
-          const isPayable = inv.status === "AWAITING_PAYMENT";
+          const isPayable = canPay && inv.status === "AWAITING_PAYMENT";
           const isDead = ["CANCELLED", "EXPIRED"].includes(inv.status);
           return (
             <div

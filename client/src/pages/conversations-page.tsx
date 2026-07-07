@@ -35,6 +35,7 @@ import ConciergeChatPage, { ParentChatSidePanel, type ParentSidePanelData } from
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { InvoiceSidebarSection } from "@/components/chat/invoice-sidebar-section";
+import { InvoiceHistorySidebarSection } from "@/components/chat/invoice-history-sidebar-section";
 // Legacy imports for dead code pending removal
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import {
@@ -2804,7 +2805,23 @@ const sendMessageMutation = useMutation({
                     withSeparator
                     testId="provider-subject-profile-card"
                   />
-                  {/* Cost Sheet / Invoice / Agreement sections moved into the + drawer above the composer */}
+                  {/* Cost Sheet / Invoice / Agreement SEND forms live in the +
+                      drawer above the composer; these are the read-only history
+                      lists, mirroring what the parent sees on their side. */}
+                  {selectedSessionId && (
+                    <div className="border-t pt-4 mt-4">
+                      <CostSheetSidebarSection
+                        sessionId={selectedSessionId}
+                        brandColor={brandColor}
+                        readOnly={true}
+                      />
+                    </div>
+                  )}
+                  {selectedSessionId && (
+                    <div className="mt-4">
+                      <InvoiceHistorySidebarSection sessionId={selectedSessionId} brandColor={brandColor} canPay={false} />
+                    </div>
+                  )}
                 </>
               }
             />

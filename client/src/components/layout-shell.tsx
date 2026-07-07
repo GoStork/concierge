@@ -810,6 +810,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     // Provider-only: all-profiles engagement + conversion analytics (reuses the
     // sponsorship dashboard in "performance" mode).
     { show: isProvider && !isAdmin, to: '/performance', icon: BarChart3, label: 'Performance', mobileLabel: 'Stats', fillOnActive: false },
+    // Provider billing hub: invoices sent to parents + payout history.
+    // Fee setup / bank accounts stay in Settings (Billing / Payouts tabs).
+    { show: isProvider && !isAdmin, to: '/provider/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing', fillOnActive: false },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Calendar', mobileLabel: 'Calendar', badge: isProvider ? pendingMeetings : undefined, fillOnActive: false },
     { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true, fillOnActive: false },
   ];

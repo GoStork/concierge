@@ -83,7 +83,7 @@ Status legend: [x] done and tested - [ ] not started - [~] in progress
 - [x] Regression matrix scripts/test-auto-draft-matrix.ts - 6/6 across all
       provider types, self-cleaning
 
-### [~] Phase 3 - Readiness check + invoice auto-draft (built, in UI testing)
+### [x] Phase 3 - Readiness check + invoice auto-draft (tested 2026-07-07)
 
 Discovery: a readiness -> invoice pipeline already existed pre-phases
 (readiness_prompt card after video calls, parent-confirm-ready endpoint,
@@ -113,31 +113,52 @@ the missing readiness options on top of it.
 - [x] AT_CLEARANCE surrogacy: covered by the existing authorize-then-capture
       clearance flow (confirm-clearance endpoint + clearance tracker card);
       no draft hold needed
+- [x] Provider-facing billing visibility (added mid-phase on request):
+      /provider/billing hub with a "Billing" nav item - Invoices tab (all
+      invoices sent to parents with amount / GoStork fee / payout split) +
+      Payouts tab (bank transfer history), search + status + service-type
+      filters, rows open the invoice document. Fee setup and bank accounts
+      stay in Settings. Provider chat sidebar also gets the same read-only
+      Cost Sheets + Invoices history sections parents have (no Pay link).
 - [x] Parent-facing billing visibility (added mid-phase on request):
       "Invoices" section in the parent chat sidebar (per session, next to
       Cost Sheets, with Pay-now links), plus a centralized parent Billing
       page at /my/billing (Invoices + Cost Sheets tabs across all providers,
       search, status filters, receipt/file downloads, open-conversation
       links) with a "Billing" nav item (desktop top nav + mobile bottom bar)
-- [ ] User acceptance testing (draft card in provider chat, approve/edit/
-      reject, need-more-time reminder, not-yet relay, parent billing page)
+- [x] User acceptance testing passed 2026-07-07 (yes-ready draft flow,
+      approve -> paid invoice, parent + provider billing hubs, readiness
+      options; the 12h re-ask sweep is code-verified via the scheduler)
 
-### [ ] Phase 4 - Agreement automation
+Known gap discovered during testing, moved to Phase 5 (order swapped with
+agreements): the readiness prompt fires after ANY call for surrogacy/IVF
+because nothing ever sets Booking.meetingSubtype - the MATCH_CALL /
+DOCTOR_CONSULTATION branches in video.controller are dead code until the
+call buttons exist.
+
+### [ ] Phase 4 - Call buttons + surrogate reservation (order swapped with
+        agreements on 2026-07-07 - the readiness trigger gap makes this more
+        urgent)
+
+- [ ] Match Call (surrogacy) / Doctor Call (IVF) buttons in provider
+      composer, reusing New Appointment widget; external attendee yes/no
+      email; coordinator answers inside the widget. Bookings created with
+      meetingSubtype MATCH_CALL / DOCTOR_CONSULTATION
+- [ ] Readiness trigger gating per type: surrogacy fires ONLY after a
+      MATCH_CALL, IVF ONLY after a DOCTOR_CONSULTATION; egg/sperm/banks
+      keep firing after the first consultation
+- [ ] Match call ends -> surrogate goes on hard 24h hold: "On Hold for 24
+      Hours" badge everywhere, AI excludes held surrogates from suggestions,
+      auto-release + Eva notify + re-reserve offer at expiry; deposit paid
+      inside the window makes the reservation stick
+- [ ] IVF admin-defined matching requirements (simple AND rules)
+
+### [ ] Phase 5 - Agreement automation
 
 - [ ] Agreement auto-generates on invoice PAID via PandaDoc (manual trigger
       preserved; idempotency guard)
 - [ ] AI auto-sends contract preview when parent asks to see the contract
       and provider has pandaDocTemplateId configured
-
-### [ ] Phase 5 - Call buttons + surrogate reservation
-
-- [ ] Match Call (surrogacy) / Doctor Call (IVF) buttons in provider
-      composer, reusing New Appointment widget; external attendee yes/no
-      email; coordinator answers inside the widget
-- [ ] Match Call books -> surrogate goes on hard 24h hold: "On Hold for 24
-      Hours" badge everywhere, AI excludes held surrogates from suggestions,
-      auto-release + Eva notify + re-reserve offer at expiry
-- [ ] IVF admin-defined matching requirements (simple AND rules)
 
 ### [ ] Phase 6 - Banks skip-to-checkout + Legal Services activation
 

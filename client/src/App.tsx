@@ -61,6 +61,7 @@ import W9SigningPage from "@/pages/w9-signing-page";
 import PaymentPage from "@/pages/payment-page";
 import AdminBillingPage from "@/pages/admin-billing-page";
 import MyInvoicesPage from "@/pages/my-invoices-page";
+import ProviderBillingPage from "@/pages/provider-billing-page";
 import AdminTestRunnerPage from "@/pages/admin-test-runner-page";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -179,6 +180,7 @@ function AppRoutes() {
         <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingPage /></ProtectedRoute>} />
         <Route path="/my/invoices" element={<ProtectedRoute><MyInvoicesPage /></ProtectedRoute>} />
         <Route path="/my/billing" element={<ProtectedRoute><MyInvoicesPage /></ProtectedRoute>} />
+        <Route path="/provider/billing" element={<ProtectedRoute><ProviderBillingPage /></ProtectedRoute>} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
         <Route path="/admin/test-runner" element={<ProtectedRoute><AdminTestRunnerPage /></ProtectedRoute>} />
         <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />
