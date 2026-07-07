@@ -55,6 +55,20 @@ export function providerTypeNameToServiceType(providerTypeName: string | undefin
   return "OTHER";
 }
 
+// Maps an AiChatSession.subjectType (e.g. "Egg Donor", "Surrogate") to the
+// LineServiceType the session's journey is actually about. Null when the
+// session has no subject (clinic-only chats) - callers fall back to the
+// provider's primary approved service.
+export function serviceTypeFromSubject(subjectType: string | null | undefined): string | null {
+  const s = (subjectType || "").toLowerCase();
+  if (!s) return null;
+  if (s.includes("egg")) return "EGG_DONATION";
+  if (s.includes("surrog")) return "SURROGACY";
+  if (s.includes("sperm")) return "SPERM_DONATION";
+  if (s.includes("ivf") || s.includes("clinic") || s.includes("doctor")) return "IVF_CLINIC";
+  return null;
+}
+
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
@@ -202,6 +216,21 @@ export class BillingService {
       description?: string | null;
       amountCents: number;
     }>;
+    /**
+     * When true, run every validation and amount resolution but create
+     * NOTHING - returns the computed amounts instead of an Invoice. Used by
+     * the Phase 3 invoice auto-draft to build the provider approval card
+     * with the exact numbers a real createInvoice would produce, while
+     * keeping the loud-failure semantics (same throws, same messages).
+     */
+    dryRun?: boolean;
+    /**
+     * Prefer this service's fee config as the primary (e.g. EGG_DONATION
+     * when the session's subject is an egg donor) instead of the provider's
+     * first approved service. Only honored when an active config exists for
+     * it - keeps multi-service agencies from drafting the wrong service.
+     */
+    preferredServiceType?: string;
   }) {
     const {
       sessionId,
@@ -212,6 +241,8 @@ export class BillingService {
       description,
       dueAt,
       lineItems,
+      dryRun,
+      preferredServiceType,
     } = params;
 
     const provider = await this.prisma.provider.findUnique({
@@ -288,7 +319,9 @@ export class BillingService {
       .filter(s => s.status === "APPROVED")
       .map(s => providerTypeNameToServiceType(s.providerType?.name))
       .find(st => configByService.has(st));
-    const primaryServiceType = primaryServiceTypeFromServices
+    const primaryServiceType = (preferredServiceType && configByService.has(preferredServiceType)
+      ? preferredServiceType
+      : primaryServiceTypeFromServices)
       ?? Array.from(configByService.keys())[0];
     const primaryConfig = configByService.get(primaryServiceType)!;
 
@@ -364,6 +397,18 @@ export class BillingService {
       : resolveServiceType(provider.services.find(s => s.status === "APPROVED")?.providerType?.name
           ?? provider.services[0]?.providerType?.name);
 
+    if (dryRun) {
+      return {
+        dryRun: true,
+        parentPaysCents,
+        referralFeeAmount,
+        providerPayoutAmount,
+        headlineServiceType,
+        primaryServiceType,
+        quotedTotalCostCents: latestQuote?.totalCostCents ?? null,
+      } as any;
+    }
+
     const invoice = await this.prisma.invoice.create({
       data: {
         providerId,
@@ -412,6 +457,35 @@ export class BillingService {
         (latestQuote ? ` (basis: quote ${latestQuote.id} = ${formatCents(latestQuote.totalCostCents)})` : ""),
     );
 
+    // Any pending invoice-draft approval cards on this session are now stale -
+    // whatever invoice just got created (draft approval, manual panel send,
+    // admin dashboard) IS the invoice. Flip them to "superseded" so the
+    // provider chat never shows an actionable draft next to a live invoice.
+    // The approve endpoint overwrites its own card to "approved" right after.
+    try {
+      const pendingDrafts = await this.prisma.aiChatMessage.findMany({
+        where: { sessionId, uiCardType: "invoice_draft_approval" },
+        select: { id: true, uiCardData: true },
+      });
+      for (const d of pendingDrafts) {
+        const dd = (d.uiCardData as any) || {};
+        if (dd.resolvedAt) continue;
+        await this.prisma.aiChatMessage.update({
+          where: { id: d.id },
+          data: {
+            uiCardData: {
+              ...dd,
+              resolvedAt: new Date().toISOString(),
+              resolvedAs: "superseded",
+              resultingInvoiceId: invoice.id,
+            },
+          },
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to supersede pending invoice drafts for session ${sessionId}: ${e.message}`);
+    }
+
     return invoice;
   }
 
@@ -451,13 +525,179 @@ export class BillingService {
       });
       return { status: "created", invoice };
     } catch (err: any) {
-      const message = err?.message || "Could not create invoice";
-      if (/No active referral fee/.test(message)) return { status: "blocked", reason: "NO_CONFIG", message };
-      if (/Billing Identity is incomplete/.test(message)) return { status: "blocked", reason: "BILLING_IDENTITY_INCOMPLETE", message };
-      if (/cost sheet/.test(message)) return { status: "blocked", reason: "NO_QUOTE", message };
-      if (/Default First Payment/.test(message)) return { status: "blocked", reason: "NO_DEFAULT_PAYMENT", message };
-      throw err;
+      return this.mapInvoiceCreationError(err);
     }
+  }
+
+  /** Shared loud-failure -> structured-blocked mapping for the readiness paths. */
+  private mapInvoiceCreationError(err: any):
+    { status: "blocked"; reason: "NO_QUOTE" | "NO_CONFIG" | "NO_DEFAULT_PAYMENT" | "BILLING_IDENTITY_INCOMPLETE"; message: string } {
+    const message = err?.message || "Could not create invoice";
+    if (/No active referral fee/.test(message)) return { status: "blocked", reason: "NO_CONFIG", message };
+    // The service throws "Legal Identity is incomplete"; older callers matched
+    // "Billing Identity" which never fired - keep both patterns matched.
+    if (/(Legal|Billing) Identity is incomplete/.test(message)) return { status: "blocked", reason: "BILLING_IDENTITY_INCOMPLETE", message };
+    if (/cost sheet/.test(message)) return { status: "blocked", reason: "NO_QUOTE", message };
+    if (/Default First Payment/.test(message)) return { status: "blocked", reason: "NO_DEFAULT_PAYMENT", message };
+    throw err;
+  }
+
+  // ─── Phase 3: invoice auto-draft with provider approval gate ───────────────
+
+  /**
+   * Dry-run twin of createInvoiceFromReadiness: resolves the exact amounts a
+   * real invoice would carry (same validations, same loud failures mapped to
+   * structured blocked results) without creating anything.
+   */
+  async previewInvoiceFromReadiness(sessionId: string): Promise<
+    | { status: "ok"; providerId: string; parentUserId: string; preview: { parentPaysCents: number; referralFeeAmount: number; providerPayoutAmount: number; headlineServiceType: string; primaryServiceType: string; quotedTotalCostCents: number | null } }
+    | { status: "skipped"; reason: "ALREADY_OPEN" | "NO_PROVIDER" }
+    | { status: "blocked"; reason: "NO_QUOTE" | "NO_CONFIG" | "NO_DEFAULT_PAYMENT" | "BILLING_IDENTITY_INCOMPLETE"; message: string }
+  > {
+    const session = await this.prisma.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true, providerId: true, subjectType: true },
+    });
+    if (!session?.providerId) return { status: "skipped", reason: "NO_PROVIDER" };
+
+    const openInvoice = await this.prisma.invoice.findFirst({
+      where: { sessionId, status: { in: ["AWAITING_PAYMENT", "AUTHORIZED"] } },
+      select: { id: true },
+    });
+    if (openInvoice) return { status: "skipped", reason: "ALREADY_OPEN" };
+
+    try {
+      const preview = (await this.createInvoice({
+        sessionId,
+        providerId: session.providerId,
+        parentUserId: session.userId,
+        triggerSource: "AUTO_READINESS",
+        dryRun: true,
+        // Multi-service agencies: draft the service the session is actually
+        // about (an egg-donor session must not draft a Surrogacy line).
+        preferredServiceType: serviceTypeFromSubject(session.subjectType) ?? undefined,
+      })) as any;
+      return { status: "ok", providerId: session.providerId, parentUserId: session.userId, preview };
+    } catch (err: any) {
+      return this.mapInvoiceCreationError(err);
+    }
+  }
+
+  /**
+   * Phase 3 entry point, called when the parent confirms "Yes, I'm ready".
+   *
+   * Two-gate check (mirrors the cost-sheet auto-draft):
+   *   Gate 1 - ConciergePromptSection "auto_invoice_on_ready".isActive
+   *   Gate 2 - Provider.autoFeaturesEnabled.autoInvoiceDraft === true
+   * Either gate off -> { status: "legacy" } and the caller runs the old
+   * direct createInvoiceFromReadiness path unchanged.
+   *
+   * Match-call deposits (surrogate on a hard 24h reservation window) always
+   * take the legacy direct path - a provider approval gate would eat into
+   * the parent's 24h decide-and-pay window.
+   *
+   * When both gates pass: post ONE provider-only "invoice_draft_approval"
+   * card in the provider session with the resolved amounts as editable line
+   * items. The provider approves (creates + sends the real invoice), edits
+   * (opens the invoice panel prefilled; sending supersedes the draft), or
+   * rejects it.
+   */
+  async tryDraftInvoiceForReadiness(
+    sessionId: string,
+    parentName: string,
+    opts: { isMatchCall?: boolean } = {},
+  ): Promise<
+    | { status: "legacy" }
+    | { status: "drafted"; messageId: string }
+    | { status: "skipped"; reason: string }
+    | { status: "blocked"; reason: "NO_QUOTE" | "NO_CONFIG" | "NO_DEFAULT_PAYMENT" | "BILLING_IDENTITY_INCOMPLETE"; message: string }
+  > {
+    if (opts.isMatchCall) return { status: "legacy" };
+
+    const session = await this.prisma.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        userId: true,
+        providerId: true,
+        provider: { select: { id: true, name: true, autoFeaturesEnabled: true, users: { select: { id: true } } } },
+      },
+    });
+    if (!session?.providerId || !session.provider) return { status: "legacy" };
+
+    const gate1 = await this.prisma.conciergePromptSection.findUnique({
+      where: { key: "auto_invoice_on_ready" },
+      select: { isActive: true },
+    });
+    if (!gate1?.isActive) return { status: "legacy" };
+    const autoFeatures = (session.provider.autoFeaturesEnabled as any) || {};
+    if (autoFeatures.autoInvoiceDraft !== true) return { status: "legacy" };
+
+    // Idempotency: one pending draft card per session, ever.
+    const existingDrafts = await this.prisma.aiChatMessage.findMany({
+      where: { sessionId, uiCardType: "invoice_draft_approval" },
+      select: { uiCardData: true },
+    });
+    if (existingDrafts.some(d => !((d.uiCardData as any) || {}).resolvedAt)) {
+      return { status: "skipped", reason: "DRAFT_ALREADY_PENDING" };
+    }
+
+    const previewRes = await this.previewInvoiceFromReadiness(sessionId);
+    if (previewRes.status !== "ok") return previewRes;
+    const p = previewRes.preview;
+
+    const lineItems = [
+      {
+        serviceType: p.primaryServiceType,
+        serviceTypeLabel: humanizeLineServiceType(p.primaryServiceType),
+        description: `${humanizeLineServiceType(p.primaryServiceType)} - first payment`,
+        amountCents: p.parentPaysCents,
+      },
+    ];
+
+    const msg = await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId,
+        role: "assistant",
+        content: `${parentName} confirmed they're ready to move forward. I drafted their invoice - review and approve to send it.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardType: "invoice_draft_approval",
+        uiCardData: {
+          parentName,
+          providerId: session.providerId,
+          lineItems,
+          totalCents: p.parentPaysCents,
+          referralFeeAmountCents: p.referralFeeAmount,
+          providerPayoutAmountCents: p.providerPayoutAmount,
+          quotedTotalCostCents: p.quotedTotalCostCents,
+          description: null,
+          autoDraftedAt: new Date().toISOString(),
+          resolvedAt: null,
+          resolvedAs: null,
+          resultingInvoiceId: null,
+        },
+      },
+    });
+
+    for (const u of session.provider.users) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: u.id,
+          eventType: "INVOICE_DRAFT_READY",
+          payload: {
+            sessionId,
+            messageId: msg.id,
+            parentName,
+            totalCents: p.parentPaysCents,
+            message: `${parentName} is ready to move forward. Review and send their auto-drafted ${formatCents(p.parentPaysCents)} invoice.`,
+          },
+        },
+      }).catch(() => {});
+    }
+
+    this.logger.log(`Invoice draft ${msg.id} posted for provider approval (session=${sessionId}, total=${formatCents(p.parentPaysCents)})`);
+    return { status: "drafted", messageId: msg.id };
   }
 
   // ─── Send payment notifications to parent ──────────────────────────────────

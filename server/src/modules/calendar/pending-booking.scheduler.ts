@@ -125,6 +125,62 @@ export async function runPendingBookingCheck(prisma: PrismaService, notification
   }
 }
 
+/**
+ * Phase 3: 12h readiness re-ask.
+ *
+ * When a parent answers "Need more time" on a readiness_prompt card, the
+ * respond endpoint stamps uiCardData.remindAt = +12h. This sweep posts a
+ * single fresh readiness card once that time passes, marking the original
+ * with reminderSentAt so it can never re-fire.
+ */
+export async function runReadinessReminderCheck(prisma: PrismaService) {
+  const now = Date.now();
+  // "later"-answered cards are a small set - filter timestamps in JS rather
+  // than fighting Prisma's JSON-path comparison operators.
+  const candidates = await prisma.aiChatMessage.findMany({
+    where: {
+      uiCardType: "readiness_prompt",
+      uiCardData: { path: ["answered"], equals: "later" },
+    },
+    select: { id: true, sessionId: true, uiCardData: true },
+  });
+
+  for (const msg of candidates) {
+    try {
+      const data = (msg.uiCardData as any) || {};
+      if (data.reminderSentAt) continue;
+      const remindAtMs = data.remindAt ? new Date(data.remindAt).getTime() : null;
+      if (!remindAtMs || remindAtMs > now) continue;
+
+      const providerName = data.providerName || "the provider";
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: msg.sessionId,
+          role: "assistant",
+          content: `Just checking back in - have you had a chance to think it over? Are you ready to move forward with ${providerName}?`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "readiness_prompt",
+          uiCardData: {
+            ...data,
+            answered: undefined,
+            remindAt: undefined,
+            reminderSentAt: undefined,
+            isReminder: true,
+          },
+        },
+      });
+      await prisma.aiChatMessage.update({
+        where: { id: msg.id },
+        data: { uiCardData: { ...data, reminderSentAt: new Date().toISOString() } },
+      });
+      console.log(`[readiness-reminder] Re-asked readiness in session ${msg.sessionId} (original card ${msg.id})`);
+    } catch (err: any) {
+      console.error(`[readiness-reminder] Failed for message ${msg.id}: ${err.message}`);
+    }
+  }
+}
+
 export function startPendingBookingScheduler(prisma: PrismaService, notifications: NotificationService) {
   if (scheduledTask) {
     console.log("[pending-booking] Scheduler already running");
@@ -142,9 +198,14 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
     } catch (err: any) {
       console.error(`[pending-booking] Cron error: ${err.message}`);
     }
+    try {
+      await runReadinessReminderCheck(prisma);
+    } catch (err: any) {
+      console.error(`[readiness-reminder] Cron error: ${err.message}`);
+    }
   });
 
-  console.log("[pending-booking] Scheduler started - runs every 10 minutes (daily/urgent nudges + auto-expiry)");
+  console.log("[pending-booking] Scheduler started - runs every 10 minutes (daily/urgent nudges + auto-expiry + readiness re-asks)");
 }
 
 export function stopPendingBookingScheduler() {

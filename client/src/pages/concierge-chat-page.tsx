@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
+import { InvoiceHistorySidebarSection } from "@/components/chat/invoice-history-sidebar-section";
 import { CostSheetParentAck } from "@/components/chat/special-message-card";
 import { ChatPlusDrawer, type ChatPlusAction } from "@/components/chat/chat-plus-drawer";
 import { InvoicePaymentPanel } from "@/components/chat/invoice-payment-panel";
@@ -2590,6 +2591,12 @@ export function ParentChatSidePanel({
               readOnly={true}
             />
           </div>
+        )}
+
+        {/* Payment history for this conversation (renders nothing when empty,
+            including its own divider) */}
+        {sessionId && (
+          <InvoiceHistorySidebarSection sessionId={sessionId} brandColor={brandColor} />
         )}
       </div>
     </div>

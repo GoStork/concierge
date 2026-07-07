@@ -240,7 +240,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       where: { userId: { in: accountUserIds } },
       orderBy: { updatedAt: "desc" },
       include: {
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         provider: { select: { id: true, name: true, logoUrl: true } },
       },
     });
@@ -462,7 +462,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: [{ humanRequested: "desc" }, { updatedAt: "desc" }],
@@ -988,7 +988,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: { updatedAt: "desc" },
@@ -3065,8 +3065,31 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
           const { BillingService } = await import("./src/modules/billing/billing.service");
           const billing = nestApp.get(BillingService);
 
-          const result = await billing.createInvoiceFromReadiness(providerSessionId);
-          if (result.status === "created") {
+          // Phase 3: when the provider has invoice auto-draft enabled, post a
+          // provider approval card instead of creating the invoice directly.
+          // Match-call deposits (24h reservation window) always go direct.
+          // "legacy" = gates off -> fall through to the original direct path.
+          // skipped/blocked results share the direct path's shapes so the
+          // handling below covers both engines.
+          const draftRes = await billing.tryDraftInvoiceForReadiness(
+            providerSessionId,
+            parentName,
+            { isMatchCall: cardData?.isMatchCall === true },
+          );
+          let result: Awaited<ReturnType<typeof billing.createInvoiceFromReadiness>> | null = null;
+          if (draftRes.status === "legacy") {
+            result = await billing.createInvoiceFromReadiness(providerSessionId);
+          } else if (draftRes.status === "drafted") {
+            console.log(`[parent-confirm-ready] Invoice draft ${draftRes.messageId} posted for provider approval (session ${providerSessionId})`);
+          } else if (draftRes.status === "skipped") {
+            console.log(`[parent-confirm-ready] Invoice draft skipped: ${draftRes.reason}`);
+          } else {
+            result = draftRes as any;
+          }
+
+          if (result === null) {
+            // drafted or draft-skipped - nothing more to do here
+          } else if (result.status === "created") {
             await billing.sendPaymentNotificationsToParent(result.invoice.id);
             console.log(`[parent-confirm-ready] Invoice ${result.invoice.id} auto-created for session ${providerSessionId}`);
           } else if (result.status === "skipped") {
@@ -3184,9 +3207,9 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
 chatRouter.patch("/api/billing/readiness-prompt-respond", requireAuth, async (req, res) => {
   try {
     const user = req.user as any;
-    const { messageId, answer } = req.body; // answer: "yes" | "no"
-    if (!messageId || !["yes", "no"].includes(answer)) {
-      return res.status(400).json({ message: "messageId and answer (yes|no) required" });
+    const { messageId, answer } = req.body; // answer: "yes" | "no" | "later"
+    if (!messageId || !["yes", "no", "later"].includes(answer)) {
+      return res.status(400).json({ message: "messageId and answer (yes|no|later) required" });
     }
     const msg = await prisma.aiChatMessage.findUnique({
       where: { id: messageId },
@@ -3207,10 +3230,76 @@ chatRouter.patch("/api/billing/readiness-prompt-respond", requireAuth, async (re
       (sessionOwner?.parentAccountId && requestUser?.parentAccountId && sessionOwner.parentAccountId === requestUser.parentAccountId);
     if (!isOwner) return res.status(403).json({ message: "Not authorized" });
 
+    const cardData = (msg.uiCardData as any) || {};
+    const extra: Record<string, unknown> = {};
+    if (answer === "later") {
+      // Phase 3: "Need more time" schedules a single 12h re-ask (swept by the
+      // readiness-reminder pass in the pending-booking scheduler).
+      extra.remindAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+      extra.reminderSentAt = null;
+    }
     await prisma.aiChatMessage.update({
       where: { id: messageId },
-      data: { uiCardData: { ...(msg.uiCardData as object || {}), answered: answer } },
+      data: { uiCardData: { ...cardData, answered: answer, ...extra } },
     });
+
+    const providerName = cardData.providerName || "the provider";
+    if (answer === "later") {
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: msg.sessionId,
+          role: "assistant",
+          content: `No problem - take the time you need. I'll check back in about 12 hours. If anything comes up before then, just ask me here.`,
+          senderType: "system",
+          senderName: "GoStork",
+        },
+      }).catch(() => {});
+    } else if (answer === "no") {
+      // Phase 3: Eva asks what the blocker is (the parent's reply flows
+      // through the normal AI routing), and the provider gets a heads-up
+      // note in their session so they can help.
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: msg.sessionId,
+          role: "assistant",
+          content: `Totally understandable - this is a big decision. Can I ask what's holding you back? I'll make sure ${providerName} addresses it, or I can help you compare other options.`,
+          senderType: "system",
+          senderName: "GoStork",
+        },
+      }).catch(() => {});
+      try {
+        const booking = cardData.bookingId
+          ? await prisma.booking.findUnique({
+              where: { id: cardData.bookingId as string },
+              include: { providerUser: { select: { providerId: true } } },
+            })
+          : null;
+        const providerId = booking?.providerUser?.providerId || null;
+        if (providerId) {
+          const providerSession = await prisma.aiChatSession.findFirst({
+            where: { userId: session.userId, providerId, status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] } },
+            orderBy: { updatedAt: "desc" },
+            select: { id: true, user: { select: { firstName: true, name: true } } },
+          });
+          if (providerSession) {
+            const parentLabel = providerSession.user?.firstName || providerSession.user?.name || "The parent";
+            await prisma.aiChatMessage.create({
+              data: {
+                sessionId: providerSession.id,
+                role: "assistant",
+                content: `${parentLabel} said they're not ready to move forward yet after the call. Eva is asking what's holding them back and will relay it here.`,
+                senderType: "system",
+                senderName: "GoStork",
+                uiCardType: "provider_only",
+              },
+            });
+          }
+        }
+      } catch (relayErr: any) {
+        console.error("[readiness-prompt-respond] provider relay failed:", relayErr.message);
+      }
+    }
+
     res.json({ success: true });
   } catch (e: any) {
     console.error("[readiness-prompt-respond]", e.message);

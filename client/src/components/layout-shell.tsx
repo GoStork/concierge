@@ -798,6 +798,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         ]
       : []),
     { show: isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread, fillOnActive: false },
+    // Parent billing hub: all invoices + cost sheets across providers.
+    // Desktop top nav + mobile bottom bar (lands after Calendar, before Profile).
+    { show: isParentOnly && (user as any).parentAccountRole !== 'VIEWER', to: '/my/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing', fillOnActive: false },
     { show: !isParentOnly && !isAdmin, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread, fillOnActive: false },
     { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers', fillOnActive: false },
     { show: isAdmin, to: '/admin/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing', fillOnActive: false },

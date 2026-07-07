@@ -1126,7 +1126,9 @@ const sendMessageMutation = useMutation({
   // Seeded by "Edit & Resend" on a sent invoice card. The invoice panel reads
   // these to pre-fill the form and cancels this invoice on successful resend.
   const [invoiceEditPrefill, setInvoiceEditPrefill] = useState<{
-    invoiceId: string;
+    // null = prefill comes from an invoice DRAFT card (no invoice exists yet,
+    // so there is nothing to cancel on send).
+    invoiceId: string | null;
     lineItems: Array<{ serviceType: any; description: string | null; amountCents: number }>;
     description: string | null;
   } | null>(null);
@@ -2596,6 +2598,23 @@ const sendMessageMutation = useMutation({
                     }
                   : undefined}
                 onEditInvoice={(hasJoined || isConsultationBooked) ? editInvoiceFromCard : undefined}
+                onEditInvoiceDraft={(hasJoined || isConsultationBooked)
+                  ? ({ lineItems, description }) => {
+                      // Phase 3: Edit on the invoice draft card opens the manual
+                      // invoice panel pre-filled. Sending from the panel creates
+                      // the real invoice, which supersedes the draft server-side.
+                      setInvoiceEditPrefill({
+                        invoiceId: null,
+                        lineItems: (lineItems || []).map((li: any) => ({
+                          serviceType: li.serviceType,
+                          description: li.description ?? null,
+                          amountCents: li.amountCents,
+                        })),
+                        description: description ?? null,
+                      });
+                      setProviderInlinePanel("invoice");
+                    }
+                  : undefined}
                 onCancelInvoice={(hasJoined || isConsultationBooked) ? cancelInvoiceFromCard : undefined}
                 invoiceActionPendingId={invoiceActionPendingId}
                 onCancelCostSheet={(hasJoined || isConsultationBooked) ? cancelCostSheetFromCard : undefined}

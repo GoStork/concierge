@@ -28,7 +28,7 @@ interface ReadinessPromptData {
   buttonLabel: string;
   yesAction: string;
   noAction: string;
-  answered?: "yes" | "no"; // DB-persisted
+  answered?: "yes" | "no" | "later"; // DB-persisted
 }
 
 interface ReadinessPromptCardProps {
@@ -56,7 +56,7 @@ const chipBase: React.CSSProperties = {
 };
 
 /** Persist answered state to DB so data.answered is correct on next load */
-async function markAnswered(messageId: string, answer: "yes" | "no") {
+async function markAnswered(messageId: string, answer: "yes" | "no" | "later") {
   await fetch("/api/billing/readiness-prompt-respond", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -94,9 +94,20 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
 
   const handleNotYet = () => {
     setResponded(true);
-    // Send AI reply immediately - don't block on persist
-    onAnswer?.("Not Yet");
-    markAnswered(messageId, "no").catch(() => {});
+    // The server posts Eva's blocker follow-up question and relays a
+    // provider-only heads-up note; invalidate so both appear.
+    markAnswered(messageId, "no")
+      .then(() => queryClient.invalidateQueries({ queryKey: [`/api/ai-concierge/session/${sessionId}/messages`] }))
+      .catch(() => {});
+  };
+
+  const handleNeedMoreTime = () => {
+    setResponded(true);
+    // The server stamps a 12h remindAt and posts Eva's "take your time" ack;
+    // the scheduler re-asks once when the time passes.
+    markAnswered(messageId, "later")
+      .then(() => queryClient.invalidateQueries({ queryKey: [`/api/ai-concierge/session/${sessionId}/messages`] }))
+      .catch(() => {});
   };
 
   const bubbleStyle: React.CSSProperties = {
@@ -156,7 +167,19 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
             variant="ghost"
             className="transition-all hover:opacity-90 font-medium"
             style={{ ...chipBase, ...(declineChipStyle ?? { backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--foreground))", border: "none" }) }}
+            onClick={handleNeedMoreTime}
+            data-testid="readiness-need-more-time"
+          >
+            <Clock className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />
+            Need more time
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="transition-all hover:opacity-90 font-medium"
+            style={{ ...chipBase, ...(declineChipStyle ?? { backgroundColor: "hsl(var(--secondary))", color: "hsl(var(--foreground))", border: "none" }) }}
             onClick={handleNotYet}
+            data-testid="readiness-not-yet"
           >
             Not Yet
           </Button>

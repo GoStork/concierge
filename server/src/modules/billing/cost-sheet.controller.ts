@@ -439,6 +439,50 @@ export class CostSheetController {
     return { invoice };
   }
 
+  // ─── List a session's invoices (parent sidebar + provider views) ───────────
+  // Parents see their payment history for this conversation next to the cost
+  // sheets; providers/admins see the same list. Read-only.
+
+  @Get("api/sessions/:sessionId/invoices")
+  @UseGuards(SessionOrJwtGuard)
+  async listSessionInvoices(@Req() req: Request, @Param("sessionId") sessionId: string) {
+    const user = req.user as any;
+    const session = await this.db.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true, providerId: true },
+    });
+    if (!session) throw new NotFoundException("Session not found");
+    const roles: string[] = user?.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN");
+    const isProviderMember = user?.providerId && user.providerId === session.providerId;
+    const isParent = user?.id === session.userId;
+    if (!isAdmin && !isProviderMember && !isParent) {
+      throw new ForbiddenException("You don't have access to this session");
+    }
+
+    const invoices = await this.db.invoice.findMany({
+      where: { sessionId },
+      include: { lineItems: { orderBy: { displayOrder: "asc" } } },
+      orderBy: { createdAt: "desc" },
+    });
+    return {
+      invoices: invoices.map((inv: any) => ({
+        id: inv.id,
+        paymentToken: inv.paymentToken,
+        serviceType: inv.serviceType,
+        providerName: inv.providerName,
+        serviceAmount: inv.serviceAmount,
+        status: inv.status,
+        dueAt: inv.dueAt,
+        createdAt: inv.createdAt,
+        paidAt: inv.paidAt ?? null,
+        description: inv.description,
+        medicalClearanceStatus: inv.medicalClearanceStatus ?? null,
+        lineItems: inv.lineItems,
+      })),
+    };
+  }
+
   // ─── Read a single invoice (for edit prefill) ──────────────────────────────
   // Returns line items + description so the provider's "Edit & Resend" flow can
   // seed the invoice form with what was already sent.

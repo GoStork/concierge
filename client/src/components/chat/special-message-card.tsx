@@ -7,6 +7,7 @@ import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { SessionMessage } from "./chat-types";
 import { CostSheetDraftApprovalCard } from "./cost-sheet-draft-approval-card";
+import { InvoiceDraftApprovalCard } from "./invoice-draft-approval-card";
 import { InvoiceCard } from "@/components/invoice-card";
 
 // Phase 2: small parent-side affordance for the cost-sheet card footer.
@@ -78,6 +79,8 @@ interface SpecialMessageCardProps {
   sessionId?: string | null;
   /** Phase 2: when provider clicks Edit on a cost-sheet draft, open the sidebar form pre-filled. */
   onEditCostSheetDraft?: (initial: { lineItems: any[]; totalCostCents: number; notes: string | null }) => void;
+  /** Phase 3: when provider clicks Edit on an invoice draft, open the invoice panel pre-filled. */
+  onEditInvoiceDraft?: (initial: { lineItems: any[]; description: string | null }) => void;
   /** Provider-only: clicking "Edit & Resend" on a sent cost-sheet card opens the send form
    *  pre-filled with the prior quote. Posting supersedes the prior quote server-side. */
   onEditCostSheet?: (initial: { totalCostCents: number; notes: string | null }) => void;
@@ -97,7 +100,7 @@ interface SpecialMessageCardProps {
   costSheetActionPendingId?: string | null;
 }
 
-export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo, sessionId, onEditCostSheetDraft, onEditCostSheet, onPrefillInput, onEditInvoice, onCancelInvoice, invoiceActionPendingId, onCancelCostSheet, costSheetActionPendingId }: SpecialMessageCardProps) {
+export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo, sessionId, onEditCostSheetDraft, onEditInvoiceDraft, onEditCostSheet, onPrefillInput, onEditInvoice, onCancelInvoice, invoiceActionPendingId, onCancelCostSheet, costSheetActionPendingId }: SpecialMessageCardProps) {
   const data = msg.uiCardData as any;
   if (!data) return null;
 
@@ -108,6 +111,17 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
         msg={{ id: msg.id, uiCardData: data }}
         sessionId={sessionId}
         onEdit={onEditCostSheetDraft}
+      />
+    );
+  }
+
+  // Phase 3: provider-only auto-drafted invoice awaiting approval.
+  if (msg.uiCardType === "invoice_draft_approval" && sessionId) {
+    return (
+      <InvoiceDraftApprovalCard
+        msg={{ id: msg.id, uiCardData: data }}
+        sessionId={sessionId}
+        onEdit={onEditInvoiceDraft}
       />
     );
   }

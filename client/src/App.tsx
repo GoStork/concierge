@@ -178,6 +178,7 @@ function AppRoutes() {
         {/* Billing routes */}
         <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingPage /></ProtectedRoute>} />
         <Route path="/my/invoices" element={<ProtectedRoute><MyInvoicesPage /></ProtectedRoute>} />
+        <Route path="/my/billing" element={<ProtectedRoute><MyInvoicesPage /></ProtectedRoute>} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
         <Route path="/admin/test-runner" element={<ProtectedRoute><AdminTestRunnerPage /></ProtectedRoute>} />
         <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />

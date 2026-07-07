@@ -22,6 +22,7 @@ import { BillingService } from "./billing.service";
 import { SponsorshipService } from "../sponsorship/sponsorship.service";
 import * as stripeService from "../../../stripe-service";
 import { prisma } from "../../../db";
+import { canSendProviderMessage } from "../../../../shared/roles";
 
 /**
  * Best-effort buyer-country lookup. Decides whether to show our US-flavored
@@ -294,6 +295,48 @@ export class BillingController {
   async getMyInvoices(@Req() req: Request) {
     const user = req.user as any;
     return this.billingService.getInvoicesForParent(user.id);
+  }
+
+  // ─── Parent: all their cost sheets across providers ────────────────────────
+  // Powers the parent Billing page's Cost Sheets tab. Same scoping model as
+  // /api/my/invoices (quotes addressed to this parent user).
+
+  @Get("api/my/cost-sheets")
+  @UseGuards(SessionOrJwtGuard)
+  async getMyCostSheets(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.id) throw new HttpException("Not authenticated", HttpStatus.FORBIDDEN);
+
+    const quotes = await this.db.providerQuote.findMany({
+      where: { parentUserId: user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    const providerIds = Array.from(new Set(quotes.map((q: any) => q.providerId).filter(Boolean)));
+    const providers = providerIds.length
+      ? await this.db.provider.findMany({
+          where: { id: { in: providerIds as string[] } },
+          select: { id: true, name: true, logoUrl: true },
+        })
+      : [];
+    const providerById = new Map(providers.map((p: any) => [p.id, p]));
+
+    return {
+      quotes: quotes.map((q: any) => ({
+        id: q.id,
+        sessionId: q.sessionId,
+        providerId: q.providerId,
+        providerName: providerById.get(q.providerId)?.name ?? null,
+        providerLogoUrl: providerById.get(q.providerId)?.logoUrl ?? null,
+        totalCostCents: q.totalCostCents,
+        costSheetFileName: q.costSheetFileName,
+        hasFile: !!q.costSheetFileUrl,
+        notes: q.notes,
+        source: q.source,
+        supersededAt: q.supersededAt,
+        parentAcknowledgedAt: q.parentAcknowledgedAt,
+        createdAt: q.createdAt,
+      })),
+    };
   }
 
   // ─── Provider: their invoices ─────────────────────────────────────────────
@@ -723,6 +766,130 @@ export class BillingController {
       this.logger.error(`Stripe webhook error: ${error.message}`);
       res.status(400).json({ error: error.message }); // 400 so Stripe retries
     }
+  }
+
+  // ─── Phase 3: invoice draft approval (provider-only chat card) ─────────────
+  //
+  //   POST /api/sessions/:sessionId/invoice-draft/:messageId/approve
+  //        - provider approves: creates the real Invoice (same engine as the
+  //          manual panel), sends the payment card + email/SMS to the parent,
+  //          marks the draft card approved
+  //   POST /api/sessions/:sessionId/invoice-draft/:messageId/reject
+  //        - provider dismisses: nothing is sent; manual invoice stays open
+
+  private async loadSessionForProviderBilling(sessionId: string, user: any) {
+    const session = await this.db.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true, providerId: true, subjectType: true },
+    });
+    if (!session) throw new HttpException("Session not found", HttpStatus.NOT_FOUND);
+    if (!session.providerId) throw new HttpException("Session has no provider", HttpStatus.BAD_REQUEST);
+    const roles: string[] = user?.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
+    const isProviderMember = user?.providerId && user.providerId === session.providerId;
+    if (!isAdmin && !isProviderMember) {
+      throw new HttpException("You don't have access to this session", HttpStatus.FORBIDDEN);
+    }
+    if (!isAdmin && !canSendProviderMessage(roles, session.subjectType)) {
+      throw new HttpException("Your role cannot send invoices for this session", HttpStatus.FORBIDDEN);
+    }
+    return session;
+  }
+
+  private async loadInvoiceDraftCard(sessionId: string, messageId: string) {
+    const msg = await this.db.aiChatMessage.findUnique({ where: { id: messageId } });
+    if (!msg || msg.sessionId !== sessionId || msg.uiCardType !== "invoice_draft_approval") {
+      throw new HttpException("Invoice draft card not found", HttpStatus.NOT_FOUND);
+    }
+    const data = (msg.uiCardData as any) || {};
+    if (data.resolvedAt) {
+      throw new HttpException(`Draft already ${data.resolvedAs || "resolved"}`, HttpStatus.CONFLICT);
+    }
+    return { msg, data };
+  }
+
+  @Post("api/sessions/:sessionId/invoice-draft/:messageId/approve")
+  @UseGuards(SessionOrJwtGuard)
+  async approveInvoiceDraft(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+    @Param("messageId") messageId: string,
+    @Body() body: {
+      lineItems?: Array<{ serviceType: string; description?: string | null; amountCents: number }>;
+      description?: string | null;
+    },
+  ) {
+    const user = req.user as any;
+    const session = await this.loadSessionForProviderBilling(sessionId, user);
+    const { msg, data } = await this.loadInvoiceDraftCard(sessionId, messageId);
+
+    const lineItems = (Array.isArray(body.lineItems) && body.lineItems.length > 0
+      ? body.lineItems
+      : (data.lineItems || [])
+    ).map((li: any) => ({
+      serviceType: li.serviceType,
+      description: li.description ?? null,
+      amountCents: Math.round(Number(li.amountCents) || 0),
+    }));
+    if (lineItems.length === 0) {
+      throw new HttpException("Invoice draft has no line items", HttpStatus.BAD_REQUEST);
+    }
+    const description = typeof body.description === "string"
+      ? body.description.trim() || null
+      : data.description ?? null;
+
+    // Same engine as the manual panel - loud failures surface to the provider.
+    const invoice = await this.billingService.createInvoice({
+      sessionId,
+      providerId: session.providerId!,
+      parentUserId: session.userId,
+      triggerSource: "AUTO_READINESS",
+      lineItems,
+      description: description ?? undefined,
+    });
+    await this.billingService.sendPaymentNotificationsToParent(invoice.id);
+
+    // createInvoice just superseded every pending draft (including this one);
+    // overwrite this card's resolution to "approved" so the UI reads right.
+    const freshMsg = await this.db.aiChatMessage.findUnique({ where: { id: msg.id }, select: { uiCardData: true } });
+    await this.db.aiChatMessage.update({
+      where: { id: msg.id },
+      data: {
+        uiCardData: {
+          ...((freshMsg?.uiCardData as any) || data),
+          lineItems,
+          totalCents: lineItems.reduce((s: number, li: any) => s + li.amountCents, 0),
+          description,
+          resolvedAt: new Date().toISOString(),
+          resolvedAs: "approved",
+          resultingInvoiceId: invoice.id,
+        },
+      },
+    });
+
+    this.logger.log(`Invoice draft ${messageId} approved -> invoice ${invoice.id} (session=${sessionId}, by=${user?.id})`);
+    return { ok: true, invoiceId: invoice.id };
+  }
+
+  @Post("api/sessions/:sessionId/invoice-draft/:messageId/reject")
+  @UseGuards(SessionOrJwtGuard)
+  async rejectInvoiceDraft(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+    @Param("messageId") messageId: string,
+  ) {
+    const user = req.user as any;
+    await this.loadSessionForProviderBilling(sessionId, user);
+    const { msg, data } = await this.loadInvoiceDraftCard(sessionId, messageId);
+
+    await this.db.aiChatMessage.update({
+      where: { id: msg.id },
+      data: {
+        uiCardData: { ...data, resolvedAt: new Date().toISOString(), resolvedAs: "rejected" },
+      },
+    });
+    this.logger.log(`Invoice draft ${messageId} rejected (session=${sessionId}, by=${user?.id})`);
+    return { ok: true };
   }
 
 }

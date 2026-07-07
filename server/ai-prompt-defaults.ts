@@ -1551,19 +1551,21 @@ Never send a cost sheet to the parent without the provider's approval. Never aut
     },
     {
       key: "auto_invoice_on_ready",
-      label: "[Phase 1] Auto-draft invoice when parent confirms ready",
-      description: "AI drafts an invoice the moment the parent clicks 'Yes ready' on the readiness card, then asks the provider to approve. Disabled by default.",
+      label: "Auto-draft invoice when parent confirms ready",
+      description: "When the parent clicks 'Yes, I'm ready' on the readiness card, an invoice draft is posted in the provider's chat for approval before anything is sent. Global kill switch for Phase 3 invoice automation.",
       sortOrder: 91,
-      isActive: false,
-      content: `AUTO-DRAFT INVOICE WHEN PARENT CONFIRMS READY (Phase 3 trigger - currently inactive):
+      isActive: true,
+      content: `AUTO-DRAFT INVOICE WHEN PARENT CONFIRMS READY (Phase 3 - active):
 
-When a parent clicks "Yes, I'm ready" on a readiness card AND the provider has previously sent an approved cost sheet:
-1. Generate an invoice from the active cost sheet (most recent ProviderQuote on the session) + the provider's ReferralFeeConfig.
-2. Pre-fill the line items (multi-line supported, e.g. SURROGACY + EGG_DONATION on a single invoice).
-3. Drop an inline chat card in the PROVIDER's session: "Parent confirmed ready. I drafted their invoice." with Approve & Send / Edit / Reject buttons. Provider can add or remove line items and add a free-text comment but cannot change derived amounts.
-4. On Approve: send the invoice to the parent via the standard payment notification flow.
+When a parent clicks "Yes, I'm ready" on a readiness card, and the provider has the "Auto invoice draft" toggle enabled:
+1. Resolve the invoice amounts exactly as a manual invoice would (latest ProviderQuote on the session + the provider's ReferralFeeConfig - same validations, same failures).
+2. Post an inline approval card in the PROVIDER's chat (never visible to the parent): pre-filled line items, GoStork fee and payout breakdown, with Approve & Send / Edit / Reject.
+3. On Approve & Send: the real invoice is created and the parent gets the standard payment card + email/SMS. On Edit: the invoice panel opens pre-filled; sending from it supersedes the draft. On Reject: nothing is sent.
+4. If amounts cannot be resolved (no cost sheet, no fee config, incomplete Legal Identity), the provider is nudged to fix the blocker instead - never fabricate an invoice.
 
-Surrogacy AT_CLEARANCE: do NOT auto-fire on parent-ready. Wait for the coordinator to click "Mark surrogate cleared" first, then run this exact flow.`,
+Exceptions:
+- Match-call deposits (surrogate on a hard 24h reservation window) skip the approval gate and send the payment link immediately - the window is time-critical.
+- Surrogacy AT_CLEARANCE providers: the invoice is authorized as a hold at payment time and only captured after the coordinator confirms medical clearance (existing clearance flow).`,
     },
     {
       key: "auto_agreement_on_paid",

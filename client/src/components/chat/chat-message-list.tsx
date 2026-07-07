@@ -44,6 +44,8 @@ interface ChatMessageListProps {
   /** Provider-only: open the invoice panel pre-filled with this invoice. Caller
    *  is expected to cancel the existing invoice and seed the form. */
   onEditInvoice?: (initial: { invoiceId: string }) => void;
+  /** Phase 3: provider clicks Edit on an invoice draft card - open the invoice panel pre-filled. */
+  onEditInvoiceDraft?: (initial: { lineItems: any[]; description: string | null }) => void;
   /** Provider-only: cancel a still-pending invoice. */
   onCancelInvoice?: (initial: { invoiceId: string }) => void;
   /** Disables the per-card invoice action buttons while a mutation runs. */
@@ -109,6 +111,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
     sessionId,
     onEditCostSheet,
     onEditInvoice,
+    onEditInvoiceDraft,
     onCancelInvoice,
     invoiceActionPendingId,
     onCancelCostSheet,
@@ -360,6 +363,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                       sessionId={sessionId}
                       onEditCostSheet={onEditCostSheet}
                       onEditInvoice={onEditInvoice}
+                      onEditInvoiceDraft={onEditInvoiceDraft}
                       onCancelInvoice={onCancelInvoice}
                       invoiceActionPendingId={invoiceActionPendingId}
                       onCancelCostSheet={onCancelCostSheet}
