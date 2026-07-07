@@ -3,6 +3,7 @@ import { MessageStatus } from "@/components/ui/message-status";
 import { chatDateLabel } from "./chat-utils";
 import { WhisperProfileCard } from "./whisper-profile-card";
 import { SpecialMessageCard } from "./special-message-card";
+import { CostSheetDraftStack } from "./cost-sheet-draft-stack";
 import { InlineBookingNotification } from "./inline-booking-notification";
 import type { SessionMessage, ViewerRole } from "./chat-types";
 import type { ChatPalette } from "@/lib/chat-palette";
@@ -178,6 +179,66 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
         const avatarInitial = !own
           ? (msgAvatarInitial?.(msg) || deriveInitials(label) || "?")
           : null;
+
+        // ---- iMessage-style stack for adjacent cost-sheet draft cards ----
+        // A manual regenerate / multi-program match creates several draft
+        // cards back-to-back. Instead of stretching the chat with N tall
+        // cards, collapse the run into one stacked deck (swipe / click to
+        // flip). Single cards fall through to the normal renderer.
+        const isDraftItem = (it: typeof merged[number] | undefined): boolean =>
+          !!it && it.type === "message" && (it as any).msg.uiCardType === "cost_sheet_draft_approval";
+        if (isDraftItem(item)) {
+          if (isDraftItem(merged[i - 1])) return null; // rendered by the run head
+          const run: SessionMessage[] = [msg];
+          for (let j = i + 1; isDraftItem(merged[j]); j++) run.push((merged[j] as any).msg);
+          if (run.length >= 2 && sessionId) {
+            return (
+              <div key={msg.id}>
+                {/* Date separator pill (same logic as the standard path) */}
+                {msg.createdAt && (() => {
+                  const msgDate = new Date(msg.createdAt).toDateString();
+                  const prevMsgItem = merged.slice(0, i).reverse().find((x) => x.type === "message");
+                  const prevDate = prevMsgItem ? new Date(prevMsgItem.createdAt).toDateString() : null;
+                  if (!prevDate || msgDate !== prevDate) {
+                    return (
+                      <div className="flex items-center justify-center my-3">
+                        <span className="px-3 py-1 text-[11px] font-medium text-muted-foreground bg-muted/60 rounded-full shadow-sm">
+                          {chatDateLabel(msg.createdAt)}
+                        </span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+                <div className="flex items-start gap-2">
+                  <div className="w-8 h-8 rounded-full shrink-0 overflow-hidden mt-0.5">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt={label ?? ""} className="w-full h-full object-cover" />
+                    ) : (
+                      <div
+                        className="w-full h-full flex items-center justify-center text-primary-foreground text-xs font-semibold"
+                        style={{ backgroundColor: brandColor }}
+                      >
+                        {avatarInitial}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col flex-1 min-w-0 items-start">
+                    {label && (
+                      <span className="text-[11px] font-medium text-muted-foreground mb-0.5">{label}</span>
+                    )}
+                    <CostSheetDraftStack msgs={run} sessionId={sessionId} />
+                    {msg.createdAt && (
+                      <span className="flex items-center gap-0.5 mt-0.5 px-1" style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}>
+                        {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+        }
 
         // For attachment messages, strip auto-generated placeholder text so only the card shows
         const isAttachmentMsg = msg.uiCardType === "attachment";

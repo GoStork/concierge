@@ -321,12 +321,12 @@ export class CostSheetAutoDraftController {
     });
     this.logger.log(`Parent acknowledged cost sheet: quote=${quoteId} at ${updated.parentAcknowledgedAt?.toISOString()}`);
 
-    // Tell BOTH sides what just happened in the chat:
-    //  - the parent sees a confirmation that their acknowledgement was sent
-    //    and that the next step is paying the invoice the provider will send
-    //  - the provider sees an actionable system message so they know to send
-    //    the invoice next. Both messages share the same content so the
-    //    transcript reads consistently in either pane.
+    // Tell the PROVIDER side what just happened - uiCardType "provider_only"
+    // keeps this out of the parent's chat (ai-router filters it). The parent
+    // already sees the green confirmation footer on the card itself; posting
+    // anything about invoices here would be premature - at this stage the
+    // parent has only scheduled a call. Invoicing happens much later, after
+    // the readiness "Yes" (Phase 3).
     try {
       const sessionWithProvider = await this.db.aiChatSession.findUnique({
         where: { id: sessionId },
@@ -338,10 +338,9 @@ export class CostSheetAutoDraftController {
       });
       if (sessionWithProvider) {
         const parentLabel = sessionWithProvider.user?.firstName || sessionWithProvider.user?.name || "The parent";
-        const providerName = sessionWithProvider.provider?.name || "the provider";
         const totalFormatted = formatMoneyCents(quote.totalCostCents);
         const ackMessage =
-          `${parentLabel} acknowledged the cost sheet (${totalFormatted}). ${providerName} can now send the invoice - that's the next step before the journey moves forward.`;
+          `${parentLabel} acknowledged the cost sheet (${totalFormatted}).`;
         await this.db.aiChatMessage.create({
           data: {
             sessionId,
@@ -349,6 +348,7 @@ export class CostSheetAutoDraftController {
             content: ackMessage,
             senderType: "system",
             senderName: "GoStork",
+            uiCardType: "provider_only",
           },
         });
 
@@ -369,7 +369,7 @@ export class CostSheetAutoDraftController {
                   quoteId,
                   totalCostCents: quote.totalCostCents,
                   parentName: parentLabel,
-                  message: `${parentLabel} acknowledged your ${totalFormatted} cost sheet. Send the invoice next.`,
+                  message: `${parentLabel} acknowledged your ${totalFormatted} cost sheet.`,
                 },
               },
             });
