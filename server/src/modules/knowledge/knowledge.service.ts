@@ -88,9 +88,11 @@ export class KnowledgeService {
     let text = "";
 
     if (fileName.toLowerCase().endsWith(".pdf")) {
-      const pdfParse = (await import("pdf-parse")).default;
-      const pdfData = await pdfParse(fileBuffer);
-      text = pdfData.text;
+      const { PDFParse } = await import("pdf-parse");
+      const parser = new PDFParse({ data: fileBuffer });
+      await parser.load();
+      const textResult = await parser.getText();
+      text = (typeof textResult === "string" ? textResult : textResult?.text) || "";
     } else if (
       fileName.toLowerCase().endsWith(".csv") ||
       fileName.toLowerCase().endsWith(".txt")
