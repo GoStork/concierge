@@ -1118,18 +1118,57 @@ export default function AdminConciergePage() {
 }
 
 // Phase 4: admin-managed documents Eva sends to parents at journey moments.
-// Currently one slot: the Match Call prep guide (auto-attached in the
-// parent's chat when a match call gets scheduled). Upload replaces the file.
-function ParentPrepGuidesCard() {
+// One slot per call type: the Match Call prep guide (surrogacy) and the
+// Doctor Call prep guide (IVF). Upload replaces the file for that slot.
+const PREP_GUIDE_SLOTS = [
+  {
+    key: "match_call_prep_guide",
+    label: "Match Call prep guide (PDF)",
+    description: "Attached in the parent's chat as soon as their match call is confirmed, together with the 24-hour hold explanation.",
+    successNote: "will now be sent to parents when a match call is scheduled.",
+  },
+  {
+    key: "doctor_call_prep_guide",
+    label: "Doctor Call prep guide (PDF)",
+    description: "Attached in the parent's chat as soon as their doctor call with an IVF clinic is confirmed.",
+    successNote: "will now be sent to parents when a doctor call is scheduled.",
+  },
+  {
+    key: "consultation_prep_guide_ivf",
+    label: "First consultation - IVF Clinic (PDF)",
+    description: "Sent when a parent's FIRST consultation with an IVF clinic is confirmed.",
+    successNote: "will now be sent before first IVF clinic consultations.",
+  },
+  {
+    key: "consultation_prep_guide_surrogacy",
+    label: "First consultation - Surrogacy Agency (PDF)",
+    description: "Sent when a parent's FIRST consultation with a surrogacy agency is confirmed.",
+    successNote: "will now be sent before first surrogacy agency consultations.",
+  },
+  {
+    key: "consultation_prep_guide_egg_donor",
+    label: "First consultation - Egg Donor Agency (PDF)",
+    description: "Sent when a parent's FIRST consultation with an egg donor agency or egg bank is confirmed.",
+    successNote: "will now be sent before first egg donor consultations.",
+  },
+  {
+    key: "consultation_prep_guide_sperm_bank",
+    label: "First consultation - Sperm Bank (PDF)",
+    description: "Sent when a parent's FIRST consultation with a sperm bank is confirmed.",
+    successNote: "will now be sent before first sperm bank consultations.",
+  },
+] as const;
+
+function PrepGuideSlot({ slot }: { slot: (typeof PREP_GUIDE_SLOTS)[number] }) {
   const { toast } = useToast();
   const assetQuery = useQuery<{ asset: { key: string; fileName: string; updatedAt: string } | null }>({
-    queryKey: ["/api/knowledge/concierge-assets/match_call_prep_guide"],
+    queryKey: [`/api/knowledge/concierge-assets/${slot.key}`],
   });
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/knowledge/concierge-assets/match_call_prep_guide", {
+      const res = await fetch(`/api/knowledge/concierge-assets/${slot.key}`, {
         method: "POST",
         credentials: "include",
         body: formData,
@@ -1141,8 +1180,8 @@ function ParentPrepGuidesCard() {
       return res.json();
     },
     onSuccess: (data) => {
-      toast({ title: "Prep guide updated", description: `${data.asset.fileName} will now be sent to parents when a match call is scheduled.` });
-      queryClient.invalidateQueries({ queryKey: ["/api/knowledge/concierge-assets/match_call_prep_guide"] });
+      toast({ title: "Prep guide updated", description: `${data.asset.fileName} ${slot.successNote}` });
+      queryClient.invalidateQueries({ queryKey: [`/api/knowledge/concierge-assets/${slot.key}`] });
     },
     onError: (err: any) => {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -1151,6 +1190,55 @@ function ParentPrepGuidesCard() {
 
   const asset = assetQuery.data?.asset ?? null;
   return (
+    <div className="rounded-lg border p-4 flex flex-wrap items-center justify-between gap-3 bg-secondary/30">
+      <div className="min-w-0">
+        <p className="font-medium text-sm">{slot.label}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{slot.description}</p>
+        {asset ? (
+          <p className="text-xs mt-1.5">
+            <a
+              href={`/api/knowledge/concierge-assets/${slot.key}/file`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:no-underline"
+              style={{ color: "hsl(var(--primary))" }}
+            >
+              {asset.fileName}
+            </a>
+            <span className="text-muted-foreground"> - updated {new Date(asset.updatedAt).toLocaleDateString()}</span>
+          </p>
+        ) : (
+          <p className="text-xs mt-1.5" style={{ color: "hsl(var(--brand-warning))" }}>
+            No guide uploaded yet - parents currently get the confirmation without an attachment.
+          </p>
+        )}
+      </div>
+      <label className="shrink-0">
+        <input
+          type="file"
+          accept="application/pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) uploadMutation.mutate(f);
+          }}
+          data-testid={`prep-guide-upload-input-${slot.key}`}
+        />
+        <span
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius)] text-sm font-medium text-primary-foreground cursor-pointer transition-opacity hover:opacity-90"
+          style={{ backgroundColor: "hsl(var(--primary))" }}
+        >
+          <Upload className="w-4 h-4" />
+          {uploadMutation.isPending ? "Uploading..." : asset ? "Replace PDF" : "Upload PDF"}
+        </span>
+      </label>
+    </div>
+  );
+}
+
+function ParentPrepGuidesCard() {
+  return (
     <Card className="p-6 space-y-4">
       <div>
         <h3 className="font-heading font-semibold text-lg">Parent Prep Guides</h3>
@@ -1158,52 +1246,9 @@ function ParentPrepGuidesCard() {
           Documents Eva automatically sends to parents at key journey moments.
         </p>
       </div>
-      <div className="rounded-lg border p-4 flex flex-wrap items-center justify-between gap-3 bg-secondary/30">
-        <div className="min-w-0">
-          <p className="font-medium text-sm">Match Call prep guide (PDF)</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Attached in the parent's chat as soon as their match call is confirmed, together with the 24-hour hold explanation.
-          </p>
-          {asset ? (
-            <p className="text-xs mt-1.5">
-              <a
-                href="/api/knowledge/concierge-assets/match_call_prep_guide/file"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:no-underline"
-                style={{ color: "hsl(var(--primary))" }}
-              >
-                {asset.fileName}
-              </a>
-              <span className="text-muted-foreground"> - updated {new Date(asset.updatedAt).toLocaleDateString()}</span>
-            </p>
-          ) : (
-            <p className="text-xs mt-1.5" style={{ color: "hsl(var(--brand-warning))" }}>
-              No guide uploaded yet - parents currently get the hold explanation without an attachment.
-            </p>
-          )}
-        </div>
-        <label className="shrink-0">
-          <input
-            type="file"
-            accept="application/pdf"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f) uploadMutation.mutate(f);
-            }}
-            data-testid="prep-guide-upload-input"
-          />
-          <span
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius)] text-sm font-medium text-primary-foreground cursor-pointer transition-opacity hover:opacity-90"
-            style={{ backgroundColor: "hsl(var(--primary))" }}
-          >
-            <Upload className="w-4 h-4" />
-            {uploadMutation.isPending ? "Uploading..." : asset ? "Replace PDF" : "Upload PDF"}
-          </span>
-        </label>
-      </div>
+      {PREP_GUIDE_SLOTS.map(slot => (
+        <PrepGuideSlot key={slot.key} slot={slot} />
+      ))}
     </Card>
   );
 }

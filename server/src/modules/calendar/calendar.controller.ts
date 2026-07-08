@@ -1046,7 +1046,14 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
    * 3-way session exists.
    */
   private async fireMatchCallPrep(booking: { id: string; meetingSubtype?: string | null; parentUserId?: string | null; providerUserId?: string | null; scheduledAt: Date; providerUser?: { providerId?: string | null; provider?: { name?: string | null } | null } | null }) {
-    if (booking.meetingSubtype !== "MATCH_CALL" || !booking.parentUserId) return;
+    const isMatch = booking.meetingSubtype === "MATCH_CALL";
+    const isDoctor = booking.meetingSubtype === "DOCTOR_CONSULTATION";
+    // No subtype = a regular consultation. Prep only applies to SCHEDULED
+    // future calls (instant ad-hoc video calls start in seconds - nothing
+    // to prepare) and only to the parent's FIRST call with this provider.
+    const isConsultation = !isMatch && !isDoctor;
+    if (!booking.parentUserId) return;
+    if (isConsultation && new Date(booking.scheduledAt).getTime() < Date.now() + 20 * 60 * 1000) return;
 
     // Prefer the surrogate 3-way session for this (parent, provider) pair.
     // Callers don't always include provider info on the booking object
@@ -1067,19 +1074,36 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
             userId: booking.parentUserId,
             providerId,
             status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
-            subjectType: { contains: "surrog", mode: "insensitive" },
+            // Match calls live in the surrogate-subject session; doctor
+            // calls in whichever session the parent has with the clinic.
+            ...(isMatch ? { subjectType: { contains: "surrog", mode: "insensitive" } } : {}),
           },
           orderBy: { updatedAt: "desc" },
-          select: { id: true },
+          select: { id: true, subjectType: true },
         })
       : null;
     const parentSession = threeWaySession
       ?? await this.prisma.aiChatSession.findFirst({
         where: { userId: booking.parentUserId, status: "ACTIVE", sessionType: "PARENT" },
         orderBy: { updatedAt: "desc" },
-        select: { id: true },
+        select: { id: true, subjectType: true },
       });
     if (!parentSession) return;
+
+    // First-call-only gate for consultations: if the parent already has any
+    // other booking with this provider, this isn't their first call.
+    if (isConsultation) {
+      if (!providerId) return;
+      const priorBookings = await this.prisma.booking.count({
+        where: {
+          id: { not: booking.id },
+          parentUserId: booking.parentUserId,
+          status: { notIn: ["CANCELLED", "DECLINED", "RESCHEDULED"] },
+          providerUser: { providerId },
+        },
+      });
+      if (priorBookings > 0) return;
+    }
 
     // Dedup: one prep bundle per booking (checked across ALL sessions so a
     // re-confirm can't double-send into a different thread).
@@ -1099,11 +1123,49 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
     // Dual-audience (CLAUDE.md rule): the parent reads second-person prep
     // guidance; the provider reads a status note about what the parent got.
-    await this.prisma.aiChatMessage.create({
-      data: {
-        sessionId: parentSession.id,
-        role: "assistant",
-        content: `Your match call is confirmed for ${when} - this is such an exciting step!
+    // Consultation guide selection: session subject first (a multi-service
+    // agency's egg-donor chat is an egg-donor consult), provider type after.
+    let consultKey: string | null = null;
+    let consultFlavor = "";
+    if (isConsultation) {
+      const subj = ((parentSession as any).subjectType || "").toLowerCase();
+      let kind: "ivf" | "surrogacy" | "egg_donor" | "sperm_bank" | null =
+        subj.includes("surrog") ? "surrogacy"
+        : subj.includes("egg") ? "egg_donor"
+        : subj.includes("sperm") ? "sperm_bank"
+        : subj.includes("clinic") || subj.includes("doctor") ? "ivf"
+        : null;
+      if (!kind && providerId) {
+        const prov = await this.prisma.provider.findUnique({
+          where: { id: providerId },
+          select: { services: { select: { status: true, providerType: { select: { name: true } } } } },
+        }).catch(() => null);
+        const names = (prov?.services || []).filter((x: any) => x.status === "APPROVED").map((x: any) => x.providerType?.name || "");
+        kind = names.includes("IVF Clinic") ? "ivf"
+          : names.includes("Surrogacy Agency") ? "surrogacy"
+          : names.some((n: string) => n.includes("Egg")) ? "egg_donor"
+          : names.includes("Sperm Bank") ? "sperm_bank"
+          : null;
+      }
+      if (!kind) return; // unknown provider type - nothing sensible to send
+      consultKey = `consultation_prep_guide_${kind}`;
+      consultFlavor = kind === "ivf"
+        ? "about their success rates, programs, lab quality, and real costs"
+        : kind === "surrogacy"
+          ? "about how they screen and match surrogates, how they'll support you, and what the journey really costs"
+          : kind === "egg_donor"
+            ? "about their donor pool, screening standards, matching process, and true costs"
+            : "about donor screening, choosing the right donor and vial type, and shipping logistics";
+    }
+
+    const parentContent = isConsultation
+      ? `Your consultation with ${providerName} is confirmed for ${when} - a great first step!
+
+First calls can feel like a lot, so I'm attaching a prep guide with thoughtful questions to ask ${consultFlavor}. Skim it before the call and jot down the ones that matter most to you.
+
+I'll check in with you right after the call. You've got this!`
+      : isMatch
+      ? `Your match call is confirmed for ${when} - this is such an exciting step!
 
 Two things to know before the call:
 
@@ -1111,32 +1173,48 @@ Two things to know before the call:
 
 2. It's completely normal to wonder what to ask. I'm attaching ${providerName === "the agency" ? "our" : "a"} prep guide with thoughtful questions - personal, medical, legal, and everything in between. Skim it before the call and jot down the ones that matter most to you.
 
-I'll check in with you right after the call. You've got this!`,
+I'll check in with you right after the call. You've got this!`
+      : `Your doctor call is confirmed for ${when} - a big step toward your treatment plan!
+
+A little preparation goes a long way with these calls, so I'm attaching a prep guide with thoughtful questions to ask the doctor - about success rates for your specific situation, the recommended protocol, genetic testing, medications, and the real costs. Skim it before the call, bring your medical records if you have them, and jot down your top three concerns.
+
+I'll check in with you right after the call. You've got this!`;
+    const providerNote = isConsultation
+      ? `The consultation is confirmed for ${when}. We've prepped ${parentLabel} for it: they received our first-consultation questions guide (attached below).`
+      : isMatch
+      ? `The match call is confirmed for ${when}. We've prepped ${parentLabel} for it: they know about the exclusive 24-hour hold that starts when the call ends, and they received the Match Call prep-questions guide (attached below).`
+      : `The doctor call is confirmed for ${when}. We've prepped ${parentLabel} for it: they received the Doctor Call prep-questions guide (attached below) and were encouraged to bring their records and top concerns.`;
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: parentSession.id,
+        role: "assistant",
+        content: parentContent,
         senderType: "system",
         senderName: "GoStork",
         uiCardData: {
           matchCallPrepForBookingId: booking.id,
-          providerContent: `The match call is confirmed for ${when}. We've prepped ${parentLabel} for it: they know about the exclusive 24-hour hold that starts when the call ends, and they received the Match Call prep-questions guide (attached below).`,
+          providerContent: providerNote,
         } as any,
       },
     });
 
     // Attach the admin-uploaded guide when it exists (soft-skip otherwise).
-    const guide = await this.prisma.conciergeAsset.findUnique({ where: { key: "match_call_prep_guide" } }).catch(() => null);
+    const guideKey = isConsultation ? consultKey! : isMatch ? "match_call_prep_guide" : "doctor_call_prep_guide";
+    const guide = await this.prisma.conciergeAsset.findUnique({ where: { key: guideKey } }).catch(() => null);
     if (guide) {
       await this.prisma.aiChatMessage.create({
         data: {
           sessionId: parentSession.id,
           role: "assistant",
-          content: "Here's your Match Call prep guide:",
+          content: `Here's your ${isConsultation ? "consultation" : isMatch ? "Match Call" : "Doctor Call"} prep guide:`,
           senderType: "system",
           senderName: "GoStork",
           uiCardType: "attachment",
           uiCardData: {
             matchCallPrepForBookingId: `${booking.id}:guide`,
             providerContent: `Prep guide sent to ${parentLabel}:`,
-            url: `/api/knowledge/concierge-assets/match_call_prep_guide/file`,
-            originalName: guide.fileName || "Match Call Prep Guide.pdf",
+            url: `/api/knowledge/concierge-assets/${guideKey}/file`,
+            originalName: guide.fileName || "Prep Guide.pdf",
             mimeType: "application/pdf",
           },
         },

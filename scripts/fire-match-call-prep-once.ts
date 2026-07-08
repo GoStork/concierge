@@ -1,5 +1,5 @@
-// One-off: fire the match-call prep bundle (24h-hold explainer + prep guide
-// PDF) for the most recent MATCH_CALL booking. Usage: npx tsx scripts/fire-match-call-prep-once.ts
+// One-off: fire the call prep bundle for the most recent booking of the given
+// subtype. Usage: npx tsx scripts/fire-match-call-prep-once.ts [MATCH_CALL|DOCTOR_CONSULTATION]
 import "reflect-metadata";
 import "dotenv/config";
 import { NestFactory } from "@nestjs/core";
@@ -11,7 +11,7 @@ import { prisma } from "../server/db";
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ["error", "warn"] });
   const ctrl = app.get(CalendarController);
   const booking = await prisma.booking.findFirst({
-    where: { meetingSubtype: "MATCH_CALL", status: { in: ["CONFIRMED", "PENDING"] } },
+    where: { meetingSubtype: (process.argv[2] as any) || "MATCH_CALL", status: { in: ["CONFIRMED", "PENDING"] } },
     orderBy: { createdAt: "desc" },
   });
   if (!booking) { console.log("no match call booking found"); process.exit(1); }

@@ -25,7 +25,14 @@ import { Res, NotFoundException } from "@nestjs/common";
 
 // Well-known ConciergeAsset keys. Adding a new admin-managed document =
 // adding a key here + an upload card in the admin Concierge settings UI.
-const CONCIERGE_ASSET_KEYS = new Set(["match_call_prep_guide"]);
+const CONCIERGE_ASSET_KEYS = new Set([
+  "match_call_prep_guide",
+  "doctor_call_prep_guide",
+  "consultation_prep_guide_ivf",
+  "consultation_prep_guide_surrogacy",
+  "consultation_prep_guide_egg_donor",
+  "consultation_prep_guide_sperm_bank",
+]);
 
 @ApiTags("Knowledge")
 @Controller("api/knowledge")
