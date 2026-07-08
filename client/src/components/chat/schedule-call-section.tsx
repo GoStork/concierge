@@ -197,7 +197,7 @@ export function ScheduleCallSection({
             ) : slots.length === 0 ? (
               <p className="text-xs text-muted-foreground py-1.5">No open slots that day - try another date.</p>
             ) : (
-              <div className="grid grid-cols-3 gap-1.5 max-h-36 overflow-y-auto">
+              <div className="grid grid-cols-3 gap-1.5">
                 {slots.map(t => (
                   <button
                     key={t}

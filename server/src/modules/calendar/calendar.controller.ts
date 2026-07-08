@@ -1092,7 +1092,13 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
     const providerName = resolvedProviderName || "the agency";
     const when = new Date(booking.scheduledAt).toLocaleString("en-US", { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    const parentUser = booking.parentUserId
+      ? await this.prisma.user.findUnique({ where: { id: booking.parentUserId }, select: { firstName: true, name: true } }).catch(() => null)
+      : null;
+    const parentLabel = parentUser?.firstName || parentUser?.name || "the parent";
 
+    // Dual-audience (CLAUDE.md rule): the parent reads second-person prep
+    // guidance; the provider reads a status note about what the parent got.
     await this.prisma.aiChatMessage.create({
       data: {
         sessionId: parentSession.id,
@@ -1108,7 +1114,10 @@ Two things to know before the call:
 I'll check in with you right after the call. You've got this!`,
         senderType: "system",
         senderName: "GoStork",
-        uiCardData: { matchCallPrepForBookingId: booking.id } as any,
+        uiCardData: {
+          matchCallPrepForBookingId: booking.id,
+          providerContent: `The match call is confirmed for ${when}. We've prepped ${parentLabel} for it: they know about the exclusive 24-hour hold that starts when the call ends, and they received the Match Call prep-questions guide (attached below).`,
+        } as any,
       },
     });
 
@@ -1125,6 +1134,7 @@ I'll check in with you right after the call. You've got this!`,
           uiCardType: "attachment",
           uiCardData: {
             matchCallPrepForBookingId: `${booking.id}:guide`,
+            providerContent: `Prep guide sent to ${parentLabel}:`,
             url: `/api/knowledge/concierge-assets/match_call_prep_guide/file`,
             originalName: guide.fileName || "Match Call Prep Guide.pdf",
             mimeType: "application/pdf",

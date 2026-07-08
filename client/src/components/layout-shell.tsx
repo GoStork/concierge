@@ -180,7 +180,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     let description = subject;
     switch (type) {
       case "booking_created":
-        title = `New meeting request from ${attendeeName}`;
+        // Bookings born CONFIRMED (propose-accept, scheduler-booked, instant
+        // video) are not requests - nothing needs confirming.
+        title = data.booking?.status === "CONFIRMED"
+          ? `New meeting booked with ${attendeeName}`
+          : `New meeting request from ${attendeeName}`;
         break;
       case "booking_confirmed":
         title = "Meeting confirmed";
