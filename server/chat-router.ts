@@ -1011,13 +1011,21 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       if (typeof pc._max?.reminderCount === "number") nudgeCountBySession[pc.sessionId] = pc._max.reminderCount;
     }
 
-    // Count unread messages per session (messages from non-providers that provider hasn't read)
-    const sessionIds = sessions.map(s => s.id);
-    const unreadCounts = sessionIds.length > 0
+    // Count unread parent messages per session - but only for sessions where
+    // the provider can actually see parent messages (identity revealed, i.e.
+    // CONSULTATION_BOOKED or PROVIDER_CONNECTED). During the anonymous whisper
+    // phase the provider transcript hides parent messages entirely, and the
+    // inbox may hide the session itself, so counting them would badge the
+    // provider with unreads they can never see or clear. Provider-actionable
+    // items in that phase are counted separately via pendingQuestions.
+    const identityRevealedIds = sessions
+      .filter(s => s.status === "CONSULTATION_BOOKED" || s.status === "PROVIDER_CONNECTED")
+      .map(s => s.id);
+    const unreadCounts = identityRevealedIds.length > 0
       ? await prisma.aiChatMessage.groupBy({
           by: ["sessionId"],
           where: {
-            sessionId: { in: sessionIds },
+            sessionId: { in: identityRevealedIds },
             readAt: null,
             senderType: { in: ["parent", "user"] },
           },
