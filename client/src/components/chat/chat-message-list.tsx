@@ -244,14 +244,23 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
           }
         }
 
+        // Dual-audience system messages (e.g. the "IT'S A MATCH" celebration)
+        // carry a provider-phrased variant in uiCardData.providerContent -
+        // the parent reads "your deposit invoice is coming up", the provider
+        // reads "the invoice has been sent to the parent". Providers get the
+        // variant; parents and admins read the primary content.
+        const baseContent = viewerRole === "provider" && (msg.uiCardData as any)?.providerContent
+          ? String((msg.uiCardData as any).providerContent)
+          : msg.content;
+
         // For attachment messages, strip auto-generated placeholder text so only the card shows
         const isAttachmentMsg = msg.uiCardType === "attachment";
         const displayContent = isAttachmentMsg
-          ? (msg.content || "")
+          ? (baseContent || "")
               .replace(/\s*\[Attached file:[^\]]*\]/gi, "")
               .replace(/^(Shared a file:|I've shared a file with you:)[^\n]*/i, "")
               .trim()
-          : msg.content;
+          : baseContent;
         const showBubble = !isAttachmentMsg || displayContent.length > 0;
 
         return (

@@ -1946,6 +1946,15 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     const parentLabel = parentUser?.firstName || parentUser?.name || "you";
     const who = ((providerCard.uiCardData as any) || {}).subjectLabel || "your surrogate";
     const deadline = dueAt.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    // Dual-audience message: `content` is the parent-facing copy, and
+    // `uiCardData.providerContent` is the provider-phrased variant the
+    // provider chat renders instead (the agency SENDS the invoice, they
+    // don't pay it). One message, adapted per viewer.
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: session.providerId },
+      select: { name: true },
+    }).catch(() => null);
+    const providerName = provider?.name || "the agency";
     await this.prisma.aiChatMessage.create({
       data: {
         sessionId: providerSessionId,
@@ -1957,7 +1966,13 @@ You said yes, ${who} said yes, and we couldn't be happier for you. This is one o
 One last step to make it official: your deposit invoice is coming right up below. Complete it by ${deadline} and the match is yours.`,
         senderType: "system",
         senderName: "GoStork",
-        uiCardData: { celebration: "match_confirmed", bookingId },
+        uiCardData: {
+          celebration: "match_confirmed",
+          bookingId,
+          providerContent: `It's a match, ${providerName}! 🎉
+
+${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on the new match. The deposit invoice has been sent to ${parentLabel} automatically; once they complete the payment by ${deadline}, the match is locked in. We'll let you know the moment it's paid.`,
+        },
       },
     }).catch(() => {});
 

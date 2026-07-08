@@ -53,6 +53,7 @@ import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterv
 import { apiRequest } from "@/lib/queryClient";
 import { ReadinessPromptCard } from "@/components/readiness-prompt-card";
 import { CelebrationBurst } from "@/components/chat/celebration-burst";
+import { ProposedTimesCard } from "@/components/chat/proposed-times-card";
 import { InvoiceCard } from "@/components/invoice-card";
 
 interface MatchCard {
@@ -2361,6 +2362,18 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         </div>
         <Download className="w-4 h-4 text-muted-foreground shrink-0" />
       </a>
+    );
+  }
+
+  if (msg.uiCardType === "proposed_times") {
+    return (
+      <ProposedTimesCard
+        data={data}
+        messageId={msg.id || ""}
+        sessionId={sessionId || ""}
+        brandColor={brandColor}
+        canPick={true}
+      />
     );
   }
 

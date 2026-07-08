@@ -36,6 +36,7 @@ import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-sec
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { InvoiceSidebarSection } from "@/components/chat/invoice-sidebar-section";
 import { InvoiceHistorySidebarSection } from "@/components/chat/invoice-history-sidebar-section";
+import { ScheduleCallSection } from "@/components/chat/schedule-call-section";
 // Legacy imports for dead code pending removal
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
 import {
@@ -1085,8 +1086,10 @@ const sendMessageMutation = useMutation({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [providerStagedFiles, setProviderStagedFiles] = useState<File[]>([]);
   const [providerUploading, setProviderUploading] = useState(false);
-  type ProviderInlinePanel = null | "costSheet" | "invoice" | "agreement";
+  type ProviderInlinePanel = null | "costSheet" | "invoice" | "agreement" | "scheduleCall";
   const [providerInlinePanel, setProviderInlinePanel] = useState<ProviderInlinePanel>(null);
+  // Which call type the scheduleCall panel books (Phase 4 scheduler flow).
+  const [scheduleCallSubtype, setScheduleCallSubtype] = useState<"MATCH_CALL" | "DOCTOR_CONSULTATION">("MATCH_CALL");
   // Seeded by "Edit & Resend" on a sent cost-sheet card; cleared when the
   // panel closes so the next "Send Cost Sheet" click starts blank.
   const [costSheetEditPrefill, setCostSheetEditPrefill] = useState<{ totalCostCents: number; notes: string | null } | null>(null);
@@ -1268,19 +1271,29 @@ const sendMessageMutation = useMutation({
   // Doctor Call tiles share the SAME calendar but tag the resulting booking
   // with meetingSubtype so the post-call readiness prompt (and, for match
   // calls, the 24h surrogate hold) fire per the provider-type rules.
-  const handleProviderMeeting = async (subtype?: "MATCH_CALL" | "DOCTOR_CONSULTATION") => {
+  const handleProviderMeeting = async (
+    subtype?: "MATCH_CALL" | "DOCTOR_CONSULTATION",
+    // Phase 4 scheduler flow: send the pick-a-time card for ANOTHER team
+    // member's calendar (the selected coordinator/doctor host).
+    hostOverride?: { slug: string; name: string },
+  ) => {
     if (!selectedSessionId) return;
     const meetingSubtype = subtype === "MATCH_CALL" || subtype === "DOCTOR_CONSULTATION" ? subtype : null;
     try {
-      const [slugRes, connectionsRes] = await Promise.all([
-        fetch("/api/provider/calendar-slug", { credentials: "include" }),
-        fetch("/api/calendar/connections", { credentials: "include" }),
-      ]);
-      const { slug } = await slugRes.json();
-      const connections: any[] = await connectionsRes.json();
-      if (!slug || !connections?.length) {
-        navigate("/account/calendar?connect=true");
-        return;
+      let slug: string | null = hostOverride?.slug ?? null;
+      let memberName: string | null = hostOverride?.name ?? null;
+      if (!slug) {
+        const [slugRes, connectionsRes] = await Promise.all([
+          fetch("/api/provider/calendar-slug", { credentials: "include" }),
+          fetch("/api/calendar/connections", { credentials: "include" }),
+        ]);
+        ({ slug } = await slugRes.json());
+        const connections: any[] = await connectionsRes.json();
+        if (!slug || !connections?.length) {
+          navigate("/account/calendar?connect=true");
+          return;
+        }
+        memberName = (user as any)?.name;
       }
       const content = meetingSubtype === "MATCH_CALL"
         ? "Let's schedule your Match Call - pick a time that works for you!"
@@ -1294,7 +1307,7 @@ const sendMessageMutation = useMutation({
         uiCardData: {
           consultationCard: {
             memberBookingSlug: slug,
-            memberName: (user as any)?.name,
+            memberName,
             bookingUrl: `${window.location.origin}/book/${slug}${meetingSubtype ? `?subtype=${meetingSubtype}` : ""}`,
             providerId: (user as any)?.providerId,
             meetingSubtype,
@@ -2671,12 +2684,12 @@ const sendMessageMutation = useMutation({
                 onMatchCallClick={
                   (hasJoined || isConsultationBooked) && providerHasSurrogacy &&
                   (selectedSession?.subjectType || "").toLowerCase().includes("surrog")
-                    ? () => handleProviderMeeting("MATCH_CALL")
+                    ? () => { setScheduleCallSubtype("MATCH_CALL"); setProviderInlinePanel("scheduleCall"); }
                     : undefined
                 }
                 onDoctorCallClick={
                   (hasJoined || isConsultationBooked) && providerHasIvf
-                    ? () => handleProviderMeeting("DOCTOR_CONSULTATION")
+                    ? () => { setScheduleCallSubtype("DOCTOR_CONSULTATION"); setProviderInlinePanel("scheduleCall"); }
                     : undefined
                 }
                 onCostSheetClick={(hasJoined || isConsultationBooked) ? () => {
@@ -2685,7 +2698,17 @@ const sendMessageMutation = useMutation({
                 onInvoiceClick={(hasJoined || isConsultationBooked) ? () => { setInvoiceEditPrefill(null); setProviderInlinePanel("invoice"); } : undefined}
                 onAgreementClick={(hasJoined || isConsultationBooked) ? () => setProviderInlinePanel("agreement") : undefined}
                 inlinePanel={
-                  providerInlinePanel === "costSheet" ? (
+                  providerInlinePanel === "scheduleCall" && selectedSessionId ? (
+                    <ScheduleCallSection
+                      key={`schedule-call-${selectedSessionId}-${scheduleCallSubtype}`}
+                      sessionId={selectedSessionId}
+                      subtype={scheduleCallSubtype}
+                      brandColor={brandColor}
+                      parentName={detail?.user?.name ?? null}
+                      onClose={() => setProviderInlinePanel(null)}
+                      onSendPickATime={(host) => handleProviderMeeting(scheduleCallSubtype, host)}
+                    />
+                  ) : providerInlinePanel === "costSheet" ? (
                     <CostSheetSidebarSection
                       key={`cs-embed-${selectedSessionId || "none"}-${costSheetEditPrefill ? costSheetEditPrefill.totalCostCents : "blank"}`}
                       sessionId={selectedSessionId}

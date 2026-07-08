@@ -1148,9 +1148,12 @@ export class VideoController {
         data: {
           sessionId: providerSession.id,
           role: "assistant",
-          content: `The match call is complete! ${who} is now on an exclusive 24-hour hold for ${parentLabel} while both sides decide - until ${holdLabel}, she won't be suggested to any other family.`,
+          content: `The match call is complete! ${who} is now on an exclusive 24-hour hold just for you - until ${holdLabel}, she won't be suggested to any other family.`,
           senderType: "system",
           senderName: "GoStork",
+          uiCardData: {
+            providerContent: `The match call is complete. ${who} is on a 24-hour hold for ${parentLabel} while both sides decide - until ${holdLabel}, she won't be suggested to other parents.`,
+          },
         },
       }).catch(() => {});
       // Dedup: one provider readiness card per booking.

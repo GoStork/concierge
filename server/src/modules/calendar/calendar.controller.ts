@@ -873,6 +873,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     /** Phase 4: "MATCH_CALL" (surrogacy) | "DOCTOR_CONSULTATION" (IVF) | null.
      *  Drives the per-type readiness trigger + the 24h surrogate hold. */
     meetingSubtype?: string | null;
+    /** Per-email attendee info ({ [email]: { name } }) - names the surrogate
+     *  in her lifecycle emails. */
+    attendeeDetails?: Record<string, { name?: string; phone?: string }> | null;
   }) {
     const booking = await this.prisma.booking.create({
       data: {
@@ -888,6 +891,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         attendeeEmails: input.attendeeEmails,
         invitedByUserId: input.invitedByUserId,
         meetingSubtype: input.meetingSubtype ?? null,
+        attendeeDetails: input.attendeeDetails ?? undefined,
       },
       include: {
         providerUser: { select: { id: true, name: true, email: true, photoUrl: true } },
@@ -902,6 +906,11 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     this.syncBookingToParentOutlookCalendar(booking).catch(() => {});
     this.emitBookingEvent("booking_created", booking, input.invitedByUserId);
     this.fireCostSheetAutoDraft(booking.id);
+    // Bookings created here are born CONFIRMED and never pass through the
+    // confirm endpoint - fire the match-call prep bundle (24h-hold explainer
+    // + admin prep guide PDF) from this path too. Self-gates on MATCH_CALL.
+    this.fireMatchCallPrep(booking as any).catch((e: any) =>
+      this.logger?.error?.(`fireMatchCallPrep failed for booking ${booking.id}: ${e.message}`) ?? console.error(e.message));
 
     return booking;
   }
@@ -942,7 +951,18 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     const booking = await this.prisma.booking.findUnique({ where: { id } });
     if (!booking) throw new NotFoundException("Booking not found");
     const isAccountMember = await this.isParentAccountMember(user.id, booking.parentUserId);
-    if (booking.providerUserId !== user.id && !isAccountMember) {
+    // Phase 4: any member of the HOST's provider team (e.g. a SCHEDULER who
+    // booked the call on a coordinator's behalf) can manage the booking too,
+    // not just the host themselves.
+    let isProviderTeammate = false;
+    if (!isAccountMember && booking.providerUserId !== user.id && user.providerId) {
+      const host = await this.prisma.user.findUnique({
+        where: { id: booking.providerUserId },
+        select: { providerId: true },
+      });
+      isProviderTeammate = !!host?.providerId && host.providerId === user.providerId;
+    }
+    if (booking.providerUserId !== user.id && !isAccountMember && !isProviderTeammate) {
       throw new ForbiddenException("Not authorized");
     }
 
@@ -951,7 +971,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       data.status = body.status;
       if (body.status === "CANCELLED") {
         data.cancelledAt = new Date();
-        data.cancelledByRole = user.id === booking.providerUserId ? "provider" : "parent";
+        data.cancelledByRole = (user.id === booking.providerUserId || isProviderTeammate) ? "provider" : "parent";
       }
     }
     if (body.notes !== undefined) data.notes = body.notes;
@@ -1025,11 +1045,22 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
    * the parent's private chat). Falls back to the private chat when no
    * 3-way session exists.
    */
-  private async fireMatchCallPrep(booking: { id: string; meetingSubtype?: string | null; parentUserId?: string | null; scheduledAt: Date; providerUser?: { providerId?: string | null; provider?: { name?: string | null } | null } | null }) {
+  private async fireMatchCallPrep(booking: { id: string; meetingSubtype?: string | null; parentUserId?: string | null; providerUserId?: string | null; scheduledAt: Date; providerUser?: { providerId?: string | null; provider?: { name?: string | null } | null } | null }) {
     if (booking.meetingSubtype !== "MATCH_CALL" || !booking.parentUserId) return;
 
     // Prefer the surrogate 3-way session for this (parent, provider) pair.
-    const providerId = booking.providerUser?.providerId || null;
+    // Callers don't always include provider info on the booking object
+    // (createBookingInternal's include is slim) - resolve from the host.
+    let providerId = booking.providerUser?.providerId || null;
+    let resolvedProviderName = booking.providerUser?.provider?.name || null;
+    if (!providerId && booking.providerUserId) {
+      const host = await this.prisma.user.findUnique({
+        where: { id: booking.providerUserId },
+        select: { providerId: true, provider: { select: { name: true } } },
+      }).catch(() => null);
+      providerId = host?.providerId || null;
+      resolvedProviderName = resolvedProviderName || host?.provider?.name || null;
+    }
     const threeWaySession = providerId
       ? await this.prisma.aiChatSession.findFirst({
           where: {
@@ -1059,7 +1090,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     });
     if (existing) return;
 
-    const providerName = booking.providerUser?.provider?.name || "the agency";
+    const providerName = resolvedProviderName || "the agency";
     const when = new Date(booking.scheduledAt).toLocaleString("en-US", { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
     await this.prisma.aiChatMessage.create({
@@ -1212,7 +1243,17 @@ I'll check in with you right after the call. You've got this!`,
     const original = await this.prisma.booking.findUnique({ where: { id } });
     if (!original) throw new NotFoundException("Booking not found");
     const isAccountMember = await this.isParentAccountMember(user.id, original.parentUserId);
-    if (original.providerUserId !== user.id && !isAccountMember) {
+    // Phase 4: host's provider teammates (e.g. the SCHEDULER who booked the
+    // call) may reschedule too.
+    let isProviderTeammate = false;
+    if (!isAccountMember && original.providerUserId !== user.id && user.providerId) {
+      const host = await this.prisma.user.findUnique({
+        where: { id: original.providerUserId },
+        select: { providerId: true },
+      });
+      isProviderTeammate = !!host?.providerId && host.providerId === user.providerId;
+    }
+    if (original.providerUserId !== user.id && !isAccountMember && !isProviderTeammate) {
       throw new ForbiddenException("Not authorized");
     }
 
@@ -1237,6 +1278,9 @@ I'll check in with you right after the call. You've got this!`,
         invitedByUserId: original.invitedByUserId,
         rescheduledFromId: original.id,
         bookerTimezone: body.bookerTimezone || original.bookerTimezone,
+        // Match/Doctor Calls stay what they are across a reschedule -
+        // dropping the subtype would break the readiness gating + 24h hold.
+        meetingSubtype: original.meetingSubtype,
       },
       include: {
         providerUser: { select: { id: true, name: true, email: true, photoUrl: true } },

@@ -1294,6 +1294,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       // out makes the chat go silent after the parent signed, even though
       // the conversations-list preview keeps showing the latest update.
       const allowedSystemCardTypes = [
+        "proposed_times",
         "agreement",
         "agreement_signed",
         "signer_signed",

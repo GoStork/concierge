@@ -180,6 +180,21 @@ surrogacy/IVF because nothing ever set Booking.meetingSubtype.
         the surrogate's 3-WAY chat; DECISION prompts stay private (parent's
         readiness card in the Eva chat, provider's readiness card
         provider-only) so both sides can answer honestly
+      - Dual-audience messages: uiCardData.providerContent carries a
+        provider-phrased variant of shared system messages (parent reads
+        "your invoice is coming", provider reads "the invoice was sent");
+        provider chat renders the variant automatically
+      - SCHEDULER flow (propose-accept, locked): Match/Doctor Call tiles
+        open a schedule-on-behalf panel - host picker shows ONLY people who
+        can host (coordinators/doctors/admins; pure schedulers and billing
+        managers excluded), defaults to self for coordinators or to the
+        parent's engaged coordinator (latest booking host) for schedulers;
+        brand calendar (ui/calendar) + the host's live slots; scheduler
+        multi-selects up to 6 options (surrogate's offline availability),
+        parent gets a proposed_times card and NOTHING books until they tap
+        a slot - acceptance re-checks conflicts, creates the meetingSubtype
+        booking, and invites everyone (parent account + surrogate email +
+        host); "or let the parent pick any time" fallback remains
 - [ ] IVF admin-defined matching requirements (simple AND rules) - not
       started, next item in this phase
 - [ ] User acceptance testing (tiles -> subtyped booking -> gated readiness

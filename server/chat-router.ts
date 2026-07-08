@@ -1840,6 +1840,481 @@ chatRouter.get("/api/provider/calendar-slug", requireAuth, async (req, res) => {
   }
 });
 
+// ─── Phase 4: scheduler-initiated Match Call / Doctor Call ───────────────────
+//
+// A SCHEDULER (or any provider member) opens a parent chat, picks WHICH
+// coordinator/doctor hosts the call, picks a slot from that member's
+// calendar, adds the surrogate's email, and books on their behalf. The
+// booking carries meetingSubtype so the whole match-call flow (readiness
+// gating, 24h hold, both-sides gate) fires exactly as if the host booked it.
+
+// Provider team members who can host a scheduled call (have a booking page).
+chatRouter.get("/api/chat-session/:id/schedulable-hosts", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: req.params.id },
+      select: { providerId: true },
+    });
+    if (!session?.providerId) return res.status(404).json({ message: "Session has no provider" });
+    const isAdmin = isAdminOrConcierge(user);
+    if (!isAdmin && user.providerId !== session.providerId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    const members = await prisma.user.findMany({
+      where: { providerId: session.providerId, isDisabled: false },
+      select: { id: true, name: true, email: true, roles: true, photoUrl: true },
+    });
+    const hosts: any[] = [];
+    // Pure schedulers / billing managers coordinate but never HOST calls -
+    // they must not appear in the host picker at all.
+    const canHost = (roles: string[]) =>
+      roles.some((r: string) => r.includes("COORDINATOR") || r === "DOCTOR" || r === "PROVIDER_ADMIN" || r === "LAWYER");
+    for (const m of members) {
+      if (!canHost(m.roles || [])) continue;
+      const config = await prisma.scheduleConfig.findUnique({
+        where: { userId: m.id },
+        select: { bookingPageSlug: true, meetingDuration: true },
+      });
+      if (config?.bookingPageSlug) {
+        hosts.push({
+          userId: m.id,
+          name: m.name || m.email,
+          roles: m.roles || [],
+          photoUrl: m.photoUrl || null,
+          slug: config.bookingPageSlug,
+          meetingDuration: config.meetingDuration || 30,
+          isSelf: m.id === user.id,
+        });
+      }
+    }
+    // Coordinators/doctors first, admins after.
+    const rank = (h: any) =>
+      h.roles.some((r: string) => r.includes("COORDINATOR") || r === "DOCTOR") ? 0 : 1;
+    hosts.sort((a, b) => rank(a) - rank(b));
+
+    // Default host: the requester themselves when they can host (a
+    // coordinator scheduling their own call); otherwise (SCHEDULER flow)
+    // the coordinator who's been working with this parent - resolved from
+    // their most recent booking together, falling back to the first host.
+    let defaultHostUserId: string | null = null;
+    const selfHost = hosts.find(h => h.isSelf);
+    if (selfHost) {
+      defaultHostUserId = selfHost.userId;
+    } else {
+      const fullSession = await prisma.aiChatSession.findUnique({
+        where: { id: req.params.id },
+        select: { userId: true },
+      });
+      if (fullSession) {
+        const hostIds = hosts.map(h => h.userId);
+        const lastBooking = await prisma.booking.findFirst({
+          where: {
+            parentUserId: fullSession.userId,
+            providerUserId: { in: hostIds },
+            status: { notIn: ["CANCELLED"] },
+          },
+          orderBy: { createdAt: "desc" },
+          select: { providerUserId: true },
+        });
+        defaultHostUserId = lastBooking?.providerUserId || hosts[0]?.userId || null;
+      }
+    }
+    res.json({ hosts, defaultHostUserId });
+  } catch (e: any) {
+    console.error("[schedulable-hosts]", e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Propose candidate time slots to the parent. The scheduler collects the
+// surrogate's availability OFFLINE, picks matching open slots on the
+// coordinator's calendar, and the parent gets a card with the options.
+// NOTHING is booked until the parent accepts one - acceptance creates the
+// booking and fires invites to everyone (parent account, surrogate email,
+// hosting coordinator/doctor).
+chatRouter.post("/api/chat-session/:id/propose-call-times", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const { hostUserId, slots, meetingSubtype, extraAttendeeEmail, extraAttendeeName, notes } = req.body || {};
+    if (!hostUserId || !Array.isArray(slots) || slots.length === 0) {
+      return res.status(400).json({ message: "hostUserId and at least one slot are required" });
+    }
+    if (slots.length > 6) return res.status(400).json({ message: "Propose up to 6 time options" });
+    const subtype = ["MATCH_CALL", "DOCTOR_CONSULTATION"].includes(meetingSubtype) ? meetingSubtype : null;
+
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, providerId: true, userId: true, subjectType: true, subjectProfileId: true },
+    });
+    if (!session?.providerId) return res.status(404).json({ message: "Session has no provider" });
+    if (!isAdminOrConcierge(user) && user.providerId !== session.providerId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    // The call is WITH the surrogate/doctor's patient side - the coordinator
+    // hosts it. Name the subject in all copy.
+    let subjectLabel: string | null = null;
+    if ((session.subjectType || "").toLowerCase().includes("surrog") && session.subjectProfileId) {
+      const surr = await prisma.surrogate.findUnique({
+        where: { id: session.subjectProfileId },
+        select: { externalId: true, firstName: true },
+      }).catch(() => null);
+      subjectLabel = surr?.externalId ? `Surrogate #${surr.externalId}` : surr?.firstName || null;
+    }
+    const parentUserRow = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { firstName: true, name: true },
+    }).catch(() => null);
+    const parentLabel = parentUserRow?.firstName || parentUserRow?.name || "the parent";
+    const host = await prisma.user.findUnique({
+      where: { id: hostUserId },
+      select: { id: true, name: true, email: true, providerId: true },
+    });
+    if (!host || host.providerId !== session.providerId) {
+      return res.status(400).json({ message: "Host must be a member of this provider" });
+    }
+    const hostConfig = await prisma.scheduleConfig.findUnique({
+      where: { userId: hostUserId },
+      select: { meetingDuration: true },
+    });
+    const parsedSlots: string[] = [];
+    for (const raw of slots) {
+      const d = new Date(raw);
+      if (isNaN(d.getTime()) || d.getTime() < Date.now()) {
+        return res.status(400).json({ message: "All proposed times must be valid future times" });
+      }
+      parsedSlots.push(d.toISOString());
+    }
+    const extra = typeof extraAttendeeEmail === "string" ? extraAttendeeEmail.trim().toLowerCase() : "";
+    if (extra && !/^\S+@\S+\.\S+$/.test(extra)) {
+      return res.status(400).json({ message: "Additional attendee email is not valid" });
+    }
+
+    const callLabel = subtype === "MATCH_CALL" ? "Match Call" : subtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "Meeting";
+    const hostName = host.name || host.email;
+    const who = subjectLabel || hostName;
+    const msg = await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: subjectLabel
+          ? `We'd love to get your ${callLabel} with ${subjectLabel} on the calendar - ${hostName} will host and guide the conversation. Here are a few times that work on her side. Tap the one that works best for you, hit Confirm, and everyone gets the invite.`
+          : `We'd love to get your ${callLabel} with ${hostName} on the calendar! Here are a few times that work on our side - tap the one that works best for you, hit Confirm, and everyone gets the invite.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardType: "proposed_times",
+        uiCardData: {
+          providerContent: `Time options for the ${callLabel} with ${who}${subjectLabel ? ` (hosted by ${hostName})` : ""} are on their way to ${parentLabel}. The moment they confirm a slot, calendar invites go out to everyone automatically.`,
+          subjectLabel,
+          meetingSubtype: subtype,
+          hostUserId,
+          hostName,
+          durationMin: hostConfig?.meetingDuration || 30,
+          slots: parsedSlots,
+          extraAttendeeEmail: extra || null,
+          extraAttendeeName: typeof extraAttendeeName === "string" && extraAttendeeName.trim() ? extraAttendeeName.trim() : null,
+          notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
+          proposedByName: user.name || null,
+          status: "pending",
+          chosenSlot: null,
+          bookingId: null,
+        },
+      },
+    });
+    res.json({ success: true, messageId: msg.id });
+  } catch (e: any) {
+    console.error("[propose-call-times]", e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Parent accepts one of the proposed slots -> the booking is created and
+// calendar invites go out to everyone.
+chatRouter.post("/api/chat-session/:id/proposed-times/:messageId/accept", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const { slot } = req.body || {};
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, providerId: true, userId: true },
+    });
+    if (!session) return res.status(404).json({ message: "Session not found" });
+    let isParent = session.userId === user.id;
+    if (!isParent && user.parentAccountId) {
+      const owner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+      isParent = !!(owner?.parentAccountId && owner.parentAccountId === user.parentAccountId);
+    }
+    if (!isParent) return res.status(403).json({ message: "Only the parent can pick a time" });
+
+    const msg = await prisma.aiChatMessage.findUnique({ where: { id: req.params.messageId } });
+    if (!msg || msg.sessionId !== session.id || msg.uiCardType !== "proposed_times") {
+      return res.status(404).json({ message: "Time options not found" });
+    }
+    const data = (msg.uiCardData as any) || {};
+    if (!slot || !Array.isArray(data.slots) || !data.slots.includes(slot)) {
+      return res.status(400).json({ message: "Pick one of the offered times" });
+    }
+    // Already booked + a DIFFERENT offered slot -> the parent changed their
+    // mind: reschedule the existing booking to the new time (old invites are
+    // cancelled, fresh ones go out, meetingSubtype is preserved).
+    if (data.status === "booked") {
+      if (!data.bookingId || slot === data.chosenSlot) {
+        return res.json({ success: true, alreadyBooked: true, bookingId: data.bookingId });
+      }
+      const newWhen = new Date(slot);
+      if (newWhen.getTime() < Date.now()) {
+        return res.status(400).json({ message: "That time has already passed - ask for fresh options" });
+      }
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (!nestApp) return res.status(503).json({ message: "Scheduling service unavailable - try again shortly" });
+      const { CalendarController } = await import("./src/modules/calendar/calendar.controller");
+      const calendarController = nestApp.get(CalendarController);
+      const newBooking = await calendarController.rescheduleBooking(req as any, data.bookingId, { scheduledAt: slot });
+      await prisma.aiChatMessage.update({
+        where: { id: msg.id },
+        data: { uiCardData: { ...data, chosenSlot: slot, bookingId: newBooking.id } },
+      });
+      const changedLabel = newWhen.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: `Done! Your ${data.meetingSubtype === "MATCH_CALL" ? "Match Call" : data.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "meeting"} with ${data.subjectLabel || data.hostName} has moved to ${changedLabel}. Updated invites are on their way to everyone.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardData: {
+            providerContent: `${(req.user as any)?.name || "The parent"} moved the ${data.meetingSubtype === "MATCH_CALL" ? "Match Call" : data.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "meeting"} with ${data.subjectLabel || data.hostName} to ${changedLabel}. Updated invites are on their way to everyone.`,
+          },
+        },
+      }).catch(() => {});
+      return res.json({ success: true, rescheduled: true, bookingId: newBooking.id });
+    }
+    const when = new Date(slot);
+    if (when.getTime() < Date.now()) {
+      return res.status(400).json({ message: "That time has already passed - ask for fresh options" });
+    }
+
+    const hostConfig = await prisma.scheduleConfig.findUnique({
+      where: { userId: data.hostUserId },
+      select: { meetingDuration: true, meetingLink: true },
+    });
+    const duration = data.durationMin || hostConfig?.meetingDuration || 30;
+    // Conflict check - the slot may have been taken since it was proposed.
+    const slotEnd = new Date(when.getTime() + duration * 60 * 1000);
+    const nearby = await prisma.booking.findMany({
+      where: {
+        providerUserId: data.hostUserId,
+        status: { notIn: ["CANCELLED", "RESCHEDULED", "EXPIRED"] },
+        scheduledAt: { lt: slotEnd, gte: new Date(when.getTime() - 4 * 60 * 60 * 1000) },
+      },
+    });
+    const taken = nearby.find(b => {
+      const bEnd = new Date(b.scheduledAt.getTime() + b.duration * 60 * 1000);
+      return b.scheduledAt < slotEnd && bEnd > when;
+    });
+    if (taken) {
+      return res.status(409).json({ message: "That time was just taken on the host's calendar - please pick another option" });
+    }
+
+    const parentUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { name: true, email: true, parentAccountId: true },
+    });
+    let attendeeEmails: string[] = [];
+    if (parentUser?.parentAccountId) {
+      const members = await prisma.user.findMany({
+        where: { parentAccountId: parentUser.parentAccountId, isDisabled: false },
+        select: { email: true },
+      });
+      attendeeEmails = members.map(m => m.email).filter(Boolean);
+    } else if (parentUser?.email) {
+      attendeeEmails = [parentUser.email];
+    }
+    if (data.extraAttendeeEmail && !attendeeEmails.includes(data.extraAttendeeEmail)) {
+      attendeeEmails.push(data.extraAttendeeEmail);
+    }
+    const extraDetails = data.extraAttendeeEmail && data.extraAttendeeName
+      ? { [data.extraAttendeeEmail]: { name: data.extraAttendeeName } }
+      : undefined;
+
+    const callLabel = data.meetingSubtype === "MATCH_CALL" ? "Match Call" : data.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "Meeting";
+    const { getNestApp } = await import("./nest-app-ref");
+    const nestApp = getNestApp();
+    if (!nestApp) return res.status(503).json({ message: "Scheduling service unavailable - try again shortly" });
+    const { CalendarController } = await import("./src/modules/calendar/calendar.controller");
+    const calendarController = nestApp.get(CalendarController);
+    const booking = await calendarController.createBookingInternal({
+      providerUserId: data.hostUserId,
+      parentUserId: session.userId,
+      scheduledAt: when,
+      duration,
+      meetingType: "video",
+      meetingUrl: hostConfig?.meetingLink || null,
+      subject: data.subjectLabel
+        ? `${callLabel} with ${data.subjectLabel} (hosted by ${data.hostName || "your coordinator"})`
+        : `${callLabel} with ${data.hostName || "your coordinator"}`,
+      attendeeName: parentUser?.name || null,
+      attendeeEmails,
+      invitedByUserId: user.id,
+      meetingSubtype: data.meetingSubtype || null,
+      attendeeDetails: extraDetails,
+    });
+    if (data.notes) {
+      await prisma.booking.update({ where: { id: booking.id }, data: { notes: data.notes } }).catch(() => {});
+    }
+    await prisma.aiChatMessage.update({
+      where: { id: msg.id },
+      data: { uiCardData: { ...data, status: "booked", chosenSlot: slot, bookingId: booking.id } },
+    });
+    const whenLabel = when.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: `You're all set! Your ${callLabel} with ${data.subjectLabel || data.hostName}${data.subjectLabel ? `, hosted by ${data.hostName},` : ""} is booked for ${whenLabel}. Calendar invites are on their way to everyone.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardData: {
+          providerContent: `${parentUser?.name || "The parent"} picked ${whenLabel} for the ${callLabel} with ${data.subjectLabel || data.hostName}${data.subjectLabel ? ` (hosted by ${data.hostName})` : ""}. Calendar invites are on their way to everyone.`,
+        },
+      },
+    }).catch(() => {});
+    res.json({ success: true, bookingId: booking.id });
+  } catch (e: any) {
+    console.error("[proposed-times-accept]", e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Book the call on the selected host's behalf.
+chatRouter.post("/api/chat-session/:id/schedule-call", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const { hostUserId, scheduledAt, meetingSubtype, extraAttendeeEmail, extraAttendeeName, notes } = req.body || {};
+    if (!hostUserId || !scheduledAt) {
+      return res.status(400).json({ message: "hostUserId and scheduledAt are required" });
+    }
+    const subtype = ["MATCH_CALL", "DOCTOR_CONSULTATION"].includes(meetingSubtype) ? meetingSubtype : null;
+
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, providerId: true, userId: true, title: true },
+    });
+    if (!session?.providerId) return res.status(404).json({ message: "Session has no provider" });
+    const isAdmin = isAdminOrConcierge(user);
+    if (!isAdmin && user.providerId !== session.providerId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const host = await prisma.user.findUnique({
+      where: { id: hostUserId },
+      select: { id: true, name: true, email: true, providerId: true },
+    });
+    if (!host || host.providerId !== session.providerId) {
+      return res.status(400).json({ message: "Host must be a member of this provider" });
+    }
+    const hostConfig = await prisma.scheduleConfig.findUnique({
+      where: { userId: hostUserId },
+      select: { meetingDuration: true, meetingLink: true },
+    });
+    const duration = hostConfig?.meetingDuration || 30;
+
+    const when = new Date(scheduledAt);
+    if (isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
+      return res.status(400).json({ message: "scheduledAt must be a valid future time" });
+    }
+
+    // Light conflict check on the host's calendar.
+    const slotEnd = new Date(when.getTime() + duration * 60 * 1000);
+    const conflict = await prisma.booking.findFirst({
+      where: {
+        providerUserId: hostUserId,
+        status: { notIn: ["CANCELLED", "RESCHEDULED", "EXPIRED"] },
+        scheduledAt: { lt: slotEnd, gte: new Date(when.getTime() - 4 * 60 * 60 * 1000) },
+      },
+    });
+    if (conflict) {
+      const cEnd = new Date(conflict.scheduledAt.getTime() + conflict.duration * 60 * 1000);
+      if (conflict.scheduledAt < slotEnd && cEnd > when) {
+        return res.status(409).json({ message: "That time conflicts with another booking on the host's calendar" });
+      }
+    }
+
+    // Parent + account members + the surrogate/extra attendee.
+    const parentUser = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { name: true, email: true, parentAccountId: true },
+    });
+    let attendeeEmails: string[] = [];
+    if (parentUser?.parentAccountId) {
+      const members = await prisma.user.findMany({
+        where: { parentAccountId: parentUser.parentAccountId, isDisabled: false },
+        select: { email: true },
+      });
+      attendeeEmails = members.map(m => m.email).filter(Boolean);
+    } else if (parentUser?.email) {
+      attendeeEmails = [parentUser.email];
+    }
+    const extra = typeof extraAttendeeEmail === "string" ? extraAttendeeEmail.trim().toLowerCase() : "";
+    if (extra) {
+      if (!/^\S+@\S+\.\S+$/.test(extra)) {
+        return res.status(400).json({ message: "Additional attendee email is not valid" });
+      }
+      if (!attendeeEmails.includes(extra)) attendeeEmails.push(extra);
+    }
+
+    const callLabel = subtype === "MATCH_CALL" ? "Match Call" : subtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "Meeting";
+    const hostName = host.name || host.email;
+
+    const { getNestApp } = await import("./nest-app-ref");
+    const nestApp = getNestApp();
+    if (!nestApp) return res.status(503).json({ message: "Scheduling service unavailable - try again shortly" });
+    const { CalendarController } = await import("./src/modules/calendar/calendar.controller");
+    const calendarController = nestApp.get(CalendarController);
+
+    const booking = await calendarController.createBookingInternal({
+      providerUserId: hostUserId,
+      parentUserId: session.userId,
+      scheduledAt: when,
+      duration,
+      meetingType: "video",
+      meetingUrl: hostConfig?.meetingLink || null,
+      subject: `${callLabel} with ${hostName}`,
+      attendeeName: parentUser?.name || null,
+      attendeeEmails,
+      invitedByUserId: user.id,
+      meetingSubtype: subtype,
+      attendeeDetails: extra && typeof extraAttendeeName === "string" && extraAttendeeName.trim()
+        ? { [extra]: { name: extraAttendeeName.trim() } }
+        : undefined,
+    });
+    if (notes && typeof notes === "string" && notes.trim()) {
+      await prisma.booking.update({ where: { id: booking.id }, data: { notes: notes.trim() } }).catch(() => {});
+    }
+
+    // Announce in the chat so both sides see it immediately.
+    const whenLabel = when.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: `Great news - your ${callLabel}, hosted by ${hostName}, is scheduled for ${whenLabel}. Calendar invites are on their way to everyone.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardData: {
+          providerContent: `${user.name || "The team"} scheduled a ${callLabel} with ${hostName} for ${whenLabel}. Calendar invites are on their way to everyone.`,
+        },
+      },
+    }).catch(() => {});
+
+    res.json({ success: true, bookingId: booking.id });
+  } catch (e: any) {
+    console.error("[schedule-call]", e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 chatRouter.get("/api/chat-session/:id/provider-calendar-slug", requireAuth, async (req, res) => {
   try {
     const user = req.user as any;

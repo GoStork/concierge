@@ -401,7 +401,22 @@ export class NotificationService implements OnModuleInit {
     });
 
     await this.fanOutAdditionalAttendees(booking, async (ae, aeName, aePhone) => {
-      const html = parentEmailBuilder(getFirstName(aeName) || ae.split("@")[0]);
+      const html = cc.isCall
+        ? buildBrandedEmail(brandData, {
+            title: `${cc.noun} Confirmed`,
+            greeting: `Hi ${esc(aeName ? getFirstName(aeName) : "there")},`,
+            body: `You're invited to a confirmed <strong>${cc.noun}</strong> with <strong>${esc(attendeeName)}</strong>${staffMember ? `, hosted by <strong>${esc(staffMember)}</strong> from <strong>${esc(providerName)}</strong>` : ""}.<br/><br/>${esc(cc.externalNote)}`,
+            detailRows: [
+              { label: "Date", value: dateStr },
+              { label: "Time", value: timeStr },
+              { label: "Duration", value: `${booking.duration} minutes` },
+              { label: "Location", value: location },
+              ...(staffMember ? [{ label: "Hosted by", value: esc(staffMember) }] : []),
+            ],
+            alertBox: { text: `Your ${cc.noun} is confirmed! Make sure to join on time.`, type: "success" },
+            buttons: location === "Video Call" ? [{ label: "Join Meeting", url: joinLink }] : [],
+          })
+        : parentEmailBuilder(getFirstName(aeName) || ae.split("@")[0]);
       await this.dispatchNotification({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_submitted", recipient: ae,
         subject: `Your meeting with ${providerName} has been submitted`, body: html,
       });
@@ -710,7 +725,28 @@ export class NotificationService implements OnModuleInit {
     }
   }
 
+  // Phase 4: Match Calls / Doctor Calls are not generic meetings - every
+  // lifecycle email names the call type and, for match calls, the surrogate
+  // (parsed from the booking subject "... with Surrogate #X (hosted by ...)").
+  private bookingCallCopy(booking: any) {
+    const subtype = booking.meetingSubtype;
+    const m = typeof booking.subject === "string" ? booking.subject.match(/with (.+?) \(hosted by/i) : null;
+    const subjectLabel: string | null = m?.[1] || null;
+    if (subtype === "MATCH_CALL") {
+      return { noun: "Match Call", isCall: true, subjectLabel,
+        parentNote: `This is your Match Call${subjectLabel ? ` with ${subjectLabel}` : ""} - the conversation where you get to know each other and decide whether to move forward together. Your coordinator will host and guide the whole conversation.`,
+        externalNote: `This is a GoStork Match Call - a friendly video conversation with intended parents who are excited to meet you. Your coordinator will host the call, guide the conversation, and be there for you the entire time. Just come as you are.` };
+    }
+    if (subtype === "DOCTOR_CONSULTATION") {
+      return { noun: "Doctor Call", isCall: true, subjectLabel,
+        parentNote: `This is your Doctor Call - a one-on-one conversation with the physician who would guide your treatment. Bring any medical questions you have.`,
+        externalNote: `This is a GoStork Doctor Call with the intended parents, hosted by the doctor.` };
+    }
+    return { noun: "meeting", isCall: false, subjectLabel: null, parentNote: "", externalNote: "" };
+  }
+
   async sendBookingConfirmation(booking: any) {
+    const cc = this.bookingCallCopy(booking);
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
     const attendeeName = booking.attendeeName || booking.parentUser?.name || attendeeEmail;
@@ -735,9 +771,11 @@ export class NotificationService implements OnModuleInit {
     const joinLink = (booking.meetingUrl && !booking.meetingUrl.includes("/room/")) ? booking.meetingUrl : videoRoomLink;
 
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
-      title: "Meeting Confirmed",
+      title: `${cc.isCall ? cc.noun : "Meeting"} Confirmed`,
       greeting: `Hi ${esc(firstName)},`,
-      body: `Great news! Your meeting with <strong>${esc(providerName)}</strong> has been confirmed.`,
+      body: cc.isCall
+        ? `Great news! Your <strong>${cc.noun}</strong>${cc.subjectLabel ? ` with <strong>${esc(cc.subjectLabel)}</strong>` : ""} is confirmed${staffMember ? `, hosted by <strong>${esc(staffMember)}</strong> from <strong>${esc(providerName)}</strong>` : ` with <strong>${esc(providerName)}</strong>`}.<br/><br/>${esc(cc.parentNote)}`
+        : `Great news! Your meeting with <strong>${esc(providerName)}</strong> has been confirmed.`,
       detailRows: [
         { label: "Date", value: dateStr },
         { label: "Time", value: timeStr },
@@ -745,7 +783,7 @@ export class NotificationService implements OnModuleInit {
         { label: "Location", value: location },
         ...(staffMember ? [{ label: "With", value: esc(staffMember) }] : []),
       ],
-      alertBox: { text: "Your meeting is confirmed! Make sure to join on time.", type: "success" },
+      alertBox: { text: `Your ${cc.isCall ? cc.noun : "meeting"} is confirmed! Make sure to join on time.`, type: "success" },
       buttons: [
         ...(location === "Video Call" ? [{ label: "Join Meeting", url: joinLink }] : []),
         { label: "Reschedule", url: detailsLink, variant: "secondary" as const },
@@ -756,7 +794,7 @@ export class NotificationService implements OnModuleInit {
     if (attendeeEmail) {
       const html = parentEmailBuilder(getFirstName(attendeeName));
       await this.dispatchNotification({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_confirmation", recipient: attendeeEmail,
-        subject: `Your meeting with ${providerName} is confirmed`, body: html,
+        subject: cc.isCall ? `Your ${cc.noun}${cc.subjectLabel ? ` with ${cc.subjectLabel}` : ""} is confirmed` : `Your meeting with ${providerName} is confirmed`, body: html,
       });
       const details: Record<string, { name?: string; phone?: string }> = booking.attendeeDetails || {};
       const primaryDetails = details[attendeeEmail.toLowerCase()] || {};
@@ -771,7 +809,7 @@ export class NotificationService implements OnModuleInit {
     await this.fanOutParentNotification(booking, async (memberEmail, memberPhone, memberName, memberId) => {
       const html = parentEmailBuilder(getFirstName(memberName));
       await this.dispatchNotification({ userId: memberId, bookingId: booking.id, type: "EMAIL", channel: "booking_confirmation", recipient: memberEmail,
-        subject: `Your meeting with ${providerName} is confirmed`, body: html,
+        subject: cc.isCall ? `Your ${cc.noun}${cc.subjectLabel ? ` with ${cc.subjectLabel}` : ""} is confirmed` : `Your meeting with ${providerName} is confirmed`, body: html,
       });
       if (memberPhone) {
         await this.dispatchSmsTemplate({ userId: memberId, bookingId: booking.id, channel: "booking_confirmation", recipient: memberPhone,
@@ -783,7 +821,7 @@ export class NotificationService implements OnModuleInit {
     await this.fanOutAdditionalAttendees(booking, async (ae, aeName, aePhone) => {
       const html = parentEmailBuilder(getFirstName(aeName) || ae.split("@")[0]);
       await this.dispatchNotification({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_confirmation", recipient: ae,
-        subject: `Your meeting with ${providerName} is confirmed`, body: html,
+        subject: cc.isCall ? `Your ${cc.noun} with ${attendeeName} is confirmed` : `Your meeting with ${providerName} is confirmed`, body: html,
       });
       if (aePhone) {
         await this.dispatchSmsTemplate({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, channel: "booking_confirmation", recipient: aePhone,
@@ -794,9 +832,11 @@ export class NotificationService implements OnModuleInit {
 
     if (providerEmail) {
       const providerHtml = buildBrandedEmail(brandData, {
-        title: "Meeting Confirmed",
+        title: `${cc.isCall ? cc.noun : "Meeting"} Confirmed`,
         greeting: `Hi ${esc(getFirstName(providerUser?.name))},`,
-        body: `Your meeting with <strong>${esc(attendeeName)}</strong> has been confirmed.`,
+        body: cc.isCall
+          ? `You're hosting a confirmed <strong>${cc.noun}</strong>${cc.subjectLabel ? ` for <strong>${esc(cc.subjectLabel)}</strong>` : ""} with <strong>${esc(attendeeName)}</strong>.`
+          : `Your meeting with <strong>${esc(attendeeName)}</strong> has been confirmed.`,
         detailRows: [
           { label: "Date", value: dateStr },
           { label: "Time", value: timeStr },
@@ -812,7 +852,7 @@ export class NotificationService implements OnModuleInit {
         ],
       });
       await this.dispatchNotification({ userId: booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_confirmation", recipient: providerEmail,
-        subject: `Meeting with ${attendeeName} confirmed`, body: providerHtml,
+        subject: `${cc.isCall ? cc.noun : "Meeting"} with ${attendeeName} confirmed`, body: providerHtml,
       });
       const providerPhone = providerUser?.mobileNumber;
       if (providerPhone) {
@@ -826,6 +866,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   async sendBookingCancellation(booking: any, cancelledBy?: "parent" | "provider" | "gostork") {
+    const cc = this.bookingCallCopy(booking);
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
     const attendeeName = booking.attendeeName || booking.parentUser?.name || attendeeEmail;
@@ -841,14 +882,16 @@ export class NotificationService implements OnModuleInit {
     const rebookLink = providerUser?.scheduleConfig?.bookingPageSlug ? `${base}/book/${providerUser.scheduleConfig.bookingPageSlug}` : base;
 
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
-      title: "Meeting Cancelled",
+      title: `${cc.isCall ? cc.noun : "Meeting"} Cancelled`,
       greeting: `Hi ${esc(firstName)},`,
-      body: `Your meeting with <strong>${esc(staffMemberName || clinicName)}</strong>${staffMemberName && clinicName ? ` from <strong>${esc(clinicName)}</strong>` : ""} has been cancelled.`,
+      body: cc.isCall
+        ? `Your <strong>${cc.noun}</strong>${cc.subjectLabel ? ` with <strong>${esc(cc.subjectLabel)}</strong>` : ""}${staffMemberName ? `, hosted by <strong>${esc(staffMemberName)}</strong>` : ""} has been cancelled. Don't worry - this happens, and new times can be arranged.`
+        : `Your meeting with <strong>${esc(staffMemberName || clinicName)}</strong>${staffMemberName && clinicName ? ` from <strong>${esc(clinicName)}</strong>` : ""} has been cancelled.`,
       detailRows: [
         { label: "Date", value: dateStr },
         { label: "Time", value: timeStr },
       ],
-      alertBox: { text: "This meeting has been cancelled. You can book a new meeting at any time.", type: "warning" },
+      alertBox: { text: `This ${cc.isCall ? cc.noun : "meeting"} has been cancelled. New times can be arranged at any time.`, type: "warning" },
       buttons: [
         { label: "Book New Meeting", url: rebookLink },
       ],
@@ -857,7 +900,7 @@ export class NotificationService implements OnModuleInit {
     if (attendeeEmail) {
       const html = parentEmailBuilder(getFirstName(attendeeName));
       await this.dispatchNotification({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_cancellation", recipient: attendeeEmail,
-        subject: `Your meeting with ${providerName} has been cancelled`, body: html,
+        subject: cc.isCall ? `Your ${cc.noun}${cc.subjectLabel ? ` with ${cc.subjectLabel}` : ""} has been cancelled` : `Your meeting with ${providerName} has been cancelled`, body: html,
       });
       const cancelDetails: Record<string, { name?: string; phone?: string }> = booking.attendeeDetails || {};
       const cancelPrimaryDetails = cancelDetails[attendeeEmail.toLowerCase()] || {};
@@ -872,7 +915,7 @@ export class NotificationService implements OnModuleInit {
     await this.fanOutParentNotification(booking, async (memberEmail, memberPhone, memberName, memberId) => {
       const html = parentEmailBuilder(getFirstName(memberName));
       await this.dispatchNotification({ userId: memberId, bookingId: booking.id, type: "EMAIL", channel: "booking_cancellation", recipient: memberEmail,
-        subject: `Your meeting with ${providerName} has been cancelled`, body: html,
+        subject: cc.isCall ? `Your ${cc.noun}${cc.subjectLabel ? ` with ${cc.subjectLabel}` : ""} has been cancelled` : `Your meeting with ${providerName} has been cancelled`, body: html,
       });
       if (memberPhone) {
         await this.dispatchSmsTemplate({ userId: memberId, bookingId: booking.id, channel: "booking_cancellation", recipient: memberPhone,
@@ -882,9 +925,22 @@ export class NotificationService implements OnModuleInit {
     });
 
     await this.fanOutAdditionalAttendees(booking, async (ae, aeName, aePhone) => {
-      const html = parentEmailBuilder(getFirstName(aeName) || ae.split("@")[0]);
+      // External attendees (e.g. the surrogate) get their own copy - the call
+      // is "with the parents" from her side, never with herself.
+      const html = cc.isCall
+        ? buildBrandedEmail(brandData, {
+            title: `${cc.noun} Cancelled`,
+            greeting: `Hi ${esc(aeName ? getFirstName(aeName) : "there")},`,
+            body: `The <strong>${cc.noun}</strong> with <strong>${esc(attendeeName)}</strong>${staffMemberName ? `, hosted by <strong>${esc(staffMemberName)}</strong>` : ""} has been cancelled. Don't worry - this happens, and new times can be arranged.`,
+            detailRows: [
+              { label: "Date", value: dateStr },
+              { label: "Time", value: timeStr },
+            ],
+            alertBox: { text: `This ${cc.noun} has been cancelled. New times can be arranged at any time.`, type: "warning" },
+          })
+        : parentEmailBuilder(getFirstName(aeName) || ae.split("@")[0]);
       await this.dispatchNotification({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_cancellation", recipient: ae,
-        subject: `Your meeting with ${providerName} has been cancelled`, body: html,
+        subject: cc.isCall ? `Your ${cc.noun} with ${attendeeName} has been cancelled` : `Your meeting with ${providerName} has been cancelled`, body: html,
       });
       if (aePhone) {
         await this.dispatchSmsTemplate({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, channel: "booking_cancellation", recipient: aePhone,
@@ -895,9 +951,9 @@ export class NotificationService implements OnModuleInit {
 
     if (providerEmail) {
       const providerHtml = buildBrandedEmail(brandData, {
-        title: "Meeting Cancelled",
+        title: `${cc.isCall ? cc.noun : "Meeting"} Cancelled`,
         greeting: `Hi ${esc(getFirstName(providerUser?.name))},`,
-        body: `The meeting with <strong>${esc(attendeeName)}</strong> has been cancelled.`,
+        body: `The ${cc.isCall ? cc.noun : "meeting"} with <strong>${esc(attendeeName)}</strong> has been cancelled.`,
         detailRows: [
           { label: "Date", value: dateStr },
           { label: "Time", value: timeStr },
@@ -918,6 +974,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   async sendBookingRescheduled(originalBooking: any, newBooking: any, message: string = "") {
+    const cc = this.bookingCallCopy(newBooking.meetingSubtype ? newBooking : originalBooking);
     const providerUser = newBooking.providerUser || (await this.prisma.user.findUnique({ where: { id: newBooking.providerUserId } }));
     const attendeeEmail = newBooking.attendeeEmails?.[0] || newBooking.parentUser?.email;
     const attendeeName = newBooking.attendeeName || newBooking.parentUser?.name || attendeeEmail;
@@ -937,9 +994,11 @@ export class NotificationService implements OnModuleInit {
     const joinLink = (newBooking.meetingUrl && !newBooking.meetingUrl.includes("/room/")) ? newBooking.meetingUrl : videoRoomLink;
 
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
-      title: "Meeting Rescheduled",
+      title: `${cc.isCall ? cc.noun : "Meeting"} Rescheduled`,
       greeting: `Hi ${esc(firstName)},`,
-      body: `Your meeting with <strong>${esc(providerName)}</strong> has been rescheduled.${message ? `<br><br><em>"${esc(message)}"</em>` : ""}`,
+      body: cc.isCall
+        ? `Your <strong>${cc.noun}</strong>${cc.subjectLabel ? ` with <strong>${esc(cc.subjectLabel)}</strong>` : ""} has been rescheduled to a new time.${message ? `<br><br><em>"${esc(message)}"</em>` : ""}`
+        : `Your meeting with <strong>${esc(providerName)}</strong> has been rescheduled.${message ? `<br><br><em>"${esc(message)}"</em>` : ""}`,
       detailRows: [
         { label: "Previous", value: `${oldDateStr} at ${oldTimeStr}` },
         { label: "New Date", value: newDateStr },
@@ -947,7 +1006,7 @@ export class NotificationService implements OnModuleInit {
         { label: "Duration", value: `${newBooking.duration} minutes` },
         ...(staffMember ? [{ label: "With", value: esc(staffMember) }] : []),
       ],
-      alertBox: { text: "Your meeting has been rescheduled to a new time.", type: "info" },
+      alertBox: { text: `Your ${cc.isCall ? cc.noun : "meeting"} has been rescheduled to a new time.`, type: "info" },
       buttons: [
         { label: "View Details", url: detailsLink },
         { label: "Reschedule", url: detailsLink, variant: "secondary" },
@@ -958,7 +1017,7 @@ export class NotificationService implements OnModuleInit {
     if (attendeeEmail) {
       const html = parentEmailBuilder(getFirstName(attendeeName));
       await this.dispatchNotification({ userId: newBooking.parentUserId || newBooking.providerUserId, bookingId: newBooking.id, type: "EMAIL", channel: "booking_rescheduled", recipient: attendeeEmail,
-        subject: `Your meeting with ${providerName} has been rescheduled`, body: html,
+        subject: cc.isCall ? `Your ${cc.noun}${cc.subjectLabel ? ` with ${cc.subjectLabel}` : ""} has been rescheduled` : `Your meeting with ${providerName} has been rescheduled`, body: html,
       });
       const reschedDetails: Record<string, { name?: string; phone?: string }> = newBooking.attendeeDetails || {};
       const reschedPrimaryDetails = reschedDetails[attendeeEmail.toLowerCase()] || {};
@@ -975,7 +1034,7 @@ export class NotificationService implements OnModuleInit {
     await this.fanOutParentNotification(newBooking, async (memberEmail, memberPhone, memberName, memberId) => {
       const html = parentEmailBuilder(getFirstName(memberName));
       await this.dispatchNotification({ userId: memberId, bookingId: newBooking.id, type: "EMAIL", channel: "booking_rescheduled", recipient: memberEmail,
-        subject: `Your meeting with ${providerName} has been rescheduled`, body: html,
+        subject: cc.isCall ? `Your ${cc.noun}${cc.subjectLabel ? ` with ${cc.subjectLabel}` : ""} has been rescheduled` : `Your meeting with ${providerName} has been rescheduled`, body: html,
       });
       if (memberPhone) {
         const smsVars: Record<string, string> = { "1": getFirstName(memberName), "2": providerName, "3": newDateStr, "4": newTimeStr, "5": joinLink };
@@ -987,9 +1046,25 @@ export class NotificationService implements OnModuleInit {
     });
 
     await this.fanOutAdditionalAttendees(newBooking, async (ae, aeName, aePhone) => {
-      const html = parentEmailBuilder(getFirstName(aeName) || ae.split("@")[0]);
+      // External attendees (e.g. the surrogate) get their own copy - the call
+      // is "with the parents" from her side, never with herself.
+      const attendeeName = newBooking.attendeeName || newBooking.parentUser?.name || "the intended parents";
+      const html = cc.isCall
+        ? buildBrandedEmail(brandData, {
+            title: `${cc.noun} Rescheduled`,
+            greeting: `Hi ${esc(aeName ? getFirstName(aeName) : "there")},`,
+            body: `Your <strong>${cc.noun}</strong> with <strong>${esc(attendeeName)}</strong> has been rescheduled to a new time.${message ? `<br><br><em>"${esc(message)}"</em>` : ""}`,
+            detailRows: [
+              { label: "Previous", value: `${oldDateStr} at ${oldTimeStr}` },
+              { label: "New Date", value: newDateStr },
+              { label: "New Time", value: newTimeStr },
+              { label: "Duration", value: `${newBooking.duration} minutes` },
+            ],
+            alertBox: { text: `Your ${cc.noun} has been rescheduled to a new time.`, type: "info" },
+          })
+        : parentEmailBuilder(getFirstName(aeName) || ae.split("@")[0]);
       await this.dispatchNotification({ userId: newBooking.parentUserId || newBooking.providerUserId, bookingId: newBooking.id, type: "EMAIL", channel: "booking_rescheduled", recipient: ae,
-        subject: `Your meeting with ${providerName} has been rescheduled`, body: html,
+        subject: cc.isCall ? `Your ${cc.noun} with ${attendeeName} has been rescheduled` : `Your meeting with ${providerName} has been rescheduled`, body: html,
       });
       if (aePhone) {
         await this.dispatchSmsTemplate({ userId: newBooking.parentUserId || newBooking.providerUserId, bookingId: newBooking.id, channel: "booking_rescheduled", recipient: aePhone,

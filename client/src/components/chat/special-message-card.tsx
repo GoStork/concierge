@@ -8,6 +8,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { SessionMessage } from "./chat-types";
 import { CostSheetDraftApprovalCard } from "./cost-sheet-draft-approval-card";
 import { InvoiceDraftApprovalCard } from "./invoice-draft-approval-card";
+import { ProposedTimesCard } from "./proposed-times-card";
 import { InvoiceCard } from "@/components/invoice-card";
 
 // Phase 4: provider-side match readiness buttons. The agency answers on the
@@ -182,6 +183,19 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
         msg={{ id: msg.id, uiCardData: data }}
         sessionId={sessionId}
         onEdit={onEditCostSheetDraft}
+      />
+    );
+  }
+
+  // Phase 4: proposed time options - parents pick, providers watch status.
+  if (msg.uiCardType === "proposed_times" && sessionId) {
+    return (
+      <ProposedTimesCard
+        data={data}
+        messageId={msg.id}
+        sessionId={sessionId}
+        brandColor={brandColor}
+        canPick={false}
       />
     );
   }
