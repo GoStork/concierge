@@ -18,6 +18,7 @@ import {
   ForbiddenException,
   BadRequestException,
 } from "@nestjs/common";
+import { deriveIvfParentContext, evaluateIvfRequirements, ivfRequirementsFromProvider } from "../../../../shared/ivf-requirements";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiBody } from "@nestjs/swagger";
 import { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
@@ -474,6 +475,39 @@ export class ProvidersController {
   // ClinicSwipeCard needs (logo, locations, a few public member faces, the matched
   // + fallback success-rate rows) so the deck renders with NO per-card refetch -
   // the old `/api/providers/:id`-per-card pattern was what made the Clinics tab lag.
+  // Phase 4: does the authenticated parent meet this clinic's matching
+  // requirements? Powers the booking-time soft warning (and anything else
+  // that needs a server-verdict). Non-IVF providers always pass.
+  @Get("marketplace/clinics/:id/requirements-check")
+  @UseGuards(SessionOrJwtGuard)
+  async clinicRequirementsCheck(@Req() req: Request, @Param("id") id: string) {
+    const user = req.user as any;
+    const provider = await this.prisma.provider.findUnique({
+      where: { id },
+      select: {
+        ivfTwinsAllowed: true, ivfGenderSelectionAllowed: true, ivfTransferFromOtherClinics: true, ivfMaxAgeIp1: true,
+        ivfMaxAgeIp2: true, ivfBiologicalConnection: true, ivfAcceptingPatients: true,
+        services: { select: { status: true, providerType: { select: { name: true } } } },
+      },
+    });
+    if (!provider) return { pass: true, failed: [] };
+    const isIvf = (provider.services || []).some((sv: any) => sv.status === "APPROVED" && sv.providerType?.name === "IVF Clinic");
+    if (!isIvf) return { pass: true, failed: [] };
+
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { dateOfBirth: true, partnerAge: true, gender: true, partnerGender: true, relationshipStatus: true, sexualOrientation: true, parentAccountId: true },
+    });
+    const profile = dbUser?.parentAccountId
+      ? await this.prisma.intendedParentProfile.findUnique({
+          where: { parentAccountId: dbUser.parentAccountId },
+          select: { hasEmbryos: true, eggSource: true, spermSource: true, surrogateTwins: true },
+        })
+      : null;
+    const ctx = deriveIvfParentContext(dbUser as any, profile as any);
+    return evaluateIvfRequirements(ivfRequirementsFromProvider(provider), ctx);
+  }
+
   @Get("marketplace/clinics")
   @ApiOperation({ summary: "Lean clinic cards for the marketplace deck (no per-card refetch)" })
   @Header("Cache-Control", "public, max-age=30")
@@ -562,6 +596,7 @@ export class ProvidersController {
         ivfAcceptingPatients: true,
         // IVF matching requirements -> the clinic's "Parents Matching Requirements" tab.
         ivfTwinsAllowed: true,
+        ivfGenderSelectionAllowed: true,
         ivfTransferFromOtherClinics: true,
         ivfMaxAgeIp1: true,
         ivfMaxAgeIp2: true,

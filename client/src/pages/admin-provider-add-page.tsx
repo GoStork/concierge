@@ -78,6 +78,7 @@ export default function AdminProviderAddPage() {
   const [editingMemberIdx, setEditingMemberIdx] = useState<number | null>(null);
   // IVF matching requirements
   const [ivfTwinsAllowed, setIvfTwinsAllowed] = useState(false);
+  const [ivfGenderSelectionAllowed, setIvfGenderSelectionAllowed] = useState(false);
   const [ivfTransferFromOtherClinics, setIvfTransferFromOtherClinics] = useState(false);
   const [ivfMaxAgeIp1, setIvfMaxAgeIp1] = useState("");
   const [ivfMaxAgeIp2, setIvfMaxAgeIp2] = useState("");
@@ -280,6 +281,7 @@ export default function AdminProviderAddPage() {
       phone: previewPhone || null,
       yearFounded: previewYearFounded ? parseInt(previewYearFounded) : null,
       ivfTwinsAllowed,
+      ivfGenderSelectionAllowed,
       ivfTransferFromOtherClinics,
       ivfMaxAgeIp1: ivfMaxAgeIp1 ? parseInt(ivfMaxAgeIp1) : null,
       ivfMaxAgeIp2: ivfMaxAgeIp2 ? parseInt(ivfMaxAgeIp2) : null,
@@ -839,6 +841,10 @@ export default function AdminProviderAddPage() {
                   <Checkbox id="ivf-twins" checked={ivfTwinsAllowed} onCheckedChange={(v) => setIvfTwinsAllowed(!!v)} data-testid="checkbox-ivf-twins" />
                   <label htmlFor="ivf-twins" className="text-sm cursor-pointer">Twins allowed</label>
                 </div>
+                  <div className="flex items-center gap-3">
+                    <Checkbox id="ivf-gender-selection" checked={ivfGenderSelectionAllowed} onCheckedChange={(v) => setIvfGenderSelectionAllowed(!!v)} data-testid="checkbox-ivf-gender-selection" />
+                    <label htmlFor="ivf-gender-selection" className="text-sm cursor-pointer">Gender selection allowed</label>
+                  </div>
                 <div className="flex items-center gap-3">
                   <Checkbox id="ivf-transfer" checked={ivfTransferFromOtherClinics} onCheckedChange={(v) => setIvfTransferFromOtherClinics(!!v)} data-testid="checkbox-ivf-transfer" />
                   <label htmlFor="ivf-transfer" className="text-sm cursor-pointer">Transferring embryos from other clinics allowed</label>

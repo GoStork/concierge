@@ -231,6 +231,7 @@ export default function ProviderProfilePage() {
 
         const hasIvfData = isIvfClinic && (
           provider.ivfTwinsAllowed ||
+          provider.ivfGenderSelectionAllowed != null ||
           provider.ivfTransferFromOtherClinics ||
           provider.ivfMaxAgeIp1 != null ||
           provider.ivfMaxAgeIp2 != null ||
@@ -255,6 +256,7 @@ export default function ProviderProfilePage() {
                   <div className="space-y-2">
                     {[
                       { label: "Twins allowed", value: provider.ivfTwinsAllowed },
+                      { label: "Gender selection allowed", value: provider.ivfGenderSelectionAllowed },
                       { label: "Transferring embryos from other clinics allowed", value: provider.ivfTransferFromOtherClinics },
                     ].map(({ label, value }) => (
                       <div key={label} className="flex items-center gap-2">

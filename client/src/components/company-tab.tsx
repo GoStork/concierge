@@ -160,6 +160,7 @@ export default function CompanyTab() {
   const [isDirty, setIsDirty] = useState(false);
   // IVF Parents Matching Requirements
   const [ivfTwinsAllowed, setIvfTwinsAllowed] = useState(false);
+  const [ivfGenderSelectionAllowed, setIvfGenderSelectionAllowed] = useState(false);
   const [ivfTransferFromOtherClinics, setIvfTransferFromOtherClinics] = useState(false);
   const [ivfMaxAgeIp1, setIvfMaxAgeIp1] = useState("");
   const [ivfMaxAgeIp2, setIvfMaxAgeIp2] = useState("");
@@ -219,8 +220,16 @@ export default function CompanyTab() {
     });
   }
 
+  // Track which provider snapshot the form was initialized from. Re-sync
+  // whenever a NEWER row arrives (post-save refetch, cache -> fresh) so the
+  // form never sticks on stale cached values - but never clobber in-flight
+  // edits (isDirty guard).
+  const lastInitStampRef = useRef<string | null>(null);
   useEffect(() => {
-    if (provider && !initialized) {
+    if (provider) {
+      const stamp = String((provider as any).updatedAt ?? provider.id);
+      if (initialized && (lastInitStampRef.current === stamp || isDirty)) return;
+      lastInitStampRef.current = stamp;
       isInitializingRef.current = true;
       setName(provider.name || "");
       setAbout(provider.about || "");
@@ -262,6 +271,7 @@ export default function CompanyTab() {
       );
       // IVF Parents Matching Requirements
       setIvfTwinsAllowed(provider.ivfTwinsAllowed ?? false);
+      setIvfGenderSelectionAllowed(provider.ivfGenderSelectionAllowed ?? false);
       setIvfTransferFromOtherClinics(provider.ivfTransferFromOtherClinics ?? false);
       setIvfMaxAgeIp1(provider.ivfMaxAgeIp1 != null ? String(provider.ivfMaxAgeIp1) : "");
       setIvfMaxAgeIp2(provider.ivfMaxAgeIp2 != null ? String(provider.ivfMaxAgeIp2) : "");
@@ -292,14 +302,15 @@ export default function CompanyTab() {
       setSurrogacySurrogateRemovableFromCert(provider.surrogacySurrogateRemovableFromCert === true);
       setInitialized(true);
     }
-  }, [provider, initialized]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, initialized, isDirty]);
 
   useEffect(() => {
     if (!initialized) { setIsDirty(false); return; }
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, locations, teamMembers, ivfTwinsAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, locations, teamMembers, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   if ((!isProvider && !isGostorkAdmin) || !providerId) {
     return (
@@ -348,6 +359,7 @@ export default function CompanyTab() {
         ...(hasDonorServices ? { biometricMatchingAuthorized } : {}),
         // IVF Parents Matching Requirements
         ivfTwinsAllowed,
+        ivfGenderSelectionAllowed,
         ivfTransferFromOtherClinics,
         ivfMaxAgeIp1: ivfMaxAgeIp1 ? parseInt(ivfMaxAgeIp1) : null,
         ivfMaxAgeIp2: ivfMaxAgeIp2 ? parseInt(ivfMaxAgeIp2) : null,
@@ -717,6 +729,10 @@ export default function CompanyTab() {
               <div className="flex items-center gap-3">
                 <Checkbox id="ivf-twins" checked={ivfTwinsAllowed} onCheckedChange={(v) => setIvfTwinsAllowed(!!v)} disabled={readOnly} />
                 <label htmlFor="ivf-twins" className="text-sm cursor-pointer">Twins allowed</label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Checkbox id="ivf-gender-selection" checked={ivfGenderSelectionAllowed} onCheckedChange={(v) => setIvfGenderSelectionAllowed(!!v)} disabled={readOnly} />
+                <label htmlFor="ivf-gender-selection" className="text-sm cursor-pointer">Gender selection allowed</label>
               </div>
               <div className="flex items-center gap-3">
                 <Checkbox id="ivf-transfer" checked={ivfTransferFromOtherClinics} onCheckedChange={(v) => setIvfTransferFromOtherClinics(!!v)} disabled={readOnly} />

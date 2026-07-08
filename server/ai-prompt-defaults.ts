@@ -863,6 +863,7 @@ PARTNER CLINIC CHECKS (for each clinic in the partnerClinics array, if non-empty
    Family types: "single_woman", "single_man", "gay_couple", "straight_couple", "straight_married_couple"
    Derive from D0a/D0b: solo man → "single_man", solo woman → "single_woman", two dads → "gay_couple", two moms → "gay_couple", man+woman → "straight_couple"
 6. ivfTwinsAllowed (boolean): parent wants twins AND clinic's ivfTwinsAllowed = false → REJECT entire program.
+7. ivfGenderSelectionAllowed (boolean): parent wants to choose the embryo's gender AND clinic's ivfGenderSelectionAllowed = false → REJECT entire program (or tell the parent this clinic does not offer gender selection if they only mentioned it casually).
 
 REJECTION BEHAVIOR:
 → Do NOT emit [[MATCH_CARD]] for a rejected program.

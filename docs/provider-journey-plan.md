@@ -195,7 +195,17 @@ surrogacy/IVF because nothing ever set Booking.meetingSubtype.
         a slot - acceptance re-checks conflicts, creates the meetingSubtype
         booking, and invites everyone (parent account + surrogate email +
         host); "or let the parent pick any time" fallback remains
-- [ ] IVF admin-defined matching requirements (simple AND rules) - not
+- [x] IVF matching requirements (audit + full enforcement): clinic-defined
+      typed requirements already existed (Settings -> Company) with partial
+      AI enforcement; now unified on shared/ivf-requirements.ts evaluator -
+      AI clinic search derives the parent's context SERVER-side from their
+      profile (age from DOB, partner age, patient type from relationship/
+      gender/orientation, embryos-elsewhere from hasEmbryos, biological
+      connection from egg/sperm source) with model args as overrides;
+      biological-connection rule now enforced; marketplace clinic cards show
+      an amber "May not meet requirements" badge with reasons; booking
+      widget shows a soft heads-up (never blocks). Unknown parent data
+      always passes - conservative by design - not
       started, next item in this phase
 - [ ] User acceptance testing (tiles -> subtyped booking -> gated readiness
       -> badge + hold lifecycle -> both-sides gate -> prep bundle)

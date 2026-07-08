@@ -1,4 +1,5 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { deriveIvfParentContext, evaluateIvfRequirements, ivfRequirementsFromProvider } from "../../shared/ivf-requirements";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
@@ -1048,6 +1049,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "boolean",
               description: "Whether the parent is a first-time IVF patient (true) or has done IVF before (false). When true, shows new-patient-specific success rates.",
             },
+            wantsGenderSelection: {
+              type: "boolean",
+              description: "Pass true if the parent said they want to choose the embryo's gender (sex selection). Clinics with ivfGenderSelectionAllowed=false will be excluded.",
+            },
             wantsTwins: {
               type: "boolean",
               description: "Pass true if the parent said they are hoping for twins (from question A3). Clinics with ivfTwinsAllowed=false will be excluded.",
@@ -2055,7 +2060,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_clinics") {
-      const { query, location: clinicLocation, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient, wantsTwins, wantsEmbryoTransfer, parentAge1, parentAge2, patientType } = args as any;
+      const { query, location: clinicLocation, state, city, name: clinicName, limit: rawLimit, minSuccessRate, excludeIds, ageGroup, eggSource, isNewPatient, wantsTwins, wantsGenderSelection, wantsEmbryoTransfer, parentAge1, parentAge2, patientType, userId: reqUserId } = args as any;
+
+      // Matching-requirements context: derived from the parent's profile
+      // (server-injected userId), with model-supplied args as overrides.
+      let parentCtx: import("../../shared/ivf-requirements").IvfParentContext = {};
+      if (reqUserId) {
+        try {
+          const reqUser = await prisma.user.findUnique({
+            where: { id: reqUserId },
+            select: { dateOfBirth: true, partnerAge: true, gender: true, partnerGender: true, relationshipStatus: true, sexualOrientation: true, parentAccountId: true },
+          });
+          const reqProfile = reqUser?.parentAccountId
+            ? await prisma.intendedParentProfile.findUnique({
+                where: { parentAccountId: reqUser.parentAccountId },
+                select: { hasEmbryos: true, eggSource: true, spermSource: true, surrogateTwins: true },
+              })
+            : null;
+          parentCtx = deriveIvfParentContext(reqUser as any, reqProfile as any);
+        } catch { /* profile lookup is best-effort - unknowns skip rules */ }
+      }
+      if (wantsTwins != null) parentCtx.wantsTwins = wantsTwins;
+      if (wantsGenderSelection != null) parentCtx.wantsGenderSelection = wantsGenderSelection;
+      if (wantsEmbryoTransfer != null) parentCtx.hasEmbryosElsewhere = wantsEmbryoTransfer;
+      if (parentAge1 != null) parentCtx.age1 = parentAge1;
+      if (parentAge2 != null) parentCtx.age2 = parentAge2;
+      if (patientType) parentCtx.patientType = patientType;
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
       const targetAgeGroup = ageGroup || "under_35";
       const targetEggSource = eggSource || "own_eggs";
@@ -2069,10 +2099,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           select: { successRate: true, nationalAverage: true, ageGroup: true, isNewPatient: true, metricCode: true, submetric: true, top10pct: true, cycleCount: true, profileType: true },
         },
         ivfTwinsAllowed: true,
+        ivfGenderSelectionAllowed: true,
         ivfTransferFromOtherClinics: true,
         ivfMaxAgeIp1: true,
         ivfMaxAgeIp2: true,
         ivfAcceptingPatients: true,
+        ivfBiologicalConnection: true,
       };
 
       let clinics: any[];
@@ -2155,35 +2187,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
-      // Apply matching requirement filters
+      // Apply matching requirement filters via the shared evaluator - the
+      // same rules the marketplace badge and booking-time check use.
       const excludedByRequirements: string[] = [];
       clinics = clinics.filter((c: any) => {
-        // Twins: if parent wants twins and clinic does not allow it, exclude
-        if (wantsTwins === true && c.ivfTwinsAllowed === false) {
-          excludedByRequirements.push(`${c.name} (does not allow twins)`);
+        const check = evaluateIvfRequirements(ivfRequirementsFromProvider(c), parentCtx);
+        if (!check.pass) {
+          excludedByRequirements.push(`${c.name} (${check.failed.join("; ")})`);
           return false;
-        }
-        // Embryo transfer: if parent wants to transfer embryos from another clinic and clinic doesn't allow it, exclude
-        if (wantsEmbryoTransfer === true && c.ivfTransferFromOtherClinics === false) {
-          excludedByRequirements.push(`${c.name} (does not accept embryo transfers from other clinics)`);
-          return false;
-        }
-        // IP1 max age: if clinic has a max age for IP1 and parent exceeds it, exclude
-        if (parentAge1 != null && c.ivfMaxAgeIp1 != null && parentAge1 > c.ivfMaxAgeIp1) {
-          excludedByRequirements.push(`${c.name} (max age for IP1 is ${c.ivfMaxAgeIp1})`);
-          return false;
-        }
-        // IP2 max age: if clinic has a max age for IP2 and parent exceeds it, exclude
-        if (parentAge2 != null && c.ivfMaxAgeIp2 != null && parentAge2 > c.ivfMaxAgeIp2) {
-          excludedByRequirements.push(`${c.name} (max age for IP2 is ${c.ivfMaxAgeIp2})`);
-          return false;
-        }
-        // Patient type: if clinic has a restricted accepting list and parent type is not in it, exclude
-        if (patientType && Array.isArray(c.ivfAcceptingPatients) && c.ivfAcceptingPatients.length > 0) {
-          if (!c.ivfAcceptingPatients.includes(patientType)) {
-            excludedByRequirements.push(`${c.name} (does not serve ${patientType.replace(/_/g, " ")} patients)`);
-            return false;
-          }
         }
         return true;
       });

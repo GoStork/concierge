@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { deriveIvfParentContext, evaluateIvfRequirements, ivfRequirementsFromProvider } from "@shared/ivf-requirements";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -192,11 +193,13 @@ export function ClinicSwipeCard({
     )),
     matching: {
       twinsAllowed: provider.ivfTwinsAllowed ?? null,
+      genderSelectionAllowed: provider.ivfGenderSelectionAllowed ?? null,
       transferFromOtherClinics: provider.ivfTransferFromOtherClinics ?? null,
       maxAgeIp1: provider.ivfMaxAgeIp1 ?? null,
       maxAgeIp2: provider.ivfMaxAgeIp2 ?? null,
       biologicalConnection: provider.ivfBiologicalConnection ?? null,
       acceptingPatients: Array.isArray(provider.ivfAcceptingPatients) ? provider.ivfAcceptingPatients : null,
+      eggDonorType: provider.ivfEggDonorType ?? null,
     },
     // Surrogate Matching Requirements only matter to parents seeking surrogacy.
     showSurrogateMatching: parentProfile?.needsSurrogate === true
@@ -245,12 +248,28 @@ export function ClinicSwipeCard({
   const successBadge = isTop10 ? "Top 10%" : null;
   const logoSrc = getPhotoSrc(provider.logoUrl) || null;
 
+  // Phase 4: does this parent meet the clinic's matching requirements?
+  // Same shared evaluator the AI search + booking check use. Providers and
+  // admins browsing the marketplace get no badge (parentAccountId gate).
+  const requirementsCheck = useMemo(() => {
+    if (!parentAccountId || !provider) return null;
+    const ctx = deriveIvfParentContext(user as any, parentProfile || null);
+    return evaluateIvfRequirements(ivfRequirementsFromProvider(provider), ctx);
+  }, [parentAccountId, provider, user, parentProfile]);
+
   return (
     <SwipeDeckCard
       id={providerId}
       photos={[]}
       title={provider.name}
-      pinnedHeader={{ logoUrl: logoSrc, title: provider.name, location: null, badge: successBadge }}
+      pinnedHeader={{
+        logoUrl: logoSrc,
+        title: provider.name,
+        location: null,
+        badge: successBadge,
+        warningBadge: requirementsCheck && !requirementsCheck.pass ? "May not meet requirements" : null,
+        warningDetail: requirementsCheck && !requirementsCheck.pass ? `This clinic ${requirementsCheck.failed.join("; ")}.` : null,
+      }}
       sponsored={!!(provider as any).sponsoredUntil && new Date((provider as any).sponsoredUntil).getTime() > Date.now()}
       firstSlidePlain
       tabs={tabs}

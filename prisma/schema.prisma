@@ -67,6 +67,8 @@ model Provider {
   autoFeaturesEnabled                   Json?
   // IVF Clinic matching requirements
   ivfTwinsAllowed                       Boolean                     @default(false)
+  // null = clinic hasn't answered (unknown skips the matching rule)
+  ivfGenderSelectionAllowed             Boolean?
   ivfTransferFromOtherClinics           Boolean                     @default(false)
   ivfMaxAgeIp1                          Int?
   ivfMaxAgeIp2                          Int?

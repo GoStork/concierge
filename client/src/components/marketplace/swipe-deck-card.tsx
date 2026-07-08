@@ -61,6 +61,10 @@ interface SwipeDeckCardProps {
     // pre-resolved { flag emoji, short country label }.
     countries?: { flag: string; label: string }[] | null;
     badge?: string | null;
+    // Amber caution chip (e.g. "May not meet requirements") with an optional
+    // hover tooltip listing the reasons.
+    warningBadge?: string | null;
+    warningDetail?: string | null;
   } | null;
   // Clinics: keep the first slide photo-free (clean branded background) so the
   // header + success rate read clearly; doctor-face photos start on slide 1.
@@ -308,7 +312,7 @@ export function SwipeDeckCard({
               <div className="shrink-0 flex flex-col items-center text-center gap-2 pt-2">
                 {/* The plain cover has neither badge-render path (no photo overlay,
                     and it has a pinnedHeader), so render Sponsored + success here. */}
-                {(sponsored || pinnedHeader.badge) && (
+                {(sponsored || pinnedHeader.badge || pinnedHeader.warningBadge) && (
                   <div className="flex items-center justify-center gap-1.5 flex-wrap">
                     {sponsored && (
                       <Badge className="bg-accent/90 text-accent-foreground font-ui px-2.5 py-1 gap-1" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-sponsored-${id}`}>
@@ -318,6 +322,16 @@ export function SwipeDeckCard({
                     {pinnedHeader.badge && (
                       <Badge className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2.5 py-1 gap-1" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-success-${id}`}>
                         <TrendingUp className="w-3 h-3" /> {pinnedHeader.badge}
+                      </Badge>
+                    )}
+                    {pinnedHeader.warningBadge && (
+                      <Badge
+                        className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"
+                        style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                        title={pinnedHeader.warningDetail || undefined}
+                        data-testid={`badge-requirements-${id}`}
+                      >
+                        <Clock className="w-3 h-3" /> {pinnedHeader.warningBadge}
                       </Badge>
                     )}
                   </div>

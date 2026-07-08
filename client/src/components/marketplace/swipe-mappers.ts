@@ -962,11 +962,16 @@ export function getClinicTabs(opts: {
   // IVF parent-matching requirements -> the "Parents Matching Requirements" tab.
   matching?: {
     twinsAllowed?: boolean | null;
+    genderSelectionAllowed?: boolean | null;
     transferFromOtherClinics?: boolean | null;
     maxAgeIp1?: number | null;
     maxAgeIp2?: number | null;
     biologicalConnection?: string | null;
     acceptingPatients?: string[] | null;
+    // Informational only (NOT a matching rule): what donor type this
+    // clinic's egg donor program offers - so a parent wanting a KNOWN
+    // donor learns upfront that a clinic only has anonymous donors.
+    eggDonorType?: string | null;
   } | null;
   // IVF surrogate-matching requirements -> the "Surrogate Matching Requirements"
   // tab, shown ONLY when showSurrogateMatching is true (parent seeks surrogacy).
@@ -1089,6 +1094,7 @@ export function getClinicTabs(opts: {
   const m = opts.matching || {};
   const matchItems: TabItem[] = [];
   if (m.twinsAllowed != null) matchItems.push({ label: m.twinsAllowed ? "Twin pregnancies allowed" : "Singleton pregnancies only", value: "", icon: Baby });
+  if (m.genderSelectionAllowed != null) matchItems.push({ label: m.genderSelectionAllowed ? "Gender selection allowed" : "No gender selection", value: "", icon: Users });
   if (m.transferFromOtherClinics != null) matchItems.push({ label: m.transferFromOtherClinics ? "Accepts embryo transfers from other clinics" : "No outside embryo transfers", value: "", icon: Snowflake });
   if (m.maxAgeIp1 != null) matchItems.push({ label: `Max age (IP1): ${m.maxAgeIp1}`, value: "", icon: Calendar });
   if (m.maxAgeIp2 != null) matchItems.push({ label: `Max age (IP2): ${m.maxAgeIp2}`, value: "", icon: Calendar });
@@ -1105,6 +1111,13 @@ export function getClinicTabs(opts: {
   };
   const accepting = (m.acceptingPatients || []).map((a) => ACCEPT_LABELS[a] || a).filter(Boolean);
   if (accepting.length > 0) matchItems.push({ label: `Accepts: ${accepting.join(", ")}`, value: "", icon: Users });
+  if (m.eggDonorType) {
+    const edt = m.eggDonorType === "anonymous" ? "Anonymous egg donors only"
+      : m.eggDonorType === "known" ? "Known egg donors only"
+      : m.eggDonorType === "both" ? "Anonymous & known egg donors"
+      : m.eggDonorType;
+    matchItems.push({ label: edt, value: "", icon: Heart });
+  }
   if (matchItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Parents Matching Requirements", items: matchItems });
 
   // Surrogate Matching Requirements - the clinic's rules for the surrogate they

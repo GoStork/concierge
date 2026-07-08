@@ -930,6 +930,19 @@ export function InlineBookingCalendar({
     },
   });
 
+  // Phase 4: soft warning when the parent doesn't meet the clinic's matching
+  // requirements (IVF clinics only - everyone else passes automatically).
+  // Never blocks the booking; clinics make exceptions.
+  const { data: requirementsCheck } = useQuery<{ pass: boolean; failed: string[] }>({
+    queryKey: ["/api/providers/marketplace/clinics/requirements-check", consultationMeta?.providerId],
+    queryFn: async () => {
+      const r = await fetch(`/api/providers/marketplace/clinics/${consultationMeta!.providerId}/requirements-check`, { credentials: "include" });
+      return r.ok ? r.json() : { pass: true, failed: [] };
+    },
+    enabled: !!consultationMeta?.providerId,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { data: availability, isLoading: slotsLoading } = useQuery({
     queryKey: ["/api/calendar/availability", slug, dateStr, bookerTimezone],
     queryFn: async () => {
@@ -1199,6 +1212,24 @@ export function InlineBookingCalendar({
         <Video className="w-3.5 h-3.5" />
         <span>Video call</span>
       </div>
+
+      {/* Phase 4: soft heads-up when the parent may not meet the clinic's
+          matching requirements. Informational only - booking stays open. */}
+      {requirementsCheck && !requirementsCheck.pass && (
+        <div
+          className="rounded-[var(--radius)] border px-3 py-2.5 text-xs leading-relaxed"
+          style={{
+            borderColor: "hsl(var(--brand-warning) / 0.4)",
+            background: "hsl(var(--brand-warning) / 0.08)",
+            color: "hsl(var(--foreground))",
+          }}
+          data-testid="requirements-warning"
+        >
+          <span className="font-semibold" style={{ color: "hsl(var(--brand-warning))" }}>Heads up:</span>{" "}
+          based on your profile, this clinic {requirementsCheck.failed.join("; ")}. Clinics sometimes make
+          exceptions, so you're welcome to book anyway - or ask me in the chat for clinics that match your profile.
+        </div>
+      )}
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">

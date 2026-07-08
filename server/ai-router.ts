@@ -302,6 +302,12 @@ async function callTier2Claude(
     if (authUserId && fc.name === "get_parent_meetings") {
       fc.args = { ...(fc.args || {}), userId: authUserId };
     }
+    // Clinic search: the matching-requirements check derives the parent's
+    // age / patient type / embryo situation SERVER-side from their profile,
+    // so enforcement never depends on the model remembering to pass args.
+    if (authUserId && fc.name === "search_clinics") {
+      fc.args = { ...(fc.args || {}), userId: authUserId };
+    }
     // Look-alike face match: both the parent identity and the photo to match
     // are server-supplied (never trust model-supplied values). photoUrl is the
     // session's most recent upload.
@@ -2228,7 +2234,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
             ivfSurrogateMaxMiscarriages: true, ivfSurrogateMaxAbortions: true,
             ivfSurrogateCovidVaccination: true,
             ivfMaxAgeIp1: true, ivfMaxAgeIp2: true,
-            ivfTwinsAllowed: true, ivfAcceptingPatients: true,
+            ivfTwinsAllowed: true, ivfGenderSelectionAllowed: true, ivfAcceptingPatients: true,
           },
         })
       : Promise.resolve(null);
@@ -2332,6 +2338,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
               if (clinicProvider.ivfMaxAgeIp1 != null) ipReqs.push(`primary parent max age ${clinicProvider.ivfMaxAgeIp1}`);
               if (clinicProvider.ivfMaxAgeIp2 != null) ipReqs.push(`secondary parent max age ${clinicProvider.ivfMaxAgeIp2}`);
               if (clinicProvider.ivfTwinsAllowed === false) ipReqs.push("does not allow twins transfers");
+              if (clinicProvider.ivfGenderSelectionAllowed === false) ipReqs.push("does not allow selecting the embryo's gender");
               if (ipReqs.length > 0) {
                 parts.push(`IVF CLINIC PARENT REQUIREMENTS (${clinicProvider.name}): ${ipReqs.join(", ")}.`);
               }

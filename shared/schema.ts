@@ -275,6 +275,7 @@ export const insertProviderSchema = z.object({
   biometricMatchingAuthorizedAt: z.union([z.string(), z.date()]).nullable().optional(),
   // IVF Clinic matching requirements
   ivfTwinsAllowed: z.boolean().optional(),
+  ivfGenderSelectionAllowed: z.boolean().nullable().optional(),
   ivfTransferFromOtherClinics: z.boolean().optional(),
   ivfMaxAgeIp1: z.number().int().nullable().optional(),
   ivfMaxAgeIp2: z.number().int().nullable().optional(),
