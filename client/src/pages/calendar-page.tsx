@@ -20,6 +20,7 @@ import {
   Loader2, Plus, Copy, Check, Video, Clock, User, Users, Calendar, List, ChevronLeft, ChevronRight, X, Settings, CalendarClock, Phone, MapPin, Link2, Trash2, Pencil, FileText, Crown, Search, Filter, SlidersHorizontal, Repeat, CalendarCheck, Ban, ChevronDown, AlertTriangle,
 } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { GoogleIcon, MicrosoftIcon, AppleIcon } from "@/components/calendar/calendar-provider-icons";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
 const locales = { "en-US": enUS };
@@ -1574,6 +1575,28 @@ export default function CalendarPage() {
   const hasGoogleConnection = connections?.some((c: any) => c.provider === "google" && c.connected);
   const hasMicrosoftConnection = connections?.some((c: any) => c.provider === "microsoft" && c.connected);
   const expiredConnections = connections?.filter((c: any) => c.tokenValid === false && (c.provider === "google" || c.provider === "microsoft" || c.provider === "apple")) ?? [];
+  // "Not connected" = the connections query resolved with zero rows. While the
+  // query is still loading, connections is undefined, so the banner never flashes.
+  const noCalendarConnected = connections !== undefined && connections.length === 0;
+
+  const startCalendarAuth = async (provider: "google" | "microsoft", email?: string) => {
+    const isMs = provider === "microsoft";
+    if (isMs) setMicrosoftReconnecting(true); else setGoogleReconnecting(true);
+    try {
+      const hint = email ? `?login_hint=${encodeURIComponent(email)}` : "";
+      const res = await fetch(`/api/calendar/${provider}/auth-url${hint}`, { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        toast({ title: data.message || "Failed to start calendar connection", variant: "destructive" });
+        if (isMs) setMicrosoftReconnecting(false); else setGoogleReconnecting(false);
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      toast({ title: "Failed to start calendar connection", variant: "destructive" });
+      if (isMs) setMicrosoftReconnecting(false); else setGoogleReconnecting(false);
+    }
+  };
 
   const { data: googleEvents } = useQuery<any[]>({
     queryKey: ["/api/calendar/google/events", rangeStart.toISOString(), rangeEnd.toISOString()],
@@ -2043,27 +2066,7 @@ export default function CalendarPage() {
                       variant="outline"
                       className="h-8 text-xs font-ui border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)]"
                       disabled={googleReconnecting || microsoftReconnecting}
-                      onClick={async () => {
-                        if (isMs) setMicrosoftReconnecting(true); else setGoogleReconnecting(true);
-                        try {
-                          const hint = conn.email ? `?login_hint=${encodeURIComponent(conn.email)}` : "";
-                          const res = await fetch(`/api/calendar/${conn.provider}/auth-url${hint}`, { credentials: "include" });
-                          const data = await res.json();
-                          if (!res.ok) {
-                            toast({ title: data.message || "Failed to start reconnection", variant: "destructive" });
-                            if (isMs) setMicrosoftReconnecting(false); else setGoogleReconnecting(false);
-                            return;
-                          }
-                          if (data.url) window.location.href = data.url;
-                          else {
-                            toast({ title: "Failed to start reconnection", variant: "destructive" });
-                            if (isMs) setMicrosoftReconnecting(false); else setGoogleReconnecting(false);
-                          }
-                        } catch {
-                          toast({ title: "Failed to start reconnection", variant: "destructive" });
-                          if (isMs) setMicrosoftReconnecting(false); else setGoogleReconnecting(false);
-                        }
-                      }}
+                      onClick={() => startCalendarAuth(conn.provider, conn.email)}
                     >
                       {isReconnecting ? (
                         <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
@@ -2074,6 +2077,64 @@ export default function CalendarPage() {
                     </Button>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {noCalendarConnected && (
+        <div className="rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.4)] bg-[hsl(var(--brand-warning)/0.08)] p-4" data-testid="banner-connect-calendar">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-[hsl(var(--brand-warning))] shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-ui font-medium text-foreground">
+                No calendar connected
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isParentUser
+                  ? "Connect your calendar to automatically filter available booking slots based on your schedule, and sync confirmed appointments to your calendar."
+                  : "Connect your calendar to sync events and prevent double-bookings. Events from connected calendars will appear as busy blocks."}
+              </p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs font-ui border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)]"
+                  disabled={googleReconnecting || microsoftReconnecting}
+                  onClick={() => startCalendarAuth("google")}
+                  data-testid="button-banner-connect-google"
+                >
+                  {googleReconnecting ? (
+                    <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                  ) : (
+                    <GoogleIcon className="w-3.5 h-3.5 mr-1.5" />
+                  )}
+                  Connect Google Calendar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs font-ui border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)]"
+                  disabled={googleReconnecting || microsoftReconnecting}
+                  onClick={() => startCalendarAuth("microsoft")}
+                  data-testid="button-banner-connect-microsoft"
+                >
+                  {microsoftReconnecting ? (
+                    <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+                  ) : (
+                    <MicrosoftIcon className="w-3.5 h-3.5 mr-1.5" />
+                  )}
+                  Connect Microsoft Calendar
+                </Button>
+                <Link
+                  to="/account/calendar?connect=apple"
+                  className="inline-flex items-center h-8 px-3 text-xs font-ui font-medium rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.5)] text-foreground hover:bg-[hsl(var(--brand-warning)/0.1)] transition-colors"
+                  data-testid="link-banner-connect-apple"
+                >
+                  <AppleIcon className="w-3.5 h-3.5 mr-1.5" />
+                  Connect Apple Calendar
+                </Link>
               </div>
             </div>
           </div>
