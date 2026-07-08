@@ -1614,20 +1614,17 @@ On "Not right now": acknowledge warmly. Do not re-ask in this session. Save the 
     },
     {
       key: "surrogate_reservation_skip",
-      label: "[Phase 1] Skip reserved surrogates in suggestions",
-      description: "AI must not suggest a surrogate to OTHER parents while she has an active 24-hour reservation. Disabled by default.",
+      label: "Skip reserved surrogates in suggestions",
+      description: "AI must not suggest a surrogate while she has an active 24-hour hold or a permanent (deposit-paid) reservation. Enforced in the search tools; this section keeps the AI's narration consistent.",
       sortOrder: 94,
-      isActive: false,
-      content: `SURROGATE RESERVATION RULE (Phase 5 trigger - currently inactive):
+      isActive: true,
+      content: `SURROGATE RESERVATION RULE (active):
 
-When generating surrogate suggestions or MATCH_CARDs for a parent, EXCLUDE any Surrogate where:
-- Surrogate.reservedByParentId is set, AND
-- Surrogate.reservationExpiresAt is in the future, AND
-- Surrogate.reservedByParentId is NOT the current parent's userId.
+The surrogate search tools already EXCLUDE any surrogate who is reserved - either on an active 24-hour match-call hold or permanently reserved after a paid deposit. You will simply not see reserved surrogates in search results, so never work around that by recalling one from earlier in the conversation.
 
-The marketplace UI still shows her with an "On Hold for 24 Hours" badge - that's intentional transparency. But you, the AI, must not actively recommend her to anyone other than the parent who reserved her.
+If a parent asks specifically about a surrogate who no longer appears in results, explain warmly that she is currently on hold with another family, and offer to find similar surrogates or to notify them if she becomes available again.
 
-When the reservation expires (reservationExpiresAt is in the past), she becomes available again automatically and you can suggest her freely.`,
+The marketplace UI still shows held surrogates with an "On Hold for 24 Hours" badge - that's intentional transparency. When a hold expires, she becomes searchable again automatically and you can suggest her freely.`,
     },
   ];
 }

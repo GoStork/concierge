@@ -240,7 +240,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       where: { userId: { in: accountUserIds } },
       orderBy: { updatedAt: "desc" },
       include: {
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         provider: { select: { id: true, name: true, logoUrl: true } },
       },
     });
@@ -462,7 +462,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: [{ humanRequested: "desc" }, { updatedAt: "desc" }],
@@ -988,7 +988,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: { updatedAt: "desc" },
@@ -3067,24 +3067,61 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
 
           // Phase 3: when the provider has invoice auto-draft enabled, post a
           // provider approval card instead of creating the invoice directly.
-          // Match-call deposits (24h reservation window) always go direct.
-          // "legacy" = gates off -> fall through to the original direct path.
-          // skipped/blocked results share the direct path's shapes so the
-          // handling below covers both engines.
-          const draftRes = await billing.tryDraftInvoiceForReadiness(
-            providerSessionId,
-            parentName,
-            { isMatchCall: cardData?.isMatchCall === true },
-          );
+          // Phase 4: MATCH CALLS need BOTH sides to say yes - the parent's
+          // yes alone never fires the invoice. tryFinalizeMatch evaluates the
+          // agency's answer too and only then sends the 24h deposit invoice.
+          // "legacy" = gates off -> original direct path. skipped/blocked
+          // results share the direct path's shapes for the handling below.
           let result: Awaited<ReturnType<typeof billing.createInvoiceFromReadiness>> | null = null;
-          if (draftRes.status === "legacy") {
-            result = await billing.createInvoiceFromReadiness(providerSessionId);
-          } else if (draftRes.status === "drafted") {
-            console.log(`[parent-confirm-ready] Invoice draft ${draftRes.messageId} posted for provider approval (session ${providerSessionId})`);
-          } else if (draftRes.status === "skipped") {
-            console.log(`[parent-confirm-ready] Invoice draft skipped: ${draftRes.reason}`);
+          if (cardData?.isMatchCall === true && cardData?.bookingId) {
+            const matchRes = await billing.tryFinalizeMatch(cardData.bookingId);
+            if (matchRes.status === "finalized") {
+              console.log(`[parent-confirm-ready] Match finalized - invoice ${matchRes.invoiceId} sent (booking ${cardData.bookingId})`);
+            } else if (matchRes.status === "waiting") {
+              console.log(`[parent-confirm-ready] Match waiting on ${matchRes.waitingOn} (booking ${cardData.bookingId})`);
+              // Reassure the parent, nudge the agency to answer its question.
+              await prisma.aiChatMessage.create({
+                data: {
+                  sessionId: session.id,
+                  role: "assistant",
+                  content: `Wonderful! I've let ${providerName} know you're ready. As soon as they confirm on the surrogate's side, your secure payment link will arrive right here - and the hold stays yours in the meantime.`,
+                  senderType: "system",
+                  senderName: "GoStork",
+                },
+              }).catch(() => {});
+              await prisma.aiChatMessage.create({
+                data: {
+                  sessionId: providerSessionId,
+                  role: "assistant",
+                  content: `${parentName} just confirmed they're ready to move forward! We're waiting on your side - answer the match question above and the deposit invoice goes out automatically.`,
+                  senderType: "system",
+                  senderName: "GoStork",
+                  uiCardType: "provider_only",
+                },
+              }).catch(() => {});
+            } else if (matchRes.status === "skipped" && matchRes.reason === "NOT_A_MATCH_CALL") {
+              // No provider readiness card exists (pre-Phase-4 booking) - old direct path.
+              result = await billing.createInvoiceFromReadiness(providerSessionId);
+            } else if (matchRes.status === "skipped") {
+              console.log(`[parent-confirm-ready] Match finalize skipped: ${matchRes.reason}`);
+            } else {
+              result = matchRes as any;
+            }
           } else {
-            result = draftRes as any;
+            const draftRes = await billing.tryDraftInvoiceForReadiness(
+              providerSessionId,
+              parentName,
+              { isMatchCall: cardData?.isMatchCall === true },
+            );
+            if (draftRes.status === "legacy") {
+              result = await billing.createInvoiceFromReadiness(providerSessionId);
+            } else if (draftRes.status === "drafted") {
+              console.log(`[parent-confirm-ready] Invoice draft ${draftRes.messageId} posted for provider approval (session ${providerSessionId})`);
+            } else if (draftRes.status === "skipped") {
+              console.log(`[parent-confirm-ready] Invoice draft skipped: ${draftRes.reason}`);
+            } else {
+              result = draftRes as any;
+            }
           }
 
           if (result === null) {
@@ -3181,19 +3218,24 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
     }
 
     // --- "Thank you" chat message (one per session, no time limit) ---
-    const existingConfirm = await prisma.aiChatMessage.findFirst({
-      where: { sessionId: session.id, senderName: "GoStork", content: { contains: "Thank you for letting us know" } },
-    });
-    if (!existingConfirm) {
-      await prisma.aiChatMessage.create({
-        data: {
-          sessionId: session.id,
-          role: "assistant",
-          content: `Thank you for letting us know! We're preparing your payment invoice now. Our team will send it to you shortly.`,
-          senderType: "system",
-          senderName: "GoStork",
-        },
+    // Match calls get their own status message from the both-sides gate above
+    // ("waiting for the agency" / invoice announce) - the generic "preparing
+    // your invoice" line would contradict it.
+    if (cardData?.isMatchCall !== true) {
+      const existingConfirm = await prisma.aiChatMessage.findFirst({
+        where: { sessionId: session.id, senderName: "GoStork", content: { contains: "Thank you for letting us know" } },
       });
+      if (!existingConfirm) {
+        await prisma.aiChatMessage.create({
+          data: {
+            sessionId: session.id,
+            role: "assistant",
+            content: `Thank you for letting us know! We're preparing your payment invoice now. Our team will send it to you shortly.`,
+            senderType: "system",
+            senderName: "GoStork",
+          },
+        });
+      }
     }
 
     res.json({ success: true, message: "Confirmed. GoStork will send your invoice shortly." });

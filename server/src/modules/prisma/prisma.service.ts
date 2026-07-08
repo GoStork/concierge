@@ -247,6 +247,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.sponsorshipItem;
   }
 
+  get conciergeAsset() {
+    return prisma.conciergeAsset;
+  }
+
   get sponsoredRankSnapshot() {
     return prisma.sponsoredRankSnapshot;
   }

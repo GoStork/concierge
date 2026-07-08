@@ -2273,3 +2273,17 @@ model SponsorshipItem {
   @@unique([sponsorshipId, entityType, entityId])
   @@index([entityType, entityId])
 }
+
+// Phase 4: admin-uploaded concierge documents (e.g. the Match Call prep
+// guide PDF sent to parents when a match call is scheduled). One row per
+// well-known key; re-uploading replaces the file.
+model ConciergeAsset {
+  id               String   @id @default(uuid())
+  key              String   @unique // e.g. "match_call_prep_guide"
+  fileName         String
+  objectPath       String // GCS object path - served via signed-URL redirect
+  contentType      String   @default("application/pdf")
+  uploadedByUserId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

@@ -211,6 +211,12 @@ export interface SwipeDeckProfile {
   // an explicit badge so parents see at a glance that the donor can't be
   // booked right now (or is not yet approved).
   donorStatus: "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
+  // Phase 4 (surrogates only): set when the surrogate is on an active 24h
+  // match-call hold (reservationExpiresAt in the future). Renders the
+  // "On Hold for 24 Hours" badge. Permanent reservations (deposit paid)
+  // surface via donorStatus MATCHED once the agency updates status; the
+  // badge covers the decision window itself.
+  onHoldUntil?: string | null;
   // Frozen-lot inventory state, only populated for egg donors who offer
   // frozen eggs (donorType "Frozen Eggs" or "Fresh & Frozen"). null when
   // the donor has no frozen offering. For "Fresh & Frozen" donors this
@@ -315,6 +321,7 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     createdAt: dbDonor.createdAt ?? null,
     statusBadge: null,
     donorStatus: resolveEggDonorHeadlineStatus(dbDonor),
+    onHoldUntil: null,
     frozenLotStatus: normalizeFrozenLotStatus(dbDonor.frozenLotStatus),
     frozenEggAvailabilityRaw: (dbDonor.profileData as any)?.["Frozen Egg Availability"] || null,
     isExperienced: !!(dbDonor as any).isExperienced,
@@ -389,6 +396,10 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
     createdAt: dbSurrogate.createdAt ?? null,
     statusBadge: null,
     donorStatus: normalizeProfileStatus(dbSurrogate.status),
+    // Active 24h match-call hold -> "On Hold for 24 Hours" badge.
+    onHoldUntil: dbSurrogate.reservationExpiresAt && new Date(dbSurrogate.reservationExpiresAt) > new Date()
+      ? dbSurrogate.reservationExpiresAt
+      : null,
     frozenLotStatus: null,
     frozenEggAvailabilityRaw: null,
     isExperienced: !!(dbSurrogate as any).isExperienced,
@@ -463,6 +474,7 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
     createdAt: dbSperm.createdAt ?? null,
     statusBadge: null,
     donorStatus: normalizeProfileStatus(dbSperm.status),
+    onHoldUntil: null,
     frozenLotStatus: null,
     frozenEggAvailabilityRaw: null,
     isExperienced: !!(dbSperm as any).isExperienced,

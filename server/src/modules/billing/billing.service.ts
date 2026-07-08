@@ -864,18 +864,28 @@ export class BillingService {
     providerType: string;
     isMatchCall: boolean; // true for surrogacy match calls
     dueAt?: Date;         // for surrogacy 24h countdown
+    /** e.g. "Surrogate #00070" - names the match-call subject in the copy. */
+    subjectLabel?: string | null;
+    /** When the 24h hold on the surrogate releases (match calls only). */
+    holdUntil?: Date | null;
   }) {
-    const { sessionId, bookingId, providerName, providerType, isMatchCall, dueAt } = params;
+    const { sessionId, bookingId, providerName, providerType, isMatchCall, dueAt, subjectLabel, holdUntil } = params;
 
     let content = "";
     let buttonLabel = "Yes, I'm Ready";
 
-    if (providerType === "Surrogacy Agency" && isMatchCall) {
-      const deadline = dueAt
-        ? new Date(dueAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-        : "within 24 hours";
-      content = `Your match call is complete! ${providerName} has reserved this surrogate exclusively for you until ${deadline}. Confirm your deposit now to secure your match - after the deadline, she may be matched with another family.`;
-      buttonLabel = "Reserve Now - Pay Deposit";
+    // Match call branch FIRST - a multi-service agency (e.g. surrogacy +
+    // egg donation) resolves to its dominant providerType, so keying the
+    // match-call copy off providerType alone misses it.
+    if (isMatchCall) {
+      const who = subjectLabel || "your surrogate match";
+      const deadline = (holdUntil || dueAt)
+        ? new Date((holdUntil || dueAt)!).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+        : "the next 24 hours";
+      content = `That was a big moment - you just finished your match call with ${who}! Take a breath, talk it over together, and know that we're here for any questions. Everything about her - the prep guide, cost sheets, and updates - lives in your chat with ${providerName}; this space is just between us.
+
+One important thing: ${who} is now on hold exclusively for you until ${deadline}. If you'd like to move forward, let us know within that window - once it passes, the hold is released and she may be matched with another family. So, how are you feeling? Ready to move forward with her?`;
+      buttonLabel = "Yes, I'm Ready";
     } else if (providerType === "IVF Clinic") {
       content = `How did your consultation with ${providerName} go? Are you ready to move forward and begin your fertility treatment?`;
     } else if (providerType === "Egg Donor Agency" || providerType === "Egg Bank") {
@@ -1147,6 +1157,7 @@ export class BillingService {
       },
     });
     this.logger.log(`Invoice ${invoiceId} captured - PAID`);
+    await this.stickSurrogateHoldOnPayment(invoiceId);
     await this.notifyAdminInvoicePaid(invoiceId);
     // AT_CLEARANCE path also auto-fires the provider transfer.
     try {
@@ -1301,6 +1312,7 @@ export class BillingService {
     });
 
     await this.reflectPaymentInChat(invoice.id, "PAID");
+    await this.stickSurrogateHoldOnPayment(invoice.id);
     await this.notifyAdminInvoicePaid(invoice.id);
     await this.emitPaymentReceipt(invoice.id).catch(e =>
       this.logger.warn(`Payment receipt emission failed for ${invoice.id}: ${e?.message}`),
@@ -1857,6 +1869,171 @@ export class BillingService {
   }
 
   // ─── Admin notifications on payment ─────────────────────────────────────────
+
+  // ─── Phase 4: both-sides match gate ─────────────────────────────────────────
+  //
+  // For match calls the deposit invoice fires only when BOTH sides confirm:
+  //   - parent: readiness_prompt card (private session) answered "yes"
+  //   - agency (on the surrogate's behalf): provider_readiness_prompt card
+  //     (3-way session) answered "yes"
+  // Called after either side answers. Returns "waiting" until both are in.
+
+  async tryFinalizeMatch(bookingId: string): Promise<
+    | { status: "finalized"; invoiceId: string }
+    | { status: "waiting"; waitingOn: "parent" | "provider" }
+    | { status: "skipped"; reason: "NOT_A_MATCH_CALL" | "NO_PROVIDER" | "INVOICE_EXISTS" }
+    | { status: "blocked"; reason: "NO_QUOTE" | "NO_CONFIG" | "NO_DEFAULT_PAYMENT" | "BILLING_IDENTITY_INCOMPLETE"; message: string }
+  > {
+    const cards = await this.prisma.aiChatMessage.findMany({
+      where: {
+        uiCardType: { in: ["readiness_prompt", "provider_readiness_prompt"] },
+        uiCardData: { path: ["bookingId"], equals: bookingId },
+      },
+      select: { sessionId: true, uiCardType: true, uiCardData: true },
+      orderBy: { createdAt: "desc" },
+    });
+    const providerCard = cards.find(c => c.uiCardType === "provider_readiness_prompt");
+    if (!providerCard) return { status: "skipped", reason: "NOT_A_MATCH_CALL" };
+    const parentYes = cards.some(c => c.uiCardType === "readiness_prompt" && ((c.uiCardData as any) || {}).answered === "yes");
+    const providerYes = ((providerCard.uiCardData as any) || {}).answered === "yes";
+    if (!parentYes) return { status: "waiting", waitingOn: "parent" };
+    if (!providerYes) return { status: "waiting", waitingOn: "provider" };
+
+    const providerSessionId = providerCard.sessionId;
+    const session = await this.prisma.aiChatSession.findUnique({
+      where: { id: providerSessionId },
+      select: { userId: true, providerId: true, subjectProfileId: true, subjectType: true },
+    });
+    if (!session?.providerId) return { status: "skipped", reason: "NO_PROVIDER" };
+
+    const openInvoice = await this.prisma.invoice.findFirst({
+      where: { sessionId: providerSessionId, status: { in: ["AWAITING_PAYMENT", "AUTHORIZED", "PAYMENT_PROCESSING", "PAID"] } },
+      select: { id: true },
+    });
+    if (openInvoice) return { status: "skipped", reason: "INVOICE_EXISTS" };
+
+    // Official match: deposit invoice due in 24h from the double-yes moment.
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    let invoice;
+    try {
+      invoice = await this.createInvoice({
+        sessionId: providerSessionId,
+        providerId: session.providerId,
+        parentUserId: session.userId,
+        triggerSource: "AUTO_READINESS",
+        dueAt,
+        preferredServiceType: "SURROGACY",
+      });
+    } catch (err: any) {
+      return this.mapInvoiceCreationError(err);
+    }
+
+    // Extend the surrogate's hold to cover the full payment window - the
+    // expiry sweep must not release her while the invoice is live.
+    if (session.subjectProfileId && (session.subjectType || "").toLowerCase().includes("surrog")) {
+      await this.prisma.surrogate.updateMany({
+        where: { id: session.subjectProfileId, reservedByParentId: session.userId },
+        data: { reservationExpiresAt: dueAt },
+      }).catch(() => {});
+    }
+
+    // Celebrate FIRST, then the invoice lands right below it. The
+    // celebration flag makes the client fire the full-screen confetti.
+    const parentUser = await this.prisma.user.findUnique({
+      where: { id: session.userId },
+      select: { firstName: true, name: true },
+    }).catch(() => null);
+    const parentLabel = parentUser?.firstName || parentUser?.name || "you";
+    const who = ((providerCard.uiCardData as any) || {}).subjectLabel || "your surrogate";
+    const deadline = dueAt.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: providerSessionId,
+        role: "assistant",
+        content: `Congratulations, ${parentLabel} - IT'S A MATCH! 🎉
+
+You said yes, ${who} said yes, and we couldn't be happier for you. This is one of those moments this whole journey is about - take a second to soak it in.
+
+One last step to make it official: your deposit invoice is coming right up below. Complete it by ${deadline} and the match is yours.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardData: { celebration: "match_confirmed", bookingId },
+      },
+    }).catch(() => {});
+
+    await this.sendPaymentNotificationsToParent(invoice.id);
+    this.scheduleCountdownReminders(invoice.id, dueAt);
+
+    this.logger.log(`Match finalized for booking ${bookingId}: invoice ${invoice.id}, due ${dueAt.toISOString()}`);
+    return { status: "finalized", invoiceId: invoice.id };
+  }
+
+  /**
+   * Phase 4: the agency answered "no" on the surrogate's behalf - the match
+   * is off. Release the hold immediately and let the parent know gently.
+   */
+  async releaseMatchAfterProviderDecline(providerSessionId: string, subjectLabel: string | null) {
+    const session = await this.prisma.aiChatSession.findUnique({
+      where: { id: providerSessionId },
+      select: { userId: true, providerId: true, subjectProfileId: true, subjectType: true, provider: { select: { name: true } } },
+    });
+    if (!session) return;
+    if (session.subjectProfileId && (session.subjectType || "").toLowerCase().includes("surrog")) {
+      await this.prisma.surrogate.updateMany({
+        where: { id: session.subjectProfileId, reservedByParentId: session.userId },
+        data: { reservedByParentId: null, reservationExpiresAt: null },
+      }).catch(() => {});
+    }
+    const parentSession = await this.prisma.aiChatSession.findFirst({
+      where: { userId: session.userId, status: "ACTIVE", sessionType: "PARENT" },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+    if (parentSession) {
+      const who = subjectLabel || "the surrogate";
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: parentSession.id,
+          role: "assistant",
+          content: `I have an update from ${session.provider?.name || "the agency"}: after the match call, ${who} has decided not to move forward at this time. I know that's disappointing - this happens sometimes, and it's about her circumstances, not about you. When you're ready, I'd love to help you find other wonderful matches. Want me to pull some options?`,
+          senderType: "system",
+          senderName: "GoStork",
+        },
+      }).catch(() => {});
+    }
+  }
+
+  // Phase 4: a paid deposit makes the surrogate's 24h match-call hold
+  // permanent - reservedByParentId stays, reservationExpiresAt is cleared so
+  // the expiry sweep never releases her and the AI keeps excluding her.
+  // No-op for non-surrogacy sessions or when no active hold exists.
+  private async stickSurrogateHoldOnPayment(invoiceId: string) {
+    try {
+      const invoice = await this.prisma.invoice.findUnique({
+        where: { id: invoiceId },
+        select: { sessionId: true, parentUserId: true },
+      });
+      if (!invoice?.sessionId) return;
+      const session = await this.prisma.aiChatSession.findUnique({
+        where: { id: invoice.sessionId },
+        select: { subjectType: true, subjectProfileId: true },
+      });
+      if (!session?.subjectProfileId || !(session.subjectType || "").toLowerCase().includes("surrog")) return;
+      const res = await this.prisma.surrogate.updateMany({
+        where: {
+          id: session.subjectProfileId,
+          reservedByParentId: invoice.parentUserId,
+          reservationExpiresAt: { not: null },
+        },
+        data: { reservationExpiresAt: null },
+      });
+      if (res.count > 0) {
+        this.logger.log(`Surrogate ${session.subjectProfileId} hold made permanent (invoice ${invoiceId} paid)`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`stickSurrogateHoldOnPayment failed for invoice ${invoiceId}: ${e.message}`);
+    }
+  }
 
   private async notifyAdminInvoicePaid(invoiceId: string) {
     const invoice = await this.prisma.invoice.findUnique({

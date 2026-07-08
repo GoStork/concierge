@@ -15,6 +15,8 @@ import {
   Receipt,
   FileSignature,
   DollarSign,
+  HeartHandshake,
+  Stethoscope,
 } from "lucide-react";
 import { ChatPlusDrawer, type ChatPlusAction } from "./chat-plus-drawer";
 import { StagedFileChip } from "./staged-file-chip";
@@ -24,6 +26,8 @@ export type PlusBuiltinTile =
   | "camera"
   | "file"
   | "meeting"
+  | "matchCall"
+  | "doctorCall"
   | "costSheet"
   | "invoice"
   | "agreement";
@@ -41,6 +45,11 @@ interface ChatInputBarProps {
   testIdPrefix?: string;
   /** Optional callback when the Meeting tile is tapped. */
   onMeetingClick?: () => void;
+  /** Phase 4: surrogacy Match Call tile - shares the parent's calendar with
+   *  meetingSubtype MATCH_CALL so the post-call readiness + 24h hold fire. */
+  onMatchCallClick?: () => void;
+  /** Phase 4: IVF Doctor Call tile - meetingSubtype DOCTOR_CONSULTATION. */
+  onDoctorCallClick?: () => void;
   /** Optional callback when the Send Cost Sheet tile is tapped. */
   onCostSheetClick?: () => void;
   /** Optional callback when the Send Invoice tile is tapped. */
@@ -62,6 +71,8 @@ const PLUS_TILE_LABELS: Record<PlusBuiltinTile, string> = {
   camera: "Camera",
   file: "File",
   meeting: "Meeting",
+  matchCall: "Match Call",
+  doctorCall: "Doctor Call",
   costSheet: "Cost Sheet",
   invoice: "Invoice",
   agreement: "Agreement",
@@ -86,6 +97,8 @@ export function ChatInputBar({
   isUploading = false,
   testIdPrefix = "provider",
   onMeetingClick,
+  onMatchCallClick,
+  onDoctorCallClick,
   onCostSheetClick,
   onInvoiceClick,
   onAgreementClick,
@@ -173,6 +186,32 @@ export function ChatInputBar({
       },
       disabled: busy,
       testId: `btn-${testIdPrefix}-meeting`,
+    });
+  }
+  if (onMatchCallClick) {
+    builtinActions.push({
+      id: "matchCall",
+      label: PLUS_TILE_LABELS.matchCall,
+      icon: HeartHandshake,
+      onClick: () => {
+        setPlusOpen(false);
+        onMatchCallClick();
+      },
+      disabled: busy,
+      testId: `btn-${testIdPrefix}-match-call`,
+    });
+  }
+  if (onDoctorCallClick) {
+    builtinActions.push({
+      id: "doctorCall",
+      label: PLUS_TILE_LABELS.doctorCall,
+      icon: Stethoscope,
+      onClick: () => {
+        setPlusOpen(false);
+        onDoctorCallClick();
+      },
+      disabled: busy,
+      testId: `btn-${testIdPrefix}-doctor-call`,
     });
   }
   if (onCostSheetClick) {

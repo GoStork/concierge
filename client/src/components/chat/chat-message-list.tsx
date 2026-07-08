@@ -4,6 +4,7 @@ import { chatDateLabel } from "./chat-utils";
 import { WhisperProfileCard } from "./whisper-profile-card";
 import { SpecialMessageCard } from "./special-message-card";
 import { CostSheetDraftStack } from "./cost-sheet-draft-stack";
+import { CelebrationBurst } from "./celebration-burst";
 import { InlineBookingNotification } from "./inline-booking-notification";
 import type { SessionMessage, ViewerRole } from "./chat-types";
 import type { ChatPalette } from "@/lib/chat-palette";
@@ -302,6 +303,12 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                 {/* Whisper profile card */}
                 {msg.uiCardData?.whisperMatchCard && (
                   <WhisperProfileCard card={msg.uiCardData.whisperMatchCard} brandColor={brandColor} />
+                )}
+
+                {/* Full-screen confetti for celebration-flagged messages
+                    (e.g. "both sides said yes" match announcement) */}
+                {(msg.uiCardData as any)?.celebration && (
+                  <CelebrationBurst messageId={msg.id} createdAt={msg.createdAt} />
                 )}
 
                 {/* Message bubble + timestamp below */}

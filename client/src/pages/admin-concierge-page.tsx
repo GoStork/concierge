@@ -1111,6 +1111,99 @@ export default function AdminConciergePage() {
       <IntelligenceRulesCard />
 
       <KnowledgeBaseCard />
+
+      <ParentPrepGuidesCard />
     </div>
+  );
+}
+
+// Phase 4: admin-managed documents Eva sends to parents at journey moments.
+// Currently one slot: the Match Call prep guide (auto-attached in the
+// parent's chat when a match call gets scheduled). Upload replaces the file.
+function ParentPrepGuidesCard() {
+  const { toast } = useToast();
+  const assetQuery = useQuery<{ asset: { key: string; fileName: string; updatedAt: string } | null }>({
+    queryKey: ["/api/knowledge/concierge-assets/match_call_prep_guide"],
+  });
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/knowledge/concierge-assets/match_call_prep_guide", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Prep guide updated", description: `${data.asset.fileName} will now be sent to parents when a match call is scheduled.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/knowledge/concierge-assets/match_call_prep_guide"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const asset = assetQuery.data?.asset ?? null;
+  return (
+    <Card className="p-6 space-y-4">
+      <div>
+        <h3 className="font-heading font-semibold text-lg">Parent Prep Guides</h3>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Documents Eva automatically sends to parents at key journey moments.
+        </p>
+      </div>
+      <div className="rounded-lg border p-4 flex flex-wrap items-center justify-between gap-3 bg-secondary/30">
+        <div className="min-w-0">
+          <p className="font-medium text-sm">Match Call prep guide (PDF)</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Attached in the parent's chat as soon as their match call is confirmed, together with the 24-hour hold explanation.
+          </p>
+          {asset ? (
+            <p className="text-xs mt-1.5">
+              <a
+                href="/api/knowledge/concierge-assets/match_call_prep_guide/file"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:no-underline"
+                style={{ color: "hsl(var(--primary))" }}
+              >
+                {asset.fileName}
+              </a>
+              <span className="text-muted-foreground"> - updated {new Date(asset.updatedAt).toLocaleDateString()}</span>
+            </p>
+          ) : (
+            <p className="text-xs mt-1.5" style={{ color: "hsl(var(--brand-warning))" }}>
+              No guide uploaded yet - parents currently get the hold explanation without an attachment.
+            </p>
+          )}
+        </div>
+        <label className="shrink-0">
+          <input
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) uploadMutation.mutate(f);
+            }}
+            data-testid="prep-guide-upload-input"
+          />
+          <span
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius)] text-sm font-medium text-primary-foreground cursor-pointer transition-opacity hover:opacity-90"
+            style={{ backgroundColor: "hsl(var(--primary))" }}
+          >
+            <Upload className="w-4 h-4" />
+            {uploadMutation.isPending ? "Uploading..." : asset ? "Replace PDF" : "Upload PDF"}
+          </span>
+        </label>
+      </div>
+    </Card>
   );
 }

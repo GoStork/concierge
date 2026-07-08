@@ -10,6 +10,77 @@ import { CostSheetDraftApprovalCard } from "./cost-sheet-draft-approval-card";
 import { InvoiceDraftApprovalCard } from "./invoice-draft-approval-card";
 import { InvoiceCard } from "@/components/invoice-card";
 
+// Phase 4: provider-side match readiness buttons. The agency answers on the
+// surrogate's behalf after a match call; "yes" plus the parent's yes fires
+// the 24h deposit invoice, "no" releases the hold and Eva tells the parent.
+export function ProviderReadinessButtons({
+  sessionId,
+  messageId,
+  data,
+  brandColor,
+}: {
+  sessionId: string;
+  messageId: string;
+  data: { answered?: "yes" | "no" | null; subjectLabel?: string | null; parentName?: string | null };
+  brandColor: string;
+}) {
+  const [answered, setAnswered] = useState<"yes" | "no" | null>(data.answered ?? null);
+  const [pending, setPending] = useState(false);
+  const respond = async (answer: "yes" | "no") => {
+    setPending(true);
+    try {
+      await apiRequest("POST", `/api/sessions/${sessionId}/provider-readiness/${messageId}/respond`, { answer });
+      setAnswered(answer);
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", sessionId] });
+    } catch {
+      // Leave buttons active so the provider can retry.
+    } finally {
+      setPending(false);
+    }
+  };
+  if (answered === "yes") {
+    return (
+      <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]">
+        <Check className="w-3.5 h-3.5" />
+        Confirmed - {data.subjectLabel || "she"} is ready to move forward
+      </div>
+    );
+  }
+  if (answered === "no") {
+    return (
+      <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+        <X className="w-3.5 h-3.5" />
+        Not moving forward - hold released
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-2">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => respond("yes")}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+        style={{ backgroundColor: brandColor }}
+        data-testid={`provider-readiness-yes-${messageId}`}
+      >
+        <Check className="w-3.5 h-3.5" />
+        Yes, she's ready
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => respond("no")}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-background border border-border text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
+        data-testid={`provider-readiness-no-${messageId}`}
+      >
+        <X className="w-3.5 h-3.5" />
+        Not moving forward
+      </button>
+    </div>
+  );
+}
+
 // Phase 2: small parent-side affordance for the cost-sheet card footer.
 // Acknowledge persists ProviderQuote.parentAcknowledgedAt. "Have questions"
 // pre-populates the chat input via the onPrefillInput callback. Both are
@@ -111,6 +182,19 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
         msg={{ id: msg.id, uiCardData: data }}
         sessionId={sessionId}
         onEdit={onEditCostSheetDraft}
+      />
+    );
+  }
+
+  // Phase 4: provider answers the match readiness question (the question text
+  // itself renders as the message bubble; this adds the answer buttons).
+  if (msg.uiCardType === "provider_readiness_prompt" && sessionId && viewerRole !== "parent") {
+    return (
+      <ProviderReadinessButtons
+        sessionId={sessionId}
+        messageId={msg.id}
+        data={data}
+        brandColor={brandColor}
       />
     );
   }

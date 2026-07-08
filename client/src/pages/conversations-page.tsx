@@ -374,6 +374,7 @@ function WhisperProfileCard({ card, brandColor }: { card: any; brandColor: strin
           title={title}
           statusLabel={statusLabel}
           donorStatus={swipeProfile.donorStatus}
+          onHoldUntil={swipeProfile.onHoldUntil ?? null}
           frozenLotStatus={swipeProfile.frozenLotStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
@@ -1263,8 +1264,13 @@ const sendMessageMutation = useMutation({
     }
   }, [selectedSessionId, queryClient]);
 
-  const handleProviderMeeting = async () => {
+  // Phase 4: the Meeting tile shares the plain calendar; the Match Call /
+  // Doctor Call tiles share the SAME calendar but tag the resulting booking
+  // with meetingSubtype so the post-call readiness prompt (and, for match
+  // calls, the 24h surrogate hold) fire per the provider-type rules.
+  const handleProviderMeeting = async (subtype?: "MATCH_CALL" | "DOCTOR_CONSULTATION") => {
     if (!selectedSessionId) return;
+    const meetingSubtype = subtype === "MATCH_CALL" || subtype === "DOCTOR_CONSULTATION" ? subtype : null;
     try {
       const [slugRes, connectionsRes] = await Promise.all([
         fetch("/api/provider/calendar-slug", { credentials: "include" }),
@@ -1276,16 +1282,22 @@ const sendMessageMutation = useMutation({
         navigate("/account/calendar?connect=true");
         return;
       }
+      const content = meetingSubtype === "MATCH_CALL"
+        ? "Let's schedule your Match Call - pick a time that works for you!"
+        : meetingSubtype === "DOCTOR_CONSULTATION"
+          ? "Let's schedule your Doctor Call - pick a time that works for you!"
+          : "I've shared my calendar - pick a time that works for you!";
       sendMessageMutation.mutate({
         sessionId: selectedSessionId,
-        content: "I've shared my calendar - pick a time that works for you!",
+        content,
         uiCardType: "rich",
         uiCardData: {
           consultationCard: {
             memberBookingSlug: slug,
             memberName: (user as any)?.name,
-            bookingUrl: `${window.location.origin}/book/${slug}`,
+            bookingUrl: `${window.location.origin}/book/${slug}${meetingSubtype ? `?subtype=${meetingSubtype}` : ""}`,
             providerId: (user as any)?.providerId,
+            meetingSubtype,
           },
         },
       });
@@ -1293,6 +1305,26 @@ const sendMessageMutation = useMutation({
       alert("Failed to load calendar. Please try again.");
     }
   };
+
+  // Phase 4: which call tiles this provider gets. Match Call needs an
+  // approved Surrogacy Agency service AND a surrogate-subject session;
+  // Doctor Call needs an approved IVF Clinic service.
+  const providerServicesQuery = useQuery<any>({
+    queryKey: ["/api/providers", (user as any)?.providerId],
+    queryFn: async () => {
+      const res = await fetch(`/api/providers/${(user as any).providerId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!(user as any)?.providerId,
+    staleTime: 60_000,
+  });
+  const approvedServiceTypes: string[] = ((providerServicesQuery.data?.services || []) as any[])
+    .filter((s: any) => s.status === "APPROVED")
+    .map((s: any) => s.providerType?.name)
+    .filter(Boolean);
+  const providerHasSurrogacy = approvedServiceTypes.includes("Surrogacy Agency");
+  const providerHasIvf = approvedServiceTypes.includes("IVF Clinic");
 
   const [inlineVideoBookingId, setInlineVideoBookingId] = useState<string | null>(null);
 
@@ -2635,7 +2667,18 @@ const sendMessageMutation = useMutation({
                 senderLabel={!hasJoined && !isConsultationBooked ? <WhisperDisclaimer /> : undefined}
                 enableFileUpload
                 testIdPrefix="provider"
-                onMeetingClick={handleProviderMeeting}
+                onMeetingClick={() => handleProviderMeeting()}
+                onMatchCallClick={
+                  (hasJoined || isConsultationBooked) && providerHasSurrogacy &&
+                  (selectedSession?.subjectType || "").toLowerCase().includes("surrog")
+                    ? () => handleProviderMeeting("MATCH_CALL")
+                    : undefined
+                }
+                onDoctorCallClick={
+                  (hasJoined || isConsultationBooked) && providerHasIvf
+                    ? () => handleProviderMeeting("DOCTOR_CONSULTATION")
+                    : undefined
+                }
                 onCostSheetClick={(hasJoined || isConsultationBooked) ? () => {
                   if (selectedSessionId) generateCostSheetDraftsMutation.mutate(selectedSessionId);
                 } : undefined}

@@ -993,7 +993,9 @@ async function sendPrepDocEmail(parentEmail: string, parentName: string, baseUrl
     }
   } catch {}
 
-  const downloadLink = `${baseUrl}/surrogacy-match-call-guide.pdf`;
+  // Served from the admin-uploaded ConciergeAsset (Settings -> AI Concierge).
+  // 302s to a signed GCS URL; 404s gracefully if no guide is uploaded yet.
+  const downloadLink = `${baseUrl}/api/knowledge/concierge-assets/match_call_prep_guide/file`;
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
@@ -1298,6 +1300,9 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
         "readiness_prompt",
         "invoice",
         "cost_sheet",
+        // System-sent file attachments (e.g. the Match Call prep guide Eva
+        // sends when a match call is scheduled).
+        "attachment",
       ];
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
       // Provider assessment prompts are only shown to providers, not parents
@@ -1419,6 +1424,9 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
         "readiness_prompt",
         "invoice",
         "cost_sheet",
+        // System-sent file attachments (e.g. the Match Call prep guide Eva
+        // sends when a match call is scheduled).
+        "attachment",
       ];
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
       // Provider assessment prompts are only shown to providers, not parents

@@ -181,6 +181,64 @@ export async function runReadinessReminderCheck(prisma: PrismaService) {
   }
 }
 
+/**
+ * Phase 4: 24h surrogate hold auto-release.
+ *
+ * A match call places reservedByParentId + reservationExpiresAt (+24h) on the
+ * surrogate. If the parent pays the deposit inside the window the hold sticks
+ * (billing clears reservationExpiresAt, keeps the parent). Otherwise this
+ * sweep releases the hold and Eva tells the parent, offering a re-reserve.
+ */
+export async function runSurrogateHoldExpiryCheck(prisma: PrismaService) {
+  const now = new Date();
+  const expired = await prisma.surrogate.findMany({
+    where: {
+      reservedByParentId: { not: null },
+      reservationExpiresAt: { not: null, lte: now },
+    },
+    select: { id: true, externalId: true, firstName: true, reservedByParentId: true },
+  });
+
+  for (const s of expired) {
+    try {
+      await prisma.surrogate.update({
+        where: { id: s.id },
+        data: { reservedByParentId: null, reservationExpiresAt: null },
+      });
+      const label = s.externalId ? `Surrogate #${s.externalId}` : (s.firstName || "your surrogate match");
+      console.log(`[surrogate-hold] Released expired 24h hold on ${label} (${s.id})`);
+
+      // Eva tells the parent in their private concierge chat + offers a re-reserve.
+      const parentSession = await prisma.aiChatSession.findFirst({
+        where: { userId: s.reservedByParentId!, status: "ACTIVE", sessionType: "PARENT" },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      });
+      if (parentSession) {
+        await prisma.aiChatMessage.create({
+          data: {
+            sessionId: parentSession.id,
+            role: "assistant",
+            content: `A quick update: the 24-hour hold on ${label} has ended, so she's visible to other families again. If you're still interested, just tell me and I'll check whether she's available and ask the agency about re-reserving her. [[QUICK_REPLY:Yes, check her availability|I need more time|Not interested anymore]]`,
+            senderType: "system",
+            senderName: "GoStork",
+          },
+        });
+      }
+      // The parent also gets an in-app notification so this doesn't get lost.
+      await prisma.inAppNotification.create({
+        data: {
+          userId: s.reservedByParentId!,
+          eventType: "SURROGATE_HOLD_EXPIRED",
+          payload: { surrogateId: s.id, label, message: `The 24-hour hold on ${label} has ended.` },
+        },
+      }).catch(() => {});
+    } catch (err: any) {
+      console.error(`[surrogate-hold] Failed to release hold on surrogate ${s.id}: ${err.message}`);
+    }
+  }
+}
+
 export function startPendingBookingScheduler(prisma: PrismaService, notifications: NotificationService) {
   if (scheduledTask) {
     console.log("[pending-booking] Scheduler already running");
@@ -202,6 +260,11 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
       await runReadinessReminderCheck(prisma);
     } catch (err: any) {
       console.error(`[readiness-reminder] Cron error: ${err.message}`);
+    }
+    try {
+      await runSurrogateHoldExpiryCheck(prisma);
+    } catch (err: any) {
+      console.error(`[surrogate-hold] Cron error: ${err.message}`);
     }
   });
 

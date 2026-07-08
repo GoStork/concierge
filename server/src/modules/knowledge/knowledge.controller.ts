@@ -18,8 +18,14 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { KnowledgeService } from "./knowledge.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { StorageService } from "../storage/storage.service";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
-import { Request } from "express";
+import { Request, Response } from "express";
+import { Res, NotFoundException } from "@nestjs/common";
+
+// Well-known ConciergeAsset keys. Adding a new admin-managed document =
+// adding a key here + an upload card in the admin Concierge settings UI.
+const CONCIERGE_ASSET_KEYS = new Set(["match_call_prep_guide"]);
 
 @ApiTags("Knowledge")
 @Controller("api/knowledge")
@@ -27,7 +33,64 @@ export class KnowledgeController {
   constructor(
     @Inject(KnowledgeService) private readonly knowledgeService: KnowledgeService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(StorageService) private readonly storage: StorageService,
   ) {}
+
+  // ─── Phase 4: admin-managed concierge documents ─────────────────────────────
+  // e.g. the Match Call prep guide PDF that Eva sends to parents when a match
+  // call gets scheduled. Upload replaces the previous file for the key.
+
+  @Post("concierge-assets/:key")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @UseInterceptors(FileInterceptor("file"))
+  @ApiOperation({ summary: "Admin: upload/replace a concierge document (e.g. match call prep guide)" })
+  async uploadConciergeAsset(
+    @Param("key") key: string,
+    @UploadedFile() file: any,
+    @Req() req: Request,
+  ) {
+    const user = req.user as any;
+    const roles: string[] = user?.roles || [];
+    if (!roles.includes("GOSTORK_ADMIN")) {
+      throw new ForbiddenException("Only GoStork admins can manage concierge documents");
+    }
+    if (!CONCIERGE_ASSET_KEYS.has(key)) throw new BadRequestException(`Unknown asset key: ${key}`);
+    if (!file) throw new BadRequestException("No file uploaded");
+    const ext = "." + (file.originalname.split(".").pop() || "").toLowerCase();
+    if (ext !== ".pdf") throw new BadRequestException("Only PDF files are supported for this document");
+
+    const objectPath = `concierge-assets/${key}.pdf`;
+    await this.storage.uploadBuffer(file.buffer, objectPath, "application/pdf");
+    const asset = await this.prisma.conciergeAsset.upsert({
+      where: { key },
+      create: { key, fileName: file.originalname, objectPath, contentType: "application/pdf", uploadedByUserId: user.id },
+      update: { fileName: file.originalname, objectPath, uploadedByUserId: user.id },
+    });
+    return { ok: true, asset: { key: asset.key, fileName: asset.fileName, updatedAt: asset.updatedAt } };
+  }
+
+  @Get("concierge-assets/:key")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiOperation({ summary: "Read a concierge document's metadata (for the admin settings UI)" })
+  async getConciergeAsset(@Param("key") key: string) {
+    const asset = await this.prisma.conciergeAsset.findUnique({
+      where: { key },
+      select: { key: true, fileName: true, updatedAt: true },
+    });
+    return { asset: asset ?? null };
+  }
+
+  // Public download - the guide is generic prep content (no PII) and the
+  // link is sent in emails where the recipient may not be logged in yet.
+  @Get("concierge-assets/:key/file")
+  @ApiOperation({ summary: "Download a concierge document (302 to a signed URL)" })
+  async downloadConciergeAsset(@Param("key") key: string, @Res() res: Response) {
+    const asset = await this.prisma.conciergeAsset.findUnique({ where: { key } });
+    if (!asset) throw new NotFoundException("Document not uploaded yet");
+    const url = await this.storage.getSignedUrl(asset.objectPath, 60);
+    res.redirect(302, url);
+  }
 
   @Post("upload")
   @UseGuards(SessionOrJwtGuard)

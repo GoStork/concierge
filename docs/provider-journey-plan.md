@@ -130,28 +130,60 @@ the missing readiness options on top of it.
       approve -> paid invoice, parent + provider billing hubs, readiness
       options; the 12h re-ask sweep is code-verified via the scheduler)
 
-Known gap discovered during testing, moved to Phase 5 (order swapped with
-agreements): the readiness prompt fires after ANY call for surrogacy/IVF
-because nothing ever sets Booking.meetingSubtype - the MATCH_CALL /
-DOCTOR_CONSULTATION branches in video.controller are dead code until the
-call buttons exist.
+Known gap discovered during testing, fixed in Phase 4 (order swapped with
+agreements): the readiness prompt used to fire after ANY call for
+surrogacy/IVF because nothing ever set Booking.meetingSubtype.
 
 ### [ ] Phase 4 - Call buttons + surrogate reservation (order swapped with
         agreements on 2026-07-07 - the readiness trigger gap makes this more
         urgent)
 
-- [ ] Match Call (surrogacy) / Doctor Call (IVF) buttons in provider
-      composer, reusing New Appointment widget; external attendee yes/no
-      email; coordinator answers inside the widget. Bookings created with
-      meetingSubtype MATCH_CALL / DOCTOR_CONSULTATION
-- [ ] Readiness trigger gating per type: surrogacy fires ONLY after a
-      MATCH_CALL, IVF ONLY after a DOCTOR_CONSULTATION; egg/sperm/banks
-      keep firing after the first consultation
-- [ ] Match call ends -> surrogate goes on hard 24h hold: "On Hold for 24
-      Hours" badge everywhere, AI excludes held surrogates from suggestions,
-      auto-release + Eva notify + re-reserve offer at expiry; deposit paid
-      inside the window makes the reservation stick
-- [ ] IVF admin-defined matching requirements (simple AND rules)
+- [x] Match Call (surrogacy) / Doctor Call (IVF) tiles in the provider
+      composer + drawer - same calendar-share flow as the Meeting tile
+      (which already supports external attendees by email), but the
+      consultation card + booking link carry meetingSubtype, and BOTH
+      booking paths (in-chat widget + /book/:slug page via ?subtype=)
+      persist it. Tiles gated: Match Call = approved Surrogacy service +
+      surrogate-subject session; Doctor Call = approved IVF Clinic service
+- [x] Readiness trigger gating per type in video.controller: flow type
+      resolved from the SESSION subject first (multi-service agencies),
+      then provider type. Surrogacy fires ONLY after MATCH_CALL, IVF ONLY
+      after DOCTOR_CONSULTATION, donor/bank flows keep firing after the
+      first consultation
+- [x] Match call ends -> hard 24h hold (reservedByParentId +
+      reservationExpiresAt), provider-only note with the release time,
+      "On Hold for 24 Hours" badge on surrogate cards (all 4 card surfaces),
+      AI exclusion in search_surrogates + find_lookalike_matches (active AND
+      permanent holds; expired holds searchable immediately), 10-min sweep
+      auto-releases + Eva re-reserve offer with quick replies + in-app
+      notification, deposit PAID inside the window clears the expiry so the
+      hold sticks. Smoke-tested 5/5 (exclusion x3 states, sweep, Eva msg)
+- [x] Match-call UX round 2 (user feedback 2026-07-07):
+      - Parent readiness copy is match-call-specific + humanized (names the
+        surrogate, explains the 24h hold and the release consequence) -
+        keyed off isMatchCall, not providerType, so multi-service agencies
+        get the right copy
+      - Pre-call prep: when a match call is CONFIRMED, Eva tells the parent
+        about the 24h-hold rule upfront and attaches the admin-uploaded
+        prep-questions PDF (new ConciergeAsset model + upload/serve
+        endpoints + "Parent Prep Guides" card in Settings -> AI Concierge;
+        also fixed the long-dead /surrogacy-match-call-guide.pdf links)
+      - BOTH-SIDES match gate: provider gets a structured readiness card
+        ("does she want to move forward?") instead of the free-text
+        assessment; the deposit invoice fires ONLY when parent + agency
+        both say yes (tryFinalizeMatch), due 24h from the double-yes, with
+        countdown reminders and the hold extended to cover the window.
+        Provider "no" releases the hold and Eva tells the parent gently
+      - Provider sees "Start Meeting" (host); parent keeps "Join Meeting"
+      - Message routing (locked): INFORMATIONAL match-call content (prep
+        bundle, post-call hold recap, match announcement + invoice) lives in
+        the surrogate's 3-WAY chat; DECISION prompts stay private (parent's
+        readiness card in the Eva chat, provider's readiness card
+        provider-only) so both sides can answer honestly
+- [ ] IVF admin-defined matching requirements (simple AND rules) - not
+      started, next item in this phase
+- [ ] User acceptance testing (tiles -> subtyped booking -> gated readiness
+      -> badge + hold lifecycle -> both-sides gate -> prep bundle)
 
 ### [ ] Phase 5 - Agreement automation
 

@@ -52,6 +52,7 @@ import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Down
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { ReadinessPromptCard } from "@/components/readiness-prompt-card";
+import { CelebrationBurst } from "@/components/chat/celebration-burst";
 import { InvoiceCard } from "@/components/invoice-card";
 
 interface MatchCard {
@@ -373,7 +374,7 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
         </div>
         <div className="pt-2 border-t">
           <a
-            href="/surrogacy-match-call-guide.pdf"
+            href="/api/knowledge/concierge-assets/match_call_prep_guide/file"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-sm font-medium transition-opacity hover:opacity-80"
@@ -816,7 +817,7 @@ export function InlineBookingCalendar({
   memberName: string;
   brandColor: string;
   existingBooking?: any;
-  consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string; subjectProfileId?: string | null; subjectType?: string | null };
+  consultationMeta?: { aiSessionId?: string; matchmakerId?: string | null; profileLabel?: string | null; profilePhotoUrl?: string | null; providerId?: string; subjectProfileId?: string | null; subjectType?: string | null; meetingSubtype?: string | null };
   autoResetOnCancel?: boolean;
   showCalendarOnExpiry?: boolean;
   onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
@@ -961,6 +962,11 @@ export function InlineBookingCalendar({
       if (finalAttendees.length > 0) {
         body.additionalAttendees = finalAttendees.map(a => a.email);
         body.attendeeDetails = Object.fromEntries(finalAttendees.map(a => [a.email, { name: a.name, phone: a.phone }]));
+      }
+      if (consultationMeta?.meetingSubtype) {
+        // Phase 4: Match Call / Doctor Call bookings carry a subtype that
+        // gates the post-call readiness prompt + the 24h surrogate hold.
+        body.meetingSubtype = consultationMeta.meetingSubtype;
       }
       if (consultationMeta?.aiSessionId) {
         body.aiSessionId = consultationMeta.aiSessionId;
@@ -1390,7 +1396,11 @@ function ConsultationBookingCard({
                   : `Meeting with ${card.memberName || card.providerName || "Consultant"}`
                 : card.providerName === "GoStork"
                   ? `Schedule GoStork Concierge Call with ${card.memberName || "GoStork Team"}`
-                  : `Schedule with ${card.memberName || card.providerName || "Consultant"}`}
+                  : (card as any).meetingSubtype === "MATCH_CALL"
+                    ? `Schedule your Match Call with ${card.memberName || card.providerName || "Consultant"}`
+                    : (card as any).meetingSubtype === "DOCTOR_CONSULTATION"
+                      ? `Schedule your Doctor Call with ${card.memberName || card.providerName || "Consultant"}`
+                      : `Schedule with ${card.memberName || card.providerName || "Consultant"}`}
             </span>
           </div>
         </div>
@@ -1400,7 +1410,7 @@ function ConsultationBookingCard({
             memberName={card.memberName || card.providerName}
             brandColor={brandColor}
             existingBooking={existingBooking}
-            consultationMeta={{ aiSessionId: card.aiSessionId, matchmakerId: card.matchmakerId, profileLabel: card.profileLabel, profilePhotoUrl: card.profilePhotoUrl, providerId: card.providerId, subjectProfileId: card.subjectProfileId, subjectType: card.subjectType }}
+            consultationMeta={{ aiSessionId: card.aiSessionId, matchmakerId: card.matchmakerId, profileLabel: card.profileLabel, profilePhotoUrl: card.profilePhotoUrl, providerId: card.providerId, subjectProfileId: card.subjectProfileId, subjectType: card.subjectType, meetingSubtype: (card as any).meetingSubtype ?? null }}
             onBookingConfirmed={onBookingConfirmed}
           />
         </div>
@@ -2159,6 +2169,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
           title={title}
           statusLabel={statusLabel}
           donorStatus={swipeProfile.donorStatus}
+          onHoldUntil={swipeProfile.onHoldUntil ?? null}
           frozenLotStatus={swipeProfile.frozenLotStatus}
           isExperienced={swipeProfile.isExperienced}
           isPremium={swipeProfile.isPremium}
@@ -5050,6 +5061,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         })()}
                       />
                     </div>
+                  )}
+
+                  {/* Full-screen confetti for celebration-flagged messages
+                      (e.g. "both sides said yes" match announcement) */}
+                  {(msg.uiCardData as any)?.celebration && (
+                    <CelebrationBurst messageId={msg.id || ""} createdAt={msg.createdAt} />
                   )}
 
                   {/* Special cards: readiness_prompt, invoice, calendar_share, video_invite, etc. */}

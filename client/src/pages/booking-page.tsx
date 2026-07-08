@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -70,6 +70,11 @@ function formatTime12(time24: string): string {
 
 export default function BookingPage() {
   const { slug } = useParams<{ slug: string }>();
+  // Phase 4: Match Call / Doctor Call links carry ?subtype= so the booking
+  // is tagged and the post-call readiness rules fire per provider type.
+  const [bookingSearchParams] = useSearchParams();
+  const rawSubtype = bookingSearchParams.get("subtype");
+  const meetingSubtype = rawSubtype === "MATCH_CALL" || rawSubtype === "DOCTOR_CONSULTATION" ? rawSubtype : null;
   const { user } = useAuth();
   const companyName = useCompanyName();
   const brandQuery = useBrandSettings();
@@ -188,6 +193,7 @@ export default function BookingPage() {
         phone: phone || null,
         notes: notes || null,
         timezone: bookerTimezone,
+        meetingSubtype: meetingSubtype || undefined,
         additionalAttendees: finalAttendees.length > 0 ? finalAttendees.map(a => a.email) : undefined,
         attendeeDetails: finalAttendees.length > 0
           ? Object.fromEntries(finalAttendees.filter(a => a.name || a.phone).map(a => [a.email, { name: a.name || undefined, phone: a.phone || undefined }]))

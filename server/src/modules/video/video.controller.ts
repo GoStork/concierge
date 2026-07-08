@@ -914,7 +914,16 @@ export class VideoController {
         select: { id: true },
       });
 
-      if (providerSession) {
+      // Phase 4: match calls get the structured provider readiness card (posted
+      // by firePostCallBillingPrompt) instead of the free-text assessment ask -
+      // the agency answers on the surrogate's behalf with Yes/Not-yet buttons.
+      const endedBooking = await this.prisma.booking.findUnique({
+        where: { id: booking.id },
+        select: { meetingSubtype: true },
+      }).catch(() => null);
+      const skipAssessment = endedBooking?.meetingSubtype === "MATCH_CALL";
+
+      if (providerSession && !skipAssessment) {
         // Dedup guard: only send once per session (race between markCallEnded and webhook)
         const existingAssessment = await this.prisma.aiChatMessage.findFirst({
           where: {
@@ -929,7 +938,7 @@ export class VideoController {
             data: {
               sessionId: providerSession.id,
               role: "assistant",
-              content: `Great call! ${providerName}, based on your consultation with ${parentFirstName}, what are your initial thoughts? Share your assessment so we can guide next steps.`,
+              content: `Great call! ${providerName}, how did your consultation with ${parentFirstName} go? What are your initial thoughts - please share your assessment so we can guide next steps.`,
               senderType: "ai",
               // Tag as provider_assessment so it is filtered from parent chat view and
               // left-pane preview - parents shouldn't see this prompt directed at providers.
@@ -1016,14 +1025,15 @@ export class VideoController {
     const providerTypeName = typePriority.find(t => serviceTypeNames.includes(t)) || serviceTypeNames[0] || "";
     const isSurrogacyAgency = providerTypeName === "Surrogacy Agency";
 
-    // Find the provider session (PROVIDER_CONNECTED or CONSULTATION_BOOKED) - needed for invoice dedup check
+    // Find the provider session (PROVIDER_CONNECTED or CONSULTATION_BOOKED) - needed for
+    // the invoice dedup check, the flow-type resolution, and the surrogate hold below.
     const providerSession = await this.prisma.aiChatSession.findFirst({
       where: {
         userId: parentUserId,
         providerId: providerEntity.id,
         status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
       },
-      select: { id: true },
+      select: { id: true, subjectType: true, subjectProfileId: true },
     });
 
     // Check if there's already a pending or paid invoice for this provider session
@@ -1047,35 +1057,64 @@ export class VideoController {
     });
     if (existingPrompt) return; // Already sent for this booking
 
-    // Determine if this is a decision call
-    let isDecisionCall = false;
+    // Determine if this call is the DECISION call for its flow type -
+    // per-provider-type rules from the provider journey plan:
+    //   - Egg / Sperm donor flows: the FIRST consultation is the decision
+    //     call - readiness fires right after it.
+    //   - Surrogacy: readiness fires ONLY after a Match Call. A plain
+    //     consultation must stay silent - the agency runs a match call next.
+    //   - IVF: readiness fires ONLY after the Doctor Call, never after the
+    //     initial clinic consultation.
+    // Flow type comes from the session SUBJECT first (a multi-service
+    // agency's egg-donor session is a donor flow even if the provider also
+    // does IVF/surrogacy), falling back to the provider's dominant type.
+    const sessionSubject = (providerSession?.subjectType || "").toLowerCase();
+    const flowType =
+      sessionSubject.includes("surrog") ? "SURROGACY"
+      : sessionSubject.includes("egg") || sessionSubject.includes("sperm") ? "DONOR"
+      : isSurrogacyAgency ? "SURROGACY"
+      : providerTypeName === "IVF Clinic" ? "IVF"
+      : "DONOR";
+
     let isMatchCall = false;
     let dueAt: Date | undefined;
 
-    if (booking?.meetingSubtype === "DOCTOR_CONSULTATION") {
-      // IVF Clinic - this IS the decision call
-      isDecisionCall = true;
-    } else if (isSurrogacyAgency) {
-      // For surrogacy: check if it was a 3-party call (Match Call) by looking at attendee count
-      // or by meetingSubtype === "MATCH_CALL"
-      if (booking?.meetingSubtype === "MATCH_CALL") {
-        isDecisionCall = true;
-        isMatchCall = true;
-      } else {
-        // Any call with surrogacy agency is a potential decision call (call 1 prompt is harmless)
-        isDecisionCall = true;
-        isMatchCall = false;
-      }
-    } else {
-      // Egg Donor Agency, Egg Bank, Sperm Bank - any call is the decision call
-      isDecisionCall = true;
+    if (flowType === "SURROGACY") {
+      if (booking?.meetingSubtype !== "MATCH_CALL") return; // wait for the match call
+      isMatchCall = true;
+    } else if (flowType === "IVF") {
+      if (booking?.meetingSubtype !== "DOCTOR_CONSULTATION") return; // wait for the doctor call
+    }
+    // DONOR flows: any completed call is the decision call.
+
+    // For AT_MATCH deposits - 24h payment deadline. Keyed off isMatchCall
+    // (not providerType) so multi-service agencies aren't missed.
+    if (isMatchCall && provider.depositMilestone === "AT_MATCH") {
+      dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     }
 
-    if (!isDecisionCall) return;
-
-    // For AT_MATCH surrogacy - set 24h deadline
-    if (isSurrogacyAgency && isMatchCall && provider.depositMilestone === "AT_MATCH") {
-      dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    // Phase 4: the match call just ended -> hard 24h hold on the surrogate,
+    // BEFORE the readiness prompt so the parent's copy can name her and cite
+    // the exact release time. She shows "On Hold for 24 Hours" in the
+    // marketplace and the AI stops suggesting her. Paying the deposit inside
+    // the window makes the hold stick; otherwise the scheduler auto-releases
+    // and Eva offers a re-reserve.
+    let subjectLabel: string | null = null;
+    let holdUntil: Date | null = null;
+    if (isMatchCall && providerSession?.subjectProfileId && sessionSubject.includes("surrog")) {
+      holdUntil = dueAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000);
+      try {
+        const held = await this.prisma.surrogate.update({
+          where: { id: providerSession.subjectProfileId },
+          data: { reservedByParentId: parentUserId, reservationExpiresAt: holdUntil },
+          select: { externalId: true, firstName: true },
+        });
+        subjectLabel = held.externalId ? `Surrogate #${held.externalId}` : held.firstName || null;
+        this.logger.log(`Surrogate ${providerSession.subjectProfileId} on 24h hold for parent ${parentUserId} until ${holdUntil.toISOString()}`);
+      } catch (holdErr: any) {
+        this.logger.error(`Failed to place surrogate hold after match call ${bookingId}: ${holdErr.message}`);
+        holdUntil = null;
+      }
     }
 
     // Post readiness prompt in the parent's PRIVATE concierge chat (not the 3-way provider
@@ -1087,7 +1126,62 @@ export class VideoController {
       providerType: providerTypeName,
       isMatchCall,
       dueAt,
+      subjectLabel,
+      holdUntil,
     });
+
+    // Provider side of the match decision: one info note (hold clock), then
+    // the structured readiness question LAST so the agency can answer right
+    // away on the surrogate's behalf. The invoice only fires when BOTH sides
+    // have said yes (see billing.service.tryFinalizeMatch).
+    if (isMatchCall && providerSession && holdUntil) {
+      const parentUser = await this.prisma.user.findUnique({
+        where: { id: parentUserId },
+        select: { firstName: true, name: true },
+      }).catch(() => null);
+      const parentLabel = parentUser?.firstName || parentUser?.name || "the parent";
+      const who = subjectLabel || "the surrogate";
+      const holdLabel = holdUntil.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      // Neutral recap in the 3-way chat, visible to BOTH sides - the shared
+      // thread tells the story; each side's decision prompt stays private.
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: providerSession.id,
+          role: "assistant",
+          content: `The match call is complete! ${who} is now on an exclusive 24-hour hold for ${parentLabel} while both sides decide - until ${holdLabel}, she won't be suggested to any other family.`,
+          senderType: "system",
+          senderName: "GoStork",
+        },
+      }).catch(() => {});
+      // Dedup: one provider readiness card per booking.
+      const existingProviderPrompt = await this.prisma.aiChatMessage.findFirst({
+        where: {
+          sessionId: providerSession.id,
+          uiCardType: "provider_readiness_prompt",
+          uiCardData: { path: ["bookingId"], equals: bookingId },
+        },
+      });
+      if (!existingProviderPrompt) {
+        await this.prisma.aiChatMessage.create({
+          data: {
+            sessionId: providerSession.id,
+            role: "assistant",
+            content: `${providerEntity.name}, after speaking with ${who} - does she want to move forward with ${parentLabel}? Once both sides confirm, it's an official match and the deposit invoice goes out automatically.`,
+            senderType: "system",
+            senderName: "GoStork",
+            uiCardType: "provider_readiness_prompt",
+            uiCardData: {
+              bookingId,
+              surrogateId: providerSession.subjectProfileId,
+              subjectLabel: who,
+              parentName: parentLabel,
+              holdUntil: holdUntil.toISOString(),
+              answered: null,
+            },
+          },
+        }).catch(() => {});
+      }
+    }
 
     // Push a live SSE signal so the parent's chat inbox unread counter updates immediately
     // instead of waiting for the next 30-second poll cycle.
@@ -1097,7 +1191,7 @@ export class VideoController {
     }).catch(() => {});
 
     // Schedule follow-up reminders
-    if (isSurrogacyAgency && isMatchCall && dueAt) {
+    if (isMatchCall && dueAt) {
       // 24h countdown reminders - but we don't have an invoice yet, schedule after parent confirms
       // The countdown gets scheduled when the invoice is created (after parent clicks "Yes")
     } else if (providerSession) {

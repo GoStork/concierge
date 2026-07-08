@@ -871,6 +871,82 @@ export class BillingController {
     return { ok: true, invoiceId: invoice.id };
   }
 
+  // ─── Phase 4: provider answers the match readiness question ────────────────
+  // The agency answers on the surrogate's behalf. "yes" + parent already yes
+  // -> official match, deposit invoice fires with a 24h window. "no" ->
+  // release the hold and tell the parent gently.
+
+  @Post("api/sessions/:sessionId/provider-readiness/:messageId/respond")
+  @UseGuards(SessionOrJwtGuard)
+  async respondProviderReadiness(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+    @Param("messageId") messageId: string,
+    @Body() body: { answer: "yes" | "no" },
+  ) {
+    const user = req.user as any;
+    if (!["yes", "no"].includes(body?.answer)) {
+      throw new HttpException("answer (yes|no) required", HttpStatus.BAD_REQUEST);
+    }
+    await this.loadSessionForProviderBilling(sessionId, user);
+
+    const msg = await this.db.aiChatMessage.findUnique({ where: { id: messageId } });
+    if (!msg || msg.sessionId !== sessionId || msg.uiCardType !== "provider_readiness_prompt") {
+      throw new HttpException("Readiness question not found", HttpStatus.NOT_FOUND);
+    }
+    const data = (msg.uiCardData as any) || {};
+    if (data.answered) {
+      return { ok: true, alreadyAnswered: true, answered: data.answered };
+    }
+
+    await this.db.aiChatMessage.update({
+      where: { id: messageId },
+      data: { uiCardData: { ...data, answered: body.answer, answeredByUserId: user.id, answeredAt: new Date().toISOString() } },
+    });
+
+    if (body.answer === "no") {
+      await this.billingService.releaseMatchAfterProviderDecline(sessionId, data.subjectLabel ?? null);
+      await this.db.aiChatMessage.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content: `Understood - we've released the hold and let the parent know gently. Thanks for the quick answer.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "provider_only",
+        },
+      }).catch(() => {});
+      return { ok: true, result: "declined" };
+    }
+
+    // "yes" - try to finalize; if the parent hasn't answered yet, we wait.
+    const matchRes = await this.billingService.tryFinalizeMatch(data.bookingId);
+    if (matchRes.status === "waiting" && matchRes.waitingOn === "parent") {
+      await this.db.aiChatMessage.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content: `Noted! We're waiting for ${data.parentName || "the parent"} to confirm on their side - the moment they do, the deposit invoice goes out automatically.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "provider_only",
+        },
+      }).catch(() => {});
+    } else if (matchRes.status === "blocked") {
+      await this.db.aiChatMessage.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content: `Both sides confirmed, but we can't issue the deposit invoice yet: ${matchRes.message}`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "provider_only",
+        },
+      }).catch(() => {});
+    }
+    return { ok: true, result: matchRes.status };
+  }
+
   @Post("api/sessions/:sessionId/invoice-draft/:messageId/reject")
   @UseGuards(SessionOrJwtGuard)
   async rejectInvoiceDraft(

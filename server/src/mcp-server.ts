@@ -1388,6 +1388,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // or PENDING (not yet approved but coming back). MATCHED is committed to
       // another parent so we never surface it; INACTIVE is soft-deleted.
       const baseWhere: any = { hiddenFromSearch: { not: true }, status: { in: ["AVAILABLE", "PENDING"] } };
+      // Phase 4: never suggest a surrogate who is reserved. Two shapes:
+      //   - active 24h match-call hold (expiresAt in the future)
+      //   - permanent reservation (deposit paid -> expiresAt cleared, parent kept)
+      // Expired holds (expiresAt in the past) are searchable again immediately;
+      // the scheduler clears the stale fields shortly after.
+      baseWhere.AND = [
+        ...(baseWhere.AND || []),
+        {
+          OR: [
+            { reservedByParentId: null },
+            // SQL: NULL <= now() is false, so permanent holds stay excluded.
+            { reservationExpiresAt: { lte: new Date() } },
+          ],
+        },
+      ];
       if (excludeSet.size > 0) baseWhere.id = { notIn: Array.from(excludeSet) };
       if (openToSameSexCouple !== undefined) baseWhere.openToSameSexCouple = openToSameSexCouple;
       if (openToInternationalParents === true) {
@@ -1882,7 +1897,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } else if (type === "Sperm Donor") {
         rows = await prisma.spermDonor.findMany({ where: availWhere, select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, race: true, eyeColor: true, hairColor: true } });
       } else {
-        rows = await prisma.surrogate.findMany({ where: availWhere, select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, race: true } });
+        // Phase 4: reserved surrogates (active hold or permanent) are excluded
+        // from look-alike suggestions too, same rule as search_surrogates.
+        rows = await prisma.surrogate.findMany({
+          where: {
+            ...availWhere,
+            OR: [
+              { reservedByParentId: null },
+              { reservationExpiresAt: { lte: new Date() } },
+            ],
+          },
+          select: { id: true, firstName: true, externalId: true, age: true, location: true, ethnicity: true, race: true },
+        });
       }
 
       // Two regimes:

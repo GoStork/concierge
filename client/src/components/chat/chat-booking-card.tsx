@@ -216,7 +216,10 @@ export function ChatBookingCard({ booking, onUpdate, readOnly }: ChatBookingCard
           data-testid={`chat-booking-join-${booking.id}`}
         >
           <Video className="w-3 h-3" />
-          Join Meeting
+          {/* This card only renders on the provider/admin (host) side - the
+              parent's card lives in inline-booking-notification, which says
+              "Join Meeting". */}
+          Start Meeting
         </a>
       )}
 

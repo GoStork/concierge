@@ -870,6 +870,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     attendeeName: string | null;
     attendeeEmails: string[];
     invitedByUserId: string;
+    /** Phase 4: "MATCH_CALL" (surrogacy) | "DOCTOR_CONSULTATION" (IVF) | null.
+     *  Drives the per-type readiness trigger + the 24h surrogate hold. */
+    meetingSubtype?: string | null;
   }) {
     const booking = await this.prisma.booking.create({
       data: {
@@ -884,6 +887,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         attendeeName: input.attendeeName,
         attendeeEmails: input.attendeeEmails,
         invitedByUserId: input.invitedByUserId,
+        meetingSubtype: input.meetingSubtype ?? null,
       },
       include: {
         providerUser: { select: { id: true, name: true, email: true, photoUrl: true } },
@@ -1007,7 +1011,96 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     this.syncBookingToOutlookCalendar(updated).catch(() => {});
     this.syncBookingToParentOutlookCalendar(updated).catch(() => {});
     this.emitBookingEvent("booking_confirmed", updated, user.id);
+    this.fireMatchCallPrep(updated).catch((e: any) =>
+      console.error(`[match-call-prep] failed for booking ${updated.id}: ${e.message}`));
     return updated;
+  }
+
+  /**
+   * Phase 4: a MATCH_CALL just got confirmed - prepare the parent BEFORE the
+   * call: explain the 24h hold rule upfront, and attach the admin-uploaded
+   * prep-questions guide (ConciergeAsset "match_call_prep_guide") if one
+   * exists. Posted in the surrogate's 3-WAY chat so everything about her
+   * lives in one thread (it's informational - the decision prompts stay in
+   * the parent's private chat). Falls back to the private chat when no
+   * 3-way session exists.
+   */
+  private async fireMatchCallPrep(booking: { id: string; meetingSubtype?: string | null; parentUserId?: string | null; scheduledAt: Date; providerUser?: { providerId?: string | null; provider?: { name?: string | null } | null } | null }) {
+    if (booking.meetingSubtype !== "MATCH_CALL" || !booking.parentUserId) return;
+
+    // Prefer the surrogate 3-way session for this (parent, provider) pair.
+    const providerId = booking.providerUser?.providerId || null;
+    const threeWaySession = providerId
+      ? await this.prisma.aiChatSession.findFirst({
+          where: {
+            userId: booking.parentUserId,
+            providerId,
+            status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
+            subjectType: { contains: "surrog", mode: "insensitive" },
+          },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true },
+        })
+      : null;
+    const parentSession = threeWaySession
+      ?? await this.prisma.aiChatSession.findFirst({
+        where: { userId: booking.parentUserId, status: "ACTIVE", sessionType: "PARENT" },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      });
+    if (!parentSession) return;
+
+    // Dedup: one prep bundle per booking (checked across ALL sessions so a
+    // re-confirm can't double-send into a different thread).
+    const existing = await this.prisma.aiChatMessage.findFirst({
+      where: {
+        uiCardData: { path: ["matchCallPrepForBookingId"], equals: booking.id },
+      },
+    });
+    if (existing) return;
+
+    const providerName = booking.providerUser?.provider?.name || "the agency";
+    const when = new Date(booking.scheduledAt).toLocaleString("en-US", { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: parentSession.id,
+        role: "assistant",
+        content: `Your match call is confirmed for ${when} - this is such an exciting step!
+
+Two things to know before the call:
+
+1. After the match call ends, the surrogate will be placed on an exclusive 24-hour hold just for you. You'll have those 24 hours to decide whether to move forward - after that, the hold is released and she may be matched with another family. No pressure during the call itself; the clock only starts when it ends.
+
+2. It's completely normal to wonder what to ask. I'm attaching ${providerName === "the agency" ? "our" : "a"} prep guide with thoughtful questions - personal, medical, legal, and everything in between. Skim it before the call and jot down the ones that matter most to you.
+
+I'll check in with you right after the call. You've got this!`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardData: { matchCallPrepForBookingId: booking.id } as any,
+      },
+    });
+
+    // Attach the admin-uploaded guide when it exists (soft-skip otherwise).
+    const guide = await this.prisma.conciergeAsset.findUnique({ where: { key: "match_call_prep_guide" } }).catch(() => null);
+    if (guide) {
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: parentSession.id,
+          role: "assistant",
+          content: "Here's your Match Call prep guide:",
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "attachment",
+          uiCardData: {
+            matchCallPrepForBookingId: `${booking.id}:guide`,
+            url: `/api/knowledge/concierge-assets/match_call_prep_guide/file`,
+            originalName: guide.fileName || "Match Call Prep Guide.pdf",
+            mimeType: "application/pdf",
+          },
+        },
+      });
+    }
   }
 
   @Post("bookings/:id/decline")
@@ -1808,6 +1901,12 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      // Phase 4: Match Call / Doctor Call bookings carry a subtype that
+      // gates the post-call readiness prompt + the 24h surrogate hold.
+      // Whitelisted - anything else is stored as a plain consultation.
+      const VALID_MEETING_SUBTYPES = new Set(["MATCH_CALL", "DOCTOR_CONSULTATION"]);
+      const meetingSubtype = VALID_MEETING_SUBTYPES.has(body.meetingSubtype) ? body.meetingSubtype : null;
+
       return tx.booking.create({
         data: {
           providerUserId: config.userId,
@@ -1820,7 +1919,12 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
           providerConfirmed: false,
           confirmToken: randomUUID(),
           meetingUrl: config.meetingLink || null,
-          subject: config.defaultSubject || `Meeting with ${config.user.name || config.user.email}`,
+          subject: meetingSubtype === "MATCH_CALL"
+            ? `Match Call with ${config.user.name || config.user.email}`
+            : meetingSubtype === "DOCTOR_CONSULTATION"
+              ? `Doctor Call with ${config.user.name || config.user.email}`
+              : config.defaultSubject || `Meeting with ${config.user.name || config.user.email}`,
+          meetingSubtype,
           attendeeEmails: allAttendeeEmails,
           attendeeName: body.name,
           attendeeDetails: body.attendeeDetails || undefined,

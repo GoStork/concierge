@@ -13,7 +13,7 @@
 - **React Router v6** for routing
 - **Redux Toolkit** + `react-redux` (global state); **TanStack Query v5** (server state)
 - **shadcn/ui** on **Radix UI** primitives, styled with **Tailwind CSS** (`tailwind-merge`, `tailwindcss-animate`)
-- **Framer Motion** (animation), **lucide-react** + `react-icons` (icons)
+- **Framer Motion** (animation), `canvas-confetti` (celebration bursts), **lucide-react** + `react-icons` (icons)
 - **react-hook-form** (forms); `react-big-calendar` + `react-day-picker` (scheduling); `embla-carousel`, `react-easy-crop`, `react-resizable-panels`
 
 ## Backend
@@ -209,6 +209,9 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `rollup@^4.59.0`
 - `tsx@^4.21.0`
 
+**Other (review & categorize)**
+- `canvas-confetti@^1.9.4`
+
 ### Dev / build dependencies
 
 **Frontend / UI**
@@ -223,6 +226,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `@replit/vite-plugin-dev-banner@^0.1.1`
 - `@replit/vite-plugin-runtime-error-modal@^0.0.3`
 - `@tailwindcss/vite@^4.1.18`
+- `@types/canvas-confetti@^1.9.0`
 - `@types/connect-pg-simple@^7.0.3`
 - `@types/express@^5.0.0`
 - `@types/express-session@^1.18.0`

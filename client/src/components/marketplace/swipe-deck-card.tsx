@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ArrowUp, Undo2, X, Heart, Send,
-  Check, Flower2, Crown, Award, TrendingUp, MapPin, Sparkles,
+  Check, Flower2, Crown, Award, TrendingUp, MapPin, Sparkles, Clock,
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
@@ -27,6 +27,10 @@ interface SwipeDeckCardProps {
   // donors + surrogates; SOLD_OUT applies to sperm donors and pure Frozen
   // Eggs donors with no inventory left.
   donorStatus?: "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
+  // Phase 4 (surrogates): ISO timestamp while an active 24h match-call hold
+  // is running. Renders the "On Hold for 24 Hours" badge - transparent to
+  // other parents that she's temporarily reserved.
+  onHoldUntil?: string | null;
   // Frozen-lot inventory status, ONLY rendered when a donor is "Fresh &
   // Frozen" (both modes simultaneously) - in that case donorStatus carries
   // the fresh-cycle state and frozenLotStatus carries the frozen-lot
@@ -92,6 +96,7 @@ export function SwipeDeckCard({
   title,
   statusLabel,
   donorStatus,
+  onHoldUntil,
   frozenLotStatus,
   isExperienced = false,
   isPremium = false,
@@ -761,6 +766,18 @@ export function SwipeDeckCard({
                   </Badge>
                 );
               })()}
+              {/* Active 24h match-call hold - visible to everyone by design */}
+              {onHoldUntil && new Date(onHoldUntil) > new Date() && (
+                <Badge
+                  className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  data-testid={`badge-on-hold-${id}`}
+                  title="Another family just completed a match call - she's reserved while they decide."
+                >
+                  <Clock className="w-3 h-3" />
+                  On Hold for 24 Hours
+                </Badge>
+              )}
               {isExperienced && (
                 <Badge
                   className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"
