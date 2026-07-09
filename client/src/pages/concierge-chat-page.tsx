@@ -4578,13 +4578,15 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-10 w-10 p-0 rounded-full"
-                style={{ color: "white", backgroundColor: brandColor }}
+                className="h-8 px-3 gap-1.5 text-xs font-medium rounded-full"
+                style={{ color: "white", backgroundColor: brandColor, borderRadius: "999px" }}
                 onClick={handleConciergeVideo}
-                aria-label="Video call"
+                title={`Start a video call with ${providerChatName || sessionTitle || "your provider"}`}
+                aria-label={`Start a video call with ${providerChatName || sessionTitle || "your provider"}`}
                 data-testid="btn-video"
               >
-                <Video className="!w-5 !h-5" strokeWidth={2.25} />
+                <Video className="w-4 h-4" strokeWidth={2.25} />
+                <span>Video Call</span>
               </Button>
             )}
             {!providerInChat && sessionLoaded && (

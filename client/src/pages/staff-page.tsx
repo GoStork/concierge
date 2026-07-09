@@ -43,9 +43,13 @@ function toDateParam(d: Date): string {
 }
 
 // Chip marking a row that belongs to a shared parent account (a couple
-// with two logins). Hover shows every member on the account.
-function HouseholdBadge({ memberNames, testId }: { memberNames: string[]; testId: string }) {
+// with two logins). Pass selfName to spell out WHO the partner is
+// ("Couple - Ariel Parent 2") so rows are linkable at a glance even when
+// filters hide the partner's row. Hover shows every member.
+function HouseholdBadge({ memberNames, selfName, testId }: { memberNames: string[]; selfName?: string | null; testId: string }) {
   if (!memberNames || memberNames.length < 2) return null;
+  const others = selfName ? memberNames.filter(n => n && n !== selfName) : [];
+  const label = others.length ? `Couple - ${others.join(" & ")}` : "Couple";
   return (
     <span
       className="shrink-0 inline-flex items-center gap-1 text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
@@ -53,8 +57,8 @@ function HouseholdBadge({ memberNames, testId }: { memberNames: string[]; testId
       title={`Shared account: ${memberNames.filter(Boolean).join(", ")}`}
       data-testid={testId}
     >
-      <Users className="w-3 h-3" />
-      Couple
+      <Users className="w-3 h-3 shrink-0" />
+      <span className="truncate max-w-[120px]">{label}</span>
     </span>
   );
 }
@@ -202,6 +206,29 @@ function GostorkAdminUsersView() {
       default: return "";
     }
   });
+
+  // Couples stay visually together: after sorting, pull the remaining
+  // household members up to sit directly under the first one encountered
+  // so the pair renders as one connected block.
+  const groupedUsers = (() => {
+    const byId = new Map(sortedUsers.map(u => [u.id, u]));
+    const emitted = new Set<string>();
+    const out: StaffMember[] = [];
+    for (const u of sortedUsers) {
+      if (emitted.has(u.id)) continue;
+      out.push(u);
+      emitted.add(u.id);
+      for (const mid of (overview[u.id]?.household?.memberIds || []) as string[]) {
+        if (emitted.has(mid)) continue;
+        const partner = byId.get(mid);
+        if (partner) {
+          out.push(partner);
+          emitted.add(mid);
+        }
+      }
+    }
+    return out;
+  })();
 
   const deleteMutation = useMutation({
     mutationFn: async (userId: string) => {
@@ -396,8 +423,18 @@ function GostorkAdminUsersView() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedUsers.length > 0 ? sortedUsers.map((member) => (
-              <TableRow key={member.id} data-testid={`row-staff-${member.id}`} className={`cursor-pointer ${member.isDisabled ? "opacity-60" : ""}`} onClick={() => navigate(`/users/${member.id}`)}>
+            {groupedUsers.length > 0 ? groupedUsers.map((member) => {
+              const household = overview[member.id]?.household as { memberIds: string[]; memberNames: string[] } | undefined;
+              return (
+              <TableRow
+                key={member.id}
+                data-testid={`row-staff-${member.id}`}
+                className={`cursor-pointer ${member.isDisabled ? "opacity-60" : ""}`}
+                // Couple rows are pulled adjacent (groupedUsers) and share
+                // an accent tint + left bar so the pair reads as one block.
+                style={household ? { background: "hsl(var(--accent) / 0.06)", boxShadow: "inset 3px 0 0 hsl(var(--accent) / 0.6)" } : undefined}
+                onClick={() => navigate(`/users/${member.id}`)}
+              >
                 <TableCell className="pl-4 w-10" onClick={(e) => e.stopPropagation()}>
                   <Checkbox
                     checked={selectedIds.has(member.id)}
@@ -413,17 +450,22 @@ function GostorkAdminUsersView() {
                     ) : (
                       <DoctorMonogram name={member.name} size={32} rounded="var(--radius)" />
                     )}
-                    <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/users/${member.id}`); }} data-testid={`link-user-name-${member.id}`}>{member.name || "-"}</button>
+                    <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer truncate max-w-[150px]" title={member.name || undefined} onClick={(e) => { e.stopPropagation(); navigate(`/users/${member.id}`); }} data-testid={`link-user-name-${member.id}`}>{member.name || "-"}</button>
                     {member.name && <CopyButton value={member.name} testId={`btn-copy-name-${member.id}`} />}
-                    <HouseholdBadge memberNames={overview[member.id]?.household?.memberNames || []} testId={`badge-couple-${member.id}`} />
                     {member.isDisabled && (
                       <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-${member.id}`}>Disabled</span>
                     )}
                   </div>
+                  {/* Second line so the chip never bleeds into the email column */}
+                  {household && (
+                    <div className="mt-1 pl-6">
+                      <HouseholdBadge memberNames={household.memberNames} selfName={member.name} testId={`badge-couple-${member.id}`} />
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="hidden sm:table-cell" data-testid={`text-email-${member.id}`}>
                   <div className="flex items-center gap-1.5">
-                    <span className="truncate max-w-[150px] inline-block align-middle" title={member.email}>{member.email}</span>
+                    <span className="truncate max-w-[135px] inline-block align-middle" title={member.email}>{member.email}</span>
                     <CopyButton value={member.email} testId={`btn-copy-email-${member.id}`} />
                   </div>
                 </TableCell>
@@ -437,7 +479,7 @@ function GostorkAdminUsersView() {
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   {(overview[member.id]?.services || []).length > 0 ? (
-                    <div className="flex flex-wrap gap-1 items-center">
+                    <div className="flex flex-wrap gap-1 items-center max-w-[170px]">
                       {(overview[member.id].services as string[]).slice(0, 2).map(svc => (
                         <span key={svc} className="text-xs font-ui px-2 py-0.5 rounded-full" style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
                           {svc}
@@ -495,7 +537,8 @@ function GostorkAdminUsersView() {
                   </div>
                 </TableCell>
               </TableRow>
-            )) : (
+              );
+            }) : (
               <TableRow>
                 <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                   {hasActiveFilters ? "No parents match your filters." : "No parents found."}
@@ -741,7 +784,9 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                     <div className="w-8 h-8 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary shrink-0">
                       <UserCircle className="w-4 h-4" />
                     </div>
-                    <span data-testid={`text-parent-name-${row.id}`}>{row.name || "-"}</span>
+                    {/* Cap the combined household name so a couple's longer
+                        name doesn't push the table wider than the page */}
+                    <span data-testid={`text-parent-name-${row.id}`} className="truncate max-w-[170px] inline-block align-middle" title={row.name}>{row.name || "-"}</span>
                     {row.name && <CopyButton value={row.name} testId={`btn-copy-name-${row.rowId}`} />}
                     <HouseholdBadge memberNames={(row.members || []).map((m: any) => m.name)} testId={`badge-couple-${row.rowId}`} />
                   </div>

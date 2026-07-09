@@ -41,7 +41,7 @@ interface AdminDashboard {
   funnel: { activeSessions: number; hotLeads: number; callsBooked: number; matched: number; onHold: number; depositsPaid: number; agreementsSigned: number };
   money: { totalCollected: number; totalFees: number; pendingPayouts: number; payoutsSent: number; awaitingPayment: number };
   adoption: { total: number; costSheet: number; invoice: number; agreement: number };
-  upcomingMeetings: Array<{ id: string; scheduledAt: string; subject: string | null; status: string; parentName: string; providerName: string }>;
+  upcomingMeetings: Array<{ id: string; scheduledAt: string; subject: string | null; status: string; hostUserId: string | null; parentName: string; providerName: string }>;
   recentInvoices: Array<{ id: string; status: string; amountCents: number; serviceType: string | null; createdAt: string; parentName: string; providerName: string | null }>;
   recentPayouts: Array<{ id: string; amountCents: number; paidAt: string | null; payoutInitiatedAt: string | null; payoutFailedAt: string | null; stripeTransferId: string | null; bankPayoutCompletedAt: string | null; bankPayoutFailedAt: string | null; status: string; providerName: string | null; parentName: string }>;
 }
@@ -219,29 +219,47 @@ export default function AdminHomePage() {
         )}
       </Card>
 
-      {/* Upcoming meetings - platform wide */}
+      {/* Upcoming meetings - the admin's own on top, then platform wide */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Video className="w-5 h-5 text-primary" />} title="Upcoming meetings" viewAllTo="/calendar" />
         {(data?.upcomingMeetings || []).length === 0 ? (
           <p className="text-sm text-muted-foreground py-2">No upcoming meetings scheduled.</p>
-        ) : (
-          <div className="divide-y">
-            {(data?.upcomingMeetings || []).map(b => (
-              <div key={b.id} className="flex items-center gap-3 py-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{b.subject || `${b.parentName} with ${b.providerName}`}</p>
-                  <p className="text-xs text-muted-foreground">{b.parentName} - {b.providerName} - {fmtWhen(b.scheduledAt)}</p>
-                </div>
-                {b.status === "PENDING" && (
-                  <span className="text-xs font-medium shrink-0" style={{ color: "hsl(var(--brand-warning))" }}>Awaiting confirm</span>
-                )}
-                <Button variant="outline" size="sm" onClick={() => openMeeting(b.id)}>
-                  Details
-                </Button>
+        ) : (() => {
+          const meetings = data?.upcomingMeetings || [];
+          const myId = (user as any)?.id;
+          const mine = meetings.filter(b => b.hostUserId === myId);
+          const platform = meetings.filter(b => b.hostUserId !== myId);
+          const renderRow = (b: (typeof meetings)[number]) => (
+            <div key={b.id} className="flex items-center gap-3 py-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{b.subject || `${b.parentName} with ${b.providerName}`}</p>
+                <p className="text-xs text-muted-foreground">{b.parentName} - {b.providerName} - {fmtWhen(b.scheduledAt)}</p>
               </div>
-            ))}
-          </div>
-        )}
+              {b.status === "PENDING" && (
+                <span className="text-xs font-medium shrink-0" style={{ color: "hsl(var(--brand-warning))" }}>Awaiting confirm</span>
+              )}
+              <Button variant="outline" size="sm" onClick={() => openMeeting(b.id)}>
+                Details
+              </Button>
+            </div>
+          );
+          return (
+            <div className="space-y-3">
+              {mine.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">My meetings</p>
+                  <div className="divide-y">{mine.map(renderRow)}</div>
+                </div>
+              )}
+              {platform.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Platform meetings</p>
+                  <div className="divide-y">{platform.map(renderRow)}</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </Card>
 
       {/* Platform funnel - last 30 days */}

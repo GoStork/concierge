@@ -1085,10 +1085,40 @@ export class UsersController {
     for (const a of agreements) { if (a.status === "SIGNED") bump(a.parentUserId, "AGREEMENT_SIGNED"); }
 
     const servicesByAccount = new Map(profiles.map((pr: any) => [pr.parentAccountId, pr.interestedServices || []]));
+
+    // Services fallback: parents who never finished onboarding have no
+    // IntendedParentProfile row, so the profile-based services list comes
+    // back empty even though their chat sessions say exactly what they
+    // are looking for. Derive from session subjectType in that case
+    // (display only - the profile itself stays untouched). Labels match
+    // the profile vocabulary: Surrogate / Egg Donor / Sperm Donor /
+    // Fertility Clinic.
+    const subjectRows = ids.length
+      ? await this.prisma.aiChatSession.findMany({
+          where: { userId: { in: ids }, subjectType: { not: null } },
+          select: { userId: true, subjectType: true },
+        })
+      : [];
+    const SUBJECT_SERVICE_LABELS: [RegExp, string][] = [
+      [/egg/i, "Egg Donor"],
+      [/surrog/i, "Surrogate"],
+      [/sperm/i, "Sperm Donor"],
+      [/ivf|clinic|doctor/i, "Fertility Clinic"],
+    ];
+    const chatServicesByUser = new Map<string, string[]>();
+    for (const r of subjectRows) {
+      const label = SUBJECT_SERVICE_LABELS.find(([re]) => re.test(r.subjectType || ""))?.[1];
+      if (!label) continue;
+      const list = chatServicesByUser.get(r.userId) || [];
+      if (!list.includes(label)) list.push(label);
+      chatServicesByUser.set(r.userId, list);
+    }
+
     const overview: Record<string, any> = {};
     for (const parent of parents) {
+      const profileServices = parent.parentAccountId ? (servicesByAccount.get(parent.parentAccountId) || []) : [];
       overview[parent.id] = {
-        services: parent.parentAccountId ? (servicesByAccount.get(parent.parentAccountId) || []) : [],
+        services: profileServices.length ? profileServices : (chatServicesByUser.get(parent.id) || []),
         costSheets: [],
         invoices: [],
         agreements: [],
@@ -1125,6 +1155,7 @@ export class UsersController {
       const costSheetsMerged = memberIds.flatMap(id => overview[id]?.costSheets || []).sort(byCreatedDesc);
       const invoicesMerged = memberIds.flatMap(id => overview[id]?.invoices || []);
       const agreementsMerged = memberIds.flatMap(id => overview[id]?.agreements || []).sort(byCreatedDesc);
+      const servicesMerged = Array.from(new Set(memberIds.flatMap(id => overview[id]?.services || [])));
       const household = { memberIds, memberNames: members.map(m => m.name || "") };
       for (const id of memberIds) {
         if (!overview[id]) continue;
@@ -1133,6 +1164,7 @@ export class UsersController {
         overview[id].costSheets = costSheetsMerged;
         overview[id].invoices = invoicesMerged;
         overview[id].agreements = agreementsMerged;
+        overview[id].services = servicesMerged;
         overview[id].household = household;
       }
     }

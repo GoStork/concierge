@@ -2537,6 +2537,33 @@ export class NotificationService implements OnModuleInit {
 
   // ─── Billing notifications ──────────────────────────────────────────────────
 
+  /**
+   * All logins on the same shared parent account as the given user - a
+   * couple has two. Invoices, sessions, and agreements are stamped with a
+   * single parentUserId, but the journey belongs to the household, so
+   * every parent-facing billing/journey notification fans out through
+   * this resolver to keep BOTH partners in the loop. The requested user
+   * sorts first; falls back to just that user for solo accounts (or an
+   * empty array if the user no longer exists).
+   */
+  async getParentAccountRecipients(parentUserId: string): Promise<Array<{ id: string; name: string | null; email: string; mobileNumber: string | null }>> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: parentUserId },
+      select: { id: true, name: true, email: true, mobileNumber: true, parentAccountId: true },
+    });
+    if (!user) return [];
+    if (!user.parentAccountId) return [{ id: user.id, name: user.name, email: user.email, mobileNumber: user.mobileNumber }];
+    const members = await this.prisma.user.findMany({
+      where: { parentAccountId: user.parentAccountId, roles: { has: "PARENT" } },
+      select: { id: true, name: true, email: true, mobileNumber: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const list = members.some(m => m.id === user.id)
+      ? members
+      : [{ id: user.id, name: user.name, email: user.email, mobileNumber: user.mobileNumber }, ...members];
+    return list.sort((a, b) => (a.id === parentUserId ? -1 : b.id === parentUserId ? 1 : 0));
+  }
+
   async sendPaymentRequestNotification(params: {
     parentUserId: string;
     parentName: string;
@@ -2608,32 +2635,44 @@ export class NotificationService implements OnModuleInit {
     }
     detailRows.push({ label: "GoStork Deposit Protection", value: "Included - your funds are protected" });
 
-    const html = buildBrandedEmail(brandData, {
-      title: "Payment Request",
-      greeting: `Hi ${esc(firstName)}, you have a payment request from <strong>${providerName}</strong> via GoStork.`,
-      body: `${lineItemsTable}${urgencyNote}`,
-      detailRows,
-      alertBox: params.dueAt ? { text: `Time-sensitive: payment required by ${new Date(params.dueAt).toLocaleString()}`, type: "warning" as const } : undefined,
-      buttons: [{ label: "Pay Now Securely", url: params.paymentUrl }],
-    });
+    // Fan out to every login on the shared parent account so both
+    // partners get the payment request, each greeted by their own name.
+    const members = await this.getParentAccountRecipients(params.parentUserId);
+    const targets = members.length
+      ? members
+      : [{ id: params.parentUserId, name: params.parentName, email: params.parentEmail, mobileNumber: params.parentPhone || null }];
 
-    await this.dispatchNotification({
-      userId: params.parentUserId,
-      type: "EMAIL",
-      channel: "invoice_payment_request",
-      recipient: params.parentEmail,
-      subject,
-      body: html,
-    });
+    const smsSentTo = new Set<string>();
+    for (const member of targets) {
+      const memberFirst = getFirstName(member.name) || firstName;
+      const html = buildBrandedEmail(brandData, {
+        title: "Payment Request",
+        greeting: `Hi ${esc(memberFirst)}, you have a payment request from <strong>${providerName}</strong> via GoStork.`,
+        body: `${lineItemsTable}${urgencyNote}`,
+        detailRows,
+        alertBox: params.dueAt ? { text: `Time-sensitive: payment required by ${new Date(params.dueAt).toLocaleString()}`, type: "warning" as const } : undefined,
+        buttons: [{ label: "Pay Now Securely", url: params.paymentUrl }],
+      });
 
-    // SMS
-    if (params.parentPhone) {
-      const smsBody = params.dueAt
-        ? `Hi ${firstName}, your payment of ${params.serviceAmountFormatted} for ${params.providerName} is due soon. Pay securely via GoStork: ${params.paymentUrl}`
-        : `Hi ${firstName}, you have a payment request of ${params.serviceAmountFormatted} from ${params.providerName}. Pay securely via GoStork: ${params.paymentUrl}`;
-      await this.sendRawSms(params.parentPhone, smsBody).catch(e =>
-        this.logger.error(`Failed to send payment request SMS: ${e.message}`),
-      );
+      await this.dispatchNotification({
+        userId: member.id,
+        type: "EMAIL",
+        channel: "invoice_payment_request",
+        recipient: member.email,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send payment request email to ${member.email}: ${e.message}`));
+
+      // SMS - dedupe by number since partners often share one phone.
+      if (member.mobileNumber && !smsSentTo.has(member.mobileNumber)) {
+        smsSentTo.add(member.mobileNumber);
+        const smsBody = params.dueAt
+          ? `Hi ${memberFirst}, your payment of ${params.serviceAmountFormatted} for ${params.providerName} is due soon. Pay securely via GoStork: ${params.paymentUrl}`
+          : `Hi ${memberFirst}, you have a payment request of ${params.serviceAmountFormatted} from ${params.providerName}. Pay securely via GoStork: ${params.paymentUrl}`;
+        await this.sendRawSms(member.mobileNumber, smsBody).catch(e =>
+          this.logger.error(`Failed to send payment request SMS: ${e.message}`),
+        );
+      }
     }
   }
 
@@ -2712,19 +2751,30 @@ export class NotificationService implements OnModuleInit {
     });
 
     // ── Parent: receipt + thank-you ─────────────────────────────────────
-    const parentSubject = `Receipt for your payment to ${params.providerName} via GoStork`;
-    const parentHtml = buildBrandedEmail(brandData, {
-      title: "Payment Receipt",
-      greeting: `Hi ${esc(firstName)}, thank you for your payment!`,
-      body: `Your payment to <strong>${esc(params.providerName)}</strong> has been received and processed successfully. A detailed receipt is attached to this email as a PDF - you can save it or forward it to your employer (FSA/HSA), insurance carrier, or accountant as needed.${lineItemsTable}`,
-      detailRows: baseRows,
-      footer: "Need help? Reply to this email or contact billing@gostork.com.",
-    });
+    // Both partners on a shared account get the receipt, each greeted by
+    // their own name and deduped by email address.
+    const members = params.parentUserId ? await this.getParentAccountRecipients(params.parentUserId) : [];
+    const parentTargets = members.length
+      ? members
+      : [{ id: params.parentUserId || "", name: params.parentName, email: params.parentEmail, mobileNumber: null }];
 
-    try {
-      await this.sendRawEmail(params.parentEmail, parentSubject, parentHtml, { attachments });
-    } catch (e: any) {
-      this.logger.warn(`Receipt email to parent ${params.parentEmail} failed: ${e?.message}`);
+    const parentSubject = `Receipt for your payment to ${params.providerName} via GoStork`;
+    const emailedTo = new Set<string>();
+    for (const member of parentTargets) {
+      if (!member.email || emailedTo.has(member.email)) continue;
+      emailedTo.add(member.email);
+      const parentHtml = buildBrandedEmail(brandData, {
+        title: "Payment Receipt",
+        greeting: `Hi ${esc(getFirstName(member.name) || firstName)}, thank you for your payment!`,
+        body: `Your payment to <strong>${esc(params.providerName)}</strong> has been received and processed successfully. A detailed receipt is attached to this email as a PDF - you can save it or forward it to your employer (FSA/HSA), insurance carrier, or accountant as needed.${lineItemsTable}`,
+        detailRows: baseRows,
+        footer: "Need help? Reply to this email or contact billing@gostork.com.",
+      });
+      try {
+        await this.sendRawEmail(member.email, parentSubject, parentHtml, { attachments });
+      } catch (e: any) {
+        this.logger.warn(`Receipt email to parent ${member.email} failed: ${e?.message}`);
+      }
     }
 
     // ── Agency: payment-received notice + same PDF ──────────────────────
@@ -2781,8 +2831,15 @@ export class NotificationService implements OnModuleInit {
       smsBody = `Your 24-hour hold with ${params.providerName} has expired. Contact GoStork to explore next steps.`;
     }
 
-    if (smsBody && params.parentPhone) {
-      await this.sendRawSms(params.parentPhone, smsBody).catch(e =>
+    if (!smsBody) return;
+    // Countdown reminders reach every partner on the account (deduped by
+    // phone - couples often share one number).
+    const members = await this.getParentAccountRecipients(params.parentUserId);
+    const phones = new Set<string>(
+      (members.length ? members.map(m => m.mobileNumber) : [params.parentPhone]).filter(Boolean) as string[],
+    );
+    for (const phone of Array.from(phones)) {
+      await this.sendRawSms(phone, smsBody).catch(e =>
         this.logger.error(`Failed to send reminder SMS (${params.reminderType}): ${e.message}`),
       );
     }
@@ -2938,35 +2995,42 @@ export class NotificationService implements OnModuleInit {
     const methodLabel = isAch ? "ACH bank transfer" : "payment";
     const subject = `Your ${methodLabel} to ${invoice.providerName} is processing`;
 
-    const html = buildBrandedEmail(brandData, {
-      title: "Payment Processing",
-      greeting: `Hi ${esc(firstName)},`,
-      body: isAch
-        ? `Your ACH bank transfer of <strong>${amountFormatted}</strong> to <strong>${providerName}</strong> has been submitted and is now processing. ACH transfers typically take <strong>3-5 business days</strong> to clear.`
-        : `Your payment of <strong>${amountFormatted}</strong> to <strong>${providerName}</strong> has been submitted and is now processing.`,
-      detailRows: [
-        { label: "Provider", value: invoice.providerName },
-        { label: "Amount",   value: amountFormatted },
-        { label: "Method",   value: isAch ? "ACH Direct Debit" : "Bank transfer" },
-        { label: "Status",   value: "Processing - awaiting clearance" },
-      ],
-      alertBox: {
-        text: isAch
-          ? "No further action is required. We'll email you a receipt as soon as the funds clear. Please do not re-submit this payment."
-          : "No further action is required. We'll email you a receipt as soon as the payment clears.",
-        type: "info",
-      },
-      footer: "Questions? Reply to this email and we'll help right away.",
-    });
+    // Both partners on a shared account get the processing notice.
+    const members = await this.getParentAccountRecipients(invoice.parentUserId);
+    const targets = members.length
+      ? members
+      : [{ id: invoice.parentUserId, name: invoice.parentUser.name, email: invoice.parentUser.email, mobileNumber: null }];
+    for (const member of targets) {
+      const html = buildBrandedEmail(brandData, {
+        title: "Payment Processing",
+        greeting: `Hi ${esc(getFirstName(member.name) || firstName)},`,
+        body: isAch
+          ? `Your ACH bank transfer of <strong>${amountFormatted}</strong> to <strong>${providerName}</strong> has been submitted and is now processing. ACH transfers typically take <strong>3-5 business days</strong> to clear.`
+          : `Your payment of <strong>${amountFormatted}</strong> to <strong>${providerName}</strong> has been submitted and is now processing.`,
+        detailRows: [
+          { label: "Provider", value: invoice.providerName },
+          { label: "Amount",   value: amountFormatted },
+          { label: "Method",   value: isAch ? "ACH Direct Debit" : "Bank transfer" },
+          { label: "Status",   value: "Processing - awaiting clearance" },
+        ],
+        alertBox: {
+          text: isAch
+            ? "No further action is required. We'll email you a receipt as soon as the funds clear. Please do not re-submit this payment."
+            : "No further action is required. We'll email you a receipt as soon as the payment clears.",
+          type: "info",
+        },
+        footer: "Questions? Reply to this email and we'll help right away.",
+      });
 
-    await this.dispatchNotification({
-      userId: invoice.parentUserId,
-      type: "EMAIL",
-      channel: "invoice_processing",
-      recipient: invoice.parentUser.email,
-      subject,
-      body: html,
-    }).catch(e => this.logger.error(`Failed to send invoice-processing email to ${invoice.parentUser.email}: ${e.message}`));
+      await this.dispatchNotification({
+        userId: member.id,
+        type: "EMAIL",
+        channel: "invoice_processing",
+        recipient: member.email,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send invoice-processing email to ${member.email}: ${e.message}`));
+    }
   }
 
   /**
@@ -3012,27 +3076,35 @@ export class NotificationService implements OnModuleInit {
       ? [{ label: "View Instructions Online", url: String(wire.hostedInstructionsUrl) }]
       : [];
 
-    const html = buildBrandedEmail(brandData, {
-      title: "Your Wire Transfer Instructions",
-      greeting: `Hi ${esc(firstName)},`,
-      body: `Use the bank details below to wire <strong>${amountFormatted}</strong> to <strong>${providerName}</strong>. International wires usually arrive within 1-3 business days; your bank may charge a wire fee that is not included in the invoice total.`,
-      detailRows,
-      alertBox: {
-        text: `<strong>IMPORTANT:</strong> You must include this reference code in your wire memo, or your bank cannot match the payment: <strong style="font-family: monospace; font-size: 16px;">${reference}</strong>`,
-        type: "warning" as const,
-      },
-      buttons,
-      footer: "Questions? Reply to this email and we'll help right away.",
-    });
+    // Both partners on a shared account get the wire instructions - either
+    // of them may be the one walking into their bank app.
+    const members = await this.getParentAccountRecipients(invoice.parentUserId);
+    const targets = members.length
+      ? members
+      : [{ id: invoice.parentUserId, name: invoice.parentUser.name, email: invoice.parentUser.email, mobileNumber: null }];
+    for (const member of targets) {
+      const html = buildBrandedEmail(brandData, {
+        title: "Your Wire Transfer Instructions",
+        greeting: `Hi ${esc(getFirstName(member.name) || firstName)},`,
+        body: `Use the bank details below to wire <strong>${amountFormatted}</strong> to <strong>${providerName}</strong>. International wires usually arrive within 1-3 business days; your bank may charge a wire fee that is not included in the invoice total.`,
+        detailRows,
+        alertBox: {
+          text: `<strong>IMPORTANT:</strong> You must include this reference code in your wire memo, or your bank cannot match the payment: <strong style="font-family: monospace; font-size: 16px;">${reference}</strong>`,
+          type: "warning" as const,
+        },
+        buttons,
+        footer: "Questions? Reply to this email and we'll help right away.",
+      });
 
-    await this.dispatchNotification({
-      userId: invoice.parentUserId,
-      type: "EMAIL",
-      channel: "wire_instructions",
-      recipient: invoice.parentUser.email,
-      subject,
-      body: html,
-    }).catch(e => this.logger.error(`Failed to send wire-instructions email to ${invoice.parentUser.email}: ${e.message}`));
+      await this.dispatchNotification({
+        userId: member.id,
+        type: "EMAIL",
+        channel: "wire_instructions",
+        recipient: member.email,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send wire-instructions email to ${member.email}: ${e.message}`));
+    }
   }
 
   // ─── Cost sheet notifications ───────────────────────────────────────────────
@@ -3054,31 +3126,40 @@ export class NotificationService implements OnModuleInit {
     const chatUrl = `${getBaseUrl()}/chat/${params.providerId}/${params.sessionId}`;
     const subject = `${params.providerName} sent you a cost sheet`;
 
-    const html = buildBrandedEmail(brandData, {
-      title: "Cost Sheet from Your Provider",
-      greeting: `Hi ${esc(firstName)},`,
-      body: `<strong>${providerName}</strong> has sent you ${params.hasFile ? "a cost sheet and" : ""} a total quoted cost for your service. You can review the details in your GoStork chat.`,
-      detailRows: [
-        { label: "Provider",           value: params.providerName },
-        { label: "Total Quoted Cost",  value: params.totalCostFormatted },
-      ],
-      buttons: [{ label: "View in Chat", url: chatUrl }],
-    });
+    // Both partners on a shared account get the cost sheet notice, each
+    // greeted by their own name.
+    const members = await this.getParentAccountRecipients(params.parentUserId);
+    const targets = members.length
+      ? members
+      : [{ id: params.parentUserId, name: params.parentName, email: params.parentEmail, mobileNumber: params.parentPhone || null }];
+    const smsSentTo = new Set<string>();
+    for (const member of targets) {
+      const html = buildBrandedEmail(brandData, {
+        title: "Cost Sheet from Your Provider",
+        greeting: `Hi ${esc(getFirstName(member.name) || firstName)},`,
+        body: `<strong>${providerName}</strong> has sent you ${params.hasFile ? "a cost sheet and" : ""} a total quoted cost for your service. You can review the details in your GoStork chat.`,
+        detailRows: [
+          { label: "Provider",           value: params.providerName },
+          { label: "Total Quoted Cost",  value: params.totalCostFormatted },
+        ],
+        buttons: [{ label: "View in Chat", url: chatUrl }],
+      });
+      await this.dispatchNotification({
+        userId: member.id,
+        type: "EMAIL",
+        channel: "cost_sheet_ready",
+        recipient: member.email,
+        subject,
+        body: html,
+      }).catch(e => this.logger.error(`Failed to send cost sheet email to ${member.email}: ${e.message}`));
 
-    await this.dispatchNotification({
-      userId: params.parentUserId,
-      type: "EMAIL",
-      channel: "cost_sheet_ready",
-      recipient: params.parentEmail,
-      subject,
-      body: html,
-    }).catch(e => this.logger.error(`Failed to send cost sheet email to ${params.parentEmail}: ${e.message}`));
-
-    if (params.parentPhone) {
-      await this.sendRawSms(
-        params.parentPhone,
-        `Hi ${firstName}, ${params.providerName} sent a cost sheet (${params.totalCostFormatted}) via GoStork. View it here: ${chatUrl}`,
-      ).catch(e => this.logger.error(`Failed to send cost sheet SMS: ${e.message}`));
+      if (member.mobileNumber && !smsSentTo.has(member.mobileNumber)) {
+        smsSentTo.add(member.mobileNumber);
+        await this.sendRawSms(
+          member.mobileNumber,
+          `Hi ${getFirstName(member.name) || firstName}, ${params.providerName} sent a cost sheet (${params.totalCostFormatted}) via GoStork. View it here: ${chatUrl}`,
+        ).catch(e => this.logger.error(`Failed to send cost sheet SMS: ${e.message}`));
+      }
     }
   }
 

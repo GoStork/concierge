@@ -2137,13 +2137,15 @@ const sendMessageMutation = useMutation({
             <Button
               variant="ghost"
               size="sm"
-              className="h-10 w-10 p-0 rounded-full"
-              style={{ color: "white", backgroundColor: brandColor }}
+              className="h-8 px-3 gap-1.5 text-xs font-medium rounded-full"
+              style={{ color: "white", backgroundColor: brandColor, borderRadius: "999px" }}
               onClick={handleParentVideo}
-              aria-label="Video call"
+              title={`Start a video call with ${selectedParentSession!.providerName || "your provider"}`}
+              aria-label={`Start a video call with ${selectedParentSession!.providerName || "your provider"}`}
               data-testid="btn-parent-video"
             >
-              <Video className="!w-5 !h-5" strokeWidth={2.25} />
+              <Video className="w-4 h-4" strokeWidth={2.25} />
+              <span className="hidden sm:inline">Video Call</span>
             </Button>
           </div>
           )}
@@ -2518,13 +2520,15 @@ const sendMessageMutation = useMutation({
             <Button
               variant="ghost"
               size="sm"
-              className="h-10 w-10 p-0 rounded-full"
-              style={{ color: "white", backgroundColor: brandColor }}
+              className="h-8 px-3 gap-1.5 text-xs font-medium rounded-full"
+              style={{ color: "white", backgroundColor: brandColor, borderRadius: "999px" }}
               onClick={handleProviderVideo}
-              aria-label="Video call"
+              title={`Start a video call with ${detail?.user?.name || "the parent"}`}
+              aria-label={`Start a video call with ${detail?.user?.name || "the parent"}`}
               data-testid="btn-provider-video"
             >
-              <Video className="!w-5 !h-5" strokeWidth={2.25} />
+              <Video className="w-4 h-4" strokeWidth={2.25} />
+              <span className="hidden sm:inline">Video Call</span>
             </Button>
           </div>
         </div>

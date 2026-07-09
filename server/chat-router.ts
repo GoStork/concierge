@@ -3280,12 +3280,13 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
       prisma.booking.findMany({
         where: { scheduledAt: { gte: now }, status: { in: ["PENDING", "CONFIRMED"] } },
         orderBy: { scheduledAt: "asc" },
-        take: 5,
+        take: 8,
         select: {
           id: true,
           scheduledAt: true,
           subject: true,
           status: true,
+          providerUserId: true,
           parentUser: { select: { name: true, firstName: true, email: true } },
           providerUser: { select: { name: true, provider: { select: { name: true } } } },
         },
@@ -3416,6 +3417,9 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
         scheduledAt: b.scheduledAt,
         subject: b.subject,
         status: b.status,
+        // Host user id lets the admin Home split "my meetings" (this admin
+        // hosts) from platform-wide provider-parent meetings.
+        hostUserId: b.providerUserId,
         parentName: b.parentUser?.firstName || b.parentUser?.name || b.parentUser?.email || "Parent",
         providerName: b.providerUser?.provider?.name || b.providerUser?.name || "Provider",
       })),
