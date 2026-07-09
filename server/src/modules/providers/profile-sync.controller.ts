@@ -21,6 +21,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { invalidateMarketplaceCache } from "./providers.controller";
+import { applyAsrmGate, getAsrmRequirements, reevaluateAllSurrogatesAsrm, invalidateAsrmRequirementsCache } from "./asrm";
 import {
   getSyncConfig,
   saveSyncConfig,
@@ -367,7 +368,7 @@ export class ProfileSyncController {
     }
     const donor = await this.prisma.surrogate.findFirst({ where: { id: donorId, providerId } });
     if (!donor) throw new NotFoundException("Surrogate not found");
-    if (donor.hiddenFromSearch && parent) throw new NotFoundException("Surrogate not found");
+    if ((donor.hiddenFromSearch || donor.asrmHidden) && parent) throw new NotFoundException("Surrogate not found");
     const statuses = parent ? ["APPROVED"] : ["PENDING", "APPROVED"];
     const { resolvedCompensation, calculatedTotalCost } = await resolveCompensationAndTotalCost(
       this.prisma, providerId, "surrogate", donor.baseCompensation != null ? Number(donor.baseCompensation) : null, statuses,
@@ -440,7 +441,7 @@ export class ProfileSyncController {
       "surrogate": new Set([
         "age", "bmi", "height", "weight", "location", "relationshipStatus",
         "race", "ethnicity", "religion", "education",
-        "liveBirths", "miscarriages", "cSections", "occupation", "baseCompensation",
+        "liveBirths", "miscarriages", "cSections", "abortions", "occupation", "baseCompensation",
         "totalCostMin", "totalCostMax", "agreesToAbortion",
         "agreesToTwins", "covidVaccinated", "openToSameSexCouple",
         "agreesToSelectiveReduction", "agreesToInternationalParents", "lastDeliveryYear",
@@ -506,6 +507,21 @@ export class ProfileSyncController {
         updated = await this.prisma.surrogate.findUnique({ where: { id: donorId } });
       } else if (validType === "sperm-donor") {
         updated = await this.prisma.spermDonor.findUnique({ where: { id: donorId } });
+      }
+    }
+
+    // ASRM minimum-requirements gate: manual edits to any gated field must
+    // re-evaluate the profile. asrmHidden/asrmFailReasons are system-owned
+    // (never in the allow-list), so providers cannot unhide a failing profile.
+    const ASRM_FIELDS = ["age", "bmi", "liveBirths", "miscarriages", "cSections", "abortions", "lastDeliveryYear", "covidVaccinated"];
+    if (validType === "surrogate" && changedFields.some(f => ASRM_FIELDS.includes(f))) {
+      const gate = await applyAsrmGate(this.prisma, updated).catch((e) => {
+        console.error(`[ASRM] gate failed for surrogate ${donorId}:`, e?.message || e);
+        return null;
+      });
+      if (gate) {
+        updated = { ...updated, asrmHidden: gate.hidden, asrmFailReasons: gate.hidden ? { failures: gate.failures, missing: gate.missing } : null };
+        invalidateMarketplaceCache("marketplace:surrogates:");
       }
     }
 

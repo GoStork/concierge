@@ -713,6 +713,31 @@ export class UsersController {
     return users;
   }
 
+  @Get("gostork/users")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "List GoStork team members (GoStork team only)" })
+  @ApiResponse({ status: 200, description: "List of GoStork team members", type: [UserResponseDto] })
+  @ApiResponse({ status: 403, description: "Forbidden - GoStork team only", type: ErrorResponseDto })
+  async listGostorkUsers(@Req() req: Request) {
+    const user = req.user as any;
+    const gostorkRoles = ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE", "GOSTORK_DEVELOPER"];
+    if (!user.roles?.some((r: string) => gostorkRoles.includes(r))) {
+      throw new ForbiddenException("GoStork team only");
+    }
+    const users = await this.prisma.user.findMany({
+      where: { roles: { hasSome: gostorkRoles as any } },
+      select: {
+        id: true, email: true, name: true, photoUrl: true, mobileNumber: true, mobileNumberDisplay: true, city: true, state: true, country: true, roles: true, providerId: true, allLocations: true, createdAt: true, dailyRoomUrl: true, calendarLink: true, isDisabled: true,
+        assignedLocations: { include: { location: true } },
+        calendarConnections: { select: { id: true, provider: true, email: true, label: true, tokenValid: true, connected: true }, orderBy: { createdAt: "desc" } },
+        scheduleConfig: { select: { bookingPageSlug: true } },
+      },
+      orderBy: { email: "asc" },
+    });
+    return users;
+  }
+
   @Get("users/:id")
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
@@ -944,6 +969,122 @@ export class UsersController {
     return { message: "User deleted" };
   }
 
+  // GoStork admin Parents page: journey aggregates per parent across ALL
+  // providers (services interested, cost sheets, invoices, agreements,
+  // last activity). Joined client-side with the /api/users list.
+  @Get("admin/parents-overview")
+  @UseGuards(SessionOrJwtGuard)
+  async adminParentsOverview(@Req() req: Request) {
+    const user = req.user as any;
+    const roles: string[] = user?.roles || [];
+    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_CONCIERGE")) {
+      throw new ForbiddenException("GoStork admin only");
+    }
+    const parents = await this.prisma.user.findMany({
+      where: { roles: { has: "PARENT" } },
+      select: { id: true, parentAccountId: true },
+    });
+    const ids = parents.map(p => p.id);
+    const accountIds = Array.from(new Set(parents.map(p => p.parentAccountId).filter(Boolean))) as string[];
+    // "Updated" = the parent's most recent journey activity (their latest
+    // chat-session update) - User itself has no updatedAt column.
+    const latestSessions = ids.length
+      ? await this.prisma.aiChatSession.groupBy({
+          by: ["userId"],
+          where: { userId: { in: ids } },
+          _max: { updatedAt: true },
+        })
+      : [];
+    const lastActivityByUser = new Map(latestSessions.map((r: any) => [r.userId, r._max.updatedAt]));
+
+    const [profiles, quotes, invoices, agreements] = await Promise.all([
+      accountIds.length
+        ? this.prisma.intendedParentProfile.findMany({
+            where: { parentAccountId: { in: accountIds } },
+            select: { parentAccountId: true, interestedServices: true },
+          })
+        : [],
+      ids.length
+        ? this.prisma.providerQuote.findMany({
+            where: { parentUserId: { in: ids } },
+            select: { id: true, parentUserId: true, sessionId: true, totalCostCents: true, supersededAt: true, parentAcknowledgedAt: true, createdAt: true },
+            orderBy: { createdAt: "desc" },
+          })
+        : [],
+      ids.length
+        ? this.prisma.invoice.findMany({
+            where: { parentUserId: { in: ids } },
+            select: { id: true, parentUserId: true, serviceType: true, serviceAmount: true, status: true },
+            orderBy: { createdAt: "desc" },
+          })
+        : [],
+      ids.length
+        ? this.prisma.agreement.findMany({
+            where: { parentUserId: { in: ids } },
+            select: { id: true, parentUserId: true, status: true, documentType: true, createdAt: true },
+            orderBy: { createdAt: "desc" },
+          })
+        : [],
+    ]);
+    // Most-advanced journey status per parent across ALL their sessions -
+    // same ladder as the provider Parents table.
+    const sessions = ids.length
+      ? await this.prisma.aiChatSession.findMany({
+          where: { userId: { in: ids }, status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] } },
+          select: { userId: true, status: true, subjectProfileId: true, subjectType: true, handoffCompletedAt: true },
+        })
+      : [];
+    const matchCallUsers = new Set(
+      ids.length
+        ? (await this.prisma.booking.findMany({
+            where: { parentUserId: { in: ids }, meetingSubtype: "MATCH_CALL", status: { notIn: ["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"] } },
+            select: { parentUserId: true },
+          })).map(b => b.parentUserId)
+        : [],
+    );
+    const overviewSurrogateIds = sessions
+      .filter(cs => (cs.subjectType || "").toLowerCase().includes("surrog") && cs.subjectProfileId)
+      .map(cs => cs.subjectProfileId as string);
+    const overviewMatched = overviewSurrogateIds.length
+      ? await this.prisma.surrogate.findMany({
+          where: { id: { in: overviewSurrogateIds }, status: "MATCHED" },
+          select: { id: true, reservedByParentId: true },
+        })
+      : [];
+    const overviewMatchedById = new Map(overviewMatched.map(su => [su.id, su.reservedByParentId]));
+    const LADDER = ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "MATCH_CALL", "MATCHED", "DEPOSIT_PAID", "AGREEMENT_SIGNED"];
+    const rank = (st: string | null) => (st ? LADDER.indexOf(st) : -1);
+    const statusByUser = new Map<string, string>();
+    const bump = (userId: string, st: string) => {
+      if (rank(st) > rank(statusByUser.get(userId) || null)) statusByUser.set(userId, st);
+    };
+    for (const cs of sessions) {
+      bump(cs.userId, cs.status);
+      if (cs.handoffCompletedAt) bump(cs.userId, "AGREEMENT_SIGNED");
+      if (cs.subjectProfileId && overviewMatchedById.get(cs.subjectProfileId) === cs.userId) bump(cs.userId, "MATCHED");
+    }
+    for (const uid of Array.from(matchCallUsers)) { if (uid) bump(uid as string, "MATCH_CALL"); }
+    for (const inv of invoices) { if (inv.status === "PAID") bump(inv.parentUserId, "DEPOSIT_PAID"); }
+    for (const a of agreements) { if (a.status === "SIGNED") bump(a.parentUserId, "AGREEMENT_SIGNED"); }
+
+    const servicesByAccount = new Map(profiles.map((pr: any) => [pr.parentAccountId, pr.interestedServices || []]));
+    const overview: Record<string, any> = {};
+    for (const parent of parents) {
+      overview[parent.id] = {
+        services: parent.parentAccountId ? (servicesByAccount.get(parent.parentAccountId) || []) : [],
+        costSheets: [],
+        invoices: [],
+        agreements: [],
+        updatedAt: lastActivityByUser.get(parent.id) || null,
+        matchStatus: statusByUser.get(parent.id) || null,
+      };
+    }
+    for (const q of quotes) overview[q.parentUserId]?.costSheets.push(q);
+    for (const inv of invoices) overview[inv.parentUserId]?.invoices.push(inv);
+    for (const a of agreements) overview[a.parentUserId]?.agreements.push(a);
+    return overview;
+  }
+
   @Get("providers/:providerId/parent-contacts")
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
@@ -977,6 +1118,8 @@ export class UsersController {
         parentUserId: { not: null },
       },
       select: {
+        meetingSubtype: true,
+        status: true,
         parentUserId: true,
         scheduledAt: true,
         parentUser: {
@@ -1038,6 +1181,9 @@ export class UsersController {
         createdAt: true,
         updatedAt: true,
         providerJoinedAt: true,
+        subjectProfileId: true,
+        subjectType: true,
+        handoffCompletedAt: true,
         user: {
           select: {
             id: true, name: true, email: true, mobileNumber: true, photoUrl: true, createdAt: true,
@@ -1046,6 +1192,27 @@ export class UsersController {
       },
       orderBy: { updatedAt: "desc" },
     });
+
+    // Journey-stage inputs: the chat-session status stops at
+    // PROVIDER_CONNECTED, but the journey continues (match call -> official
+    // match -> deposit -> agreement signed). Derive the most-advanced stage
+    // per session from the same facts the automations write.
+    const surrogateIds = chatSessions
+      .filter(cs => (cs.subjectType || "").toLowerCase().includes("surrog") && cs.subjectProfileId)
+      .map(cs => cs.subjectProfileId as string);
+    const matchedSurrogates = surrogateIds.length
+      ? await this.prisma.surrogate.findMany({
+          where: { id: { in: surrogateIds }, status: "MATCHED" },
+          select: { id: true, reservedByParentId: true },
+        })
+      : [];
+    const matchedSurrogateById = new Map(matchedSurrogates.map(su => [su.id, su.reservedByParentId]));
+    const matchCallParents = new Set(
+      bookings
+        .filter((b: any) => b.meetingSubtype === "MATCH_CALL" && !["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"].includes(b.status))
+        .map((b: any) => b.parentUserId)
+        .filter(Boolean),
+    );
 
     // Invoices grouped by sessionId so each match row only shows its own
     // invoices. Single query, in-memory grouping = no N+1.
@@ -1082,6 +1249,56 @@ export class UsersController {
       }
     }
 
+    // Cost sheets grouped by sessionId - same single-query pattern as invoices.
+    const costSheetsBySession = new Map<string, any[]>();
+    if (sessionIds.length > 0) {
+      const quotes = await this.prisma.providerQuote.findMany({
+        where: { providerId, sessionId: { in: sessionIds } },
+        select: {
+          id: true,
+          sessionId: true,
+          totalCostCents: true,
+          supersededAt: true,
+          parentAcknowledgedAt: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      for (const q of quotes) {
+        if (!q.sessionId) continue;
+        const list = costSheetsBySession.get(q.sessionId) || [];
+        list.push(q);
+        costSheetsBySession.set(q.sessionId, list);
+      }
+    }
+
+    // Agreements grouped by sessionId - same single-query pattern as invoices.
+    const agreementsBySession = new Map<string, any[]>();
+    if (sessionIds.length > 0) {
+      const agreements = await this.prisma.agreement.findMany({
+        where: {
+          providerId,
+          sessionId: { in: sessionIds },
+        },
+        select: {
+          id: true,
+          status: true,
+          documentType: true,
+          serviceType: true,
+          pandaDocViewUrl: true,
+          signedAt: true,
+          createdAt: true,
+          sessionId: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      for (const agr of agreements) {
+        const list = agreementsBySession.get(agr.sessionId) || [];
+        list.push(agr);
+        agreementsBySession.set(agr.sessionId, list);
+      }
+    }
+
     // Build the rows: one per chat session.
     const rows: any[] = [];
     const parentsWithSession = new Set<string>();
@@ -1089,12 +1306,28 @@ export class UsersController {
       if (!cs.userId || !cs.user) continue;
       parentsWithSession.add(cs.userId);
       const agg = parentAgg.get(cs.userId);
+      const rowInvoices = invoicesBySession.get(cs.id) || [];
+      const rowAgreements = agreementsBySession.get(cs.id) || [];
+      // Most-advanced journey stage wins. Mirrors the 13-stage spine:
+      // Connected -> Match Call -> Matched (double-yes) -> Deposit Paid ->
+      // Agreement Signed (handoff).
+      const journeyStatus =
+        cs.handoffCompletedAt || rowAgreements.some((a: any) => a.status === "SIGNED")
+          ? "AGREEMENT_SIGNED"
+          : rowInvoices.some((inv: any) => inv.status === "PAID")
+            ? "DEPOSIT_PAID"
+            : cs.subjectProfileId && matchedSurrogateById.get(cs.subjectProfileId) === cs.userId
+              ? "MATCHED"
+              : matchCallParents.has(cs.userId)
+                ? "MATCH_CALL"
+                : cs.status;
+
       rows.push({
         // Stable React key - use sessionId so multiple matches for the
         // same parent get distinct rows.
         rowId: cs.id,
         sessionId: cs.id,
-        matchStatus: cs.status,
+        matchStatus: journeyStatus,
         chatStartedAt: cs.providerJoinedAt || cs.createdAt,
         // Parent fields are duplicated on every row that belongs to the
         // parent. UI keeps them visible per row so each row reads
@@ -1104,6 +1337,19 @@ export class UsersController {
         meetingCount: agg?.meetingCount || 0,
         source: agg?.hasMeeting ? "both" : "chat",
         invoices: invoicesBySession.get(cs.id) || [],
+        agreements: agreementsBySession.get(cs.id) || [],
+        costSheets: costSheetsBySession.get(cs.id) || [],
+        // The service this match/session is about (from the session subject)
+        serviceType: (() => {
+          const st = (cs.subjectType || "").toLowerCase();
+          if (st.includes("egg")) return "EGG_DONATION";
+          if (st.includes("surrog")) return "SURROGACY";
+          if (st.includes("sperm")) return "SPERM_DONATION";
+          if (st.includes("ivf") || st.includes("clinic") || st.includes("doctor")) return "IVF_CLINIC";
+          return null;
+        })(),
+        sessionCreatedAt: cs.createdAt,
+        sessionUpdatedAt: cs.updatedAt,
       });
     }
 
@@ -1121,6 +1367,11 @@ export class UsersController {
         meetingCount: agg.meetingCount,
         source: "meeting",
         invoices: [],
+        agreements: [],
+        costSheets: [],
+        serviceType: null,
+        sessionCreatedAt: null,
+        sessionUpdatedAt: null,
       });
     }
 

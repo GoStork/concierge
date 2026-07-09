@@ -48,6 +48,13 @@ model Provider {
   agreementTemplateOriginalName         String?
   pandaDocTemplateId                    String?
   pandaDocRoles                         String? // JSON array of role names in signing order, e.g. ["Client","Client2","Agency"]
+  // Phase 5 agreement automation mode, set by the PROVIDER (overrides the
+  // GoStork-admin autoAgreementDraft rollout toggle):
+  //   null       = inherit admin toggle (on -> "approval", off -> "off")
+  //   "off"      = never auto-draft on invoice PAID
+  //   "approval" = auto-draft, provider approves before send
+  //   "auto_send" = fully automated - generate AND send for signature on PAID
+  agreementAutomation                   String?
   // Look-alike face matching: the agency authorizes GoStork to generate
   // faceprints from its donors'/surrogates' photos. Default ON (opt-out) -
   // backed by the agency agreement's biometric rep/warranty; agencies that
@@ -80,6 +87,7 @@ model Provider {
   ivfSurrogateMaxAge                    Int?
   ivfSurrogateMinBmi                    Float?
   ivfSurrogateMaxBmi                    Float?
+  ivfSurrogateMinDeliveries             Int?
   ivfSurrogateMaxDeliveries             Int?
   ivfSurrogateMaxCSections              Int?
   ivfSurrogateMaxMiscarriages           Int?
@@ -105,6 +113,7 @@ model Provider {
   averageClearanceDays                  Int? // used for AT_CLEARANCE milestone scheduling
   eggDonors                             EggDonor[]
   agreements                            Agreement[]
+  agreementTemplates                    ProviderAgreementTemplate[]
   eggDonorSyncConfig                    EggDonorSyncConfig?
   brandSettings                         ProviderBrandSettings?
   legalIdentity                         ProviderLegalIdentity?
@@ -904,6 +913,7 @@ model Surrogate {
   liveBirths                   Int?
   miscarriages                 Int?
   cSections                    Int?
+  abortions                    Int?
   relationshipStatus           String?
   race                         String?
   ethnicity                    String?
@@ -927,6 +937,12 @@ model Surrogate {
   manuallyEditedFields         String[]                    @default([])
   photos                       String[]                    @default([])
   hiddenFromSearch             Boolean                     @default(false)
+  // ASRM minimum-requirements gate: system-owned, set automatically on every
+  // sync/upload/edit by evaluating the profile against the GoStork house
+  // provider's Surrogate Matching Requirements. Providers cannot clear it -
+  // parent-facing queries exclude these profiles regardless of hiddenFromSearch.
+  asrmHidden                   Boolean                     @default(false)
+  asrmFailReasons              Json?
   isPremium                    Boolean                     @default(false)
   isExperienced                Boolean                     @default(false)
   lastFullSyncAt               DateTime?
@@ -1770,11 +1786,33 @@ model SilentQuery {
 // PANDADOC AGREEMENT TRACKING
 // ==========================================
 
+// Per-service agreement templates for multi-service providers (e.g. an
+// agency doing both SURROGACY and EGG_DONATION has a different contract per
+// service). Falls back to the legacy single-template fields on Provider
+// (agreementTemplateUrl / pandaDocTemplateId / pandaDocRoles) when no row
+// exists for the session's service type.
+model ProviderAgreementTemplate {
+  id                            String   @id @default(uuid())
+  providerId                    String
+  serviceType                   String // SURROGACY | EGG_DONATION | SPERM_DONATION | IVF_CLINIC | OTHER
+  agreementTemplateUrl          String?
+  agreementTemplateOriginalName String?
+  pandaDocTemplateId            String?
+  pandaDocRoles                 String? // JSON array of role names in signing order
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, serviceType])
+}
+
 model Agreement {
   id                 String    @id @default(uuid())
   providerId         String
   parentUserId       String
   sessionId          String
+  serviceType        String? // which service's template generated this agreement (SURROGACY / EGG_DONATION / ...)
   generatedByUserId  String? // userId of the provider staff member who clicked Generate & Send Agreement
   pandaDocDocumentId String?   @unique
   pandaDocViewUrl    String?

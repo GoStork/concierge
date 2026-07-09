@@ -61,6 +61,14 @@ import W9SigningPage from "@/pages/w9-signing-page";
 import PaymentPage from "@/pages/payment-page";
 import AdminBillingPage from "@/pages/admin-billing-page";
 import MyInvoicesPage from "@/pages/my-invoices-page";
+import ParentHomePage from "@/pages/parent-home-page";
+import MyCostSheetsPage from "@/pages/my-cost-sheets-page";
+import ProviderPayoutsPage from "@/pages/provider-payouts-page";
+import ProviderCostSheetsPage from "@/pages/provider-cost-sheets-page";
+import ProviderAgreementsPage from "@/pages/provider-agreements-page";
+import ProviderHomePage from "@/pages/provider-home-page";
+import AdminHomePage from "@/pages/admin-home-page";
+import AdminAgreementsPage from "@/pages/admin-agreements-page";
 import ProviderBillingPage from "@/pages/provider-billing-page";
 import AdminTestRunnerPage from "@/pages/admin-test-runner-page";
 
@@ -112,6 +120,9 @@ function DashboardRoute() {
   if (isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY') {
     return <Navigate to="/chat" replace />;
   }
+  // GoStork admins land on the command center; providers on their Home.
+  if (isAdmin) return <Navigate to="/admin/home" replace />;
+  if (isProvider) return <Navigate to="/provider/home" replace />;
   return <Navigate to="/marketplace" replace />;
 }
 
@@ -159,7 +170,8 @@ function AppRoutes() {
         <Route path="/admin/scrapers/cdc-sync/:id/clinic/:providerId" element={<ProtectedRoute><CdcClinicSuccessRatesPage /></ProtectedRoute>} />
         <Route path="/users/new" element={<ProtectedRoute><AdminUserAddPage /></ProtectedRoute>} />
         <Route path="/users/:id" element={<ProtectedRoute><AdminUserEditPage /></ProtectedRoute>} />
-        <Route path="/users" element={<ProtectedRoute><StaffPage /></ProtectedRoute>} />
+        <Route path="/parents" element={<ProtectedRoute><StaffPage /></ProtectedRoute>} />
+        <Route path="/users" element={<Navigate to="/parents" replace />} />
         <Route path="/parents/:id" element={<ProtectedRoute><ParentDetailPage /></ProtectedRoute>} />
         <Route path="/provider/services" element={<Navigate to="/account/company" replace />} />
         <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
@@ -180,7 +192,16 @@ function AppRoutes() {
         <Route path="/admin/billing" element={<ProtectedRoute><AdminBillingPage /></ProtectedRoute>} />
         <Route path="/my/invoices" element={<ProtectedRoute><MyInvoicesPage /></ProtectedRoute>} />
         <Route path="/my/billing" element={<ProtectedRoute><MyInvoicesPage /></ProtectedRoute>} />
+        <Route path="/my/cost-sheets" element={<ProtectedRoute><MyCostSheetsPage /></ProtectedRoute>} />
+        <Route path="/home" element={<ProtectedRoute><ParentHomePage /></ProtectedRoute>} />
+        <Route path="/provider/home" element={<ProtectedRoute><ProviderHomePage /></ProtectedRoute>} />
+        <Route path="/admin/home" element={<ProtectedRoute><AdminHomePage /></ProtectedRoute>} />
+        <Route path="/admin/agreements" element={<ProtectedRoute><AdminAgreementsPage /></ProtectedRoute>} />
         <Route path="/provider/billing" element={<ProtectedRoute><ProviderBillingPage /></ProtectedRoute>} />
+        <Route path="/provider/invoices" element={<ProtectedRoute><ProviderBillingPage /></ProtectedRoute>} />
+        <Route path="/provider/payouts" element={<ProtectedRoute><ProviderPayoutsPage /></ProtectedRoute>} />
+        <Route path="/provider/cost-sheets" element={<ProtectedRoute><ProviderCostSheetsPage /></ProtectedRoute>} />
+        <Route path="/provider/agreements" element={<ProtectedRoute><ProviderAgreementsPage /></ProtectedRoute>} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
         <Route path="/admin/test-runner" element={<ProtectedRoute><AdminTestRunnerPage /></ProtectedRoute>} />
         <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />

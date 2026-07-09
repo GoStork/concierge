@@ -129,6 +129,7 @@ export default function AdminUserAddPage() {
         queryClient.invalidateQueries({ queryKey: ["/api/parent-account/members"] });
       } else {
         queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/gostork/users"] });
         if (providerId) {
           queryClient.invalidateQueries({ queryKey: ["/api/providers", providerId, "users"] });
         }

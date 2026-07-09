@@ -32,6 +32,7 @@ import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
 import { useMarketplaceViewContext, recordProfileView } from "@/lib/profile-views";
 import { format } from "date-fns";
 import ConciergeChatPage, { ParentChatSidePanel, type ParentSidePanelData } from "@/pages/concierge-chat-page";
+import { captureMessageTarget, hasPendingMessageTarget } from "@/hooks/use-scroll-to-message";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { InvoiceSidebarSection } from "@/components/chat/invoice-sidebar-section";
@@ -643,6 +644,9 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
 /* DEAD_CODE_BLOCK_END */
 
 export default function ConversationsPage() {
+  // Deep-link (?msg=) capture MUST run before the URL-normalizing effects
+  // below rewrite the address bar and drop the query string.
+  captureMessageTarget();
   const { user } = useAuth();
   const { data: brand } = useBrandSettings();
   const navigate = useNavigate();
@@ -1372,6 +1376,8 @@ const sendMessageMutation = useMutation({
   useEffect(() => {
     providerScrollDone.current = false;
     const scrollToEnd = () => {
+      // A ?msg= deep link is navigating to a specific card - don't fight it.
+      if (hasPendingMessageTarget()) return;
       if (chatEndRef.current) {
         const container = chatEndRef.current.closest('[data-testid="provider-chat-messages"]');
         if (container) {
@@ -1394,6 +1400,7 @@ const sendMessageMutation = useMutation({
     if (!container) return;
 
     const scrollToEnd = () => {
+      if (hasPendingMessageTarget()) return;
       if (!providerScrollDone.current) container.scrollTop = container.scrollHeight;
     };
 

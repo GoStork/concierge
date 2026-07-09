@@ -1349,6 +1349,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             name: true,
             ivfSurrogateMinAge: true, ivfSurrogateMaxAge: true,
             ivfSurrogateMinBmi: true, ivfSurrogateMaxBmi: true,
+            ivfSurrogateMinDeliveries: true,
             ivfSurrogateMaxDeliveries: true, ivfSurrogateMaxCSections: true,
             ivfSurrogateMaxMiscarriages: true, ivfSurrogateMaxAbortions: true,
             ivfSurrogateCovidVaccination: true,
@@ -1365,6 +1366,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
           if (clinic.ivfSurrogateMaxCSections != null) reqs.push(`max ${clinic.ivfSurrogateMaxCSections} c-sections`);
           if (clinic.ivfSurrogateMaxMiscarriages != null) reqs.push(`max ${clinic.ivfSurrogateMaxMiscarriages} miscarriages`);
+          if (clinic.ivfSurrogateMinDeliveries != null) reqs.push(`min ${clinic.ivfSurrogateMinDeliveries} prior deliveries`);
           if (clinic.ivfSurrogateMaxDeliveries != null) reqs.push(`max ${clinic.ivfSurrogateMaxDeliveries} deliveries`);
           if (clinic.ivfSurrogateCovidVaccination === true) reqs.push("covid vaccinated required");
           clinicRequirementsNote = reqs.length > 0
@@ -1392,7 +1394,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // AI concierge ONLY recommends bookable inventory: AVAILABLE (ready now)
       // or PENDING (not yet approved but coming back). MATCHED is committed to
       // another parent so we never surface it; INACTIVE is soft-deleted.
-      const baseWhere: any = { hiddenFromSearch: { not: true }, status: { in: ["AVAILABLE", "PENDING"] } };
+      const baseWhere: any = { hiddenFromSearch: { not: true }, asrmHidden: { not: true }, status: { in: ["AVAILABLE", "PENDING"] } };
       // Phase 4: never suggest a surrogate who is reserved. Two shapes:
       //   - active 24h match-call hold (expiresAt in the future)
       //   - permanent reservation (deposit paid -> expiresAt cleared, parent kept)
@@ -1452,8 +1454,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const existing = baseWhere.miscarriages?.lte ?? 999;
           baseWhere.miscarriages = { lte: Math.min(c.ivfSurrogateMaxMiscarriages, existing) };
         }
-        if (c.ivfSurrogateMaxDeliveries != null) {
-          baseWhere.liveBirths = { lte: c.ivfSurrogateMaxDeliveries };
+        if (c.ivfSurrogateMinDeliveries != null || c.ivfSurrogateMaxDeliveries != null) {
+          baseWhere.liveBirths = {
+            ...(c.ivfSurrogateMinDeliveries != null ? { gte: c.ivfSurrogateMinDeliveries } : {}),
+            ...(c.ivfSurrogateMaxDeliveries != null ? { lte: c.ivfSurrogateMaxDeliveries } : {}),
+          };
         }
         if (c.ivfSurrogateCovidVaccination === true) {
           baseWhere.covidVaccinated = true;
@@ -1907,6 +1912,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         rows = await prisma.surrogate.findMany({
           where: {
             ...availWhere,
+            asrmHidden: { not: true },
+            // status lifecycle: ON_HOLD (match call scheduled) and MATCHED
+            // (official match) are never suggested, same as search_surrogates.
+            status: { in: ["AVAILABLE", "PENDING"] },
             OR: [
               { reservedByParentId: null },
               { reservationExpiresAt: { lte: new Date() } },
@@ -3126,7 +3135,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           WITH costs AS (
             SELECT "totalCostMin"::float AS cost_low, "totalCostMax"::float AS cost_high
             FROM "Surrogate"
-            WHERE "hiddenFromSearch" IS NOT TRUE AND status != 'INACTIVE'
+            WHERE "hiddenFromSearch" IS NOT TRUE AND "asrmHidden" IS NOT TRUE AND status != 'INACTIVE'
               AND "totalCostMin" IS NOT NULL
           ),
           bounds AS (

@@ -2230,6 +2230,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
             name: true,
             ivfSurrogateMinAge: true, ivfSurrogateMaxAge: true,
             ivfSurrogateMinBmi: true, ivfSurrogateMaxBmi: true,
+            ivfSurrogateMinDeliveries: true,
             ivfSurrogateMaxDeliveries: true, ivfSurrogateMaxCSections: true,
             ivfSurrogateMaxMiscarriages: true, ivfSurrogateMaxAbortions: true,
             ivfSurrogateCovidVaccination: true,
@@ -2329,6 +2330,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
                 surReqs.push(`BMI ${clinicProvider.ivfSurrogateMinBmi ?? "?"}-${clinicProvider.ivfSurrogateMaxBmi ?? "?"}`);
               if (clinicProvider.ivfSurrogateMaxCSections != null) surReqs.push(`max ${clinicProvider.ivfSurrogateMaxCSections} c-sections`);
               if (clinicProvider.ivfSurrogateMaxMiscarriages != null) surReqs.push(`max ${clinicProvider.ivfSurrogateMaxMiscarriages} miscarriages`);
+              if (clinicProvider.ivfSurrogateMinDeliveries != null) surReqs.push(`min ${clinicProvider.ivfSurrogateMinDeliveries} prior deliveries`);
               if (clinicProvider.ivfSurrogateMaxDeliveries != null) surReqs.push(`max ${clinicProvider.ivfSurrogateMaxDeliveries} deliveries`);
               if (clinicProvider.ivfSurrogateCovidVaccination === true) surReqs.push("covid vaccinated required");
               if (surReqs.length > 0) {
@@ -7292,6 +7294,15 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
+    // Phase 5: [[AGREEMENT_PREVIEW]] - parent asked to see the provider's
+    // contract. Side effect (attachment/agreement card) fires after the main
+    // message is saved; the tag itself is stripped here.
+    let agreementPreviewRequested = false;
+    if (finalContent.includes("[[AGREEMENT_PREVIEW]]")) {
+      agreementPreviewRequested = true;
+      finalContent = finalContent.replace(/\[\[AGREEMENT_PREVIEW\]\]/g, "").trim();
+    }
+
     // Resolve [[MEETING_CARD:<bookingId>]] tags into hydrated Booking objects so
     // the parent can join/reschedule/cancel an existing meeting inline. The AI
     // emits only the bookingId (from get_parent_meetings); the server re-fetches
@@ -7527,6 +7538,15 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         where: { id: savedUserMsg.id },
         data: { deliveredAt: now, readAt: now },
       }).catch(() => {});
+    }
+
+    if (agreementPreviewRequested && replySessionId) {
+      try {
+        const { postAgreementPreview } = await import("./agreement-flow");
+        await postAgreementPreview(replySessionId);
+      } catch (e: any) {
+        console.error("[AGREEMENT_PREVIEW] Failed to post preview:", e?.message);
+      }
     }
 
     sse.sendDone({

@@ -30,6 +30,7 @@ import {
   Upload,
   X,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-bar";
@@ -124,6 +125,7 @@ export default function ProfileDatabasePanel({
   const searchQuery = useAppSelector((state) => state.ui.marketplaceSearchQuery);
   const sortBy = useAppSelector((state) => state.ui.marketplaceSortBy);
   const roles: string[] = (user as any)?.roles || [];
+  const navigate = useNavigate();
   const isAdmin = roles.includes("GOSTORK_ADMIN");
   const isProvider = !!((user as any)?.providerId);
   const isAdminOrProvider = isAdmin || isProvider;
@@ -197,6 +199,19 @@ export default function ProfileDatabasePanel({
       if (!res.ok) return [];
       return res.json();
     },
+  });
+
+  // Platform-wide ASRM surrogate minimums (from the GoStork house provider) -
+  // shown as a constant banner above the surrogate records.
+  const asrmQuery = useQuery({
+    queryKey: ["/api/providers/asrm/surrogate-requirements"],
+    queryFn: async () => {
+      const res = await fetch("/api/providers/asrm/surrogate-requirements", { credentials: "include" });
+      if (!res.ok) return { requirements: null, lines: [] };
+      return res.json();
+    },
+    enabled: type === "surrogate",
+    staleTime: 5 * 60 * 1000,
   });
 
   useEffect(() => {
@@ -1144,6 +1159,86 @@ export default function ProfileDatabasePanel({
             className="mb-4"
           />
         )}
+        {type === "surrogate" && asrmQuery.data?.lines?.length > 0 && (
+          <div className="mb-4 rounded-[var(--radius)] border border-primary/20 bg-secondary p-4" data-testid="asrm-requirements-banner">
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldCheck className="w-4 h-4 text-primary" />
+              <h4 className="font-heading text-sm text-foreground">ASRM Minimum Requirements (GoStork)</h4>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">
+              Every surrogate profile is automatically checked against these ASRM-based minimums when it is uploaded, synced, or edited.
+              Profiles that do not meet them are still saved, but are hidden from parents and labeled "Below ASRM minimum". This cannot be overridden.
+            </p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {asrmQuery.data.lines.map((line: string) => (
+                <span key={line} className="inline-flex items-center gap-1 text-xs text-foreground">
+                  <CheckCircle2 className="w-3 h-3 text-[hsl(var(--brand-success))]" />
+                  {line}
+                </span>
+              ))}
+            </div>
+            {(() => {
+              const reasonsOf = (p: any) => Array.isArray(p.asrmFailReasons)
+                ? { failures: p.asrmFailReasons as string[], missing: [] as string[] }
+                : { failures: (p.asrmFailReasons?.failures ?? []) as string[], missing: (p.asrmFailReasons?.missing ?? []) as string[] };
+              const displayIdOf = (p: any) => {
+                const raw = p.externalId || p.id.slice(0, 8);
+                return raw.startsWith("pdf-") ? raw.replace(/^pdf-/, "") : raw;
+              };
+              const hiddenProfiles = (profiles as any[]).filter((p) => p.asrmHidden);
+              const missingInfo = hiddenProfiles.map((p) => ({ p, ...reasonsOf(p) })).filter((x) => x.missing.length > 0);
+              const belowMin = hiddenProfiles.map((p) => ({ p, ...reasonsOf(p) })).filter((x) => x.failures.length > 0);
+              if (hiddenProfiles.length === 0) return null;
+              return (
+                <div className="mt-3 space-y-2 border-t border-primary/10 pt-3" data-testid="asrm-warnings">
+                  {missingInfo.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-heading text-[hsl(var(--brand-warning))] flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Action needed - {missingInfo.length} {missingInfo.length === 1 ? "profile is" : "profiles are"} hidden because required ASRM info is missing. Edit each profile and add the missing fields:
+                      </p>
+                      {missingInfo.map(({ p, missing }) => (
+                        <div key={p.id} className="flex items-center justify-between gap-2 rounded-[var(--radius)] bg-[hsl(var(--brand-warning)/0.08)] px-3 py-1.5" data-testid={`asrm-warning-missing-${p.id}`}>
+                          <span className="text-xs text-foreground">
+                            <span className="font-heading">Surrogate #{displayIdOf(p)}</span>
+                            <span className="text-muted-foreground"> - missing: </span>
+                            <span className="font-ui">{missing.join(", ")}</span>
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs shrink-0"
+                            onClick={() => navigate(isAdmin
+                              ? `/admin/providers/${providerId}/${typeToUrlSlug(type)}/${p.id}/edit`
+                              : `/${typeToUrlSlug(type)}/${providerId}/${p.id}`)}
+                            data-testid={`btn-asrm-fix-${p.id}`}
+                          >
+                            <Pencil className="w-3 h-3 mr-1" /> Add info
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {belowMin.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-heading text-destructive flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        {belowMin.length} {belowMin.length === 1 ? "profile is" : "profiles are"} hidden for not meeting the minimums:
+                      </p>
+                      {belowMin.map(({ p, failures }) => (
+                        <div key={p.id} className="rounded-[var(--radius)] bg-destructive/5 px-3 py-1.5 text-xs text-foreground" data-testid={`asrm-warning-below-${p.id}`}>
+                          <span className="font-heading">Surrogate #{displayIdOf(p)}</span>
+                          <span className="text-muted-foreground"> - {failures.join("; ")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
         <div className="flex items-center justify-between mb-3">
           <h4
             className="font-heading text-sm"
@@ -1529,7 +1624,7 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
           </div>
         </div>
       )}
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
       {profiles.map((d: any) => (
         <ProfileCard
           key={d.id}

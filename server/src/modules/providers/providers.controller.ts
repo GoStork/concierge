@@ -27,6 +27,8 @@ import { insertProviderSchema } from "@shared/schema";
 import { hasProviderRole, isProviderWriteRestricted } from "@shared/roles";
 import { enrichDonorsWithPendingCosts, enrichDonorsAcrossProviders } from "../costs/total-cost.utils";
 import { updateProfileEmbedding, applyProviderFaceAuthorization } from "./profile-sync.service";
+import { getAsrmRequirements, reevaluateAllSurrogatesAsrm, invalidateAsrmRequirementsCache } from "./asrm";
+import { describeSurrogateAsrmRequirements } from "../../../../shared/surrogate-requirements";
 import { z } from "zod";
 
 const marketplaceCache = new Map<string, { data: any; expiry: number }>();
@@ -116,7 +118,7 @@ function acceptsInsuranceCarrier(accepted: string[] | null | undefined, carrier:
 // Canonical donor/surrogate statuses surfaced to the marketplace UI.
 // INACTIVE is intentionally excluded - it's a soft-delete that must never
 // be shown anywhere (chat, marketplace, AI search, provider's own list).
-const SELECTABLE_DONOR_STATUSES = ["AVAILABLE", "PENDING", "MATCHED"] as const;
+const SELECTABLE_DONOR_STATUSES = ["AVAILABLE", "ON_HOLD", "PENDING", "MATCHED"] as const;
 
 // Parse the optional ?status= query param (comma-separated subset of the
 // canonical set) into a Prisma `where.status` clause. Empty / missing /
@@ -131,6 +133,17 @@ function buildDonorStatusFilter(raw?: string | null): { in: string[] } | { not: 
     .filter((s) => (SELECTABLE_DONOR_STATUSES as readonly string[]).includes(s));
   if (requested.length === 0) return { not: "INACTIVE" };
   return { in: requested };
+}
+
+// Parent-facing surrogate list: MATCHED surrogates are hidden entirely
+// (only their own agency sees them), regardless of the requested filter.
+function buildParentSurrogateStatusFilter(raw?: string | null): { in: string[] } | { notIn: string[] } {
+  const base = buildDonorStatusFilter(raw);
+  if ("in" in base) {
+    const allowed = base.in.filter((s) => s !== "MATCHED");
+    if (allowed.length > 0) return { in: allowed };
+  }
+  return { notIn: ["INACTIVE", "MATCHED"] };
 }
 
 @ApiTags("Providers")
@@ -214,7 +227,8 @@ export class ProvidersController {
       skip: pageNum * PAGE_SIZE,
       where: {
         hiddenFromSearch: false,
-        status: statusFilter,
+        asrmHidden: false,
+        status: buildParentSurrogateStatusFilter(status),
         provider: {
           services: {
             some: {
@@ -305,6 +319,7 @@ export class ProvidersController {
       this.prisma.surrogate.findMany({
         where: {
           hiddenFromSearch: false,
+          asrmHidden: false,
           status: { not: "INACTIVE" },
           location: { not: null },
           provider: approvedSurrogacyAgencyFilter,
@@ -608,6 +623,7 @@ export class ProvidersController {
         ivfSurrogateMaxAge: true,
         ivfSurrogateMinBmi: true,
         ivfSurrogateMaxBmi: true,
+        ivfSurrogateMinDeliveries: true,
         ivfSurrogateMaxDeliveries: true,
         ivfSurrogateMaxCSections: true,
         ivfSurrogateMaxMiscarriages: true,
@@ -1125,6 +1141,22 @@ export class ProvidersController {
     };
   }
 
+  // ASRM(GoStork) minimum requirements for surrogates - read from the GoStork
+  // house provider's Surrogate Matching Requirements settings. Powers the
+  // constant banner on the provider Surrogates tab. Must be declared before
+  // the ":id" catch-all route.
+  @Get("asrm/surrogate-requirements")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get the platform-wide ASRM surrogate minimum requirements" })
+  async asrmSurrogateRequirements() {
+    const requirements = await getAsrmRequirements(this.prisma);
+    return {
+      requirements,
+      lines: requirements ? describeSurrogateAsrmRequirements(requirements) : [],
+    };
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Get a single provider by ID" })
   @ApiParam({ name: "id", description: "Provider UUID" })
@@ -1238,6 +1270,20 @@ export class ProvidersController {
       }
       if (bioTransition !== null) {
         applyProviderFaceAuthorization(this.prisma, id, bioTransition).catch(() => {});
+      }
+      // ASRM gate: if the GoStork house provider's Surrogate Matching
+      // Requirements changed, re-evaluate every surrogate against the new
+      // minimums (fire-and-forget - can touch thousands of rows).
+      if (Object.keys(input).some((k) => k.startsWith("ivfSurrogate"))) {
+        invalidateAsrmRequirementsCache();
+        const isHouseProvider = process.env.GOSTORK_PROVIDER_ID
+          ? provider.id === process.env.GOSTORK_PROVIDER_ID
+          : provider.name?.toLowerCase() === "gostork";
+        if (isHouseProvider) {
+          reevaluateAllSurrogatesAsrm(this.prisma)
+            .then(() => invalidateMarketplaceCache("marketplace:surrogates:"))
+            .catch((e) => console.error("[ASRM] re-evaluation after settings change failed:", e?.message || e));
+        }
       }
       return provider;
     } catch (err) {

@@ -262,6 +262,7 @@ export default function AdminUserEditPage() {
         queryClient.invalidateQueries({ queryKey: ["/api/parent-account/members"] });
       } else {
         queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/gostork/users"] });
         if (userData?.providerId) {
           queryClient.invalidateQueries({ queryKey: ["/api/providers", userData.providerId, "users"] });
         }

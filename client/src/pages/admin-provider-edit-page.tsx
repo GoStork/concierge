@@ -13,13 +13,12 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { InsurancePicker } from "@/components/ui/insurance-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, Plus, GripVertical, Eye, Palette, DollarSign, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, Plus, GripVertical, Eye, Palette, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
-import { ProviderAutoFeaturesCard } from "@/components/provider-auto-features-card";
 import { CountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
+import { ProviderAutoFeaturesCard } from "@/components/provider-auto-features-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MembersTable from "@/components/members-table";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
@@ -203,7 +202,6 @@ export default function AdminProviderEditPage() {
   const [editName, setEditName] = useState("");
   const [editAbout, setEditAbout] = useState("");
   const [editWebsite, setEditWebsite] = useState("");
-  const [acceptedInsurance, setAcceptedInsurance] = useState<string[]>([]);
   const [lgbtqCare, setLgbtqCare] = useState(false);
   const [clinicOffersVideo, setClinicOffersVideo] = useState(false);
   const [biometricMatchingAuthorized, setBiometricMatchingAuthorized] = useState(false);
@@ -221,8 +219,8 @@ export default function AdminProviderEditPage() {
   const isInitializingRef = useRef(false);
   const lastInitStampRef = useRef<string | null>(null);
   const editFormRef = useRef<HTMLFormElement | null>(null);
-  // IVF matching requirements
   const [isTestData, setIsTestData] = useState(false);
+  // IVF matching requirements
   const [ivfTwinsAllowed, setIvfTwinsAllowed] = useState(false);
   const [ivfGenderSelectionAllowed, setIvfGenderSelectionAllowed] = useState(false);
   const [ivfTransferFromOtherClinics, setIvfTransferFromOtherClinics] = useState(false);
@@ -241,7 +239,7 @@ export default function AdminProviderEditPage() {
   // IVF Clinic surrogate matching requirements
   const [ivfSurrogateAgeRange, setIvfSurrogateAgeRange] = useState<[number, number]>([18, 45]);
   const [ivfSurrogateBmiRange, setIvfSurrogateBmiRange] = useState<[number, number]>([18, 35]);
-  const [ivfSurrogateMaxDeliveries, setIvfSurrogateMaxDeliveries] = useState("");
+  const [ivfSurrogateDeliveriesRange, setIvfSurrogateDeliveriesRange] = useState<[number, number]>([1, 5]);
   const [ivfSurrogateMaxCSections, setIvfSurrogateMaxCSections] = useState("");
   const [ivfSurrogateMaxMiscarriages, setIvfSurrogateMaxMiscarriages] = useState("");
   const [ivfSurrogateMaxAbortions, setIvfSurrogateMaxAbortions] = useState("");
@@ -267,7 +265,6 @@ export default function AdminProviderEditPage() {
       isInitializingRef.current = true;
       setEditName(provider.name);
       setEditAbout(provider.about || "");
-      setAcceptedInsurance(provider.acceptedInsurance || []);
       setLgbtqCare(provider.lgbtqCare || false);
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
       setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? true);
@@ -291,7 +288,6 @@ export default function AdminProviderEditPage() {
         acceptingNewPatients: d.acceptingNewPatients ?? true,
         offersVideoVisits: d.offersVideoVisits ?? false,
       })) || []);
-      // IVF matching requirements
       setIsTestData(provider.isTestData ?? false);
       setIvfTwinsAllowed(provider.ivfTwinsAllowed ?? false);
       setIvfGenderSelectionAllowed(provider.ivfGenderSelectionAllowed ?? false);
@@ -311,7 +307,7 @@ export default function AdminProviderEditPage() {
       // IVF Clinic surrogate matching requirements
       setIvfSurrogateAgeRange([provider.ivfSurrogateMinAge ?? 18, provider.ivfSurrogateMaxAge ?? 45]);
       setIvfSurrogateBmiRange([provider.ivfSurrogateMinBmi ?? 18, provider.ivfSurrogateMaxBmi ?? 35]);
-      setIvfSurrogateMaxDeliveries(provider.ivfSurrogateMaxDeliveries != null ? String(provider.ivfSurrogateMaxDeliveries) : "");
+      setIvfSurrogateDeliveriesRange([provider.ivfSurrogateMinDeliveries ?? 1, provider.ivfSurrogateMaxDeliveries ?? 5]);
       setIvfSurrogateMaxCSections(provider.ivfSurrogateMaxCSections != null ? String(provider.ivfSurrogateMaxCSections) : "");
       setIvfSurrogateMaxMiscarriages(provider.ivfSurrogateMaxMiscarriages != null ? String(provider.ivfSurrogateMaxMiscarriages) : "");
       setIvfSurrogateMaxAbortions(provider.ivfSurrogateMaxAbortions != null ? String(provider.ivfSurrogateMaxAbortions) : "");
@@ -355,7 +351,7 @@ export default function AdminProviderEditPage() {
     }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, acceptedInsurance, lgbtqCare, clinicOffersVideo, biometricMatchingAuthorized, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, partnerProviderIds, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, lgbtqCare, clinicOffersVideo, biometricMatchingAuthorized, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, partnerProviderIds, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   const editScrapeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -386,7 +382,6 @@ export default function AdminProviderEditPage() {
       name: editName,
       about: editAbout || null,
       websiteUrl: editWebsite || null,
-      acceptedInsurance,
       offersVideoVisits: clinicOffersVideo,
       biometricMatchingAuthorized,
       email: editEmail || null,
@@ -394,6 +389,7 @@ export default function AdminProviderEditPage() {
       yearFounded: editYearFounded ? parseInt(editYearFounded) : null,
       logoUrl: editLogoUrl || null,
       isTestData,
+      partnerProviderIds: partnerProviderIds.length > 0 ? partnerProviderIds : null,
       ivfTwinsAllowed,
       ivfGenderSelectionAllowed,
       ivfTransferFromOtherClinics,
@@ -412,7 +408,8 @@ export default function AdminProviderEditPage() {
       ivfSurrogateMaxAge: ivfSurrogateAgeRange[1],
       ivfSurrogateMinBmi: ivfSurrogateBmiRange[0],
       ivfSurrogateMaxBmi: ivfSurrogateBmiRange[1],
-      ivfSurrogateMaxDeliveries: ivfSurrogateMaxDeliveries ? parseInt(ivfSurrogateMaxDeliveries) : null,
+      ivfSurrogateMinDeliveries: ivfSurrogateDeliveriesRange[0],
+      ivfSurrogateMaxDeliveries: ivfSurrogateDeliveriesRange[1],
       ivfSurrogateMaxCSections: ivfSurrogateMaxCSections ? parseInt(ivfSurrogateMaxCSections) : null,
       ivfSurrogateMaxMiscarriages: ivfSurrogateMaxMiscarriages ? parseInt(ivfSurrogateMaxMiscarriages) : null,
       ivfSurrogateMaxAbortions: ivfSurrogateMaxAbortions ? parseInt(ivfSurrogateMaxAbortions) : null,
@@ -722,8 +719,13 @@ export default function AdminProviderEditPage() {
   const showSurrogates = svcNames.some((n: string) => n.includes("surrogacy"));
   const showSpermDonors = svcNames.some((n: string) => n.includes("sperm"));
   const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
-  const isSurrogacyAgency = showSurrogates;
   const ivfOffersEggDonors = showEggDonors;
+  // The GoStork house provider's Surrogate Matching Requirements define the
+  // platform-wide ASRM minimums - it never matches parents itself, so the
+  // Parents Matching Requirements section is hidden for it ONLY. Every real
+  // provider keeps the section.
+  const isGoStorkHouse = (provider?.name || "").trim().toLowerCase() === "gostork";
+  const isSurrogacyAgency = showSurrogates;
   const tabTriggerClass = "shrink-0 md:shrink md:flex-1 whitespace-nowrap h-full text-sm font-ui rounded-[var(--radius)] px-3 data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
 
 
@@ -860,13 +862,6 @@ export default function AdminProviderEditPage() {
                   />
                 </div>
               </div>
-            </Card>
-
-            <Card className="p-6 space-y-4">
-              <h3 className="text-lg font-heading flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-primary" /> Accepted Insurance
-              </h3>
-              <InsurancePicker value={acceptedInsurance} onChange={setAcceptedInsurance} mode="multi" data-testid="picker-edit-insurance" />
             </Card>
 
             <Card className="p-6 space-y-4">
@@ -1054,7 +1049,7 @@ export default function AdminProviderEditPage() {
               </Card>
             )}
 
-            {(isIvfClinic || isSurrogacyAgency) && (
+            {!isGoStorkHouse && (isIvfClinic || isSurrogacyAgency) && (
               <Card className="p-6 space-y-6">
                 <h3 className="text-lg font-heading flex items-center gap-2">
                   <Check className="w-5 h-5 text-primary" /> Parents Matching Requirements
@@ -1230,11 +1225,16 @@ export default function AdminProviderEditPage() {
                     className="max-w-sm"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4 max-w-sm">
-                  <div className="space-y-2">
-                    <Label>Max Deliveries</Label>
-                    <NumberInput allowDecimal={false} value={ivfSurrogateMaxDeliveries} onChange={setIvfSurrogateMaxDeliveries} placeholder="e.g. 5" />
-                  </div>
+                <div className="space-y-2">
+                  <Label>Deliveries Range of Surrogate: <span className="text-primary font-ui">{ivfSurrogateDeliveriesRange[0]} - {ivfSurrogateDeliveriesRange[1]}</span></Label>
+                  <Slider
+                    min={0} max={10} step={1}
+                    value={ivfSurrogateDeliveriesRange}
+                    onValueChange={(v) => setIvfSurrogateDeliveriesRange(v as [number, number])}
+                    className="max-w-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4 max-w-lg">
                   <div className="space-y-2">
                     <Label>Max C-Sections</Label>
                     <NumberInput allowDecimal={false} value={ivfSurrogateMaxCSections} onChange={setIvfSurrogateMaxCSections} placeholder="e.g. 3" />
@@ -1248,11 +1248,11 @@ export default function AdminProviderEditPage() {
                     <NumberInput allowDecimal={false} value={ivfSurrogateMaxAbortions} onChange={setIvfSurrogateMaxAbortions} placeholder="e.g. 2" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Max Years from Last Pregnancy</Label>
+                    <Label className="whitespace-nowrap">Max Years from Last Pregnancy</Label>
                     <NumberInput allowDecimal={false} value={ivfSurrogateMaxYearsFromLastPregnancy} onChange={setIvfSurrogateMaxYearsFromLastPregnancy} placeholder="e.g. 5" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Months Post Vaginal Delivery</Label>
+                    <Label className="whitespace-nowrap">Months Post Vaginal Delivery</Label>
                     <NumberInput allowDecimal={false} value={ivfSurrogateMonthsPostVaginal} onChange={setIvfSurrogateMonthsPostVaginal} placeholder="e.g. 6" />
                   </div>
                 </div>

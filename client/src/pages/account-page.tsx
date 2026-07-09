@@ -719,6 +719,7 @@ function AccountTab() {
       await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/parent-profile"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gostork/users"] });
       if ((user as any).providerId) {
         queryClient.invalidateQueries({ queryKey: ["/api/providers", (user as any).providerId, "users"] });
       }
@@ -741,6 +742,7 @@ function AccountTab() {
       await apiRequest("PUT", "/api/user/photo", { photoUrl: url });
       await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/gostork/users"] });
       if ((user as any).providerId) {
         queryClient.invalidateQueries({ queryKey: ["/api/providers", (user as any).providerId, "users"] });
       }

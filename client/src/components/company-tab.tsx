@@ -12,7 +12,6 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { InsurancePicker } from "@/components/ui/insurance-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
@@ -148,7 +147,6 @@ export default function CompanyTab() {
   const [yearFounded, setYearFounded] = useState("");
   const [consultationBookingUrl, setConsultationBookingUrl] = useState("");
   const [consultationIframeEnabled, setConsultationIframeEnabled] = useState(false);
-  const [acceptedInsurance, setAcceptedInsurance] = useState<string[]>([]);
   const [lgbtqCare, setLgbtqCare] = useState(false);
   const [clinicOffersVideo, setClinicOffersVideo] = useState(false);
   const [biometricMatchingAuthorized, setBiometricMatchingAuthorized] = useState(false);
@@ -167,10 +165,15 @@ export default function CompanyTab() {
   const [ivfBiologicalConnection, setIvfBiologicalConnection] = useState("");
   const [ivfAcceptingPatients, setIvfAcceptingPatients] = useState<string[]>([]);
   const [ivfEggDonorType, setIvfEggDonorType] = useState("");
+  const [surrogacyCitizensNotAllowed, setSurrogacyCitizensNotAllowed] = useState<string[]>([]);
+  const [surrogacyTwinsAllowed, setSurrogacyTwinsAllowed] = useState(false);
+  const [surrogacyStayAfterBirthMonths, setSurrogacyStayAfterBirthMonths] = useState("");
+  const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
+  const [surrogacySurrogateRemovableFromCert, setSurrogacySurrogateRemovableFromCert] = useState(false);
   // IVF Surrogate Matching Requirements
   const [ivfSurrogateAgeRange, setIvfSurrogateAgeRange] = useState<[number, number]>([18, 45]);
   const [ivfSurrogateBmiRange, setIvfSurrogateBmiRange] = useState<[number, number]>([18, 35]);
-  const [ivfSurrogateMaxDeliveries, setIvfSurrogateMaxDeliveries] = useState("");
+  const [ivfSurrogateDeliveriesRange, setIvfSurrogateDeliveriesRange] = useState<[number, number]>([1, 5]);
   const [ivfSurrogateMaxCSections, setIvfSurrogateMaxCSections] = useState("");
   const [ivfSurrogateMaxMiscarriages, setIvfSurrogateMaxMiscarriages] = useState("");
   const [ivfSurrogateMaxAbortions, setIvfSurrogateMaxAbortions] = useState("");
@@ -183,12 +186,6 @@ export default function CompanyTab() {
   const [ivfSurrogatePlacentaPrevia, setIvfSurrogatePlacentaPrevia] = useState(false);
   const [ivfSurrogatePreeclampsia, setIvfSurrogatePreeclampsia] = useState(false);
   const [ivfSurrogateMentalHealthHistory, setIvfSurrogateMentalHealthHistory] = useState("");
-  // Surrogacy Agency Matching Requirements
-  const [surrogacyCitizensNotAllowed, setSurrogacyCitizensNotAllowed] = useState<string[]>([]);
-  const [surrogacyTwinsAllowed, setSurrogacyTwinsAllowed] = useState(false);
-  const [surrogacyStayAfterBirthMonths, setSurrogacyStayAfterBirthMonths] = useState("");
-  const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
-  const [surrogacySurrogateRemovableFromCert, setSurrogacySurrogateRemovableFromCert] = useState(false);
   const isInitializingRef = useRef(false);
   const companyFormRef = useRef<HTMLFormElement | null>(null);
   const [manageServicesOpen, setManageServicesOpen] = useState(false);
@@ -239,7 +236,6 @@ export default function CompanyTab() {
       setYearFounded(provider.yearFounded ? String(provider.yearFounded) : "");
       setConsultationBookingUrl(provider.consultationBookingUrl || "");
       setConsultationIframeEnabled(provider.consultationIframeEnabled || false);
-      setAcceptedInsurance(provider.acceptedInsurance || []);
       setLgbtqCare(provider.lgbtqCare || false);
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
       setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? true);
@@ -278,10 +274,15 @@ export default function CompanyTab() {
       setIvfBiologicalConnection(provider.ivfBiologicalConnection || "");
       setIvfAcceptingPatients(provider.ivfAcceptingPatients || []);
       setIvfEggDonorType(provider.ivfEggDonorType || "");
+      setSurrogacyCitizensNotAllowed(provider.surrogacyCitizensNotAllowed || []);
+      setSurrogacyTwinsAllowed(provider.surrogacyTwinsAllowed ?? false);
+      setSurrogacyStayAfterBirthMonths(provider.surrogacyStayAfterBirthMonths != null ? String(provider.surrogacyStayAfterBirthMonths) : "");
+      setSurrogacyBirthCertificateListing(Array.isArray(provider.surrogacyBirthCertificateListing) ? provider.surrogacyBirthCertificateListing : (provider.surrogacyBirthCertificateListing ? [provider.surrogacyBirthCertificateListing as string] : []));
+      setSurrogacySurrogateRemovableFromCert(provider.surrogacySurrogateRemovableFromCert === true);
       // IVF Surrogate Matching Requirements
       setIvfSurrogateAgeRange([provider.ivfSurrogateMinAge ?? 18, provider.ivfSurrogateMaxAge ?? 45]);
       setIvfSurrogateBmiRange([provider.ivfSurrogateMinBmi ?? 18, provider.ivfSurrogateMaxBmi ?? 35]);
-      setIvfSurrogateMaxDeliveries(provider.ivfSurrogateMaxDeliveries != null ? String(provider.ivfSurrogateMaxDeliveries) : "");
+      setIvfSurrogateDeliveriesRange([provider.ivfSurrogateMinDeliveries ?? 1, provider.ivfSurrogateMaxDeliveries ?? 5]);
       setIvfSurrogateMaxCSections(provider.ivfSurrogateMaxCSections != null ? String(provider.ivfSurrogateMaxCSections) : "");
       setIvfSurrogateMaxMiscarriages(provider.ivfSurrogateMaxMiscarriages != null ? String(provider.ivfSurrogateMaxMiscarriages) : "");
       setIvfSurrogateMaxAbortions(provider.ivfSurrogateMaxAbortions != null ? String(provider.ivfSurrogateMaxAbortions) : "");
@@ -294,12 +295,6 @@ export default function CompanyTab() {
       setIvfSurrogatePlacentaPrevia(provider.ivfSurrogatePlacentaPrevia ?? false);
       setIvfSurrogatePreeclampsia(provider.ivfSurrogatePreeclampsia ?? false);
       setIvfSurrogateMentalHealthHistory(provider.ivfSurrogateMentalHealthHistory || "");
-      // Surrogacy Agency Matching Requirements
-      setSurrogacyCitizensNotAllowed(provider.surrogacyCitizensNotAllowed || []);
-      setSurrogacyTwinsAllowed(provider.surrogacyTwinsAllowed ?? false);
-      setSurrogacyStayAfterBirthMonths(provider.surrogacyStayAfterBirthMonths != null ? String(provider.surrogacyStayAfterBirthMonths) : "");
-      setSurrogacyBirthCertificateListing(Array.isArray(provider.surrogacyBirthCertificateListing) ? provider.surrogacyBirthCertificateListing : (provider.surrogacyBirthCertificateListing ? [provider.surrogacyBirthCertificateListing as string] : []));
-      setSurrogacySurrogateRemovableFromCert(provider.surrogacySurrogateRemovableFromCert === true);
       setInitialized(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -310,7 +305,7 @@ export default function CompanyTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, locations, teamMembers, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateMaxDeliveries, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, locations, teamMembers, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   if ((!isProvider && !isGostorkAdmin) || !providerId) {
     return (
@@ -354,7 +349,6 @@ export default function CompanyTab() {
         consultationBookingUrl: consultationBookingUrl || null,
         consultationIframeEnabled,
         // Clinic marketplace self-entry
-        acceptedInsurance,
         offersVideoVisits: clinicOffersVideo,
         ...(hasDonorServices ? { biometricMatchingAuthorized } : {}),
         // IVF Parents Matching Requirements
@@ -366,12 +360,18 @@ export default function CompanyTab() {
         ivfBiologicalConnection: ivfBiologicalConnection || null,
         ivfAcceptingPatients: ivfAcceptingPatients.length > 0 ? ivfAcceptingPatients : null,
         ivfEggDonorType: ivfEggDonorType || null,
+        surrogacyCitizensNotAllowed: surrogacyCitizensNotAllowed.length > 0 ? surrogacyCitizensNotAllowed : null,
+        surrogacyTwinsAllowed,
+        surrogacyStayAfterBirthMonths: surrogacyStayAfterBirthMonths ? parseInt(surrogacyStayAfterBirthMonths) : null,
+        surrogacyBirthCertificateListing: surrogacyBirthCertificateListing.length > 0 ? surrogacyBirthCertificateListing : null,
+        surrogacySurrogateRemovableFromCert,
         // IVF Surrogate Matching Requirements
         ivfSurrogateMinAge: ivfSurrogateAgeRange[0],
         ivfSurrogateMaxAge: ivfSurrogateAgeRange[1],
         ivfSurrogateMinBmi: ivfSurrogateBmiRange[0],
         ivfSurrogateMaxBmi: ivfSurrogateBmiRange[1],
-        ivfSurrogateMaxDeliveries: ivfSurrogateMaxDeliveries ? parseInt(ivfSurrogateMaxDeliveries) : null,
+        ivfSurrogateMinDeliveries: ivfSurrogateDeliveriesRange[0],
+        ivfSurrogateMaxDeliveries: ivfSurrogateDeliveriesRange[1],
         ivfSurrogateMaxCSections: ivfSurrogateMaxCSections ? parseInt(ivfSurrogateMaxCSections) : null,
         ivfSurrogateMaxMiscarriages: ivfSurrogateMaxMiscarriages ? parseInt(ivfSurrogateMaxMiscarriages) : null,
         ivfSurrogateMaxAbortions: ivfSurrogateMaxAbortions ? parseInt(ivfSurrogateMaxAbortions) : null,
@@ -384,12 +384,6 @@ export default function CompanyTab() {
         ivfSurrogatePlacentaPrevia,
         ivfSurrogatePreeclampsia,
         ivfSurrogateMentalHealthHistory: ivfSurrogateMentalHealthHistory || null,
-        // Surrogacy Agency Matching Requirements
-        surrogacyCitizensNotAllowed: surrogacyCitizensNotAllowed.length > 0 ? surrogacyCitizensNotAllowed : null,
-        surrogacyTwinsAllowed,
-        surrogacyStayAfterBirthMonths: surrogacyStayAfterBirthMonths ? parseInt(surrogacyStayAfterBirthMonths) : null,
-        surrogacyBirthCertificateListing: surrogacyBirthCertificateListing.length > 0 ? surrogacyBirthCertificateListing : null,
-        surrogacySurrogateRemovableFromCert,
       });
 
       const errors: string[] = [];
@@ -448,6 +442,10 @@ export default function CompanyTab() {
   const svcNames = (services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");
   const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
   const isSurrogacyAgency = svcNames.some((n: string) => n.includes("surrogacy"));
+  // The GoStork house provider's Surrogate Matching Requirements define the
+  // platform ASRM minimums; it never matches parents itself, so the Parents
+  // Matching Requirements section is hidden for it only.
+  const isGoStorkHouse = ((provider as any)?.name || "").trim().toLowerCase() === "gostork";
   const ivfOffersEggDonors = svcNames.some((n: string) => n.includes("egg donor") || n.includes("egg bank"));
   // Agencies that actually have donors/surrogates - the only ones for whom the
   // biometric face-matching authorization is relevant (hidden for pure clinics).
@@ -527,17 +525,6 @@ export default function CompanyTab() {
             rows={4}
             disabled={readOnly}
             data-testid="input-company-about"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label>Accepted insurance</Label>
-          <InsurancePicker
-            value={acceptedInsurance}
-            onChange={setAcceptedInsurance}
-            mode="multi"
-            disabled={readOnly}
-            data-testid="picker-company-insurance"
           />
         </div>
 
@@ -718,7 +705,33 @@ export default function CompanyTab() {
         )}
       </Card>
 
-      {(isIvfClinic || isSurrogacyAgency) && (
+      {hasDonorServices && (
+        <Card className="p-6 space-y-4">
+          <h2 className="text-lg font-heading flex items-center gap-2">
+            <ScanFace className="w-5 h-5 text-primary" /> Look-Alike Face Matching
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            GoStork creates a faceprint from your donors' / surrogates' profile photos (processed via AWS Rekognition) so intended parents can find profiles that resemble them. This is biometric processing and is enabled by default under your agency agreement. If you have not obtained the necessary biometric consent from your donors and surrogates, turn it off - your profiles will then be excluded and their faceprints removed.
+          </p>
+          <label className="flex items-start gap-3 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-4">
+            <Checkbox
+              className="mt-0.5"
+              checked={biometricMatchingAuthorized}
+              onCheckedChange={(v) => { if (!readOnly) setBiometricMatchingAuthorized(!!v); }}
+              disabled={readOnly}
+              data-testid="checkbox-biometric-authorized"
+            />
+            <span>
+              {name || "Our agency"} has obtained the consents required for GoStork to generate and store faceprints of our donors and surrogates for look-alike matching.
+              {biometricMatchingAuthorized
+                ? " (Enabled) Turning this off removes all of our profiles' faceprints from the matching index."
+                : " (Disabled) Our profiles are excluded from look-alike matching."}
+            </span>
+          </label>
+        </Card>
+      )}
+
+      {!isGoStorkHouse && (isIvfClinic || isSurrogacyAgency) && (
         <Card className="p-6 space-y-6">
           <h2 className="text-lg font-heading flex items-center gap-2">
             <Check className="w-5 h-5 text-primary" /> Parents Matching Requirements
@@ -920,11 +933,17 @@ export default function CompanyTab() {
               disabled={readOnly}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4 max-w-sm">
-            <div className="space-y-2">
-              <Label>Max Deliveries</Label>
-              <NumberInput allowDecimal={false} value={ivfSurrogateMaxDeliveries} onChange={setIvfSurrogateMaxDeliveries} placeholder="e.g. 5" disabled={readOnly} />
-            </div>
+          <div className="space-y-2">
+            <Label>Deliveries Range of Surrogate: <span className="text-primary font-ui">{ivfSurrogateDeliveriesRange[0]} - {ivfSurrogateDeliveriesRange[1]}</span></Label>
+            <Slider
+              min={0} max={10} step={1}
+              value={ivfSurrogateDeliveriesRange}
+              onValueChange={(v) => { if (!readOnly) setIvfSurrogateDeliveriesRange(v as [number, number]); }}
+              className="max-w-sm"
+              disabled={readOnly}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4 max-w-lg">
             <div className="space-y-2">
               <Label>Max C-Sections</Label>
               <NumberInput allowDecimal={false} value={ivfSurrogateMaxCSections} onChange={setIvfSurrogateMaxCSections} placeholder="e.g. 3" disabled={readOnly} />
@@ -938,11 +957,11 @@ export default function CompanyTab() {
               <NumberInput allowDecimal={false} value={ivfSurrogateMaxAbortions} onChange={setIvfSurrogateMaxAbortions} placeholder="e.g. 2" disabled={readOnly} />
             </div>
             <div className="space-y-2">
-              <Label>Max Years from Last Pregnancy</Label>
+              <Label className="whitespace-nowrap">Max Years from Last Pregnancy</Label>
               <NumberInput allowDecimal={false} value={ivfSurrogateMaxYearsFromLastPregnancy} onChange={setIvfSurrogateMaxYearsFromLastPregnancy} placeholder="e.g. 5" disabled={readOnly} />
             </div>
             <div className="space-y-2">
-              <Label>Months Post Vaginal Delivery</Label>
+              <Label className="whitespace-nowrap">Months Post Vaginal Delivery</Label>
               <NumberInput allowDecimal={false} value={ivfSurrogateMonthsPostVaginal} onChange={setIvfSurrogateMonthsPostVaginal} placeholder="e.g. 6" disabled={readOnly} />
             </div>
           </div>

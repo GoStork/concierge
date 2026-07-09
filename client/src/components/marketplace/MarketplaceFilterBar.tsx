@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { hasProviderRole } from "@shared/roles";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -1592,6 +1593,14 @@ export function MarketplaceFilterBar({
   const isGoStorkAdmin = (((user as any)?.roles as string[]) || []).some(
     (r) => r === "GOSTORK_ADMIN" || r === "GOSTORK_DEVELOPER",
   );
+  // Surrogate status options: MATCHED surrogates are hidden from parents at
+  // the API layer, so only providers (own inventory) and GoStork staff get
+  // the Matched filter option.
+  const canSeeMatchedSurrogates = isGoStorkAdmin || hasProviderRole(((user as any)?.roles as string[]) || []);
+  const surrogateStatusOptions = canSeeMatchedSurrogates
+    ? ["AVAILABLE", "ON_HOLD", "PENDING", "MATCHED"]
+    : ["AVAILABLE", "ON_HOLD", "PENDING"];
+  const surrogateStatusLabels = { AVAILABLE: "Available", ON_HOLD: "On Hold", PENDING: "Pending", MATCHED: "Matched" };
   const searchQuery = useAppSelector((state) => state.ui.marketplaceSearchQuery);
   const sortBy = useAppSelector((state) => state.ui.marketplaceSortBy);
   const activeFilters = useAppSelector((state) => state.ui.activeFilters);
@@ -1881,13 +1890,13 @@ export function MarketplaceFilterBar({
         <MobileMultiSelectDrawer
           label="Status"
           filterKey="status"
-          options={["AVAILABLE", "PENDING", "MATCHED"]}
+          options={surrogateStatusOptions}
           activeFilters={activeFilters}
           dispatch={dispatch}
           testIdPrefix="filter-status"
           btnStyle={obs}
           dark={darkLabels} listMode={listMode}
-          optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }}
+          optionLabels={surrogateStatusLabels}
         />
       )}
 
@@ -2192,7 +2201,7 @@ export function MarketplaceFilterBar({
       )}
 
       {isSurrogate && (
-        <MultiSelectPopover label="Status" filterKey="status" options={["AVAILABLE", "PENDING", "MATCHED"]} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={{ AVAILABLE: "Available", PENDING: "Pending", MATCHED: "Matched" }} />
+        <MultiSelectPopover label="Status" filterKey="status" options={surrogateStatusOptions} activeFilters={activeFilters} dispatch={dispatch} testIdPrefix="filter-status" optionLabels={surrogateStatusLabels} />
       )}
 
       {isSperm && (
@@ -2547,7 +2556,7 @@ export function MarketplaceFilterBar({
           </SelectTrigger>
           <SelectContent>
             {currentSortOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} disabled={"needsLocation" in opt && opt.needsLocation && !hasIvfLocation} data-testid={`sort-option-${opt.value}`}>
+              <SelectItem key={opt.value} value={opt.value} disabled={Boolean("needsLocation" in opt && (opt as any).needsLocation && !hasIvfLocation)} data-testid={`sort-option-${opt.value}`}>
                 {opt.label}
               </SelectItem>
             ))}

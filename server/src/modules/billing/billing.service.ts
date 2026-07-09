@@ -6,6 +6,13 @@ import { generateReceiptPdf } from "./receipt-pdf";
 import { formatMoneyCents } from "../../lib/format-money";
 import { getBaseUrl } from "../../lib/get-base-url";
 import {
+  effectiveAgreementMode,
+  agreementServiceTypeForSession,
+  generateAndAnnounceAgreement,
+  maybeCompleteHandoff,
+} from "../../../agreement-flow";
+import { resolveAgreementTemplate, agreementDocumentType } from "../../../pandadoc-service";
+import {
   getCardDetailsForPaymentIntent,
   getOrCreateStripeCustomer,
   createBankTransferPaymentIntent,
@@ -700,6 +707,161 @@ export class BillingService {
     return { status: "drafted", messageId: msg.id };
   }
 
+  // ─── Phase 5: auto-draft agreement when the deposit invoice is PAID ─────────
+  //
+  // Gate-1: ConciergePromptSection "auto_agreement_on_paid".isActive (global
+  // kill switch). Gate-2: effective per-provider mode - the provider's own
+  // agreementAutomation setting overrides the GoStork-admin autoAgreementDraft
+  // rollout toggle. "approval" posts a provider-only approval card;
+  // "auto_send" generates AND sends for signature immediately.
+  async tryDraftAgreementOnPaid(invoiceId: string): Promise<
+    | { status: "off" }
+    | { status: "skipped"; reason: string }
+    | { status: "blocked"; reason: "NO_TEMPLATE" | "PARTNER_INFO_REQUIRED" }
+    | { status: "drafted"; messageId: string }
+    | { status: "sent"; agreementId: string }
+  > {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        sessionId: true,
+        providerId: true,
+        parentUser: { select: { name: true, firstName: true, lastName: true, email: true } },
+        provider: { select: { id: true, name: true, agreementAutomation: true, autoFeaturesEnabled: true, users: { select: { id: true } } } },
+      },
+    });
+    if (!invoice?.sessionId || !invoice.provider) return { status: "off" };
+    const sessionId = invoice.sessionId;
+
+    const gate1 = await this.prisma.conciergePromptSection.findUnique({
+      where: { key: "auto_agreement_on_paid" },
+      select: { isActive: true },
+    });
+    if (!gate1?.isActive) return { status: "off" };
+    const mode = effectiveAgreementMode(invoice.provider);
+    if (mode === "off") return { status: "off" };
+
+    // Idempotency: one live agreement per session (any status except the
+    // terminal failures), and never a second pending approval card.
+    const existingAgreement = await this.prisma.agreement.findFirst({
+      where: { sessionId, status: { notIn: ["REJECTED", "EXPIRED", "ERROR"] } },
+      select: { id: true },
+    });
+    if (existingAgreement) return { status: "skipped", reason: "AGREEMENT_EXISTS" };
+    const existingCards = await this.prisma.aiChatMessage.findMany({
+      where: { sessionId, uiCardType: "agreement_draft_approval" },
+      select: { uiCardData: true },
+    });
+    if (existingCards.some(c => !((c.uiCardData as any) || {}).resolvedAt)) {
+      return { status: "skipped", reason: "DRAFT_ALREADY_PENDING" };
+    }
+
+    const parentName =
+      invoice.parentUser?.firstName ||
+      invoice.parentUser?.name ||
+      invoice.parentUser?.email ||
+      "The parent";
+
+    // Template must exist BEFORE we announce anything. Missing template =
+    // loud provider-only nudge, never a fabricated document.
+    const serviceType = await agreementServiceTypeForSession(sessionId);
+    const tpl = await resolveAgreementTemplate(invoice.provider.id, serviceType);
+    if (!tpl.agreementTemplateUrl || !tpl.pandaDocTemplateId) {
+      const alreadyNudged = await this.prisma.aiChatMessage.findFirst({
+        where: { sessionId, uiCardType: "provider_only", content: { contains: "agreement template" } },
+        select: { id: true },
+      });
+      if (!alreadyNudged) {
+        const docTitle = agreementDocumentType(serviceType).toLowerCase();
+        await this.prisma.aiChatMessage.create({
+          data: {
+            sessionId,
+            role: "assistant",
+            content: `${parentName} completed their payment, but I couldn't draft the ${docTitle} because no agreement template is configured${serviceType ? ` for ${humanizeLineServiceType(serviceType)}` : ""}. Upload your template and assign signature fields in Settings > Documents, then send the agreement from the + menu here.`,
+            senderType: "system",
+            senderName: "GoStork",
+            uiCardType: "provider_only",
+          },
+        });
+      }
+      this.logger.warn(`Agreement auto-draft blocked for session ${sessionId}: no template (serviceType=${serviceType})`);
+      return { status: "blocked", reason: "NO_TEMPLATE" };
+    }
+
+    const docTitle = agreementDocumentType(serviceType);
+
+    if (mode === "auto_send") {
+      try {
+        const agreement = await generateAndAnnounceAgreement({
+          sessionId,
+          providerId: invoice.provider.id,
+          trigger: "auto",
+        });
+        for (const u of invoice.provider.users) {
+          await this.prisma.inAppNotification.create({
+            data: {
+              userId: u.id,
+              eventType: "AGREEMENT_AUTO_SENT",
+              payload: {
+                sessionId,
+                agreementId: agreement.id,
+                parentName,
+                message: `${parentName}'s payment cleared - their ${docTitle} was generated and sent for signature automatically.`,
+              },
+            },
+          }).catch(() => {});
+        }
+        this.logger.log(`Agreement ${agreement.id} auto-sent on PAID (session=${sessionId})`);
+        return { status: "sent", agreementId: agreement.id };
+      } catch (e: any) {
+        if (e?.code !== "PARTNER_INFO_REQUIRED") throw e;
+        // Fully-automated send needs the partner's signer details, which only
+        // the provider can supply - fall through to the approval card so the
+        // provider completes it from the + menu Agreement panel.
+        this.logger.log(`Agreement auto-send needs partner info (session=${sessionId}) - posting approval card instead`);
+      }
+    }
+
+    const msg = await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId,
+        role: "assistant",
+        content: `${parentName} completed their payment. I drafted the ${docTitle} - review and approve to send it for signature.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardType: "agreement_draft_approval",
+        uiCardData: {
+          parentName,
+          providerId: invoice.provider.id,
+          serviceType,
+          documentType: docTitle,
+          invoiceId: invoice.id,
+          autoDraftedAt: new Date().toISOString(),
+          resolvedAt: null,
+          resolvedAs: null,
+          resultingAgreementId: null,
+        },
+      },
+    });
+    for (const u of invoice.provider.users) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: u.id,
+          eventType: "AGREEMENT_DRAFT_READY",
+          payload: {
+            sessionId,
+            messageId: msg.id,
+            parentName,
+            message: `${parentName}'s payment cleared. Review and send their ${docTitle} for signature.`,
+          },
+        },
+      }).catch(() => {});
+    }
+    this.logger.log(`Agreement draft ${msg.id} posted for provider approval (session=${sessionId})`);
+    return { status: "drafted", messageId: msg.id };
+  }
+
   // ─── Send payment notifications to parent ──────────────────────────────────
 
   async sendPaymentNotificationsToParent(invoiceId: string) {
@@ -1159,6 +1321,18 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     this.logger.log(`Invoice ${invoiceId} captured - PAID`);
     await this.stickSurrogateHoldOnPayment(invoiceId);
     await this.notifyAdminInvoicePaid(invoiceId);
+    // Phase 5: clearance captured -> deposit is truly PAID -> agreement flow
+    await this.tryDraftAgreementOnPaid(invoiceId).catch(e =>
+      this.logger.warn(`Agreement auto-draft failed for ${invoiceId} (capture path): ${e?.message}`),
+    );
+    {
+      const inv = await this.prisma.invoice.findUnique({ where: { id: invoiceId }, select: { sessionId: true } });
+      if (inv?.sessionId) {
+        await maybeCompleteHandoff(inv.sessionId).catch(e =>
+          this.logger.warn(`Handoff check failed for session ${inv.sessionId}: ${e?.message}`),
+        );
+      }
+    }
     // AT_CLEARANCE path also auto-fires the provider transfer.
     try {
       const r = await this.connectService.createTransferForPaidInvoice(invoiceId);
@@ -1314,6 +1488,17 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     await this.reflectPaymentInChat(invoice.id, "PAID");
     await this.stickSurrogateHoldOnPayment(invoice.id);
     await this.notifyAdminInvoicePaid(invoice.id);
+    // Phase 5: auto-draft/send the agreement now that the deposit is paid,
+    // and complete the stage 13 handoff if the agreement was already signed
+    // (AT_CLEARANCE flows can sign against an AUTHORIZED invoice).
+    await this.tryDraftAgreementOnPaid(invoice.id).catch(e =>
+      this.logger.warn(`Agreement auto-draft failed for ${invoice.id}: ${e?.message}`),
+    );
+    if (invoice.sessionId) {
+      await maybeCompleteHandoff(invoice.sessionId).catch(e =>
+        this.logger.warn(`Handoff check failed for session ${invoice.sessionId}: ${e?.message}`),
+      );
+    }
     await this.emitPaymentReceipt(invoice.id).catch(e =>
       this.logger.warn(`Payment receipt emission failed for ${invoice.id}: ${e?.message}`),
     );
@@ -1933,7 +2118,9 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     if (session.subjectProfileId && (session.subjectType || "").toLowerCase().includes("surrog")) {
       await this.prisma.surrogate.updateMany({
         where: { id: session.subjectProfileId, reservedByParentId: session.userId },
-        data: { reservationExpiresAt: dueAt },
+        // Official match: she's MATCHED from this moment - hidden from the
+        // parent marketplace and AI search; only her agency still sees her.
+        data: { reservationExpiresAt: dueAt, status: "MATCHED" },
       }).catch(() => {});
     }
 
@@ -1996,7 +2183,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     if (session.subjectProfileId && (session.subjectType || "").toLowerCase().includes("surrog")) {
       await this.prisma.surrogate.updateMany({
         where: { id: session.subjectProfileId, reservedByParentId: session.userId },
-        data: { reservedByParentId: null, reservationExpiresAt: null },
+        data: { reservedByParentId: null, reservationExpiresAt: null, status: "AVAILABLE" },
       }).catch(() => {});
     }
     const parentSession = await this.prisma.aiChatSession.findFirst({
@@ -2040,10 +2227,10 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
           reservedByParentId: invoice.parentUserId,
           reservationExpiresAt: { not: null },
         },
-        data: { reservationExpiresAt: null },
+        data: { reservationExpiresAt: null, status: "MATCHED" },
       });
       if (res.count > 0) {
-        this.logger.log(`Surrogate ${session.subjectProfileId} hold made permanent (invoice ${invoiceId} paid)`);
+        this.logger.log(`Surrogate ${session.subjectProfileId} hold made permanent + status MATCHED (invoice ${invoiceId} paid)`);
       }
     } catch (e: any) {
       this.logger.warn(`stickSurrogateHoldOnPayment failed for invoice ${invoiceId}: ${e.message}`);
@@ -2113,6 +2300,15 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     this.logger.log(`Invoice ${invoiceId} manually marked PAID by admin ${adminUserId}`);
     await this.reflectPaymentInChat(invoiceId, "PAID");
     await this.notifyAdminInvoicePaid(invoiceId);
+    // Phase 5: admin manual-mark-paid also fires the agreement flow + handoff check
+    await this.tryDraftAgreementOnPaid(invoiceId).catch(e =>
+      this.logger.warn(`Agreement auto-draft failed for ${invoiceId} (admin manual path): ${e?.message}`),
+    );
+    if (invoice.sessionId) {
+      await maybeCompleteHandoff(invoice.sessionId).catch(e =>
+        this.logger.warn(`Handoff check failed for session ${invoice.sessionId}: ${e?.message}`),
+      );
+    }
     await this.emitPaymentReceipt(invoiceId).catch(e =>
       this.logger.warn(`Payment receipt emission failed for ${invoiceId}: ${e?.message}`),
     );
@@ -2234,7 +2430,14 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     // Aggregate stats
     const stats = await this.prisma.invoice.aggregate({
       where: { status: "PAID" },
-      _sum: { serviceAmount: true, referralFeeAmount: true, providerPayoutAmount: true },
+      _sum: { serviceAmount: true, referralFeeAmount: true },
+    });
+    // "Payouts Sent" = transfers that actually went out. Summing the provider
+    // share of every paid invoice (old behavior) silently counted pending and
+    // FAILED payouts as sent and disagreed with the Home dashboard.
+    const sentStats = await this.prisma.invoice.aggregate({
+      where: { status: "PAID", stripeTransferId: { not: null } },
+      _sum: { providerPayoutAmount: true },
     });
 
     const pendingStats = await this.prisma.invoice.aggregate({
@@ -2250,7 +2453,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
       serviceTypes: distinctServiceTypes.map((s) => s.serviceType).filter(Boolean),
       totalRevenue: stats._sum.serviceAmount || 0,
       totalGoStorkFees: stats._sum.referralFeeAmount || 0,
-      totalProviderPayouts: stats._sum.providerPayoutAmount || 0,
+      totalProviderPayouts: sentStats._sum.providerPayoutAmount || 0,
       pendingAmount: pendingStats._sum.serviceAmount || 0,
     };
   }

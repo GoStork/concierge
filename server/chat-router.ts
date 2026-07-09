@@ -84,7 +84,7 @@ async function computeProfileAvailability(
   const clinicIds = [...new Set(sessions.filter(s => t(s).includes("clinic") || t(s).includes("agency")).map(s => s.subjectProfileId!))];
   const [existEgg, existSurr, existSperm, existClinic] = await Promise.all([
     eggIds.length   ? prisma.eggDonor.findMany({ where: { id: { in: eggIds } },   select: { id: true, status: true, hiddenFromSearch: true, frozenLotStatus: true } }) : [],
-    surrIds.length  ? prisma.surrogate.findMany({ where: { id: { in: surrIds } },  select: { id: true, status: true, hiddenFromSearch: true } }) : [],
+    surrIds.length  ? prisma.surrogate.findMany({ where: { id: { in: surrIds } },  select: { id: true, status: true, hiddenFromSearch: true, asrmHidden: true } }) : [],
     spermIds.length ? prisma.spermDonor.findMany({ where: { id: { in: spermIds } },select: { id: true, status: true, hiddenFromSearch: true } }) : [],
     clinicIds.length? prisma.provider.findMany({ where: { id: { in: clinicIds } }, select: { id: true } }) : [],
   ]);
@@ -93,7 +93,8 @@ async function computeProfileAvailability(
     donorMap.set(e.id, { status: e.status, hiddenFromSearch: e.hiddenFromSearch, frozenLotStatus: e.frozenLotStatus });
   }
   for (const e of [...existSurr, ...existSperm]) {
-    donorMap.set(e.id, { status: e.status, hiddenFromSearch: e.hiddenFromSearch });
+    // ASRM-hidden surrogates are treated exactly like provider-hidden ones
+    donorMap.set(e.id, { status: e.status, hiddenFromSearch: e.hiddenFromSearch || (e as any).asrmHidden === true });
   }
   const existingProviderIds = new Set(existClinic.map(e => e.id));
   for (const s of sessions) {
@@ -240,7 +241,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       where: { userId: { in: accountUserIds } },
       orderBy: { updatedAt: "desc" },
       include: {
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         provider: { select: { id: true, name: true, logoUrl: true } },
       },
     });
@@ -462,7 +463,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: [{ humanRequested: "desc" }, { updatedAt: "desc" }],
@@ -988,7 +989,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: { updatedAt: "desc" },
@@ -2970,6 +2971,489 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
   }
 });
 
+// Phase 5: stream the provider's agreement template as a read-only preview
+// (Eva shares this when a parent asks to see the contract before paying).
+chatRouter.get("/api/agreements/template-preview/:sessionId", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  try {
+    const session = await prisma.aiChatSession.findUnique({
+      where: { id: req.params.sessionId },
+      select: { id: true, userId: true, providerId: true, user: { select: { parentAccountId: true } } },
+    });
+    if (!session?.providerId) return res.status(404).json({ message: "Session not found" });
+    const roles: string[] = user?.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
+    const isProviderMember = user?.providerId && user.providerId === session.providerId;
+    const isOwner = user?.id === session.userId;
+    const isAccountMember = !!user?.parentAccountId && user.parentAccountId === session.user?.parentAccountId;
+    if (!isAdmin && !isProviderMember && !isOwner && !isAccountMember) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    const { agreementServiceTypeForSession } = await import("./agreement-flow");
+    const { resolveAgreementTemplate, downloadAgreementTemplateFile } = await import("./pandadoc-service");
+    const serviceType = await agreementServiceTypeForSession(session.id);
+    const tpl = await resolveAgreementTemplate(session.providerId, serviceType);
+    if (!tpl.agreementTemplateUrl) return res.status(404).json({ message: "No agreement template uploaded" });
+    const { buffer, contentType, filename } = await downloadAgreementTemplateFile(tpl.agreementTemplateUrl);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${(tpl.agreementTemplateOriginalName || filename).replace(/"/g, "")}"`);
+    res.send(buffer);
+  } catch (e: any) {
+    console.error("Template preview error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Phase 5: parent-facing agreements list (the Agreements tab in /my/billing).
+// Covers every member of the parent account, mirroring shared sessions.
+// ─── Phase: Home dashboards ──────────────────────────────────────────────────
+
+// Parent Home action queue: things only discoverable by scanning chat cards
+// (proposed call times, agreements awaiting MY signature). Invoices, cost
+// sheets and meetings come from their existing endpoints client-side.
+chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  try {
+    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { parentAccountId: true, email: true } });
+    const memberIds = me?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: me.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [user.id];
+
+    const sessions = await prisma.aiChatSession.findMany({
+      where: { userId: { in: memberIds } },
+      select: { id: true, provider: { select: { name: true } } },
+    });
+    const sessionIds = sessions.map(s => s.id);
+    const providerNameBySession = new Map(sessions.map(s => [s.id, s.provider?.name || null]));
+
+    // Proposed call times the parent hasn't confirmed yet
+    const proposedCards = sessionIds.length
+      ? await prisma.aiChatMessage.findMany({
+          where: { sessionId: { in: sessionIds }, uiCardType: "proposed_times" },
+          orderBy: { createdAt: "desc" },
+          take: 50,
+          select: { id: true, sessionId: true, createdAt: true, uiCardData: true },
+        })
+      : [];
+    const pendingProposals = proposedCards
+      .filter(c => (((c.uiCardData as any) || {}).status ?? "pending") === "pending")
+      .map(c => ({
+        messageId: c.id,
+        sessionId: c.sessionId,
+        createdAt: c.createdAt,
+        providerName: providerNameBySession.get(c.sessionId) || null,
+        callLabel: ((c.uiCardData as any) || {}).meetingSubtype === "MATCH_CALL" ? "Match Call"
+          : ((c.uiCardData as any) || {}).meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call"
+          : "a call",
+        subjectLabel: ((c.uiCardData as any) || {}).subjectLabel || null,
+      }));
+
+    // Agreements sent where THIS user still has to sign
+    const sentAgreements = await prisma.agreement.findMany({
+      where: { parentUserId: { in: memberIds }, status: "SENT" },
+      select: { id: true, documentType: true, sessionId: true, createdAt: true, signerStatus: true, provider: { select: { name: true } } },
+    });
+    const myEmail = (me?.email || user.email || "").toLowerCase();
+    const awaitingMySignature = sentAgreements
+      .filter(a => {
+        const ss = (a.signerStatus as Record<string, any>) || {};
+        const mine = Object.entries(ss).find(([email]) => email.toLowerCase() === myEmail);
+        // No signer entry for me -> not my turn / not my doc; entry present and
+        // not completed -> action item.
+        return mine ? mine[1]?.completed !== true : false;
+      })
+      .map(a => ({
+        agreementId: a.id,
+        documentType: a.documentType,
+        sessionId: a.sessionId,
+        createdAt: a.createdAt,
+        providerName: a.provider?.name || null,
+      }));
+
+    res.json({ pendingProposals, awaitingMySignature });
+  } catch (e: any) {
+    console.error("Parent dashboard queue error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// GoStork admin Home: platform-wide command center. Stuck items first
+// (escalations, deposit deadlines, unsigned agreements, failed payouts),
+// then the 30-day funnel, money tiles, and automation adoption.
+chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  const roles: string[] = user?.roles || [];
+  if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_CONCIERGE")) {
+    return res.status(403).json({ message: "GoStork admin only" });
+  }
+  try {
+    const now = new Date();
+    const d30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [
+      escalations,
+      dueInvoices,
+      sentAgreements,
+      failedPayouts,
+      activeSessions,
+      hotLeads30,
+      callsBooked30,
+      matchedNow,
+      onHoldNow,
+      deposits30,
+      signed30,
+      paidInvoices,
+      providers,
+    ] = await Promise.all([
+      prisma.aiChatSession.findMany({
+        where: { humanRequested: true, humanConcludedAt: null },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
+        select: { id: true, updatedAt: true, user: { select: { name: true, firstName: true, email: true } }, provider: { select: { name: true } } },
+      }),
+      prisma.invoice.findMany({
+        where: { status: "AWAITING_PAYMENT", dueAt: { not: null } },
+        orderBy: { dueAt: "asc" },
+        take: 10,
+        select: { id: true, dueAt: true, serviceAmount: true, serviceType: true, sessionId: true, parentUser: { select: { name: true, firstName: true, email: true } }, provider: { select: { name: true } } },
+      }),
+      prisma.agreement.findMany({
+        where: { status: "SENT" },
+        orderBy: { createdAt: "asc" },
+        take: 10,
+        select: { id: true, createdAt: true, documentType: true, signerStatus: true, parentUser: { select: { name: true, firstName: true, email: true } }, provider: { select: { name: true } } },
+      }),
+      prisma.invoice.findMany({
+        // Still-unresolved failures only: a later successful transfer (or a
+        // completed bank payout) clears the item from the queue even though
+        // payoutFailedAt stays stamped.
+        where: { status: "PAID", payoutFailedAt: { not: null }, stripeTransferId: null, bankPayoutCompletedAt: null },
+        orderBy: { payoutFailedAt: "desc" },
+        take: 10,
+        select: { id: true, payoutFailedAt: true, providerPayoutAmount: true, provider: { select: { name: true } }, parentUser: { select: { name: true, firstName: true } } },
+      }),
+      prisma.aiChatSession.count({ where: { updatedAt: { gte: d30 } } }),
+      prisma.intendedParentProfile.count({ where: { hotLeadAt: { gte: d30 } } }),
+      prisma.booking.count({ where: { createdAt: { gte: d30 }, status: { notIn: ["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"] } } }),
+      prisma.surrogate.count({ where: { status: "MATCHED" } }),
+      prisma.surrogate.count({ where: { status: "ON_HOLD" } }),
+      prisma.invoice.count({ where: { status: "PAID", paidAt: { gte: d30 } } }),
+      prisma.agreement.count({ where: { status: "SIGNED", signedAt: { gte: d30 } } }),
+      prisma.invoice.findMany({
+        where: { status: "PAID" },
+        select: { serviceAmount: true, referralFeeAmount: true, providerPayoutAmount: true, stripeTransferId: true },
+      }),
+      prisma.provider.findMany({
+        where: { services: { some: { status: "APPROVED" } } },
+        select: { id: true, autoFeaturesEnabled: true, agreementAutomation: true },
+      }),
+    ]);
+
+    const [upcomingMeetings, recentInvoices, recentPayouts] = await Promise.all([
+      prisma.booking.findMany({
+        where: { scheduledAt: { gte: now }, status: { in: ["PENDING", "CONFIRMED"] } },
+        orderBy: { scheduledAt: "asc" },
+        take: 5,
+        select: {
+          id: true,
+          scheduledAt: true,
+          subject: true,
+          status: true,
+          parentUser: { select: { name: true, firstName: true, email: true } },
+          providerUser: { select: { name: true, provider: { select: { name: true } } } },
+        },
+      }),
+      prisma.invoice.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 3,
+        select: {
+          id: true,
+          status: true,
+          serviceAmount: true,
+          serviceType: true,
+          createdAt: true,
+          parentUser: { select: { name: true, firstName: true, email: true } },
+          provider: { select: { name: true } },
+        },
+      }),
+      prisma.invoice.findMany({
+        where: { status: "PAID", providerPayoutAmount: { gt: 0 } },
+        orderBy: { paidAt: "desc" },
+        take: 3,
+        select: {
+          id: true,
+          providerPayoutAmount: true,
+          currency: true,
+          paidAt: true,
+          payoutInitiatedAt: true,
+          payoutFailedAt: true,
+          stripeTransferId: true,
+          bankPayoutCompletedAt: true,
+          bankPayoutFailedAt: true,
+          provider: { select: { name: true } },
+          parentUser: { select: { name: true, firstName: true } },
+        },
+      }),
+    ]);
+
+    const totalCollected = paidInvoices.reduce((sum, i) => sum + (i.serviceAmount || 0), 0);
+    const totalFees = paidInvoices.reduce((sum, i) => sum + (i.referralFeeAmount || 0), 0);
+    const pendingPayouts = paidInvoices.filter(i => !i.stripeTransferId).length;
+    const payoutsSent = paidInvoices
+      .filter(i => i.stripeTransferId)
+      .reduce((sum, i: any) => sum + (i.providerPayoutAmount || 0), 0);
+
+    const adoption = { total: providers.length, costSheet: 0, invoice: 0, agreement: 0 };
+    for (const pr of providers) {
+      const f = (pr.autoFeaturesEnabled as any) || {};
+      if (f.autoCostSheetDraft === true) adoption.costSheet++;
+      if (f.autoInvoiceDraft === true) adoption.invoice++;
+      // Provider's own setting overrides the admin rollout toggle
+      const mode = pr.agreementAutomation;
+      if (mode === "approval" || mode === "auto_send" || (mode == null && f.autoAgreementDraft === true)) adoption.agreement++;
+    }
+
+    res.json({
+      escalations: escalations.map(e => ({
+        sessionId: e.id,
+        parentName: e.user?.firstName || e.user?.name || e.user?.email || "Parent",
+        providerName: e.provider?.name || null,
+        updatedAt: e.updatedAt,
+      })),
+      dueInvoices: dueInvoices.map(inv => ({
+        id: inv.id,
+        sessionId: inv.sessionId,
+        dueAt: inv.dueAt,
+        overdue: inv.dueAt ? inv.dueAt < now : false,
+        amountCents: inv.serviceAmount,
+        serviceType: inv.serviceType,
+        parentName: inv.parentUser?.firstName || inv.parentUser?.name || inv.parentUser?.email || "Parent",
+        providerName: inv.provider?.name || null,
+      })),
+      sentAgreements: sentAgreements.map(a => {
+        const ss = (a.signerStatus as Record<string, any>) || {};
+        const signers = Object.values(ss);
+        return {
+          agreementId: a.id,
+          createdAt: a.createdAt,
+          documentType: a.documentType,
+          parentName: a.parentUser?.firstName || a.parentUser?.name || a.parentUser?.email || "Parent",
+          providerName: a.provider?.name || null,
+          signedCount: signers.filter((x: any) => x?.completed).length,
+          signerCount: signers.length,
+        };
+      }),
+      failedPayouts: failedPayouts.map(inv => ({
+        id: inv.id,
+        payoutFailedAt: inv.payoutFailedAt,
+        amountCents: inv.providerPayoutAmount,
+        providerName: inv.provider?.name || null,
+        parentName: inv.parentUser?.firstName || inv.parentUser?.name || "Parent",
+      })),
+      funnel: {
+        activeSessions,
+        hotLeads: hotLeads30,
+        callsBooked: callsBooked30,
+        matched: matchedNow,
+        onHold: onHoldNow,
+        depositsPaid: deposits30,
+        agreementsSigned: signed30,
+      },
+      money: { totalCollected, totalFees, pendingPayouts, payoutsSent },
+      adoption,
+      upcomingMeetings: upcomingMeetings.map(b => ({
+        id: b.id,
+        scheduledAt: b.scheduledAt,
+        subject: b.subject,
+        status: b.status,
+        parentName: b.parentUser?.firstName || b.parentUser?.name || b.parentUser?.email || "Parent",
+        providerName: b.providerUser?.provider?.name || b.providerUser?.name || "Provider",
+      })),
+      recentInvoices: recentInvoices.map(inv => ({
+        id: inv.id,
+        status: inv.status,
+        amountCents: inv.serviceAmount,
+        serviceType: inv.serviceType,
+        createdAt: inv.createdAt,
+        parentName: inv.parentUser?.firstName || inv.parentUser?.name || inv.parentUser?.email || "Parent",
+        providerName: inv.provider?.name || null,
+      })),
+      recentPayouts: recentPayouts.map(inv => ({
+        id: inv.id,
+        amountCents: inv.providerPayoutAmount,
+        paidAt: inv.paidAt,
+        payoutInitiatedAt: inv.payoutInitiatedAt,
+        payoutFailedAt: inv.payoutFailedAt,
+        stripeTransferId: inv.stripeTransferId,
+        bankPayoutCompletedAt: inv.bankPayoutCompletedAt,
+        bankPayoutFailedAt: inv.bankPayoutFailedAt,
+        status: "PAID",
+        providerName: inv.provider?.name || null,
+        parentName: inv.parentUser?.firstName || inv.parentUser?.name || "Parent",
+      })),
+    });
+  } catch (e: any) {
+    console.error("Admin dashboard error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Provider Home work queue: every unresolved inline decision across all the
+// provider's sessions - approval cards (cost sheet / invoice / agreement),
+// unanswered readiness prompts, unanswered whispers, agreements out for
+// signature. Bookings + invoices come from their existing endpoints.
+chatRouter.get("/api/provider/dashboard-queue", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const sessions = await prisma.aiChatSession.findMany({
+      where: { providerId: user.providerId },
+      select: { id: true, user: { select: { name: true, firstName: true, lastName: true, email: true } } },
+    });
+    const sessionIds = sessions.map(s => s.id);
+    const parentNameBySession = new Map(sessions.map(s => [
+      s.id,
+      s.user?.firstName || s.user?.name || s.user?.email || "Parent",
+    ]));
+
+    const APPROVAL_TYPES = ["cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt"];
+    const cards = sessionIds.length
+      ? await prisma.aiChatMessage.findMany({
+          where: { sessionId: { in: sessionIds }, uiCardType: { in: APPROVAL_TYPES } },
+          orderBy: { createdAt: "desc" },
+          take: 200,
+          select: { id: true, sessionId: true, uiCardType: true, createdAt: true, uiCardData: true },
+        })
+      : [];
+    const openApprovals = cards
+      .filter(c => {
+        const d = (c.uiCardData as any) || {};
+        if (c.uiCardType === "provider_readiness_prompt") return !d.answered;
+        return !d.resolvedAt;
+      })
+      .map(c => ({
+        messageId: c.id,
+        sessionId: c.sessionId,
+        type: c.uiCardType,
+        createdAt: c.createdAt,
+        parentName: ((c.uiCardData as any) || {}).parentName || parentNameBySession.get(c.sessionId) || "Parent",
+        documentType: ((c.uiCardData as any) || {}).documentType || null,
+        totalCents: ((c.uiCardData as any) || {}).totalCents ?? null,
+      }));
+
+    const [pendingWhispers, agreementsAwaiting] = await Promise.all([
+      prisma.silentQuery.findMany({
+        where: { providerId: user.providerId, status: "PENDING" },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, questionText: true, createdAt: true },
+      }),
+      prisma.agreement.findMany({
+        where: { providerId: user.providerId, status: "SENT" },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          documentType: true,
+          createdAt: true,
+          signerStatus: true,
+          parentUser: { select: { name: true, firstName: true, lastName: true, email: true } },
+        },
+      }),
+    ]);
+
+    res.json({
+      openApprovals,
+      pendingWhispers,
+      agreementsAwaiting: agreementsAwaiting.map(a => {
+        const ss = (a.signerStatus as Record<string, any>) || {};
+        const signers = Object.values(ss);
+        return {
+          agreementId: a.id,
+          documentType: a.documentType,
+          createdAt: a.createdAt,
+          parentName: a.parentUser?.firstName || a.parentUser?.name || a.parentUser?.email || "Parent",
+          signedCount: signers.filter((x: any) => x?.completed).length,
+          signerCount: signers.length,
+        };
+      }),
+    });
+  } catch (e: any) {
+    console.error("Provider dashboard queue error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.get("/api/my/agreements", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  try {
+    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { parentAccountId: true } });
+    const memberIds = me?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: me.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [user.id];
+    const agreements = await prisma.agreement.findMany({
+      where: { parentUserId: { in: memberIds } },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        documentType: true,
+        serviceType: true,
+        sessionId: true,
+        signedAt: true,
+        rejectedAt: true,
+        createdAt: true,
+        provider: { select: { id: true, name: true, logoUrl: true } },
+      },
+    });
+    res.json(agreements);
+  } catch (e: any) {
+    console.error("List my agreements error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// GoStork admin: every agreement across all providers (the admin Agreements
+// page). Includes parent + provider names and signer progress.
+chatRouter.get("/api/admin/agreements", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  const roles: string[] = user?.roles || [];
+  if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_CONCIERGE")) {
+    return res.status(403).json({ message: "GoStork admin only" });
+  }
+  try {
+    const agreements = await prisma.agreement.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        documentType: true,
+        signedAt: true,
+        createdAt: true,
+        signerStatus: true,
+        parentUser: { select: { name: true, firstName: true, lastName: true, email: true } },
+        provider: { select: { name: true } },
+      },
+    });
+    res.json(agreements.map(a => {
+      const ss = (a.signerStatus as Record<string, any>) || {};
+      const signers = Object.values(ss);
+      return {
+        id: a.id,
+        status: a.status,
+        documentType: a.documentType,
+        signedAt: a.signedAt,
+        createdAt: a.createdAt,
+        parentName: a.parentUser?.name || `${a.parentUser?.firstName || ""} ${a.parentUser?.lastName || ""}`.trim() || a.parentUser?.email || "Parent",
+        providerName: a.provider?.name || "Provider",
+        signedCount: signers.filter((x: any) => x?.completed).length,
+        signerCount: signers.length,
+      };
+    }));
+  } catch (e: any) {
+    console.error("Admin agreements list error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 chatRouter.get("/api/agreements", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
@@ -3013,7 +3497,7 @@ chatRouter.post("/api/agreements/sync-template", requireAuth, async (req, res) =
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    const templateId = await syncTemplateToPandaDoc(user.providerId);
+    const templateId = await syncTemplateToPandaDoc(user.providerId, typeof req.query.serviceType === "string" ? req.query.serviceType : (typeof req.body?.serviceType === "string" ? req.body.serviceType : null));
     res.json({ templateId });
   } catch (e: any) {
     console.error("Sync template error:", e);
@@ -3025,28 +3509,138 @@ chatRouter.post("/api/agreements/sync-template", requireAuth, async (req, res) =
 chatRouter.delete("/api/agreements/template", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const serviceType = typeof req.query.serviceType === "string" ? req.query.serviceType : null;
   try {
-    const provider = await prisma.provider.findUnique({
-      where: { id: user.providerId },
-      select: { pandaDocTemplateId: true },
-    });
-    if (provider?.pandaDocTemplateId) {
+    let pandaDocTemplateId: string | null = null;
+    if (serviceType) {
+      const row = await prisma.providerAgreementTemplate.findUnique({
+        where: { providerId_serviceType: { providerId: user.providerId, serviceType } },
+        select: { pandaDocTemplateId: true },
+      });
+      pandaDocTemplateId = row?.pandaDocTemplateId ?? null;
+    } else {
+      const provider = await prisma.provider.findUnique({
+        where: { id: user.providerId },
+        select: { pandaDocTemplateId: true },
+      });
+      pandaDocTemplateId = provider?.pandaDocTemplateId ?? null;
+    }
+    if (pandaDocTemplateId) {
       const apiKey = process.env.PANDADOC_API_KEY;
       if (apiKey) {
-        const delRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${provider.pandaDocTemplateId}`, {
+        const delRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${pandaDocTemplateId}`, {
           method: "DELETE",
           headers: { "Authorization": `API-Key ${apiKey}` },
         });
-        console.log(`[PandaDoc] Template delete: ${provider.pandaDocTemplateId} -> ${delRes.status}`);
+        console.log(`[PandaDoc] Template delete: ${pandaDocTemplateId} -> ${delRes.status}`);
       }
     }
-    await prisma.provider.update({
-      where: { id: user.providerId },
-      data: { agreementTemplateUrl: null, agreementTemplateOriginalName: null, pandaDocTemplateId: null },
-    });
+    if (serviceType) {
+      await prisma.providerAgreementTemplate.deleteMany({
+        where: { providerId: user.providerId, serviceType },
+      });
+    } else {
+      await prisma.provider.update({
+        where: { id: user.providerId },
+        data: { agreementTemplateUrl: null, agreementTemplateOriginalName: null, pandaDocTemplateId: null },
+      });
+    }
     res.json({ ok: true });
   } catch (e: any) {
     console.error("Delete template error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Per-service agreement templates (Phase 5): list all template slots and
+// upsert a service's template file. The legacy single template on Provider
+// remains the fallback for providers that never configured per-service rows.
+chatRouter.get("/api/agreements/templates", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const [provider, rows, services] = await Promise.all([
+      prisma.provider.findUnique({
+        where: { id: user.providerId },
+        select: { agreementTemplateUrl: true, agreementTemplateOriginalName: true, pandaDocTemplateId: true, agreementAutomation: true, autoFeaturesEnabled: true },
+      }),
+      prisma.providerAgreementTemplate.findMany({ where: { providerId: user.providerId } }),
+      prisma.providerService.findMany({
+        where: { providerId: user.providerId, status: "APPROVED" },
+        select: { providerType: { select: { name: true } } },
+      }),
+    ]);
+    const serviceTypes = new Set<string>();
+    for (const svc of services) {
+      const n = (svc.providerType?.name || "").toLowerCase();
+      if (n.includes("surrog")) serviceTypes.add("SURROGACY");
+      else if (n.includes("egg")) serviceTypes.add("EGG_DONATION");
+      else if (n.includes("sperm")) serviceTypes.add("SPERM_DONATION");
+      else if (n.includes("ivf") || n.includes("clinic")) serviceTypes.add("IVF_CLINIC");
+    }
+    const autoDraft = (provider?.autoFeaturesEnabled as any)?.autoAgreementDraft === true;
+    res.json({
+      serviceTypes: [...serviceTypes],
+      legacy: {
+        agreementTemplateUrl: provider?.agreementTemplateUrl ?? null,
+        agreementTemplateOriginalName: provider?.agreementTemplateOriginalName ?? null,
+        pandaDocTemplateId: provider?.pandaDocTemplateId ?? null,
+      },
+      templates: rows.map(r => ({
+        serviceType: r.serviceType,
+        agreementTemplateUrl: r.agreementTemplateUrl,
+        agreementTemplateOriginalName: r.agreementTemplateOriginalName,
+        pandaDocTemplateId: r.pandaDocTemplateId,
+      })),
+      agreementAutomation: provider?.agreementAutomation ?? null,
+      adminAutoAgreementDraft: autoDraft,
+    });
+  } catch (e: any) {
+    console.error("List agreement templates error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.put("/api/agreements/templates/:serviceType", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const serviceType = req.params.serviceType;
+  const VALID = ["SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC", "OTHER"];
+  if (!VALID.includes(serviceType)) return res.status(400).json({ message: "Invalid serviceType" });
+  const { agreementTemplateUrl, agreementTemplateOriginalName } = req.body || {};
+  if (typeof agreementTemplateUrl !== "string" || !agreementTemplateUrl) {
+    return res.status(400).json({ message: "agreementTemplateUrl is required" });
+  }
+  try {
+    const row = await prisma.providerAgreementTemplate.upsert({
+      where: { providerId_serviceType: { providerId: user.providerId, serviceType } },
+      // New file invalidates the previously synced PandaDoc template + roles
+      update: { agreementTemplateUrl, agreementTemplateOriginalName: agreementTemplateOriginalName ?? null, pandaDocTemplateId: null, pandaDocRoles: null },
+      create: { providerId: user.providerId, serviceType, agreementTemplateUrl, agreementTemplateOriginalName: agreementTemplateOriginalName ?? null },
+    });
+    res.json({ ok: true, serviceType: row.serviceType });
+  } catch (e: any) {
+    console.error("Upsert agreement template error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Provider's own automation preference (overrides the GoStork-admin rollout toggle)
+chatRouter.put("/api/agreements/automation", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const { mode } = req.body || {};
+  if (mode !== null && !["off", "approval", "auto_send"].includes(mode)) {
+    return res.status(400).json({ message: "mode must be null, off, approval, or auto_send" });
+  }
+  try {
+    await prisma.provider.update({
+      where: { id: user.providerId },
+      data: { agreementAutomation: mode },
+    });
+    res.json({ ok: true, mode });
+  } catch (e: any) {
+    console.error("Update agreement automation error:", e);
     res.status(500).json({ message: e.message });
   }
 });
@@ -3056,7 +3650,7 @@ chatRouter.get("/api/agreements/template-editor-session", requireAuth, async (re
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    const eToken = await createTemplateEditingSession(user.providerId, user.email);
+    const eToken = await createTemplateEditingSession(user.providerId, user.email, typeof req.query.serviceType === "string" ? req.query.serviceType : null);
     res.json({ eToken });
   } catch (e: any) {
     console.error("Template editor session error:", e);
@@ -3070,7 +3664,7 @@ chatRouter.post("/api/agreements/refresh-roles", requireAuth, async (req, res) =
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    const result = await refreshTemplateRoles(user.providerId);
+    const result = await refreshTemplateRoles(user.providerId, typeof req.query.serviceType === "string" ? req.query.serviceType : (typeof req.body?.serviceType === "string" ? req.body.serviceType : null));
     res.json(result);
   } catch (e: any) {
     console.error("Refresh template roles error:", e);
@@ -3078,7 +3672,9 @@ chatRouter.post("/api/agreements/refresh-roles", requireAuth, async (req, res) =
   }
 });
 
-// Generate agreement from PandaDoc template (new template-based flow)
+// Generate agreement from PandaDoc template (new template-based flow).
+// Thin wrapper over the shared flow in agreement-flow.ts (also used by the
+// Phase 5 auto-draft approval + fully-automated paths).
 chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
@@ -3097,144 +3693,20 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
     }
   }
   try {
-    const session = await prisma.aiChatSession.findUnique({
-      where: { id: sessionId },
-      include: { provider: { select: { pandaDocTemplateId: true } } },
-    });
-    if (!session) return res.status(404).json({ message: "Session not found" });
-    if (session.providerId !== user.providerId) return res.status(403).json({ message: "Not authorized for this session" });
-
-    // GoStork payment gate: if this provider uses PandaDoc agreements, a paid invoice is required first.
-    // This ensures GoStork collects its referral fee before the legal contract is executed.
-    if (session.provider?.pandaDocTemplateId) {
-      const paidInvoice = await prisma.invoice.findFirst({
-        where: {
-          sessionId: session.id,
-          status: { in: ["PAID", "AUTHORIZED"] }, // AUTHORIZED = AT_CLEARANCE pre-auth placed
-        },
-      });
-      if (!paidInvoice) {
-        return res.status(402).json({
-          code: "PAYMENT_REQUIRED",
-          message: "Payment must be completed before the agreement can be sent for signature. Please complete your GoStork payment first.",
-        });
-      }
-    }
-
-    const agreement = await generateAgreementFromTemplate({
+    const { generateAndAnnounceAgreement } = await import("./agreement-flow");
+    const agreement = await generateAndAnnounceAgreement({
+      sessionId,
       providerId: user.providerId,
-      parentUserId: session.userId,
-      sessionId: session.id,
       generatedByUserId: user.id,
       partnerOverride: partnerOverride ?? undefined,
       skipPartner: skipPartner === true,
-      // Capture which environment created this agreement so the
-      // PandaDoc webhook handler (which may run on a DIFFERENT
-      // environment because PandaDoc fans out events to every
-      // subscribed webhook URL) emails subsequent signers with a
-      // link to the right place.
-      originAppUrl: getAppBaseUrl(),
+      trigger: "manual",
     });
-
-    await prisma.aiChatMessage.create({
-      data: {
-        sessionId: session.id,
-        role: "assistant",
-        content: "The provider has generated the official agreement. Please review and sign it using the button below. You'll also receive it via email.",
-        senderType: "system",
-        senderName: await resolveSessionSenderName(session.id),
-        uiCardType: "agreement",
-        uiCardData: {
-          agreementCard: {
-            agreementId: (agreement as any).id,
-            status: (agreement as any).status,
-            viewUrl: (agreement as any).pandaDocViewUrl || null,
-          },
-        },
-      },
-    });
-
-    // Send email only to the first signer (lowest signingOrder). Subsequent signers are notified
-    // sequentially via the recipient_completed webhook after each person signs.
-    try {
-      const { getNestApp } = await import("./nest-app-ref");
-      const nestApp = getNestApp();
-      if (nestApp) {
-        const { NotificationService } = await import("./src/modules/notifications/notification.service");
-        const notifService = nestApp.get(NotificationService);
-        const providerRecord = await prisma.provider.findUnique({
-          where: { id: user.providerId },
-          select: { name: true },
-        });
-        const providerName = providerRecord?.name || "Your Agency";
-        const agr = agreement as any;
-        const appBase = getAppBaseUrl();
-        const goStorkSigningUrl = agr.id ? `${appBase}/agreements/${agr.id}` : null;
-
-        type SignerEntry = { name: string; email: string; userId: string | null; guestToken: string | null; signingOrder: number; notified: boolean; signed: boolean };
-        console.log(`[Agreement signers] parentSigners count: ${(agr.parentSigners ?? []).length}, agreementId: ${agr.id}, emails: ${(agr.parentSigners ?? []).map((s: any) => s.email).join(", ")}`);
-        let signers: SignerEntry[] = (agr.parentSigners ?? []).map((s: any) => ({
-          name: s.name,
-          email: s.email,
-          userId: s.userId ?? null,
-          guestToken: s.guestToken ?? null,
-          signingOrder: s.signingOrder ?? 1,
-          notified: false,
-          signed: false,
-        }));
-
-        // Fallback: if parentSigners not populated (e.g. old non-template flow), email the primary parent
-        if (signers.length === 0) {
-          const parentUser = await prisma.user.findUnique({
-            where: { id: session.userId },
-            select: { name: true, email: true },
-          });
-          if (parentUser?.email) {
-            signers.push({ name: parentUser.name || parentUser.email, email: parentUser.email, userId: session.userId, guestToken: null, signingOrder: 1, notified: false, signed: false });
-          }
-        }
-
-        // Sort by signing order, then persist the full ordered list on the agreement
-        signers.sort((a, b) => a.signingOrder - b.signingOrder);
-        await (prisma.agreement as any).update({ where: { id: agr.id }, data: { signerOrder: signers } });
-
-        // Only notify the first signer now
-        const firstSigner = signers[0];
-        if (firstSigner?.email) {
-          const signerUserIds = firstSigner.userId ? [firstSigner.userId] : [];
-          const signerUsers = signerUserIds.length > 0
-            ? await prisma.user.findMany({ where: { id: { in: signerUserIds } }, select: { id: true, mobileNumber: true } })
-            : [];
-          const phone = signerUsers.find(u => u.id === firstSigner.userId)?.mobileNumber ?? null;
-          const emailSigningUrl = firstSigner.userId
-            ? goStorkSigningUrl
-            : firstSigner.guestToken ? `${appBase}/agreements/guest/${firstSigner.guestToken}` : null;
-
-          console.log(`[Agreement notify] generate-from-template -> sending to ${firstSigner.email}, isGoStorkMember: ${!!firstSigner.userId && !firstSigner.guestToken}`);
-          await notifService.sendAgreementReadyNotification({
-            parentUserId: firstSigner.userId || session.userId,
-            parentName: firstSigner.name || firstSigner.email,
-            parentEmail: firstSigner.email,
-            parentPhone: phone,
-            providerName,
-            providerId: user.providerId,
-            signingUrl: emailSigningUrl,
-            sessionId: session.id,
-            isGoStorkMember: !!firstSigner.userId && !firstSigner.guestToken,
-          });
-
-          // Mark first signer as notified in signerOrder
-          signers[0] = { ...firstSigner, notified: true };
-          await (prisma.agreement as any).update({ where: { id: agr.id }, data: { signerOrder: signers } });
-        }
-      }
-    } catch (notifErr: any) {
-      console.error("[Agreement] Notification send failed:", notifErr?.message);
-    }
-
-    const agr2 = agreement as any;
-    res.json({ success: true, agreementId: agr2.id, status: agr2.status });
+    res.json({ success: true, agreementId: agreement.id, status: agreement.status });
   } catch (e: any) {
+    if (e.code === "PAYMENT_REQUIRED") {
+      return res.status(402).json({ code: "PAYMENT_REQUIRED", message: e.message });
+    }
     if (e.code === "PARTNER_INFO_REQUIRED") {
       return res.status(409).json({
         code: "PARTNER_INFO_REQUIRED",
@@ -3285,6 +3757,17 @@ chatRouter.get("/api/agreements/guest/:token/signing-session", async (req, res) 
 chatRouter.get("/api/agreements/:id/signing-session", requireAuth, async (req, res) => {
   const user = req.user as any;
   try {
+    // GoStork admins don't sign either - same status view, any agreement
+    const adminRoles: string[] = user?.roles || [];
+    if (adminRoles.includes("GOSTORK_ADMIN") || adminRoles.includes("GOSTORK_CONCIERGE")) {
+      const agr = await prisma.agreement.findUnique({
+        where: { id: req.params.id as string },
+        select: { id: true, providerId: true, status: true, sessionId: true, signerStatus: true },
+      });
+      if (!agr) return res.status(404).json({ message: "Agreement not found" });
+      return res.json({ isProviderView: true, status: agr.status, agreementId: agr.id, sessionId: agr.sessionId, providerId: agr.providerId });
+    }
+
     // Providers don't sign - return a completion view response instead
     if (isProviderUser(user)) {
       const agr = await prisma.agreement.findUnique({
@@ -4212,6 +4695,14 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                 uiCardData: { agreementId: agreement.id },
               },
             }).catch(e => console.error("[PandaDoc webhook] Failed to post all-signed chat message:", e));
+
+            // Stage 13: fully signed + paid invoice -> journey handoff
+            try {
+              const { maybeCompleteHandoff } = await import("./agreement-flow");
+              await maybeCompleteHandoff(agreement.sessionId);
+            } catch (handoffErr: any) {
+              console.error("[PandaDoc webhook] Handoff check failed:", handoffErr?.message);
+            }
           }
 
         } else if (newState === "document.rejected") {

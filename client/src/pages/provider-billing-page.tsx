@@ -1,24 +1,22 @@
 /**
- * Provider Billing page
- * Route: /provider/billing
+ * Provider Invoices page
+ * Routes: /provider/invoices (canonical), /provider/billing (legacy alias)
  *
- * The provider's money hub - the counterpart of the parent /my/billing page
- * and the admin Billing dashboard:
- *   - Invoices tab: every invoice sent to parents (any status), with the
- *     amount / GoStork fee / payout split
- *   - Payouts tab: what GoStork has sent (or is sending) to the bank
- * Search + status + service-type filters. View state lives in URL params so
- * the back button restores the exact tab/filter. Fee setup and bank accounts
- * stay in Settings (Billing / Payouts tabs) - this page is for history.
+ * Every invoice sent to parents (any status), with the amount / GoStork fee /
+ * payout split. Search + status + service-type filters in URL params. Split
+ * out of the old 3-tab Billing page - payouts live at /provider/payouts and
+ * agreements at /provider/agreements. Reached from the Home dashboard.
+ * Fee setup and bank accounts stay in Settings (Billing / Payouts tabs).
  */
 
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Receipt, Search, Landmark, CheckCircle2, DollarSign } from "lucide-react";
+import { Loader2, Receipt, Search } from "lucide-react";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { formatDateTime } from "@/lib/format-date";
 import { derivePayoutStatus } from "@/lib/payout-status";
+import { DateRangeFilter, inDateRange } from "@/components/date-range-filter";
 
 const INVOICE_STATUS_FILTERS = [
   { key: "all", label: "All statuses" },
@@ -27,19 +25,13 @@ const INVOICE_STATUS_FILTERS = [
   { key: "other", label: "Cancelled / expired / refunded" },
 ];
 
-const PAYOUT_STATUS_FILTERS = [
-  { key: "all", label: "All statuses" },
-  { key: "sent", label: "Sent" },
-  { key: "pending", label: "Pending" },
-  { key: "failed", label: "Failed" },
-];
-
 export default function ProviderBillingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get("tab") === "payouts" ? "payouts" : "invoices";
   const status = searchParams.get("status") || "all";
   const service = searchParams.get("service") || "all";
   const q = searchParams.get("q") || "";
+  const dateFrom = searchParams.get("from") || "";
+  const dateTo = searchParams.get("to") || "";
 
   const setParam = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(searchParams);
@@ -76,25 +68,9 @@ export default function ProviderBillingPage() {
     if (status === "pending" && !["AWAITING_PAYMENT", "AUTHORIZED"].includes(inv.status)) return false;
     if (status === "paid" && inv.status !== "PAID") return false;
     if (status === "other" && !["CANCELLED", "EXPIRED", "REFUNDED", "PARTIALLY_REFUNDED", "CLEARANCE_FAILED"].includes(inv.status)) return false;
+    if (!inDateRange(inv.createdAt, dateFrom, dateTo)) return false;
     return matchesService(inv) && matchesSearch(inv);
   });
-
-  const payoutRows = invoices
-    .filter((inv: any) => inv.status === "PAID" && (inv.providerPayoutAmount || 0) > 0)
-    .filter((inv: any) => {
-      if (status === "all") return matchesService(inv) && matchesSearch(inv);
-      const s = derivePayoutStatus(inv);
-      const key = s.label.toLowerCase();
-      const want = status === "sent" ? key.includes("sent") || s.isReceived
-        : status === "failed" ? key.includes("fail")
-        : !key.includes("sent") && !key.includes("fail") && !s.isReceived;
-      return want && matchesService(inv) && matchesSearch(inv);
-    })
-    .sort((a: any, b: any) => {
-      const aT = new Date(a.payoutInitiatedAt || a.paidAt || a.createdAt).getTime();
-      const bT = new Date(b.payoutInitiatedAt || b.paidAt || b.createdAt).getTime();
-      return bT - aT;
-    });
 
   const totalReceived = invoices
     .filter((i: any) => i.status === "PAID")
@@ -102,13 +78,11 @@ export default function ProviderBillingPage() {
   const awaitingCount = invoices.filter((i: any) => ["AWAITING_PAYMENT", "AUTHORIZED"].includes(i.status)).length;
   const pendingPayouts = invoices.filter((i: any) => i.status === "PAID" && (i.providerPayoutAmount || 0) > 0 && !derivePayoutStatus(i).isReceived).length;
 
-  const statusFilters = tab === "invoices" ? INVOICE_STATUS_FILTERS : PAYOUT_STATUS_FILTERS;
-
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
       <div>
-        <h1 className="text-2xl font-heading font-bold">Billing</h1>
-        <p className="text-sm text-muted-foreground mt-1">All invoices you've sent and every payout GoStork has sent you</p>
+        <h1 className="text-2xl font-heading font-bold">Invoices</h1>
+        <p className="text-sm text-muted-foreground mt-1">Every invoice you've sent to parents</p>
       </div>
 
       {/* Stats */}
@@ -127,28 +101,6 @@ export default function ProviderBillingPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b">
-        {[
-          { key: "invoices", label: "Invoices", icon: Receipt },
-          { key: "payouts", label: "Payouts", icon: Landmark },
-        ].map(t => (
-          <button
-            key={t.key}
-            onClick={() => setParam({ tab: t.key === "invoices" ? null : t.key, status: null })}
-            className="px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5"
-            style={{
-              borderBottomColor: tab === t.key ? "hsl(var(--primary))" : "transparent",
-              color: tab === t.key ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
-            }}
-            data-testid={`provider-billing-tab-${t.key}`}
-          >
-            <t.icon className="w-4 h-4" />
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {/* Search + filters */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
@@ -162,13 +114,14 @@ export default function ProviderBillingPage() {
             data-testid="provider-billing-search"
           />
         </div>
+        <DateRangeFilter from={dateFrom} to={dateTo} onFrom={v => setParam({ from: v })} onTo={v => setParam({ to: v })} testIdPrefix="provider-invoices-date" />
         <select
           value={status}
           onChange={e => setParam({ status: e.target.value })}
           className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
           data-testid="provider-billing-status-filter"
         >
-          {statusFilters.map(f => (
+          {INVOICE_STATUS_FILTERS.map(f => (
             <option key={f.key} value={f.key}>{f.label}</option>
           ))}
         </select>
@@ -191,99 +144,59 @@ export default function ProviderBillingPage() {
         <div className="flex justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
-      ) : tab === "invoices" ? (
-        !filteredInvoices.length ? (
-          <div className="flex flex-col items-center gap-2 py-16 text-center">
-            <Receipt className="w-8 h-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">{invoices.length ? "No invoices match your filters" : "No invoices yet"}</p>
-          </div>
-        ) : (
-          <div className="rounded-xl border overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/40">
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
-                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Amount</th>
-                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork Fee</th>
-                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your Payout</th>
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Status</th>
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredInvoices.map((inv: any) => (
-                    <tr
-                      key={inv.id}
-                      className="border-b last:border-0 hover:bg-muted/10 cursor-pointer"
-                      onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
-                      title="Open invoice document"
-                      data-testid={`provider-billing-invoice-${inv.id}`}
-                    >
-                      <td className="px-4 py-2.5 whitespace-nowrap">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()}</td>
-                      <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.serviceAmount, inv.currency)}</td>
-                      <td className="px-4 py-2.5 text-right text-muted-foreground whitespace-nowrap">{formatCents(inv.referralFeeAmount, inv.currency)}</td>
-                      <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap"><InvoiceStatusBadge status={inv.status} /></td>
-                      <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.createdAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )
+      ) : !filteredInvoices.length ? (
+        <div className="flex flex-col items-center gap-2 py-16 text-center">
+          <Receipt className="w-8 h-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">{invoices.length ? "No invoices match your filters" : "No invoices yet"}</p>
+        </div>
       ) : (
-        /* Payouts tab */
-        !payoutRows.length ? (
-          <div className="flex flex-col items-center gap-2 py-16 text-center">
-            <Landmark className="w-8 h-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">No payouts match your filters</p>
-          </div>
-        ) : (
-          <div className="rounded-xl border overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/40">
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
-                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your Payout</th>
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork Paid You</th>
-                    <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payoutRows.map((inv: any) => {
-                    const s = derivePayoutStatus(inv);
-                    return (
-                      <tr
-                        key={inv.id}
-                        className="border-b last:border-0 hover:bg-muted/10 cursor-pointer"
-                        onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
-                        title="Open invoice document"
-                        data-testid={`provider-billing-payout-${inv.id}`}
-                      >
-                        <td className="px-4 py-2.5 whitespace-nowrap">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
-                        <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()}</td>
-                        <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
-                        <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: s.color }}>
-                          <span title={s.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
-                            {s.isReceived && <CheckCircle2 className="w-3.5 h-3.5" />}
-                            {s.label}
+        <div className="rounded-xl border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Amount</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork Fee</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your Payout</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Status</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Payout Status</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInvoices.map((inv: any) => (
+                  <tr
+                    key={inv.id}
+                    className="border-b last:border-0 hover:bg-muted/10 cursor-pointer"
+                    onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
+                    title="Open invoice document"
+                    data-testid={`provider-billing-invoice-${inv.id}`}
+                  >
+                    <td className="px-4 py-2.5 whitespace-nowrap">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()}</td>
+                    <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.serviceAmount, inv.currency)}</td>
+                    <td className="px-4 py-2.5 text-right text-muted-foreground whitespace-nowrap">{formatCents(inv.referralFeeAmount, inv.currency)}</td>
+                    <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
+                    <td className="px-4 py-2.5 whitespace-nowrap"><InvoiceStatusBadge status={inv.status} /></td>
+                    <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap">
+                      {(() => {
+                        const ps = derivePayoutStatus(inv);
+                        return (
+                          <span title={ps.tooltip} className="cursor-help underline decoration-dotted underline-offset-2" style={{ color: ps.color }}>
+                            {ps.label}
                           </span>
-                        </td>
-                        <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )
+        </div>
       )}
     </div>
   );

@@ -223,6 +223,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.agreement;
   }
 
+  get providerAgreementTemplate() {
+    return prisma.providerAgreementTemplate;
+  }
+
   get invoice() {
     return prisma.invoice;
   }

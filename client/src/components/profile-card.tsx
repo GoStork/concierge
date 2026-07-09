@@ -1,4 +1,4 @@
-import { User, EyeOff, Eye, Pencil, Crown, Award, Trash2, Sparkles } from "lucide-react";
+import { User, EyeOff, Eye, Pencil, Crown, Award, Trash2, Sparkles, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { getPhotoSrc, getProfileTypeLabel, getProfileCardSummary, getProfileDetails } from "@/lib/profile-utils";
@@ -85,6 +85,15 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
   const isHidden = adminControls?.isHidden ?? false;
   const isMarketplace = variant === "marketplace";
   const sponsored = adminControls?.sponsored ?? false;
+  // ASRM minimum-requirements gate (surrogates only): system-owned, cannot be
+  // cleared by the provider - the profile stays hidden from parents even if
+  // the provider's own hide toggle is off. asrmFailReasons is
+  // { failures, missing } (legacy rows may hold a plain failures array).
+  const asrmHidden = !isMarketplace && profile.asrmHidden === true;
+  const asrmFailures: string[] = Array.isArray(profile.asrmFailReasons)
+    ? profile.asrmFailReasons
+    : (Array.isArray(profile.asrmFailReasons?.failures) ? profile.asrmFailReasons.failures : []);
+  const asrmMissing: string[] = Array.isArray(profile.asrmFailReasons?.missing) ? profile.asrmFailReasons.missing : [];
 
   // Resolve the same headline status the parent marketplace card shows
   // (swipe-deck-card), so providers/admins see PENDING / MATCHED / SOLD_OUT
@@ -114,7 +123,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
           <img
             src={photoUrl}
             alt={`${typeLabel} #${displayId}`}
-            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${isHidden ? "opacity-50 grayscale" : ""}`}
+            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${isHidden || asrmHidden ? "opacity-50 grayscale" : ""}`}
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
           />
         ) : (
@@ -123,6 +132,26 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
           </div>
         )}
         <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
+          {asrmHidden && asrmFailures.length > 0 && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-destructive text-destructive-foreground shadow"
+              title={`Does not meet the ASRM minimum requirements - hidden from parents.\n- ${asrmFailures.join("\n- ")}`}
+              data-testid={`badge-asrm-hidden-${profile.id}`}
+            >
+              <ShieldAlert className="w-3 h-3" />
+              BELOW ASRM MINIMUM
+            </span>
+          )}
+          {asrmHidden && asrmMissing.length > 0 && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow"
+              title={`Missing info required for the ASRM check - hidden from parents until added.\nEdit the profile and fill in: ${asrmMissing.join(", ")}`}
+              data-testid={`badge-asrm-missing-${profile.id}`}
+            >
+              <ShieldAlert className="w-3 h-3" />
+              MISSING ASRM INFO: {asrmMissing.join(", ").toUpperCase()}
+            </span>
+          )}
           {isHidden && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius)] text-[10px] font-heading bg-[hsl(var(--brand-warning))] text-primary-foreground shadow" data-testid={`badge-hidden-${profile.id}`}>
               <EyeOff className="w-3 h-3" />
@@ -246,18 +275,22 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
             )}
             <button
               className={`py-2 px-3 rounded-[var(--radius)] text-xs font-ui border transition-colors ${
-                isHidden
+                asrmHidden || isHidden
                   ? "border-[hsl(var(--brand-warning)/0.3)] text-[hsl(var(--brand-warning))] bg-[hsl(var(--brand-warning)/0.08)] hover:bg-[hsl(var(--brand-warning)/0.12)]"
                   : "border-primary/30 text-primary hover:bg-primary/10"
-              }`}
+              } ${asrmHidden ? "opacity-60 cursor-not-allowed" : ""}`}
+              disabled={asrmHidden}
               onClick={(e) => {
                 e.stopPropagation();
+                if (asrmHidden) return;
                 adminControls.onToggleVisibility(profile.id, !isHidden);
               }}
-              title={isHidden ? "Hidden from parent search - click to make visible" : "Visible to parents - click to hide from search"}
+              title={asrmHidden
+                ? "Hidden by the ASRM minimum-requirements check - cannot be made visible until the profile meets the requirements"
+                : isHidden ? "Hidden from parent search - click to make visible" : "Visible to parents - click to hide from search"}
               data-testid={`btn-toggle-visibility-${type}-${profile.id}`}
             >
-              {isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {asrmHidden || isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
             {adminControls.onDelete && (
               <button

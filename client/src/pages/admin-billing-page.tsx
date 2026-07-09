@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
+import { derivePayoutStatus } from "@/lib/payout-status";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 
 function StatCard({ label, value, icon: Icon, sub }: { label: string; value: string; icon: any; sub?: string }) {
@@ -53,8 +54,12 @@ export default function AdminBillingPage() {
   // Status filter lives in the URL (?tab=) so the browser back button restores it.
   const tab = searchParams.get("tab") || "all";
   const setStatus = (value: string) => {
-    if (value === "all") setSearchParams({}, { replace: true });
-    else setSearchParams({ tab: value }, { replace: true });
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value === "all") next.delete("tab");
+      else next.set("tab", value);
+      return next;
+    }, { replace: true });
     setPage(1);
   };
   const queryClient = useQueryClient();
@@ -62,9 +67,11 @@ export default function AdminBillingPage() {
   const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
 
-  // Filters
-  const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  // Filters. ?q= deep links (from the admin Home "Resolve"/"Review" rows)
+  // pre-fill the search so the page opens scoped to the exact invoice.
+  const initialQ = searchParams.get("q") || "";
+  const [searchInput, setSearchInput] = useState(initialQ);
+  const [search, setSearch] = useState(initialQ);
   const [serviceType, setServiceType] = useState("all");
   const [paidFrom, setPaidFrom] = useState("");
   const [paidTo, setPaidTo] = useState("");
@@ -137,11 +144,12 @@ export default function AdminBillingPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="GoStork Fees Earned"  value={formatCents(stats.totalGoStorkFees)}    icon={TrendingUp}    />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard label="Total Collected"       value={formatCents(stats.totalRevenue)}         icon={DollarSign}    />
+        <StatCard label="Fees Collected"        value={formatCents(stats.totalGoStorkFees)}     icon={TrendingUp}    />
         <StatCard label="Provider Payouts Sent" value={formatCents(stats.totalProviderPayouts)} icon={CheckCircle2}  />
-        <StatCard label="Pending"               value={formatCents(stats.pendingAmount)}        icon={Clock}         sub="Awaiting payment" />
+        <StatCard label="Held by GoStork"       value={formatCents((stats.totalRevenue || 0) - (stats.totalProviderPayouts || 0))} icon={DollarSign} sub="Collected minus payouts" />
+        <StatCard label="Awaiting Payment"      value={formatCents(stats.pendingAmount)}        icon={Clock}         sub="Unpaid invoices" />
       </div>
 
       {/* Filters */}
@@ -238,6 +246,7 @@ export default function AdminBillingPage() {
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">GoStork Fee</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">Payout</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Payout Status</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -257,6 +266,16 @@ export default function AdminBillingPage() {
                     <td className="px-4 py-3 text-right" style={{ color: "hsl(var(--brand-success))" }}>{formatCents(inv.referralFeeAmount, inv.currency)}</td>
                     <td className="px-4 py-3 text-right text-muted-foreground">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
                     <td className="px-4 py-3"><InvoiceStatusBadge status={inv.status} /></td>
+                    <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
+                      {(() => {
+                        const ps = derivePayoutStatus(inv);
+                        return (
+                          <span title={ps.tooltip} className="cursor-help underline decoration-dotted underline-offset-2" style={{ color: ps.color }}>
+                            {ps.label}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(inv.paidAt || inv.createdAt).toLocaleDateString()}</td>
                     <td className="px-4 py-3">
                       {expandedId === inv.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -266,7 +285,7 @@ export default function AdminBillingPage() {
                   {/* Expanded detail row */}
                   {expandedId === inv.id && (
                     <tr key={`${inv.id}-detail`} className="bg-muted/10">
-                      <td colSpan={9} className="px-6 py-5">
+                      <td colSpan={10} className="px-6 py-5">
                         <div className="grid md:grid-cols-2 gap-6">
                           {/* Details */}
                           <div className="space-y-3 text-sm">

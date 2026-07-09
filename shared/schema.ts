@@ -287,6 +287,7 @@ export const insertProviderSchema = z.object({
   ivfSurrogateMaxAge: z.number().int().nullable().optional(),
   ivfSurrogateMinBmi: z.number().nullable().optional(),
   ivfSurrogateMaxBmi: z.number().nullable().optional(),
+  ivfSurrogateMinDeliveries: z.number().int().nullable().optional(),
   ivfSurrogateMaxDeliveries: z.number().int().nullable().optional(),
   ivfSurrogateMaxCSections: z.number().int().nullable().optional(),
   ivfSurrogateMaxMiscarriages: z.number().int().nullable().optional(),

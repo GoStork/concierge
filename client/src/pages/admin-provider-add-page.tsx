@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -76,7 +76,7 @@ export default function AdminProviderAddPage() {
   const [previewServices, setPreviewServices] = useState<string[]>([]);
   const [previewTeamMembers, setPreviewTeamMembers] = useState<ScrapedTeamMember[]>([]);
   const [editingMemberIdx, setEditingMemberIdx] = useState<number | null>(null);
-  // IVF matching requirements
+  // IVF Clinic surrogate matching requirements
   const [ivfTwinsAllowed, setIvfTwinsAllowed] = useState(false);
   const [ivfGenderSelectionAllowed, setIvfGenderSelectionAllowed] = useState(false);
   const [ivfTransferFromOtherClinics, setIvfTransferFromOtherClinics] = useState(false);
@@ -85,16 +85,15 @@ export default function AdminProviderAddPage() {
   const [ivfBiologicalConnection, setIvfBiologicalConnection] = useState("");
   const [ivfAcceptingPatients, setIvfAcceptingPatients] = useState<string[]>([]);
   const [ivfEggDonorType, setIvfEggDonorType] = useState("");
-  // Surrogacy matching requirements
   const [surrogacyCitizensNotAllowed, setSurrogacyCitizensNotAllowed] = useState<string[]>([]);
   const [surrogacyTwinsAllowed, setSurrogacyTwinsAllowed] = useState(false);
   const [surrogacyStayAfterBirthMonths, setSurrogacyStayAfterBirthMonths] = useState("");
   const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
   const [surrogacySurrogateRemovableFromCert, setSurrogacySurrogateRemovableFromCert] = useState(false);
-  // IVF Clinic surrogate matching requirements
+  const [ivfSurrogateMaxDeliveries, setIvfSurrogateMaxDeliveries] = useState("");
   const [ivfSurrogateAgeRange, setIvfSurrogateAgeRange] = useState<[number, number]>([18, 45]);
   const [ivfSurrogateBmiRange, setIvfSurrogateBmiRange] = useState<[number, number]>([18, 35]);
-  const [ivfSurrogateMaxDeliveries, setIvfSurrogateMaxDeliveries] = useState("");
+  const [ivfSurrogateDeliveriesRange, setIvfSurrogateDeliveriesRange] = useState<[number, number]>([1, 5]);
   const [ivfSurrogateMaxCSections, setIvfSurrogateMaxCSections] = useState("");
   const [ivfSurrogateMaxMiscarriages, setIvfSurrogateMaxMiscarriages] = useState("");
   const [ivfSurrogateMaxAbortions, setIvfSurrogateMaxAbortions] = useState("");
@@ -115,34 +114,14 @@ export default function AdminProviderAddPage() {
   const isIvfClinic = previewServices.some(
     (s) => s.toLowerCase().includes("ivf") || s.toLowerCase().includes("in vitro")
   );
+
   const isSurrogacyAgency = previewServices.some(
     (s) => s.toLowerCase().includes("surrogacy")
   );
+
   const ivfOffersEggDonors = previewServices.some(
     (s) => s.toLowerCase().includes("egg donor") || s.toLowerCase().includes("egg bank")
   );
-
-  const surrogacyDefaultsAppliedRef = useRef(false);
-  const US_STATES_SET = useRef(new Set(["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"]));
-
-  useEffect(() => {
-    if (!isSurrogacyAgency || surrogacyDefaultsAppliedRef.current) return;
-    // Only apply US defaults when we have at least one location and it is explicitly in the US
-    if (previewLocations.length === 0) return;
-    const isUSBased = previewLocations.some(loc => {
-      const s = (loc.state || "").trim().toUpperCase();
-      const c = (loc.country || "").trim().toLowerCase();
-      return US_STATES_SET.current.has(s) || c === "us" || c === "usa" || c === "united states";
-    });
-    if (isUSBased) {
-      surrogacyDefaultsAppliedRef.current = true;
-      setSurrogacyTwinsAllowed(true);
-      setSurrogacySurrogateRemovableFromCert(true);
-      setSurrogacyStayAfterBirthMonths("0");
-      setSurrogacyBirthCertificateListing(["both_biological_parents"]);
-    }
-  }, [isSurrogacyAgency, previewLocations]);
-
   const firstLocation = previewLocations[0];
   const { data: ivfRatesData } = useQuery<{ found: boolean; matchedProvider?: { id: string; name: string }; rates: any[] }>({
     queryKey: ["/api/providers/lookup-success-rates", previewName, firstLocation?.city, firstLocation?.state],
@@ -297,7 +276,8 @@ export default function AdminProviderAddPage() {
       ivfSurrogateMaxAge: ivfSurrogateAgeRange[1],
       ivfSurrogateMinBmi: ivfSurrogateBmiRange[0],
       ivfSurrogateMaxBmi: ivfSurrogateBmiRange[1],
-      ivfSurrogateMaxDeliveries: ivfSurrogateMaxDeliveries ? parseInt(ivfSurrogateMaxDeliveries) : null,
+      ivfSurrogateMinDeliveries: ivfSurrogateDeliveriesRange[0],
+      ivfSurrogateMaxDeliveries: ivfSurrogateDeliveriesRange[1],
       ivfSurrogateMaxCSections: ivfSurrogateMaxCSections ? parseInt(ivfSurrogateMaxCSections) : null,
       ivfSurrogateMaxMiscarriages: ivfSurrogateMaxMiscarriages ? parseInt(ivfSurrogateMaxMiscarriages) : null,
       ivfSurrogateMaxAbortions: ivfSurrogateMaxAbortions ? parseInt(ivfSurrogateMaxAbortions) : null,
@@ -1005,11 +985,16 @@ export default function AdminProviderAddPage() {
                 className="max-w-sm"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4 max-w-sm">
-              <div className="space-y-2">
-                <Label>Max Deliveries</Label>
-                <NumberInput allowDecimal={false} value={ivfSurrogateMaxDeliveries} onChange={setIvfSurrogateMaxDeliveries} placeholder="e.g. 5" />
-              </div>
+            <div className="space-y-2">
+              <Label>Deliveries Range of Surrogate: <span className="text-primary font-ui">{ivfSurrogateDeliveriesRange[0]} - {ivfSurrogateDeliveriesRange[1]}</span></Label>
+              <Slider
+                min={0} max={10} step={1}
+                value={ivfSurrogateDeliveriesRange}
+                onValueChange={(v) => setIvfSurrogateDeliveriesRange(v as [number, number])}
+                className="max-w-sm"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4 max-w-lg">
               <div className="space-y-2">
                 <Label>Max C-Sections</Label>
                 <NumberInput allowDecimal={false} value={ivfSurrogateMaxCSections} onChange={setIvfSurrogateMaxCSections} placeholder="e.g. 3" />
@@ -1023,11 +1008,11 @@ export default function AdminProviderAddPage() {
                 <NumberInput allowDecimal={false} value={ivfSurrogateMaxAbortions} onChange={setIvfSurrogateMaxAbortions} placeholder="e.g. 2" />
               </div>
               <div className="space-y-2">
-                <Label>Max Years from Last Pregnancy</Label>
+                <Label className="whitespace-nowrap">Max Years from Last Pregnancy</Label>
                 <NumberInput allowDecimal={false} value={ivfSurrogateMaxYearsFromLastPregnancy} onChange={setIvfSurrogateMaxYearsFromLastPregnancy} placeholder="e.g. 5" />
               </div>
               <div className="space-y-2">
-                <Label>Months Post Vaginal Delivery</Label>
+                <Label className="whitespace-nowrap">Months Post Vaginal Delivery</Label>
                 <NumberInput allowDecimal={false} value={ivfSurrogateMonthsPostVaginal} onChange={setIvfSurrogateMonthsPostVaginal} placeholder="e.g. 6" />
               </div>
             </div>

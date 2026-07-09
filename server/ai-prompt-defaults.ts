@@ -1221,7 +1221,10 @@ CURRENT PROFESSIONALS:
 - currentAgencyName (string: agency name if they already have one)
 - currentAttorneyName (string: attorney name if they already have one)
 
-All [[SAVE:...]], [[QUICK_REPLY:...]], [[CURATION]], [[MATCH_CARD:...]], [[HOT_LEAD:...]], [[WHISPER:...]], [[HUMAN_NEEDED]], and [[CONSULTATION_BOOKING:...]] tags are stripped before the user sees the message.`,
+CONTRACT / AGREEMENT PREVIEW - [[AGREEMENT_PREVIEW]]:
+When a parent in a provider session asks to SEE the contract or agreement (e.g. "can I see the contract?", "what does the agreement look like?", "can I review the agreement before paying?"), include the tag [[AGREEMENT_PREVIEW]] in your reply. The system then shares the right document automatically: their official agreement if one already exists, otherwise the provider's standard agreement template as a read-only preview, or an honest note (plus a nudge to the provider) if none is uploaded. Your text should be a short warm lead-in like "Of course - here it is:" and NOTHING more about the document contents; do not describe, summarize, or quote contract terms yourself. Only use this tag in a session that has a specific provider. For general questions about what agreements usually contain, answer normally without the tag.
+
+All [[SAVE:...]], [[QUICK_REPLY:...]], [[CURATION]], [[MATCH_CARD:...]], [[HOT_LEAD:...]], [[WHISPER:...]], [[HUMAN_NEEDED]], [[AGREEMENT_PREVIEW]], and [[CONSULTATION_BOOKING:...]] tags are stripped before the user sees the message.`,
     },
     {
       key: "post_match_behavior",
@@ -1570,23 +1573,23 @@ Exceptions:
     },
     {
       key: "auto_agreement_on_paid",
-      label: "[Phase 1] Auto-draft agreement when invoice is paid",
-      description: "AI drafts the agency agreement via PandaDoc as soon as the deposit invoice flips to PAID. Disabled by default.",
+      label: "[Phase 5] Auto-draft agreement when invoice is paid",
+      description: "Global kill switch: when a deposit invoice flips to PAID, the agreement is auto-drafted (provider approves before send) or auto-sent, per the provider's automation setting. Also gates Eva's contract preview draft flow.",
       sortOrder: 92,
-      isActive: false,
-      content: `AUTO-DRAFT AGREEMENT WHEN INVOICE IS PAID (Phase 4 trigger - currently inactive):
+      isActive: true,
+      content: `AUTO-DRAFT AGREEMENT WHEN INVOICE IS PAID (Phase 5 - live):
 
-When an Invoice on a session transitions to PAID AND the provider has an agreement template configured (pandaDocTemplateId set):
-1. Generate the PandaDoc agreement using the existing generateAgreementFromTemplate flow with the parent + partner data already on file.
-2. Drop an inline chat card in the PROVIDER's session: "Invoice paid. I drafted the engagement letter / agreement." with Approve & Send / Edit / Reject buttons.
-3. On Approve: trigger the standard sequential signing flow (parent first, then partner, then provider).
+This section is the GLOBAL kill switch for agreement automation. Turning it off stops all automatic agreement drafting platform-wide; the manual "Generate & Send Agreement" panel keeps working.
 
-ALSO auto-fire (without waiting for paid invoice) if:
-- The parent explicitly asks to "see the contract first" / "preview the agreement", AND
-- The provider has a pandaDocTemplateId configured.
-In that case, generate the PandaDoc doc via the standard flow (which does NOT advance state machine). Provider still gets the approval card before parent receives.
+When an Invoice on a session transitions to PAID (Stripe webhook, AT_CLEARANCE capture, or admin manual mark-paid) AND the provider's effective automation mode is not off:
+1. The provider's own setting (Settings > Documents > Automation) wins: "approval" posts a provider-only approval card ("[Parent] completed their payment. I drafted the [agreement] - review and approve to send it for signature."); "auto_send" generates AND sends the agreement for signature immediately with no approval step. If the provider never chose, the GoStork-admin per-provider rollout toggle (autoAgreementDraft) maps on -> approval, off -> off.
+2. The template is resolved per service: multi-service agencies configure one template per service (surrogacy vs egg donation) in Settings > Documents; single-template providers keep working unchanged.
+3. If no template is configured, the provider gets a loud in-chat nudge to upload one - nothing is fabricated.
+4. On Approve: the standard sequential signing flow runs (first signer emailed, then each next signer via webhook). Partner-info gaps surface on the card so the provider can complete them.
 
-Manual "Generate Agreement" button remains available at all times.`,
+Once the agreement is FULLY SIGNED and the invoice is PAID, the journey handoff completes automatically (stage 13): the session is stamped, both sides get a celebration message.
+
+Manual "Generate & Send Agreement" from the + menu remains available at all times and uses the same engine.`,
     },
     {
       key: "lawyer_intro_prompt",

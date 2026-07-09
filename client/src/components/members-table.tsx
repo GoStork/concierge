@@ -141,7 +141,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
 
   const queryKey: (string | undefined)[] =
     context === "provider" ? ["/api/providers", providerId, "users"] :
-    context === "gostork" ? ["/api/users"] :
+    context === "gostork" ? ["/api/gostork/users"] :
     ["/api/parent-account/members"];
 
   const { data: rawMembers, isLoading } = useQuery<MemberData[]>({
@@ -153,10 +153,9 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
         return res.json();
       }
       if (context === "gostork") {
-        const res = await fetch("/api/users", { credentials: "include" });
+        const res = await fetch("/api/gostork/users", { credentials: "include" });
         if (!res.ok) throw new Error("Failed to fetch members");
-        const all = await res.json();
-        return all.filter((u: MemberData) => (u.roles || []).some((r: string) => r in GOSTORK_ROLES));
+        return res.json();
       }
       const res = await fetch("/api/parent-account/members", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch members");

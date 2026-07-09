@@ -13,6 +13,7 @@ import {
   User,
   LayoutDashboard,
   BarChart3,
+  Home,
   Search,
   Building2,
   Users,
@@ -752,6 +753,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const navigation: { show: boolean; to: string; icon: any; label: string; mobileLabel: string; tabId?: string; mobileOnly?: boolean; desktopOnly?: boolean; submenuItems?: typeof MARKETPLACE_TABS; badge?: number; fillOnActive?: boolean; isExplore?: boolean }[] = [
     { show: false /* hidden for now */, to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', mobileLabel: 'Dashboard' },
     // Desktop keeps the Marketplace dropdown; on mobile providers/admins get the
+    // Home dashboards lead the bar: action queue + meetings + billing/
+    // agreements summaries. Billing (both roles) and Performance (provider)
+    // left the top bar - their pages stay routable via Home's View-all links.
+    // Chat remains the parent's default landing; Home is the overview.
+    { show: isParentOnly, to: '/home', icon: Home, label: 'Home', mobileLabel: 'Home', fillOnActive: false },
+    { show: isProvider && !isAdmin, to: '/provider/home', icon: Home, label: 'Home', mobileLabel: 'Home', fillOnActive: false },
+    { show: isAdmin, to: '/admin/home', icon: Home, label: 'Home', mobileLabel: 'Home', fillOnActive: false },
     // same centered stork Explore button as parents (added below).
     { show: isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS, desktopOnly: true },
     { show: isProvider && !isAdmin, to: '/marketplace', icon: Search, label: 'Marketplace', mobileLabel: 'Marketplace', submenuItems: MARKETPLACE_TABS, desktopOnly: true },
@@ -778,21 +786,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         ]
       : []),
     { show: isParentOnly, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread, fillOnActive: false },
-    // Parent billing hub: all invoices + cost sheets across providers.
-    // Desktop top nav + mobile bottom bar (lands after Calendar, before Profile).
-    { show: isParentOnly && (user as any).parentAccountRole !== 'VIEWER', to: '/my/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing', fillOnActive: false },
     { show: !isParentOnly && !isAdmin, to: '/chat', icon: MessageCircle, label: 'Chats', mobileLabel: 'Chats', badge: totalUnread, fillOnActive: false },
     { show: isAdmin, to: '/admin/providers', icon: Building2, label: 'Providers', mobileLabel: 'Providers', fillOnActive: false },
-    { show: isAdmin, to: '/admin/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing', fillOnActive: false },
     { show: isAdmin, to: '/admin/concierge-monitor', icon: Headphones, label: 'Concierge', mobileLabel: 'Concierge', badge: conciergeUnread, fillOnActive: false },
     { show: isAdmin, to: '/admin/test-runner', icon: FlaskConical, label: 'Test Runner', mobileLabel: 'Tests', fillOnActive: false },
-    { show: isAdmin || isProvider, to: '/users', icon: Users, label: 'Parents', mobileLabel: 'Parents', fillOnActive: false },
-    // Provider-only: all-profiles engagement + conversion analytics (reuses the
-    // sponsorship dashboard in "performance" mode).
-    { show: isProvider && !isAdmin, to: '/performance', icon: BarChart3, label: 'Performance', mobileLabel: 'Stats', fillOnActive: false },
-    // Provider billing hub: invoices sent to parents + payout history.
-    // Fee setup / bank accounts stay in Settings (Billing / Payouts tabs).
-    { show: isProvider && !isAdmin, to: '/provider/billing', icon: DollarSign, label: 'Billing', mobileLabel: 'Billing', fillOnActive: false },
+    { show: isAdmin || isProvider, to: '/parents', icon: Users, label: 'Parents', mobileLabel: 'Parents', fillOnActive: false },
     { show: !((user as any).parentAccountRole === 'VIEWER'), to: '/calendar', icon: Calendar, label: 'Calendar', mobileLabel: 'Calendar', badge: isProvider ? pendingMeetings : undefined, fillOnActive: false },
     { show: true, to: '/account', icon: User, label: 'Profile', mobileLabel: 'Profile', mobileOnly: true, fillOnActive: false },
   ];
@@ -842,7 +840,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   const isActive = (to: string) => {
     const params = new URLSearchParams(location.search);
-    const onUserRoute = location.pathname === '/users' || location.pathname.startsWith('/users/');
+    const onUserRoute = location.pathname === '/parents' || location.pathname === '/users' || location.pathname.startsWith('/users/');
     if (onUserRoute && params.has('provider')) {
       return to === '/admin/providers';
     }

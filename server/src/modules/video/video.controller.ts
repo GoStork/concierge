@@ -1106,7 +1106,7 @@ export class VideoController {
       try {
         const held = await this.prisma.surrogate.update({
           where: { id: providerSession.subjectProfileId },
-          data: { reservedByParentId: parentUserId, reservationExpiresAt: holdUntil },
+          data: { reservedByParentId: parentUserId, reservationExpiresAt: holdUntil, status: "ON_HOLD" },
           select: { externalId: true, firstName: true },
         });
         subjectLabel = held.externalId ? `Surrogate #${held.externalId}` : held.firstName || null;

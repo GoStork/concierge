@@ -209,6 +209,7 @@ export function ClinicSwipeCard({
       maxAge: provider.ivfSurrogateMaxAge ?? null,
       minBmi: provider.ivfSurrogateMinBmi ?? null,
       maxBmi: provider.ivfSurrogateMaxBmi ?? null,
+      minDeliveries: provider.ivfSurrogateMinDeliveries ?? null,
       maxDeliveries: provider.ivfSurrogateMaxDeliveries ?? null,
       maxCSections: provider.ivfSurrogateMaxCSections ?? null,
       maxMiscarriages: provider.ivfSurrogateMaxMiscarriages ?? null,

@@ -26,7 +26,7 @@ interface SwipeDeckCardProps {
   // bookable. AVAILABLE renders nothing; PENDING/MATCHED apply to egg
   // donors + surrogates; SOLD_OUT applies to sperm donors and pure Frozen
   // Eggs donors with no inventory left.
-  donorStatus?: "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
+  donorStatus?: "AVAILABLE" | "ON_HOLD" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
   // Phase 4 (surrogates): ISO timestamp while an active 24h match-call hold
   // is running. Renders the "On Hold for 24 Hours" badge - transparent to
   // other parents that she's temporarily reserved.
@@ -315,24 +315,30 @@ export function SwipeDeckCard({
                 {(sponsored || pinnedHeader.badge || pinnedHeader.warningBadge) && (
                   <div className="flex items-center justify-center gap-1.5 flex-wrap">
                     {sponsored && (
-                      <Badge className="bg-accent/90 text-accent-foreground font-ui px-2.5 py-1 gap-1" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-sponsored-${id}`}>
+                      <Badge className="bg-accent/90 text-accent-foreground font-ui px-2 py-0.5 gap-1" style={{ fontSize: 'var(--badge-text-size, 11px)' }} data-testid={`badge-sponsored-${id}`}>
                         <Sparkles className="w-3 h-3" /> Sponsored
                       </Badge>
                     )}
                     {pinnedHeader.badge && (
-                      <Badge className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2.5 py-1 gap-1" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-success-${id}`}>
+                      <Badge className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2 py-0.5 gap-1" style={{ fontSize: 'var(--badge-text-size, 11px)' }} data-testid={`badge-success-${id}`}>
                         <TrendingUp className="w-3 h-3" /> {pinnedHeader.badge}
                       </Badge>
                     )}
                     {pinnedHeader.warningBadge && (
-                      <Badge
-                        className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"
-                        style={{ fontSize: 'var(--badge-text-size, 13px)' }}
-                        title={pinnedHeader.warningDetail || undefined}
-                        data-testid={`badge-requirements-${id}`}
-                      >
-                        <Clock className="w-3 h-3" /> {pinnedHeader.warningBadge}
-                      </Badge>
+                      <span className="relative group/reqs pointer-events-auto">
+                        <Badge
+                          className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2 py-0.5 gap-1 whitespace-nowrap cursor-help"
+                          style={{ fontSize: 'var(--badge-text-size, 11px)' }}
+                          data-testid={`badge-requirements-${id}`}
+                        >
+                          <Clock className="w-3 h-3" /> {pinnedHeader.warningBadge}
+                        </Badge>
+                        {pinnedHeader.warningDetail && (
+                          <span className="hidden group-hover/reqs:block absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-[60] w-64 rounded-[var(--radius)] border bg-popover text-popover-foreground shadow-md p-3 text-xs font-ui text-left normal-case whitespace-normal">
+                            {pinnedHeader.warningDetail}
+                          </span>
+                        )}
+                      </span>
                     )}
                   </div>
                 )}
@@ -597,13 +603,13 @@ export function SwipeDeckCard({
                   </p>
                 )}
                 {sponsored && (
-                  <Badge className="bg-accent/90 text-accent-foreground font-ui px-2.5 py-1 gap-1 shrink-0" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-sponsored-${id}`}>
+                  <Badge className="bg-accent/90 text-accent-foreground font-ui px-2 py-0.5 gap-1 shrink-0" style={{ fontSize: 'var(--badge-text-size, 11px)' }} data-testid={`badge-sponsored-${id}`}>
                     <Sparkles className="w-3 h-3" />
                     Sponsored
                   </Badge>
                 )}
                 {pinnedHeader.badge && (
-                  <Badge className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2.5 py-1 gap-1 shrink-0" style={{ fontSize: 'var(--badge-text-size, 13px)' }} data-testid={`badge-success-${id}`}>
+                  <Badge className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2 py-0.5 gap-1 shrink-0" style={{ fontSize: 'var(--badge-text-size, 11px)' }} data-testid={`badge-success-${id}`}>
                     <TrendingUp className="w-3 h-3" />
                     {pinnedHeader.badge}
                   </Badge>
@@ -682,8 +688,8 @@ export function SwipeDeckCard({
             <div className="flex items-center gap-1.5 mb-2 flex-wrap">
               {sponsored && (
                 <Badge
-                  className="bg-accent/90 text-accent-foreground font-ui px-2.5 py-1 gap-1"
-                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  className="bg-accent/90 text-accent-foreground font-ui px-2 py-0.5 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                   data-testid={`badge-sponsored-${id}`}
                 >
                   <Sparkles className="w-3 h-3" />
@@ -692,8 +698,8 @@ export function SwipeDeckCard({
               )}
               {successBadge && (
                 <Badge
-                  className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2.5 py-1 gap-1"
-                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  className="bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2 py-0.5 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                   data-testid={`badge-success-${id}`}
                 >
                   <TrendingUp className="w-3 h-3" />
@@ -702,8 +708,8 @@ export function SwipeDeckCard({
               )}
               {isPremium && (
                 <Badge
-                  className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"
-                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2 py-0.5 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                   data-testid={`badge-premium-${id}`}
                 >
                   <Crown className="w-3 h-3" />
@@ -712,8 +718,8 @@ export function SwipeDeckCard({
               )}
               {statusLabel && (
                 <Badge
-                  className="bg-accent/90 text-accent-foreground font-ui px-2.5 py-1"
-                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  className="bg-accent/90 text-accent-foreground font-ui px-2 py-0.5"
+                  style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                   data-testid={`badge-status-${id}`}
                 >
                   {statusLabel}
@@ -739,8 +745,8 @@ export function SwipeDeckCard({
                       "bg-[hsl(var(--brand-success))]/90 text-white";
                     return (
                       <Badge
-                        className={`font-ui px-2.5 py-1 ${freshBg}`}
-                        style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                        className={`font-ui px-2 py-0.5 ${freshBg}`}
+                        style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                         data-testid={`badge-fresh-status-${id}`}
                       >
                         Fresh: {freshLabel}
@@ -754,8 +760,8 @@ export function SwipeDeckCard({
                       : "bg-[hsl(var(--brand-success))]/90 text-white";
                     return (
                       <Badge
-                        className={`font-ui px-2.5 py-1 ${frozenBg}`}
-                        style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                        className={`font-ui px-2 py-0.5 ${frozenBg}`}
+                        style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                         data-testid={`badge-frozen-status-${id}`}
                       >
                         Frozen: {frozenLabel}
@@ -767,12 +773,13 @@ export function SwipeDeckCard({
                 const ds = getDonorStatusStyle(donorStatus)!;
                 const pillBg =
                   donorStatus === "PENDING"  ? "bg-[hsl(var(--brand-warning))]/90 text-white" :
+                  donorStatus === "ON_HOLD"  ? "bg-[hsl(var(--brand-warning))]/90 text-white" :
                   donorStatus === "SOLD_OUT" ? "bg-destructive/90 text-destructive-foreground" :
                   /* MATCHED */                "bg-muted-foreground/80 text-background";
                 return (
                   <Badge
-                    className={`font-ui px-2.5 py-1 ${pillBg}`}
-                    style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                    className={`font-ui px-2 py-0.5 ${pillBg}`}
+                    style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                     data-testid={`badge-donor-status-${id}`}
                     title={ds.description}
                   >
@@ -783,8 +790,8 @@ export function SwipeDeckCard({
               {/* Active 24h match-call hold - visible to everyone by design */}
               {onHoldUntil && new Date(onHoldUntil) > new Date() && (
                 <Badge
-                  className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"
-                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2 py-0.5 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                   data-testid={`badge-on-hold-${id}`}
                   title="Another family just completed a match call - she's reserved while they decide."
                 >
@@ -794,8 +801,8 @@ export function SwipeDeckCard({
               )}
               {isExperienced && (
                 <Badge
-                  className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2.5 py-1 gap-1"
-                  style={{ fontSize: 'var(--badge-text-size, 13px)' }}
+                  className="bg-[hsl(var(--brand-warning))]/90 text-white font-ui px-2 py-0.5 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 11px)' }}
                   data-testid={`badge-experienced-${id}`}
                 >
                   <Award className="w-3 h-3" />

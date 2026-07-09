@@ -28,16 +28,23 @@ export default function AgreementsSigningPage() {
   });
 
   const handleBack = () => {
+    // Return to wherever the user actually came from (Home dashboard, the
+    // Agreements page, the chat, an email link...). React Router stamps an
+    // index on history state - idx > 0 means there IS an in-app page behind
+    // us. Only when the agreement was opened directly (fresh tab from an
+    // email) do we fall back to the conversation it belongs to.
+    if ((window.history.state?.idx ?? 0) > 0) {
+      navigate(-1);
+      return;
+    }
     if (data?.sessionId) {
-      if (!data.isProviderView && data.isProviderThread && data.providerId) {
-        navigate(`/chat/${data.providerId}/${data.sessionId}`);
-      } else if (data.isProviderView && data.providerId && data.sessionId) {
+      if (data.providerId) {
         navigate(`/chat/${data.providerId}/${data.sessionId}`);
       } else {
         navigate(`/chat/concierge?session=${data.sessionId}`);
       }
     } else {
-      navigate(-1);
+      navigate("/chat");
     }
   };
 

@@ -8,6 +8,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { SessionMessage } from "./chat-types";
 import { CostSheetDraftApprovalCard } from "./cost-sheet-draft-approval-card";
 import { InvoiceDraftApprovalCard } from "./invoice-draft-approval-card";
+import { AgreementDraftApprovalCard } from "./agreement-draft-approval-card";
 import { ProposedTimesCard } from "./proposed-times-card";
 import { InvoiceCard } from "@/components/invoice-card";
 
@@ -220,6 +221,16 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
         msg={{ id: msg.id, uiCardData: data }}
         sessionId={sessionId}
         onEdit={onEditInvoiceDraft}
+      />
+    );
+  }
+
+  // Phase 5: provider-only auto-drafted agreement awaiting approval.
+  if (msg.uiCardType === "agreement_draft_approval" && sessionId) {
+    return (
+      <AgreementDraftApprovalCard
+        msg={{ id: msg.id, uiCardData: data }}
+        sessionId={sessionId}
       />
     );
   }

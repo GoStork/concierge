@@ -53,6 +53,7 @@ import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterv
 import { apiRequest } from "@/lib/queryClient";
 import { ReadinessPromptCard } from "@/components/readiness-prompt-card";
 import { CelebrationBurst } from "@/components/chat/celebration-burst";
+import { useScrollToMessage, captureMessageTarget, hasPendingMessageTarget } from "@/hooks/use-scroll-to-message";
 import { ProposedTimesCard } from "@/components/chat/proposed-times-card";
 import { InvoiceCard } from "@/components/invoice-card";
 
@@ -2678,6 +2679,9 @@ interface ConciergeChatProps {
 }
 
 export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId, isInline, externalBookingSlug, onCloseExternalBooking, talkToTeamRef, onSidePanelChange, onBookingConfirmed }: ConciergeChatProps = {}) {
+  // Deep-link (?msg=) capture MUST run before the ?session= URL locking
+  // below rewrites the address bar and drops the query string.
+  captureMessageTarget();
   const [searchParams] = useSearchParams();
   const matchmakerId = isInline ? (inlineMatchmakerId || null) : searchParams.get("matchmaker");
   const existingSessionId = isInline ? (inlineSessionId || null) : searchParams.get("session");
@@ -2698,6 +2702,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const { data: brand } = useBrandSettings();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Deep-link support: ?msg=<id> / ?msg=quote:<quoteId> scrolls to the card
+  useScrollToMessage(messages.length);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -3321,6 +3327,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
   // Initial scroll - use container scroll, not window scroll
   useEffect(() => {
+    if (hasPendingMessageTarget()) return; // ?msg= deep link owns the scroll
     const container = document.querySelector('[data-testid="concierge-messages"]');
     if (container) container.scrollTop = container.scrollHeight;
   }, []);
@@ -3367,6 +3374,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const forceScrollRef = useRef(false);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const scrollToBottom = useRef((behavior?: "smooth") => {
+    if (hasPendingMessageTarget()) return; // ?msg= deep link owns the scroll
     if (messagesEndRef.current) {
       const container = messagesEndRef.current.closest('[data-testid="concierge-messages"]') as HTMLElement | null;
       if (container) {
@@ -4723,7 +4731,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               // questions buttons could appear stuck or inert until a hard
               // refresh. Index is only the fallback for unsaved local stubs.
               return (
-            <div key={msg.id || `local-${i}`}>
+            <div key={msg.id || `local-${i}`} id={msg.id ? `msg-${msg.id}` : undefined} data-quote-id={(msg as any).uiCardData?.quoteId || undefined}>
               {/* Date separator - full width, outside the avatar row */}
               {msg.createdAt && (() => {
                 const msgDate = new Date(msg.createdAt).toDateString();

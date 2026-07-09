@@ -163,8 +163,17 @@ export interface TabSection {
 // and never reach the mapper. SOLD_OUT only applies to sperm donors and
 // pure Frozen Eggs donors but the type union is shared so all three
 // mappers can route through here.
-export function normalizeProfileStatus(raw: string | null | undefined): "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" {
-  if (raw === "PENDING" || raw === "MATCHED" || raw === "SOLD_OUT") return raw;
+// Long occupation values blow up the compact overview chip row (e.g.
+// "Stay at home parent" next to "BMI 26" + "Married"). Display-only mapping;
+// filtering still uses the raw stored value.
+export function shortOccupation(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  if (/stay[- ]?at[- ]?home/i.test(raw)) return "Homemaker";
+  return raw;
+}
+
+export function normalizeProfileStatus(raw: string | null | undefined): "AVAILABLE" | "ON_HOLD" | "PENDING" | "MATCHED" | "SOLD_OUT" {
+  if (raw === "ON_HOLD" || raw === "PENDING" || raw === "MATCHED" || raw === "SOLD_OUT") return raw;
   return "AVAILABLE";
 }
 
@@ -182,7 +191,7 @@ function normalizeFrozenLotStatus(raw: string | null | undefined): "AVAILABLE" |
 //                           as a second badge on the card)
 export function resolveEggDonorHeadlineStatus(
   dbDonor: any,
-): "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" {
+): "AVAILABLE" | "ON_HOLD" | "PENDING" | "MATCHED" | "SOLD_OUT" {
   const dt = (dbDonor.donorType || "").toLowerCase();
   if (dt === "frozen eggs") {
     const fl = normalizeFrozenLotStatus(dbDonor.frozenLotStatus);
@@ -210,7 +219,7 @@ export interface SwipeDeckProfile {
   // (presence on the marketplace is the signal); PENDING and MATCHED render
   // an explicit badge so parents see at a glance that the donor can't be
   // booked right now (or is not yet approved).
-  donorStatus: "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
+  donorStatus: "AVAILABLE" | "ON_HOLD" | "PENDING" | "MATCHED" | "SOLD_OUT" | null;
   // Phase 4 (surrogates only): set when the surrogate is on an active 24h
   // match-call hold (reservationExpiresAt in the future). Renders the
   // "On Hold for 24 Hours" badge. Permanent reservations (deposit paid)
@@ -814,7 +823,7 @@ export function getDonorTabs(profile: SwipeDeckProfile, matchedPrefs: MatchedPre
   if (costItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Journey Costs", items: costItems });
 
   const interestItems: TabItem[] = [];
-  if (isNonEmpty(profile.occupation)) interestItems.push({ label: profile.occupation!, value: "", icon: Briefcase });
+  if (isNonEmpty(profile.occupation)) interestItems.push({ label: shortOccupation(profile.occupation)!, value: "", icon: Briefcase });
   const validHobbies = profile.interests.filter(i => i != null && i.trim() !== "");
   if (validHobbies.length > 0) {
     for (const h of validHobbies) interestItems.push({ label: h, value: "" });
@@ -840,7 +849,7 @@ export function getSurrogateTabs(profile: SwipeDeckProfile, matchedPrefs: Matche
     if (isNonEmpty(profile.location)) overviewItems.push({ label: flaggedLocation(profile.displayLocation || profile.location), value: "" });
     if (profile.bmi) overviewItems.push({ label: `BMI ${Math.round(Number(profile.bmi))}`, value: "", lineBreakBefore: true });
     if (isNonEmpty(profile.relationshipStatus)) overviewItems.push({ label: profile.relationshipStatus!, value: "" });
-    if (isNonEmpty(profile.occupation)) overviewItems.push({ label: profile.occupation!, value: "" });
+    if (isNonEmpty(profile.occupation)) overviewItems.push({ label: shortOccupation(profile.occupation)!, value: "" });
     if (overviewItems.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Overview", items: overviewItems });
   }
 
@@ -981,6 +990,7 @@ export function getClinicTabs(opts: {
     maxAge?: number | null;
     minBmi?: number | null;
     maxBmi?: number | null;
+    minDeliveries?: number | null;
     maxDeliveries?: number | null;
     maxCSections?: number | null;
     maxMiscarriages?: number | null;
@@ -1129,7 +1139,13 @@ export function getClinicTabs(opts: {
     const reqChips: TabItem[] = [];
     if (sm.minAge != null && sm.maxAge != null) reqChips.push({ label: `Age ${sm.minAge}-${sm.maxAge}`, value: "", icon: Calendar });
     if (sm.minBmi != null && sm.maxBmi != null) reqChips.push({ label: `BMI ${sm.minBmi}-${sm.maxBmi}`, value: "", icon: Scale });
-    if (sm.maxDeliveries != null) reqChips.push({ label: `Up to ${sm.maxDeliveries} deliveries`, value: "", icon: Baby });
+    if (sm.minDeliveries != null && sm.maxDeliveries != null) {
+      reqChips.push({ label: `${sm.minDeliveries}-${sm.maxDeliveries} deliveries`, value: "", icon: Baby });
+    } else if (sm.minDeliveries != null) {
+      reqChips.push({ label: `At least ${sm.minDeliveries} ${sm.minDeliveries === 1 ? "delivery" : "deliveries"}`, value: "", icon: Baby });
+    } else if (sm.maxDeliveries != null) {
+      reqChips.push({ label: `Up to ${sm.maxDeliveries} deliveries`, value: "", icon: Baby });
+    }
     if (sm.maxCSections != null) reqChips.push({ label: `Up to ${sm.maxCSections} C-sections`, value: "", icon: Scissors });
     if (sm.maxMiscarriages != null) reqChips.push({ label: `Up to ${sm.maxMiscarriages} miscarriages`, value: "", icon: Heart });
     if (sm.maxAbortions != null) reqChips.push({ label: `Up to ${sm.maxAbortions} abortions`, value: "", icon: Heart });

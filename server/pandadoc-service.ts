@@ -126,6 +126,12 @@ interface GenerateAgreementParams {
   };
   skipPartner?: boolean;
   /**
+   * Service the agreement covers (SURROGACY | EGG_DONATION | SPERM_DONATION |
+   * IVF_CLINIC | OTHER). Selects the per-service template row when the
+   * provider has one; falls back to the legacy single template on Provider.
+   */
+  serviceType?: string | null;
+  /**
    * Base URL of the environment the agency just generated from (e.g.
    * "https://go-stork.replit.app" or "https://polygynous-vergie-coyly.
    * ngrok-free.dev"). Stored on the agreement so PandaDoc webhook fan-
@@ -502,45 +508,84 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
 
 // ---- New PandaDoc template-based functions ----
 
+// Human document titles per service, used for Agreement.documentType and the
+// PandaDoc document name.
+export function agreementDocumentType(serviceType: string | null | undefined): string {
+  switch (serviceType) {
+    case "SURROGACY": return "Surrogacy Agreement";
+    case "EGG_DONATION": return "Egg Donation Agreement";
+    case "SPERM_DONATION": return "Sperm Donation Agreement";
+    case "IVF_CLINIC": return "Clinic Agreement";
+    default: return "Agency Agreement";
+  }
+}
+
+export type ResolvedAgreementTemplate = {
+  source: "service" | "provider";
+  serviceType: string | null;
+  agreementTemplateUrl: string | null;
+  agreementTemplateOriginalName: string | null;
+  pandaDocTemplateId: string | null;
+  pandaDocRoles: string | null;
+};
+
 /**
- * Upload provider's Word/PDF template to PandaDoc as a reusable template.
- * Stores the resulting template UUID on provider.pandaDocTemplateId.
+ * Resolve which agreement template applies: the per-service
+ * ProviderAgreementTemplate row when one exists with an uploaded file,
+ * otherwise the legacy single-template fields on Provider. Multi-service
+ * agencies (surrogacy + egg donation) keep one contract per service; a
+ * provider that never configured per-service rows keeps working unchanged.
  */
-/**
- * Upload provider's file to PandaDoc as a template, embedding role names in the creation payload.
- * Stores the resulting template UUID in pandaDocTemplateId.
- */
-export async function syncTemplateToPandaDoc(providerId: string): Promise<string> {
+export async function resolveAgreementTemplate(providerId: string, serviceType?: string | null): Promise<ResolvedAgreementTemplate> {
+  if (serviceType) {
+    const row = await prisma.providerAgreementTemplate.findUnique({
+      where: { providerId_serviceType: { providerId, serviceType } },
+    });
+    if (row?.agreementTemplateUrl) {
+      return {
+        source: "service",
+        serviceType,
+        agreementTemplateUrl: row.agreementTemplateUrl,
+        agreementTemplateOriginalName: row.agreementTemplateOriginalName,
+        pandaDocTemplateId: row.pandaDocTemplateId,
+        pandaDocRoles: row.pandaDocRoles,
+      };
+    }
+  }
   const provider = await prisma.provider.findUnique({
     where: { id: providerId },
-    select: { id: true, name: true, agreementTemplateUrl: true, pandaDocTemplateId: true },
+    select: { agreementTemplateUrl: true, agreementTemplateOriginalName: true, pandaDocTemplateId: true, pandaDocRoles: true },
   });
-  if (!provider) throw new Error("Provider not found");
-  if (!provider.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template");
+  return {
+    source: "provider",
+    serviceType: serviceType ?? null,
+    agreementTemplateUrl: provider?.agreementTemplateUrl ?? null,
+    agreementTemplateOriginalName: provider?.agreementTemplateOriginalName ?? null,
+    pandaDocTemplateId: provider?.pandaDocTemplateId ?? null,
+    pandaDocRoles: provider?.pandaDocRoles ?? null,
+  };
+}
 
-  const apiKey = process.env.PANDADOC_API_KEY;
-  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
-
-  // If a valid template already exists in PandaDoc, reuse it - preserves field assignments
-  if (provider.pandaDocTemplateId) {
-    const checkRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${provider.pandaDocTemplateId}`, {
-      headers: { "Authorization": `API-Key ${apiKey}` },
+// Writes template metadata (pandaDocTemplateId / pandaDocRoles) back to
+// whichever store the template was resolved from.
+async function persistTemplateMeta(providerId: string, tpl: ResolvedAgreementTemplate, data: { pandaDocTemplateId?: string | null; pandaDocRoles?: string | null }) {
+  if (tpl.source === "service" && tpl.serviceType) {
+    await prisma.providerAgreementTemplate.update({
+      where: { providerId_serviceType: { providerId, serviceType: tpl.serviceType } },
+      data,
     });
-    if (checkRes.ok) {
-      console.log(`[PandaDoc] Reusing existing template: ${provider.pandaDocTemplateId}`);
-      return provider.pandaDocTemplateId;
-    }
-    // Template not found in PandaDoc (deleted externally) - clear DB and re-create
-    console.log(`[PandaDoc] Template ${provider.pandaDocTemplateId} not found in PandaDoc, creating new one`);
-    await prisma.provider.update({ where: { id: providerId }, data: { pandaDocTemplateId: null } });
+  } else {
+    await prisma.provider.update({ where: { id: providerId }, data });
   }
+}
 
-  // Download the file
-  const fileUrl = provider.agreementTemplateUrl;
-  let buffer: Buffer;
-  let contentType: string;
+/**
+ * Download an agreement template file from wherever it lives (private GCS,
+ * local /uploads, or a public URL). Shared by the PandaDoc sync and the
+ * Phase 5 contract-preview chat route.
+ */
+export async function downloadAgreementTemplateFile(fileUrl: string): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
   const filename = decodeURIComponent(fileUrl.split("/").pop()?.split("?")[0] || "agreement-template");
-
   const gcsMatch = fileUrl.match(/storage\.googleapis\.com\/([^/]+)\/(.+)/);
   if (gcsMatch) {
     const keyJson = process.env.GCS_SERVICE_ACCOUNT_KEY;
@@ -551,23 +596,64 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
     const file = storage.bucket(gcsMatch[1]).file(gcsMatch[2]);
     const [meta] = await file.getMetadata();
     const [contents] = await file.download();
-    buffer = contents;
-    contentType = (meta.contentType as string) || "application/octet-stream";
-  } else if (fileUrl.startsWith("/uploads/")) {
+    return { buffer: contents, contentType: (meta.contentType as string) || "application/octet-stream", filename };
+  }
+  if (fileUrl.startsWith("/uploads/")) {
     const localPath = path.join(process.cwd(), "public", fileUrl);
-    buffer = fs.readFileSync(localPath);
-    contentType = filename.endsWith(".pdf") ? "application/pdf"
+    const buffer = fs.readFileSync(localPath);
+    const contentType = filename.endsWith(".pdf") ? "application/pdf"
       : filename.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       : "application/msword";
-  } else {
-    const resp = await fetch(fileUrl);
-    if (!resp.ok) throw new Error(`Failed to fetch template file: ${resp.status}`);
-    buffer = Buffer.from(await resp.arrayBuffer());
-    contentType = resp.headers.get("content-type") || "application/octet-stream";
+    return { buffer, contentType, filename };
+  }
+  const resp = await fetch(fileUrl);
+  if (!resp.ok) throw new Error(`Failed to fetch template file: ${resp.status}`);
+  return {
+    buffer: Buffer.from(await resp.arrayBuffer()),
+    contentType: resp.headers.get("content-type") || "application/octet-stream",
+    filename,
+  };
+}
+
+/**
+ * Upload provider's Word/PDF template to PandaDoc as a reusable template.
+ * Stores the resulting template UUID on provider.pandaDocTemplateId.
+ */
+/**
+ * Upload provider's file to PandaDoc as a template, embedding role names in the creation payload.
+ * Stores the resulting template UUID in pandaDocTemplateId.
+ */
+export async function syncTemplateToPandaDoc(providerId: string, serviceType?: string | null): Promise<string> {
+  const provider = await prisma.provider.findUnique({
+    where: { id: providerId },
+    select: { id: true, name: true },
+  });
+  if (!provider) throw new Error("Provider not found");
+  const tpl = await resolveAgreementTemplate(providerId, serviceType);
+  if (!tpl.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template");
+
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+
+  // If a valid template already exists in PandaDoc, reuse it - preserves field assignments
+  if (tpl.pandaDocTemplateId) {
+    const checkRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${tpl.pandaDocTemplateId}`, {
+      headers: { "Authorization": `API-Key ${apiKey}` },
+    });
+    if (checkRes.ok) {
+      console.log(`[PandaDoc] Reusing existing template: ${tpl.pandaDocTemplateId}`);
+      return tpl.pandaDocTemplateId;
+    }
+    // Template not found in PandaDoc (deleted externally) - clear DB and re-create
+    console.log(`[PandaDoc] Template ${tpl.pandaDocTemplateId} not found in PandaDoc, creating new one`);
+    await persistTemplateMeta(providerId, tpl, { pandaDocTemplateId: null });
   }
 
+  // Download the file
+  const { buffer, contentType, filename } = await downloadAgreementTemplateFile(tpl.agreementTemplateUrl);
+
   const templateMeta: any = {
-    name: `${provider.name} Agreement Template`,
+    name: `${provider.name} ${agreementDocumentType(tpl.serviceType)} Template`,
   };
 
   const formData = new FormData();
@@ -603,10 +689,7 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
     }
   }
 
-  await prisma.provider.update({
-    where: { id: providerId },
-    data: { pandaDocTemplateId: templateId },
-  });
+  await persistTemplateMeta(providerId, tpl, { pandaDocTemplateId: templateId });
 
   return templateId;
 }
@@ -614,18 +697,14 @@ export async function syncTemplateToPandaDoc(providerId: string): Promise<string
 /**
  * Create an embedded editing session for the provider's PandaDoc template.
  */
-export async function createTemplateEditingSession(providerId: string, userEmail: string): Promise<string> {
-  const provider = await prisma.provider.findUnique({
-    where: { id: providerId },
-    select: { pandaDocTemplateId: true },
-  });
-  if (!provider) throw new Error("Provider not found");
-  if (!provider.pandaDocTemplateId) throw new Error("Provider template not synced to PandaDoc yet");
+export async function createTemplateEditingSession(providerId: string, userEmail: string, serviceType?: string | null): Promise<string> {
+  const tpl = await resolveAgreementTemplate(providerId, serviceType);
+  if (!tpl.pandaDocTemplateId) throw new Error("Provider template not synced to PandaDoc yet");
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
 
-  const res = await fetch(`https://api.pandadoc.com/public/v1/templates/${provider.pandaDocTemplateId}/editing-sessions`, {
+  const res = await fetch(`https://api.pandadoc.com/public/v1/templates/${tpl.pandaDocTemplateId}/editing-sessions`, {
     method: "POST",
     headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ email: userEmail }),
@@ -694,7 +773,8 @@ async function removePlaceholderRecipients(
  * are preserved. Roles are fetched live from the template details API and recipients are
  * assigned accordingly.
  */
-export async function generateAgreementFromTemplate({ providerId, parentUserId, sessionId, generatedByUserId, partnerOverride, skipPartner, originAppUrl }: GenerateAgreementParams) {
+export async function generateAgreementFromTemplate({ providerId, parentUserId, sessionId, generatedByUserId, partnerOverride, skipPartner, serviceType, originAppUrl }: GenerateAgreementParams) {
+  const tpl = await resolveAgreementTemplate(providerId, serviceType);
   const [provider, parentUser, session] = await Promise.all([
     prisma.provider.findUnique({
       where: { id: providerId },
@@ -715,8 +795,8 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
   if (!parentUser) throw new Error("Parent user not found");
   if (!session) throw new Error("Chat session not found");
   if (session.providerId !== providerId) throw new Error("Provider/session mismatch");
-  if (!provider.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template.");
-  if (!provider.pandaDocTemplateId) {
+  if (!tpl.agreementTemplateUrl) throw new Error("Provider has not uploaded an agreement template.");
+  if (!tpl.pandaDocTemplateId) {
     throw new Error("Please open the editor, assign signature fields, and click Save before sending an agreement.");
   }
 
@@ -761,8 +841,8 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
 
   let cachedNames: string[] | null = null;
   try {
-    if (provider.pandaDocRoles) {
-      const parsed = JSON.parse(provider.pandaDocRoles);
+    if (tpl.pandaDocRoles) {
+      const parsed = JSON.parse(tpl.pandaDocRoles);
       if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((n: unknown) => typeof n === "string")) {
         cachedNames = parsed as string[];
       }
@@ -775,7 +855,7 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
     roles = [{ id: "cached", name: cachedNames[0], signingOrder: 1 }];
     console.log(`[PandaDoc] Using cached single role (no live fetch): "${cachedNames[0]}"`);
   } else {
-    const fetched = await fetchTemplateRolesAndFields(apiKey, provider.pandaDocTemplateId);
+    const fetched = await fetchTemplateRolesAndFields(apiKey, tpl.pandaDocTemplateId);
     roles = fetched.roles;
     fieldCountByRoleId = fetched.fieldCountByRoleId;
     const reason = cachedNames ? `${cachedNames.length} cached roles - fetching live for field counts` : "no valid role cache - fetching live";
@@ -872,9 +952,10 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
       providerId,
       parentUserId,
       sessionId,
+      serviceType: tpl.serviceType,
       generatedByUserId: generatedByUserId ?? null,
       status: "DRAFT",
-      documentType: "Agency Agreement",
+      documentType: agreementDocumentType(tpl.serviceType),
       signerStatus: Object.keys(initialSignerStatus2).length > 0 ? initialSignerStatus2 : undefined,
       originAppUrl: originAppUrl ?? null,
     },
@@ -965,18 +1046,15 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
     console.log(`[PandaDoc] Final recipients: ${JSON.stringify(recipients.map(r => `${r.email}(role=${r.role},order=${r.signing_order})`))}`);
 
     // Cache role names for next time.
-    await prisma.provider.update({
-      where: { id: providerId },
-      data: { pandaDocRoles: JSON.stringify(roles.map(r => r.name)) },
-    });
+    await persistTemplateMeta(providerId, tpl, { pandaDocRoles: JSON.stringify(roles.map(r => r.name)) });
 
     // Create document from template (JSON, not multipart) - preserves all editor field placements.
     const createResponse = await fetch("https://api.pandadoc.com/public/v1/documents", {
       method: "POST",
       headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: `${provider.name} - Agency Agreement - ${parent1Name}`,
-        template_uuid: provider.pandaDocTemplateId,
+        name: `${provider.name} - ${agreementDocumentType(tpl.serviceType)} - ${parent1Name}`,
+        template_uuid: tpl.pandaDocTemplateId,
         recipients,
         metadata: {
           gostork_provider_id: providerId,
@@ -1095,18 +1173,14 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
  * Fetch the current role names from a provider's PandaDoc template and cache them
  * in provider.pandaDocRoles. Called after the provider closes the editor.
  */
-export async function refreshTemplateRoles(providerId: string): Promise<{ roles: string[] }> {
-  const provider = await prisma.provider.findUnique({
-    where: { id: providerId },
-    select: { pandaDocTemplateId: true },
-  });
-  if (!provider) throw new Error("Provider not found");
-  if (!provider.pandaDocTemplateId) return { roles: [] };
+export async function refreshTemplateRoles(providerId: string, serviceType?: string | null): Promise<{ roles: string[] }> {
+  const tpl = await resolveAgreementTemplate(providerId, serviceType);
+  if (!tpl.pandaDocTemplateId) return { roles: [] };
 
   const apiKey = process.env.PANDADOC_API_KEY;
   if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
 
-  const { roles, fieldCountByRoleId } = await fetchTemplateRolesAndFields(apiKey, provider.pandaDocTemplateId);
+  const { roles, fieldCountByRoleId } = await fetchTemplateRolesAndFields(apiKey, tpl.pandaDocTemplateId);
 
   const rolesWithFields = roles.filter(r => (fieldCountByRoleId[r.id] ?? 0) > 0);
   const droppedRoles = roles.filter(r => (fieldCountByRoleId[r.id] ?? 0) === 0);
@@ -1118,10 +1192,7 @@ export async function refreshTemplateRoles(providerId: string): Promise<{ roles:
 
   const pandaDocRoles = rolesWithFields.length > 0 ? JSON.stringify(rolesWithFields.map(r => r.name)) : null;
 
-  await prisma.provider.update({
-    where: { id: providerId },
-    data: { pandaDocRoles },
-  });
+  await persistTemplateMeta(providerId, tpl, { pandaDocRoles });
 
   return { roles: rolesWithFields.map(r => r.name) };
 }

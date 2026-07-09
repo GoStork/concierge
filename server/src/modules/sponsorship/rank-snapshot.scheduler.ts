@@ -32,7 +32,7 @@ function typeConfigs(prisma: PrismaService): TypeCfg[] {
   });
   return [
     { entityType: "EGG_DONOR", delegate: () => prisma.eggDonor, visible: { hiddenFromSearch: false, ...approved(["Egg Donor Agency", "Egg Bank"]) }, organicOrderBy: { createdAt: "desc" } },
-    { entityType: "SURROGATE", delegate: () => prisma.surrogate, visible: { hiddenFromSearch: false, ...approved(["Surrogacy Agency"]) }, organicOrderBy: { createdAt: "desc" } },
+    { entityType: "SURROGATE", delegate: () => prisma.surrogate, visible: { hiddenFromSearch: false, asrmHidden: false, ...approved(["Surrogacy Agency"]) }, organicOrderBy: { createdAt: "desc" } },
     { entityType: "SPERM_DONOR", delegate: () => prisma.spermDonor, visible: { hiddenFromSearch: false, ...approved(["Sperm Bank"]) }, organicOrderBy: { createdAt: "desc" } },
     { entityType: "DOCTOR", delegate: () => prisma.providerMember, visible: { isPublicProfile: true, slug: { not: null }, ...approved(["IVF Clinic"]) }, organicOrderBy: [{ isMedicalDirector: "desc" }, { name: "asc" }] },
   ];

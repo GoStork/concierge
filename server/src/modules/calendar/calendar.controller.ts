@@ -909,6 +909,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     // Bookings created here are born CONFIRMED and never pass through the
     // confirm endpoint - fire the match-call prep bundle (24h-hold explainer
     // + admin prep guide PDF) from this path too. Self-gates on MATCH_CALL.
+    this.syncSurrogateStatusForMatchCall(booking as any, "hold").catch((e: any) =>
+      this.logger.warn(`Surrogate on-hold status update failed for booking ${(booking as any)?.id}: ${e?.message}`),
+    );
     this.fireMatchCallPrep(booking as any).catch((e: any) =>
       this.logger?.error?.(`fireMatchCallPrep failed for booking ${booking.id}: ${e.message}`) ?? console.error(e.message));
 
@@ -986,6 +989,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     });
 
     if (body.status === "CANCELLED") {
+      this.syncSurrogateStatusForMatchCall(updated as any, "release").catch(() => {});
       this.notifications.sendBookingCancellation(updated).catch(() => {});
       this.deleteGoogleCalendarEvent(updated).catch(() => {});
       this.deleteParentGoogleCalendarEvent(updated).catch(() => {});
@@ -1031,6 +1035,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     this.syncBookingToOutlookCalendar(updated).catch(() => {});
     this.syncBookingToParentOutlookCalendar(updated).catch(() => {});
     this.emitBookingEvent("booking_confirmed", updated, user.id);
+    this.syncSurrogateStatusForMatchCall(updated as any, "hold").catch((e: any) =>
+      this.logger.warn(`Surrogate on-hold status update failed for booking ${updated?.id}: ${e?.message}`),
+    );
     this.fireMatchCallPrep(updated).catch((e: any) =>
       console.error(`[match-call-prep] failed for booking ${updated.id}: ${e.message}`));
     return updated;
@@ -1045,6 +1052,69 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
    * the parent's private chat). Falls back to the private chat when no
    * 3-way session exists.
    */
+  /**
+   * Surrogate status lifecycle, scheduling side: the moment a MATCH_CALL is
+   * booked her marketplace status flips to ON_HOLD (filterable, badge on the
+   * card, excluded from AI suggestions). If the call is cancelled before the
+   * 24h reservation exists, she flips back to AVAILABLE. The post-call
+   * reservation, official-match (MATCHED) and expiry transitions live in
+   * video.controller / billing.service / pending-booking.scheduler.
+   */
+  private async syncSurrogateStatusForMatchCall(
+    booking: { id: string; meetingSubtype?: string | null; parentUserId?: string | null; providerUserId?: string | null; providerUser?: { providerId?: string | null } | null },
+    action: "hold" | "release",
+  ) {
+    if (booking.meetingSubtype !== "MATCH_CALL" || !booking.parentUserId) return;
+    let providerId = booking.providerUser?.providerId || null;
+    if (!providerId && booking.providerUserId) {
+      const host = await this.prisma.user.findUnique({
+        where: { id: booking.providerUserId },
+        select: { providerId: true },
+      }).catch(() => null);
+      providerId = host?.providerId || null;
+    }
+    if (!providerId) return;
+    const session = await this.prisma.aiChatSession.findFirst({
+      where: {
+        userId: booking.parentUserId,
+        providerId,
+        subjectType: { contains: "surrog", mode: "insensitive" },
+        subjectProfileId: { not: null },
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { subjectProfileId: true },
+    });
+    if (!session?.subjectProfileId) return;
+
+    if (action === "hold") {
+      const res = await this.prisma.surrogate.updateMany({
+        where: { id: session.subjectProfileId, status: { in: ["AVAILABLE", "PENDING"] } },
+        data: { status: "ON_HOLD" },
+      });
+      if (res.count > 0) this.logger.log(`Surrogate ${session.subjectProfileId} status -> ON_HOLD (match call ${booking.id} scheduled)`);
+      return;
+    }
+
+    // release: only while the pre-call scheduling hold applies - never after
+    // the post-call reservation was placed, and never off MATCHED. Also skip
+    // when another live match call exists for the same surrogate journey.
+    const otherUpcoming = await this.prisma.booking.count({
+      where: {
+        id: { not: booking.id },
+        parentUserId: booking.parentUserId,
+        meetingSubtype: "MATCH_CALL",
+        status: { notIn: ["CANCELLED", "DECLINED", "RESCHEDULED"] },
+        providerUser: { providerId },
+      },
+    });
+    if (otherUpcoming > 0) return;
+    const res = await this.prisma.surrogate.updateMany({
+      where: { id: session.subjectProfileId, status: "ON_HOLD", reservedByParentId: null },
+      data: { status: "AVAILABLE" },
+    });
+    if (res.count > 0) this.logger.log(`Surrogate ${session.subjectProfileId} status -> AVAILABLE (match call ${booking.id} cancelled)`);
+  }
+
   private async fireMatchCallPrep(booking: { id: string; meetingSubtype?: string | null; parentUserId?: string | null; providerUserId?: string | null; scheduledAt: Date; providerUser?: { providerId?: string | null; provider?: { name?: string | null } | null } | null }) {
     const isMatch = booking.meetingSubtype === "MATCH_CALL";
     const isDoctor = booking.meetingSubtype === "DOCTOR_CONSULTATION";
@@ -1250,6 +1320,7 @@ I'll check in with you right after the call. You've got this!`;
         parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
       },
     });
+    this.syncSurrogateStatusForMatchCall(updated as any, "release").catch(() => {});
 
     this.notifications.sendBookingDeclinedToParent(updated).catch(() => {});
     this.deleteGoogleCalendarEvent(updated).catch(() => {});

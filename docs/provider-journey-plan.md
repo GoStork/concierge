@@ -205,17 +205,96 @@ surrogacy/IVF because nothing ever set Booking.meetingSubtype.
       biological-connection rule now enforced; marketplace clinic cards show
       an amber "May not meet requirements" badge with reasons; booking
       widget shows a soft heads-up (never blocks). Unknown parent data
-      always passes - conservative by design - not
-      started, next item in this phase
-- [ ] User acceptance testing (tiles -> subtyped booking -> gated readiness
+      always passes - conservative by design. DONE (pushed 6e0ee5d):
+      shared evaluator in shared/ivf-requirements.ts, server-derived parent
+      context, gender-selection field end to end, egg-donor-type display,
+      form-sync bugfix in both provider editors
+- [x] User acceptance testing (tiles -> subtyped booking -> gated readiness
       -> badge + hold lifecycle -> both-sides gate -> prep bundle)
 
-### [ ] Phase 5 - Agreement automation
+### Phase 4 addendum - surrogate status lifecycle (BUILT - awaiting UAT)
 
-- [ ] Agreement auto-generates on invoice PAID via PandaDoc (manual trigger
-      preserved; idempotency guard)
-- [ ] AI auto-sends contract preview when parent asks to see the contract
-      and provider has pandaDocTemplateId configured
+- [x] Match call scheduled -> surrogate status ON_HOLD (set at booking
+      creation/confirm; reverted to AVAILABLE on cancel/decline while no
+      reservation exists); post-call 24h hold also stamps ON_HOLD
+- [x] Official match (both-sides yes) -> status MATCHED; deposit paid keeps
+      it; expired unpaid hold reverts to AVAILABLE (expiry sweep); provider
+      decline reverts to AVAILABLE
+- [x] MATCHED surrogates hidden from the parent marketplace entirely (only
+      their agency sees them; Matched filter option hidden for parents);
+      AI search + look-alike already exclude ON_HOLD/MATCHED via status
+- [x] "On Hold" added to the marketplace Status filter + amber card badge;
+      nightly scraper sync preserves GoStork-owned statuses while a
+      reservation/hold is active
+
+### [ ] Phase 5 - Agreement automation (BUILT - awaiting UAT)
+
+- [x] Agreement auto-fires on invoice PAID via PandaDoc, on all three PAID
+      transitions (Stripe webhook, AT_CLEARANCE capture, admin mark-paid).
+      Two gates: global auto_agreement_on_paid kill switch (active) +
+      per-provider effective mode. Idempotent (one live agreement per
+      session, one pending approval card); manual + menu trigger preserved
+      and shares the same engine (server/agreement-flow.ts)
+- [x] Provider automation setting in Settings > Documents (off / draft for
+      my approval / fully automated) - overrides the GoStork-admin
+      autoAgreementDraft rollout toggle (all 3 admin switches now live)
+- [x] Approval mode posts a provider-only agreement_draft_approval card
+      (ApprovalCard reuse) with approve/reject endpoints + inline
+      second-signer form; auto_send generates AND sends immediately,
+      falling back to the approval card when partner info is missing
+- [x] Per-service agreement templates (ProviderAgreementTemplate) - one
+      contract per service for multi-service agencies (surrogacy vs egg
+      donation), with fallback to the legacy single template; Documents
+      tab renders one editor per approved service
+- [x] Eva auto-shares the contract when the parent asks ([[AGREEMENT_PREVIEW]]
+      tag): existing agreement card, else template file preview (streamed
+      via /api/agreements/template-preview/:sessionId), else honest note +
+      provider nudge. No template = loud nudge, never fabricated
+- [x] Stage 13 journey handoff: fully signed + PAID -> handoffCompletedAt
+      stamped (atomic claim), dual-voice celebration message with confetti
+- [x] Agreements visibility: dedicated pages replaced the old 3-tab
+      billing hubs. Parent: /my/invoices + /my/cost-sheets (agreements
+      inline on Home - only 1-2 per parent). Provider: /provider/invoices
+      + /provider/payouts + /provider/agreements (agencies hold many
+      agreements -> dedicated page with search + status filter). Shared
+      AgreementRows renderer; Agreements column in the provider Parents
+      table; /my/billing and /provider/billing remain as invoice aliases
+- [ ] User acceptance testing (paid invoice -> approval card -> send ->
+      sign -> handoff celebration; fully-automated mode; Eva contract
+      preview; multi-service templates)
+
+### Home dashboards (BUILT - awaiting UAT; admin command center pending)
+
+Locked decisions: dashboard = action queue first, never just relocated
+tables; full pages stay routable via View-all links; chat remains the
+parent's default landing; provider nav slims to Home / Marketplace / Chats /
+Parents / Calendar (Billing + Performance fold into Home); parent nav gets
+Home where Billing was.
+
+- [x] Parent Home (/home): action queue (unpaid invoices w/ Pay Now,
+      agreements awaiting MY signature, proposed call times to confirm,
+      unacknowledged cost sheets), upcoming meetings, billing summary
+      tiles + recent invoices, agreements section. VIEWER accounts see no
+      billing. Backed by GET /api/my/dashboard-queue + existing endpoints
+- [x] Provider Home (/provider/home): work queue (unresolved cost-sheet/
+      invoice/agreement approval cards + readiness prompts via GET
+      /api/provider/dashboard-queue, live PENDING booking requests,
+      unanswered whispers), out-for-signature tracker (n/m signed),
+      upcoming meetings, revenue tiles + recent invoices, Performance +
+      Payouts quick-link cards, agreements section
+- [x] Nav rewire: Home first in both bars; /my/billing, /provider/billing,
+      /performance remain routable (reached from Home)
+- [x] GoStork admin command center (/admin/home): Needs-attention queue
+      (human escalations -> monitor takeover deep link, overdue deposit
+      deadlines, failed payouts), 30-day platform funnel (sessions, hot
+      leads, calls, on-hold/matched surrogates, deposits, signatures),
+      upcoming deposit deadlines, platform-wide out-for-signature list,
+      money tiles (collected / fees / pending payouts), automation
+      adoption per feature, quick links. Admin nav: Home first, Billing
+      folded in (/admin/billing routable); admins land on /admin/home
+      after login. Shared QueueRow/SectionHeader/StatTile extracted to
+      components/home/home-sections.tsx and reused by all 3 dashboards
+- [ ] User acceptance testing (both dashboards, mobile bottom bar, nav)
 
 ### [ ] Phase 6 - Banks skip-to-checkout + Legal Services activation
 

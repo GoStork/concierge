@@ -339,6 +339,68 @@ export class BillingController {
     };
   }
 
+  // ─── Provider: their cost sheets (all parents) ────────────────────────────
+
+  @Get("api/provider/cost-sheets")
+  @UseGuards(SessionOrJwtGuard)
+  async getProviderCostSheets(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.providerId) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+
+    const quotes = await this.db.providerQuote.findMany({
+      where: { providerId: user.providerId },
+      orderBy: { createdAt: "desc" },
+    });
+    // Quotes carry no service type - derive it from the session subject so
+    // the Cost Sheets page can offer the same type filter as invoices.
+    const quoteSessionIds = Array.from(new Set(quotes.map((q: any) => q.sessionId).filter(Boolean)));
+    const quoteSessions = quoteSessionIds.length
+      ? await this.db.aiChatSession.findMany({
+          where: { id: { in: quoteSessionIds as string[] } },
+          select: { id: true, subjectType: true },
+        })
+      : [];
+    const serviceTypeBySession = new Map(
+      quoteSessions.map((cs: any) => {
+        const st = (cs.subjectType || "").toLowerCase();
+        const svc = st.includes("egg") ? "EGG_DONATION"
+          : st.includes("surrog") ? "SURROGACY"
+          : st.includes("sperm") ? "SPERM_DONATION"
+          : st.includes("ivf") || st.includes("clinic") || st.includes("doctor") ? "IVF_CLINIC"
+          : null;
+        return [cs.id, svc];
+      }),
+    );
+    const parentIds = Array.from(new Set(quotes.map((q: any) => q.parentUserId).filter(Boolean)));
+    const parents = parentIds.length
+      ? await this.db.user.findMany({
+          where: { id: { in: parentIds as string[] } },
+          select: { id: true, name: true, firstName: true, lastName: true, email: true },
+        })
+      : [];
+    const parentById = new Map(parents.map((u: any) => [u.id, u]));
+
+    return {
+      quotes: quotes.map((q: any) => {
+        const p = parentById.get(q.parentUserId);
+        return {
+          id: q.id,
+          sessionId: q.sessionId,
+          serviceType: serviceTypeBySession.get(q.sessionId) || null,
+          parentName: p?.name || `${p?.firstName || ""} ${p?.lastName || ""}`.trim() || p?.email || "Parent",
+          totalCostCents: q.totalCostCents,
+          costSheetFileName: q.costSheetFileName,
+          hasFile: !!q.costSheetFileUrl,
+          notes: q.notes,
+          source: q.source,
+          supersededAt: q.supersededAt,
+          parentAcknowledgedAt: q.parentAcknowledgedAt,
+          createdAt: q.createdAt,
+        };
+      }),
+    };
+  }
+
   // ─── Provider: their invoices ─────────────────────────────────────────────
 
   @Get("api/provider/invoices")
@@ -965,6 +1027,97 @@ export class BillingController {
       },
     });
     this.logger.log(`Invoice draft ${messageId} rejected (session=${sessionId}, by=${user?.id})`);
+    return { ok: true };
+  }
+
+  // ─── Phase 5: provider approves/rejects the auto-drafted agreement ──────────
+
+  private async loadAgreementDraftCard(sessionId: string, messageId: string) {
+    const msg = await this.db.aiChatMessage.findUnique({ where: { id: messageId } });
+    if (!msg || msg.sessionId !== sessionId || msg.uiCardType !== "agreement_draft_approval") {
+      throw new HttpException("Agreement draft card not found", HttpStatus.NOT_FOUND);
+    }
+    const data = (msg.uiCardData as any) || {};
+    if (data.resolvedAt) {
+      throw new HttpException(`Draft already ${data.resolvedAs || "resolved"}`, HttpStatus.CONFLICT);
+    }
+    return { msg, data };
+  }
+
+  @Post("api/sessions/:sessionId/agreement-draft/:messageId/approve")
+  @UseGuards(SessionOrJwtGuard)
+  async approveAgreementDraft(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+    @Param("messageId") messageId: string,
+    @Body() body: {
+      partnerOverride?: { firstName: string; lastName: string; email: string };
+      skipPartner?: boolean;
+    },
+  ) {
+    const user = req.user as any;
+    const session = await this.loadSessionForProviderBilling(sessionId, user);
+    const { msg, data } = await this.loadAgreementDraftCard(sessionId, messageId);
+
+    // Same engine as the manual + menu panel - loud failures surface to the provider.
+    const { generateAndAnnounceAgreement } = await import("../../../agreement-flow");
+    let agreement: any;
+    try {
+      agreement = await generateAndAnnounceAgreement({
+        sessionId,
+        providerId: session.providerId!,
+        generatedByUserId: user.id,
+        partnerOverride: body?.partnerOverride,
+        skipPartner: body?.skipPartner === true,
+        trigger: "approval",
+      });
+    } catch (e: any) {
+      if (e?.code === "PARTNER_INFO_REQUIRED") {
+        // Card stays unresolved - client collects partner details and retries.
+        throw new HttpException(
+          { code: "PARTNER_INFO_REQUIRED", parent1: e.parent1, parentRoles: e.parentRoles },
+          HttpStatus.CONFLICT,
+        );
+      }
+      if (e?.code === "PAYMENT_REQUIRED") {
+        throw new HttpException({ code: "PAYMENT_REQUIRED", message: e.message }, HttpStatus.PAYMENT_REQUIRED);
+      }
+      throw e;
+    }
+
+    await this.db.aiChatMessage.update({
+      where: { id: msg.id },
+      data: {
+        uiCardData: {
+          ...data,
+          resolvedAt: new Date().toISOString(),
+          resolvedAs: "approved",
+          resultingAgreementId: agreement.id,
+        },
+      },
+    });
+    this.logger.log(`Agreement draft ${messageId} approved -> agreement ${agreement.id} (session=${sessionId}, by=${user?.id})`);
+    return { ok: true, agreementId: agreement.id };
+  }
+
+  @Post("api/sessions/:sessionId/agreement-draft/:messageId/reject")
+  @UseGuards(SessionOrJwtGuard)
+  async rejectAgreementDraft(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+    @Param("messageId") messageId: string,
+  ) {
+    const user = req.user as any;
+    await this.loadSessionForProviderBilling(sessionId, user);
+    const { msg, data } = await this.loadAgreementDraftCard(sessionId, messageId);
+
+    await this.db.aiChatMessage.update({
+      where: { id: msg.id },
+      data: {
+        uiCardData: { ...data, resolvedAt: new Date().toISOString(), resolvedAs: "rejected" },
+      },
+    });
+    this.logger.log(`Agreement draft ${messageId} rejected (session=${sessionId}, by=${user?.id})`);
     return { ok: true };
   }
 

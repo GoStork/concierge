@@ -343,7 +343,12 @@ export default function DonorEditPage() {
         toast({ title: "No changes", description: "No fields were modified.", variant: "warning" });
         return;
       }
-      queryClient.invalidateQueries({ queryKey: [`/api/providers/${providerId}/${endpoint}`, donorId] });
+      // Prefix key invalidates BOTH the profiles list (Surrogates/Donors tab -
+      // ASRM banner warnings, card badges) and the single-donor detail query.
+      // The list must refresh too: the PATCH can flip asrmHidden, and with the
+      // app-wide staleTime:Infinity the tab would otherwise show stale data
+      // until a hard refresh.
+      queryClient.invalidateQueries({ queryKey: [`/api/providers/${providerId}/${endpoint}`] });
       toast({ title: "Donor profile updated", description: "Changes saved successfully.", variant: "success" });
       formDataSnapshotRef.current = JSON.stringify({ formData, photos });
       setIsDirty(false);

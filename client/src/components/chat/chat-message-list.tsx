@@ -5,6 +5,7 @@ import { WhisperProfileCard } from "./whisper-profile-card";
 import { SpecialMessageCard } from "./special-message-card";
 import { CostSheetDraftStack } from "./cost-sheet-draft-stack";
 import { CelebrationBurst } from "./celebration-burst";
+import { useScrollToMessage } from "@/hooks/use-scroll-to-message";
 import { InlineBookingNotification } from "./inline-booking-notification";
 import type { SessionMessage, ViewerRole } from "./chat-types";
 import type { ChatPalette } from "@/lib/chat-palette";
@@ -120,6 +121,9 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
   },
   ref,
 ) {
+  // Deep-link support: ?msg=<id> / ?msg=quote:<quoteId> scrolls to the card
+  useScrollToMessage(messages.length);
+
   // Merge messages with booking cards chronologically
   const allBookings = bookings || [];
   const hasActive = allBookings.some((b: any) => b.status === "PENDING" || b.status === "CONFIRMED");
@@ -197,7 +201,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
           for (let j = i + 1; isDraftItem(merged[j]); j++) run.push((merged[j] as any).msg);
           if (run.length >= 2 && sessionId) {
             return (
-              <div key={msg.id}>
+              <div key={msg.id} id={`msg-${msg.id}`} data-quote-id={(msg.uiCardData as any)?.quoteId || undefined}>
                 {/* Date separator pill (same logic as the standard path) */}
                 {msg.createdAt && (() => {
                   const msgDate = new Date(msg.createdAt).toDateString();
@@ -264,7 +268,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
         const showBubble = !isAttachmentMsg || displayContent.length > 0;
 
         return (
-          <div key={msg.id}>
+          <div key={msg.id} id={`msg-${msg.id}`} data-quote-id={(msg.uiCardData as any)?.quoteId || undefined}>
             {/* Date separator pill */}
             {msg.createdAt && (() => {
               const msgDate = new Date(msg.createdAt).toDateString();

@@ -316,7 +316,7 @@ export function BoostProfilesCard({ initialEntityType, onChanged, className, sho
  * wizard. Drop it on the Sponsorship tab and on each profile tab; pass
  * initialEntityType from a profile tab to skip straight to that type's tiers.
  */
-export function StartSponsorshipButton({ initialEntityType, label = "Start Sponsorship", onChanged, variant, size, className, showManageHint }: {
+export function StartSponsorshipButton({ initialEntityType, label, onChanged, variant, size, className, showManageHint }: {
   initialEntityType?: EntityType;
   label?: string;
   onChanged?: () => void;
@@ -326,10 +326,19 @@ export function StartSponsorshipButton({ initialEntityType, label = "Start Spons
   showManageHint?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // A provider with a live sponsorship isn't "starting" one - reflect the state
+  // in the label. Scoped to the profile type when opened from a profile tab
+  // (an active egg-donor plan keeps the surrogates tab on "Start"). Shares the
+  // dashboard's /api/sponsorship/mine cache.
+  const mineQ = useQuery<any[]>({ queryKey: ["/api/sponsorship/mine"] });
+  const hasLive = (mineQ.data || []).some((s) =>
+    (s.status === "ACTIVE" || s.status === "PAST_DUE") &&
+    (!initialEntityType || s.plan?.slotEntityType === initialEntityType));
+  const text = label ?? (hasLive ? "Update Sponsorship" : "Start Sponsorship");
   return (
     <>
       <Button variant={variant} size={size} className={className} onClick={() => setOpen(true)} data-testid="button-start-sponsorship">
-        <Sparkles className="w-4 h-4 mr-1.5" /> {label}
+        <Sparkles className="w-4 h-4 mr-1.5" /> {text}
       </Button>
       {open && <StartSponsorshipWizard initialEntityType={initialEntityType} onClose={() => setOpen(false)} onChanged={onChanged} showManageHint={showManageHint} />}
     </>

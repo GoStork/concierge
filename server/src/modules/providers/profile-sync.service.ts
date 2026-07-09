@@ -13,6 +13,7 @@ import {
   solveRecaptchaV2,
 } from "./captcha-solver";
 import { encryptNullable, decryptNullable } from "../../lib/encrypt";
+import { applyAsrmGate } from "./asrm";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -920,6 +921,7 @@ Extract ALL surrogate profiles visible on this page. For each surrogate, extract
 - liveBirths: Number of live births (integer)
 - miscarriages: Number of miscarriages (integer)
 - cSections: Number of C-sections (integer)
+- abortions: Number of abortions/terminations (integer)
 - relationshipStatus: Relationship status (e.g. "Married", "Single")
 - openToSameSexCouple: true/false/null
 - occupation: Occupation or job title
@@ -946,6 +948,7 @@ Return a JSON object with this exact structure:
       "liveBirths": number or null,
       "miscarriages": number or null,
       "cSections": number or null,
+      "abortions": number or null,
       "relationshipStatus": "string or null",
       "race": "string or null",
       "ethnicity": "string or null",
@@ -2029,6 +2032,7 @@ interface PregnancyHistoryStats {
   liveBirths: number;
   cSections: number;
   miscarriages: number;
+  abortions: number;
   lastDeliveryYear: number | null;
 }
 
@@ -2043,6 +2047,7 @@ function calcPregnancyHistoryStats(profileData: any): PregnancyHistoryStats | nu
   let liveBirths = 0;
   let cSections = 0;
   let miscarriages = 0;
+  let abortions = 0;
   let lastDeliveryYear: number | null = null;
 
   for (const entry of entries) {
@@ -2057,6 +2062,7 @@ function calcPregnancyHistoryStats(profileData: any): PregnancyHistoryStats | nu
     }
 
     if (outcome.includes("abortion") || outcome.includes("terminated") || outcome.includes("termination")) {
+      abortions++;
       continue;
     }
 
@@ -2083,7 +2089,7 @@ function calcPregnancyHistoryStats(profileData: any): PregnancyHistoryStats | nu
     }
   }
 
-  return { liveBirths, cSections, miscarriages, lastDeliveryYear };
+  return { liveBirths, cSections, miscarriages, abortions, lastDeliveryYear };
 }
 
 async function upsertSurrogate(
@@ -2097,7 +2103,7 @@ async function upsertSurrogate(
 
   const existing = await prisma.surrogate.findUnique({
     where: { providerId_externalId: { providerId, externalId: extId } },
-    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true },
+    select: { manuallyEditedFields: true, profileData: true, status: true, photoUrl: true, photos: true, reservedByParentId: true },
   });
 
   // Reuse already-persisted GCS photos to avoid re-downloading on every run
@@ -2125,6 +2131,7 @@ async function upsertSurrogate(
   const resolvedLiveBirths = surrogate.liveBirths != null ? parseInt(String(surrogate.liveBirths)) || 0 : (phStats?.liveBirths ?? 0);
   const resolvedCSections = surrogate.cSections != null ? parseInt(String(surrogate.cSections)) || 0 : (phStats?.cSections ?? 0);
   const resolvedMiscarriages = surrogate.miscarriages != null ? parseInt(String(surrogate.miscarriages)) || 0 : (phStats?.miscarriages ?? 0);
+  const resolvedAbortions = surrogate.abortions != null ? parseInt(String(surrogate.abortions)) || 0 : (phStats?.abortions ?? 0);
   const resolvedLastDeliveryYear = surrogate.lastDeliveryYear != null ? (parseInt(String(surrogate.lastDeliveryYear)) || null) : (phStats?.lastDeliveryYear ?? null);
 
   const upsertedSurrogate = await prisma.surrogate.upsert({
@@ -2144,6 +2151,7 @@ async function upsertSurrogate(
       liveBirths: skipIfManual("liveBirths", resolvedLiveBirths, mf),
       miscarriages: skipIfManual("miscarriages", resolvedMiscarriages, mf),
       cSections: skipIfManual("cSections", resolvedCSections, mf),
+      abortions: skipIfManual("abortions", resolvedAbortions, mf),
       relationshipStatus: skipIfManual("relationshipStatus", normalizeRelationshipStatus(surrogate.relationshipStatus) || undefined, mf),
       openToSameSexCouple: skipIfManual("openToSameSexCouple", surrogate.openToSameSexCouple ?? undefined, mf),
       race: skipIfManual("race", surrogate.race || undefined, mf),
@@ -2158,7 +2166,11 @@ async function upsertSurrogate(
       photos: skipIfManual("photos", resolvePersistedPhotos(extractPhotosArray(surrogate), existing?.photos as string[] | null | undefined), mf),
       videoUrl: skipIfManual("videoUrl", surrogate.videoUrl || (surrogate.profileData?.["Video URL"] as string) || undefined, mf),
       profileUrl: surrogate.profileUrl || undefined,
-      status: skipIfManual("status", existing?.status === "INACTIVE" && (!surrogate.status || surrogate.status === "AVAILABLE") ? "INACTIVE" : (surrogate.status || "AVAILABLE"), mf),
+      // GoStork owns the status while a hold/match reservation is active
+      // (ON_HOLD / MATCHED) - the agency platform doesn't know about it yet,
+      // so the scraped status must not stomp it. Same for a GoStork-set
+      // ON_HOLD from a scheduled match call.
+      status: skipIfManual("status", (existing?.reservedByParentId || existing?.status === "ON_HOLD") ? existing!.status : (existing?.status === "INACTIVE" && (!surrogate.status || surrogate.status === "AVAILABLE") ? "INACTIVE" : (surrogate.status || "AVAILABLE")), mf),
       isExperienced: skipIfManual("isExperienced", detectExperienced(mergedProfile, "surrogate"), mf),
       profileData: mergedProfile,
       cardHash: surrogate.cardHash || undefined,
@@ -2180,6 +2192,7 @@ async function upsertSurrogate(
       liveBirths: resolvedLiveBirths,
       miscarriages: resolvedMiscarriages,
       cSections: resolvedCSections,
+      abortions: resolvedAbortions,
       relationshipStatus: normalizeRelationshipStatus(surrogate.relationshipStatus) || null,
       openToSameSexCouple: surrogate.openToSameSexCouple ?? null,
       race: surrogate.race || null,
@@ -2203,6 +2216,12 @@ async function upsertSurrogate(
   });
 
   await migrateLocalPhotosToGcs(prisma, "surrogate", providerId, extId, storageService || null).catch(() => {});
+
+  // ASRM minimum-requirements gate - evaluated on the FINAL persisted row so
+  // manually-edited fields (skipIfManual) are respected. A failing profile is
+  // still saved, but flagged asrmHidden and excluded from parent-facing search.
+  await applyAsrmGate(prisma, upsertedSurrogate).catch((e) =>
+    console.error(`[ASRM] gate failed for surrogate ${upsertedSurrogate.id}:`, e?.message || e));
 
   updateProfileEmbedding(prisma, "Surrogate", upsertedSurrogate.id, mergedProfile).catch(() => {});
   indexEntityFaces(prisma, "Surrogate", upsertedSurrogate.id).catch(() => {});
@@ -6464,7 +6483,8 @@ export async function getProfiles(
       });
     case "surrogate":
       return prisma.surrogate.findMany({
-        where,
+        // ASRM-hidden profiles are never parent-visible (excludeHidden = parent request)
+        where: options?.excludeHidden ? { ...where, asrmHidden: false } : where,
         orderBy: { createdAt: "desc" },
       });
     case "sperm-donor":
@@ -6804,6 +6824,7 @@ Extract ALL information from this surrogate profile. Return a JSON object with t
       "liveBirths": number or null,
       "miscarriages": number or null,
       "cSections": number or null,
+      "abortions": number or null,
       "relationshipStatus": "string or null",
       "race": "string or null - Race(s)",
       "ethnicity": "string or null - Ethnicity/ethnic background",

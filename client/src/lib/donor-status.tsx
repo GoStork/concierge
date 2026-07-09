@@ -6,7 +6,9 @@ import { ReactNode } from "react";
 // see "INACTIVE" land in the UI, something upstream is leaking.
 // PENDING and MATCHED apply to egg donors + surrogates; SOLD_OUT applies
 // to sperm donors. AVAILABLE is universal.
-export type DonorStatus = "AVAILABLE" | "PENDING" | "MATCHED" | "SOLD_OUT";
+// ON_HOLD applies to surrogates only: a match call is scheduled or the 24h
+// post-call decision hold is running - she stays visible but isn't bookable.
+export type DonorStatus = "AVAILABLE" | "ON_HOLD" | "PENDING" | "MATCHED" | "SOLD_OUT";
 
 export interface StatusBadgeStyle {
   label: string;
@@ -21,6 +23,12 @@ const STYLES: Record<DonorStatus, StatusBadgeStyle> = {
     description: "Available now",
     pillClassName: "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]",
     dotClassName: "bg-[hsl(var(--brand-success))]",
+  },
+  ON_HOLD: {
+    label: "On Hold",
+    description: "On hold - a match call is in progress with another family",
+    pillClassName: "bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning))]",
+    dotClassName: "bg-[hsl(var(--brand-warning))]",
   },
   PENDING: {
     label: "Pending",
@@ -57,7 +65,7 @@ export function DonorStatusPill({ status, className }: { status: string | null |
     <span
       className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${style.pillClassName} ${className || ""}`}
       title={style.description}
-      data-testid={`donor-status-pill-${status.toLowerCase()}`}
+      data-testid={`donor-status-pill-${String(status).toLowerCase()}`}
     >
       {style.label}
     </span>

@@ -17,6 +17,7 @@ import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { useToast } from "@/hooks/use-toast";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import MembersTable from "@/components/members-table";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 
 type StaffMember = {
   id: string;
@@ -32,6 +33,13 @@ type StaffMember = {
   assignedLocations?: any[];
   isDisabled?: boolean;
 };
+
+// yyyy-mm-dd in LOCAL time (toISOString would shift the day near midnight)
+function toDateParam(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
 
 function CopyButton({ value, testId }: { value: string; testId: string }) {
   const [copied, setCopied] = useState(false);
@@ -93,6 +101,8 @@ function GostorkAdminUsersView() {
   const setSearchQuery = (v: string) => updateUsersParam("q", v);
   const setDateFrom = (v: string) => updateUsersParam("from", v);
   const setDateTo = (v: string) => updateUsersParam("to", v);
+  const serviceFilter = searchParams.get("svc") || "all";
+  const statusFilter = searchParams.get("status") || "all";
 
   const { sortConfig, handleSort, sortData } = useTableSort("created", "desc");
 
@@ -107,9 +117,28 @@ function GostorkAdminUsersView() {
 
   const parentUsers = (allUsers || []).filter(u => (u.roles || []).includes("PARENT"));
 
-  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "";
+  // Journey aggregates (services / cost sheets / invoices / agreements /
+  // last activity) per parent, across all providers.
+  const { data: overview = {} } = useQuery<Record<string, any>>({
+    queryKey: ["/api/admin/parents-overview"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/parents-overview", { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    staleTime: 15_000,
+  });
+
+  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter !== "all" || statusFilter !== "all";
 
   const filteredUsers = parentUsers.filter(member => {
+    if (serviceFilter !== "all") {
+      const svcs: string[] = overview[member.id]?.services || [];
+      if (!svcs.some(sv => sv.toLowerCase().includes(serviceFilter.toLowerCase()))) return false;
+    }
+    if (statusFilter !== "all" && overview[member.id]?.matchStatus !== statusFilter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const fields = [
@@ -134,9 +163,13 @@ function GostorkAdminUsersView() {
   });
 
   function clearFilters() {
-    setSearchQuery("");
-    setDateFrom("");
-    setDateTo("");
+    // One atomic URL update - successive per-key updates raced each other
+    // (each built from the same stale params), so only the last key cleared.
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      for (const key of ["q", "from", "to", "svc", "status"]) next.delete(key);
+      return next;
+    }, { replace: true });
   }
 
   const sortedUsers = sortData(filteredUsers, (item, key) => {
@@ -145,6 +178,9 @@ function GostorkAdminUsersView() {
       case "email": return item.email;
       case "mobile": return item.mobileNumber || "";
       case "created": return item.createdAt || "";
+      case "updated": return overview[item.id]?.updatedAt || "";
+      case "services": return (overview[item.id]?.services || []).join(", ");
+      case "status": return overview[item.id]?.matchStatus || "";
       default: return "";
     }
   });
@@ -251,22 +287,20 @@ function GostorkAdminUsersView() {
               {dateFrom || "From"}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-56 p-3" align="start">
-            <div className="space-y-2">
-              <span className="text-sm font-medium">From Date</span>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
-                className="h-8 text-xs"
-                data-testid="input-date-from"
-              />
-              {dateFrom && (
-                <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setDateFrom("")}>
+          <PopoverContent className="w-auto p-0" align="start">
+            <CalendarPicker
+              mode="single"
+              selected={dateFrom ? new Date(`${dateFrom}T00:00:00`) : undefined}
+              onSelect={(d) => setDateFrom(d ? toDateParam(d) : "")}
+              data-testid="calendar-date-from"
+            />
+            {dateFrom && (
+              <div className="border-t px-3 py-2">
+                <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => setDateFrom("")}>
                   Clear
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
           </PopoverContent>
         </Popover>
         <Popover>
@@ -276,24 +310,43 @@ function GostorkAdminUsersView() {
               {dateTo || "To"}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-56 p-3" align="start">
-            <div className="space-y-2">
-              <span className="text-sm font-medium">To Date</span>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={e => setDateTo(e.target.value)}
-                className="h-8 text-xs"
-                data-testid="input-date-to"
-              />
-              {dateTo && (
-                <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setDateTo("")}>
+          <PopoverContent className="w-auto p-0" align="start">
+            <CalendarPicker
+              mode="single"
+              selected={dateTo ? new Date(`${dateTo}T00:00:00`) : undefined}
+              onSelect={(d) => setDateTo(d ? toDateParam(d) : "")}
+              data-testid="calendar-date-to"
+            />
+            {dateTo && (
+              <div className="border-t px-3 py-2">
+                <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => setDateTo("")}>
                   Clear
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
           </PopoverContent>
         </Popover>
+        <select
+          value={serviceFilter}
+          onChange={e => updateUsersParam("svc", e.target.value === "all" ? "" : e.target.value)}
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          data-testid="admin-parents-service-filter"
+        >
+          <option value="all">All services</option>
+          <option value="Surrogate">Surrogacy</option>
+          <option value="Egg Donor">Egg Donation</option>
+          <option value="Sperm">Sperm Donation</option>
+          <option value="IVF">IVF Clinic</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => updateUsersParam("status", e.target.value === "all" ? "" : e.target.value)}
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          data-testid="admin-parents-status-filter"
+        >
+          <option value="all">All statuses</option>
+          {Object.entries(JOURNEY_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground hover:text-foreground h-8 px-2 shrink-0 rounded-full" data-testid="button-clear-filters">
             <XCircle className="w-4 h-4" />
@@ -301,8 +354,8 @@ function GostorkAdminUsersView() {
         )}
       </div>
 
-      <Card className="overflow-hidden">
-        <Table>
+      <Card className="overflow-x-auto">
+        <Table className="[&_th]:px-2 [&_td]:px-2 [&_th]:text-xs">
           <TableHeader>
             <TableRow>
               <TableHead className="w-10 pl-4">
@@ -316,7 +369,13 @@ function GostorkAdminUsersView() {
               <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={handleSort} data-testid="sort-name" />
               <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={handleSort} className="hidden sm:table-cell" data-testid="sort-email" />
               <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden md:table-cell" data-testid="sort-mobile" />
+              <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
+              <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Cost Sheets</TableHead>
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Invoices</TableHead>
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Agreements</TableHead>
               <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-created" />
+              <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
               <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -331,8 +390,8 @@ function GostorkAdminUsersView() {
                     data-testid={`checkbox-select-${member.id}`}
                   />
                 </TableCell>
-                <TableCell className="font-ui">
-                  <div className="flex items-center gap-3">
+                <TableCell className="font-ui whitespace-nowrap">
+                  <div className="flex items-center gap-2">
                     {getPhotoSrc(member.photoUrl) ? (
                       <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-8 h-8 rounded-[var(--radius)] object-cover" />
                     ) : (
@@ -347,27 +406,63 @@ function GostorkAdminUsersView() {
                 </TableCell>
                 <TableCell className="hidden sm:table-cell" data-testid={`text-email-${member.id}`}>
                   <div className="flex items-center gap-1.5">
-                    <span>{member.email}</span>
+                    <span className="truncate max-w-[150px] inline-block align-middle" title={member.email}>{member.email}</span>
                     <CopyButton value={member.email} testId={`btn-copy-email-${member.id}`} />
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell" data-testid={`text-mobile-${member.id}`}>
+                <TableCell className="hidden md:table-cell whitespace-nowrap" data-testid={`text-mobile-${member.id}`}>
                   {member.mobileNumber ? (
                     <div className="flex items-center gap-1 text-sm">
-                      <Phone className="w-3 h-3 text-muted-foreground" />
-                      <span>{formatPhoneDisplay(member.mobileNumber)}</span>
+                      <span className="whitespace-nowrap">{formatPhoneDisplay(member.mobileNumber)}</span>
                       <CopyButton value={member.mobileNumber} testId={`btn-copy-mobile-${member.id}`} />
                     </div>
                   ) : <span className="text-muted-foreground text-sm">-</span>}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                  {(overview[member.id]?.services || []).length > 0 ? (
+                    <div className="flex flex-wrap gap-1 items-center">
+                      {(overview[member.id].services as string[]).slice(0, 2).map(svc => (
+                        <span key={svc} className="text-xs font-ui px-2 py-0.5 rounded-full" style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
+                          {svc}
+                        </span>
+                      ))}
+                      {(overview[member.id].services as string[]).length > 2 && (
+                        <span
+                          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
+                          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
+                          title={(overview[member.id].services as string[]).slice(2).join(", ")}
+                        >
+                          +{(overview[member.id].services as string[]).length - 2}
+                        </span>
+                      )}
+                    </div>
+                  ) : <span className="text-muted-foreground text-sm">-</span>}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                  <MatchStatusBadge status={overview[member.id]?.matchStatus} />
+                </TableCell>
+                <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                  <ParentCostSheetsCell costSheets={overview[member.id]?.costSheets || []} sessionId={null} />
+                </TableCell>
+                <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                  <ParentInvoicesCell invoices={overview[member.id]?.invoices || []} />
+                </TableCell>
+                <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                  <ParentAgreementsCell agreements={overview[member.id]?.agreements || []} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell" data-testid={`text-created-${member.id}`}>
                   {member.createdAt ? (
                     <span className="text-sm text-muted-foreground">{new Date(member.createdAt).toLocaleDateString()}</span>
                   ) : <span className="text-muted-foreground text-sm">-</span>}
                 </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  {overview[member.id]?.updatedAt ? (
+                    <span className="text-sm text-muted-foreground">{new Date(overview[member.id].updatedAt).toLocaleDateString()}</span>
+                  ) : <span className="text-muted-foreground text-sm">-</span>}
+                </TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => navigate(`/users/${member.id}`)} data-testid={`button-edit-${member.id}`}><Pencil className="w-4 h-4" /></Button>
+                    {/* No edit button - clicking anywhere on the row opens the edit page */}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -385,7 +480,7 @@ function GostorkAdminUsersView() {
               </TableRow>
             )) : (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                   {hasActiveFilters ? "No parents match your filters." : "No parents found."}
                 </TableCell>
               </TableRow>
@@ -423,17 +518,39 @@ function GostorkAdminUsersView() {
   );
 }
 
+const SERVICE_LABELS: Record<string, string> = {
+  SURROGACY: "Surrogacy",
+  EGG_DONATION: "Egg Donation",
+  SPERM_DONATION: "Sperm Donation",
+  IVF_CLINIC: "IVF Clinic",
+};
+
+const JOURNEY_STATUS_LABELS: Record<string, string> = {
+  CONSULTATION_BOOKED: "Call Booked",
+  PROVIDER_CONNECTED: "Connected",
+  MATCH_CALL: "Match Call",
+  MATCHED: "Matched",
+  DEPOSIT_PAID: "Deposit Paid",
+  AGREEMENT_SIGNED: "Agreement Signed",
+};
+
 function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const searchQuery = searchParams.get("q") || "";
-  const setSearchQuery = (v: string) => {
+  const serviceFilter = searchParams.get("svc") || "all";
+  const statusFilter = searchParams.get("status") || "all";
+  const dateFrom = searchParams.get("from") || "";
+  const dateTo = searchParams.get("to") || "";
+  const setParam = (key: string, v: string) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      if (!v) next.delete("q");
-      else next.set("q", v);
+      if (!v || v === "all") next.delete(key);
+      else next.set(key, v);
       return next;
     }, { replace: true });
   };
+  const setSearchQuery = (v: string) => setParam("q", v);
+  const { sortConfig, handleSort, sortData } = useTableSort("updated", "desc");
   const navigate = useNavigate();
 
   const { data: parents, isLoading } = useQuery<any[]>({
@@ -445,11 +562,27 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
     },
   });
 
-  const filtered = (parents || []).filter(p => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return [p.name, p.email, p.mobileNumber].filter(Boolean).some((f: string) => f.toLowerCase().includes(q));
-  });
+  const filtered = sortData(
+    (parents || []).filter(p => {
+      if (serviceFilter !== "all" && p.serviceType !== serviceFilter) return false;
+      if (statusFilter !== "all" && p.matchStatus !== statusFilter) return false;
+      if (dateFrom && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) < new Date(`${dateFrom}T00:00:00`))) return false;
+      if (dateTo && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) > new Date(`${dateTo}T23:59:59`))) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return [p.name, p.email, p.mobileNumber].filter(Boolean).some((f: string) => f.toLowerCase().includes(q));
+    }),
+    (p: any, key: string) => {
+      switch (key) {
+        case "name": return (p.name || "").toLowerCase();
+        case "service": return p.serviceType || "";
+        case "status": return p.matchStatus || "";
+        case "created": return p.sessionCreatedAt ? new Date(p.sessionCreatedAt).getTime() : 0;
+        case "updated": return p.sessionUpdatedAt ? new Date(p.sessionUpdatedAt).getTime() : 0;
+        default: return null;
+      }
+    },
+  );
 
   if (isLoading) return <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
@@ -460,7 +593,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         <p className="text-muted-foreground">Parents who have connected with you via the AI concierge or meetings.</p>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -471,6 +604,68 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
             data-testid="input-search-parents"
           />
         </div>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant={dateFrom ? "default" : "outline"} size="sm" className="shrink-0 h-9 text-xs rounded-full gap-1" data-testid="provider-parents-date-from">
+              <Calendar className="w-3 h-3" />
+              {dateFrom || "From"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <CalendarPicker
+              mode="single"
+              selected={dateFrom ? new Date(`${dateFrom}T00:00:00`) : undefined}
+              onSelect={(d) => setParam("from", d ? toDateParam(d) : "")}
+            />
+            {dateFrom && (
+              <div className="border-t px-3 py-2">
+                <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => setParam("from", "")}>
+                  Clear
+                </Button>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant={dateTo ? "default" : "outline"} size="sm" className="shrink-0 h-9 text-xs rounded-full gap-1" data-testid="provider-parents-date-to">
+              <Calendar className="w-3 h-3" />
+              {dateTo || "To"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <CalendarPicker
+              mode="single"
+              selected={dateTo ? new Date(`${dateTo}T00:00:00`) : undefined}
+              onSelect={(d) => setParam("to", d ? toDateParam(d) : "")}
+            />
+            {dateTo && (
+              <div className="border-t px-3 py-2">
+                <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => setParam("to", "")}>
+                  Clear
+                </Button>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+        <select
+          value={serviceFilter}
+          onChange={e => setParam("svc", e.target.value)}
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          data-testid="parents-service-filter"
+        >
+          <option value="all">All services</option>
+          {Object.entries(SERVICE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => setParam("status", e.target.value)}
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          data-testid="parents-status-filter"
+        >
+          <option value="all">All statuses</option>
+          {Object.entries(JOURNEY_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
       </div>
 
       {/* overflow-x-auto so wide rows scroll horizontally instead of
@@ -480,16 +675,19 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           so "source" was always the same value and the column didn't
           earn its width. */}
       <Card className="overflow-x-auto">
-        <Table>
+        <Table className="[&_th]:px-2 [&_td]:px-2 [&_th]:text-xs">
           <TableHeader>
             <TableRow>
-              <TableHead className="whitespace-nowrap">Name</TableHead>
+              <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
               <TableHead className="hidden sm:table-cell whitespace-nowrap">Email</TableHead>
               <TableHead className="hidden md:table-cell whitespace-nowrap">Mobile</TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Match Status</TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Last Meeting</TableHead>
-              <TableHead className="hidden lg:table-cell text-right whitespace-nowrap">Meetings</TableHead>
+              <SortableTableHead label="Services" sortKey="service" currentSort={sortConfig} onSort={handleSort} className="hidden lg:table-cell whitespace-nowrap" />
+              <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="hidden lg:table-cell whitespace-nowrap" />
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Cost Sheets</TableHead>
               <TableHead className="hidden lg:table-cell whitespace-nowrap">Invoices</TableHead>
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Agreements</TableHead>
+              <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
+              <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -519,37 +717,47 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                 </TableCell>
                 <TableCell className="hidden sm:table-cell whitespace-nowrap" data-testid={`text-parent-email-${row.id}`}>
                   <div className="flex items-center gap-1.5">
-                    <span>{row.email}</span>
+                    <span className="truncate max-w-[150px] inline-block align-middle" title={row.email}>{row.email}</span>
                     <CopyButton value={row.email} testId={`btn-copy-email-${row.rowId}`} />
                   </div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell whitespace-nowrap" data-testid={`text-parent-mobile-${row.id}`}>
                   {row.mobileNumber ? (
                     <div className="flex items-center gap-1 text-sm">
-                      <Phone className="w-3 h-3 text-muted-foreground shrink-0" />
                       <span className="whitespace-nowrap">{formatPhoneDisplay(row.mobileNumber)}</span>
                       <CopyButton value={row.mobileNumber} testId={`btn-copy-mobile-${row.rowId}`} />
                     </div>
                   ) : <span className="text-muted-foreground text-sm">-</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                  {row.serviceType ? (
+                    <span className="text-xs font-ui px-2 py-0.5 rounded-full" style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
+                      {SERVICE_LABELS[row.serviceType] || row.serviceType}
+                    </span>
+                  ) : <span className="text-muted-foreground text-sm">-</span>}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <MatchStatusBadge status={row.matchStatus} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  {row.lastMeetingAt ? (
-                    <span className="text-sm text-muted-foreground">{new Date(row.lastMeetingAt).toLocaleDateString()}</span>
-                  ) : <span className="text-muted-foreground text-sm">-</span>}
-                </TableCell>
-                <TableCell className="hidden lg:table-cell text-right whitespace-nowrap">
-                  <span className="text-sm text-muted-foreground" data-testid={`text-meeting-count-${row.id}`}>{row.meetingCount}</span>
+                  <ParentCostSheetsCell costSheets={row.costSheets || []} sessionId={row.sessionId} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <ParentInvoicesCell invoices={row.invoices || []} />
                 </TableCell>
+                <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                  <ParentAgreementsCell agreements={row.agreements || []} />
+                </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  <span className="text-sm text-muted-foreground">{row.sessionCreatedAt ? new Date(row.sessionCreatedAt).toLocaleDateString() : "-"}</span>
+                </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  <span className="text-sm text-muted-foreground">{row.sessionUpdatedAt ? new Date(row.sessionUpdatedAt).toLocaleDateString() : "-"}</span>
+                </TableCell>
               </TableRow>
             )) : (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                   {searchQuery ? "No parents match your search." : "No parent contacts yet. Parents will appear here when the AI concierge connects them with you."}
                 </TableCell>
               </TableRow>
@@ -573,9 +781,16 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
 // consultation. Anything unexpected falls through to a neutral pill.
 function MatchStatusBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="text-muted-foreground text-sm">-</span>;
-  const map: Record<string, { label: string }> = {
-    CONSULTATION_BOOKED: { label: "Call Booked" },
-    PROVIDER_CONNECTED: { label: "Connected" },
+  // Journey ladder (server derives the most-advanced stage per session):
+  // Call Booked -> Connected -> Match Call -> Matched -> Deposit Paid ->
+  // Agreement Signed. Early stages green, match milestones accent/primary.
+  const map: Record<string, { label: string; bg: string; fg: string }> = {
+    CONSULTATION_BOOKED: { label: "Call Booked", bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
+    PROVIDER_CONNECTED: { label: "Connected", bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
+    MATCH_CALL: { label: "Match Call", bg: "hsl(var(--brand-warning) / 0.15)", fg: "hsl(var(--brand-warning))" },
+    MATCHED: { label: "Matched", bg: "hsl(var(--accent) / 0.15)", fg: "hsl(var(--accent))" },
+    DEPOSIT_PAID: { label: "Deposit Paid", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
+    AGREEMENT_SIGNED: { label: "Agreement Signed", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
   };
   const entry = map[status];
   if (!entry) {
@@ -591,10 +806,7 @@ function MatchStatusBadge({ status }: { status: string | null | undefined }) {
   return (
     <span
       className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
-      style={{
-        background: "hsl(var(--brand-success) / 0.12)",
-        color: "hsl(var(--brand-success))",
-      }}
+      style={{ background: entry.bg, color: entry.fg }}
     >
       <CheckCircle2 className="w-3 h-3" />
       {entry.label}
@@ -615,9 +827,12 @@ function ParentInvoicesCell({ invoices }: { invoices: any[] }) {
   if (!invoices || invoices.length === 0) {
     return <span className="text-muted-foreground text-sm">-</span>;
   }
+  // Cap at 2 chips + "+N" so a busy journey doesn't blow up the row
+  const shown = invoices.slice(0, 2);
+  const extra = invoices.length - shown.length;
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {invoices.map(inv => {
+    <div className="flex flex-wrap gap-1.5 items-center">
+      {shown.map(inv => {
         const isPaid = inv.status === "PAID";
         const isAwaiting = inv.status === "AWAITING_PAYMENT" || inv.status === "PAYMENT_PROCESSING";
         const tone = isPaid ? "success" : isAwaiting ? "warning" : "muted";
@@ -644,6 +859,120 @@ function ParentInvoicesCell({ invoices }: { invoices: any[] }) {
           </a>
         );
       })}
+      {extra > 0 && (
+        <span
+          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
+          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
+          title={invoices.slice(2).map(inv => `$${(inv.serviceAmount / 100).toLocaleString()} - ${inv.status}`).join("\n")}
+        >
+          +{extra}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Cost sheets cell ───────────────────────────────────────────────────────
+//
+// One chip per cost sheet on the session, colored by state. Click deep-links
+// into the chat scrolled to that cost-sheet card (?msg=quote:<id>).
+function ParentCostSheetsCell({ costSheets, sessionId }: { costSheets: any[]; sessionId: string | null }) {
+  const navigate = useNavigate();
+  if (!costSheets || costSheets.length === 0) {
+    return <span className="text-muted-foreground text-sm">-</span>;
+  }
+  // Cap at 2 chips + "+N" (some journeys accumulate many superseded quotes)
+  const shown = costSheets.slice(0, 2);
+  const extra = costSheets.length - shown.length;
+  return (
+    <div className="flex flex-wrap gap-1.5 items-center">
+      {shown.map(cs => {
+        const superseded = !!cs.supersededAt;
+        const acked = !superseded && !!cs.parentAcknowledgedAt;
+        const bg = acked ? "hsl(var(--brand-success) / 0.12)"
+          : superseded ? "hsl(var(--secondary))"
+          : "hsl(var(--brand-warning) / 0.15)";
+        const fg = acked ? "hsl(var(--brand-success))"
+          : superseded ? "hsl(var(--muted-foreground))"
+          : "hsl(var(--brand-warning))";
+        return (
+          <button
+            key={cs.id}
+            type="button"
+            onClick={e => {
+              e.stopPropagation();
+              const sid = cs.sessionId || sessionId;
+              if (sid) navigate(`/chat/${sid}?msg=quote:${cs.id}`);
+            }}
+            className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
+            style={{ background: bg, color: fg, opacity: superseded ? 0.75 : 1 }}
+            title={`${superseded ? "Superseded" : acked ? "Acknowledged" : "Awaiting review"} - ${new Date(cs.createdAt).toLocaleDateString()}`}
+          >
+            ${((cs.totalCostCents || 0) / 100).toLocaleString()}
+          </button>
+        );
+      })}
+      {extra > 0 && (
+        <span
+          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
+          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
+          title={costSheets.slice(2).map(cs => `$${((cs.totalCostCents || 0) / 100).toLocaleString()}${cs.supersededAt ? " (superseded)" : ""}`).join("\n")}
+        >
+          +{extra}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Agreements cell ────────────────────────────────────────────────────────
+//
+// One chip per agreement on the session, colored by signing state. Click
+// opens the agreement page in a new tab without leaving the Parents list.
+function ParentAgreementsCell({ agreements }: { agreements: any[] }) {
+  if (!agreements || agreements.length === 0) {
+    return <span className="text-muted-foreground text-sm">-</span>;
+  }
+  const shown = agreements.slice(0, 2);
+  const extra = agreements.length - shown.length;
+  return (
+    <div className="flex flex-wrap gap-1.5 items-center">
+      {shown.map(agr => {
+        const isSigned = agr.status === "SIGNED";
+        const isSent = agr.status === "SENT";
+        const bg = isSigned
+          ? "hsl(var(--brand-success) / 0.12)"
+          : isSent ? "hsl(var(--brand-warning) / 0.15)"
+          : "hsl(var(--secondary))";
+        const fg = isSigned
+          ? "hsl(var(--brand-success))"
+          : isSent ? "hsl(var(--brand-warning))"
+          : "hsl(var(--foreground))";
+        const label = isSigned ? "Signed" : isSent ? "Awaiting Signature" : agr.status.charAt(0) + agr.status.slice(1).toLowerCase();
+        return (
+          <a
+            key={agr.id}
+            href={`/agreements/${agr.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
+            style={{ background: bg, color: fg }}
+            title={`${agr.documentType} - ${agr.status}`}
+          >
+            {label}
+          </a>
+        );
+      })}
+      {extra > 0 && (
+        <span
+          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
+          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
+          title={agreements.slice(2).map(agr => `${agr.documentType} - ${agr.status}`).join("\n")}
+        >
+          +{extra}
+        </span>
+      )}
     </div>
   );
 }

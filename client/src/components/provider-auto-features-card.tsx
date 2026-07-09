@@ -5,15 +5,38 @@ import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 
-// Phase 2: per-provider automation feature flags. GoStork-admin-only.
-// Toggle fires PATCH /api/providers/:id/auto-features. Phase 3 + 4
-// flags render as disabled placeholders so admins can see what's coming.
+// Per-provider automation feature flags. GoStork-admin-only.
+// Toggle fires PATCH /api/providers/:id/auto-features. All three phases are
+// live: cost-sheet draft (Phase 2), invoice draft (Phase 3), agreement draft
+// (Phase 5 - note the provider's own Settings > Documents automation setting
+// overrides this rollout toggle).
 
 interface AutoFeaturesShape {
   autoCostSheetDraft?: boolean;
   autoInvoiceDraft?: boolean;
   autoAgreementDraft?: boolean;
 }
+
+const FLAG_DEFS: Array<{ key: keyof AutoFeaturesShape; label: string; description: string; testId: string }> = [
+  {
+    key: "autoCostSheetDraft",
+    label: "Auto cost-sheet draft on booking",
+    description: "Eva drafts a cost sheet when a parent books a consult. Provider approves before send.",
+    testId: "switch-auto-cost-sheet-draft",
+  },
+  {
+    key: "autoInvoiceDraft",
+    label: "Auto invoice draft on parent-ready",
+    description: "Eva drafts the invoice when the parent confirms they're ready. Provider approves before send.",
+    testId: "switch-auto-invoice-draft",
+  },
+  {
+    key: "autoAgreementDraft",
+    label: "Auto agreement draft on invoice-paid",
+    description: "Eva drafts the agreement when the deposit invoice is paid. The provider's own Documents setting can override this (off / approval / fully automated).",
+    testId: "switch-auto-agreement-draft",
+  },
+];
 
 export function ProviderAutoFeaturesCard({
   providerId,
@@ -22,21 +45,25 @@ export function ProviderAutoFeaturesCard({
   providerId: string;
   initial: AutoFeaturesShape | null | undefined;
 }) {
-  const flags: AutoFeaturesShape = initial || {};
-  const [autoCostSheetDraft, setAutoCostSheetDraft] = useState<boolean>(flags.autoCostSheetDraft === true);
+  const init: AutoFeaturesShape = initial || {};
+  const [flags, setFlags] = useState<AutoFeaturesShape>({
+    autoCostSheetDraft: init.autoCostSheetDraft === true,
+    autoInvoiceDraft: init.autoInvoiceDraft === true,
+    autoAgreementDraft: init.autoAgreementDraft === true,
+  });
   const { toast } = useToast();
 
   const mutation = useMutation({
-    mutationFn: async (next: boolean) => {
-      return apiRequest("PATCH", `/api/providers/${providerId}/auto-features`, {
-        autoCostSheetDraft: next,
-      });
+    mutationFn: async (patch: Partial<AutoFeaturesShape>) => {
+      return apiRequest("PATCH", `/api/providers/${providerId}/auto-features`, patch);
     },
     onSuccess: () => {
       toast({ title: "Automation flags saved" });
     },
-    onError: (err: any) => {
-      setAutoCostSheetDraft(prev => !prev);
+    onError: (err: any, patch) => {
+      // Roll back the optimistic flip
+      const key = Object.keys(patch)[0] as keyof AutoFeaturesShape;
+      setFlags(prev => ({ ...prev, [key]: !prev[key] }));
       toast({
         title: "Failed to save",
         description: err?.message || "Try again.",
@@ -45,9 +72,9 @@ export function ProviderAutoFeaturesCard({
     },
   });
 
-  const handleToggle = (next: boolean) => {
-    setAutoCostSheetDraft(next);
-    mutation.mutate(next);
+  const handleToggle = (key: keyof AutoFeaturesShape, next: boolean) => {
+    setFlags(prev => ({ ...prev, [key]: next }));
+    mutation.mutate({ [key]: next });
   };
 
   return (
@@ -61,45 +88,19 @@ export function ProviderAutoFeaturesCard({
             GoStork-only controls. Flip per provider to roll out automations safely.
           </p>
         </div>
-        <div className="flex items-center justify-between border-t border-border pt-3">
-          <div className="pr-4">
-            <p className="text-sm">Auto cost-sheet draft on booking</p>
-            <p className="text-xs text-muted-foreground">
-              Eva drafts a cost sheet when a parent books a consult. Provider approves before send.
-            </p>
+        {FLAG_DEFS.map(def => (
+          <div key={def.key} className="flex items-center justify-between border-t border-border pt-3">
+            <div className="pr-4">
+              <p className="text-sm">{def.label}</p>
+              <p className="text-xs text-muted-foreground">{def.description}</p>
+            </div>
+            <Switch
+              checked={flags[def.key] === true}
+              onCheckedChange={(v) => handleToggle(def.key, v)}
+              data-testid={def.testId}
+            />
           </div>
-          <Switch
-            checked={autoCostSheetDraft}
-            onCheckedChange={handleToggle}
-            data-testid="switch-auto-cost-sheet-draft"
-          />
-        </div>
-        <div className="flex items-center justify-between border-t border-border pt-3">
-          <div className="pr-4 opacity-60">
-            <p className="text-sm">Auto invoice draft on parent-ready</p>
-            <p className="text-xs text-muted-foreground">Phase 3 - coming soon.</p>
-          </div>
-          <Switch
-            checked={false}
-            disabled
-            onCheckedChange={() => {}}
-            data-testid="switch-auto-invoice-draft-placeholder"
-            aria-label="Auto invoice draft (coming in Phase 3)"
-          />
-        </div>
-        <div className="flex items-center justify-between border-t border-border pt-3">
-          <div className="pr-4 opacity-60">
-            <p className="text-sm">Auto agreement draft on invoice-paid</p>
-            <p className="text-xs text-muted-foreground">Phase 4 - coming soon.</p>
-          </div>
-          <Switch
-            checked={false}
-            disabled
-            onCheckedChange={() => {}}
-            data-testid="switch-auto-agreement-draft-placeholder"
-            aria-label="Auto agreement draft (coming in Phase 4)"
-          />
-        </div>
+        ))}
       </div>
     </Card>
   );

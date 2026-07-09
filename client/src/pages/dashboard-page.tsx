@@ -136,7 +136,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   {stats ? `+${stats.parentsThisWeek} this week` : "Loading..."}
                 </p>
-                <Link to="/users">
+                <Link to="/parents">
                   <Button variant="ghost" className="px-0 mt-4 h-auto text-primary font-ui flex items-center gap-1" data-testid="link-view-parents">
                     View Parents <ArrowRight className="w-3 h-3" />
                   </Button>

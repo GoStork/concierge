@@ -203,7 +203,9 @@ export async function runSurrogateHoldExpiryCheck(prisma: PrismaService) {
     try {
       await prisma.surrogate.update({
         where: { id: s.id },
-        data: { reservedByParentId: null, reservationExpiresAt: null },
+        // Hold expired unpaid: she's available again - revert the ON_HOLD /
+        // MATCHED status the hold or the double-yes match had set.
+        data: { reservedByParentId: null, reservationExpiresAt: null, status: "AVAILABLE" },
       });
       const label = s.externalId ? `Surrogate #${s.externalId}` : (s.firstName || "your surrogate match");
       console.log(`[surrogate-hold] Released expired 24h hold on ${label} (${s.id})`);
