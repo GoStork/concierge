@@ -329,6 +329,9 @@ export default function ProviderHomePage() {
             </div>
             <InvoiceStatusBadge status={inv.status} />
             <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.serviceAmount, inv.currency)}</p>
+            <Button variant="outline" size="sm" onClick={() => navigate(`/provider/invoices?q=${inv.id}`)}>
+              Open
+            </Button>
           </div>
         ))}
       </Card>
@@ -350,6 +353,9 @@ export default function ProviderHomePage() {
                   </div>
                   <span className="text-xs font-medium shrink-0" style={{ color: ps.color }}>{ps.label}</span>
                   <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.providerPayoutAmount, inv.currency)}</p>
+                  <Button variant="outline" size="sm" onClick={() => navigate(`/provider/payouts?q=${inv.id}`)}>
+                    Open
+                  </Button>
                 </div>
               );
             })}

@@ -9,6 +9,7 @@
  */
 
 import { Link, useSearchParams } from "react-router-dom";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, FileText, Search, Paperclip, MessageCircle, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -100,6 +101,11 @@ export default function MyCostSheetsPage() {
             <option key={f.key} value={f.key}>{f.label}</option>
           ))}
         </select>
+        <ClearFiltersButton
+          show={!!(q || status !== "all")}
+          onClick={() => setParam({ q: null, status: null })}
+          testId="my-cost-sheets-clear-filters"
+        />
       </div>
 
       {isLoading ? (

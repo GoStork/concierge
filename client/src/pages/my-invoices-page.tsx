@@ -9,6 +9,7 @@
  */
 
 import { Link, useSearchParams } from "react-router-dom";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Shield, ExternalLink, ChevronDown, ChevronUp, Loader2, Receipt, Search, MessageCircle } from "lucide-react";
@@ -116,6 +117,11 @@ export default function MyInvoicesPage() {
             <option key={f.key} value={f.key}>{f.label}</option>
           ))}
         </select>
+        <ClearFiltersButton
+          show={!!(q || status !== "all")}
+          onClick={() => setParam({ q: null, status: null })}
+          testId="my-invoices-clear-filters"
+        />
       </div>
 
       {isLoading ? (

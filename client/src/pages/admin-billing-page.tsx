@@ -20,12 +20,16 @@ import {
   AlertCircle,
   Search,
   X,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Input } from "@/components/ui/input";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { derivePayoutStatus } from "@/lib/payout-status";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
+import { useToast } from "@/hooks/use-toast";
+import { ParentInfoBlock, InvoiceInfoBlock } from "@/components/invoice-details-blocks";
 
 function StatCard({ label, value, icon: Icon, sub }: { label: string; value: string; icon: any; sub?: string }) {
   return (
@@ -64,6 +68,7 @@ export default function AdminBillingPage() {
   };
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { toast } = useToast();
   const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
 
@@ -73,6 +78,7 @@ export default function AdminBillingPage() {
   const [searchInput, setSearchInput] = useState(initialQ);
   const [search, setSearch] = useState(initialQ);
   const [serviceType, setServiceType] = useState("all");
+  const [payoutStatus, setPayoutStatus] = useState("all");
   const [paidFrom, setPaidFrom] = useState("");
   const [paidTo, setPaidTo] = useState("");
 
@@ -83,15 +89,16 @@ export default function AdminBillingPage() {
   }, [searchInput]);
 
   // Reset to page 1 whenever a filter changes.
-  useEffect(() => { setPage(1); }, [serviceType, paidFrom, paidTo]);
+  useEffect(() => { setPage(1); }, [serviceType, payoutStatus, paidFrom, paidTo]);
 
   const { data, isLoading } = useQuery<any>({
-    queryKey: ["/api/admin/invoices", tab, page, search, serviceType, paidFrom, paidTo],
+    queryKey: ["/api/admin/invoices", tab, page, search, serviceType, payoutStatus, paidFrom, paidTo],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), pageSize: "25" });
       if (tab !== "all") params.set("status", tab);
       if (search) params.set("search", search);
       if (serviceType !== "all") params.set("serviceType", serviceType);
+      if (payoutStatus !== "all") params.set("payoutStatus", payoutStatus);
       if (paidFrom) params.set("paidFrom", paidFrom);
       if (paidTo) params.set("paidTo", paidTo);
       const res = await fetch(`/api/admin/invoices?${params}`, { credentials: "include" });
@@ -101,8 +108,8 @@ export default function AdminBillingPage() {
   });
 
   const serviceTypeOptions: string[] = data?.serviceTypes || [];
-  const hasActiveFilters = !!search || serviceType !== "all" || !!paidFrom || !!paidTo || tab !== "all";
-  const clearFilters = () => { setSearchInput(""); setSearch(""); setServiceType("all"); setPaidFrom(""); setPaidTo(""); setStatus("all"); };
+  const hasActiveFilters = !!search || serviceType !== "all" || payoutStatus !== "all" || !!paidFrom || !!paidTo || tab !== "all";
+  const clearFilters = () => { setSearchInput(""); setSearch(""); setServiceType("all"); setPayoutStatus("all"); setPaidFrom(""); setPaidTo(""); setStatus("all"); };
 
   const markPaidMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
@@ -145,16 +152,17 @@ export default function AdminBillingPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <StatCard label="Total Collected"       value={formatCents(stats.totalRevenue)}         icon={DollarSign}    />
-        <StatCard label="Fees Collected"        value={formatCents(stats.totalGoStorkFees)}     icon={TrendingUp}    />
-        <StatCard label="Provider Payouts Sent" value={formatCents(stats.totalProviderPayouts)} icon={CheckCircle2}  />
-        <StatCard label="Held by GoStork"       value={formatCents((stats.totalRevenue || 0) - (stats.totalProviderPayouts || 0))} icon={DollarSign} sub="Collected minus payouts" />
-        <StatCard label="Awaiting Payment"      value={formatCents(stats.pendingAmount)}        icon={Clock}         sub="Unpaid invoices" />
+        <StatCard label="Gross Income"    value={formatCents(stats.totalRevenue)}         icon={DollarSign}    sub="Total Paid Invoices" />
+        <StatCard label="Payouts Sent"    value={formatCents(stats.totalProviderPayouts)} icon={CheckCircle2}  sub="COGS" />
+        <StatCard label="Net Income"      value={formatCents(stats.totalGoStorkFees)}     icon={TrendingUp}    sub="GoStork Fees" />
+        <StatCard label="Pending Payouts" value={formatCents((stats.totalRevenue || 0) - (stats.totalProviderPayouts || 0))} icon={DollarSign} sub="Future COGS" />
+        <StatCard label="Unpaid Invoices" value={formatCents(stats.pendingAmount)}        icon={Clock}         sub="Future Invoices" />
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-        <div className="flex-1 min-w-[220px]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-nowrap sm:overflow-x-auto sm:scrollbar-hide sm:flex-1 sm:min-w-0">
+        <div className="flex-1 min-w-[180px]">
           <label className="text-xs text-muted-foreground mb-1 block">Search</label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -178,8 +186,8 @@ export default function AdminBillingPage() {
           </div>
         </div>
 
-        <div className="min-w-[160px]">
-          <label className="text-xs text-muted-foreground mb-1 block">Status</label>
+        <div className="w-[170px] shrink-0">
+          <label className="text-xs text-muted-foreground mb-1 block">Invoice Status</label>
           <select
             value={tab}
             onChange={e => setStatus(e.target.value)}
@@ -192,7 +200,23 @@ export default function AdminBillingPage() {
           </select>
         </div>
 
-        <div className="min-w-[160px]">
+        <div className="w-[170px] shrink-0">
+          <label className="text-xs text-muted-foreground mb-1 block">Payout Status</label>
+          <select
+            value={payoutStatus}
+            onChange={e => setPayoutStatus(e.target.value)}
+            className="w-full h-10 rounded-[var(--radius)] border border-input bg-background px-3 text-sm"
+            data-testid="billing-payout-status"
+          >
+            <option value="all">All payout statuses</option>
+            <option value="pending">Pending</option>
+            <option value="sent">Sent</option>
+            <option value="received">Received</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+
+        <div className="w-[170px] shrink-0">
           <label className="text-xs text-muted-foreground mb-1 block">Service Type</label>
           <select
             value={serviceType}
@@ -207,21 +231,18 @@ export default function AdminBillingPage() {
           </select>
         </div>
 
-        <div className="min-w-[150px]">
+        <div className="w-[150px] shrink-0">
           <label className="text-xs text-muted-foreground mb-1 block">Date From</label>
           <Input type="date" value={paidFrom} onChange={e => setPaidFrom(e.target.value)} data-testid="billing-paid-from" />
         </div>
 
-        <div className="min-w-[150px]">
+        <div className="w-[150px] shrink-0">
           <label className="text-xs text-muted-foreground mb-1 block">Date To</label>
           <Input type="date" value={paidTo} onChange={e => setPaidTo(e.target.value)} data-testid="billing-paid-to" />
         </div>
 
-        {hasActiveFilters && (
-          <Button variant="outline" size="sm" onClick={clearFilters} className="gap-1.5" data-testid="billing-clear-filters">
-            <X className="w-3.5 h-3.5" /> Clear
-          </Button>
-        )}
+        </div>
+        <ClearFiltersButton show={hasActiveFilters} onClick={clearFilters} testId="billing-clear-filters" />
       </div>
 
       {/* Invoice table */}
@@ -245,7 +266,7 @@ export default function AdminBillingPage() {
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">Amount</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">GoStork Fee</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">Payout</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Invoice Status</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Payout Status</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
                 <th className="px-4 py-3" />
@@ -288,23 +309,27 @@ export default function AdminBillingPage() {
                       <td colSpan={10} className="px-6 py-5">
                         <div className="grid md:grid-cols-2 gap-6">
                           {/* Details */}
-                          <div className="space-y-3 text-sm">
-                            <h3 className="font-semibold">Invoice Details</h3>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
-                              <span>Invoice ID</span><span className="font-mono text-xs">{inv.id}</span>
-                              <span>Session ID</span><span className="font-mono text-xs">{inv.sessionId}</span>
-                              {inv.description && <><span>Description</span><span>{inv.description}</span></>}
-                              {inv.paidAt && <><span>Paid At</span><span>{new Date(inv.paidAt).toLocaleString()}</span></>}
-                              {inv.payoutInitiatedAt && <><span>Payout Initiated</span><span>{new Date(inv.payoutInitiatedAt).toLocaleString()}</span></>}
-                              {inv.payoutCompletedAt && <><span>Payout Completed</span><span>{new Date(inv.payoutCompletedAt).toLocaleString()}</span></>}
-                              {inv.manualOverride && <><span>Override</span><span className="text-orange-500">Manual</span></>}
-                              {inv.adminNotes && <><span>Notes</span><span>{inv.adminNotes}</span></>}
-                            </div>
+                          <div className="space-y-5 text-sm">
+                            <ParentInfoBlock parentUser={inv.parentUser} />
+                            <InvoiceInfoBlock inv={inv} showAdminFields />
                           </div>
 
                           {/* Actions */}
                           <div className="space-y-3">
                             <h3 className="text-sm font-semibold">Actions</h3>
+
+                            {inv.status === "AWAITING_PAYMENT" && inv.paymentToken && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`${window.location.origin}/pay/${inv.paymentToken}`);
+                                  toast({ title: "Payment link copied", description: "Send it to the parent so they can pay directly." });
+                                }}
+                              >
+                                <Link2 className="w-3.5 h-3.5 mr-1.5" /> Copy payment link
+                              </Button>
+                            )}
 
                             {inv.status === "AWAITING_PAYMENT" && (
                               <div className="space-y-2">

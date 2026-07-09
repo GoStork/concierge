@@ -2362,6 +2362,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
 
   async getInvoicesForAdmin(filters: {
     status?: string;
+    payoutStatus?: string;
     providerId?: string;
     serviceType?: string;
     search?: string;
@@ -2372,10 +2373,37 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     page?: number;
     pageSize?: number;
   }) {
-    const { status, providerId, serviceType, search, dateFrom, dateTo, paidFrom, paidTo, page = 1, pageSize = 25 } = filters;
+    const { status, payoutStatus, providerId, serviceType, search, dateFrom, dateTo, paidFrom, paidTo, page = 1, pageSize = 25 } = filters;
     const where: any = {};
     const andConditions: any[] = [];
     if (status && status !== "all") where.status = status;
+    // Payout-status filter - mirrors the client derivePayoutStatus precedence
+    // (bank completed > bank failed / transfer failed > transfer sent > pending)
+    if (payoutStatus && payoutStatus !== "all") {
+      if (payoutStatus === "received") {
+        andConditions.push({ bankPayoutCompletedAt: { not: null } });
+      } else if (payoutStatus === "failed") {
+        andConditions.push({
+          bankPayoutCompletedAt: null,
+          OR: [{ bankPayoutFailedAt: { not: null } }, { payoutFailedAt: { not: null } }],
+        });
+      } else if (payoutStatus === "sent") {
+        andConditions.push({
+          stripeTransferId: { not: null },
+          bankPayoutCompletedAt: null,
+          bankPayoutFailedAt: null,
+          payoutFailedAt: null,
+        });
+      } else if (payoutStatus === "pending") {
+        andConditions.push({
+          status: "PAID",
+          stripeTransferId: null,
+          payoutFailedAt: null,
+          bankPayoutFailedAt: null,
+          bankPayoutCompletedAt: null,
+        });
+      }
+    }
     if (providerId) where.providerId = providerId;
     if (serviceType && serviceType !== "all") where.serviceType = serviceType;
     if (dateFrom || dateTo) {
@@ -2417,7 +2445,25 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
       this.prisma.invoice.findMany({
         where,
         include: {
-          parentUser: { select: { id: true, name: true, email: true } },
+          // Full contact card for the expanded row - admin uses this to
+          // recognize the parent and chase unpaid invoices.
+          parentUser: {
+            select: {
+              id: true,
+              name: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              mobileNumberDisplay: true,
+              mobileNumber: true,
+              createdAt: true,
+              parentAccount: {
+                select: {
+                  members: { select: { id: true, name: true, email: true } },
+                },
+              },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
@@ -2578,7 +2624,27 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     return this.prisma.invoice.findMany({
       where: { providerId },
       include: {
-        parentUser: { select: { id: true, name: true, email: true } },
+        // Same contact card the admin dashboard gets - the provider uses
+        // it to recognize the parent and chase unpaid invoices. Identity
+        // is already revealed at this stage (invoices only exist after a
+        // consultation is booked).
+        parentUser: {
+          select: {
+            id: true,
+            name: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            mobileNumberDisplay: true,
+            mobileNumber: true,
+            createdAt: true,
+            parentAccount: {
+              select: {
+                members: { select: { id: true, name: true, email: true } },
+              },
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });

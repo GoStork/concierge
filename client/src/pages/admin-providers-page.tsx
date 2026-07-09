@@ -4,6 +4,7 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { Button } from "@/components/ui/button";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -67,6 +68,14 @@ export default function AdminProvidersPage() {
   const setProviderType = useCallback((v: string) => updateParam("type", v, "All"), [updateParam]);
   const setStatusFilter = useCallback((v: string) => updateParam("status", v, "All"), [updateParam]);
   const setSortBy = useCallback((v: string) => updateParam("sort", v, "newest"), [updateParam]);
+  const hasActiveFilters = !!(searchQuery || locationSearch || providerType !== "All" || statusFilter !== "All");
+  const clearFilters = useCallback(() => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      ["q", "loc", "type", "status"].forEach(k => next.delete(k));
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const debouncedSearch = useDebounce(searchQuery, 300);
   const debouncedLocation = useDebounce(locationSearch, 300);
@@ -141,7 +150,8 @@ export default function AdminProvidersPage() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide" data-testid="card-provider-filters">
+      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide flex-1 min-w-0" data-testid="card-provider-filters">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -212,6 +222,8 @@ export default function AdminProvidersPage() {
             </div>
           </PopoverContent>
         </Popover>
+      </div>
+        <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="admin-providers-clear-filters" />
       </div>
 
       <div className={`bg-card rounded-[var(--radius)] border border-border/50 shadow-sm overflow-hidden transition-opacity ${isFetching && !isLoading ? "opacity-60" : ""}`}>

@@ -712,6 +712,11 @@ chatRouter.post("/api/admin/concierge-sessions/:id/exit-human", requireAuth, asy
       },
     });
 
+    // Clear any Needs-attention dismissal for this escalation so a FUTURE
+    // escalation on the same session surfaces again (the escalation
+    // taskKey has no occurrence timestamp - the session id is the key).
+    await prisma.adminTaskDismissal.deleteMany({ where: { taskKey: `escalation:${session.id}` } }).catch(() => {});
+
     await prisma.aiChatMessage.create({
       data: {
         sessionId: session.id,
@@ -3129,7 +3134,7 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
         where: { status: "PAID", payoutFailedAt: { not: null }, stripeTransferId: null, bankPayoutCompletedAt: null },
         orderBy: { payoutFailedAt: "desc" },
         take: 10,
-        select: { id: true, payoutFailedAt: true, providerPayoutAmount: true, provider: { select: { name: true } }, parentUser: { select: { name: true, firstName: true } } },
+        select: { id: true, payoutFailedAt: true, payoutFailureReason: true, providerPayoutAmount: true, provider: { select: { name: true } }, parentUser: { select: { name: true, firstName: true } } },
       }),
       prisma.aiChatSession.count({ where: { updatedAt: { gte: d30 } } }),
       prisma.intendedParentProfile.count({ where: { hotLeadAt: { gte: d30 } } }),
@@ -3195,6 +3200,19 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
       }),
     ]);
 
+    // Dismissed Needs-attention rows. The taskKey embeds the occurrence
+    // timestamp, so the same invoice failing AGAIN later gets a fresh key
+    // and re-surfaces despite the old dismissal.
+    const dismissedKeys = new Set(
+      (await prisma.adminTaskDismissal.findMany({ select: { taskKey: true } })).map(d => d.taskKey),
+    );
+
+    const awaitingAgg = await prisma.invoice.aggregate({
+      where: { status: { in: ["AWAITING_PAYMENT", "AUTHORIZED"] } },
+      _sum: { serviceAmount: true },
+    });
+    const awaitingPayment = awaitingAgg._sum.serviceAmount || 0;
+
     const totalCollected = paidInvoices.reduce((sum, i) => sum + (i.serviceAmount || 0), 0);
     const totalFees = paidInvoices.reduce((sum, i) => sum + (i.referralFeeAmount || 0), 0);
     const pendingPayouts = paidInvoices.filter(i => !i.stripeTransferId).length;
@@ -3213,22 +3231,28 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
     }
 
     res.json({
-      escalations: escalations.map(e => ({
-        sessionId: e.id,
-        parentName: e.user?.firstName || e.user?.name || e.user?.email || "Parent",
-        providerName: e.provider?.name || null,
-        updatedAt: e.updatedAt,
-      })),
-      dueInvoices: dueInvoices.map(inv => ({
-        id: inv.id,
-        sessionId: inv.sessionId,
-        dueAt: inv.dueAt,
-        overdue: inv.dueAt ? inv.dueAt < now : false,
-        amountCents: inv.serviceAmount,
-        serviceType: inv.serviceType,
-        parentName: inv.parentUser?.firstName || inv.parentUser?.name || inv.parentUser?.email || "Parent",
-        providerName: inv.provider?.name || null,
-      })),
+      escalations: escalations
+        .map(e => ({
+          sessionId: e.id,
+          parentName: e.user?.firstName || e.user?.name || e.user?.email || "Parent",
+          providerName: e.provider?.name || null,
+          updatedAt: e.updatedAt,
+          taskKey: `escalation:${e.id}`,
+        }))
+        .filter(e => !dismissedKeys.has(e.taskKey)),
+      dueInvoices: dueInvoices
+        .map(inv => ({
+          id: inv.id,
+          sessionId: inv.sessionId,
+          dueAt: inv.dueAt,
+          overdue: inv.dueAt ? inv.dueAt < now : false,
+          amountCents: inv.serviceAmount,
+          serviceType: inv.serviceType,
+          parentName: inv.parentUser?.firstName || inv.parentUser?.name || inv.parentUser?.email || "Parent",
+          providerName: inv.provider?.name || null,
+          taskKey: `due-invoice:${inv.id}:${inv.dueAt ? new Date(inv.dueAt).getTime() : 0}`,
+        }))
+        .filter(inv => !dismissedKeys.has(inv.taskKey)),
       sentAgreements: sentAgreements.map(a => {
         const ss = (a.signerStatus as Record<string, any>) || {};
         const signers = Object.values(ss);
@@ -3242,13 +3266,17 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
           signerCount: signers.length,
         };
       }),
-      failedPayouts: failedPayouts.map(inv => ({
-        id: inv.id,
-        payoutFailedAt: inv.payoutFailedAt,
-        amountCents: inv.providerPayoutAmount,
-        providerName: inv.provider?.name || null,
-        parentName: inv.parentUser?.firstName || inv.parentUser?.name || "Parent",
-      })),
+      failedPayouts: failedPayouts
+        .map(inv => ({
+          id: inv.id,
+          payoutFailedAt: inv.payoutFailedAt,
+          payoutFailureReason: inv.payoutFailureReason,
+          amountCents: inv.providerPayoutAmount,
+          providerName: inv.provider?.name || null,
+          parentName: inv.parentUser?.firstName || inv.parentUser?.name || "Parent",
+          taskKey: `failed-payout:${inv.id}:${inv.payoutFailedAt ? new Date(inv.payoutFailedAt).getTime() : 0}`,
+        }))
+        .filter(inv => !dismissedKeys.has(inv.taskKey)),
       funnel: {
         activeSessions,
         hotLeads: hotLeads30,
@@ -3258,7 +3286,7 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
         depositsPaid: deposits30,
         agreementsSigned: signed30,
       },
-      money: { totalCollected, totalFees, pendingPayouts, payoutsSent },
+      money: { totalCollected, totalFees, pendingPayouts, payoutsSent, awaitingPayment },
       adoption,
       upcomingMeetings: upcomingMeetings.map(b => ({
         id: b.id,
@@ -3293,6 +3321,48 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
     });
   } catch (e: any) {
     console.error("Admin dashboard error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Dismiss a row in the admin Home Needs-attention queue (and undo it).
+// taskKey format: "<type>:<entityId>[:<occurredAtMs>]" - built server-side
+// in /api/admin/dashboard; a new occurrence of the same problem gets a new
+// key and re-surfaces.
+chatRouter.post("/api/admin/dashboard/dismiss", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  const roles: string[] = user?.roles || [];
+  if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_CONCIERGE")) {
+    return res.status(403).json({ message: "GoStork admin only" });
+  }
+  const taskKey = String(req.body?.taskKey || "").trim();
+  if (!taskKey || taskKey.length > 200) return res.status(400).json({ message: "taskKey required" });
+  try {
+    await prisma.adminTaskDismissal.upsert({
+      where: { taskKey },
+      create: { taskKey, dismissedBy: user.id },
+      update: {},
+    });
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error("Dismiss task error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.delete("/api/admin/dashboard/dismiss", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  const roles: string[] = user?.roles || [];
+  if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_CONCIERGE")) {
+    return res.status(403).json({ message: "GoStork admin only" });
+  }
+  const taskKey = String(req.query?.taskKey || "").trim();
+  if (!taskKey) return res.status(400).json({ message: "taskKey required" });
+  try {
+    await prisma.adminTaskDismissal.deleteMany({ where: { taskKey } });
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error("Undo dismiss error:", e);
     res.status(500).json({ message: e.message });
   }
 });

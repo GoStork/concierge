@@ -8,13 +8,17 @@
  * Payouts quick-link card.
  */
 
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Search, Landmark, CheckCircle2 } from "lucide-react";
+import { Loader2, Search, Landmark, CheckCircle2, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { formatDateTime } from "@/lib/format-date";
 import { derivePayoutStatus } from "@/lib/payout-status";
 import { DateRangeFilter, inDateRange } from "@/components/date-range-filter";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { ParentInfoBlock, InvoiceInfoBlock } from "@/components/invoice-details-blocks";
+import { Button } from "@/components/ui/button";
 
 const PAYOUT_STATUS_FILTERS = [
   { key: "all", label: "All statuses" },
@@ -25,6 +29,7 @@ const PAYOUT_STATUS_FILTERS = [
 
 export default function ProviderPayoutsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const status = searchParams.get("status") || "all";
   const service = searchParams.get("service") || "all";
   const q = searchParams.get("q") || "";
@@ -139,6 +144,11 @@ export default function ProviderPayoutsPage() {
             ))}
           </select>
         )}
+        <ClearFiltersButton
+          show={!!(q || dateFrom || dateTo || status !== "all" || service !== "all")}
+          onClick={() => setParam({ q: null, from: null, to: null, status: null, service: null })}
+          testId="provider-payouts-clear-filters"
+        />
       </div>
 
       {isLoading ? (
@@ -161,17 +171,18 @@ export default function ProviderPayoutsPage() {
                   <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your Payout</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork Paid You</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
+                  <th className="w-8" />
                 </tr>
               </thead>
               <tbody>
                 {payoutRows.map((inv: any) => {
                   const s = derivePayoutStatus(inv);
                   return (
+                    <>
                     <tr
                       key={inv.id}
                       className="border-b last:border-0 hover:bg-muted/10 cursor-pointer"
-                      onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
-                      title="Open invoice document"
+                      onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
                       data-testid={`provider-billing-payout-${inv.id}`}
                     >
                       <td className="px-4 py-2.5 whitespace-nowrap">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
@@ -184,7 +195,35 @@ export default function ProviderPayoutsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt)}</td>
+                      <td className="px-2 py-2.5 text-muted-foreground">
+                        {expandedId === inv.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </td>
                     </tr>
+                    {expandedId === inv.id && (
+                      <tr key={`${inv.id}-detail`} className="bg-muted/10 border-b last:border-0">
+                        <td colSpan={6} className="px-6 py-5">
+                          <div className="grid md:grid-cols-2 gap-6 text-sm">
+                            <div className="space-y-5">
+                              <ParentInfoBlock parentUser={inv.parentUser} />
+                              <InvoiceInfoBlock inv={inv} />
+                            </div>
+                            <div className="space-y-3">
+                              <h3 className="font-semibold">Actions</h3>
+                              <div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
+                                >
+                                  <FileText className="w-3.5 h-3.5 mr-1.5" /> Open invoice document
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </>
                   );
                 })}
               </tbody>

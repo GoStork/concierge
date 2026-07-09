@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -222,6 +223,12 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
         <PillSelect value={sort} onChange={(v) => setSort(v as SortKey)} placeholder="Sort"
           options={(Object.keys(SORT_LABELS) as SortKey[]).map((k) => ({ value: k, label: SORT_LABELS[k] }))}
           allowClear={false} testid="filter-sort" />
+        <ClearFiltersButton
+          pill
+          show={!!(search || specialty || location || acceptingOnly)}
+          onClick={() => { setSearch(""); setSpecialty(""); setLocation(""); setAcceptingOnly(false); }}
+          testId="doctors-clear-filters"
+        />
       </div>
 
       {filtered.length === 0 ? (

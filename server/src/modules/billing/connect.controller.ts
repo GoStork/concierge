@@ -92,6 +92,22 @@ export class ConnectController {
    * fail again with the same error if the underlying condition (KYC,
    * balance, account state) hasn't been fixed.
    */
+  /**
+   * Admin: run the remainder sweep NOW instead of waiting for the daily
+   * 06:00 run. Pays out (available balance - outstanding provider
+   * obligations) to GoStork's bank. No-ops with an explanatory `skipped`
+   * message when the platform payout schedule isn't Manual or the
+   * remainder is under the minimum.
+   */
+  @Post("api/admin/payouts/remainder-sweep")
+  @UseGuards(SessionOrJwtGuard)
+  async remainderSweep(@Req() req: Request) {
+    const user = req.user as any;
+    if (!user?.roles?.includes("GOSTORK_ADMIN")) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const { runRemainderSweep } = await import("./remainder-sweep.scheduler");
+    return runRemainderSweep(prisma as any);
+  }
+
   @Post("api/admin/invoices/:invoiceId/retry-payout")
   @UseGuards(SessionOrJwtGuard)
   async retryPayout(@Req() req: Request, @Param("invoiceId") invoiceId: string) {
@@ -99,7 +115,10 @@ export class ConnectController {
     if (!user?.roles?.includes("GOSTORK_ADMIN")) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     await prisma.invoice.update({
       where: { id: invoiceId },
-      data: { payoutFailedAt: null, payoutFailureReason: null },
+      // Reset the auto-retry ladder along with the failure stamps - a
+      // manual retry is a fresh start, and if funds STILL aren't settled
+      // the deferral path re-schedules from attempt #1.
+      data: { payoutFailedAt: null, payoutFailureReason: null, payoutNextAttemptAt: null, payoutAttemptCount: 0 },
     });
     const result = await this.connectService.createTransferForPaidInvoice(invoiceId);
     return result;

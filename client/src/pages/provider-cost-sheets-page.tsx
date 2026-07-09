@@ -14,6 +14,7 @@ import { Loader2, FileText, Search, Paperclip, MessageCircle, Check } from "luci
 import { Button } from "@/components/ui/button";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { DateRangeFilter, inDateRange } from "@/components/date-range-filter";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 
 const COST_SHEET_STATUS_FILTERS = [
   { key: "all", label: "All statuses" },
@@ -119,6 +120,11 @@ export default function ProviderCostSheetsPage() {
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
+        <ClearFiltersButton
+          show={!!(q || dateFrom || dateTo || status !== "all" || svc !== "all")}
+          onClick={() => setParam({ q: null, from: null, to: null, status: null, svc: null })}
+          testId="provider-cost-sheets-clear-filters"
+        />
       </div>
 
       {isLoading ? (

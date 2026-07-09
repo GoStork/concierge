@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Search, Loader2, MessageSquare } from "lucide-react";
 
 type FilterTab = "all" | "unread";
@@ -100,6 +101,12 @@ export function ConversationsShell({
                 data-testid="input-search-conversations"
               />
             </div>
+            <ClearFiltersButton
+              pill
+              show={!!(searchQuery || activeFilter !== "all")}
+              onClick={() => { onSearchChange(""); onFilterChange("all"); }}
+              testId="conversations-clear-filters"
+            />
           </div>
         </div>
 

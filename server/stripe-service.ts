@@ -1224,6 +1224,52 @@ export async function createExpressLoginLink(accountId: string): Promise<{ url: 
 }
 
 /**
+ * Reads the platform account's own payout schedule ("manual", "daily",
+ * "weekly", "monthly"). The remainder-sweep scheduler refuses to run
+ * unless this is "manual" - with automatic payouts on, Stripe already
+ * sweeps the full balance and our extra payout would double-drain it.
+ */
+export async function retrievePlatformPayoutSchedule(): Promise<string> {
+  const stripe = getStripe();
+  const account = await stripe.accounts.retrieve();
+  return (account.settings?.payouts?.schedule?.interval as string) || "unknown";
+}
+
+/**
+ * Pays out a specific amount from the platform's available balance to
+ * GoStork's external bank account. Used by the remainder sweep: it pays
+ * out ONLY (available - outstanding provider obligations), so provider
+ * money is never swept out of Stripe's reach. The idempotency key (one
+ * per calendar day) makes concurrent containers safe - Stripe dedupes.
+ */
+export async function createPlatformPayout(amountCents: number, currency: string, idempotencyKey: string): Promise<Stripe.Payout> {
+  const stripe = getStripe();
+  return await stripe.payouts.create(
+    {
+      amount: amountCents,
+      currency: currency.toLowerCase(),
+      description: "GoStork remainder sweep (fees net of provider obligations)",
+    },
+    { idempotencyKey },
+  );
+}
+
+/**
+ * Fetches GoStork's own PLATFORM available balance for one currency.
+ * Used as the pre-flight check before firing a provider transfer: card
+ * payments settle into the pending balance first (~2 days in live mode,
+ * simulated in test mode), and transfers.create only draws from
+ * available - attempting it early is a guaranteed "insufficient
+ * available funds" error.
+ */
+export async function retrievePlatformAvailableBalance(currency: string): Promise<number> {
+  const stripe = getStripe();
+  const bal = await stripe.balance.retrieve();
+  const row = (bal.available || []).find(b => b.currency === currency.toLowerCase());
+  return row?.amount ?? 0;
+}
+
+/**
  * Fetches Connect account balance (available + pending). Used by the
  * disconnect-safety check - we refuse to disconnect while money is still
  * sitting on the connected account.

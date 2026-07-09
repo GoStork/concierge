@@ -16,6 +16,9 @@ import { StorageService } from "./src/modules/storage/storage.service";
 import { startCalendarHealthScheduler } from "./src/modules/calendar/calendar-health.scheduler";
 import { startCostSheetReminderScheduler } from "./src/modules/billing/cost-sheet-reminder.scheduler";
 import { startReversalRecoupScheduler } from "./src/modules/billing/reversal-recoup.scheduler";
+import { startPayoutRetryScheduler } from "./src/modules/billing/payout-retry.scheduler";
+import { startRemainderSweepScheduler } from "./src/modules/billing/remainder-sweep.scheduler";
+import { ConnectService } from "./src/modules/billing/connect.service";
 import { startWhisperSlaScheduler } from "./src/modules/providers/whisper-sla.scheduler";
 import { startPendingBookingScheduler } from "./src/modules/calendar/pending-booking.scheduler";
 import { startSponsorshipExpiryScheduler } from "./src/modules/sponsorship/sponsorship-expiry.scheduler";
@@ -245,6 +248,8 @@ export function log(message: string, source = "nestjs") {
   startCalendarHealthScheduler(prismaService, notificationService);
   startCostSheetReminderScheduler(prismaService, notificationService);
   startReversalRecoupScheduler(prismaService);
+  startPayoutRetryScheduler(prismaService, nestApp.get(ConnectService));
+  startRemainderSweepScheduler(prismaService);
   startWhisperSlaScheduler(prismaService, notificationService);
   startPendingBookingScheduler(prismaService, notificationService);
   startSponsorshipExpiryScheduler(prismaService, nestApp.get(SponsorshipService));

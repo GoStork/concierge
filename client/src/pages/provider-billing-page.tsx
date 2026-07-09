@@ -9,14 +9,18 @@
  * Fee setup and bank accounts stay in Settings (Billing / Payouts tabs).
  */
 
-import { useSearchParams } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Receipt, Search } from "lucide-react";
+import { Loader2, Receipt, Search, ChevronDown, ChevronUp, MessageCircle, FileText } from "lucide-react";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { formatDateTime } from "@/lib/format-date";
 import { derivePayoutStatus } from "@/lib/payout-status";
 import { DateRangeFilter, inDateRange } from "@/components/date-range-filter";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { ParentInfoBlock, InvoiceInfoBlock } from "@/components/invoice-details-blocks";
+import { Button } from "@/components/ui/button";
 
 const INVOICE_STATUS_FILTERS = [
   { key: "all", label: "All statuses" },
@@ -27,6 +31,8 @@ const INVOICE_STATUS_FILTERS = [
 
 export default function ProviderBillingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const status = searchParams.get("status") || "all";
   const service = searchParams.get("service") || "all";
   const q = searchParams.get("q") || "";
@@ -138,6 +144,11 @@ export default function ProviderBillingPage() {
             ))}
           </select>
         )}
+        <ClearFiltersButton
+          show={!!(q || dateFrom || dateTo || status !== "all" || service !== "all")}
+          onClick={() => setParam({ q: null, from: null, to: null, status: null, service: null })}
+          testId="provider-billing-clear-filters"
+        />
       </div>
 
       {isLoading ? (
@@ -163,15 +174,16 @@ export default function ProviderBillingPage() {
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Status</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Payout Status</th>
                   <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
+                  <th className="w-8" />
                 </tr>
               </thead>
               <tbody>
                 {filteredInvoices.map((inv: any) => (
+                  <>
                   <tr
                     key={inv.id}
                     className="border-b last:border-0 hover:bg-muted/10 cursor-pointer"
-                    onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
-                    title="Open invoice document"
+                    onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
                     data-testid={`provider-billing-invoice-${inv.id}`}
                   >
                     <td className="px-4 py-2.5 whitespace-nowrap">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
@@ -191,7 +203,52 @@ export default function ProviderBillingPage() {
                       })()}
                     </td>
                     <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.createdAt)}</td>
+                    <td className="px-2 py-2.5 text-muted-foreground">
+                      {expandedId === inv.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </td>
                   </tr>
+                  {expandedId === inv.id && (
+                    <tr key={`${inv.id}-detail`} className="bg-muted/10 border-b last:border-0">
+                      <td colSpan={9} className="px-6 py-5">
+                        <div className="grid md:grid-cols-2 gap-6 text-sm">
+                          <div className="space-y-5">
+                            <ParentInfoBlock parentUser={inv.parentUser} />
+                            <InvoiceInfoBlock inv={inv} />
+                          </div>
+                          <div className="space-y-3">
+                            <h3 className="font-semibold">Actions</h3>
+                            {["AWAITING_PAYMENT", "AUTHORIZED"].includes(inv.status) && inv.sessionId && (
+                              <Button
+                                size="sm"
+                                onClick={() => navigate(`/chat/${inv.sessionId}`)}
+                                data-testid={`provider-invoice-remind-${inv.id}`}
+                              >
+                                <MessageCircle className="w-3.5 h-3.5 mr-1.5" /> Remind in chat
+                              </Button>
+                            )}
+                            <div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
+                              >
+                                <FileText className="w-3.5 h-3.5 mr-1.5" /> Open invoice document
+                              </Button>
+                            </div>
+                            {!["AWAITING_PAYMENT", "AUTHORIZED"].includes(inv.status) && inv.sessionId && (
+                              <button
+                                onClick={() => navigate(`/chat/${inv.sessionId}`)}
+                                className="text-sm underline text-muted-foreground block"
+                              >
+                                Open chat with parent
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </>
                 ))}
               </tbody>
             </table>

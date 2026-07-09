@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, Search, FileSignature } from "lucide-react";
 import { AgreementRows } from "@/components/agreements-list";
 import { DateRangeFilter, inDateRange } from "@/components/date-range-filter";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 
 const AGREEMENT_STATUS_FILTERS = [
   { key: "all", label: "All statuses" },
@@ -127,6 +128,11 @@ export default function AdminAgreementsPage() {
             ))}
           </select>
         )}
+        <ClearFiltersButton
+          show={!!(q || dateFrom || dateTo || status !== "all" || docType !== "all")}
+          onClick={() => setParam({ q: null, from: null, to: null, status: null, type: null })}
+          testId="admin-agreements-clear-filters"
+        />
       </div>
 
       {isLoading ? (

@@ -19,6 +19,7 @@ import {
   deleteConnectAccount,
   listConnectedPayoutBalanceTransactions,
   listConnectedAccountPaymentBalanceTransactions,
+  retrievePlatformAvailableBalance,
 } from "../../../stripe-service";
 import type Stripe from "stripe";
 
@@ -710,6 +711,7 @@ export class ConnectService {
   async createTransferForPaidInvoice(invoiceId: string): Promise<
     | { status: "transferred"; transferId: string }
     | { status: "skipped"; reason: "ALREADY_TRANSFERRED" | "ZERO_PAYOUT" | "PROVIDER_NOT_READY"; message: string }
+    | { status: "deferred"; nextAttemptAt: Date; message: string }
     | { status: "failed"; reason: string }
   > {
     const invoice = await this.prisma.invoice.findUnique({
@@ -722,6 +724,7 @@ export class ConnectService {
         status: true,
         stripeTransferId: true,
         payoutInitiatedAt: true,
+        payoutAttemptCount: true,
       },
     });
     if (!invoice) return { status: "failed", reason: "Invoice not found" };
@@ -744,6 +747,26 @@ export class ConnectService {
           ? "Provider's Stripe Connect account has payouts disabled (KYC incomplete or restricted)"
           : "Provider has not connected a payout account yet",
       };
+    }
+
+    // Pre-flight: card payments settle into the PENDING platform balance
+    // first (~2 business days live, simulated in test mode), and
+    // transfers.create only draws from AVAILABLE. If the available
+    // balance can't cover this payout yet, attempting the transfer is a
+    // guaranteed failure - so instead of failing we schedule an automatic
+    // retry (backoff ladder below) and keep the payout honestly "Pending".
+    // Balance-check errors themselves are non-fatal: we fall through and
+    // let the transfer attempt speak for itself.
+    try {
+      const available = await retrievePlatformAvailableBalance(invoice.currency || "USD");
+      if (available < invoice.providerPayoutAmount) {
+        return await this.deferPayout(
+          invoice,
+          `Platform available balance (${available}) cannot cover payout (${invoice.providerPayoutAmount}) yet - funds still settling`,
+        );
+      }
+    } catch (e: any) {
+      this.logger.warn(`Platform balance pre-check failed for invoice ${invoice.id} (attempting transfer anyway): ${e?.message}`);
     }
 
     // Retry loop. The first attempt usually succeeds; the retries are
@@ -801,6 +824,8 @@ export class ConnectService {
             payoutCompletedAt: new Date(),
             payoutFailedAt: null,
             payoutFailureReason: null,
+            payoutNextAttemptAt: null,
+            payoutAttemptCount: 0,
           },
         });
         if (attempt > 0) {
@@ -820,13 +845,21 @@ export class ConnectService {
           await new Promise(r => setTimeout(r, wait));
           continue;
         }
-        // Non-transient OR retries exhausted - record failure and stop.
+        // Transient funds error with in-process retries exhausted: the
+        // money just hasn't settled yet. Hand off to the payout-retry
+        // scheduler instead of stamping a fake failure.
+        if (transient) {
+          return await this.deferPayout(invoice, reason);
+        }
+        // Non-transient (account restricted, bad destination, ...) -
+        // record a real failure; auto-retry won't fix these.
         await this.prisma.invoice.update({
           where: { id: invoice.id },
           data: {
             payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(),
             payoutFailedAt: new Date(),
             payoutFailureReason: reason.slice(0, 500),
+            payoutNextAttemptAt: null,
           },
         });
         this.logger.error(`Transfer failed for invoice ${invoice.id} after ${attempt + 1} attempt(s): ${reason}`);
@@ -835,6 +868,52 @@ export class ConnectService {
     }
     // Unreachable in practice - the loop either returns or records failure.
     return { status: "failed", reason: lastError?.message || "Exhausted retries" };
+  }
+
+  /**
+   * Schedules the next automatic transfer attempt for an invoice whose
+   * platform funds haven't settled yet. Backoff ladder: 2h, 8h, 24h, 48h,
+   * 72h after the respective attempt. While scheduled, the payout status
+   * stays "Pending" (payoutFailedAt is NOT stamped) because nothing is
+   * actually wrong - the money is on its way. Only when the ladder is
+   * exhausted (~6 days) do we flip to a real failure so the admin
+   * Needs-attention queue picks it up.
+   */
+  private async deferPayout(
+    invoice: { id: string; payoutInitiatedAt: Date | null; payoutAttemptCount: number },
+    why: string,
+  ): Promise<{ status: "deferred"; nextAttemptAt: Date; message: string } | { status: "failed"; reason: string }> {
+    const BACKOFF_HOURS = [2, 8, 24, 48, 72];
+    const attemptCount = (invoice.payoutAttemptCount || 0) + 1;
+    const delayHours = BACKOFF_HOURS[attemptCount - 1];
+    if (delayHours == null) {
+      const reason = `Funds still unavailable after ${attemptCount - 1} automatic attempts: ${why}`.slice(0, 500);
+      await this.prisma.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(),
+          payoutFailedAt: new Date(),
+          payoutFailureReason: reason,
+          payoutNextAttemptAt: null,
+          payoutAttemptCount: attemptCount,
+        },
+      });
+      this.logger.error(`Payout for invoice ${invoice.id} exhausted the auto-retry ladder: ${why}`);
+      return { status: "failed", reason };
+    }
+    const nextAttemptAt = new Date(Date.now() + delayHours * 60 * 60 * 1000);
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        payoutInitiatedAt: invoice.payoutInitiatedAt || new Date(),
+        payoutFailedAt: null,
+        payoutFailureReason: `Waiting for platform funds to settle - automatic retry #${attemptCount} scheduled`.slice(0, 500),
+        payoutNextAttemptAt: nextAttemptAt,
+        payoutAttemptCount: attemptCount,
+      },
+    });
+    this.logger.log(`Payout for invoice ${invoice.id} deferred (attempt ${attemptCount}, next try in ${delayHours}h): ${why}`);
+    return { status: "deferred", nextAttemptAt, message: why };
   }
 
   /** account.application.deauthorized - provider disconnected, mark as off. */

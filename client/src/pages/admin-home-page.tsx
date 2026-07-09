@@ -9,7 +9,8 @@
  * stays routable via the Money section's View-all.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { Card } from "@/components/ui/card";
@@ -29,14 +30,15 @@ import { QueueRow, SectionHeader, StatTile } from "@/components/home/home-sectio
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { derivePayoutStatus } from "@/lib/payout-status";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
+import { useToast } from "@/hooks/use-toast";
 
 interface AdminDashboard {
-  escalations: Array<{ sessionId: string; parentName: string; providerName: string | null; updatedAt: string }>;
-  dueInvoices: Array<{ id: string; sessionId: string | null; dueAt: string; overdue: boolean; amountCents: number; serviceType: string | null; parentName: string; providerName: string | null }>;
+  escalations: Array<{ sessionId: string; parentName: string; providerName: string | null; updatedAt: string; taskKey: string }>;
+  dueInvoices: Array<{ id: string; sessionId: string | null; dueAt: string; overdue: boolean; amountCents: number; serviceType: string | null; parentName: string; providerName: string | null; taskKey: string }>;
   sentAgreements: Array<{ agreementId: string; createdAt: string; documentType: string; parentName: string; providerName: string | null; signedCount: number; signerCount: number }>;
-  failedPayouts: Array<{ id: string; payoutFailedAt: string; amountCents: number; providerName: string | null; parentName: string }>;
+  failedPayouts: Array<{ id: string; payoutFailedAt: string; payoutFailureReason: string | null; amountCents: number; providerName: string | null; parentName: string; taskKey: string }>;
   funnel: { activeSessions: number; hotLeads: number; callsBooked: number; matched: number; onHold: number; depositsPaid: number; agreementsSigned: number };
-  money: { totalCollected: number; totalFees: number; pendingPayouts: number; payoutsSent: number };
+  money: { totalCollected: number; totalFees: number; pendingPayouts: number; payoutsSent: number; awaitingPayment: number };
   adoption: { total: number; costSheet: number; invoice: number; agreement: number };
   upcomingMeetings: Array<{ id: string; scheduledAt: string; subject: string | null; status: string; parentName: string; providerName: string }>;
   recentInvoices: Array<{ id: string; status: string; amountCents: number; serviceType: string | null; createdAt: string; parentName: string; providerName: string | null }>;
@@ -65,6 +67,74 @@ export default function AdminHomePage() {
     refetchOnWindowFocus: true,
     staleTime: 15_000,
   });
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
+
+  const dismiss = useMutation({
+    mutationFn: async (taskKey: string) => {
+      const res = await fetch("/api/admin/dashboard/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ taskKey }),
+      });
+      if (!res.ok) throw new Error("Failed to dismiss");
+      return taskKey;
+    },
+    onSuccess: (taskKey: string) => {
+      refresh();
+      toast({
+        title: "Dismissed",
+        description: "It will reappear if the same problem happens again.",
+        action: (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              await fetch(`/api/admin/dashboard/dismiss?taskKey=${encodeURIComponent(taskKey)}`, {
+                method: "DELETE",
+                credentials: "include",
+              });
+              refresh();
+            }}
+          >
+            Undo
+          </Button>
+        ),
+      });
+    },
+    onError: () => toast({ title: "Could not dismiss", variant: "destructive" }),
+  });
+
+  const retryPayout = async (invoiceId: string, providerName: string | null) => {
+    setRetryingId(invoiceId);
+    try {
+      const res = await fetch(`/api/admin/invoices/${invoiceId}/retry-payout`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.message || "Retry failed");
+      if (body?.status === "transferred") {
+        toast({ title: "Payout sent", description: `Transfer to ${providerName || "provider"} succeeded.`, variant: "success" });
+      } else if (body?.status === "deferred") {
+        toast({ title: "Funds still settling", description: "An automatic retry is scheduled - no action needed." });
+      } else if (body?.status === "failed") {
+        toast({ title: "Retry failed", description: body?.reason || "Unknown error", variant: "destructive" });
+      } else {
+        toast({ title: "Payout skipped", description: body?.message || body?.reason || "Nothing to transfer." });
+      }
+    } catch (e: any) {
+      toast({ title: "Retry failed", description: e?.message, variant: "destructive" });
+    } finally {
+      setRetryingId(null);
+      refresh();
+    }
+  };
 
   const queueCount =
     (data?.escalations.length || 0) +
@@ -101,6 +171,7 @@ export default function AdminHomePage() {
                 detail={`Waiting since ${fmtWhen(e.updatedAt)}`}
                 cta="Take over"
                 onClick={() => navigate(`/admin/concierge-monitor?sessionId=${e.sessionId}`)}
+                onDismiss={() => dismiss.mutate(e.taskKey)}
               />
             ))}
             {(data?.dueInvoices || []).filter(i => i.overdue).map(inv => (
@@ -111,6 +182,7 @@ export default function AdminHomePage() {
                 detail={`${inv.providerName || "Provider"} - was due ${fmtWhen(inv.dueAt)}`}
                 cta="Review"
                 onClick={() => navigate(`/admin/billing?q=${inv.id}`)}
+                onDismiss={() => dismiss.mutate(inv.taskKey)}
               />
             ))}
             {(data?.failedPayouts || []).map(fp => (
@@ -118,9 +190,11 @@ export default function AdminHomePage() {
                 key={fp.id}
                 icon={<Landmark className="w-4 h-4" />}
                 title={`Payout of ${formatCents(fp.amountCents)} to ${fp.providerName || "provider"} failed`}
-                detail={`${fp.parentName}'s invoice - failed ${fmtWhen(fp.payoutFailedAt)}`}
-                cta="Resolve"
+                detail={`${fp.parentName}'s invoice - failed ${fmtWhen(fp.payoutFailedAt)}${fp.payoutFailureReason ? ` - ${fp.payoutFailureReason}` : ""}`}
+                cta="Open"
                 onClick={() => navigate(`/admin/billing?q=${fp.id}`)}
+                action={{ label: "Retry payout", loading: retryingId === fp.id, onClick: () => retryPayout(fp.id, fp.providerName) }}
+                onDismiss={() => dismiss.mutate(fp.taskKey)}
               />
             ))}
           </div>
@@ -161,7 +235,7 @@ export default function AdminHomePage() {
           <StatTile label="Matched" value={data?.funnel.matched ?? 0} hint="surrogates matched" />
           <StatTile label="Deposits paid" value={data?.funnel.depositsPaid ?? 0} />
           <StatTile label="Agreements signed" value={data?.funnel.agreementsSigned ?? 0} />
-          <StatTile label="Fees collected" value={formatCents(data?.money.totalFees ?? 0)} hint="all time" />
+          <StatTile label="Net Income" value={formatCents(data?.money.totalFees ?? 0)} hint="GoStork Fees - all time" />
         </div>
       </Card>
 
@@ -211,6 +285,18 @@ export default function AdminHomePage() {
         )}
       </Card>
 
+      {/* Money */}
+      <Card className="p-5 space-y-3">
+        <SectionHeader icon={<DollarSign className="w-5 h-5 text-primary" />} title="Money" viewAllTo="/admin/billing" />
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <StatTile label="Gross Income" value={formatCents(data?.money.totalCollected ?? 0)} hint="Total Paid Invoices" />
+          <StatTile label="Payouts Sent" value={formatCents(data?.money.payoutsSent ?? 0)} hint="COGS" />
+          <StatTile label="Net Income" value={formatCents(data?.money.totalFees ?? 0)} hint="GoStork Fees" />
+          <StatTile label="Pending Payouts" value={formatCents((data?.money.totalCollected ?? 0) - (data?.money.payoutsSent ?? 0))} hint="Future COGS" />
+          <StatTile label="Unpaid Invoices" value={formatCents(data?.money.awaitingPayment ?? 0)} hint="Future Invoices" />
+        </div>
+      </Card>
+
       {/* Invoices */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Receipt className="w-5 h-5 text-primary" />} title="Invoices" viewAllTo="/admin/billing" />
@@ -237,7 +323,7 @@ export default function AdminHomePage() {
 
       {/* Payouts */}
       <Card className="p-5 space-y-3">
-        <SectionHeader icon={<Landmark className="w-5 h-5 text-primary" />} title="Payouts" viewAllTo="/admin/billing" />
+        <SectionHeader icon={<Landmark className="w-5 h-5 text-primary" />} title="Payouts" viewAllTo="/admin/billing?tab=PAID" />
         {(data?.recentPayouts || []).length === 0 ? (
           <p className="text-sm text-muted-foreground py-2">No payouts yet.</p>
         ) : (
@@ -260,18 +346,6 @@ export default function AdminHomePage() {
             })}
           </div>
         )}
-      </Card>
-
-      {/* Money */}
-      <Card className="p-5 space-y-3">
-        <SectionHeader icon={<DollarSign className="w-5 h-5 text-primary" />} title="Money" viewAllTo="/admin/billing" />
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <StatTile label="Total collected" value={formatCents(data?.money.totalCollected ?? 0)} hint="all paid invoices" />
-          <StatTile label="Fees Collected" value={formatCents(data?.money.totalFees ?? 0)} />
-          <StatTile label="Payouts sent" value={formatCents(data?.money.payoutsSent ?? 0)} hint="to providers" />
-          <StatTile label="Held by GoStork" value={formatCents((data?.money.totalCollected ?? 0) - (data?.money.payoutsSent ?? 0))} hint="collected minus payouts" />
-          <StatTile label="Pending payouts" value={data?.money.pendingPayouts ?? 0} />
-        </div>
       </Card>
 
       {/* Automation adoption */}

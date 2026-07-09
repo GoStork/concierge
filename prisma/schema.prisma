@@ -1937,6 +1937,14 @@ model Invoice {
   stripeTransferId    String?   @unique
   payoutFailedAt      DateTime?
   payoutFailureReason String?
+  // Auto-retry bookkeeping: when the platform balance can't cover the
+  // transfer yet (funds still settling), we DON'T stamp a failure - we
+  // schedule the next automatic attempt here and the payout-retry
+  // scheduler picks it up. attemptCount drives the backoff ladder; after
+  // the ladder is exhausted the invoice flips to a real failure
+  // (payoutFailedAt) and lands in the admin Needs-attention queue.
+  payoutNextAttemptAt DateTime?
+  payoutAttemptCount  Int       @default(0)
 
   // Bank-side settlement: when Stripe sweeps the connected account's
   // balance to the provider's bank (a Stripe Payout, distinct from the
@@ -2326,4 +2334,15 @@ model ConciergeAsset {
   uploadedByUserId String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// Dismissed rows in the GoStork admin Home "Needs attention" queue.
+// taskKey encodes the item identity INCLUDING its occurrence timestamp
+// (e.g. "failed-payout:<invoiceId>:<failedAtMs>") so a dismissed item
+// reappears if the same underlying thing happens again later.
+model AdminTaskDismissal {
+  id          String   @id @default(uuid())
+  taskKey     String   @unique
+  dismissedBy String?
+  dismissedAt DateTime @default(now())
 }

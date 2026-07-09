@@ -119,6 +119,7 @@ export class BillingController {
 
     const result = await this.billingService.getInvoicesForAdmin({
       status: query.status,
+      payoutStatus: query.payoutStatus,
       providerId: query.providerId,
       serviceType: query.serviceType,
       search: query.search,

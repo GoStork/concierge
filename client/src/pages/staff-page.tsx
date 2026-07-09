@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
+import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -269,7 +270,8 @@ function GostorkAdminUsersView() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide" data-testid="card-parent-filters">
+      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide flex-1 min-w-0" data-testid="card-parent-filters">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -329,7 +331,7 @@ function GostorkAdminUsersView() {
         <select
           value={serviceFilter}
           onChange={e => updateUsersParam("svc", e.target.value === "all" ? "" : e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
           data-testid="admin-parents-service-filter"
         >
           <option value="all">All services</option>
@@ -341,17 +343,14 @@ function GostorkAdminUsersView() {
         <select
           value={statusFilter}
           onChange={e => updateUsersParam("status", e.target.value === "all" ? "" : e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
           data-testid="admin-parents-status-filter"
         >
           <option value="all">All statuses</option>
           {Object.entries(JOURNEY_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground hover:text-foreground h-8 px-2 shrink-0 rounded-full" data-testid="button-clear-filters">
-            <XCircle className="w-4 h-4" />
-          </Button>
-        )}
+      </div>
+        <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="button-clear-filters" />
       </div>
 
       <Card className="overflow-x-auto">
@@ -550,6 +549,14 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
     }, { replace: true });
   };
   const setSearchQuery = (v: string) => setParam("q", v);
+  const hasActiveFilters = !!(searchQuery || serviceFilter !== "all" || statusFilter !== "all" || dateFrom || dateTo);
+  const clearFilters = () => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      ["q", "svc", "status", "from", "to"].forEach(k => next.delete(k));
+      return next;
+    }, { replace: true });
+  };
   const { sortConfig, handleSort, sortData } = useTableSort("updated", "desc");
   const navigate = useNavigate();
 
@@ -593,7 +600,8 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         <p className="text-muted-foreground">Parents who have connected with you via the AI concierge or meetings.</p>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide flex-1 min-w-0">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -651,7 +659,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         <select
           value={serviceFilter}
           onChange={e => setParam("svc", e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
           data-testid="parents-service-filter"
         >
           <option value="all">All services</option>
@@ -660,12 +668,14 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         <select
           value={statusFilter}
           onChange={e => setParam("status", e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
           data-testid="parents-status-filter"
         >
           <option value="all">All statuses</option>
           {Object.entries(JOURNEY_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+      </div>
+        <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="provider-parents-clear-filters" />
       </div>
 
       {/* overflow-x-auto so wide rows scroll horizontally instead of
