@@ -43,6 +43,7 @@ export function humanizeLineServiceType(t: string): string {
     case "EGG_DONATION": return "Egg Donation";
     case "SPERM_DONATION": return "Sperm Donation";
     case "IVF_CLINIC": return "IVF Clinic";
+    case "LEGAL_SERVICES": return "Legal Services";
     case "OTHER": return "Other";
     default: return t || "Service";
   }
@@ -59,6 +60,7 @@ export function providerTypeNameToServiceType(providerTypeName: string | undefin
   if (n.includes("egg donor") || n.includes("egg bank")) return "EGG_DONATION";
   if (n.includes("sperm")) return "SPERM_DONATION";
   if (n.includes("ivf") || n.includes("clinic")) return "IVF_CLINIC";
+  if (n.includes("legal")) return "LEGAL_SERVICES";
   return "OTHER";
 }
 
@@ -73,6 +75,7 @@ export function serviceTypeFromSubject(subjectType: string | null | undefined): 
   if (s.includes("surrog")) return "SURROGACY";
   if (s.includes("sperm")) return "SPERM_DONATION";
   if (s.includes("ivf") || s.includes("clinic") || s.includes("doctor")) return "IVF_CLINIC";
+  if (s.includes("legal") || s.includes("lawyer")) return "LEGAL_SERVICES";
   return null;
 }
 
@@ -207,7 +210,7 @@ export class BillingService {
     sessionId: string;
     providerId: string;
     parentUserId: string;
-    triggerSource?: "PROVIDER_MANUAL" | "ADMIN_MANUAL" | "AUTO_READINESS";
+    triggerSource?: "PROVIDER_MANUAL" | "ADMIN_MANUAL" | "AUTO_READINESS" | "BANK_CHECKOUT";
     parentPaysOverrideCents?: number;
     description?: string;
     dueAt?: Date;
@@ -727,10 +730,18 @@ export class BillingService {
         id: true,
         sessionId: true,
         providerId: true,
+        parentUserId: true,
         parentUser: { select: { name: true, firstName: true, lastName: true, email: true } },
         provider: { select: { id: true, name: true, agreementAutomation: true, autoFeaturesEnabled: true, users: { select: { id: true } } } },
       },
     });
+    // Journey stage sync: this method fires on EVERY invoice-PAID transition
+    // (Stripe webhook, clearance capture, admin mark-paid) BEFORE any
+    // automation gates - the one choke point for "the parent paid a deposit".
+    if (invoice?.parentUserId) {
+      const { advanceJourneyStage } = await import("../../../journey-stage");
+      await advanceJourneyStage(invoice.parentUserId, "Deposit Paid");
+    }
     if (!invoice?.sessionId || !invoice.provider) return { status: "off" };
     const sessionId = invoice.sessionId;
 
@@ -816,10 +827,39 @@ export class BillingService {
         return { status: "sent", agreementId: agreement.id };
       } catch (e: any) {
         if (e?.code !== "PARTNER_INFO_REQUIRED") throw e;
-        // Fully-automated send needs the partner's signer details, which only
-        // the provider can supply - fall through to the approval card so the
-        // provider completes it from the + menu Agreement panel.
-        this.logger.log(`Agreement auto-send needs partner info (session=${sessionId}) - posting approval card instead`);
+        // Fully-automated send needs the partner's signer details. The
+        // PARENT is the one who knows them - ask right in the chat (a
+        // partner_info_request card with a "just me" escape hatch) and
+        // auto-send the moment they answer. Falling back to the provider
+        // approval card here would break the "fully automated" promise.
+        const existingPartnerCards = await this.prisma.aiChatMessage.findMany({
+          where: { sessionId, uiCardType: "partner_info_request" },
+          select: { uiCardData: true },
+        });
+        if (!existingPartnerCards.some(c => !((c.uiCardData as any) || {}).resolvedAt)) {
+          const msg = await this.prisma.aiChatMessage.create({
+            data: {
+              sessionId,
+              role: "assistant",
+              content: `One last step before I can send your ${docTitle} for signature: it includes both parents as signers. Add your partner's details below - or tap "It's just me" and I'll send it with you as the only signer.`,
+              senderType: "system",
+              senderName: "GoStork",
+              uiCardType: "partner_info_request",
+              uiCardData: {
+                providerId: invoice.provider.id,
+                serviceType,
+                documentType: docTitle,
+                invoiceId,
+                requestedAt: new Date().toISOString(),
+                providerContent: `${parentName}'s ${docTitle} is drafted and will send automatically - waiting on their partner's signer details (or single-parent confirmation).`,
+              },
+            },
+          });
+          this.logger.log(`Agreement auto-send needs partner info (session=${sessionId}) - asked the parent (message ${msg.id})`);
+          return { status: "blocked", reason: "PARTNER_INFO_REQUIRED" };
+        }
+        this.logger.log(`Agreement auto-send still waiting on partner info (session=${sessionId}) - card already pending`);
+        return { status: "blocked", reason: "PARTNER_INFO_REQUIRED" };
       }
     }
 
@@ -947,6 +987,189 @@ export class BillingService {
     });
 
     return invoice;
+  }
+
+  // ─── Bank skip-to-checkout (Phase 6) ────────────────────────────────────────
+
+  /**
+   * Egg/Sperm Bank donors are ready inventory - no match calls, no
+   * agreements. When a parent hits "Buy" (marketplace card CTA or Eva's
+   * bank_checkout chat card) this does the whole dance in one shot:
+   * find-or-create the 3-way session with the bank (identity revealed -
+   * the purchase IS the consent moment, same rationale as consultation
+   * booking), post the bank's cost sheet as a quote card, auto-fire the
+   * invoice from the donor's published Total Cost, and send the parent
+   * the Pay Now link. No bank staff action required.
+   *
+   * Loud failures by design: no published donor price, missing referral
+   * fee config, or incomplete provider legal identity all throw - never
+   * fabricate a price.
+   */
+  async bankCheckout(params: {
+    parentUserId: string;
+    donorId: string;
+    donorType: "egg-donor" | "sperm-donor";
+    providerId: string;
+  }): Promise<{ status: "created" | "already_pending" | "already_paid"; sessionId: string; invoiceId: string }> {
+    const { parentUserId, donorId, donorType, providerId } = params;
+    const bankTypeName = donorType === "egg-donor" ? "Egg Bank" : "Sperm Bank";
+    const serviceType = donorType === "egg-donor" ? "EGG_DONATION" : "SPERM_DONATION";
+
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      select: { id: true, name: true, services: { where: { status: "APPROVED" }, include: { providerType: true } } },
+    });
+    if (!provider) throw new NotFoundException("Provider not found");
+    if (!provider.services.some((sv: any) => sv.providerType?.name === bankTypeName)) {
+      throw new BadRequestException(`Skip-to-checkout is only available for ${bankTypeName} donors - agency donors go through the match process.`);
+    }
+
+    const donor: any = donorType === "egg-donor"
+      ? await this.prisma.eggDonor.findUnique({ where: { id: donorId }, select: { id: true, firstName: true, externalId: true, totalCost: true, photos: true, providerId: true } })
+      : await this.prisma.spermDonor.findUnique({ where: { id: donorId }, select: { id: true, firstName: true, externalId: true, totalCost: true, photos: true, providerId: true } });
+    if (!donor || donor.providerId !== providerId) throw new NotFoundException("Donor not found at this provider");
+
+    // Donor totalCost is stored in DOLLARS (see total-cost.utils) - invoices are cents.
+    const priceCents = donor.totalCost != null ? Math.round(Number(donor.totalCost) * 100) : null;
+    if (!priceCents || priceCents <= 0) {
+      throw new BadRequestException("This donor has no published total cost yet. The bank needs an approved cost sheet before checkout is possible.");
+    }
+    const donorLabel = [donor.firstName, donor.externalId ? `#${donor.externalId}` : null].filter(Boolean).join(" ") || "this donor";
+
+    const parentUser = await this.prisma.user.findUnique({
+      where: { id: parentUserId },
+      select: { id: true, name: true, firstName: true, parentAccountId: true },
+    });
+    if (!parentUser) throw new NotFoundException("Parent not found");
+    const parentName = parentUser.firstName || parentUser.name || "The parent";
+    const accountIds = parentUser.parentAccountId
+      ? (await this.prisma.user.findMany({ where: { parentAccountId: parentUser.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [parentUserId];
+
+    // Find-or-create the 3-way session for THIS donor. CONSULTATION_BOOKED
+    // is the identity-reveal status the rest of the app already honors.
+    let session = await this.prisma.aiChatSession.findFirst({
+      where: { userId: { in: accountIds }, providerId, subjectProfileId: donorId },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+    if (session) {
+      await this.prisma.aiChatSession.update({
+        where: { id: session.id },
+        data: { status: "CONSULTATION_BOOKED", updatedAt: new Date() },
+      });
+    } else {
+      const created = await this.prisma.aiChatSession.create({
+        data: {
+          userId: parentUserId,
+          providerId,
+          providerName: provider.name,
+          status: "CONSULTATION_BOOKED",
+          title: `${donorLabel} - ${provider.name}`,
+          profilePhotoUrl: donor.photos?.[0] || undefined,
+          subjectProfileId: donorId,
+          subjectType: donorType,
+        },
+        select: { id: true },
+      });
+      session = created;
+    }
+
+    // Idempotency: one live purchase per donor session.
+    const existing = await this.prisma.invoice.findFirst({
+      where: { sessionId: session.id, status: { in: ["AWAITING_PAYMENT", "AUTHORIZED", "AT_CLEARANCE", "PAID"] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, status: true },
+    });
+    if (existing) {
+      return {
+        status: existing.status === "PAID" ? "already_paid" : "already_pending",
+        sessionId: session.id,
+        invoiceId: existing.id,
+      };
+    }
+
+    // Dual-audience kickoff message (parent reads 2nd person; provider reads
+    // the providerContent variant automatically).
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: `You're all set! Here's the full cost breakdown and your invoice for ${donorLabel} from ${provider.name}. Once payment is complete, ${provider.name} will coordinate the next steps with you right here.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardData: {
+          providerContent: `${parentName} started checkout for ${donorLabel}. The cost sheet and invoice were sent automatically - payment confirmation will appear here.`,
+        },
+      },
+    });
+
+    // Post the bank's price as a quote + cost-sheet card (supersede priors).
+    const quote = await this.prisma.$transaction(async (tx: any) => {
+      await tx.providerQuote.updateMany({
+        where: { sessionId: session!.id, supersededAt: null },
+        data: { supersededAt: new Date() },
+      });
+      return tx.providerQuote.create({
+        data: {
+          sessionId: session!.id,
+          providerId,
+          parentUserId,
+          totalCostCents: priceCents,
+          notes: `${donorLabel} - ${bankTypeName} package (published total cost)`,
+          source: "BANK_CHECKOUT",
+        },
+      });
+    });
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: `${provider.name} sent a cost sheet. Total: ${formatMoneyCents(priceCents)}`,
+        senderType: "system",
+        senderName: provider.name,
+        uiCardType: "cost_sheet",
+        uiCardData: {
+          quoteId: quote.id,
+          providerName: provider.name,
+          totalCostCents: priceCents,
+          notes: quote.notes,
+          parentAcknowledgedAt: null,
+          sentAt: quote.createdAt.toISOString(),
+        },
+      },
+    });
+
+    const invoice = await this.createInvoice({
+      sessionId: session.id,
+      providerId,
+      parentUserId,
+      triggerSource: "BANK_CHECKOUT",
+      description: `${donorLabel} - ${bankTypeName} package`,
+      lineItems: [{ serviceType, description: `${donorLabel} - ${bankTypeName} package (published total cost)`, amountCents: priceCents }],
+      preferredServiceType: serviceType,
+    });
+    await this.sendPaymentNotificationsToParent(invoice.id);
+
+    // Heads-up to the bank's users.
+    const providerUsers = await this.prisma.user.findMany({ where: { providerId }, select: { id: true } });
+    for (const pu of providerUsers) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: pu.id,
+          eventType: "BANK_CHECKOUT_STARTED",
+          payload: {
+            sessionId: session.id,
+            parentName,
+            donorLabel,
+            message: `${parentName} started checkout for ${donorLabel} - invoice sent automatically.`,
+          },
+        },
+      }).catch(() => {});
+    }
+
+    this.logger.log(`[bank-checkout] ${parentName} -> ${donorLabel} @ ${provider.name}: invoice ${invoice.id} (${priceCents} cents)`);
+    return { status: "created", sessionId: session.id, invoiceId: invoice.id };
   }
 
   // ─── Cancel an invoice (provider/admin) ────────────────────────────────────
@@ -2122,6 +2345,10 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
         // parent marketplace and AI search; only her agency still sees her.
         data: { reservationExpiresAt: dueAt, status: "MATCHED" },
       }).catch(() => {});
+    }
+    {
+      const { advanceJourneyStage } = await import("../../../journey-stage");
+      await advanceJourneyStage(session.userId, "Matched");
     }
 
     // Celebrate FIRST, then the invoice lands right below it. The

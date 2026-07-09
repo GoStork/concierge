@@ -212,7 +212,11 @@ surrogacy/IVF because nothing ever set Booking.meetingSubtype.
 - [x] User acceptance testing (tiles -> subtyped booking -> gated readiness
       -> badge + hold lifecycle -> both-sides gate -> prep bundle)
 
-### Phase 4 addendum - surrogate status lifecycle (BUILT - awaiting UAT)
+### Phase 4 addendum - surrogate status lifecycle (BUILT - awaiting UAT;
+    verified 2026-07-09 that NO surrogate has organically hit ON_HOLD or
+    MATCHED yet - needs one surrogacy run with a surrogate-subject session:
+    schedule match call -> ON_HOLD badge/filter -> both-sides yes ->
+    MATCHED + hidden from parent marketplace)
 
 - [x] Match call scheduled -> surrogate status ON_HOLD (set at booking
       creation/confirm; reverted to AVAILABLE on cancel/decline while no
@@ -259,9 +263,12 @@ surrogacy/IVF because nothing ever set Booking.meetingSubtype.
       agreements -> dedicated page with search + status filter). Shared
       AgreementRows renderer; Agreements column in the provider Parents
       table; /my/billing and /provider/billing remain as invoice aliases
-- [ ] User acceptance testing (paid invoice -> approval card -> send ->
-      sign -> handoff celebration; fully-automated mode; Eva contract
-      preview; multi-service templates)
+- [x] User acceptance testing - CORE PATH VERIFIED 2026-07-09 (two full
+      runs in DB: Egg Donation Agreement Jul 8 -> signed Jul 9 + Surrogacy
+      Agreement Jul 9, both with handoffCompletedAt stamped = celebration
+      fired; two service types = per-service templates proven)
+- [ ] UAT still open: fully-automated (auto_send) mode; Eva contract
+      preview ([[AGREEMENT_PREVIEW]]); partner-info-missing fallback
 
 ### Home dashboards (BUILT - awaiting UAT; admin command center pending)
 
@@ -298,10 +305,40 @@ Home where Billing was.
 
 ### [ ] Phase 6 - Banks skip-to-checkout + Legal Services activation
 
-- [ ] Egg/Sperm Bank skip-to-checkout: marketplace button + Eva chat card
-- [ ] Lawyer-intro trigger (legal keywords OR path-commitment), one yes/no
-      connect question, creates 3-way chat with lawyer
-- [ ] Legal cost sheets rules-based by service type
+Locked decisions (2026-07-09): bank checkout = AUTO INVOICE VIA EVA (button
+on bank donor cards + Eva chat card -> parent confirms -> session with the
+bank -> cost sheet posted -> invoice auto-fires with Pay Now; no bank staff
+action). Lawyer intro = AUTO-PICK the best-matching approved Legal Services
+provider; triggers on legal keywords OR proactively ONCE after the parent's
+first consultation call is created with a Surrogacy or Egg Donation agency
+(do NOT wait for a match); one yes/no question; yes -> 3-way chat with the
+lawyer. Legal pricing = existing AI cost-sheet upload pipeline (no separate
+rules engine) - just ensure the Legal service type works end to end.
+
+- [x] Egg/Sperm Bank skip-to-checkout (BUILT 2026-07-09): Buy button on
+      bank donor cards (marketplace, parents only, banks with a published
+      totalCost only) + Eva [[BANK_CHECKOUT:DONOR_ID]] checkout card ->
+      POST /api/bank-checkout (BillingService.bankCheckout): find-or-create
+      3-way session (CONSULTATION_BOOKED = identity reveal), dual-audience
+      kickoff message, ProviderQuote + cost_sheet card, auto invoice
+      (lineItems from donor totalCost, triggerSource BANK_CHECKOUT) + Pay
+      Now notifications + bank in-app notification. Idempotent per donor
+      session; loud failures (no price / no fee config / agency donor)
+- [x] Lawyer intro (BUILT 2026-07-09): one-time proactive offer (atomic
+      lawyerIntroOfferedAt claim) posted into the parent's private Eva
+      session right after their first consultation session with a
+      Surrogacy/Egg Donor agency (hook in createConsultationChatSession);
+      keywords path via prompt; Eva emits [[LAWYER_CONNECT]] -> auto-picks
+      approved Legal Services provider (parent-state match, else first),
+      creates/reuses 3-way chat (dual-audience intro), notifies lawyer
+      users; honest note + admin notification when no legal provider exists
+- [x] Legal service type end to end (BUILT 2026-07-09): "legal" added to
+      cost-sheet AI classifier tags + prompts, LEGAL_SERVICES in billing
+      maps (humanize / providerTypeName / subjectType), Legal coverage
+      leaf + labels in the provider costs tab
+- [ ] User acceptance testing (bank Buy button -> invoice chat; Eva
+      checkout card; lawyer offer after first agency call; yes ->
+      3-way lawyer chat; legal cost-sheet upload classification)
 
 ### [ ] Phase 7 - Polish, journey handoff, analytics
 

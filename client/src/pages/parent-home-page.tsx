@@ -8,7 +8,10 @@
  * default landing - Home is the overview, not the front door.
  */
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
+import { BookingDetailDialog } from "@/components/booking-detail-dialog";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { Card } from "@/components/ui/card";
@@ -33,6 +36,7 @@ import { formatMoneyCents as formatCents } from "@/lib/format-money";
 interface DashboardQueue {
   pendingProposals: Array<{ messageId: string; sessionId: string; createdAt: string; providerName: string | null; callLabel: string; subjectLabel: string | null }>;
   awaitingMySignature: Array<{ agreementId: string; documentType: string; sessionId: string; createdAt: string; providerName: string | null }>;
+  prepDocs: Array<{ messageId: string; sessionId: string; createdAt: string; providerName: string | null; callLabel: string; scheduledAt: string | null; url: string; fileName: string }>;
 }
 
 function fmtWhen(iso: string) {
@@ -40,6 +44,7 @@ function fmtWhen(iso: string) {
 }
 
 export default function ParentHomePage() {
+  const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const firstName = (user as any)?.firstName || (user as any)?.name?.split(" ")[0] || "there";
@@ -119,6 +124,7 @@ export default function ParentHomePage() {
     unpaidInvoices.length +
     (queue?.awaitingMySignature.length || 0) +
     (queue?.pendingProposals.length || 0) +
+    (queue?.prepDocs?.length || 0) +
     unackedCostSheets.length +
     (unreadMessages > 0 ? 1 : 0);
 
@@ -181,6 +187,25 @@ export default function ParentHomePage() {
                 onClick={() => navigate("/chat")}
               />
             )}
+            {(queue?.prepDocs || []).map(pd => (
+              <QueueRow
+                key={pd.messageId}
+                icon={<FileText className="w-4 h-4" />}
+                title={`Prep guide for your ${pd.callLabel}${pd.providerName ? ` with ${pd.providerName}` : ""}`}
+                detail={pd.scheduledAt ? `Read it before ${fmtWhen(pd.scheduledAt)}` : pd.fileName}
+                cta="Read"
+                onClick={() => window.open(pd.url, "_blank", "noopener,noreferrer")}
+                onDismiss={async () => {
+                  await fetch("/api/my/dashboard/dismiss", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ messageId: pd.messageId }),
+                  }).catch(() => {});
+                  queryClient.invalidateQueries({ queryKey: ["/api/my/dashboard-queue"] });
+                }}
+              />
+            ))}
             {unackedCostSheets.map((cs: any) => (
               <QueueRow
                 key={cs.id}
@@ -208,7 +233,7 @@ export default function ParentHomePage() {
                   <p className="text-sm font-medium truncate">{b.subject || `Meeting with ${b.providerUser?.name || "your provider"}`}</p>
                   <p className="text-xs text-muted-foreground">{fmtWhen(b.scheduledAt)}</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => navigate("/calendar")}>
+                <Button variant="outline" size="sm" onClick={() => setSelectedMeeting(b)}>
                   Details
                 </Button>
               </div>
@@ -292,6 +317,7 @@ export default function ParentHomePage() {
           emptyText="No agreements yet. Your provider sends the official agreement here after your deposit payment."
         />
       </Card>
+      <BookingDetailDialog booking={selectedMeeting} open={!!selectedMeeting} onClose={() => setSelectedMeeting(null)} />
     </div>
   );
 }

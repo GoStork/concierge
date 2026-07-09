@@ -1,15 +1,24 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ParentProfileCard } from "@/components/profile-cards";
 import type { SessionUser } from "@/components/chat/chat-types";
+import { formatPhoneDisplay } from "@/lib/phone-countries";
+
+type AccountMember = {
+  id: string;
+  name: string | null;
+  email: string;
+  mobileNumber: string | null;
+  photoUrl: string | null;
+};
 
 export default function ParentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: parent, isLoading, error } = useQuery<SessionUser>({
+  const { data: parent, isLoading, error } = useQuery<SessionUser & { accountMembers?: AccountMember[] }>({
     queryKey: ["/api/provider/parents", id],
     queryFn: async () => {
       const res = await fetch(`/api/provider/parents/${id}`, { credentials: "include" });
@@ -59,8 +68,30 @@ export default function ParentDetailPage() {
           )}
 
           {parent && (
-            <div className="rounded-[var(--radius)] bg-card border p-5" data-testid="parent-detail-card">
-              <ParentProfileCard user={parent} testId="parent-detail-profile" />
+            <div className="space-y-4">
+              {/* Shared parent account: both partners have their own login
+                  but share one journey - surface every member's contact
+                  info so the provider can reach either of them. */}
+              {(parent.accountMembers?.length || 0) > 1 && (
+                <div className="rounded-[var(--radius)] border p-4" style={{ background: "hsl(var(--accent) / 0.08)" }} data-testid="parent-detail-household">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Users className="w-4 h-4" style={{ color: "hsl(var(--accent))" }} />
+                    <span className="text-sm font-medium font-ui">Shared account - {parent.accountMembers!.length} members</span>
+                  </div>
+                  <div className="space-y-2">
+                    {parent.accountMembers!.map(m => (
+                      <div key={m.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-sm" data-testid={`household-member-${m.id}`}>
+                        <span className="font-medium">{m.name || "-"}</span>
+                        <span className="text-muted-foreground">{m.email}</span>
+                        {m.mobileNumber && <span className="text-muted-foreground">{formatPhoneDisplay(m.mobileNumber)}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="rounded-[var(--radius)] bg-card border p-5" data-testid="parent-detail-card">
+                <ParentProfileCard user={parent} testId="parent-detail-profile" />
+              </div>
             </div>
           )}
         </div>

@@ -11,6 +11,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BookingDetailDialog } from "@/components/booking-detail-dialog";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { Card } from "@/components/ui/card";
@@ -71,6 +72,23 @@ export default function AdminHomePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
+
+  // The dashboard payload carries trimmed meeting rows; the popup needs the
+  // full booking (participants, meeting room, status machinery) - fetch the
+  // admin calendar list on demand and pick the row.
+  const openMeeting = async (id: string) => {
+    try {
+      const res = await fetch("/api/calendar/bookings", { credentials: "include" });
+      if (!res.ok) throw new Error();
+      const all = await res.json();
+      const full = (Array.isArray(all) ? all : []).find((b: any) => b.id === id);
+      if (full) setSelectedMeeting(full);
+      else navigate("/calendar");
+    } catch {
+      navigate("/calendar");
+    }
+  };
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
 
@@ -217,6 +235,9 @@ export default function AdminHomePage() {
                 {b.status === "PENDING" && (
                   <span className="text-xs font-medium shrink-0" style={{ color: "hsl(var(--brand-warning))" }}>Awaiting confirm</span>
                 )}
+                <Button variant="outline" size="sm" onClick={() => openMeeting(b.id)}>
+                  Details
+                </Button>
               </div>
             ))}
           </div>
@@ -359,6 +380,7 @@ export default function AdminHomePage() {
         </div>
       </Card>
 
+      <BookingDetailDialog booking={selectedMeeting} open={!!selectedMeeting} onClose={() => setSelectedMeeting(null)} />
     </div>
   );
 }

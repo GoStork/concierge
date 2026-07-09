@@ -1674,6 +1674,10 @@ model IntendedParentProfile {
   // Lead Status
   hotLeadProviderId String?
   hotLeadAt         DateTime?
+  // One-time lawyer-intro gate: stamped the first time Eva offers (or the
+  // parent asks for) a legal connection, so the proactive offer after the
+  // first surrogacy/egg-donation consultation never repeats.
+  lawyerIntroOfferedAt DateTime?
 
   // Current Professionals Network
   currentClinicName   String?

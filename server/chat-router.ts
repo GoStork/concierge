@@ -1033,7 +1033,24 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
           where: {
             sessionId: { in: identityRevealedIds },
             readAt: null,
-            senderType: { in: ["parent", "user"] },
+            OR: [
+              { senderType: { in: ["parent", "user"] } },
+              // Provider-directed AI/system messages count too: the "parent
+              // is ready" notify (provider_only), the readiness question,
+              // and the approval cards are exactly what the provider must
+              // not miss - a badge that ignores them hides real work.
+              {
+                uiCardType: {
+                  in: [
+                    "provider_only",
+                    "provider_readiness_prompt",
+                    "agreement_draft_approval",
+                    "invoice_draft_approval",
+                    "cost_sheet_draft_approval",
+                  ],
+                },
+              },
+            ],
           },
           _count: true,
         })
@@ -1319,7 +1336,21 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
     return res.status(403).json({ message: "Forbidden" });
   }
   try {
-    const parentId = req.params.id;
+    const parentId = req.params.id as string;
+
+    // Couples share one journey: the chat session may belong to the
+    // partner's login, so both the access check and the booking check run
+    // against every login on the same parent account.
+    const targetUser = await prisma.user.findUnique({
+      where: { id: parentId },
+      select: { parentAccountId: true },
+    });
+    const accountUserIds = targetUser?.parentAccountId
+      ? (await prisma.user.findMany({
+          where: { parentAccountId: targetUser.parentAccountId },
+          select: { id: true },
+        })).map(u => u.id)
+      : [parentId];
 
     if (!isAdminOrConcierge(user)) {
       const providerId = user.providerId;
@@ -1327,7 +1358,7 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
 
       const sharedSession = await prisma.aiChatSession.findFirst({
         where: {
-          userId: parentId,
+          userId: { in: accountUserIds },
           providerId,
           status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
         },
@@ -1344,7 +1375,7 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
         if (staffIds.length > 0) {
           const booking = await prisma.booking.findFirst({
             where: {
-              parentUserId: parentId,
+              parentUserId: { in: accountUserIds },
               providerUserId: { in: staffIds },
             },
             select: { id: true },
@@ -1384,7 +1415,18 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
     });
 
     if (!parent) return res.status(404).json({ message: "Parent not found" });
-    res.json(parent);
+
+    // All logins on the shared parent account (couple), requested parent
+    // first, so the detail page can show both partners' contact info.
+    const accountMembers = accountUserIds.length > 1
+      ? (await prisma.user.findMany({
+          where: { id: { in: accountUserIds }, roles: { has: "PARENT" } },
+          select: { id: true, name: true, email: true, mobileNumber: true, photoUrl: true },
+          orderBy: { createdAt: "asc" },
+        })).sort((a, b) => (a.id === parentId ? -1 : b.id === parentId ? 1 : 0))
+      : [];
+
+    res.json({ ...parent, accountMembers });
   } catch (e: any) {
     console.error("Provider parent detail error:", e);
     res.status(500).json({ message: e.message });
@@ -3013,6 +3055,34 @@ chatRouter.get("/api/agreements/template-preview/:sessionId", requireAuth, async
 // Covers every member of the parent account, mirroring shared sessions.
 // ─── Phase: Home dashboards ──────────────────────────────────────────────────
 
+// Parent Home: dismiss a prep-doc queue row. Key is scoped to the parent
+// account so one member's dismissal clears it for the household, and to the
+// message id so a NEW prep guide (new call) always resurfaces.
+chatRouter.post("/api/my/dashboard/dismiss", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  const messageId = String(req.body?.messageId || "").trim();
+  if (!messageId) return res.status(400).json({ message: "messageId required" });
+  try {
+    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { parentAccountId: true } });
+    const memberIds = me?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: me.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [user.id];
+    // The message must live in one of the parent's own sessions.
+    const msg = await prisma.aiChatMessage.findUnique({ where: { id: messageId }, select: { session: { select: { userId: true } } } });
+    if (!msg || !memberIds.includes(msg.session?.userId || "")) return res.status(404).json({ message: "Not found" });
+    const accountKey = me?.parentAccountId || user.id;
+    await prisma.adminTaskDismissal.upsert({
+      where: { taskKey: `parent-prep:${accountKey}:${messageId}` },
+      create: { taskKey: `parent-prep:${accountKey}:${messageId}`, dismissedBy: user.id },
+      update: {},
+    });
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error("Parent dismiss error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 // Parent Home action queue: things only discoverable by scanning chat cards
 // (proposed call times, agreements awaiting MY signature). Invoices, cost
 // sheets and meetings come from their existing endpoints client-side.
@@ -3058,6 +3128,59 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
       where: { parentUserId: { in: memberIds }, status: "SENT" },
       select: { id: true, documentType: true, sessionId: true, createdAt: true, signerStatus: true, provider: { select: { name: true } } },
     });
+    // Prep guides Eva attached in chat (consultation / match-call / doctor
+    // call PDFs) - parents skim past them in the conversation, so surface
+    // the recent ones as action items they can read or dismiss.
+    const accountKey = me?.parentAccountId || user.id;
+    const d30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const prepAttachments = sessionIds.length
+      ? await prisma.aiChatMessage.findMany({
+          where: {
+            sessionId: { in: sessionIds },
+            uiCardType: "attachment",
+            createdAt: { gte: d30 },
+            uiCardData: { path: ["matchCallPrepForBookingId"], string_contains: ":guide" },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+          select: { id: true, sessionId: true, createdAt: true, uiCardData: true },
+        })
+      : [];
+    const prepDismissed = new Set(
+      (await prisma.adminTaskDismissal.findMany({
+        where: { taskKey: { startsWith: `parent-prep:${accountKey}:` } },
+        select: { taskKey: true },
+      })).map(d => d.taskKey),
+    );
+    const prepBookingIds = prepAttachments
+      .map(m => String(((m.uiCardData as any) || {}).matchCallPrepForBookingId || "").split(":")[0])
+      .filter(Boolean);
+    const prepBookings = prepBookingIds.length
+      ? await prisma.booking.findMany({ where: { id: { in: prepBookingIds } }, select: { id: true, meetingSubtype: true, scheduledAt: true } })
+      : [];
+    const bookingById = new Map(prepBookings.map(b => [b.id, b]));
+    const prepDocs = prepAttachments
+      .filter(m => !prepDismissed.has(`parent-prep:${accountKey}:${m.id}`))
+      .map(m => {
+        const d = (m.uiCardData as any) || {};
+        const bookingId = String(d.matchCallPrepForBookingId || "").split(":")[0];
+        const bk = bookingById.get(bookingId);
+        const callLabel = bk?.meetingSubtype === "MATCH_CALL" ? "Match Call"
+          : bk?.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call"
+          : "consultation";
+        return {
+          messageId: m.id,
+          sessionId: m.sessionId,
+          createdAt: m.createdAt,
+          providerName: providerNameBySession.get(m.sessionId) || null,
+          callLabel,
+          scheduledAt: bk?.scheduledAt || null,
+          url: d.url || null,
+          fileName: d.originalName || "Prep Guide.pdf",
+        };
+      })
+      .filter(p2 => !!p2.url);
+
     const myEmail = (me?.email || user.email || "").toLowerCase();
     const awaitingMySignature = sentAgreements
       .filter(a => {
@@ -3075,7 +3198,7 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
         providerName: a.provider?.name || null,
       }));
 
-    res.json({ pendingProposals, awaitingMySignature });
+    res.json({ pendingProposals, awaitingMySignature, prepDocs });
   } catch (e: any) {
     console.error("Parent dashboard queue error:", e);
     res.status(500).json({ message: e.message });

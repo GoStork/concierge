@@ -9,7 +9,9 @@
  * is their front door; the full pages stay routable via View-all links.
  */
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { BookingDetailDialog } from "@/components/booking-detail-dialog";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { Card } from "@/components/ui/card";
@@ -64,6 +66,7 @@ function approvalLabel(a: ProviderQueue["openApprovals"][number]): { title: stri
 }
 
 export default function ProviderHomePage() {
+  const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
   const firstName = (user as any)?.firstName || (user as any)?.name?.split(" ")[0] || "there";
@@ -230,7 +233,7 @@ export default function ProviderHomePage() {
                 title={`Meeting request${b.parentUser?.name ? ` from ${b.parentUser.name}` : b.attendeeName ? ` from ${b.attendeeName}` : ""}`}
                 detail={fmtWhen(b.scheduledAt)}
                 cta="Respond"
-                onClick={() => navigate("/calendar")}
+                onClick={() => setSelectedMeeting(b)}
               />
             ))}
             {unreadMessages > 0 && (
@@ -269,7 +272,7 @@ export default function ProviderHomePage() {
                   <p className="text-sm font-medium truncate">{b.subject || `Meeting with ${b.parentUser?.name || b.attendeeName || "a parent"}`}</p>
                   <p className="text-xs text-muted-foreground">{fmtWhen(b.scheduledAt)}</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => navigate("/calendar")}>
+                <Button variant="outline" size="sm" onClick={() => setSelectedMeeting(b)}>
                   Details
                 </Button>
               </div>
@@ -419,6 +422,7 @@ export default function ProviderHomePage() {
           emptyText="No agreements sent yet."
         />
       </Card>
+      <BookingDetailDialog booking={selectedMeeting} open={!!selectedMeeting} onClose={() => setSelectedMeeting(null)} />
     </div>
   );
 }

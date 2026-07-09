@@ -107,6 +107,30 @@ export class BillingController {
     @Inject(SponsorshipService) private readonly sponsorshipService: SponsorshipService,
   ) {}
 
+  // ─── Bank skip-to-checkout (Phase 6) ───────────────────────────────────────
+
+  /**
+   * Parent buys an egg/sperm BANK donor directly: creates the 3-way session
+   * with the bank, posts the cost sheet, auto-fires the invoice, and returns
+   * the session to navigate to. Parent-only; providers/admins have their own
+   * invoice tooling.
+   */
+  @Post("api/bank-checkout")
+  @UseGuards(SessionOrJwtGuard)
+  async bankCheckout(@Req() req: Request, @Body() body: { donorId?: string; donorType?: string; providerId?: string }) {
+    const user = req.user as any;
+    if (user?.providerId || user?.roles?.includes("GOSTORK_ADMIN")) {
+      throw new HttpException("Parent accounts only", HttpStatus.FORBIDDEN);
+    }
+    const donorId = String(body?.donorId || "").trim();
+    const providerId = String(body?.providerId || "").trim();
+    const donorType = body?.donorType === "sperm-donor" ? "sperm-donor" as const : body?.donorType === "egg-donor" ? "egg-donor" as const : null;
+    if (!donorId || !providerId || !donorType) {
+      throw new HttpException("donorId, donorType (egg-donor|sperm-donor), and providerId are required", HttpStatus.BAD_REQUEST);
+    }
+    return this.billingService.bankCheckout({ parentUserId: user.id, donorId, donorType, providerId });
+  }
+
   // ─── Admin: invoice list + stats ──────────────────────────────────────────
 
   @Get("api/admin/invoices")
@@ -1043,6 +1067,86 @@ export class BillingController {
       throw new HttpException(`Draft already ${data.resolvedAs || "resolved"}`, HttpStatus.CONFLICT);
     }
     return { msg, data };
+  }
+
+  /**
+   * Parent answers the partner_info_request card (auto_send agreements that
+   * need the second parent's signer details). Either partner details or
+   * single=true; the agreement then sends automatically - the provider is
+   * never involved. Parent-account members only.
+   */
+  @Post("api/sessions/:sessionId/partner-info/:messageId")
+  @UseGuards(SessionOrJwtGuard)
+  async submitPartnerInfo(
+    @Req() req: Request,
+    @Param("sessionId") sessionId: string,
+    @Param("messageId") messageId: string,
+    @Body() body: { partnerFirstName?: string; partnerLastName?: string; partnerEmail?: string; single?: boolean },
+  ) {
+    const user = req.user as any;
+    const session = await this.db.aiChatSession.findUnique({
+      where: { id: sessionId },
+      select: { id: true, userId: true, providerId: true, user: { select: { parentAccountId: true } } },
+    });
+    if (!session?.providerId) throw new HttpException("Session not found", HttpStatus.NOT_FOUND);
+    const accountIds = session.user?.parentAccountId
+      ? (await this.db.user.findMany({ where: { parentAccountId: session.user.parentAccountId }, select: { id: true } })).map(u => u.id)
+      : [session.userId];
+    if (!accountIds.includes(user?.id)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+
+    const msg = await this.db.aiChatMessage.findUnique({ where: { id: messageId }, select: { id: true, sessionId: true, uiCardType: true, uiCardData: true } });
+    if (!msg || msg.sessionId !== sessionId || msg.uiCardType !== "partner_info_request") {
+      throw new HttpException("Card not found", HttpStatus.NOT_FOUND);
+    }
+    const data = (msg.uiCardData as any) || {};
+    if (data.resolvedAt) return { ok: true, alreadyResolved: true };
+
+    const single = body?.single === true;
+    let partnerOverride: { firstName: string; lastName: string; email: string } | undefined;
+    if (!single) {
+      const firstName = String(body?.partnerFirstName || "").trim();
+      const lastName = String(body?.partnerLastName || "").trim();
+      const email = String(body?.partnerEmail || "").trim();
+      if (!firstName || !lastName || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        throw new HttpException("Partner first name, last name, and a valid email are required (or choose single).", HttpStatus.BAD_REQUEST);
+      }
+      partnerOverride = { firstName, lastName, email };
+    } else {
+      // Remember the answer so future agreements skip the question.
+      await this.db.user.update({ where: { id: session.userId }, data: { relationshipStatus: "Single" } }).catch(() => {});
+    }
+
+    const { generateAndAnnounceAgreement } = await import("../../../agreement-flow");
+    let agreement: any;
+    try {
+      agreement = await generateAndAnnounceAgreement({
+        sessionId,
+        providerId: session.providerId,
+        generatedByUserId: user.id,
+        partnerOverride,
+        skipPartner: single,
+        trigger: "auto",
+      });
+    } catch (e: any) {
+      if (e?.code === "PAYMENT_REQUIRED") {
+        throw new HttpException({ code: "PAYMENT_REQUIRED", message: e.message }, HttpStatus.PAYMENT_REQUIRED);
+      }
+      throw e;
+    }
+
+    await this.db.aiChatMessage.update({
+      where: { id: msg.id },
+      data: {
+        uiCardData: {
+          ...data,
+          resolvedAt: new Date().toISOString(),
+          resolvedAs: single ? "single" : "partner_added",
+          resultingAgreementId: agreement.id,
+        },
+      },
+    });
+    this.logger.log(`Partner info submitted for session ${sessionId} (${single ? "single" : "partner added"}) -> agreement ${agreement.id} auto-sent`);
+    return { ok: true, agreementId: agreement.id };
   }
 
   @Post("api/sessions/:sessionId/agreement-draft/:messageId/approve")

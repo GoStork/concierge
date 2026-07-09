@@ -7,6 +7,8 @@ import { InvoicePaymentPanel } from "@/components/chat/invoice-payment-panel";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { ComparisonCard } from "@/components/chat/comparison-card";
 import { createPortal } from "react-dom";
+import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
+import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -1426,7 +1428,11 @@ function ConsultationBookingCard({
               {existingBooking && existingBooking.status !== "CANCELLED"
                 ? card.providerName === "GoStork"
                   ? `GoStork Concierge Call with ${card.memberName || "GoStork Team"}`
-                  : `Meeting with ${card.memberName || card.providerName || "Consultant"}`
+                  : ((existingBooking as any).meetingSubtype ?? (card as any).meetingSubtype) === "MATCH_CALL"
+                    ? `Match Call with ${card.memberName || card.providerName || "Consultant"}`
+                    : ((existingBooking as any).meetingSubtype ?? (card as any).meetingSubtype) === "DOCTOR_CONSULTATION"
+                      ? `Doctor Call with ${card.memberName || card.providerName || "Consultant"}`
+                      : `Consultation Call with ${card.memberName || card.providerName || "Consultant"}`
                 : card.providerName === "GoStork"
                   ? `Schedule GoStork Concierge Call with ${card.memberName || "GoStork Team"}`
                   : (card as any).meetingSubtype === "MATCH_CALL"
@@ -2439,6 +2445,14 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         }
       />
     );
+  }
+
+  if (msg.uiCardType === "bank_checkout") {
+    return <BankCheckoutCard data={data} brandColor={brandColor} />;
+  }
+
+  if (msg.uiCardType === "partner_info_request" && sessionId) {
+    return <PartnerInfoRequestCard data={data} messageId={msg.id} sessionId={String(sessionId)} brandColor={brandColor} />;
   }
 
   if (msg.uiCardType === "cost_sheet") {
@@ -4612,29 +4626,39 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         >
           {(() => {
             const shouldInlineBooking = !externalBookingSlug && !conciergeBookingSlug && sessionBookings && sessionBookings.length > 0;
-            // Skip standalone booking card if a ConsultationBookingCard already shows this booking inline
-            const consultationCardProviderIds = new Set(messages.filter(m => m.consultationCard?.providerId).map(m => m.consultationCard!.providerId));
-            // Also track providerUserId for admin calendar cards (which have no providerId)
-            const consultationCardProviderUserIds = new Set(messages.filter(m => m.consultationCard?.providerUserId).map(m => m.consultationCard!.providerUserId));
-            const activeBooking = shouldInlineBooking
-              ? sessionBookings!.find((b: any) =>
-                  !consultationCardProviderIds.has(b.providerUser?.provider?.id) &&
-                  !consultationCardProviderUserIds.has(b.providerUserId ?? b.providerUser?.id) &&
+            // Skip standalone booking cards only when a ConsultationBookingCard
+            // already shows the SAME provider + SAME call type inline - a
+            // Consultation and a Match Call are separate meetings and each
+            // needs its own widget.
+            const consultationCardKeys = new Set(
+              messages
+                .filter(m => m.consultationCard?.providerId || m.consultationCard?.providerUserId)
+                .map(m => `${m.consultationCard!.providerId || m.consultationCard!.providerUserId}:${(m.consultationCard as any)?.meetingSubtype ?? ""}`)
+            );
+            const activeBookings: any[] = shouldInlineBooking
+              ? sessionBookings!.filter((b: any) => {
+                  const pid = b.providerUser?.provider?.id;
+                  const puid = b.providerUserId ?? b.providerUser?.id;
+                  const subtype = b.meetingSubtype ?? "";
+                  if (consultationCardKeys.has(`${pid}:${subtype}`) || consultationCardKeys.has(`${puid}:${subtype}`)) return false;
+                  if (b.status === "CANCELLED") return false;
                   // Confirmed bookings already have a dedicated provider session with the full
                   // booking UI. Only show the card in the AI concierge timeline while PENDING
                   // so the parent can track a booking awaiting confirmation. In provider-specific
                   // sessions (providerInChat set) always show regardless of status.
-                  (b.status === "PENDING" || !!providerInChat)
-                ) || null
-              : null;
+                  return b.status === "PENDING" || !!providerInChat;
+                })
+              : [];
             type TimelineItem = { type: "message"; msg: ChatMessage; ts: string } | { type: "booking"; booking: any; ts: string };
             // Filter out empty assistant streaming placeholders that haven't received tokens yet
             const msgItems: TimelineItem[] = messages
               .filter((m) => !(m.role === "assistant" && !m.content && !m.uiCardData && !m.uiCardType && !m.consultationCard))
               .map((m) => ({ type: "message" as const, msg: m, ts: m.createdAt || "" }));
-            const bookingItems: TimelineItem[] = activeBooking
-              ? [{ type: "booking" as const, booking: activeBooking, ts: activeBooking.createdAt || activeBooking.scheduledAt || "" }]
-              : [];
+            const bookingItems: TimelineItem[] = activeBookings.map((b: any) => ({
+              type: "booking" as const,
+              booking: b,
+              ts: b.createdAt || b.scheduledAt || "",
+            }));
             const timeline = [...msgItems, ...bookingItems].sort(
               (a, b) => new Date(a.ts || 0).getTime() - new Date(b.ts || 0).getTime()
             );
@@ -4663,7 +4687,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           <div className="flex items-center gap-2 px-3 py-1.5">
                             <CalendarCheck className="w-4 h-4 text-primary-foreground" />
                             <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-                              {`Consultation Call with ${item.booking.providerUser?.provider?.name || item.booking.providerUser?.name || "Provider"}`}
+                              {`${item.booking.meetingSubtype === "MATCH_CALL" ? "Match Call" : item.booking.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "Consultation Call"} with ${item.booking.providerUser?.provider?.name || item.booking.providerUser?.name || "Provider"}`}
                             </span>
                           </div>
                         </div>
@@ -5028,9 +5052,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
 
                   {/* Consultation / calendar card */}
                   {msg.consultationCard && (() => {
-                    // Only show on the LAST message that has one for this provider.
+                    // Only show on the LAST message that has one for this provider
+                    // AND call type - a Consultation card and a Match Call card for
+                    // the same provider are DIFFERENT meetings and must both render.
+                    const cardSubtype = (msg.consultationCard as any)?.meetingSubtype ?? null;
                     const lastMsgWithCard = [...messages].reverse().find(
-                      m => m.consultationCard != null && m.consultationCard?.providerId === msg.consultationCard?.providerId
+                      m => m.consultationCard != null
+                        && m.consultationCard?.providerId === msg.consultationCard?.providerId
+                        && (((m.consultationCard as any)?.meetingSubtype ?? null) === cardSubtype)
                     );
                     if (lastMsgWithCard && lastMsgWithCard !== msg) return null;
                     return true;
@@ -5093,6 +5122,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                           // with the egg donor's agency). Only attach future, non-cancelled bookings.
                           const cardCreatedAt = msg.createdAt ? new Date(msg.createdAt).getTime() : 0;
                           const nowMs = Date.now();
+                          // Same call type only: a Match Call booking must never
+                          // shadow the Consultation card (and vice versa) - they are
+                          // two separate meetings for the same provider.
+                          const cardSubtype = (msg.consultationCard as any)?.meetingSubtype ?? null;
                           const providerBookings = sessionBookings.filter(
                             (b: any) => {
                               const bookingProviderId = (b.providerUser?.provider?.id ?? null);
@@ -5100,6 +5133,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                               const idMatch = bookingProviderId === cardProviderId;
                               const userIdMatch = cardProviderUserId && bookingProviderUserId === cardProviderUserId;
                               if (!(idMatch || userIdMatch)) return false;
+                              if ((b.meetingSubtype ?? null) !== cardSubtype) return false;
                               if (b.status === "CANCELLED") return false;
                               const scheduledMs = b.scheduledAt ? new Date(b.scheduledAt).getTime() : 0;
                               const createdMs = b.createdAt ? new Date(b.createdAt).getTime() : 0;

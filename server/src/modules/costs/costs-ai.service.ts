@@ -402,10 +402,11 @@ Return ONLY a valid JSON array with objects having these exact fields:
 
 This provider offers MULTIPLE services (e.g. IVF Clinic + Surrogacy Agency + Egg Donor Agency). You must FIRST decide which service the uploaded cost sheet covers by reading the document content, then pick the right classification path:
 
-STEP 1 - Emit "serviceTypes" array (1+ tags) from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor". Detection cues:
+STEP 1 - Emit "serviceTypes" array (1+ tags) from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal". Detection cues:
 - "ivf_clinic": IVF cycle / FET / embryo creation / shipping embryos / PGT / embryo transfer / stimulation / retrieval done by a clinic, clinical fees stated.
 - "surrogacy": "Surrogate Compensation", "Surrogacy", "Gestational Carrier" / "GC fee", "Surrogate Insurance", "Surrogate Screening", "Surrogate Sign-on bonus", "Maternity Leave", "Lloyds of London", "Newborn Insurance", "Escrow", "Agency fee" in a surrogacy context.
 - "egg_donor": "Egg Donor Compensation", "Egg Donor Agency Fees", "Donor screening", "Donor IVF cycle", "Fresh Donor Cycle", "Frozen Egg Lot", "donor matching fee".
+- "legal": the WHOLE document is a law firm / attorney fee schedule - "Retainer", "Gestational Carrier Agreement drafting", "Donor Agreement review", "Pre-Birth Parentage Order", "Second-Parent Adoption", "Escrow management (legal)", hourly attorney rates. Do NOT use this tag for legal LINE ITEMS inside an agency or clinic cost sheet - those keep the agency/clinic tag.
 - "sperm_donor": "Sperm Donor", "Sperm Bank", "Vial of sperm", per-vial pricing.
 A bundled sheet can have multiple tags (e.g. an Egg Donor agency that includes the surrogacy match -> ["egg_donor", "surrogacy"]).
 
@@ -559,7 +560,7 @@ programName: the document's branded program name (e.g. "Unlimited IVF Until Live
 
 country: the clinic's country of delivery. Use the full English name ("United States", "Mexico", "Colombia"). Default to "United States" when nothing in the document indicates otherwise.
 
-serviceTypes: an ARRAY of service-type tags from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor". A single cost sheet can be tagged with MULTIPLE if the program bundles services (e.g. an Egg Donor agency that includes the surrogacy match -> ["egg_donor", "surrogacy"]). Detection rules:
+serviceTypes: an ARRAY of service-type tags from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal". A single cost sheet can be tagged with MULTIPLE if the program bundles services (e.g. an Egg Donor agency that includes the surrogacy match -> ["egg_donor", "surrogacy"]). Detection rules:
 - "ivf_clinic" - any IVF cycle / FET / embryo creation / shipping embryos line items, OR the provider type itself is an IVF clinic.
 - "surrogacy" - presence of "Surrogate Compensation", "Surrogacy", "Gestational Carrier" / "GC fee", "Surrogate Insurance", "Surrogate Screening", "Lloyds of London", "Newborn Insurance".
 - "egg_donor" - presence of "Egg Donor Compensation", "Egg Donor Agency Fees", "Donor screening", "Donor IVF cycle", "Fresh Donor Cycle", "Frozen Egg Lot".
@@ -581,7 +582,7 @@ ${subtypeOutputSchema}
     "reasoning": "<one sentence>",
     "programName": "<label>",
     "country": "<country>",
-    "serviceTypes": [<one or more of: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor">]
+    "serviceTypes": [<one or more of: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal">]
   }
 }
 ${subtypeTrailingNote}`;
@@ -794,7 +795,7 @@ ${subtypeTrailingNote}`;
       // serviceTypes - validate the AI's array against the allowed tokens.
       // Fall back to a single default tag derived from the provider type
       // so a malformed/missing field still gives the program a sensible tag.
-      const ALLOWED_TAGS = new Set(["ivf_clinic", "surrogacy", "egg_donor", "sperm_donor"]);
+      const ALLOWED_TAGS = new Set(["ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal"]);
       const rawTags = Array.isArray(cls.serviceTypes) ? cls.serviceTypes : [];
       let serviceTypes = rawTags
         .map((t: any) => String(t).toLowerCase().trim())

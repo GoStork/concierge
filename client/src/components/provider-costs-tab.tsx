@@ -315,6 +315,7 @@ function serviceTagsFromSubTypes(subTypes: string[] | null | undefined): string[
     if (leaf === "surrogacy") tags.add("surrogacy");
     else if (leaf === "egg_donor_fresh" || leaf === "egg_donor_frozen") tags.add("egg_donor");
     else if (leaf === "sperm_donor") tags.add("sperm_donor");
+    else if (leaf === "legal") tags.add("legal");
     else tags.add("ivf_clinic"); // any IVF subtype id
   }
   return Array.from(tags);
@@ -330,6 +331,7 @@ const COVERAGE_LEAVES: { id: string; label: string; serviceTag: string }[] = [
   { id: "egg_donor",         label: "Egg Donor",   serviceTag: "egg_donor" },
   { id: "sperm_donor",       label: "Sperm Donor", serviceTag: "sperm_donor" },
   { id: "ivf",               label: "IVF",         serviceTag: "ivf_clinic" },
+  { id: "legal",             label: "Legal",       serviceTag: "legal" },
 ];
 
 // Backwards alias - some call sites still import NON_IVF_LEAVES.
@@ -717,8 +719,9 @@ const SERVICE_TYPE_LABELS: Record<string, string> = {
   surrogacy: "Surrogacy",
   egg_donor: "Egg Donor",
   sperm_donor: "Sperm Donor",
+  legal: "Legal",
 };
-const ALL_SERVICE_TYPES = ["surrogacy", "egg_donor", "sperm_donor", "ivf_clinic"] as const;
+const ALL_SERVICE_TYPES = ["surrogacy", "egg_donor", "sperm_donor", "ivf_clinic", "legal"] as const;
 
 interface ServiceInfo {
   providerTypeId: string;
@@ -3280,6 +3283,7 @@ function ProgramsView({
       if (n.includes("surrogacy")) tags.add("surrogacy");
       if (n.includes("egg donor") || n.includes("egg bank")) tags.add("egg_donor");
       if (n.includes("sperm bank") || n.includes("sperm donor")) tags.add("sperm_donor");
+      if (n.includes("legal")) tags.add("legal");
     }
     // Defensive: if mapping produced nothing (unknown provider type name)
     // fall back to the full set instead of locking the clinic out.

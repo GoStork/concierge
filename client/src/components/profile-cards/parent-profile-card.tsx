@@ -58,7 +58,9 @@ function buildSections(user: SessionUser): ProfileSection[] {
   if (!p) return sections;
 
   const journey: ProfileRow[] = [];
-  if (nonEmpty(p.journeyStage)) journey.push({ label: "Stage", value: p.journeyStage! });
+  // journeyStage (Eva's AI-saved self-note) is deliberately NOT displayed -
+  // the sidebar's Match Status chip shows the server-derived ladder, which
+  // is always current; showing both confused people whenever they diverged.
   if (p.interestedServices?.length > 0) journey.push({ label: "Interested In", value: p.interestedServices.join(", ") });
   const firstIvf = boolLabel(p.isFirstIvf);
   if (firstIvf) journey.push({ label: "First IVF", value: firstIvf });

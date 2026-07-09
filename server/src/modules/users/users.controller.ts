@@ -47,6 +47,23 @@ const ROLES_NEEDING_VIDEO_ROOM = [
   "DOCTOR",
 ];
 
+// Combine the names of all logins on a shared parent account into one
+// display name. Same last name -> "Eran & Dana Amir"; different last
+// names -> "Eran Amir & Dana Levy". Solo accounts pass through as-is.
+function combineParentNames(members: { name: string | null }[]): string {
+  const names = members.map(m => (m.name || "").trim()).filter(Boolean);
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  const parts = names.map(n => n.split(/\s+/));
+  const lastNames = parts.map(p => (p.length >= 2 ? p[p.length - 1].toLowerCase() : null));
+  const sameLast = lastNames.every(l => l && l === lastNames[0]);
+  if (sameLast) {
+    const firsts = parts.map(p => p.slice(0, -1).join(" "));
+    return `${firsts.join(" & ")} ${parts[0][parts[0].length - 1]}`;
+  }
+  return names.join(" & ");
+}
+
 @ApiTags("Users")
 @Controller("api")
 export class UsersController {
@@ -982,7 +999,7 @@ export class UsersController {
     }
     const parents = await this.prisma.user.findMany({
       where: { roles: { has: "PARENT" } },
-      select: { id: true, parentAccountId: true },
+      select: { id: true, name: true, parentAccountId: true },
     });
     const ids = parents.map(p => p.id);
     const accountIds = Array.from(new Set(parents.map(p => p.parentAccountId).filter(Boolean))) as string[];
@@ -1082,6 +1099,43 @@ export class UsersController {
     for (const q of quotes) overview[q.parentUserId]?.costSheets.push(q);
     for (const inv of invoices) overview[inv.parentUserId]?.invoices.push(inv);
     for (const a of agreements) overview[a.parentUserId]?.agreements.push(a);
+
+    // Shared-account (couple) rollup: partners on the same parentAccountId
+    // share one journey, so each member's row shows the ACCOUNT's
+    // aggregates - the same match status, activity, cost sheets, invoices,
+    // and agreements regardless of which login the artifact was stamped
+    // with. `household` lets the UI badge the logins as one family.
+    const membersByAccount = new Map<string, typeof parents>();
+    for (const p of parents) {
+      if (!p.parentAccountId) continue;
+      const list = membersByAccount.get(p.parentAccountId) || [];
+      list.push(p);
+      membersByAccount.set(p.parentAccountId, list);
+    }
+    const latestOf = (dates: any[]) =>
+      dates.filter(Boolean).sort((a, b) => new Date(a).getTime() - new Date(b).getTime()).pop() || null;
+    const byCreatedDesc = (a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    for (const members of Array.from(membersByAccount.values())) {
+      if (members.length < 2) continue;
+      const memberIds = members.map(m => m.id);
+      const bestStatus = memberIds
+        .map(id => overview[id]?.matchStatus || null)
+        .reduce((best, st) => (rank(st) > rank(best) ? st : best), null as string | null);
+      const latest = latestOf(memberIds.map(id => overview[id]?.updatedAt));
+      const costSheetsMerged = memberIds.flatMap(id => overview[id]?.costSheets || []).sort(byCreatedDesc);
+      const invoicesMerged = memberIds.flatMap(id => overview[id]?.invoices || []);
+      const agreementsMerged = memberIds.flatMap(id => overview[id]?.agreements || []).sort(byCreatedDesc);
+      const household = { memberIds, memberNames: members.map(m => m.name || "") };
+      for (const id of memberIds) {
+        if (!overview[id]) continue;
+        overview[id].matchStatus = bestStatus;
+        overview[id].updatedAt = latest;
+        overview[id].costSheets = costSheetsMerged;
+        overview[id].invoices = invoicesMerged;
+        overview[id].agreements = agreementsMerged;
+        overview[id].household = household;
+      }
+    }
     return overview;
   }
 
@@ -1130,30 +1184,6 @@ export class UsersController {
       },
       orderBy: { scheduledAt: "desc" },
     });
-
-    type ParentAgg = {
-      parentUser: any;
-      lastMeetingAt: Date | null;
-      meetingCount: number;
-      hasMeeting: boolean;
-    };
-    const parentAgg = new Map<string, ParentAgg>();
-    for (const b of bookings) {
-      if (!b.parentUserId || !b.parentUser) continue;
-      const existing = parentAgg.get(b.parentUserId);
-      if (!existing) {
-        parentAgg.set(b.parentUserId, {
-          parentUser: b.parentUser,
-          lastMeetingAt: b.scheduledAt,
-          meetingCount: 1,
-          hasMeeting: true,
-        });
-      } else {
-        existing.meetingCount += 1;
-        // bookings are ordered scheduledAt desc, so the first one we saw
-        // is already the latest - no update needed.
-      }
-    }
 
     // Each chat session = one match between this parent and this provider.
     // A parent can have multiple sessions (e.g. one for Surrogacy Q&A, one
@@ -1207,10 +1237,86 @@ export class UsersController {
         })
       : [];
     const matchedSurrogateById = new Map(matchedSurrogates.map(su => [su.id, su.reservedByParentId]));
-    const matchCallParents = new Set(
+
+    // Shared-account (couple) resolution: partners on the same
+    // parentAccountId share the chat session and the journey, so every
+    // aggregate below is keyed by ACCOUNT (falling back to the login id
+    // for solo parents) - never by the individual login. Otherwise a
+    // couple fragments into two rows: the session sits on whoever started
+    // the chat while a Match Call booked by the partner lands on a
+    // separate meeting-only row with no status.
+    const involvedUserIds = new Set<string>();
+    for (const b of bookings) if (b.parentUserId) involvedUserIds.add(b.parentUserId);
+    for (const cs of chatSessions) if (cs.userId) involvedUserIds.add(cs.userId);
+    for (const rid of Array.from(matchedSurrogateById.values())) if (rid) involvedUserIds.add(rid);
+    const involvedUsers = involvedUserIds.size
+      ? await this.prisma.user.findMany({
+          where: { id: { in: Array.from(involvedUserIds) } },
+          select: { id: true, parentAccountId: true },
+        })
+      : [];
+    const accountIdByUser = new Map<string, string | null>(involvedUsers.map(u => [u.id, u.parentAccountId]));
+    const accountIds = Array.from(new Set(involvedUsers.map(u => u.parentAccountId).filter(Boolean))) as string[];
+    const accountMembersList = accountIds.length
+      ? await this.prisma.user.findMany({
+          where: { parentAccountId: { in: accountIds }, roles: { has: "PARENT" } },
+          select: { id: true, name: true, email: true, mobileNumber: true, photoUrl: true, createdAt: true, parentAccountId: true },
+          orderBy: { createdAt: "asc" },
+        })
+      : [];
+    const membersByAccount = new Map<string, any[]>();
+    for (const m of accountMembersList) {
+      const list = membersByAccount.get(m.parentAccountId as string) || [];
+      list.push(m);
+      membersByAccount.set(m.parentAccountId as string, list);
+      accountIdByUser.set(m.id, m.parentAccountId);
+    }
+    const accountKey = (userId: string) => {
+      const acctId = accountIdByUser.get(userId);
+      return acctId ? `acct-${acctId}` : `user-${userId}`;
+    };
+    // All logins on the row's account, primary (the one the row's session
+    // or booking belongs to) first so the spread `...primary` fields and
+    // the /parents/:id navigation target stay stable.
+    const membersFor = (userId: string, fallbackUser: any) => {
+      const acctId = accountIdByUser.get(userId);
+      const members = (acctId ? membersByAccount.get(acctId) : null) || [];
+      if (members.length === 0) return fallbackUser ? [fallbackUser] : [];
+      return [...members].sort((a, b) => (a.id === userId ? -1 : b.id === userId ? 1 : 0));
+    };
+    const toMemberDto = (m: any) => ({ id: m.id, name: m.name, email: m.email, mobileNumber: m.mobileNumber, photoUrl: m.photoUrl });
+
+    // Parent-level aggregates (meeting count + last meeting), shared by
+    // every row that belongs to the same account.
+    type ParentAgg = {
+      parentUser: any;
+      lastMeetingAt: Date | null;
+      meetingCount: number;
+      hasMeeting: boolean;
+    };
+    const parentAgg = new Map<string, ParentAgg>();
+    for (const b of bookings) {
+      if (!b.parentUserId || !b.parentUser) continue;
+      const key = accountKey(b.parentUserId);
+      const existing = parentAgg.get(key);
+      if (!existing) {
+        parentAgg.set(key, {
+          parentUser: b.parentUser,
+          lastMeetingAt: b.scheduledAt,
+          meetingCount: 1,
+          hasMeeting: true,
+        });
+      } else {
+        existing.meetingCount += 1;
+        // bookings are ordered scheduledAt desc, so the first one we saw
+        // is already the latest - no update needed.
+      }
+    }
+
+    const matchCallAccounts = new Set(
       bookings
         .filter((b: any) => b.meetingSubtype === "MATCH_CALL" && !["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"].includes(b.status))
-        .map((b: any) => b.parentUserId)
+        .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
         .filter(Boolean),
     );
 
@@ -1301,11 +1407,13 @@ export class UsersController {
 
     // Build the rows: one per chat session.
     const rows: any[] = [];
-    const parentsWithSession = new Set<string>();
+    const accountsWithSession = new Set<string>();
     for (const cs of chatSessions) {
       if (!cs.userId || !cs.user) continue;
-      parentsWithSession.add(cs.userId);
-      const agg = parentAgg.get(cs.userId);
+      const key = accountKey(cs.userId);
+      accountsWithSession.add(key);
+      const agg = parentAgg.get(key);
+      const rowMembers = membersFor(cs.userId, cs.user);
       const rowInvoices = invoicesBySession.get(cs.id) || [];
       const rowAgreements = agreementsBySession.get(cs.id) || [];
       // Most-advanced journey stage wins. Mirrors the 13-stage spine:
@@ -1316,9 +1424,10 @@ export class UsersController {
           ? "AGREEMENT_SIGNED"
           : rowInvoices.some((inv: any) => inv.status === "PAID")
             ? "DEPOSIT_PAID"
-            : cs.subjectProfileId && matchedSurrogateById.get(cs.subjectProfileId) === cs.userId
+            : cs.subjectProfileId && matchedSurrogateById.get(cs.subjectProfileId)
+                && accountKey(matchedSurrogateById.get(cs.subjectProfileId) as string) === key
               ? "MATCHED"
-              : matchCallParents.has(cs.userId)
+              : matchCallAccounts.has(key)
                 ? "MATCH_CALL"
                 : cs.status;
 
@@ -1333,6 +1442,11 @@ export class UsersController {
         // parent. UI keeps them visible per row so each row reads
         // standalone in the scan-down direction.
         ...cs.user,
+        // Couples: `name` becomes the combined household name and
+        // `members` carries each login's contact info so the table can
+        // show both partners on the one row.
+        name: combineParentNames(rowMembers) || cs.user.name,
+        members: rowMembers.map(toMemberDto),
         lastMeetingAt: agg?.lastMeetingAt || null,
         meetingCount: agg?.meetingCount || 0,
         source: agg?.hasMeeting ? "both" : "chat",
@@ -1355,14 +1469,17 @@ export class UsersController {
 
     // Meeting-only parents (had a booking with us but never opened a
     // chat) still get one row each, with no session-level fields.
-    for (const [parentId, agg] of parentAgg) {
-      if (parentsWithSession.has(parentId)) continue;
+    for (const [key, agg] of parentAgg) {
+      if (accountsWithSession.has(key)) continue;
+      const aggMembers = membersFor(agg.parentUser.id, agg.parentUser);
       rows.push({
-        rowId: `meeting-${parentId}`,
+        rowId: `meeting-${key}`,
         sessionId: null,
         matchStatus: null,
         chatStartedAt: null,
         ...agg.parentUser,
+        name: combineParentNames(aggMembers) || agg.parentUser.name,
+        members: aggMembers.map(toMemberDto),
         lastMeetingAt: agg.lastMeetingAt,
         meetingCount: agg.meetingCount,
         source: "meeting",

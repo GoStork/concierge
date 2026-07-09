@@ -1613,6 +1613,35 @@ const sendMessageMutation = useMutation({
   const isWhisperPhase = !hasJoined && !isConsultationBooked && (selectedSession?.pendingQuestions || 0) > 0;
   const canReply = hasJoined || isWhisperPhase || isConsultationBooked;
 
+  // Journey-ladder match status for the side panel: the parent-contacts
+  // endpoint already computes CONSULTATION_BOOKED -> ... -> AGREEMENT_SIGNED
+  // per session - reuse it instead of the coarse session status, so the
+  // panel says "Matched"/"Deposit Paid"/"Agreement Signed" once true.
+  const parentContactsQuery = useQuery<any[]>({
+    queryKey: [`/api/providers/${(user as any)?.providerId}/parent-contacts`],
+    queryFn: async () => {
+      const res = await fetch(`/api/providers/${(user as any)?.providerId}/parent-contacts`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!(user as any)?.providerId,
+    staleTime: 15_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+  const journeyMatchStatus = (() => {
+    const row = (parentContactsQuery.data || []).find((r: any) => r.sessionId === selectedSessionId);
+    const labels: Record<string, string> = {
+      CONSULTATION_BOOKED: "Call Booked",
+      PROVIDER_CONNECTED: "Connected",
+      MATCH_CALL: "Match Call",
+      MATCHED: "Matched",
+      DEPOSIT_PAID: "Deposit Paid",
+      AGREEMENT_SIGNED: "Agreement Signed",
+    };
+    return row?.matchStatus ? labels[row.matchStatus] || null : null;
+  })();
+
   // Online presence tracking
   const onlineProviderIds = useMemo(() => {
     if (!isParent) return [];
@@ -2507,7 +2536,9 @@ const sendMessageMutation = useMutation({
           brandColor={brandColor}
           user={detail.user}
           matchStatus={
-            hasJoined
+            journeyMatchStatus
+              ? { label: journeyMatchStatus, tone: "success" }
+              : hasJoined
               ? { label: "Connected", tone: "success" }
               : isConsultationBooked
               ? { label: "Call Booked", tone: "success" }
@@ -2792,7 +2823,12 @@ const sendMessageMutation = useMutation({
                   <div className="border-b pb-4 mb-4" data-testid="consultation-status-section">
                     <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Match Status</h4>
                     <div className="space-y-2">
-                      {hasJoined ? (
+                      {journeyMatchStatus ? (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium w-fit" data-testid="badge-journey-status">
+                          <CheckCircle2 className="w-3 h-3" />
+                          {journeyMatchStatus}
+                        </div>
+                      ) : hasJoined ? (
                         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium w-fit" data-testid="badge-provider-connected">
                           <CheckCircle2 className="w-3 h-3" />
                           Connected

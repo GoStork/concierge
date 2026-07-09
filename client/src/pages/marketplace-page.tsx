@@ -6,6 +6,7 @@ import { api } from "@shared/routes";
 import { type ProviderWithRelations } from "@shared/schema";
 import { hasProviderRole } from "@shared/roles";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -980,6 +981,36 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
     );
   }
 
+  // Bank skip-to-checkout: parents can buy Egg Bank / Sperm Bank donors with
+  // a published total cost directly - one click creates the session + cost
+  // sheet + invoice and lands in the new chat. Agency donors never get this.
+  const { toast } = useToast();
+  const isParentViewer = !(user as any)?.providerId && !((user as any)?.roles || []).includes("GOSTORK_ADMIN");
+  const bankTypeName = type === "egg-donor" ? "Egg Bank" : type === "sperm-donor" ? "Sperm Bank" : null;
+  const checkoutFor = (donor: any) => {
+    if (!isParentViewer || !bankTypeName) return undefined;
+    const isBankDonor = ((donor.provider?.services || []) as any[]).some((sv: any) => sv.providerType?.name === bankTypeName);
+    if (!isBankDonor || !(Number(donor.totalCost) > 0)) return undefined;
+    return async () => {
+      recordProfileView(donor.id, type);
+      try {
+        const res = await fetch("/api/bank-checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ donorId: donor.id, donorType: type, providerId: donor.providerId }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.message || "Checkout failed");
+        if (body.status === "already_pending") toast({ title: "Invoice already waiting", description: "Complete the payment in the chat." });
+        if (body.status === "already_paid") toast({ title: "Already purchased", description: "Your payment for this donor is complete." });
+        navigate(`/chat/${body.sessionId}`);
+      } catch (e: any) {
+        toast({ title: "Checkout failed", description: e?.message, variant: "destructive" });
+      }
+    };
+  };
+
   const renderCard = (donor: any, mode: SwipeDeckCardMode, api: SwipeDeckCardApi) => {
     const profile = mapDonor(donor);
     const tabs = getTabs(profile);
@@ -1003,6 +1034,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
         onPass={api.onPass}
         onUndo={mode === "active" ? api.onUndo : (passedIds.includes(donor.id) ? () => onUndo(donor.id) : undefined)}
         onMessage={() => { recordProfileView(donor.id, type); navigate(`/concierge?donorId=${donor.id}&donorType=${type}&providerId=${donor.providerId}&photoUrl=${encodeURIComponent(donor.photoUrl || "")}`); }}
+        onCheckout={checkoutFor(donor)}
         onViewFullProfile={() => { recordProfileView(donor.id, type); navigate(`/${typeToUrlSlug(type)}/${donor.providerId}/${donor.id}`, { state: { initialPhotoUrl: donor.photoUrl, deckList: (filtered || []).map((d) => ({ id: d.id, providerId: d.providerId, photoUrl: d.photoUrl })), deckIndex: (filtered || []).findIndex((d) => d.id === donor.id) } }); }}
       />
     );

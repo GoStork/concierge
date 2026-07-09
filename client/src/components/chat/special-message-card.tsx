@@ -11,6 +11,8 @@ import { InvoiceDraftApprovalCard } from "./invoice-draft-approval-card";
 import { AgreementDraftApprovalCard } from "./agreement-draft-approval-card";
 import { ProposedTimesCard } from "./proposed-times-card";
 import { InvoiceCard } from "@/components/invoice-card";
+import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
+import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
 
 // Phase 4: provider-side match readiness buttons. The agency answers on the
 // surrogate's behalf after a match call; "yes" plus the parent's yes fires
@@ -237,6 +239,16 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
 
   if (msg.uiCardType === "attachment") {
     return <AttachmentMessageCard data={data} />;
+  }
+
+  // Phase 6: bank skip-to-checkout offer (parent-facing Buy button).
+  if (msg.uiCardType === "bank_checkout") {
+    return <BankCheckoutCard data={data} brandColor={brandColor} />;
+  }
+
+  // auto_send agreements: parent supplies partner signer details (or "just me").
+  if (msg.uiCardType === "partner_info_request" && sessionId) {
+    return <PartnerInfoRequestCard data={data} messageId={msg.id} sessionId={sessionId} brandColor={brandColor} viewerRole={viewerRole} />;
   }
 
   if (msg.uiCardType === "video_invite") {

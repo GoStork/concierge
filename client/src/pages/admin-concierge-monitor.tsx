@@ -622,6 +622,33 @@ export default function AdminConciergeMonitor() {
   // the same subject thumbnail / "re: …" subtitle the provider view uses.
   const selectedSummary = selectedSessionId ? sessions.find(s => s.id === selectedSessionId) : null;
 
+  // Journey-ladder match status (reuses the provider parent-contacts
+  // endpoint, admin-permitted): Matched / Deposit Paid / Agreement Signed
+  // instead of the coarse Connected / Call Booked once the journey advances.
+  const monitorProviderId = (selectedSummary as any)?.providerId || (detail as any)?.providerId || null;
+  const adminContactsQuery = useQuery<any[]>({
+    queryKey: [`/api/providers/${monitorProviderId}/parent-contacts`],
+    queryFn: async () => {
+      const res = await fetch(`/api/providers/${monitorProviderId}/parent-contacts`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!monitorProviderId,
+    staleTime: 15_000,
+  });
+  const journeyMatchStatus = (() => {
+    const row = (adminContactsQuery.data || []).find((r: any) => r.sessionId === selectedSessionId);
+    const labels: Record<string, string> = {
+      CONSULTATION_BOOKED: "Call Booked",
+      PROVIDER_CONNECTED: "Connected",
+      MATCH_CALL: "Match Call",
+      MATCHED: "Matched",
+      DEPOSIT_PAID: "Deposit Paid",
+      AGREEMENT_SIGNED: "Agreement Signed",
+    };
+    return row?.matchStatus ? labels[row.matchStatus] || null : null;
+  })();
+
   // Build detail content when a session is selected
   // Only render the full chat once BOTH session detail and bookings are ready.
   // This prevents the booking card from popping in after messages are already shown.
@@ -776,7 +803,9 @@ export default function AdminConciergeMonitor() {
         brandColor={brandColor}
         user={detail.user}
         matchStatus={
-          detail.providerJoinedAt
+          journeyMatchStatus
+            ? { label: journeyMatchStatus, tone: "success" }
+            : detail.providerJoinedAt
             ? { label: "Connected", tone: "success" }
             : selectedSummary?.status === "CONSULTATION_BOOKED" || detail.status === "CONSULTATION_BOOKED"
             ? { label: "Call Booked", tone: "success" }
@@ -963,6 +992,13 @@ export default function AdminConciergeMonitor() {
           );
           const status = detail.status;
           const matchBadge = (() => {
+            // Prefer the journey ladder (Match Call / Matched / Deposit Paid /
+            // Agreement Signed) computed server-side per session - the raw
+            // session status stalls at CONSULTATION_BOOKED/PROVIDER_CONNECTED
+            // long after the journey has moved on.
+            if (journeyMatchStatus) {
+              return { label: journeyMatchStatus, className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };
+            }
             switch (status) {
               case "PROVIDER_CONNECTED":
                 return { label: "Connected", className: "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]", icon: <CheckCircle2 className="w-3 h-3" /> };

@@ -10,7 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check, CheckCircle2, Ban, UserCheck } from "lucide-react";
+import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check, CheckCircle2, Ban, UserCheck, Users } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
@@ -40,6 +40,23 @@ function toDateParam(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${m}-${day}`;
+}
+
+// Chip marking a row that belongs to a shared parent account (a couple
+// with two logins). Hover shows every member on the account.
+function HouseholdBadge({ memberNames, testId }: { memberNames: string[]; testId: string }) {
+  if (!memberNames || memberNames.length < 2) return null;
+  return (
+    <span
+      className="shrink-0 inline-flex items-center gap-1 text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}
+      title={`Shared account: ${memberNames.filter(Boolean).join(", ")}`}
+      data-testid={testId}
+    >
+      <Users className="w-3 h-3" />
+      Couple
+    </span>
+  );
 }
 
 function CopyButton({ value, testId }: { value: string; testId: string }) {
@@ -398,6 +415,7 @@ function GostorkAdminUsersView() {
                     )}
                     <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/users/${member.id}`); }} data-testid={`link-user-name-${member.id}`}>{member.name || "-"}</button>
                     {member.name && <CopyButton value={member.name} testId={`btn-copy-name-${member.id}`} />}
+                    <HouseholdBadge memberNames={overview[member.id]?.household?.memberNames || []} testId={`badge-couple-${member.id}`} />
                     {member.isDisabled && (
                       <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-${member.id}`}>Disabled</span>
                     )}
@@ -577,7 +595,9 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       if (dateTo && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) > new Date(`${dateTo}T23:59:59`))) return false;
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
-      return [p.name, p.email, p.mobileNumber].filter(Boolean).some((f: string) => f.toLowerCase().includes(q));
+      // Search both partners on a shared account, not just the primary login.
+      const memberFields = (p.members || []).flatMap((m: any) => [m.name, m.email, m.mobileNumber]);
+      return [p.name, p.email, p.mobileNumber, ...memberFields].filter(Boolean).some((f: string) => f.toLowerCase().includes(q));
     }),
     (p: any, key: string) => {
       switch (key) {
@@ -723,21 +743,38 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                     </div>
                     <span data-testid={`text-parent-name-${row.id}`}>{row.name || "-"}</span>
                     {row.name && <CopyButton value={row.name} testId={`btn-copy-name-${row.rowId}`} />}
+                    <HouseholdBadge memberNames={(row.members || []).map((m: any) => m.name)} testId={`badge-couple-${row.rowId}`} />
                   </div>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell whitespace-nowrap" data-testid={`text-parent-email-${row.id}`}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate max-w-[150px] inline-block align-middle" title={row.email}>{row.email}</span>
-                    <CopyButton value={row.email} testId={`btn-copy-email-${row.rowId}`} />
+                  {/* Couples: one line per login so the provider can reach either partner */}
+                  <div className="flex flex-col gap-0.5">
+                    {((row.members?.length > 1 ? row.members : [{ id: row.id, email: row.email }]) as any[]).map(m => (
+                      <div key={m.id} className="flex items-center gap-1.5">
+                        <span className="truncate max-w-[150px] inline-block align-middle" title={m.email}>{m.email}</span>
+                        <CopyButton value={m.email} testId={`btn-copy-email-${row.rowId}-${m.id}`} />
+                      </div>
+                    ))}
                   </div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell whitespace-nowrap" data-testid={`text-parent-mobile-${row.id}`}>
-                  {row.mobileNumber ? (
-                    <div className="flex items-center gap-1 text-sm">
-                      <span className="whitespace-nowrap">{formatPhoneDisplay(row.mobileNumber)}</span>
-                      <CopyButton value={row.mobileNumber} testId={`btn-copy-mobile-${row.rowId}`} />
-                    </div>
-                  ) : <span className="text-muted-foreground text-sm">-</span>}
+                  {(() => {
+                    // Distinct numbers across the household - partners often
+                    // share one phone, so dedupe by value.
+                    const source: any[] = row.members?.length > 1 ? row.members : [{ id: row.id, mobileNumber: row.mobileNumber }];
+                    const mobiles = Array.from(new Map(source.filter(m => m.mobileNumber).map(m => [m.mobileNumber, m])).values()) as any[];
+                    if (mobiles.length === 0) return <span className="text-muted-foreground text-sm">-</span>;
+                    return (
+                      <div className="flex flex-col gap-0.5">
+                        {mobiles.map(m => (
+                          <div key={m.id} className="flex items-center gap-1 text-sm">
+                            <span className="whitespace-nowrap">{formatPhoneDisplay(m.mobileNumber)}</span>
+                            <CopyButton value={m.mobileNumber} testId={`btn-copy-mobile-${row.rowId}-${m.id}`} />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   {row.serviceType ? (

@@ -188,7 +188,19 @@ export class ProvidersController {
           },
         },
       },
-      include: { provider: { select: { id: true, name: true, logoUrl: true } } },
+      include: {
+        provider: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            // Approved service-type names let the client show the bank
+            // skip-to-checkout Buy button ONLY on Egg Bank / Sperm Bank
+            // donors (agency donors go through the match process).
+            services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
+          },
+        },
+      },
       orderBy: [SPONSORED_FIRST_ORDER, { createdAt: "desc" }],
     });
     const hasMore = rows.length > PAGE_SIZE;
@@ -238,7 +250,19 @@ export class ProvidersController {
           },
         },
       },
-      include: { provider: { select: { id: true, name: true, logoUrl: true } } },
+      include: {
+        provider: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            // Approved service-type names let the client show the bank
+            // skip-to-checkout Buy button ONLY on Egg Bank / Sperm Bank
+            // donors (agency donors go through the match process).
+            services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
+          },
+        },
+      },
       orderBy: [SPONSORED_FIRST_ORDER, { createdAt: "desc" }],
     });
     const hasMore = rows.length > PAGE_SIZE;
@@ -384,7 +408,19 @@ export class ProvidersController {
           },
         },
       },
-      include: { provider: { select: { id: true, name: true, logoUrl: true } } },
+      include: {
+        provider: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            // Approved service-type names let the client show the bank
+            // skip-to-checkout Buy button ONLY on Egg Bank / Sperm Bank
+            // donors (agency donors go through the match process).
+            services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
+          },
+        },
+      },
       orderBy: [SPONSORED_FIRST_ORDER, { createdAt: "desc" }],
     });
     const hasMore = rows.length > PAGE_SIZE;

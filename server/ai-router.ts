@@ -7303,6 +7303,25 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       finalContent = finalContent.replace(/\[\[AGREEMENT_PREVIEW\]\]/g, "").trim();
     }
 
+    // Phase 6: [[LAWYER_CONNECT]] - parent said yes to the lawyer intro (or
+    // asked for legal help). Side effect (auto-pick lawyer + 3-way chat)
+    // fires after the main message is saved; tag stripped here.
+    let lawyerConnectRequested = false;
+    if (finalContent.includes("[[LAWYER_CONNECT]]")) {
+      lawyerConnectRequested = true;
+      finalContent = finalContent.replace(/\[\[LAWYER_CONNECT\]\]/g, "").trim();
+    }
+
+    // Phase 6: [[BANK_CHECKOUT:DONOR_ID]] - parent wants to buy a BANK donor
+    // directly. Side effect (bank_checkout card with price + Buy button)
+    // fires after the main message is saved; tag stripped here.
+    let bankCheckoutDonorId: string | null = null;
+    const bankCheckoutMatch = finalContent.match(/\[\[BANK_CHECKOUT:([^\]]+)\]\]/);
+    if (bankCheckoutMatch) {
+      bankCheckoutDonorId = bankCheckoutMatch[1].trim();
+      finalContent = finalContent.replace(/\[\[BANK_CHECKOUT:[^\]]*\]\]/g, "").trim();
+    }
+
     // Resolve [[MEETING_CARD:<bookingId>]] tags into hydrated Booking objects so
     // the parent can join/reschedule/cancel an existing meeting inline. The AI
     // emits only the bookingId (from get_parent_meetings); the server re-fetches
@@ -7546,6 +7565,24 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         await postAgreementPreview(replySessionId);
       } catch (e: any) {
         console.error("[AGREEMENT_PREVIEW] Failed to post preview:", e?.message);
+      }
+    }
+
+    if (bankCheckoutDonorId && replySessionId) {
+      try {
+        const { postBankCheckoutCard } = await import("./bank-checkout-flow");
+        await postBankCheckoutCard(replySessionId, bankCheckoutDonorId);
+      } catch (e: any) {
+        console.error("[BANK_CHECKOUT] Failed to post checkout card:", e?.message);
+      }
+    }
+
+    if (lawyerConnectRequested && replySessionId) {
+      try {
+        const { connectLawyer } = await import("./lawyer-intro-flow");
+        await connectLawyer(replySessionId, userId);
+      } catch (e: any) {
+        console.error("[LAWYER_CONNECT] Failed to connect lawyer:", e?.message);
       }
     }
 

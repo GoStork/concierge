@@ -230,6 +230,13 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`[CONSULTATION] Created session ${targetSessionId} for provider ${consultProviderId}`);
     }
 
+    // Phase 6: first call with a surrogacy / egg-donation agency = the
+    // commitment signal for the one-time lawyer-intro offer (fire and
+    // forget; internally idempotent via lawyerIntroOfferedAt).
+    import("../../../lawyer-intro-flow")
+      .then(({ maybeOfferLawyerIntro }) => maybeOfferLawyerIntro(parentUserId, consultProviderId))
+      .catch((e: any) => this.logger.warn(`[lawyer-intro] Offer hook failed: ${e?.message}`));
+
     // Once the parent has booked a consultation with this provider, any pending
     // whispers on OTHER (anonymous) sessions between the same parent+provider
     // are moot - the provider can talk to the parent directly now. Mark them
