@@ -19,6 +19,7 @@ export const PROVIDER_ROLES = [
   "SCHEDULER",
   "DOCTOR",
   "LAWYER",
+  "LEGAL_ASSISTANT",
   "BILLING_MANAGER",
 ] as const;
 
@@ -108,7 +109,7 @@ export const COORDINATOR_SUBJECT_TYPES: Record<string, string[]> = {
 // Roles that can access ALL session types from their provider without subjectType restriction.
 // LAWYER mirrors DOCTOR: cross-subject, write-capable. They handle legal substance across any
 // session at a Legal Services provider.
-export const ALL_SESSION_PROVIDER_ROLES = ["PROVIDER_ADMIN", "DOCTOR", "LAWYER", "SCHEDULER", "BILLING_MANAGER"] as const;
+export const ALL_SESSION_PROVIDER_ROLES = ["PROVIDER_ADMIN", "DOCTOR", "LAWYER", "LEGAL_ASSISTANT", "SCHEDULER", "BILLING_MANAGER"] as const;
 
 // Returns true if a provider staff member's roles allow them to access a session with the given subjectType.
 // If subjectType is null/undefined (untagged session), all provider staff can access it.

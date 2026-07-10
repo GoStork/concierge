@@ -321,7 +321,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                 {/* Full-screen confetti for celebration-flagged messages
                     (e.g. "both sides said yes" match announcement) */}
                 {(msg.uiCardData as any)?.celebration && (
-                  <CelebrationBurst messageId={msg.id} createdAt={msg.createdAt} />
+                  <CelebrationBurst messageId={msg.id} createdAt={msg.createdAt} kind={(msg.uiCardData as any).celebration} />
                 )}
 
                 {/* Message bubble + timestamp below */}

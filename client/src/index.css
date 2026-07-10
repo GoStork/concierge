@@ -577,3 +577,27 @@ input[type="time"]::-webkit-date-and-time-value {
   border: none;
   display: block;
 }
+
+/* Milestone celebration: balloons float up the screen (celebration-burst.tsx).
+   Rise covers the full viewport plus a margin; sway drifts sideways via the
+   per-balloon --balloon-drift custom property. */
+@keyframes balloon-rise {
+  0%   { transform: translateY(30vh); opacity: 0; }
+  6%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { transform: translateY(-130vh); opacity: 0; }
+}
+@keyframes balloon-sway {
+  from { transform: translateX(calc(var(--balloon-drift, 16px) * -1)) rotate(-3deg); }
+  to   { transform: translateX(var(--balloon-drift, 16px)) rotate(3deg); }
+}
+
+/* Milestone celebration: fireworks (celebration-burst.tsx). iMessage-style -
+   the whole screen dims to near-black while the canvas show runs, then
+   releases. Duration must match FIREWORKS_SHOW_MS. */
+@keyframes fireworks-dim {
+  0%   { opacity: 0; }
+  7%   { opacity: 0.72; }
+  86%  { opacity: 0.72; }
+  100% { opacity: 0; }
+}

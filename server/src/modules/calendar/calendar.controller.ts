@@ -196,13 +196,25 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       ? (await this.prisma.user.findMany({ where: { parentAccountId: parentAccount.parentAccountId }, select: { id: true } })).map(u => u.id)
       : [parentUserId];
 
-    const existingSession = sessionTitle
-      ? await this.prisma.aiChatSession.findFirst({
-          where: { userId: { in: accountIds }, providerId: consultProviderId, title: sessionTitle },
-          orderBy: { updatedAt: "desc" },
-          select: { id: true },
-        })
-      : null;
+    const existingSession =
+      (sessionTitle
+        ? await this.prisma.aiChatSession.findFirst({
+            where: { userId: { in: accountIds }, providerId: consultProviderId, title: sessionTitle },
+            orderBy: { updatedAt: "desc" },
+            select: { id: true },
+          })
+        : null)
+      // Legal chats are firm-level (no per-profile disambiguation) and are
+      // titled "Legal - <firm>" by connectLawyer, so the exact-title match
+      // above misses them and booking a call with the lawyer would spawn a
+      // duplicate 3-way chat. Reuse the existing legal session instead.
+      ?? (body.subjectType === "legal"
+        ? await this.prisma.aiChatSession.findFirst({
+            where: { userId: { in: accountIds }, providerId: consultProviderId, subjectType: "legal" },
+            orderBy: { updatedAt: "desc" },
+            select: { id: true },
+          })
+        : null);
 
     let targetSessionId: string;
     if (existingSession) {
@@ -315,17 +327,38 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       });
     }
 
+    // Booking a consultation is the journey-stage transition - persist it so the
+    // AI router activates POST-BOOKING CALL PREP on the next parent message.
+    if (parentAccount?.parentAccountId) {
+      await this.prisma.intendedParentProfile.update({
+        where: { parentAccountId: parentAccount.parentAccountId },
+        data: { journeyStage: "Consultation Requested" },
+      }).catch(() => {});
+    }
+
     // Send confirmation message back to the AI concierge chat
     if (body.aiSessionId) {
       const conciergeSessionId = body.aiSessionId;
+
+      // Post-booking turns are post-match territory (call prep, next cycles) -
+      // handled by Tier 2's full prompt. One-way door, same as [[CURATION]];
+      // no-op for sessions where curation already fired.
+      await this.prisma.aiChatSession.update({
+        where: { id: conciergeSessionId },
+        data: { tier2Active: true },
+      }).catch(() => {});
 
       // Build next-step goals from the parent's profile flags
       const parentProfile = parentAccount?.parentAccountId
         ? await this.prisma.intendedParentProfile.findUnique({
             where: { parentAccountId: parentAccount.parentAccountId },
-            select: { needsEggDonor: true, needsSurrogate: true, needsClinic: true, interestedServices: true },
+            select: { needsEggDonor: true, needsSurrogate: true, needsClinic: true, interestedServices: true, hasEmbryos: true, embryoCount: true, embryosTested: true, eggSource: true, spermSource: true, isFirstIvf: true, currentClinicName: true, surrogateBudget: true },
           }).catch(() => null)
         : null;
+      const parentIdentity = await this.prisma.user.findUnique({
+        where: { id: parentUserId },
+        select: { gender: true, relationshipStatus: true },
+      }).catch(() => null);
 
       const nextGoals: string[] = [];
       if (parentProfile?.needsEggDonor) nextGoals.push("finding the right egg donor");
@@ -347,8 +380,24 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      // When the provider still lacks core call-prep info (family type, embryos,
+      // clinic, IVF history, budget), invite the parent into the call-prep
+      // mini-intake instead of pivoting straight to the next goal. Mirrors the
+      // missing-field logic in the AI router's CALL PREP MODE block.
+      const prepMissing =
+        !parentIdentity?.gender || !parentIdentity?.relationshipStatus ||
+        parentProfile?.hasEmbryos == null ||
+        (parentProfile?.hasEmbryos === true && (parentProfile?.embryoCount == null || parentProfile?.embryosTested == null)) ||
+        (parentProfile?.needsClinic == null && !parentProfile?.currentClinicName) ||
+        parentProfile?.isFirstIvf == null ||
+        (!parentProfile?.surrogateBudget && parentProfile?.needsSurrogate !== false);
+
       let continueText: string;
-      if (nextGoals.length === 0) {
+      let confirmQuickReplies: string[] | null = null;
+      if (prepMissing) {
+        continueText = `While we wait for your call, let's make sure ${provider.name} comes fully prepared. They'll ask a few standard questions on the call - if we cover them now, I'll have your details ready for them and you can spend the call on what really matters. Ready for a couple of quick questions?`;
+        confirmQuickReplies = ["Let's do it", "Maybe later"];
+      } else if (nextGoals.length === 0) {
         continueText = "Let me know if there's anything else I can help you with on your journey!";
       } else if (nextGoals.length === 1) {
         continueText = `Now let's keep going - I'll help you with ${nextGoals[0]}!`;
@@ -364,6 +413,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
           role: "assistant",
           content: `Great news! Your consultation with ${provider.name} is all set! I've created a separate chat where you can communicate directly with them - you'll find it in your inbox under "Provider Conversations."\n\n${continueText}`,
           senderType: "ai",
+          ...(confirmQuickReplies ? { uiCardData: { quickReplies: confirmQuickReplies } } : {}),
         },
       });
     }
@@ -1137,13 +1187,24 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     // (createBookingInternal's include is slim) - resolve from the host.
     let providerId = booking.providerUser?.providerId || null;
     let resolvedProviderName = booking.providerUser?.provider?.name || null;
-    if (!providerId && booking.providerUserId) {
+    let hostIsGoStorkStaff = false;
+    if (booking.providerUserId) {
       const host = await this.prisma.user.findUnique({
         where: { id: booking.providerUserId },
-        select: { providerId: true, provider: { select: { name: true } } },
+        select: { providerId: true, roles: true, provider: { select: { name: true } } },
       }).catch(() => null);
-      providerId = host?.providerId || null;
+      providerId = providerId || host?.providerId || null;
       resolvedProviderName = resolvedProviderName || host?.provider?.name || null;
+      hostIsGoStorkStaff = !!(host?.roles || []).some(r => r === "GOSTORK_ADMIN" || r === "GOSTORK_CONCIERGE");
+    }
+    // GoStork concierge calls (staff-hosted, or booked on the GoStork house
+    // provider) get NO provider prep bundle - the consultation guides coach
+    // parents on questioning CLINICS and AGENCIES; sending the IVF question
+    // list before a concierge chat is nonsense (the house provider is
+    // approved for every service type, so type-derived guide picks misfire).
+    if (hostIsGoStorkStaff || (resolvedProviderName || "").trim().toLowerCase() === "gostork") {
+      console.log(`[prep-bundle] Skipping prep guide for GoStork concierge call (booking ${booking.id})`);
+      return;
     }
     const threeWaySession = providerId
       ? await this.prisma.aiChatSession.findFirst({

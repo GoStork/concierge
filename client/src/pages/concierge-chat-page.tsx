@@ -34,6 +34,7 @@ import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-d
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
 import { AgencySwipeCard } from "@/components/marketplace/agency-swipe-card";
+import { LawGroupSwipeCard } from "@/components/marketplace/law-group-swipe-card";
 import {
   mapDatabaseDonorToSwipeProfile,
   mapDatabaseSurrogateToSwipeProfile,
@@ -1475,7 +1476,7 @@ function ConsultationBookingCard({
             <img
               src={getPhotoSrc(card.providerLogo)!}
               alt={card.providerName}
-              className="w-12 h-12 rounded-full object-cover border-2"
+              className="w-12 h-12 rounded-full object-contain p-1 bg-background border-2"
               style={{ borderColor: `${brandColor}30` }}
             />
           ) : (
@@ -2101,6 +2102,40 @@ function AgencyMatchCard({ card, brandColor, onAction }: { card: MatchCard; bran
   );
 }
 
+// Law-firm match card - the SHARED LawGroupSwipeCard (firm tabs + one face
+// tab per lawyer); the matcher adds the chat footer buttons. "Schedule a
+// Call" routes through the deterministic lawyer-connect bypass, which opens
+// the legal chat and embeds the attorney's booking calendar.
+function LawGroupMatchCard({ card, brandColor, onAction }: { card: MatchCard; brandColor: string; onAction: (text: string) => void }) {
+  const navigate = useNavigate();
+  const firmName = card.name || "this firm";
+  const goToProfile = () => navigate(`/providers/${card.providerId}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } });
+
+  return (
+    <div className="w-full" data-testid={`match-card-${card.providerId}`}>
+      <div className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]">
+        <LawGroupSwipeCard
+          providerId={card.providerId}
+          reasons={card.reasons || []}
+          disableSwipe
+          chatMode
+          onPass={() => onAction(`I'm not interested in ${firmName}.`)}
+          onSave={() => { persistChatFavorite("agency", card.providerId); onAction(`I like ${firmName}! Save as favorite. ❤️`); }}
+          onViewProfile={goToProfile}
+        />
+      </div>
+      <div className="mt-2 flex gap-2">
+        <Button variant="outline" className="flex-1 text-xs font-ui h-8" onClick={goToProfile}>
+          View Firm
+        </Button>
+        <Button className="flex-1 text-xs font-ui h-8 text-primary-foreground" style={{ backgroundColor: brandColor }} onClick={() => onAction("Connect me with a lawyer")}>
+          Schedule a Call
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
   const [profile, setProfile] = useState<any>(null);
   const [fetchFailed, setFetchFailed] = useState(false);
@@ -2108,9 +2143,10 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   const isClinic = cardType.toLowerCase() === "clinic";
   const isAgency = cardType.toLowerCase() === "surrogacyagency" || cardType.toLowerCase() === "surrogacy agency";
   const isCountryProgram = cardType.toLowerCase() === "countryprogram" || cardType.toLowerCase() === "country program";
+  const isLawGroup = cardType.toLowerCase() === "law group" || cardType.toLowerCase() === "lawgroup" || cardType.toLowerCase() === "legal services";
 
   useEffect(() => {
-    if (isClinic || isAgency || isCountryProgram) return;
+    if (isClinic || isAgency || isCountryProgram || isLawGroup) return;
     const fetchProfile = async () => {
       try {
         const typeSlug = cardType.toLowerCase().replace(" ", "-");
@@ -2125,7 +2161,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
       }
     };
     fetchProfile();
-  }, [card.providerId, card.type, isClinic, isAgency, isCountryProgram]);
+  }, [card.providerId, card.type, isClinic, isAgency, isCountryProgram, isLawGroup]);
 
   // Hooks must run unconditionally, BEFORE any early return below (clinic /
   // agency / loading branches). A photo-less card first renders the loading
@@ -2151,14 +2187,18 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
   // single sponsorable profile, so they're skipped.
   useEffect(() => {
     const t = cardType.toLowerCase();
-    if (t === "countryprogram" || t === "country program") return;
+    if (t === "countryprogram" || t === "country program" || isLawGroup) return;
     const imprType = isClinic ? "clinic" : isAgency ? "agency"
       : t === "surrogate" ? "surrogate" : t === "sperm donor" ? "sperm-donor" : "egg-donor";
     if (card.providerId) recordImpression(card.providerId, imprType);
-  }, [card.providerId, cardType, isClinic, isAgency]);
+  }, [card.providerId, cardType, isClinic, isAgency, isLawGroup]);
 
   if (isClinic) {
     return <ClinicMatchCard card={card} brandColor={brandColor} onAction={onAction} onViewProfile={onViewProfile} />;
+  }
+
+  if (isLawGroup) {
+    return <LawGroupMatchCard card={card} brandColor={brandColor} onAction={onAction} />;
   }
 
   if (isCountryProgram) {
@@ -2543,6 +2583,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
 export function ParentChatSidePanel({
   subjectInfo,
   providerName,
+  providerLogo,
   sessionCalendarSlug,
   sessionBookings,
   brandColor,
@@ -2552,6 +2593,7 @@ export function ParentChatSidePanel({
 }: {
   subjectInfo: ConsultationCardData | null;
   providerName: string | null;
+  providerLogo?: string | null;
   sessionCalendarSlug: { slug: string | null; memberName: string | null } | null;
   sessionBookings: any[] | null;
   brandColor: string;
@@ -2634,7 +2676,7 @@ export function ParentChatSidePanel({
             <ProviderProfileCard
               providerId={subjectInfo?.providerId}
               providerName={displayProviderName}
-              providerLogo={subjectInfo?.providerLogo}
+              providerLogo={subjectInfo?.providerLogo || providerLogo}
               brandColor={brandColor}
               calendar={sessionCalendarSlug?.slug ? {
                 slug: sessionCalendarSlug.slug,
@@ -2738,6 +2780,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   // Session-level subject info returned directly from the API (used when no consultation card is in messages)
   const [sessionSubjectInfo, setSessionSubjectInfo] = useState<{ subjectProfileId: string; subjectType: string; profilePhotoUrl?: string | null; providerLogo?: string | null; providerId?: string } | null>(null);
+  // Provider logo for provider-direct sessions (no donor/surrogate subject), where sessionSubjectInfo stays null
+  const [sessionProviderLogo, setSessionProviderLogo] = useState<string | null>(null);
   const [conciergeBookingSlug, setConciergeBookingSlug] = useState<{ slug: string; memberName: string } | null>(null);
   const parentFileInputRef = useRef<HTMLInputElement>(null);
   const parentPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -2822,7 +2866,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
         }, 100);
       } else {
-        alert("This provider hasn't set up online scheduling yet. You can message them to arrange a meeting.");
+        alert("Online scheduling isn't set up for this chat yet - send a message and we'll arrange a time.");
       }
     } catch {
       alert("Failed to load calendar. Please try again.");
@@ -2840,23 +2884,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, []);
-
-  const handleConciergeVideo = useCallback(async () => {
-    if (!sessionId) return;
-    try {
-      const res = await fetch("/api/video/chat-booking", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ sessionId }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      const { bookingId } = await res.json();
-      setInlineVideoBookingId(bookingId);
-    } catch {
-      alert("Failed to start video call. Please try again.");
-    }
-  }, [sessionId]);
 
   const handleParentFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -3019,7 +3046,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         const aiMsgId = aiData.message.id;
         // Register the message ID immediately so the polling loop doesn't add a duplicate
         // while the typing animation is still running (which defers finalizeUploadBubble)
-        if (aiMsgId) knownMessageIds.current.add(aiMsgId);
+        if (aiMsgId) {
+          knownMessageIds.current.add(aiMsgId);
+          markSessionRead(aiData.sessionId || sessionId);
+        }
         const finalizeUploadBubble = () => {
           setMessages(prev => prev.map(m => {
             if (m.id !== `${streamingUploadId}-ai`) return m;
@@ -3082,6 +3112,23 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const lastPollTimeRef = useRef<string | null>(null);
   const knownMessageIds = useRef<Set<string>>(new Set());
   const statusPollCounter = useRef(0);
+
+  // Send a read receipt for a session the user is actively viewing and
+  // optimistically clear its unreadCount so the sidebar + top-nav Chats badge
+  // update instantly instead of waiting for the next sessions-list poll.
+  // Must be called from EVERY path that appends an incoming message while the
+  // chat is open - loader, poller, AND the send-response paths (send-response
+  // messages never pass through the poller, so skipping them leaves the fresh
+  // AI reply counted as unread even though it is on screen).
+  const markSessionRead = (sid: string | null | undefined) => {
+    if (!sid) return;
+    queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
+      old?.map((s) => (s.id === sid ? { ...s, unreadCount: 0 } : s))
+    );
+    fetch(`/api/chat-sessions/${sid}/read`, { method: "POST", credentials: "include" })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] }))
+      .catch(() => {});
+  };
 
   const matchmakers: Matchmaker[] = brand?.matchmakers || [];
   const [resolvedMatchmakerId, setResolvedMatchmakerId] = useState<string | null>(null);
@@ -3203,6 +3250,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         setHumanInChat(!!data.humanJoinedAt && !data.humanConcludedAt);
       }
       if (data.humanAgentPhotoUrl) setHumanAgentPhotoUrl(data.humanAgentPhotoUrl);
+      if (data.providerLogo) setSessionProviderLogo(data.providerLogo);
       if (data.subjectProfileId && data.subjectType) {
         setSessionSubjectInfo({
           subjectProfileId: data.subjectProfileId,
@@ -3242,14 +3290,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         lastPollTimeRef.current = msgs[msgs.length - 1].createdAt;
         msgs.forEach((m: any) => { if (m.id) knownMessageIds.current.add(m.id); });
         if (msgs.some((m: any) => m.senderType === "provider")) setProviderInChat(true);
-        // Send read receipt + optimistically clear this session's unreadCount so the
-        // top-nav Chats badge updates instantly instead of waiting for the next poll.
-        queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
-          old?.map(s => s.id === existingSessionId ? { ...s, unreadCount: 0 } : s)
-        );
-        fetch(`/api/chat-sessions/${existingSessionId}/read`, { method: "POST", credentials: "include" })
-          .then(() => queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] }))
-          .catch(() => {});
+        markSessionRead(existingSessionId);
       }
     } catch { return false; }
     return true;
@@ -3593,13 +3634,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             setProviderInChat(true);
           }
           // Mark newly polled messages as read since user is actively viewing this chat.
-          // Optimistically clear unreadCount so the top-nav Chats badge updates instantly.
-          queryClient.setQueryData<any[]>(["/api/my/chat-sessions"], (old) =>
-            old?.map(s => s.id === sessionId ? { ...s, unreadCount: 0 } : s)
-          );
-          fetch(`/api/chat-sessions/${sessionId}/read`, { method: "POST", credentials: "include" })
-            .then(() => queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] }))
-            .catch(() => {});
+          markSessionRead(sessionId);
         }
 
         // Periodically refresh delivery status AND uiCardData on existing
@@ -3966,6 +4001,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             // real senderType==="provider" message) handle that transition correctly.
 
             if (data.message?.id) knownMessageIds.current.add(data.message.id);
+            // The reply arrives via this response, not the poller, so send the
+            // read receipt here - the user is looking at it right now.
+            if (data.message?.id) markSessionRead(data.sessionId || sessionId);
 
             const finalMsg: ChatMessage = {
               role: "assistant",
@@ -4265,7 +4303,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     // e.g. AI: "I see you're looking into surrogacy - is that correct?" → "Yes, that's right"
     const isAffirmative = /^(yes|yeah|yep|that'?s right|correct|exactly|right|sure)\b/i.test(o);
     const isNegative = /^(no|nope|not exactly|not quite|not really)\b/i.test(o);
-    if (isAffirmative || isNegative) {
+    // Only rewrite GENERIC confirmations ("Yes, that's right", "Not exactly").
+    // A button that already carries its own meaning ("Yes, connect me with a
+    // lawyer") must be sent verbatim - matching service words in the AI's
+    // question would turn a lawyer acceptance into "Yes, I'm looking into
+    // surrogacy" and derail the flow.
+    const genericWord = /^(yes|yeah|yep|no|nope|not|sure|ok|okay|correct|exactly|right|really|quite|absolutely|definitely|that'?s|it'?s|i'?m|i|we|do|does|don'?t|did|is|it|am|are|yet|now|please|thanks|thank|you)$/i;
+    const isGenericConfirmation = o.split(/[^a-z']+/i).filter(Boolean).every(w => genericWord.test(w));
+    if ((isAffirmative || isNegative) && isGenericConfirmation) {
       if (/surrogacy|surrogate/i.test(q))
         return isAffirmative ? "Yes, I'm looking into surrogacy" : "No, I'm not specifically looking into surrogacy";
       if (/egg donation|egg donor/i.test(q))
@@ -4305,6 +4350,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   useEffect(() => {
     if (talkToTeamRef) {
       talkToTeamRef.current = { trigger: handleTalkToTeam, escalated: humanEscalated };
+      // Clear on unmount so a stale trigger can never send into a session
+      // that is no longer displayed (the next mount re-sets it).
+      return () => { talkToTeamRef.current = null; };
     }
   }, [talkToTeamRef, humanEscalated]);
 
@@ -4372,7 +4420,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 return;
               }
               if (data.humanNeeded) setHumanEscalated(true);
-              if (data.message?.id) knownMessageIds.current.add(data.message.id);
+              if (data.message?.id) {
+                knownMessageIds.current.add(data.message.id);
+                markSessionRead(data.sessionId || sessionId);
+              }
               const newMessage: ChatMessage = {
                 role: "assistant",
                 content: data.message?.content ?? "",
@@ -4574,21 +4625,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             </>
           )}
           <div className="flex items-center gap-1 shrink-0 ml-auto">
-            {providerInChat && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 px-3 gap-1.5 text-xs font-medium rounded-full"
-                style={{ color: "white", backgroundColor: brandColor, borderRadius: "999px" }}
-                onClick={handleConciergeVideo}
-                title={`Start a video call with ${providerChatName || sessionTitle || "your provider"}`}
-                aria-label={`Start a video call with ${providerChatName || sessionTitle || "your provider"}`}
-                data-testid="btn-video"
-              >
-                <Video className="w-4 h-4" strokeWidth={2.25} />
-                <span>Video Call</span>
-              </Button>
-            )}
             {!providerInChat && sessionLoaded && (
               humanInChat ? (
                 <div
@@ -4734,11 +4770,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     .replace(/^(Shared a file:|I've shared a file with you:)[^\n]*/i, "")
                     .trim()
                 : (msg.content || "");
-              const hasQuickReplies = !!(msg.quickReplies && msg.quickReplies.length > 0);
+              const hasQuickReplies = !!(msg.quickReplies?.length || (msg as any).uiCardData?.quickReplies?.length);
               const showBubble = !isAttachmentMsg || displayContent.length > 0 || hasQuickReplies;
               const msgAvatarUrl = !alignRight
                 ? (msg.senderType === "provider"
-                    ? (getPhotoSrc(sessionSubjectInfo?.providerLogo) || null)
+                    ? (getPhotoSrc(sessionSubjectInfo?.providerLogo || sessionProviderLogo) || null)
                     : msg.senderType === "human"
                     ? (getPhotoSrc(humanAgentPhotoUrl) || null)
                     : resolvedAvatarUrl)
@@ -4903,12 +4939,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                         ))}
                       </span>
                       {/* Quick replies - inside bubble */}
-                      {msg.quickReplies && msg.quickReplies.length > 0 && i === messages.length - 1 && (() => {
-                        const isMulti = msg.multiSelect;
-                        const isBinary = msg.quickReplies.length === 2 && !isMulti;
+                      {i === messages.length - 1 && (() => {
+                        // msg.quickReplies is a transient copy set by the SSE done
+                        // handler - a typing-animation race can drop it. The persisted
+                        // uiCardData.quickReplies (refreshed by the 3s poll) is the
+                        // durable source of truth, so fall back to it.
+                        const qrOptions: string[] = (msg.quickReplies && msg.quickReplies.length > 0)
+                          ? msg.quickReplies
+                          : (((msg as any).uiCardData?.quickReplies as string[] | undefined) || []);
+                        if (qrOptions.length === 0) return null;
+                        const isMulti = msg.multiSelect ?? !!(msg as any).uiCardData?.multiSelect;
+                        const isBinary = qrOptions.length === 2 && !isMulti;
                         return (
                           <div className="flex flex-wrap gap-2 mt-3" data-testid="quick-replies">
-                            {msg.quickReplies.map((qr, qi) => {
+                            {qrOptions.map((qr, qi) => {
                               const isSelected = isMulti && multiSelectChoices.has(qr);
                               const multiUnselectedStyle: React.CSSProperties = multiIsOutline
                                 ? { backgroundColor: "transparent", color: multiColor, border: `1px solid ${multiColor}` }
@@ -5154,7 +5198,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   {/* Full-screen confetti for celebration-flagged messages
                       (e.g. "both sides said yes" match announcement) */}
                   {(msg.uiCardData as any)?.celebration && (
-                    <CelebrationBurst messageId={msg.id || ""} createdAt={msg.createdAt} />
+                    <CelebrationBurst messageId={msg.id || ""} createdAt={msg.createdAt} kind={(msg.uiCardData as any).celebration} />
                   )}
 
                   {/* Special cards: readiness_prompt, invoice, calendar_share, video_invite, etc. */}
@@ -5213,7 +5257,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   <div className="p-1.5" style={{ backgroundColor: brandColor }}>
                     <div className="flex items-center gap-2 px-3 py-1.5">
                       <CalendarCheck className="w-4 h-4 text-primary-foreground" />
-                      <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">Schedule a Meeting</span>
+                      <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
+                        {`Schedule a Meeting${bk.memberName ? ` with ${bk.memberName}` : ""}`}
+                      </span>
                     </div>
                   </div>
                   <div className="px-4 pb-4">
@@ -5446,6 +5492,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           <ParentChatSidePanel
             subjectInfo={subjectInfo}
             providerName={providerChatName}
+            providerLogo={sessionProviderLogo}
             sessionCalendarSlug={sessionCalendarSlug ?? null}
             sessionBookings={sessionBookings ?? null}
             brandColor={brandColor}

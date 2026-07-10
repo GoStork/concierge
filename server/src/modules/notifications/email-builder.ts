@@ -1,0 +1,224 @@
+import { getBaseUrl } from "../../lib/get-base-url";
+
+/**
+ * Shared branded-email builder. EVERY email sent by the platform must be
+ * rendered through buildBrandedEmail() with brand data from
+ * fetchEmailBrandData() - never hand-roll email HTML (hand-rolled emails
+ * bypass the GCS logo signing below and ship a broken logo image).
+ */
+
+export function esc(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/** Mix a hex color toward white by a given ratio (0 = original, 1 = white) */
+function tintHex(hex: string, ratio: number): string {
+  const m = hex.match(/^#?([0-9a-fA-F]{6})$/);
+  if (!m) return hex;
+  const r = parseInt(m[1].slice(0, 2), 16);
+  const g = parseInt(m[1].slice(2, 4), 16);
+  const b = parseInt(m[1].slice(4, 6), 16);
+  const tr = Math.round(r + (255 - r) * ratio);
+  const tg = Math.round(g + (255 - g) * ratio);
+  const tb = Math.round(b + (255 - b) * ratio);
+  return `#${tr.toString(16).padStart(2, "0")}${tg.toString(16).padStart(2, "0")}${tb.toString(16).padStart(2, "0")}`;
+}
+
+/** Darken a hex color by a given ratio (0 = original, 1 = black) */
+function shadeHex(hex: string, ratio: number): string {
+  const m = hex.match(/^#?([0-9a-fA-F]{6})$/);
+  if (!m) return hex;
+  const r = Math.round(parseInt(m[1].slice(0, 2), 16) * (1 - ratio));
+  const g = Math.round(parseInt(m[1].slice(2, 4), 16) * (1 - ratio));
+  const b = Math.round(parseInt(m[1].slice(4, 6), 16) * (1 - ratio));
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
+/**
+ * Load brand settings for email rendering. Resolves the header logo with
+ * dark-background priority (dark icon > light icon > dark full > light full)
+ * and signs GCS-hosted logo URLs so email clients can load them - the bucket
+ * uses uniform bucket-level access, so the raw URL returns AccessDenied.
+ * Uncached; NotificationService wraps this with a TTL cache.
+ */
+export async function fetchEmailBrandData(prisma: { siteSettings: { findFirst: () => Promise<any> } }): Promise<Record<string, string>> {
+  const defaults: Record<string, string> = {
+    brandColor: "#004D4D",
+    primaryForegroundColor: "#ffffff",
+    secondaryColor: "#F0FAF5",
+    accentColor: "#0DA4EA",
+    successColor: "#16a34a",
+    warningColor: "#f59e0b",
+    errorColor: "#ef4444",
+    foregroundColor: "#0A0A0A",
+    mutedForegroundColor: "#737373",
+    backgroundColor: "#ffffff",
+    cardColor: "#ffffff",
+    borderColor: "#e5e5e5",
+    companyName: "GoStork",
+    logoUrl: "",
+    headingFont: "Playfair Display",
+    bodyFont: "DM Sans",
+    buttonRadius: "8px",
+    containerRadius: "12px",
+    headingFontStack: "'Playfair Display',Georgia,serif",
+    bodyFontStack: "'DM Sans',Arial,sans-serif",
+  };
+  try {
+    const settings = await prisma.siteSettings.findFirst();
+    if (settings) {
+      const s = settings as any;
+      defaults.brandColor = s.primaryColor || defaults.brandColor;
+      defaults.secondaryColor = s.secondaryColor || defaults.secondaryColor;
+      defaults.accentColor = s.accentColor || defaults.accentColor;
+      defaults.successColor = s.successColor || defaults.successColor;
+      defaults.warningColor = s.warningColor || defaults.warningColor;
+      defaults.errorColor = s.errorColor || defaults.errorColor;
+      defaults.companyName = s.companyName || defaults.companyName;
+      // Email header has a dark (brandColor) background - prefer dark-mode icon logo.
+      // Priority: dark icon > light icon > dark full > light full
+      const rawLogo = s.darkLogoUrl || s.logoUrl || s.darkLogoWithNameUrl || s.logoWithNameUrl || "";
+      const imageBaseUrl = getBaseUrl();
+      let logoUrl = rawLogo && rawLogo.startsWith("/") ? `${imageBaseUrl}${rawLogo}` : rawLogo;
+      // GCS bucket uses uniform bucket-level access - objects are private.
+      // Generate a short-lived signed URL so email clients can load the logo directly.
+      if (logoUrl && logoUrl.includes("storage.googleapis.com")) {
+        try {
+          const { Storage } = await import("@google-cloud/storage");
+          const keyJson = process.env.GCS_SERVICE_ACCOUNT_KEY;
+          if (keyJson) {
+            const credentials = JSON.parse(keyJson);
+            const storage = new Storage({ credentials });
+            const bucketName = process.env.GCS_BUCKET_NAME || "gostork-recordings";
+            const urlObj = new URL(logoUrl);
+            const objectPath = decodeURIComponent(urlObj.pathname.slice(`/${bucketName}/`.length));
+            const [signed] = await storage.bucket(bucketName).file(objectPath).getSignedUrl({
+              action: "read",
+              expires: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+            });
+            logoUrl = signed;
+          }
+        } catch {
+          // fall back to raw URL if signing fails
+        }
+      }
+      defaults.logoUrl = logoUrl;
+      defaults.primaryForegroundColor = s.primaryForegroundColor || defaults.primaryForegroundColor;
+      defaults.foregroundColor = s.foregroundColor || defaults.foregroundColor;
+      defaults.mutedForegroundColor = s.mutedForegroundColor || defaults.mutedForegroundColor;
+      defaults.backgroundColor = s.backgroundColor || defaults.backgroundColor;
+      defaults.cardColor = s.cardColor || defaults.cardColor;
+      defaults.borderColor = s.borderColor || defaults.borderColor;
+      defaults.headingFont = s.headingFont || defaults.headingFont;
+      defaults.bodyFont = s.bodyFont || defaults.bodyFont;
+      const borderRadiusRem = typeof s.borderRadius === "number" ? s.borderRadius : 0.5;
+      if (borderRadiusRem <= 0) defaults.buttonRadius = "0px";
+      else if (borderRadiusRem <= 0.125) defaults.buttonRadius = "2px";
+      else if (borderRadiusRem <= 0.25) defaults.buttonRadius = "4px";
+      else if (borderRadiusRem <= 0.5) defaults.buttonRadius = "8px";
+      else if (borderRadiusRem <= 0.75) defaults.buttonRadius = "12px";
+      else defaults.buttonRadius = "9999px";
+      const containerRadiusRem = typeof s.containerRadius === "number" ? s.containerRadius : 0.75;
+      defaults.containerRadius = `${Math.round(containerRadiusRem * 16)}px`;
+      const hf = defaults.headingFont;
+      defaults.headingFontStack = `'${hf}',Georgia,serif`;
+      const bf = defaults.bodyFont;
+      defaults.bodyFontStack = `'${bf}',Arial,sans-serif`;
+    }
+  } catch {
+  }
+  return defaults;
+}
+
+export function buildBrandedEmail(
+  brand: Record<string, string>,
+  opts: {
+    title: string;
+    greeting: string;
+    body: string;
+    detailRows?: { label: string; value: string }[];
+    buttons?: { label: string; url: string; variant?: "primary" | "secondary" | "destructive" }[];
+    footer?: string;
+    alertBox?: { text: string; type: "warning" | "success" | "info" | "error" };
+  },
+): string {
+  const btnRadius = brand.buttonRadius || "8px";
+  const btnColor = (v?: string) => {
+    if (v === "destructive") return brand.errorColor;
+    if (v === "secondary") return "transparent";
+    return brand.brandColor;
+  };
+  const btnTextColor = (v?: string) => {
+    if (v === "secondary") return brand.brandColor;
+    return brand.primaryForegroundColor;
+  };
+  const btnBorder = (v?: string) => {
+    if (v === "secondary") return `2px solid ${brand.brandColor}`;
+    return "none";
+  };
+
+  const alertBg: Record<string, string> = {
+    warning: tintHex(brand.warningColor, 0.9),
+    success: tintHex(brand.successColor, 0.9),
+    info: brand.secondaryColor,
+    error: tintHex(brand.errorColor, 0.9),
+  };
+  const alertBorderColor: Record<string, string> = { warning: brand.warningColor, success: brand.successColor, info: brand.accentColor, error: brand.errorColor };
+  const alertTextColor: Record<string, string> = {
+    warning: shadeHex(brand.warningColor, 0.4),
+    success: shadeHex(brand.successColor, 0.4),
+    info: brand.brandColor,
+    error: shadeHex(brand.errorColor, 0.4),
+  };
+
+  const detailsHtml = opts.detailRows?.length
+    ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:${tintHex(brand.backgroundColor, 0.02)};border-radius:${brand.containerRadius};overflow:hidden;">
+${opts.detailRows.map(r => `<tr><td width="160" style="padding:10px 16px;color:${brand.mutedForegroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};white-space:nowrap;vertical-align:top;">${r.label}</td><td style="padding:10px 16px;color:${brand.foregroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;word-break:break-word;">${r.value}</td></tr>`).join("\n")}
+</table>` : "";
+
+  const alertHtml = opts.alertBox
+    ? `<div style="background:${alertBg[opts.alertBox.type]};border-left:4px solid ${alertBorderColor[opts.alertBox.type]};padding:14px 16px;border-radius:4px;margin:16px 0;font-size:14px;font-family:${brand.bodyFontStack};color:${alertTextColor[opts.alertBox.type]};">${opts.alertBox.text}</div>` : "";
+
+  const buttonsHtml = opts.buttons?.length
+    ? `<table cellpadding="0" cellspacing="0" style="margin:24px auto;" align="center"><tr>${opts.buttons.map(b =>
+        `<td style="padding:0 6px;"><table cellpadding="0" cellspacing="0"><tr><td style="background:${btnColor(b.variant)};border-radius:${btnRadius};border:${btnBorder(b.variant)};"><a href="${b.url}" style="display:inline-block;padding:12px 24px;color:${btnTextColor(b.variant)};text-decoration:none;font-weight:600;font-size:14px;font-family:${brand.bodyFontStack};">${b.label}</a></td></tr></table></td>`
+      ).join("")}</tr></table>` : "";
+
+  const footerHtml = opts.footer ? `<p style="color:${brand.mutedForegroundColor};font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid ${brand.borderColor};font-family:${brand.bodyFontStack};">${opts.footer}</p>` : "";
+
+  return `<!DOCTYPE html>
+<html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<style>
+:root { color-scheme: light; }
+body { color-scheme: light; }
+[data-ogsc] .og-dark { display: none !important; }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:${tintHex(brand.backgroundColor, 0.03)};font-family:${brand.bodyFontStack};color-scheme:light;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:${tintHex(brand.backgroundColor, 0.03)};padding:40px 20px;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background-color:${brand.cardColor};border-radius:${brand.containerRadius};overflow:hidden;">
+<tr><td style="background-color:${brand.brandColor} !important;padding:30px;text-align:center;mso-padding-alt:0px;">
+${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="${esc(brand.companyName)}" style="max-height:40px;margin-bottom:8px;" />` : ""}
+<h1 style="color:${brand.primaryForegroundColor};font-family:${brand.headingFontStack};font-size:24px;margin:0;">${esc(brand.companyName)}</h1>
+</td></tr>
+<tr><td style="padding:40px 30px;">
+<h2 style="font-family:${brand.headingFontStack};color:${brand.brandColor};font-size:22px;margin:0 0 16px;">${opts.title}</h2>
+<p style="color:${brand.foregroundColor};font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 12px;">${opts.greeting}</p>
+<div style="color:${brand.foregroundColor};font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 16px;">${opts.body}</div>
+${detailsHtml}
+${alertHtml}
+${buttonsHtml}
+${footerHtml}
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}

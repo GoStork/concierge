@@ -18,10 +18,12 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Headphones,
+  Globe,
   Receipt,
   FileSignature,
   Landmark,
   CheckCircle2,
+  CalendarClock,
   DollarSign,
   TrendingUp,
   Zap,
@@ -38,6 +40,7 @@ interface AdminDashboard {
   dueInvoices: Array<{ id: string; sessionId: string | null; dueAt: string; overdue: boolean; amountCents: number; serviceType: string | null; parentName: string; providerName: string | null; taskKey: string }>;
   sentAgreements: Array<{ agreementId: string; createdAt: string; documentType: string; parentName: string; providerName: string | null; signedCount: number; signerCount: number }>;
   failedPayouts: Array<{ id: string; payoutFailedAt: string; payoutFailureReason: string | null; amountCents: number; providerName: string | null; parentName: string; taskKey: string }>;
+  pendingMeetings: Array<{ id: string; scheduledAt: string; subject: string | null; parentName: string; hostName: string; hostUserId: string | null; taskKey: string }>;
   funnel: { activeSessions: number; hotLeads: number; callsBooked: number; matched: number; onHold: number; depositsPaid: number; agreementsSigned: number };
   money: { totalCollected: number; totalFees: number; pendingPayouts: number; payoutsSent: number; awaitingPayment: number };
   adoption: { total: number; costSheet: number; invoice: number; agreement: number };
@@ -156,6 +159,7 @@ export default function AdminHomePage() {
 
   const queueCount =
     (data?.escalations.length || 0) +
+    (data?.pendingMeetings?.length || 0) +
     (data?.dueInvoices.filter(i => i.overdue).length || 0) +
     (data?.failedPayouts.length || 0);
 
@@ -166,7 +170,7 @@ export default function AdminHomePage() {
         <p className="text-sm text-muted-foreground mt-1">The full picture - every parent, provider, and journey on the platform.</p>
       </div>
 
-      {/* Needs attention: escalations, overdue deposits, failed payouts */}
+      {/* Needs attention: escalations, unconfirmed meetings, overdue deposits, failed payouts */}
       <Card className="p-5 space-y-3">
         <SectionHeader
           icon={<CheckCircle2 className="w-5 h-5 text-primary" />}
@@ -177,7 +181,7 @@ export default function AdminHomePage() {
         ) : queueCount === 0 ? (
           <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-success))" }}>
             <CheckCircle2 className="w-4 h-4" />
-            All clear - no escalations, overdue deposits, or failed payouts.
+            All clear - no escalations, unconfirmed meetings, overdue deposits, or failed payouts.
           </div>
         ) : (
           <div className="space-y-2">
@@ -190,6 +194,17 @@ export default function AdminHomePage() {
                 cta="Take over"
                 onClick={() => navigate(`/admin/concierge-monitor?sessionId=${e.sessionId}`)}
                 onDismiss={() => dismiss.mutate(e.taskKey)}
+              />
+            ))}
+            {(data?.pendingMeetings || []).map(b => (
+              <QueueRow
+                key={b.id}
+                icon={<CalendarClock className="w-4 h-4" />}
+                title={`${b.parentName}'s "${b.subject || "meeting"}" is awaiting confirmation`}
+                detail={`Host: ${b.hostName} - ${fmtWhen(b.scheduledAt)}`}
+                cta="Review"
+                onClick={() => openMeeting(b.id)}
+                onDismiss={() => dismiss.mutate(b.taskKey)}
               />
             ))}
             {(data?.dueInvoices || []).filter(i => i.overdue).map(inv => (
@@ -244,16 +259,30 @@ export default function AdminHomePage() {
             </div>
           );
           return (
-            <div className="space-y-3">
+            <div className="space-y-4">
+              {/* My meetings: tinted panel so the admin's own commitments
+                  never blend into the marketplace noise below */}
               {mine.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">My meetings</p>
+                <div className="rounded-[var(--radius)] border border-[hsl(var(--primary)/0.25)] bg-secondary/60 px-4 pb-1 pt-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full flex items-center justify-center bg-primary text-primary-foreground">
+                      <Headphones className="w-3.5 h-3.5" />
+                    </span>
+                    <p className="text-sm font-heading font-semibold">My meetings</p>
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">{mine.length}</span>
+                  </div>
                   <div className="divide-y">{mine.map(renderRow)}</div>
                 </div>
               )}
               {platform.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Platform meetings</p>
+                <div className="rounded-[var(--radius)] border border-[hsl(var(--accent)/0.25)] bg-[hsl(var(--accent)/0.08)] px-4 pb-1 pt-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full flex items-center justify-center bg-accent text-accent-foreground">
+                      <Globe className="w-3.5 h-3.5" />
+                    </span>
+                    <p className="text-sm font-heading font-semibold">Platform meetings</p>
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[hsl(var(--accent)/0.15)] text-accent">{platform.length}</span>
+                  </div>
                   <div className="divide-y">{platform.map(renderRow)}</div>
                 </div>
               )}

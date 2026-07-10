@@ -2266,9 +2266,15 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
         data: {
           sessionId: invoice.sessionId,
           role: "assistant",
-          content: `${parentLabel} has ${verb} ${amount} for ${invoice.serviceType} via ${invoice.providerName}. Thank you!`,
+          // Viewer-specific voices (dual-audience rule) + the fireworks
+          // celebration on a completed payment (not on authorizations).
+          content: `You've ${verb} ${amount} for ${invoice.serviceType} via ${invoice.providerName} - thank you!`,
           senderType: "system",
           senderName: "GoStork",
+          uiCardData: {
+            providerContent: `${parentLabel} has ${verb} ${amount} for ${invoice.serviceType} via ${invoice.providerName}. Thank you!`,
+            ...(verb === "paid" ? { celebration: "payment_received" } : {}),
+          },
         },
       });
     } catch (e: any) {

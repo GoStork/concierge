@@ -25,27 +25,17 @@ import { NotificationService } from "../notifications/notification.service";
 import { AppEventsService } from "../notifications/app-events.service";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { insertUserSchema } from "@shared/schema";
-import { hasProviderRole, PROVIDER_ROLES, PARENT_ACCOUNT_ROLES, isParentAccountAdmin } from "@shared/roles";
+import { hasProviderRole, PROVIDER_ROLES, GOSTORK_ROLES, PARENT_ACCOUNT_ROLES, isParentAccountAdmin } from "@shared/roles";
 import { z } from "zod";
 import { CreateUserDto, UserResponseDto } from "../../dto/user.dto";
 import { ErrorResponseDto } from "../../dto/auth.dto";
 import { encryptNullable, decryptNullable } from "../../lib/encrypt";
 
-const ROLES_NEEDING_VIDEO_ROOM = [
-  "GOSTORK_ADMIN",
-  "GOSTORK_CONCIERGE",
-  "GOSTORK_DEVELOPER",
-  "PROVIDER_ADMIN",
-  "IP_SURROGACY_COORDINATOR",
-  "IP_EGG_DONOR_COORDINATOR",
-  "IP_SPERM_DONOR_COORDINATOR",
-  "IP_IVF_COORDINATOR",
-  "SURROGATE_COORDINATOR",
-  "EGG_DONOR_COORDINATOR",
-  "SPERM_DONOR_COORDINATOR",
-  "SCHEDULER",
-  "DOCTOR",
-];
+// EVERY provider-side role and all GoStork staff get a personal video room -
+// derived from the shared role registry so newly added roles (Lawyer, Legal
+// Assistant, ...) are covered automatically instead of silently skipped by
+// a stale hardcoded list.
+const ROLES_NEEDING_VIDEO_ROOM: string[] = [...GOSTORK_ROLES, ...PROVIDER_ROLES];
 
 // Combine the names of all logins on a shared parent account into one
 // display name. Same last name -> "Eran & Dana Amir"; different last

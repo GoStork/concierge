@@ -733,6 +733,41 @@ export class ProvidersController {
           ? { members: { some: { AND: searchTerms.map((term: string) => ({ name: { contains: term, mode: "insensitive" } })) } } }
           : { members: { some: { name: { contains: raw, mode: "insensitive" } } } };
       where.OR = [nameMatch, memberMatch];
+
+      // Admin/dev searches also match the provider's team user accounts (name,
+      // email, phone), so pasting a contact from an email or phone book brings
+      // up the company profile. Parent marketplace searches never get this -
+      // staff contact details are not a parent-facing search surface.
+      const isAdminSearcher = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_DEVELOPER");
+      if (isAdminSearcher) {
+        where.OR.push({
+          users: {
+            some: {
+              OR: [
+                { email: { contains: raw, mode: "insensitive" } },
+                { name: { contains: raw, mode: "insensitive" } },
+                { firstName: { contains: raw, mode: "insensitive" } },
+                { lastName: { contains: raw, mode: "insensitive" } },
+              ],
+            },
+          },
+        });
+        // Phone numbers are stored in mixed formats ("+15551234567" vs
+        // "(555) 123-4567"), so normalize both sides to digits before matching.
+        const digits = raw.replace(/\D/g, "");
+        if (digits.length >= 4) {
+          const phoneRows: { providerId: string }[] = await this.prisma.$queryRawUnsafe(
+            `SELECT DISTINCT "providerId" FROM "User"
+             WHERE "providerId" IS NOT NULL
+               AND (regexp_replace(COALESCE("mobileNumber", ''), '\\D', '', 'g') LIKE $1
+                 OR regexp_replace(COALESCE("mobileNumberDisplay", ''), '\\D', '', 'g') LIKE $1)`,
+            `%${digits}%`,
+          );
+          if (phoneRows.length > 0) {
+            where.OR.push({ id: { in: phoneRows.map((r) => r.providerId) } });
+          }
+        }
+      }
     }
 
     if (query.location) {

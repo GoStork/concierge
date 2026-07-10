@@ -1500,8 +1500,13 @@ const sendMessageMutation = useMutation({
       return parentSessions.find(s => isConciergeSession(s)) || null;
     }
     if (urlEntityId && urlSubjectId) {
-      // Match by providerId + subjectProfileId first, fallback to session id
-      return parentSessions.find(s => s.providerId === urlEntityId && s.subjectProfileId === urlSubjectId)
+      // Match by providerId + subjectProfileId first, fallback to session id.
+      // A concierge session can carry the same providerId/subjectProfileId as the
+      // provider thread it spawned (whisper context pointers), so prefer the
+      // provider thread - /chat/:entityId/:subjectId is never a concierge URL.
+      const pairMatches = parentSessions.filter(s => s.providerId === urlEntityId && s.subjectProfileId === urlSubjectId);
+      return pairMatches.find(s => !isConciergeSession(s))
+        || pairMatches[0]
         || parentSessions.find(s => s.providerId === urlEntityId && s.id === urlSubjectId)
         || null;
     }
@@ -1570,10 +1575,13 @@ const sendMessageMutation = useMutation({
     }
   }, [isProvider, selectedSessionId, selectedParentSession?.id, queryClient]);
 
-  // Reset talk-to-team escalation state and side panel when switching sessions
+  // Reset talk-to-team escalation state and side panel when switching sessions.
+  // Do NOT null talkToTeamRef here - the inline ConciergeChatPage owns it (sets it
+  // on mount, clears it on unmount). This parent effect runs AFTER the remounted
+  // child's mount effect, so nulling here would wipe the freshly-set trigger and
+  // leave the header button dead.
   useEffect(() => {
     setTalkToTeamEscalated(false);
-    talkToTeamRef.current = null;
     setParentSidePanelData(null);
   }, [selectedParentSession?.id]);
 
@@ -1699,23 +1707,6 @@ const sendMessageMutation = useMutation({
       }
     } catch {
       alert("Failed to load calendar. Please try again.");
-    }
-  };
-
-  const handleParentVideo = async () => {
-    if (!selectedParentSession) return;
-    try {
-      const res = await fetch("/api/video/chat-booking", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ sessionId: selectedParentSession.id }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      const { bookingId } = await res.json();
-      setInlineVideoBookingId(bookingId);
-    } catch {
-      alert("Failed to start video call. Please try again.");
     }
   };
 
@@ -1910,6 +1901,12 @@ const sendMessageMutation = useMutation({
                                 className="w-12 h-12 rounded-full object-cover"
                                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement)?.style && ((e.target as HTMLImageElement).nextElementSibling as HTMLElement).style.setProperty('display', 'flex'); }}
                               />
+                            ) : session.providerLogo ? (
+                              <img
+                                src={getPhotoSrc(session.providerLogo) || undefined}
+                                alt={session.title || ""}
+                                className="w-12 h-12 rounded-full object-contain p-1 bg-background border"
+                              />
                             ) : (
                               <div
                                 className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
@@ -1978,7 +1975,7 @@ const sendMessageMutation = useMutation({
       ? (selectedParentSession!.providerName || "Provider")
       : (selectedParentSession?.matchmakerName || "AI Concierge");
     const parentHeaderAvatar = hasProvider
-      ? (selectedParentSession!.providerLogo || null)
+      ? getPhotoSrc(selectedParentSession!.providerLogo) || null
       : getPhotoSrc(selectedParentSession?.matchmakerAvatar) || null;
 
     const parentDetailContent = hasParentSession ? (
@@ -2019,6 +2016,8 @@ const sendMessageMutation = useMutation({
               <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted relative">
                 {selectedParentSession!.profilePhotoUrl ? (
                   <img src={getPhotoSrc(selectedParentSession!.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
+                ) : parentHeaderAvatar ? (
+                  <img src={parentHeaderAvatar} alt="" className="w-10 h-10 rounded-full object-contain p-0.5 bg-background border" />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
                     <User className="w-4 h-4 text-muted-foreground" />
@@ -2052,7 +2051,7 @@ const sendMessageMutation = useMutation({
             <>
               <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
                 {parentHeaderAvatar ? (
-                  <img src={parentHeaderAvatar} alt={parentHeaderName} className="w-10 h-10 rounded-full object-cover" />
+                  <img src={parentHeaderAvatar} alt={parentHeaderName} className={`w-10 h-10 rounded-full ${hasProvider ? "object-contain p-0.5 bg-background border" : "object-cover"}`} />
                 ) : (
                   <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold" style={{ backgroundColor: brandColor }}>
                     {parentHeaderName.charAt(0)}
@@ -2065,90 +2064,40 @@ const sendMessageMutation = useMutation({
               </div>
             </>
           )}
-          {!selectedParentSession!.providerId && (
-            <div className="flex items-center gap-1 shrink-0 ml-auto">
-              {selectedParentSession!.humanJoinedAt && !selectedParentSession!.humanConcludedAt ? (
-                <div
-                  className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium"
-                  style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderRadius: "999px" }}
-                  data-testid="btn-talk-to-team"
-                >
-                  <Headphones className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Talking with Human</span>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs gap-1.5 h-8"
-                  style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
-                  onClick={async () => {
-                    setTalkToTeamEscalated(true);
-                    try {
-                      await fetch(`/api/chat-sessions/${selectedParentSession!.id}/request-human`, {
-                        method: "POST",
-                        credentials: "include",
-                      });
-                    } catch {}
-                  }}
-                  disabled={talkToTeamEscalated || !!selectedParentSession!.humanRequested}
-                  data-testid="btn-talk-to-team"
-                >
-                  <Headphones className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{(talkToTeamEscalated || selectedParentSession!.humanRequested) ? "Team Notified" : "Talk to GoStork Team"}</span>
-                </Button>
-              )}
-            </div>
-          )}
-          {selectedParentSession!.providerId && (
+          {/* Talk to GoStork Team - available on EVERY parent chat (AI concierge
+              and provider sessions alike, any status). Triggers the inline chat's
+              escalation flow (via talkToTeamRef) so the parent gets the triage
+              question with quick-reply options instead of a silent notification. */}
           <div className="flex items-center gap-1 shrink-0 ml-auto">
-            {selectedParentSession!.status === "PROVIDER_CONNECTED" && (
-              selectedParentSession!.humanJoinedAt && !selectedParentSession!.humanConcludedAt ? (
-                <div
-                  className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium"
-                  style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderRadius: "999px" }}
-                >
-                  <Headphones className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Talking with Human</span>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs gap-1.5 h-8"
-                  style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
-                  onClick={async () => {
+            {selectedParentSession!.humanJoinedAt && !selectedParentSession!.humanConcludedAt ? (
+              <div
+                className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium"
+                style={{ backgroundColor: `${brandColor}15`, color: brandColor, borderRadius: "999px" }}
+                data-testid="btn-talk-to-team"
+              >
+                <Headphones className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Talking with Human</span>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs gap-1.5 h-8"
+                style={{ borderColor: `${brandColor}30`, color: brandColor, borderRadius: "999px" }}
+                onClick={() => {
+                  if (talkToTeamRef.current?.trigger) {
                     setTalkToTeamEscalated(true);
-                    try {
-                      await fetch(`/api/chat-sessions/${selectedParentSession!.id}/request-human`, {
-                        method: "POST",
-                        credentials: "include",
-                      });
-                    } catch {}
-                  }}
-                  disabled={talkToTeamEscalated || selectedParentSession!.humanRequested}
-                  data-testid="btn-talk-to-team"
-                >
-                  <Headphones className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{(talkToTeamEscalated || selectedParentSession!.humanRequested) ? "Team Notified" : "Talk to GoStork Team"}</span>
-                </Button>
-              )
+                    talkToTeamRef.current.trigger();
+                  }
+                }}
+                disabled={talkToTeamEscalated || !!selectedParentSession!.humanRequested}
+                data-testid="btn-talk-to-team"
+              >
+                <Headphones className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{(talkToTeamEscalated || selectedParentSession!.humanRequested) ? "Team Notified" : "Talk to GoStork Team"}</span>
+              </Button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-3 gap-1.5 text-xs font-medium rounded-full"
-              style={{ color: "white", backgroundColor: brandColor, borderRadius: "999px" }}
-              onClick={handleParentVideo}
-              title={`Start a video call with ${selectedParentSession!.providerName || "your provider"}`}
-              aria-label={`Start a video call with ${selectedParentSession!.providerName || "your provider"}`}
-              data-testid="btn-parent-video"
-            >
-              <Video className="w-4 h-4" strokeWidth={2.25} />
-              <span className="hidden sm:inline">Video Call</span>
-            </Button>
           </div>
-          )}
         </div>
         {selectedParentSession!.providerId && selectedParentSession!.title && (
           <ChatHeaderContextPanel
@@ -2218,6 +2167,7 @@ const sendMessageMutation = useMutation({
           <ParentChatSidePanel
             subjectInfo={parentSidePanelData.subjectInfo}
             providerName={parentSidePanelData.providerName}
+            providerLogo={selectedParentSession?.providerLogo ?? null}
             sessionCalendarSlug={parentSidePanelData.sessionCalendarSlug}
             sessionBookings={parentSidePanelData.sessionBookings}
             brandColor={brandColor}

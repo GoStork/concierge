@@ -24,6 +24,8 @@ const PROVIDER_ROLES = [
   { value: "SPERM_DONOR_COORDINATOR", label: "Sperm Donor Coordinator" },
   { value: "SCHEDULER", label: "Scheduler" },
   { value: "DOCTOR", label: "Doctor" },
+  { value: "LAWYER", label: "Lawyer" },
+  { value: "LEGAL_ASSISTANT", label: "Legal Assistant" },
   { value: "BILLING_MANAGER", label: "Billing Manager" },
 ];
 
@@ -52,6 +54,8 @@ function inferRolesFromTitle(title: string | null): string[] | null {
   if (t.includes("patient") || t.includes("intake") || t.includes("ivf")) roles.push("IP_IVF_COORDINATOR");
   if (t.includes("scheduler") || t.includes("scheduling") || t.includes("match call")) roles.push("SCHEDULER");
   if (t.includes("doctor") || t.includes("physician") || t.includes("md") || t.includes("dr.")) roles.push("DOCTOR");
+  if (t.includes("paralegal") || t.includes("legal assistant")) roles.push("LEGAL_ASSISTANT");
+  else if (t.includes("attorney") || t.includes("lawyer") || t.includes("esq") || t.includes("counsel") || t.includes("legal")) roles.push("LAWYER");
   if (t.includes("billing") || t.includes("finance") || t.includes("accounting")) roles.push("BILLING_MANAGER");
   if (t.includes("admin") || t.includes("director") || t.includes("founder") || t.includes("ceo") || t.includes("owner") || t.includes("managing")) roles.push("PROVIDER_ADMIN");
   return roles.length > 0 ? roles : null;
@@ -78,7 +82,7 @@ export default function AdminUserAddPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
   const [parentAccountRole, setParentAccountRole] = useState("INTENDED_PARENT_2");
-  const [selectedRoles, setSelectedRoles] = useState<string[]>(isGostorkTeamMode ? ["GOSTORK_ADMIN"] : ["IP_IVF_COORDINATOR"]);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>(isGostorkTeamMode ? ["GOSTORK_ADMIN"] : ["PROVIDER_ADMIN"]);
   const [personalLocation, setPersonalLocation] = useState({ address: "", city: "", state: "", zip: "", country: "" });
   const [allLocations, setAllLocations] = useState(true);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
@@ -244,7 +248,7 @@ export default function AdminUserAddPage() {
                 setSelectedMemberId(val);
                 if (val === "__new__") {
                   setName("");
-                  setSelectedRoles(["IP_IVF_COORDINATOR"]);
+                  setSelectedRoles(["PROVIDER_ADMIN"]);
                   return;
                 }
                 const member = teamMembers.find(m => m.id === val);

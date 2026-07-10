@@ -544,7 +544,7 @@ export default function AdminConciergeMonitor() {
                         <img
                           src={getPhotoSrc(s.providerLogo) || undefined}
                           alt={s.providerName || ""}
-                          className="w-12 h-12 rounded-full object-cover bg-background border"
+                          className="w-12 h-12 rounded-full object-contain p-1 bg-background border"
                         />
                       ) : isProviderThread ? (
                         <div
@@ -716,7 +716,7 @@ export default function AdminConciergeMonitor() {
                 <div className="flex items-center gap-1 mt-0.5 min-w-0">
                   <span className="text-[11px] text-muted-foreground flex-shrink-0">re:</span>
                   {subjectAvatar ? (
-                    <img src={subjectAvatar} alt="" className="w-3.5 h-3.5 rounded-full object-cover flex-shrink-0 bg-background border" />
+                    <img src={subjectAvatar} alt="" className={`w-3.5 h-3.5 rounded-full flex-shrink-0 bg-background border ${!selectedSummary?.profilePhotoUrl && selectedSummary?.providerLogo ? "object-contain" : "object-cover"}`} />
                   ) : headerMatchmakerName ? (
                     <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-primary-foreground flex-shrink-0" style={{ backgroundColor: brandColor, fontSize: "8px", fontWeight: 700 }}>
                       {headerMatchmakerName.charAt(0).toUpperCase()}

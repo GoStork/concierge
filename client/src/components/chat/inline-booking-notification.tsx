@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Loader2, X, CalendarClock, Clock, Crown, Check, Video, Globe } from "lucide-react";
@@ -279,13 +280,35 @@ export function InlineBookingNotification({
               const counterpartySubtitle = isProvider
                 ? (booking.parentUser?.email || booking.attendeeEmails?.[0] || "")
                 : (isAdminHost ? "" : orgName);
-              const counterpartyPhoto = isProvider
-                ? (booking.parentUser?.photoUrl || null)
-                : (booking.providerUser?.photoUrl || null);
+              const counterpartyPhoto = getPhotoSrc(
+                isProvider
+                  ? (booking.parentUser?.photoUrl || null)
+                  : (booking.providerUser?.photoUrl || null),
+              );
               return (
                 <div className="flex items-center gap-3">
                   {counterpartyPhoto ? (
-                    <img src={counterpartyPhoto} alt={counterpartyName} className="w-12 h-12 rounded-full object-cover" />
+                    <>
+                      <img
+                        src={counterpartyPhoto}
+                        alt={counterpartyName}
+                        className="w-12 h-12 rounded-full object-cover"
+                        onError={(e) => {
+                          // Broken/forbidden image -> show the standard
+                          // initial-letter avatar instead of the browser's
+                          // broken-image glyph.
+                          e.currentTarget.style.display = "none";
+                          const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+                          if (fallback) {
+                            fallback.classList.remove("hidden");
+                            fallback.classList.add("flex");
+                          }
+                        }}
+                      />
+                      <div className="hidden w-12 h-12 rounded-full bg-primary/10 items-center justify-center text-primary font-bold text-sm">
+                        {counterpartyName.charAt(0)}
+                      </div>
+                    </>
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
                       {counterpartyName.charAt(0)}

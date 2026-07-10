@@ -39,11 +39,35 @@ export async function maybeOfferLawyerIntro(parentUserId: string, providerId: st
     where: { id: providerId },
     select: { name: true, services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } } },
   });
+  // The GoStork HOUSE provider is approved for every service type but is
+  // not a real agency - concierge calls must never trigger the lawyer offer.
+  if ((provider?.name || "").trim().toLowerCase() === "gostork") return;
   const isTriggerAgency = !!provider?.services.some(sv => LAWYER_TRIGGER_AGENCY_TYPES.includes(sv.providerType?.name || ""));
   if (!isTriggerAgency) return;
 
   const { accountIds, parentAccountId } = await accountIdsFor(parentUserId);
   if (!parentAccountId) return;
+
+  // Find the target chat FIRST - engaged parents often have NO provider-free
+  // session left (match flows attach a provider to the matchmaker session),
+  // so fall back to their most recent active matchmaker chat. Only claim
+  // the one-time flag once a target exists, otherwise a skipped offer burns
+  // the flag and the parent never gets asked.
+  const evaSession =
+    (await prisma.aiChatSession.findFirst({
+      where: { userId: { in: accountIds }, providerId: null },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    })) ??
+    (await prisma.aiChatSession.findFirst({
+      where: { userId: { in: accountIds }, matchmakerId: { not: null }, status: "ACTIVE" },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    }));
+  if (!evaSession) {
+    console.log(`[lawyer-intro] No suitable session found for parent ${parentUserId} - offer NOT claimed (will retry on next booking)`);
+    return;
+  }
 
   // One-time gate, claimed atomically so double-fired booking hooks (or two
   // account members booking simultaneously) can't post the offer twice.
@@ -52,18 +76,6 @@ export async function maybeOfferLawyerIntro(parentUserId: string, providerId: st
     data: { lawyerIntroOfferedAt: new Date() },
   });
   if (claimed.count !== 1) return;
-
-  // Post into the parent's own Eva session (no provider attached) so the
-  // agency never reads the parent's private legal decision.
-  const evaSession = await prisma.aiChatSession.findFirst({
-    where: { userId: { in: accountIds }, providerId: null },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true },
-  });
-  if (!evaSession) {
-    console.log(`[lawyer-intro] No Eva session found for parent ${parentUserId} - offer skipped (keywords path still available)`);
-    return;
-  }
 
   const isSurrogacy = !!provider?.services.some(sv => sv.providerType?.name === "Surrogacy Agency");
   const journeyWord = isSurrogacy ? "surrogacy" : "egg donation";
@@ -81,19 +93,49 @@ export async function maybeOfferLawyerIntro(parentUserId: string, providerId: st
 }
 
 /**
- * Picks the approved Legal Services provider best matching the parent and
- * opens the 3-way chat. Returns the new session id, or null when no legal
- * provider exists (a plain-text explanation is posted instead).
+ * Picks the approved Legal Services provider best matching the parent (same
+ * state first, else the first one) plus their bookable team member. Shared by
+ * connectLawyer and the deterministic lawyer-connect bypass in ai-router so
+ * both always agree on the same attorney.
  */
-export async function connectLawyer(currentSessionId: string, parentUserId: string): Promise<string | null> {
-  const postNote = (content: string) =>
-    prisma.aiChatMessage.create({ data: { sessionId: currentSessionId, role: "assistant", content, senderType: "ai" } });
-
+export async function pickLawyerWithBooking(parentUserId: string): Promise<{
+  provider: { id: string; name: string; logoUrl: string | null };
+  member: { name: string | null; photoUrl: string | null; slug: string } | null;
+} | null> {
   const lawyers = await prisma.provider.findMany({
     where: { services: { some: { status: "APPROVED", providerType: { name: "Legal Services" } } } },
     select: { id: true, name: true, logoUrl: true, locations: { select: { state: true, city: true } } },
   });
-  if (lawyers.length === 0) {
+  if (lawyers.length === 0) return null;
+  const parentState = (await prisma.user.findUnique({ where: { id: parentUserId }, select: { state: true } }).catch(() => null) as any)?.state || null;
+  const lawyer =
+    (parentState && lawyers.find(l => l.locations.some(loc => (loc.state || "").toLowerCase() === String(parentState).toLowerCase()))) ||
+    lawyers[0];
+  const member = await prisma.user.findFirst({
+    where: { providerId: lawyer.id, scheduleConfig: { bookingPageSlug: { not: null } } },
+    select: { name: true, photoUrl: true, scheduleConfig: { select: { bookingPageSlug: true } } },
+  }).catch(() => null);
+  return {
+    provider: { id: lawyer.id, name: lawyer.name, logoUrl: lawyer.logoUrl },
+    member: member?.scheduleConfig?.bookingPageSlug
+      ? { name: member.name, photoUrl: member.photoUrl, slug: member.scheduleConfig.bookingPageSlug }
+      : null,
+  };
+}
+
+/**
+ * Picks the approved Legal Services provider best matching the parent and
+ * opens the 3-way chat. Returns the new session id, or null when no legal
+ * provider exists (a plain-text explanation is posted instead).
+ * opts.skipBreadcrumb: the deterministic bypass already told the parent the
+ * chat is open (with the calendar card) - don't post a second note under it.
+ */
+export async function connectLawyer(currentSessionId: string, parentUserId: string, opts?: { skipBreadcrumb?: boolean }): Promise<string | null> {
+  const postNote = (content: string) =>
+    prisma.aiChatMessage.create({ data: { sessionId: currentSessionId, role: "assistant", content, senderType: "ai" } });
+
+  const pick = await pickLawyerWithBooking(parentUserId);
+  if (!pick) {
     await postNote(
       "I don't have a fertility attorney on the platform yet - I've flagged this to the GoStork team and they'll reach out with a personal recommendation instead.",
     );
@@ -110,27 +152,24 @@ export async function connectLawyer(currentSessionId: string, parentUserId: stri
     return null;
   }
 
-  // Best match: same state as one of the parent's engaged providers'
-  // sessions is overkill - use the parent's stored country/state when we
-  // have it, else the first (often only) legal provider.
+  const lawyer = pick.provider;
   const parent = await prisma.user.findUnique({
     where: { id: parentUserId },
-    select: { id: true, name: true, firstName: true, state: true, parentAccountId: true },
+    select: { id: true, name: true, firstName: true, parentAccountId: true },
   }).catch(() => null as any);
-  const parentState = (parent as any)?.state || null;
-  const lawyer =
-    (parentState && lawyers.find(l => l.locations.some(loc => (loc.state || "").toLowerCase() === String(parentState).toLowerCase()))) ||
-    lawyers[0];
-
   const parentName = parent?.firstName || parent?.name || "The parent";
   const { accountIds } = await accountIdsFor(parentUserId);
 
-  // Reuse an existing session with this lawyer if one exists.
+  // Reuse an existing session with this lawyer if one exists. The intro
+  // message and the lawyer notification fire ONLY on first creation -
+  // re-connecting (parent asks again, retest, etc.) must not repost the
+  // intro or re-ping the firm.
   let session = await prisma.aiChatSession.findFirst({
     where: { userId: { in: accountIds }, providerId: lawyer.id },
     orderBy: { updatedAt: "desc" },
     select: { id: true },
   });
+  const isNewSession = !session;
   if (session) {
     await prisma.aiChatSession.update({ where: { id: session.id }, data: { status: "CONSULTATION_BOOKED", updatedAt: new Date() } });
   } else {
@@ -147,33 +186,38 @@ export async function connectLawyer(currentSessionId: string, parentUserId: stri
     });
   }
 
-  // Dual-audience intro in the NEW session.
-  await prisma.aiChatMessage.create({
-    data: {
-      sessionId: session.id,
-      role: "assistant",
-      content: `You're connected with ${lawyer.name}! They specialize in fertility law and can walk you through contracts, parental rights, and everything legal on your journey. Say hello and share where you are in the process.`,
-      senderType: "system",
-      senderName: "GoStork",
-      uiCardData: {
-        providerContent: `${parentName} was just connected with you by Eva for legal guidance on their fertility journey. Say hello and let them know how you can help.`,
-      },
-    },
-  });
-
-  // Confirmation breadcrumb in the CURRENT Eva chat.
-  await postNote(`Done! I've opened a chat with ${lawyer.name} - you'll find it in your conversations list. They're expecting you.`);
-
-  // Notify the lawyer's users.
-  const lawyerUsers = await prisma.user.findMany({ where: { providerId: lawyer.id }, select: { id: true } });
-  for (const lu of lawyerUsers) {
-    await prisma.inAppNotification.create({
+  if (isNewSession) {
+    // Dual-audience intro in the NEW session.
+    await prisma.aiChatMessage.create({
       data: {
-        userId: lu.id,
-        eventType: "LAWYER_INTRO_CREATED",
-        payload: { sessionId: session.id, parentName, message: `${parentName} was connected with you for legal guidance.` },
+        sessionId: session.id,
+        role: "assistant",
+        content: `You're connected with ${lawyer.name}! They specialize in fertility law and can walk you through contracts, parental rights, and everything legal on your journey. Say hello and share where you are in the process.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardData: {
+          providerContent: `${parentName} was just connected with you by Eva for legal guidance on their fertility journey. Say hello and let them know how you can help.`,
+        },
       },
-    }).catch(() => {});
+    });
+
+    // Notify the lawyer's users.
+    const lawyerUsers = await prisma.user.findMany({ where: { providerId: lawyer.id }, select: { id: true } });
+    for (const lu of lawyerUsers) {
+      await prisma.inAppNotification.create({
+        data: {
+          userId: lu.id,
+          eventType: "LAWYER_INTRO_CREATED",
+          payload: { sessionId: session.id, parentName, message: `${parentName} was connected with you for legal guidance.` },
+        },
+      }).catch(() => {});
+    }
+  }
+
+  // Confirmation breadcrumb in the CURRENT Eva chat (skipped when the
+  // deterministic bypass already announced the connection with a calendar card).
+  if (!opts?.skipBreadcrumb) {
+    await postNote(`Done! I've opened a chat with ${lawyer.name} - you'll find it in your conversations list. They're expecting you.`);
   }
 
   console.log(`[lawyer-intro] Connected parent ${parentUserId} with ${lawyer.name} (session ${session.id})`);

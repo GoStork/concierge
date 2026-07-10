@@ -278,7 +278,14 @@ export function log(message: string, source = "nestjs") {
   // never-overwrite pattern used for prompt sections below.
   try {
     const db = prismaService.client;
-    const requiredProviderTypes = ["Legal Services"];
+    const requiredProviderTypes = [
+      "Legal Services",
+      "Genetic Counseling",
+      "Fertility Coaches",
+      "Fertility Nutritionists",
+      "Therapists",
+      "Doulas",
+    ];
     for (const name of requiredProviderTypes) {
       const existing = await db.providerType.findUnique({ where: { name } });
       if (!existing) {

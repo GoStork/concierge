@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export const SERVICE_STATUS_OPTIONS = ["NEW", "IN_PROGRESS", "APPROVED", "DECLINED"] as const;
@@ -35,9 +35,11 @@ export default function ManageServicesDialog({ provider, open, onOpenChange }: M
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [localServices, setLocalServices] = useState<any[]>(provider?.services || []);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalServices(provider?.services || []);
+    setConfirmRemoveId(null);
   }, [provider?.id, provider?.services]);
 
   const { data: providerTypes } = useQuery<any[]>({
@@ -80,6 +82,23 @@ export default function ManageServicesDialog({ provider, open, onOpenChange }: M
     },
   });
 
+  const deleteServiceMutation = useMutation({
+    mutationFn: async ({ providerId, serviceId }: { providerId: string; serviceId: string }) => {
+      const res = await apiRequest("POST", `/api/providers/${providerId}/services/${serviceId}/delete`);
+      return res.json();
+    },
+    onSuccess: (_data, { serviceId }) => {
+      invalidateProviderQueries();
+      setLocalServices((prev) => prev.filter((s: any) => s.id !== serviceId));
+      setConfirmRemoveId(null);
+      toast({ title: "Service removed", variant: "success" });
+    },
+    onError: (err: Error) => {
+      setConfirmRemoveId(null);
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const currentServiceTypeIds = new Set(localServices.map((s: any) => s.providerTypeId));
   const availableTypes = providerTypes?.filter((t: any) => !currentServiceTypeIds.has(t.id)) || [];
 
@@ -96,31 +115,71 @@ export default function ManageServicesDialog({ provider, open, onOpenChange }: M
               {localServices.map((service: any) => (
                 <div key={service.id} className="flex items-center justify-between gap-3 p-3 border rounded-[var(--radius)]" data-testid={`service-row-${service.id}`}>
                   <span className="text-sm font-ui">{service.providerType?.name || "Service"}</span>
-                  <Select
-                    value={service.status}
-                    onValueChange={(newStatus) => {
-                      if (!provider) return;
-                      updateServiceStatusMutation.mutate({
-                        providerId: provider.id,
-                        serviceId: service.id,
-                        status: newStatus,
-                      });
-                      setLocalServices((prev) => prev.map((s: any) => (s.id === service.id ? { ...s, status: newStatus } : s)));
-                    }}
-                  >
-                    <SelectTrigger className="w-[160px]" data-testid={`select-status-${service.id}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SERVICE_STATUS_OPTIONS.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          <Badge className={`${SERVICE_STATUS_STYLES[status]} text-xs`}>
-                            {status.replace("_", " ")}
-                          </Badge>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-2">
+                    {confirmRemoveId === service.id ? (
+                      <>
+                        <span className="text-xs text-muted-foreground">Remove this service?</span>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            if (!provider) return;
+                            deleteServiceMutation.mutate({ providerId: provider.id, serviceId: service.id });
+                          }}
+                          disabled={deleteServiceMutation.isPending}
+                          data-testid={`button-confirm-remove-${service.id}`}
+                        >
+                          Remove
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setConfirmRemoveId(null)}
+                          disabled={deleteServiceMutation.isPending}
+                          data-testid={`button-cancel-remove-${service.id}`}
+                        >
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Select
+                          value={service.status}
+                          onValueChange={(newStatus) => {
+                            if (!provider) return;
+                            updateServiceStatusMutation.mutate({
+                              providerId: provider.id,
+                              serviceId: service.id,
+                              status: newStatus,
+                            });
+                            setLocalServices((prev) => prev.map((s: any) => (s.id === service.id ? { ...s, status: newStatus } : s)));
+                          }}
+                        >
+                          <SelectTrigger className="w-[160px]" data-testid={`select-status-${service.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SERVICE_STATUS_OPTIONS.map((status) => (
+                              <SelectItem key={status} value={status}>
+                                <Badge className={`${SERVICE_STATUS_STYLES[status]} text-xs`}>
+                                  {status.replace("_", " ")}
+                                </Badge>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => setConfirmRemoveId(service.id)}
+                          data-testid={`button-remove-service-${service.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

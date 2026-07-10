@@ -29,6 +29,8 @@ const PROVIDER_ROLES = [
   { value: "SPERM_DONOR_COORDINATOR", label: "Sperm Donor Coordinator" },
   { value: "SCHEDULER", label: "Scheduler" },
   { value: "DOCTOR", label: "Doctor" },
+  { value: "LAWYER", label: "Lawyer" },
+  { value: "LEGAL_ASSISTANT", label: "Legal Assistant" },
   { value: "BILLING_MANAGER", label: "Billing Manager" },
 ];
 

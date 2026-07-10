@@ -471,7 +471,7 @@ export default function CompanyTab() {
             <img
               src={getPhotoSrc(logoUrl) || logoUrl}
               alt="Logo"
-              className="w-16 h-16 rounded-[var(--radius)] object-contain bg-secondary shrink-0"
+              className="w-16 h-16 rounded-[var(--radius)] object-contain bg-background p-0.5 border border-border/30 shrink-0"
               referrerPolicy="no-referrer"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               data-testid="img-company-logo"
@@ -670,6 +670,10 @@ export default function CompanyTab() {
         </DndContext>
       </Card>
 
+      {/* The GoStork house profile is the concierge team, not a provider -
+          its "approved services" were only ever scaffolding and caused it to
+          masquerade as an agency/clinic. Section hidden for the house. */}
+      {!isGoStorkHouse && (
       <Card className="p-6 space-y-4">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg font-heading flex items-center gap-2">
@@ -704,6 +708,7 @@ export default function CompanyTab() {
           <p className="text-sm text-muted-foreground py-2">No services registered yet.</p>
         )}
       </Card>
+      )}
 
       {hasDonorServices && (
         <Card className="p-6 space-y-4">
@@ -882,33 +887,7 @@ export default function CompanyTab() {
         </Card>
       )}
 
-      {hasDonorServices && (
-        <Card className="p-6 space-y-4">
-          <h2 className="text-lg font-heading flex items-center gap-2">
-            <ScanFace className="w-5 h-5 text-primary" /> Look-Alike Face Matching
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            GoStork creates a faceprint from your donors' / surrogates' profile photos (processed via AWS Rekognition) so intended parents can find profiles that resemble them. This is biometric processing and is enabled by default under your agency agreement. If you have not obtained the necessary biometric consent from your donors and surrogates, turn it off - your profiles will then be excluded and their faceprints removed.
-          </p>
-          <label className="flex items-start gap-3 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-4">
-            <Checkbox
-              className="mt-0.5"
-              checked={biometricMatchingAuthorized}
-              onCheckedChange={(v) => { if (!readOnly) setBiometricMatchingAuthorized(!!v); }}
-              disabled={readOnly}
-              data-testid="checkbox-biometric-authorized"
-            />
-            <span>
-              {name || "Our agency"} has obtained the consents required for GoStork to generate and store faceprints of our donors and surrogates for look-alike matching.
-              {biometricMatchingAuthorized
-                ? " (Enabled) Turning this off removes all of our profiles' faceprints from the matching index."
-                : " (Disabled) Our profiles are excluded from look-alike matching."}
-            </span>
-          </label>
-        </Card>
-      )}
-
-      {isIvfClinic && (
+      {(isIvfClinic || isGoStorkHouse) && (
         <Card className="p-6 space-y-6">
           <h2 className="text-lg font-heading flex items-center gap-2">
             <Check className="w-5 h-5 text-primary" /> Surrogate Matching Requirements
@@ -997,6 +976,10 @@ export default function CompanyTab() {
         </Card>
       )}
 
+      {/* The house profile's public page has no team display - GoStork staff
+          live in the Team tab (login accounts). Real providers keep this: it
+          feeds the team section parents see on clinic/agency public profiles. */}
+      {!isGoStorkHouse && (
       <Card className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-heading flex items-center gap-2">
@@ -1243,6 +1226,7 @@ export default function CompanyTab() {
           </SortableContext>
         </DndContext>
       </Card>
+      )}
 
       <SaveBar
         visible={!readOnly && isDirty}

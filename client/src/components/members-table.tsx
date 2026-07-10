@@ -46,6 +46,8 @@ const PROVIDER_ROLES: Record<string, string> = {
   SPERM_DONOR_COORDINATOR: "Sperm Donor Coordinator",
   SCHEDULER: "Scheduler",
   DOCTOR: "Doctor",
+  LAWYER: "Lawyer",
+  LEGAL_ASSISTANT: "Legal Assistant",
   BILLING_MANAGER: "Billing Manager",
 };
 

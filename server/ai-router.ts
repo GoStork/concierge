@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { getBaseUrl } from "./src/lib/get-base-url";
+import { buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
 import { canProviderAccessSession } from "../shared/roles";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -987,60 +988,31 @@ async function sendPrepDocEmail(parentEmail: string, parentName: string, baseUrl
     return;
   }
 
-  let brandColor = "#004D4D";
-  let companyName = "GoStork";
-  let logoUrl = "";
-  try {
-    const settings = await prisma.siteSettings.findFirst();
-    if (settings) {
-      brandColor = (settings as any).primaryColor || brandColor;
-      companyName = (settings as any).companyName || companyName;
-      logoUrl = (settings as any).logoWithNameUrl || (settings as any).logoUrl || "";
-    }
-  } catch {}
+  const brand = await fetchEmailBrandData(prisma);
+  const companyName = brand.companyName;
 
   // Served from the admin-uploaded ConciergeAsset (Settings -> AI Concierge).
   // 302s to a signed GCS URL; 404s gracefully if no guide is uploaded yet.
   const downloadLink = `${baseUrl}/api/knowledge/concierge-assets/match_call_prep_guide/file`;
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f5f5f0;font-family:'DM Sans',Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f0;padding:40px 20px;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;">
-<tr><td style="background-color:${brandColor};padding:30px;text-align:center;">
-${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" style="max-height:40px;margin-bottom:8px;"><br>` : ""}
-<h1 style="color:#ffffff;font-family:'Playfair Display',Georgia,serif;font-size:24px;margin:0;">${companyName}</h1>
-</td></tr>
-<tr><td style="padding:40px 30px;">
-<h2 style="font-family:'Playfair Display',Georgia,serif;color:${brandColor};font-size:22px;margin:0 0 16px;">Your Match Call Prep Guide</h2>
-<p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 12px;">Hi ${escapeHtml(parentName)},</p>
-<p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 20px;">Exciting news - a match call is being arranged for you! To help you feel confident and prepared, we've put together a guide with thoughtful questions to ask your potential surrogate.</p>
-<div style="background-color:#f8f9fa;border-radius:8px;padding:20px;margin:0 0 20px;">
-<p style="color:${brandColor};font-size:14px;font-weight:600;margin:0 0 12px;">What's Inside:</p>
+  const html = buildBrandedEmail(brand, {
+    title: "Your Match Call Prep Guide",
+    greeting: `Hi ${escapeHtml(parentName)},`,
+    body: `<p style="margin:0 0 20px;">Exciting news - a match call is being arranged for you! To help you feel confident and prepared, we've put together a guide with thoughtful questions to ask your potential surrogate.</p>
+<div style="background-color:${brand.secondaryColor};border-radius:8px;padding:20px;margin:0;">
+<p style="color:${brand.brandColor};font-size:14px;font-weight:600;margin:0 0 12px;">What's Inside:</p>
 <table cellpadding="0" cellspacing="0" width="100%">
-<tr><td style="padding:4px 0;color:#333;font-size:14px;">🫶 Personal &amp; Lifestyle questions</td></tr>
-<tr><td style="padding:4px 0;color:#333;font-size:14px;">🧠 Values &amp; Boundaries discussion points</td></tr>
-<tr><td style="padding:4px 0;color:#333;font-size:14px;">🏥 Medical &amp; Pregnancy-related questions</td></tr>
-<tr><td style="padding:4px 0;color:#333;font-size:14px;">💬 Key Ethical Topics to address</td></tr>
-<tr><td style="padding:4px 0;color:#333;font-size:14px;">📝 Legal, Logistical &amp; Communication style</td></tr>
-<tr><td style="padding:4px 0;color:#333;font-size:14px;">🐣 After Birth expectations</td></tr>
+<tr><td style="padding:4px 0;font-size:14px;">🫶 Personal &amp; Lifestyle questions</td></tr>
+<tr><td style="padding:4px 0;font-size:14px;">🧠 Values &amp; Boundaries discussion points</td></tr>
+<tr><td style="padding:4px 0;font-size:14px;">🏥 Medical &amp; Pregnancy-related questions</td></tr>
+<tr><td style="padding:4px 0;font-size:14px;">💬 Key Ethical Topics to address</td></tr>
+<tr><td style="padding:4px 0;font-size:14px;">📝 Legal, Logistical &amp; Communication style</td></tr>
+<tr><td style="padding:4px 0;font-size:14px;">🐣 After Birth expectations</td></tr>
 </table>
-</div>
-<table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;"><tr><td style="background-color:${brandColor};border-radius:8px;padding:14px 32px;">
-<a href="${downloadLink}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;display:inline-block;">Download Your Guide (PDF)</a>
-</td></tr></table>
-<div style="background-color:#fef9e7;border-left:4px solid #f59e0b;padding:16px;border-radius:4px;margin:0 0 20px;">
-<p style="color:#333;font-size:14px;line-height:1.5;margin:0;"><strong>💡 Tip:</strong> Start warm and personal - this is a relationship-building moment, not just a checklist. Leave space for your surrogate to ask you questions too. It's a two-way match!</p>
-</div>
-<p style="color:#666;font-size:13px;line-height:1.5;margin:0;">Your ${companyName} team is here every step of the way. If you have any questions before your call, just chat with your AI concierge or reach out to our team.</p>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
+</div>`,
+    alertBox: { text: `<strong>💡 Tip:</strong> Start warm and personal - this is a relationship-building moment, not just a checklist. Leave space for your surrogate to ask you questions too. It's a two-way match!`, type: "warning" },
+    buttons: [{ label: "Download Your Guide (PDF)", url: downloadLink }],
+    footer: `Your ${companyName} team is here every step of the way. If you have any questions before your call, just chat with your AI concierge or reach out to our team.`,
+  });
 
   const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@gostork.com";
   try {
@@ -1073,49 +1045,22 @@ async function sendWhisperEmail(providerEmail: string, providerName: string, que
     return;
   }
 
-  let brandColor = "#004D4D";
-  let companyName = "GoStork";
-  let logoUrl = "";
-  try {
-    const settings = await prisma.siteSettings.findFirst();
-    if (settings) {
-      brandColor = (settings as any).primaryColor || brandColor;
-      companyName = (settings as any).companyName || companyName;
-      logoUrl = (settings as any).logoWithNameUrl || (settings as any).logoUrl || "";
-    }
-  } catch {}
+  const brand = await fetchEmailBrandData(prisma);
+  const companyName = brand.companyName;
 
   const chatLink = overrideChatLink || `${baseUrl}/chat/${sessionId}`;
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f5f5f0;font-family:'DM Sans',Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f0;padding:40px 20px;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;">
-<tr><td style="background-color:${brandColor};padding:30px;text-align:center;">
-${logoUrl ? `<img src="${logoUrl}" alt="${companyName}" style="max-height:40px;margin-bottom:8px;"><br>` : ""}
-<h1 style="color:#ffffff;font-family:'Playfair Display',Georgia,serif;font-size:24px;margin:0;">${companyName}</h1>
-</td></tr>
-<tr><td style="padding:40px 30px;">
-<h2 style="font-family:'Playfair Display',Georgia,serif;color:${brandColor};font-size:22px;margin:0 0 16px;">New Question from a Prospective Parent</h2>
-<p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 12px;">Hi ${escapeHtml(providerName)} team,</p>
-<p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 16px;">A prospective parent asked our AI concierge a question that we don't have the answer to yet. Could you help us out?</p>
-<div style="background-color:#f8f9fa;border-left:4px solid ${brandColor};padding:16px 20px;border-radius:4px;margin:0 0 24px;">
-<p style="color:#555;font-size:13px;font-weight:600;text-transform:uppercase;margin:0 0 8px;">Question:</p>
-<p style="color:#333;font-size:15px;line-height:1.6;margin:0;font-style:italic;">"${escapeHtml(questionText)}"</p>
+  const html = buildBrandedEmail(brand, {
+    title: "New Question from a Prospective Parent",
+    greeting: `Hi ${escapeHtml(providerName)} team,`,
+    body: `<p style="margin:0 0 16px;">A prospective parent asked our AI concierge a question that we don't have the answer to yet. Could you help us out?</p>
+<div style="background-color:${brand.secondaryColor};border-left:4px solid ${brand.brandColor};padding:16px 20px;border-radius:4px;margin:0 0 24px;">
+<p style="color:${brand.mutedForegroundColor};font-size:13px;font-weight:600;text-transform:uppercase;margin:0 0 8px;">Question:</p>
+<p style="font-size:15px;line-height:1.6;margin:0;font-style:italic;">"${escapeHtml(questionText)}"</p>
 </div>
-<p style="color:#333;font-size:15px;line-height:1.6;margin:0 0 24px;">Once you answer, our AI will learn it for the future so parents always get accurate information about your clinic.</p>
-<table cellpadding="0" cellspacing="0" style="margin:0 auto 24px;"><tr><td style="background-color:${brandColor};border-radius:8px;padding:14px 32px;">
-<a href="${chatLink}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;display:inline-block;">Open This Conversation</a>
-</td></tr></table>
-<p style="color:#999;font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid #eee;">This question was asked anonymously - no parent contact information is shared. You can reply directly from your ${companyName} inbox.</p>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
+<p style="margin:0;">Once you answer, our AI will learn it for the future so parents always get accurate information about your clinic.</p>`,
+    buttons: [{ label: "Open This Conversation", url: chatLink }],
+    footer: `This question was asked anonymously - no parent contact information is shared. You can reply directly from your ${companyName} inbox.`,
+  });
 
   const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@gostork.com";
   try {
@@ -1712,7 +1657,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const userId = (req.user as any).id;
     let currentSessionId = req.body.sessionId;
 
-    const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true, name: true, firstName: true, lastName: true } });
+    const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true, name: true, firstName: true, lastName: true, email: true, mobileNumber: true } });
     if (currentSessionId) {
       const session = await prisma.aiChatSession.findUnique({ where: { id: currentSessionId } });
       if (!session) {
@@ -1897,7 +1842,10 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         }
       }
 
-      // If the parent is requesting a human in a provider session, notify GoStork admins
+      // If the parent is requesting a human in a provider session, notify GoStork admins.
+      // NOTE: the handler-wide `firstName` is declared much later (TDZ) - use this
+      // branch-local name everywhere below or the whole branch throws at runtime.
+      const parentFirstName = currentUser?.firstName || currentUser?.name?.split(" ")[0] || "The parent";
       let humanEscalationTriggered = false;
       const userMessage = String(req.body.message ?? "");
       const humanRequestPatternInProvider = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person/i;
@@ -1911,16 +1859,16 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
               data: {
                 userId: admin.id,
                 eventType: "HUMAN_ESCALATION",
-                payload: { parentName: firstName, parentUserId: userId, sessionId: currentSessionId, message: `${firstName} has requested to speak with a human concierge` },
+                payload: { parentName: parentFirstName, parentUserId: userId, sessionId: currentSessionId, message: `${parentFirstName} has requested to speak with a human concierge` },
               },
             });
           }
           try {
             const { notifyAdminsHumanEscalation } = await import("./notify-admin-escalation");
             notifyAdminsHumanEscalation({
-              parentName: firstName,
+              parentName: parentFirstName,
               parentEmail: currentUser?.email || "",
-              parentPhone: currentUser?.mobileNumber,
+              parentPhone: currentUser?.mobileNumber || undefined,
               sessionId: currentSessionId || "",
             }).catch((e: any) => console.error("[PROVIDER_SESSION ESCALATION] Email/SMS failed:", e));
 
@@ -1935,7 +1883,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
                 if (appEvents) {
                   appEvents.emit({
                     type: "human_escalation",
-                    payload: { parentName: firstName, sessionId: currentSessionId, message: `${firstName} has requested to speak with a human concierge` },
+                    payload: { parentName: parentFirstName, sessionId: currentSessionId, message: `${parentFirstName} has requested to speak with a human concierge` },
                     targetUserIds: admins.map((a: any) => a.id),
                   }).catch((e: any) => console.error("[PROVIDER_SESSION ESCALATION] SSE failed:", e));
                 }
@@ -1950,6 +1898,88 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }
 
       const sse = setupSSE(res);
+
+      // "Talk to GoStork Team" flow inside a provider session. The AI is passive
+      // here (messages relay straight to the provider), so the triage reply that
+      // Eva generates in AI-only sessions is posted deterministically instead.
+      // Dual-audience: the parent reads `content` (second person), the provider
+      // chat renders `uiCardData.providerContent`.
+      const teamQuickReplies = ["Keep chatting here", "I'll wait for the team", "Schedule a video call"];
+      if (humanRequestPatternInProvider.test(userMessage)) {
+        const triageContent = "I've notified the GoStork concierge team - someone will join this chat shortly, and they'll see the full conversation when they arrive. What would you like to do in the meantime?";
+        const triageCardData = {
+          quickReplies: teamQuickReplies,
+          providerContent: `${parentFirstName} asked to speak with the GoStork team - a GoStork concierge will join this chat shortly.`,
+        };
+        const triageMsg = await prisma.aiChatMessage.create({
+          data: { sessionId: currentSessionId!, role: "assistant", content: triageContent, senderType: "system", senderName: "GoStork", uiCardData: triageCardData },
+        });
+        sse.sendToken(triageContent);
+        sse.sendDone({
+          message: { id: triageMsg.id, content: triageContent, senderType: "system", role: "assistant", uiCardData: triageCardData },
+          sessionId: currentSessionId,
+          userMessageId: savedUserMsg.id,
+          userMessageDeliveredAt: userMsgDeliveredAt,
+          quickReplies: teamQuickReplies,
+          humanNeeded: true,
+        });
+        return;
+      }
+      if (/^i'?ll wait for the team[.!]?$/i.test(userMessage.trim())) {
+        const ackContent = "No problem - the team will be with you shortly. I'm here if you need anything in the meantime.";
+        const ackCardData = { providerContent: `${parentFirstName} is waiting for the GoStork team to join this chat.` };
+        const ackMsg = await prisma.aiChatMessage.create({
+          data: { sessionId: currentSessionId!, role: "assistant", content: ackContent, senderType: "system", senderName: "GoStork", uiCardData: ackCardData },
+        });
+        sse.sendToken(ackContent);
+        sse.sendDone({
+          message: { id: ackMsg.id, content: ackContent, senderType: "system", role: "assistant", uiCardData: ackCardData },
+          sessionId: currentSessionId,
+          userMessageId: savedUserMsg.id,
+          userMessageDeliveredAt: userMsgDeliveredAt,
+        });
+        return;
+      }
+      if (/^schedule a video call[.!]?$/i.test(userMessage.trim()) ||
+          (/(schedule|book|set up).{0,40}(video\s*)?(call|meeting).{0,40}(concierge|gostork|your team|the team|a human)/i.test(userMessage) && !/(agency|clinic|provider|surrogate|donor)/i.test(userMessage))) {
+        // Same GoStork staff pick as the [[CONCIERGE_CALENDAR]] tag handler.
+        const staffMember = await prisma.user.findFirst({
+          where: {
+            OR: [{ roles: { has: "GOSTORK_ADMIN" } }, { roles: { has: "GOSTORK_CONCIERGE" } }],
+            scheduleConfig: { bookingPageSlug: { not: null } },
+          },
+          orderBy: { createdAt: "asc" },
+          select: { name: true, photoUrl: true, scheduleConfig: { select: { bookingPageSlug: true } } },
+        });
+        if (staffMember?.scheduleConfig?.bookingPageSlug) {
+          const calContent = "Here's the GoStork concierge calendar - pick a time that works for you:";
+          const conciergeCard = {
+            providerId: null,
+            providerName: "GoStork",
+            providerLogo: null,
+            bookingUrl: `/book/${staffMember.scheduleConfig.bookingPageSlug}`,
+            iframeEnabled: true,
+            memberBookingSlug: staffMember.scheduleConfig.bookingPageSlug,
+            memberName: staffMember.name,
+            memberPhoto: staffMember.photoUrl,
+            aiSessionId: currentSessionId || undefined,
+          };
+          const calCardData = { consultationCard: conciergeCard, providerContent: `${parentFirstName} is scheduling a video call with the GoStork team.` };
+          const calMsg = await prisma.aiChatMessage.create({
+            data: { sessionId: currentSessionId!, role: "assistant", content: calContent, senderType: "system", senderName: "GoStork", uiCardType: "rich", uiCardData: calCardData },
+          });
+          sse.sendToken(calContent);
+          sse.sendDone({
+            message: { id: calMsg.id, content: calContent, senderType: "system", role: "assistant", uiCardData: calCardData },
+            sessionId: currentSessionId,
+            userMessageId: savedUserMsg.id,
+            userMessageDeliveredAt: userMsgDeliveredAt,
+            consultationCard: conciergeCard,
+          });
+          return;
+        }
+      }
+
       sse.sendDone({
         message: { id: null, content: "", senderType: "ai", role: "assistant" },
         sessionId: currentSessionId,
@@ -2275,6 +2305,10 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     }
 
     let userContextBlock = "";
+    // Whether a real upcoming provider consultation exists (drives CALL PREP MODE
+    // below and read by the FAVORITE interceptor - never offer to schedule a call
+    // that is already booked).
+    let hasUpcomingProviderConsult = false;
     if (userRecord) {
       const parts: string[] = [];
 
@@ -2438,6 +2472,69 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         }
       }
 
+      // POST-BOOKING CALL PREP: once a consultation is booked (journeyStage flips to
+      // "Consultation Requested" in the calendar controller / FAVORITE flow SAVE),
+      // drive the short agency-prep intake for whatever is still missing so the
+      // provider's parent-profile card is filled before the call. The rules live in
+      // the post_booking_call_prep prompt section; this block activates it and
+      // scopes it to ONLY the missing items.
+      // journeyStage alone is a STALE signal - it stays "Consultation Requested"
+      // after calls happen or get cancelled, which would make every later favorite
+      // act like a call is already scheduled. Require a real upcoming
+      // provider-hosted consultation (GoStork concierge calls don't count -
+      // there's no agency to prep for).
+      const upcomingProviderConsult = profile?.journeyStage === "Consultation Requested"
+        ? await prisma.booking.findFirst({
+            where: {
+              parentUserId: userId,
+              status: { in: ["PENDING", "CONFIRMED"] },
+              scheduledAt: { gte: new Date() },
+              providerUser: { providerId: { not: null } },
+            },
+            select: {
+              id: true,
+              providerUser: {
+                select: {
+                  provider: {
+                    select: {
+                      name: true,
+                      services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
+                    },
+                  },
+                },
+              },
+            },
+          })
+        : null;
+      hasUpcomingProviderConsult = !!upcomingProviderConsult;
+      if (upcomingProviderConsult) {
+        // These two directives must hold for the WHOLE post-booking phase -
+        // not just while prep items are missing (prep completes quickly and
+        // the model then happily re-offered the calendar / never re-raised
+        // the buried lawyer offer).
+        const consultProvName = upcomingProviderConsult.providerUser?.provider?.name || "the provider";
+        parts.push(`CALL ALREADY BOOKED: the parent already has a consultation call scheduled with ${consultProvName}. NEVER offer to schedule another consultation with ${consultProvName} and NEVER emit [[CONSULTATION_BOOKING]] for them - reference the existing upcoming call instead (next steps happen ON that call). Scheduling with a DIFFERENT provider they newly engage is still fine.`);
+        const prepMissing: string[] = [];
+        if (!userRecord?.gender || !userRecord?.relationshipStatus) prepMissing.push("family type - who is on this journey (Phase 1 identity question)");
+        if (!userRecord?.dateOfBirth) prepMissing.push("their age (save as birthYear = current year minus age)");
+        if (!userRecord?.sexualOrientation) prepMissing.push(`their sexual orientation - agencies use it for surrogate matching preferences. Ask warmly and normalize it, e.g. "So the agency can match you with surrogates who are excited about your family type - how do you identify?" [[QUICK_REPLY:Straight|Gay|Lesbian|Bi|Queer]] and save [[SAVE:{"sexualOrientation":"..."}]]. SKIP silently (do not ask) if it is already implied by family type: two dads = Gay, two moms = Lesbian`);
+        if (/married|partner|couple/i.test(userRecord?.relationshipStatus || "") && !userRecord?.partnerFirstName) prepMissing.push("their partner's first name and age (save partnerFirstName + partnerBirthYear)");
+        if (profile?.hasEmbryos == null) prepMissing.push("whether they have frozen embryos");
+        else if (profile.hasEmbryos === true && (profile?.embryoCount == null || profile?.embryosTested == null)) prepMissing.push("embryo details (how many and/or PGT-A tested)");
+        if (!profile?.eggSource) prepMissing.push("their egg source plan (SKIP silently if implied by family type)");
+        if (!profile?.spermSource) prepMissing.push("their sperm source plan (SKIP silently if implied by family type)");
+        if (profile?.needsClinic == null && !profile?.currentClinicName) prepMissing.push("whether they already work with an IVF clinic (and which one)");
+        // "First IVF journey?" is a CLINIC-call question - surrogacy/donor
+        // agency calls don't need it (user feedback 2026-07-09).
+        const consultTypeNames = (upcomingProviderConsult?.providerUser?.provider?.services || []).map((sv: any) => sv.providerType?.name || "");
+        const consultIsIvfClinic = consultTypeNames.some((n: string) => /ivf|clinic/i.test(n));
+        if (profile?.isFirstIvf == null && consultIsIvfClinic) prepMissing.push("whether this is their first IVF journey");
+        if (!profile?.surrogateBudget && profile?.needsSurrogate !== false) prepMissing.push("their budget comfort range for the journey");
+        if (prepMissing.length > 0) {
+          parts.push(`CALL PREP MODE - ACTIVE: The parent's consultation call is ALREADY BOOKED and confirmed - do NOT offer the calendar again, do NOT emit [[CONSULTATION_BOOKING]], do NOT ask about scheduling or time preferences. Follow the POST-BOOKING CALL PREP section. Items still missing for the provider: ${prepMissing.map((m, i) => `(${i + 1}) ${m}`).join("; ")}. When the parent agrees to prep (e.g. "Let's do it") or sends any message while prep is pending, ask the FIRST missing item immediately - one question per message, IN THE ORDER LISTED, framed as preparing for their call. THIS OVERRIDES THE FAVORITE FLOW: if the parent just favorited a profile, confirm the favorite in ONE sentence (note the agency can discuss her on the upcoming call - do NOT offer to schedule another call, do NOT ask if they have questions or want more profiles), then ask the next missing prep item in the SAME reply. NEVER refuse the save - the system already saved it when the heart was tapped; if the profile has a hard incompatibility (e.g. not open to single parents), keep the confirmation, add ONE short heads-up sentence about it, and STILL ask the next prep item. Everything else about the parent is already saved - do not re-ask it.`);
+        }
+      }
+
       userContextBlock = parts.join("\n");
     }
 
@@ -2446,6 +2543,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const biologicalMasterLogicFromDb = dbSections ? assemblePromptFromSections(dbSections, [
       "expert_persona", "ui_components", "conversation_flow", "matching_rules",
       "match_blurb_rules", "protocols", "post_match_behavior", "agency_confidentiality", "general_behavior",
+      "post_booking_call_prep",
     ]) : null;
 
     const biologicalMasterLogic = biologicalMasterLogicFromDb || `
@@ -2894,15 +2992,15 @@ STEP 7 - MATCH REVEAL:
   
   - FAVORITE (❤️ button): The parent sends a message like "I like [Name]! Save as favorite. ❤️"
     → Step 1: Acknowledge warmly and confirm the favorite: "Great choice! I've saved [Name] as a favorite for you."
-    → Step 2: Immediately propose scheduling as the primary next step. Say something like: "The next step would be to schedule a free consultation call with [Agency Name] so you can speak with them directly - it's completely free and no commitment required. Would you like to book that now, or do you have questions about [Name] first?" [[QUICK_REPLY:Schedule a consultation|I have some questions|Show me more profiles]]
+    → Step 2: Immediately propose scheduling as the primary next step. Say something like: "The next step would be to schedule a free consultation call with the surrogate's agency (or "the egg donor's agency" / "the sperm donor's agency") so you can speak with them directly - it's completely free and no commitment required. Would you like to book that now, or do you have questions about [Name] first?" [[QUICK_REPLY:Schedule a consultation|I have some questions|Show me more profiles]] NEVER say the agency's real name before the call is booked (AGENCY NAME CONFIDENTIALITY).
       CRITICAL: Do NOT offer showing more profiles as an equal or primary option at this stage - the parent just saved someone they like. Scheduling is the clear next step. "Show me more profiles" is a fallback only.
     → Step 3 (If "I have some questions"): FIRST, use the get_surrogate_profile tool to look up the surrogate's FULL profile (for egg donors/clinics, re-run the search tool). The get_surrogate_profile tool returns pregnancy history (birth weights, delivery types, gestational ages), health info, support system, insurance, preferences, and more. Answer the parent's question using this data.
       ONLY use [[WHISPER:PROVIDER_ID]] if the answer is truly NOT in the profile data AND NOT in the knowledge base. Questions about pregnancy history, birth weights, delivery types, health details, BMI, compensation, preferences, support system, and personal background are ALL in the profile - use the tool to look them up.
       If you DO need to whisper: Your response MUST include the literal tag [[WHISPER:provider-uuid-here]] with the real provider UUID. Say: "That's a great question! I don't have that specific detail yet, but I've just sent a message to the agency. I'll get back to you as soon as they reply!" followed by [[WHISPER:provider-uuid-here]].
       CRITICAL: You MUST include the [[WHISPER:...]] tag in your response text. Do NOT just say you'll check - the tag is what triggers the system to actually send the question. Without the tag, NOTHING happens. The PROVIDER_ID is the ownerProviderId from the MATCH_CARD you presented (NOT the surrogate/donor's own ID).
       IMPORTANT: After using [[WHISPER:...]], WAIT for the provider's answer. Do NOT move forward to scheduling until the parent says they're done with questions. Keep answering questions as long as the parent has them.
-      After answering ALL questions, loop back to Step 2: "Now that you have those answers - would you like to schedule a free consultation call with [Agency Name]?" [[QUICK_REPLY:Yes, schedule a consultation|Show me more profiles]]
-    → Step 4 (If "Schedule a consultation" at any point): Provide a brief summary about the agency. Then include [[CONSULTATION_BOOKING:PROVIDER_ID]] to present the booking card. Also include [[HOT_LEAD:PROVIDER_ID]] and save: [[SAVE:{"journeyStage":"Consultation Requested"}]]
+      After answering ALL questions, loop back to Step 2: "Now that you have those answers - would you like to schedule a free consultation call with the surrogate's agency?" (or the egg/sperm donor's agency - NEVER the real agency name) [[QUICK_REPLY:Yes, schedule a consultation|Show me more profiles]]
+    → Step 4 (If "Schedule a consultation" at any point): Provide a brief summary about the agency WITHOUT naming it (per AGENCY NAME CONFIDENTIALITY - real details like location/experience are fine, the name is not). Then include [[CONSULTATION_BOOKING:PROVIDER_ID]] to present the booking card. Also include [[HOT_LEAD:PROVIDER_ID]] and save: [[SAVE:{"journeyStage":"Consultation Requested"}]]
     → Step 5 (If "Show me more profiles"): Call the search tools again and present ONE NEW MATCH_CARD.
   
   - REMEMBER: Always wait for the parent to respond at each step. Never skip ahead or auto-present the next profile. The parent can ask as many questions as they want before scheduling.
@@ -3790,7 +3888,19 @@ Now continue with any surrogate matching questions not yet answered: D1 (countri
     if (humanRequestRegex.test(userMessage)) {
       messages.push({
         role: "system" as const,
-        content: `The parent is requesting to talk to a human. Your response MUST:\n1. Confirm the GoStork concierge team has been notified and someone will join the chat shortly.\n2. Ask ONCE if they'd like to continue the matching process while waiting.\nExample: "Of course! I've notified the GoStork concierge team - someone will join our chat shortly to assist you directly. In the meantime, would you like to continue with the matching process while we wait?"\nNEVER use these words: "schedule", "arrange", "set up a call", "connect you with", "consultation". The human is joining THIS chat, not scheduling a separate call.\nYou MUST include [[HUMAN_NEEDED]] in your response.`,
+        content: `The parent is requesting to talk to a human. Your response MUST:\n1. Confirm the GoStork concierge team has been notified and someone will join the chat shortly.\n2. Ask what they'd like to do in the meantime and end with EXACTLY these quick replies: [[QUICK_REPLY:Keep making progress|I'll wait for the team|Schedule a video call]]\nExample: "Of course! I've notified the GoStork concierge team - someone will join our chat shortly to assist you directly. What would you like to do in the meantime?"\nDo NOT offer provider consultations here - this is about GoStork's own team.\nYou MUST include [[HUMAN_NEEDED]] in your response.`,
+      });
+    }
+
+    // Parent wants to SCHEDULE a call with GoStork's own team (the
+    // escalation quick reply or a free-text ask). Deterministic directive -
+    // the DB prompt alone proved too weak against the older "never say
+    // schedule" escalation framing in the conversation history.
+    const scheduleConciergeRegex = /^schedule a video call$|(schedule|book|set up).{0,40}(video\s*)?(call|meeting).{0,40}(concierge|gostork|your team|the team|a human)|(video\s*)?call with (the )?(concierge|gostork|team|human)/i;
+    if (scheduleConciergeRegex.test(userMessage.trim()) && !/(agency|clinic|provider|surrogate|donor)/i.test(userMessage)) {
+      messages.push({
+        role: "system" as const,
+        content: `The parent wants to SCHEDULE a video call with the GoStork concierge team. You MUST reply with ONE short sentence like "Here's the concierge calendar - pick a time that works for you:" and include [[CONCIERGE_CALENDAR]]. The system embeds the GoStork concierge's booking calendar right below your message automatically. Do NOT mention a "Contact Us" page, a "Schedule a Call" button, or any other way to book - the calendar card IS the way. Also include [[HUMAN_NEEDED]] only if the team has not already been notified in this conversation.`,
       });
     }
 
@@ -3808,7 +3918,7 @@ Now continue with any surrogate matching questions not yet answered: D1 (countri
     // Always inject consultation naming rule
     messages.push({
       role: "system" as const,
-      content: `When offering to schedule a consultation or call, you MUST always name the specific provider/clinic/agency. NEVER say vague phrases like "one of our experts" or "a professional". Always say the specific name, e.g., "Would you like to schedule a free consultation with San Diego Fertility Center?" If multiple providers were presented, name the most recently discussed one.`,
+      content: `When offering to schedule a consultation or call with a PROVIDER, you MUST always name the specific provider/clinic/agency. NEVER say vague phrases like "one of our experts" or "a professional". Always say the specific name, e.g., "Would you like to schedule a free consultation with San Diego Fertility Center?" If multiple providers were presented, name the most recently discussed one. Exception: calls with GoStork's OWN concierge team use [[CONCIERGE_CALENDAR]] and are named "the GoStork concierge team".`,
     });
 
     // Detect short affirmatives and "learn more" intent BEFORE show-more blocks
@@ -4147,7 +4257,39 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       /\bi('?m| am) (?:a |the )?(?:woman|man)\b/i.test(allUserMessages);
     const phase1Complete = familyTypeKnown && mwGenderKnown;
 
-    if (useTier2) {
+    // Deterministic lawyer connect - BOTH tiers. The model repeatedly
+    // narrates fake "I've submitted a request, they'll reach out" text
+    // instead of emitting [[LAWYER_CONNECT]] (and the whisper fallback then
+    // pings the AGENCY with the lawyer ask). When the parent clearly asks to
+    // be connected with a lawyer, skip the model entirely: announce the
+    // connection and embed the attorney's booking calendar inline. The
+    // [[LAWYER_CALENDAR]] tag is processed downstream (card + connectLawyer).
+    let lawyerBypassPick: Awaited<ReturnType<typeof import("./lawyer-intro-flow").pickLawyerWithBooking>> = null;
+    const lawyerAskRegex = /\b(connect|introduce|match|set me up|hook me up)\b[^.?!]{0,40}\b(lawyer|attorney|legal counsel)\b|^(yes[,! ]*)?(please )?(i (want|need|would like) |get me |find me )(a |an |to (talk|speak) (to|with) (a |an )?)?(fertility )?(lawyer|attorney)\b/i;
+    const lawyerDeclineRegex = /\bnot right now\b|\bno thanks?\b|\bdon'?t (want|need)\b|\bmaybe later\b|^\s*no\b/i;
+    if (lawyerAskRegex.test(userMessage) && !lawyerDeclineRegex.test(userMessage)) {
+      try {
+        const { pickLawyerWithBooking } = await import("./lawyer-intro-flow");
+        lawyerBypassPick = await pickLawyerWithBooking(userId);
+        if (lawyerBypassPick) {
+          const memberFirst = lawyerBypassPick.member?.name ? String(lawyerBypassPick.member.name).trim() : null;
+          finalContent = memberFirst && lawyerBypassPick.member?.slug
+            ? `You're in good hands - I've connected you with ${lawyerBypassPick.provider.name} and opened a chat with them in your conversations list. You can also schedule a call with ${memberFirst} directly right here: [[LAWYER_CALENDAR]]`
+            : `You're in good hands - I've connected you with ${lawyerBypassPick.provider.name} and opened a chat with them in your conversations list. Say hello and share where you are in the process. [[LAWYER_CALENDAR]]`;
+          sse.sendToken(finalContent.replace(/\s*\[\[LAWYER_CALENDAR\]\]/g, "").trim());
+          serverBypassServed = true;
+          console.log(`[LAWYER BYPASS] Deterministic connect served (${lawyerBypassPick.provider.name}, member slug: ${lawyerBypassPick.member?.slug || "none"})`);
+        } else {
+          console.log("[LAWYER BYPASS] No approved Legal Services provider - falling through to the model");
+        }
+      } catch (e: any) {
+        console.error("[LAWYER BYPASS] pick failed - falling through to the model:", e?.message);
+      }
+    }
+
+    if (serverBypassServed && finalContent) {
+      // Canned lawyer reply already streamed - skip both model tiers.
+    } else if (useTier2) {
       // Tier 2: Claude Sonnet 4.6 with full prompt + caching + tools
       // Force tool use when parent says "ready" after CURATION - prevents AI from fabricating match results.
       // Only force if no match cards have been shown yet in this session (otherwise Tier2 handles it naturally).
@@ -4619,10 +4761,21 @@ ${phase0Section}`;
         } catch {}
       }
 
-      // Human escalation: bypass Gemini entirely and return the correct response
+      // Schedule-with-concierge: bypass Gemini entirely - Tier 1's compact
+      // prompt knows nothing about [[CONCIERGE_CALENDAR]], so it hallucinates
+      // fake "Contact Us" buttons. Deterministic response; the tag is
+      // processed downstream into the GoStork concierge booking card.
+      const scheduleConciergeRegexT1 = /^schedule a video call$|(schedule|book|set up).{0,40}(video\s*)?(call|meeting).{0,40}(concierge|gostork|your team|the team|a human)|(video\s*)?call with (the )?(concierge|gostork|team|human)/i;
       const humanRequestRegexT1 = /talk to (?:a )?(?:real|human|actual) person|talk to (?:the )?gostork team|speak (?:to|with) (?:a )?human|connect me with (?:a )?(?:human|person|someone)|i want (?:a )?human|i'd like to talk to a real person|just want to speak to (?:a )?human|want to talk to (?:a )?human/i;
-      if (humanRequestRegexT1.test(userMessage)) {
-        const humanMsg = `Of course! I've just notified the GoStork concierge team - someone will join our chat shortly to assist you directly. In the meantime, would you like to keep making progress on your matches while you wait? [[HUMAN_NEEDED]] [[QUICK_REPLY:Yes, let's keep going|I'll wait for the team]]`;
+      if (scheduleConciergeRegexT1.test(userMessage.trim()) && !/(agency|clinic|provider|surrogate|donor)/i.test(userMessage)) {
+        // Notify the team only if this session hasn't escalated yet -
+        // the HUMAN_NEEDED handler pings every admin unconditionally.
+        const needsNotify = !currentSession?.humanRequested;
+        const calMsg = `Here's the concierge calendar - pick a time that works for you: [[CONCIERGE_CALENDAR]]${needsNotify ? " [[HUMAN_NEEDED]]" : ""}`;
+        sse.sendToken(calMsg.replace(/\[\[CONCIERGE_CALENDAR\]\]/g, "").replace(/\[\[HUMAN_NEEDED\]\]/g, "").trim());
+        finalContent = calMsg;
+      } else if (humanRequestRegexT1.test(userMessage)) {
+        const humanMsg = `Of course! I've just notified the GoStork concierge team - someone will join our chat shortly to assist you directly. What would you like to do in the meantime? [[HUMAN_NEEDED]] [[QUICK_REPLY:Keep making progress|I'll wait for the team|Schedule a video call]]`;
         sse.sendToken(humanMsg.replace(/\[\[HUMAN_NEEDED\]\]/g, "").replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim());
         finalContent = humanMsg;
       } else if (shouldServePhase1) {
@@ -5201,6 +5354,75 @@ ${phase0Section}`;
         }
       } catch (e) {
         console.error("[QUESTION INTERCEPT] Error:", e);
+      }
+    }
+
+    // FAVORITE CONVERSION INTERCEPTOR: The FAVORITE flow (post_match_behavior)
+    // mandates proposing a free consultation call as the primary next step after
+    // the parent hearts a profile. Tier 1 sometimes replies with a bare
+    // acknowledgment instead - especially on marketplace deep-link sessions where
+    // the heart is the first turn after the greeting card. Enforce the offer:
+    // one forced retry, then a deterministic Step 2 append if the model still
+    // drops it. Scoped to the exact heart-button message ("Save as favorite")
+    // so free-typed messages never trigger it.
+    const isHeartButtonAction = /save as favorite/i.test(userMessage);
+    const proposesConsultation = /\[\[CONSULTATION_BOOKING:/i.test(finalContent) ||
+      /\[\[BANK_CHECKOUT:/i.test(finalContent) || // bank donors are ready inventory - no consultation step
+      (/consultation/i.test(finalContent) && /\[\[QUICK_REPLY:/i.test(finalContent));
+    // With a consultation already booked, "schedule a call" must NOT be enforced -
+    // the CALL PREP MODE directive drives the post-favorite behavior instead.
+    if (isHeartButtonAction && hasUpcomingProviderConsult) {
+      console.log(`[FAVORITE INTERCEPT] Skipped - consultation already booked, call-prep directive owns the follow-up`);
+    }
+    if (isHeartButtonAction && !hasUpcomingProviderConsult && !proposesConsultation && currentSessionId) {
+      console.log(`[FAVORITE INTERCEPT] Heart action but AI reply has no consultation offer. Enforcing FAVORITE flow Step 2.`);
+      try {
+        const likedName = (userMessage.match(/^i like (.+?)!\s*save as favorite/i)?.[1] || "").trim();
+        const foundMc = await findLatestMatchCard(currentSessionId);
+        const etype = ((foundMc?.type || likedName || "")).toLowerCase();
+
+        // How to refer to the favorited profile in the follow-up question. The
+        // deep-link heart sends a generic type label ("Surrogate") - use a
+        // pronoun there instead of the awkward "questions about Surrogate".
+        const pronounByLabel: Record<string, string> = {
+          "surrogate": "her", "egg donor": "her", "sperm donor": "him",
+          "clinic": "them", "surrogacy agency": "them", "doctor": "them",
+        };
+        const subjectRef = pronounByLabel[likedName.toLowerCase()] || likedName || "them";
+
+        // AGENCY NAME CONFIDENTIALITY: for surrogates/donors, the representing
+        // agency is NEVER named before the call is booked - use the generic
+        // "the surrogate's agency" phrasing. Clinics/doctors/agencies favorited
+        // from their own public card keep their name (they ARE the provider).
+        const isRepresentedProfile = etype.includes("surrogate") && !etype.includes("agency")
+          ? true : etype.includes("egg donor") || etype.includes("sperm donor");
+        const agencyPhrase = etype.includes("egg donor") ? "with the egg donor's agency"
+          : etype.includes("sperm donor") ? "with the sperm donor's agency"
+          : isRepresentedProfile ? "with the surrogate's agency"
+          : likedName ? `with ${likedName}` : "with them";
+
+        messages.push({
+          role: "user",
+          content: `SYSTEM OVERRIDE: The parent just FAVORITED ${likedName || "this profile"} using the heart button. Your reply did not follow the mandatory FAVORITE flow. Respond again and you MUST: (1) warmly confirm the favorite was saved, (2) propose scheduling a free consultation call ${agencyPhrase} as the clear next step (completely free, no commitment) - NEVER say the agency's real name, refer to it only as "${agencyPhrase.replace(/^with /, "")}", and (3) end with exactly [[QUICK_REPLY:Schedule a consultation|I have some questions|Show me more profiles]]. Do NOT show a new match card. Do NOT call search tools. Do NOT run intake questions.`,
+        });
+        const retryContent = await claudeRetry(messages);
+        const retryProposes = retryContent && !/\[\[MATCH_CARD:/i.test(retryContent) &&
+          /consultation/i.test(retryContent) && /\[\[QUICK_REPLY:/i.test(retryContent);
+        if (retryProposes) {
+          console.log(`[FAVORITE INTERCEPT] Retry followed the FAVORITE flow - using retry response`);
+          finalContent = retryContent;
+        } else {
+          messages.pop();
+          // Replace (not append): the original reply violated the flow - often an
+          // intake question - and appending to it produces an incoherent message
+          // whose first [[QUICK_REPLY]] tag would also win the QR extraction.
+          console.log(`[FAVORITE INTERCEPT] Retry still dropped the offer - replacing with deterministic FAVORITE flow message`);
+          const savedRef = pronounByLabel[likedName.toLowerCase()] || likedName || "them";
+          finalContent =
+            `Great choice - I've saved ${savedRef} as a favorite! The next step would be to schedule a free consultation call ${agencyPhrase} so you can speak with them directly - it's completely free and there's no commitment. Would you like to book that now, or do you have questions about ${subjectRef} first? [[QUICK_REPLY:Schedule a consultation|I have some questions|Show me more profiles]]`;
+        }
+      } catch (e) {
+        console.error("[FAVORITE INTERCEPT] Error:", e);
       }
     }
 
@@ -6379,6 +6601,20 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // Accept `id` as a fallback when AI used the wrong field name for providerId.
         // The AI sometimes emits id: "<uuid>" instead of providerId: "<uuid>".
         if (!parsed.providerId && parsed.id) parsed.providerId = parsed.id;
+        // Repair the classic field swap: the model sometimes puts the AGENCY
+        // id in providerId and the actual profile UUID in entityId - the
+        // client then fetches a profile with the agency id and renders
+        // "Profile unavailable". If providerId matches a Provider row and
+        // entityId is a UUID, swap them (and keep the agency as owner).
+        const mcLooksUuid = (v: any) => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(v);
+        if (mcLooksUuid(parsed.providerId) && mcLooksUuid(parsed.entityId) && parsed.entityId !== parsed.providerId) {
+          const agencyRow = await prisma.provider.findUnique({ where: { id: parsed.providerId }, select: { id: true } }).catch(() => null);
+          if (agencyRow) {
+            parsed.ownerProviderId = parsed.ownerProviderId || parsed.providerId;
+            parsed.providerId = parsed.entityId;
+            console.log(`[ai-router] MATCH_CARD repaired swapped providerId/entityId (profile=${parsed.providerId})`);
+          }
+        }
         // Reject invalid providerIds - these are not real DB UUIDs:
         // - Numeric only (display number like "23069")
         // - Looks like a name (only letters, short - e.g. "Sarah", "John")
@@ -7282,6 +7518,35 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             consultationCard.profilePhotoUrl = profilePhotoUrl;
             consultationCard.subjectProfileId = subjectProfileId;
             consultationCard.subjectType = subjectType;
+
+            // AGENCY NAME CONFIDENTIALITY (pre-booking): until the parent actually
+            // books the call (3-way chat created), the card must not reveal which
+            // agency represents the surrogate/donor - name, logo, email domain, or
+            // the coordinator's surname. Applies ONLY to donor/surrogate agencies;
+            // clinics, lawyers, and GoStork are direct providers whose names are
+            // always visible. Full names appear post-booking in the 3-way chat.
+            try {
+              const CONFIDENTIAL_AGENCY_TYPES = ["Surrogacy Agency", "Egg Donor Agency"];
+              const svcTypes = await prisma.provider.findUnique({
+                where: { id: consultProvider.id },
+                select: { services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } } },
+              });
+              const isConfidentialAgency = !!svcTypes?.services?.some((s: any) => CONFIDENTIAL_AGENCY_TYPES.includes(s.providerType?.name || ""));
+              if (isConfidentialAgency) {
+                const st = (subjectType || "").toLowerCase();
+                consultationCard.providerName = st.includes("egg") ? "the Egg Donor's Agency"
+                  : st.includes("sperm") ? "the Sperm Donor's Agency"
+                  : "the Surrogate's Agency";
+                consultationCard.providerLogo = null;
+                consultationCard.providerEmail = null;
+                if (consultationCard.memberName) {
+                  consultationCard.memberName = String(consultationCard.memberName).trim().split(/\s+/)[0];
+                }
+                console.log(`[CONSULTATION] Agency identity masked on pre-booking card (${consultationCard.providerName}, coordinator "${consultationCard.memberName || ""}")`);
+              }
+            } catch (e) {
+              console.error("[CONSULTATION] Agency confidentiality masking failed:", e);
+            }
             console.log(`[CONSULTATION] Calendar card shown for provider ${consultProviderId}, profile "${sessionTitle}" (session will be created on actual booking)`);
           }
         }
@@ -7291,6 +7556,45 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       finalContent = finalContent.replace(/\[\[CONSULTATION_BOOKING:.*?\]\]/g, "").trim();
       if (!consultationCard) {
         console.warn(`[CONSULTATION] consultationCard is NULL after processing - calendar will NOT show`);
+      }
+    }
+
+    // Human-escalation "Schedule" path: [[CONCIERGE_CALENDAR]] embeds a
+    // GoStork staff member's booking calendar inline - the classic
+    // "GoStork Concierge Call" card (ConsultationBookingCard renders the
+    // GoStork-branded title when providerName === "GoStork"). Skipped if a
+    // provider consultation card was already attached to this reply.
+    if (finalContent.includes("[[CONCIERGE_CALENDAR]]")) {
+      finalContent = finalContent.replace(/\[\[CONCIERGE_CALENDAR\]\]/g, "").trim();
+      if (!consultationCard) {
+        try {
+          const staffMember = await prisma.user.findFirst({
+            where: {
+              OR: [{ roles: { has: "GOSTORK_ADMIN" } }, { roles: { has: "GOSTORK_CONCIERGE" } }],
+              scheduleConfig: { bookingPageSlug: { not: null } },
+            },
+            orderBy: { createdAt: "asc" },
+            select: { name: true, photoUrl: true, scheduleConfig: { select: { bookingPageSlug: true } } },
+          });
+          if (staffMember?.scheduleConfig?.bookingPageSlug) {
+            consultationCard = {
+              providerId: null,
+              providerName: "GoStork",
+              providerLogo: null,
+              bookingUrl: `/book/${staffMember.scheduleConfig.bookingPageSlug}`,
+              iframeEnabled: true,
+              memberBookingSlug: staffMember.scheduleConfig.bookingPageSlug,
+              memberName: staffMember.name,
+              memberPhoto: staffMember.photoUrl,
+              aiSessionId: currentSessionId || undefined,
+            };
+            console.log(`[CONCIERGE_CALENDAR] GoStork concierge card built for ${staffMember.name}`);
+          } else {
+            console.error("[CONCIERGE_CALENDAR] No GoStork staff member with a booking page - card skipped");
+          }
+        } catch (e: any) {
+          console.error("[CONCIERGE_CALENDAR] Failed to build card:", e?.message);
+        }
       }
     }
 
@@ -7310,6 +7614,47 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     if (finalContent.includes("[[LAWYER_CONNECT]]")) {
       lawyerConnectRequested = true;
       finalContent = finalContent.replace(/\[\[LAWYER_CONNECT\]\]/g, "").trim();
+    }
+
+    // [[LAWYER_CALENDAR]] - deterministic lawyer-connect bypass: open the
+    // legal chat (via connectLawyer post-save, breadcrumb suppressed) AND
+    // embed the attorney's booking calendar inline, same card the concierge
+    // and provider consultations use.
+    let lawyerCalendarServed = false;
+    if (finalContent.includes("[[LAWYER_CALENDAR]]")) {
+      finalContent = finalContent.replace(/\[\[LAWYER_CALENDAR\]\]/g, "").trim();
+      lawyerConnectRequested = true;
+      lawyerCalendarServed = true;
+      if (lawyerBypassPick) {
+        // The firm card renders ABOVE the calendar: firm tabs + one face tab
+        // per lawyer (LawGroupSwipeCard). Pushed after the MATCH_CARD
+        // validation loops on purpose - this is DB truth, not model output.
+        matchCards.push({
+          type: "Law Group",
+          providerId: lawyerBypassPick.provider.id,
+          ownerProviderId: lawyerBypassPick.provider.id,
+          name: lawyerBypassPick.provider.name,
+          photo: lawyerBypassPick.provider.logoUrl || undefined,
+          reasons: [],
+        });
+      }
+      if (!consultationCard && lawyerBypassPick?.member?.slug) {
+        consultationCard = {
+          providerId: lawyerBypassPick.provider.id,
+          providerName: lawyerBypassPick.provider.name,
+          providerLogo: lawyerBypassPick.provider.logoUrl,
+          bookingUrl: `/book/${lawyerBypassPick.member.slug}`,
+          iframeEnabled: true,
+          memberBookingSlug: lawyerBypassPick.member.slug,
+          memberName: lawyerBypassPick.member.name,
+          memberPhoto: lawyerBypassPick.member.photoUrl,
+          aiSessionId: currentSessionId || undefined,
+          subjectType: "legal",
+        };
+        console.log(`[LAWYER_CALENDAR] Card built: slug=${lawyerBypassPick.member.slug}, provider=${lawyerBypassPick.provider.name}`);
+      } else if (!consultationCard) {
+        console.warn("[LAWYER_CALENDAR] No bookable member on the legal provider - chat opens without a calendar card");
+      }
     }
 
     // Phase 6: [[BANK_CHECKOUT:DONOR_ID]] - parent wants to buy a BANK donor
@@ -7580,9 +7925,64 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     if (lawyerConnectRequested && replySessionId) {
       try {
         const { connectLawyer } = await import("./lawyer-intro-flow");
-        await connectLawyer(replySessionId, userId);
+        await connectLawyer(replySessionId, userId, { skipBreadcrumb: lawyerCalendarServed });
       } catch (e: any) {
         console.error("[LAWYER_CONNECT] Failed to connect lawyer:", e?.message);
+      }
+    }
+
+    // Standalone lawyer offer: inline reminders kept getting buried (quick
+    // replies only render on the LAST message, and the model loves attaching
+    // meeting cards below its text). So when the parent has an upcoming
+    // provider call and no legal chat yet, post the offer as its OWN trailing
+    // message - always last on screen, buttons always tappable. Once per
+    // session (uiCardData.lawyerOffer marker); answering it either creates
+    // the legal session (suppresses forever) or leaves the marker (never
+    // re-posted).
+    if (hasUpcomingProviderConsult && replySessionId && !lawyerConnectRequested) {
+      try {
+        const [legalSession, alreadyOffered] = await Promise.all([
+          prisma.aiChatSession.findFirst({ where: { userId, subjectType: "legal" }, select: { id: true } }),
+          prisma.aiChatMessage.findFirst({
+            where: { sessionId: replySessionId, uiCardData: { path: ["lawyerOffer"], equals: true } },
+            select: { id: true },
+          }),
+        ]);
+        if (!legalSession && !alreadyOffered) {
+          // Show the firm (+ its lawyers as face tabs) with the offer so the
+          // parent sees WHO they'd be connected with before answering.
+          let offerMatchCards: any[] | undefined;
+          try {
+            const { pickLawyerWithBooking } = await import("./lawyer-intro-flow");
+            const pick = await pickLawyerWithBooking(userId);
+            if (pick) {
+              offerMatchCards = [{
+                type: "Law Group",
+                providerId: pick.provider.id,
+                ownerProviderId: pick.provider.id,
+                name: pick.provider.name,
+                photo: pick.provider.logoUrl || undefined,
+                reasons: [],
+              }];
+            }
+          } catch { /* offer still posts without the card */ }
+          await prisma.aiChatMessage.create({
+            data: {
+              sessionId: replySessionId,
+              role: "assistant",
+              content: "One quick thing before your call: surrogacy and egg donation journeys require independent legal counsel, and it's smart to have your own fertility attorney lined up early. I can connect you with a vetted attorney right here on GoStork - want me to?",
+              senderType: "ai",
+              uiCardData: {
+                lawyerOffer: true,
+                quickReplies: ["Yes, connect me with a lawyer", "Not right now"],
+                ...(offerMatchCards ? { matchCards: offerMatchCards } : {}),
+              },
+            },
+          });
+          console.log(`[lawyer-offer] Posted standalone trailing offer in session ${replySessionId}`);
+        }
+      } catch (e: any) {
+        console.error("[lawyer-offer] Failed to post trailing offer:", e?.message);
       }
     }
 

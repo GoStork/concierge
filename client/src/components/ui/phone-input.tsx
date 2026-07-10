@@ -124,6 +124,34 @@ export function PhoneInput({
     }
   }, [defaultIsoCode, isoCode]);
 
+  // No preset country and no existing number: detect from the visitor's IP
+  // (same /api/geo/country the parent onboarding uses) so the picker starts
+  // on the right country instead of "Select country". Silent on failure -
+  // the user just picks manually. Runs once; never overrides a later manual
+  // pick or an arriving defaultIsoCode.
+  const geoTriedRef = useRef(false);
+  useEffect(() => {
+    if (geoTriedRef.current || isoCode || defaultIsoCode || value || displayValue) return;
+    geoTriedRef.current = true;
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    (async () => {
+      try {
+        const res = await fetch("/api/geo/country", { credentials: "include", signal: controller.signal });
+        if (!cancelled && res.ok) {
+          const json = await res.json();
+          if (typeof json?.countryCode === "string" && json.countryCode.length === 2) {
+            setIsoCode(prev => prev ?? json.countryCode.toUpperCase());
+          }
+        }
+      } catch { /* silent - manual pick */ } finally {
+        clearTimeout(timeout);
+      }
+    })();
+    return () => { cancelled = true; clearTimeout(timeout); controller.abort(); };
+  }, [isoCode, defaultIsoCode, value, displayValue]);
+
   useEffect(() => {
     setNationalDisplay(formatNational(derivedDigits, isoCode));
   }, [derivedDigits, isoCode]);

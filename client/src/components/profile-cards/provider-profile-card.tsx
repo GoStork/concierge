@@ -60,7 +60,7 @@ export function ProviderProfileCard({
           <img
             src={getPhotoSrc(providerLogo) || undefined}
             alt={providerName || "Provider"}
-            className="w-9 h-9 rounded-full object-cover border bg-background"
+            className="w-9 h-9 rounded-full object-contain p-0.5 border bg-background"
           />
         ) : (
           <div
@@ -72,7 +72,10 @@ export function ProviderProfileCard({
         )}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">{providerName || "Provider"}</p>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Agency</p>
+          {/* The GoStork house profile is the concierge team, not an agency */}
+          {(providerName || "").trim().toLowerCase() !== "gostork" && (
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Agency</p>
+          )}
         </div>
       </div>
 

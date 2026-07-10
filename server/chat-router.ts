@@ -5,6 +5,7 @@ import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession
 import { StorageService } from "./src/modules/storage/storage.service";
 import { isUserOnline, getOnlineUserIds } from "./online-tracker";
 import { getBaseUrl as getAppBaseUrlShared } from "./src/lib/get-base-url";
+import { buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
 import { canProviderAccessSession, canSendProviderMessage, COORDINATOR_SUBJECT_TYPES, ALL_SESSION_PROVIDER_ROLES } from "../shared/roles";
 
 const storageService = new StorageService();
@@ -916,18 +917,18 @@ chatRouter.post("/api/consultation/request-callback", requireAuth, async (req, r
     const sendgridKey = process.env.SENDGRID_API_KEY;
     if (sendgridKey) {
       const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@gostork.com";
-      const html = `
-        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-          <h2 style="color:#004D4D">New Consultation Request</h2>
-          <p>A prospective parent has requested a consultation callback through GoStork.</p>
-          <table style="width:100%;border-collapse:collapse;margin:16px 0">
-            <tr><td style="padding:8px;font-weight:bold;border-bottom:1px solid #eee">Name</td><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(name)}</td></tr>
-            <tr><td style="padding:8px;font-weight:bold;border-bottom:1px solid #eee">Email</td><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(email)}</td></tr>
-            ${message ? `<tr><td style="padding:8px;font-weight:bold;border-bottom:1px solid #eee">Message</td><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(message)}</td></tr>` : ""}
-          </table>
-          <p style="color:#666;font-size:14px">Please reach out to this parent to schedule a consultation.</p>
-        </div>
-      `;
+      const brand = await fetchEmailBrandData(prisma);
+      const html = buildBrandedEmail(brand, {
+        title: "New Consultation Request",
+        greeting: `A prospective parent has requested a consultation callback through ${brand.companyName}.`,
+        body: "",
+        detailRows: [
+          { label: "Name", value: escapeHtml(name) },
+          { label: "Email", value: escapeHtml(email) },
+          ...(message ? [{ label: "Message", value: escapeHtml(message) }] : []),
+        ],
+        footer: "Please reach out to this parent to schedule a consultation.",
+      });
       await fetch("https://api.sendgrid.com/v3/mail/send", {
         method: "POST",
         headers: {
@@ -936,7 +937,7 @@ chatRouter.post("/api/consultation/request-callback", requireAuth, async (req, r
         },
         body: JSON.stringify({
           personalizations: [{ to: [{ email: recipientEmail }] }],
-          from: { email: fromEmail, name: "GoStork" },
+          from: { email: fromEmail, name: brand.companyName },
           subject: `Consultation Request from ${name}`,
           content: [{ type: "text/html", value: html }],
         }),
@@ -1816,13 +1817,21 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
         }).catch(() => {});
       }
 
+      // Dual-audience message: the parent reads `content` (second person),
+      // the provider chat renders `uiCardData.providerContent`. A parent must
+      // never read about themselves in third person in their own chat.
+      const readyParentFirstName = (parentUser?.name || "").trim().split(/\s+/)[0] || "there";
+      const readyProviderName = session.provider?.name || "The provider";
       await prisma.aiChatMessage.create({
         data: {
           sessionId: session.id,
           role: "assistant",
-          content: `Great news! ${session.provider?.name || "The provider"} has confirmed the consultation was successful and you're ready to move forward. Your journey stage has been updated to Match Eligibility.`,
+          content: `I just heard from ${readyProviderName}, and they loved connecting with you! They're excited to move forward together. This is a big milestone, ${readyParentFirstName} - you're officially ready for matching, and I'll be right here to walk you through what comes next.`,
           senderType: "system",
           senderName: await resolveSessionSenderName(session as any),
+          uiCardData: {
+            providerContent: `Thank you for confirming the consultation went well! We've shared the good news with ${readyParentFirstName} and moved them to Match Eligibility. We'll guide them through the next steps from here.`,
+          },
         },
       });
 
@@ -1850,6 +1859,9 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
         }).catch(() => {});
       }
 
+      // Dual-audience message: parent reads `content`, provider reads
+      // `uiCardData.providerContent` (see chat-message-list.tsx).
+      const notFitParentFirstName = (parentUser?.name || "").trim().split(/\s+/)[0] || "there";
       await prisma.aiChatMessage.create({
         data: {
           sessionId: session.id,
@@ -1857,6 +1869,9 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
           content: `Thank you for completing the consultation with ${session.provider?.name || "the provider"}. Based on the discussion, this may not be the ideal match. Don't worry - I can help you explore other providers that might be a better fit for your needs.`,
           senderType: "system",
           senderName: await resolveSessionSenderName(session.id),
+          uiCardData: {
+            providerContent: `Thanks for letting us know this wasn't the right fit. We've updated ${notFitParentFirstName}'s journey accordingly and will help them explore other options - nothing more is needed on your side.`,
+          },
         },
       });
     }
@@ -2689,6 +2704,21 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
         select: { id: true },
       });
       providerUserIds = providerUsers.map(u => u.id);
+      // The GoStork HOUSE provider's real "members" are the GoStork staff -
+      // their User rows have no providerId, so concierge-call bookings they
+      // host would otherwise never surface in the dedicated GoStork chat
+      // (no widget for the parent, no confirm/decline card for the admin).
+      const houseCheck = await prisma.provider.findUnique({
+        where: { id: session.providerId },
+        select: { name: true },
+      });
+      if ((houseCheck?.name || "").trim().toLowerCase() === "gostork") {
+        const staff = await prisma.user.findMany({
+          where: { OR: [{ roles: { has: "GOSTORK_ADMIN" } }, { roles: { has: "GOSTORK_CONCIERGE" } }] },
+          select: { id: true },
+        });
+        providerUserIds = Array.from(new Set(providerUserIds.concat(staff.map(u => u.id))));
+      }
     } else {
       const consultMsgs = await prisma.aiChatMessage.findMany({
         where: { sessionId: session.id, uiCardType: "rich" },
@@ -3222,6 +3252,7 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
       dueInvoices,
       sentAgreements,
       failedPayouts,
+      pendingMeetings,
       activeSessions,
       hotLeads30,
       callsBooked30,
@@ -3258,6 +3289,15 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
         orderBy: { payoutFailedAt: "desc" },
         take: 10,
         select: { id: true, payoutFailedAt: true, payoutFailureReason: true, providerPayoutAmount: true, provider: { select: { name: true } }, parentUser: { select: { name: true, firstName: true } } },
+      }),
+      // Meetings awaiting a GOSTORK host's confirmation - a task, not just a
+      // calendar row. Provider-hosted pending meetings are the provider's task
+      // and already surface in the provider home work queue.
+      prisma.booking.findMany({
+        where: { status: "PENDING", providerUser: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } } },
+        orderBy: { scheduledAt: "asc" },
+        take: 10,
+        select: { id: true, scheduledAt: true, subject: true, attendeeName: true, parentUser: { select: { name: true, firstName: true, email: true } }, providerUser: { select: { id: true, name: true } } },
       }),
       prisma.aiChatSession.count({ where: { updatedAt: { gte: d30 } } }),
       prisma.intendedParentProfile.count({ where: { hotLeadAt: { gte: d30 } } }),
@@ -3401,6 +3441,17 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
           taskKey: `failed-payout:${inv.id}:${inv.payoutFailedAt ? new Date(inv.payoutFailedAt).getTime() : 0}`,
         }))
         .filter(inv => !dismissedKeys.has(inv.taskKey)),
+      pendingMeetings: pendingMeetings
+        .map(b => ({
+          id: b.id,
+          scheduledAt: b.scheduledAt,
+          subject: b.subject,
+          parentName: b.parentUser?.firstName || b.parentUser?.name || b.attendeeName || b.parentUser?.email || "Parent",
+          hostName: b.providerUser?.name || "GoStork",
+          hostUserId: b.providerUser?.id || null,
+          taskKey: `pending-booking:${b.id}:${new Date(b.scheduledAt).getTime()}`,
+        }))
+        .filter(b => !dismissedKeys.has(b.taskKey)),
       funnel: {
         activeSessions,
         hotLeads: hotLeads30,
@@ -4889,7 +4940,8 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                 senderType: "system",
                 senderName: await resolveSessionSenderName(agreement.sessionId),
                 uiCardType: "agreement_signed",
-                uiCardData: { agreementId: agreement.id },
+                // Balloons float up the screen for the signing milestone.
+                uiCardData: { agreementId: agreement.id, celebration: "agreement_signed" },
               },
             }).catch(e => console.error("[PandaDoc webhook] Failed to post all-signed chat message:", e));
 

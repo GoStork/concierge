@@ -892,7 +892,6 @@ export class VideoController {
       }),
     ]);
 
-    const parentFirstName = parentUser?.firstName || parentUser?.name?.split(" ")[0] || "there";
     const providerName = providerEntity?.name || "the agency";
 
     // --- 1. Parent's private AI concierge session ---
@@ -904,52 +903,13 @@ export class VideoController {
       select: { id: true },
     });
 
-    // --- 2. The 3-way session (PROVIDER_CONNECTED or CONSULTATION_BOOKED) ---
-    // Let the provider know the call ended and ask for their assessment.
-    // This message is visible to the provider - do NOT include the parent's readiness
-    // question here (parent needs a private space to be honest about the call).
-    if (providerEntity) {
-      const providerSession = await this.prisma.aiChatSession.findFirst({
-        where: { userId: parentUserId, providerId: providerEntity.id, status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] } },
-        select: { id: true },
-      });
+    // NOTE: the free-text post-call assessment ask to the provider ("Great
+    // call! ... please share your assessment") was removed - the provider
+    // records the consultation outcome via the structured Ready for Match /
+    // Not a Fit buttons instead, and match calls get the readiness card from
+    // firePostCallBillingPrompt.
 
-      // Phase 4: match calls get the structured provider readiness card (posted
-      // by firePostCallBillingPrompt) instead of the free-text assessment ask -
-      // the agency answers on the surrogate's behalf with Yes/Not-yet buttons.
-      const endedBooking = await this.prisma.booking.findUnique({
-        where: { id: booking.id },
-        select: { meetingSubtype: true },
-      }).catch(() => null);
-      const skipAssessment = endedBooking?.meetingSubtype === "MATCH_CALL";
-
-      if (providerSession && !skipAssessment) {
-        // Dedup guard: only send once per session (race between markCallEnded and webhook)
-        const existingAssessment = await this.prisma.aiChatMessage.findFirst({
-          where: {
-            sessionId: providerSession.id,
-            senderType: "ai",
-            content: { contains: "Great call!" },
-            createdAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
-          },
-        });
-        if (!existingAssessment) {
-          await this.prisma.aiChatMessage.create({
-            data: {
-              sessionId: providerSession.id,
-              role: "assistant",
-              content: `Great call! ${providerName}, how did your consultation with ${parentFirstName} go? What are your initial thoughts - please share your assessment so we can guide next steps.`,
-              senderType: "ai",
-              // Tag as provider_assessment so it is filtered from parent chat view and
-              // left-pane preview - parents shouldn't see this prompt directed at providers.
-              uiCardType: "provider_assessment",
-            },
-          });
-        }
-      }
-    }
-
-    // --- 3. In-app notification to prompt parent back to their private chat ---
+    // --- 2. In-app notification to prompt parent back to their private chat ---
     await this.prisma.inAppNotification.create({
       data: {
         userId: parentUserId,
@@ -961,7 +921,7 @@ export class VideoController {
       },
     }).catch(() => { /* non-critical */ });
 
-    // --- 4. Email + SMS to parent: same readiness prompt via out-of-app channels ---
+    // --- 3. Email + SMS to parent: same readiness prompt via out-of-app channels ---
     if (parentUser?.email) {
       const chatUrl = `${getBaseUrl()}/chat/concierge${parentMainSession ? `?session=${parentMainSession.id}` : ""}`;
       this.notificationService.sendPostCallReadinessNotification({
@@ -974,7 +934,7 @@ export class VideoController {
       }).catch(err => this.logger.error(`Post-call email/SMS failed: ${err.message}`));
     }
 
-    // --- 5. GoStork Billing: post readiness prompt card in the PRIVATE concierge chat ---
+    // --- 4. GoStork Billing: post readiness prompt card in the PRIVATE concierge chat ---
     // The readiness prompt goes to the parent's private AI session, not the 3-way chat,
     // so the parent can answer honestly without the provider seeing their response.
     await this.firePostCallBillingPrompt({

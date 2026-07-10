@@ -17,6 +17,17 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Clock, Crown, Users, Video, FileText, Check, X, CalendarClock, Loader2 } from "lucide-react";
 
+/** Every mutation in this dialog changes booking state that multiple surfaces
+ *  derive from: the Calendar page, the pending work queues, and the admin Home
+ *  dashboard aggregate (Needs-attention pending meetings). Invalidate them all
+ *  in one place - a key that isn't in the viewer's cache is a no-op. */
+function invalidateBookingQueries() {
+  queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/admin/dashboard"] });
+}
+
 export function SuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId: string; onCancel: () => void; onSuccess: () => void }) {
   const { toast } = useToast();
   const [suggestDate, setSuggestDate] = useState("");
@@ -32,9 +43,7 @@ export function SuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId:
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
+      invalidateBookingQueries();
       toast({ title: "New time suggested", description: "The parent has been notified.", variant: "success" });
       onSuccess();
     },
@@ -83,9 +92,7 @@ function RescheduleForm({ bookingId, onCancel, onSuccess }: { bookingId: string;
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
+      invalidateBookingQueries();
       toast({ title: "Meeting rescheduled", variant: "success" });
       onSuccess();
     },
@@ -134,9 +141,7 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
       await apiRequest("PATCH", `/api/calendar/bookings/${booking.id}`, { status: "CANCELLED" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
+      invalidateBookingQueries();
       toast({ title: "Booking cancelled", variant: "success" });
       onClose();
     },
@@ -147,9 +152,7 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
       await apiRequest("POST", `/api/calendar/bookings/${booking.id}/confirm`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
+      invalidateBookingQueries();
       toast({ title: "Meeting confirmed", description: "The parent has been notified.", variant: "success" });
       onClose();
     },
@@ -160,9 +163,7 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
       await apiRequest("POST", `/api/calendar/bookings/${booking.id}/decline`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/bookings/pending-count"] });
+      invalidateBookingQueries();
       toast({ title: "Meeting declined", description: "The parent has been notified.", variant: "success" });
       onClose();
     },

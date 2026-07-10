@@ -202,9 +202,16 @@ export async function removeBackgroundFromFile(file: File): Promise<string> {
 
 /**
  * Resolve a URL that is safe to draw onto a canvas without tainting it.
- * Local (same-origin) URLs are returned as-is; external URLs are routed
+ * Local (same-origin) URLs are returned as-is; our own GCS bucket is private,
+ * so its URLs must go through the authenticated /api/uploads/gcs endpoint
+ * (an anonymous proxy fetch gets AccessDenied); other external URLs are routed
  * through the image proxy so canvas.toBlob() won't throw a security error.
  */
 export function proxiedForCanvas(url: string): string {
-  return url.startsWith("http") ? `/api/uploads/proxy?url=${encodeURIComponent(url)}` : url;
+  if (!url.startsWith("http")) return url;
+  if (/storage\.googleapis\.com\/gostork/i.test(url)) {
+    const match = url.match(/storage\.googleapis\.com\/[^/]+\/(.+)/);
+    if (match) return `/api/uploads/gcs?path=${encodeURIComponent(match[1])}`;
+  }
+  return `/api/uploads/proxy?url=${encodeURIComponent(url)}`;
 }

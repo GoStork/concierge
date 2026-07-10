@@ -5,6 +5,7 @@ import { type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
 import { getBaseUrl } from "./src/lib/get-base-url";
+import { buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
 import { setupAuth, requireAuth, requireRole } from "./auth";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -464,18 +465,18 @@ export async function registerRoutes(
       const sendgridKey = process.env.SENDGRID_API_KEY;
       if (sendgridKey) {
         const fromEmail = process.env.SENDGRID_FROM_EMAIL || "noreply@gostork.com";
-        const html = `
-          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-            <h2 style="color:#004D4D">New Consultation Request</h2>
-            <p>A prospective parent has requested a consultation callback through GoStork.</p>
-            <table style="width:100%;border-collapse:collapse;margin:16px 0">
-              <tr><td style="padding:8px;font-weight:bold;border-bottom:1px solid #eee">Name</td><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(name)}</td></tr>
-              <tr><td style="padding:8px;font-weight:bold;border-bottom:1px solid #eee">Email</td><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(email)}</td></tr>
-              ${message ? `<tr><td style="padding:8px;font-weight:bold;border-bottom:1px solid #eee">Message</td><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(message)}</td></tr>` : ""}
-            </table>
-            <p style="color:#666;font-size:14px">Please reach out to this parent to schedule a consultation.</p>
-          </div>
-        `;
+        const brand = await fetchEmailBrandData(prisma);
+        const html = buildBrandedEmail(brand, {
+          title: "New Consultation Request",
+          greeting: `A prospective parent has requested a consultation callback through ${brand.companyName}.`,
+          body: "",
+          detailRows: [
+            { label: "Name", value: escapeHtml(name) },
+            { label: "Email", value: escapeHtml(email) },
+            ...(message ? [{ label: "Message", value: escapeHtml(message) }] : []),
+          ],
+          footer: "Please reach out to this parent to schedule a consultation.",
+        });
         await fetch("https://api.sendgrid.com/v3/mail/send", {
           method: "POST",
           headers: {
@@ -484,7 +485,7 @@ export async function registerRoutes(
           },
           body: JSON.stringify({
             personalizations: [{ to: [{ email: recipientEmail }] }],
-            from: { email: fromEmail, name: "GoStork" },
+            from: { email: fromEmail, name: brand.companyName },
             subject: `Consultation Request from ${name}`,
             content: [{ type: "text/html", value: html }],
           }),
