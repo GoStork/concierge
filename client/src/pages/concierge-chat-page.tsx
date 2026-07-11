@@ -16,6 +16,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { isVideoInviteExpired } from "@/lib/booking-time";
 import { StagedFileChip } from "@/components/chat/staged-file-chip";
 import { AttachmentMessageCard } from "@/components/chat/attachment-message-card";
 import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
@@ -2364,7 +2365,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
 
   if (msg.uiCardType === "video_invite") {
     const videoBookingId = data.bookingId;
-    if (!videoBookingId) {
+    if (!videoBookingId || isVideoInviteExpired(msg.createdAt)) {
       return (
         <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>
           <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground/70 shrink-0" style={{ backgroundColor: brandColor }}>
@@ -2695,14 +2696,13 @@ export function ParentChatSidePanel({
           </div>
         )}
 
+        {/* Cost sheet history (renders nothing when empty, including its own divider) */}
         {sessionId && (
-          <div className="border-t pt-3">
-            <CostSheetSidebarSection
-              sessionId={sessionId}
-              brandColor={brandColor}
-              readOnly={true}
-            />
-          </div>
+          <CostSheetSidebarSection
+            sessionId={sessionId}
+            brandColor={brandColor}
+            readOnly={true}
+          />
         )}
 
         {/* Payment history for this conversation (renders nothing when empty,

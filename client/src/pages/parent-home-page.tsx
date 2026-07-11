@@ -9,6 +9,8 @@
  */
 
 import { useState } from "react";
+import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
+import { Map } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { BookingDetailDialog } from "@/components/booking-detail-dialog";
@@ -134,6 +136,18 @@ export default function ParentHomePage() {
         <h1 className="text-2xl font-heading">Welcome back, {firstName}</h1>
         <p className="text-sm text-muted-foreground mt-1">Here's where your journey stands.</p>
       </div>
+
+      {/* Phase 7A: journey timelines - one card per active journey, every
+          type the parent is running in parallel (surrogacy, egg donation,
+          IVF, banks, legal). Derived server-side; parents see their own
+          account automatically. */}
+      <Card className="p-5 space-y-3">
+        <SectionHeader
+          icon={<Map className="w-5 h-5 text-primary" />}
+          title="Your Journeys"
+        />
+        <JourneyTimelineCard variant="home" testId="home-journeys" />
+      </Card>
 
       {/* Action queue */}
       <Card className="p-5 space-y-3">

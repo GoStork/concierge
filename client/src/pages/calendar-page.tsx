@@ -2593,7 +2593,7 @@ export default function CalendarPage() {
                                         )}
                                       </div>
                                     </div>
-                                    {b.status === "CONFIRMED" && b.providerUser?.dailyRoomUrl && b.meetingType !== "phone" && (
+                                    {b.status === "CONFIRMED" && end > new Date() && b.providerUser?.dailyRoomUrl && b.meetingType !== "phone" && (
                                       <a
                                         href={`/room/${b.id}`}
                                         target="_blank"

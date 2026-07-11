@@ -235,6 +235,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.adminTaskDismissal;
   }
 
+  get journeyEvent() {
+    return prisma.journeyEvent;
+  }
+
   get invoiceReminder() {
     return prisma.invoiceReminder;
   }

@@ -148,11 +148,22 @@ export class CostsService {
     return best;
   }
 
+  // A US state code/name in the STATE field means the row is a US-format
+  // location. Without this, a firm with 9 US offices ("CA", "NY", ...) and
+  // one "Beijing, China" row derives country=China - the US rows match no
+  // KNOWN_COUNTRIES entry, so the single foreign office wins the vote.
+  private static readonly US_STATE_TOKENS = new Set<string>([
+    "al","ak","az","ar","ca","co","ct","de","fl","ga","hi","id","il","in","ia","ks","ky","la","me","md","ma","mi","mn","ms","mo","mt","ne","nv","nh","nj","nm","ny","nc","nd","oh","ok","or","pa","ri","sc","sd","tn","tx","ut","vt","va","wa","wv","wi","wy","dc",
+    "alabama","alaska","arizona","arkansas","california","colorado","connecticut","delaware","florida","hawaii","idaho","illinois","indiana","iowa","kansas","kentucky","louisiana","maine","maryland","massachusetts","michigan","minnesota","mississippi","missouri","montana","nebraska","nevada","new hampshire","new jersey","new mexico","new york","north carolina","north dakota","ohio","oklahoma","oregon","pennsylvania","rhode island","south carolina","south dakota","tennessee","texas","utah","vermont","virginia","washington","west virginia","wisconsin","wyoming","district of columbia",
+  ]);
+
   private detectCountryInLocation(loc: {
     address: string | null;
     city: string | null;
     state: string | null;
   }): string | null {
+    const stateToken = (loc.state || "").trim().toLowerCase();
+    if (stateToken && CostsService.US_STATE_TOKENS.has(stateToken)) return "United States";
     const fields: string[] = [loc.state, loc.city, loc.address]
       .filter((s): s is string => !!s && s.trim().length > 0)
       .map(s => s.toLowerCase());
@@ -190,6 +201,7 @@ export class CostsService {
     filename: string,
     subType?: string,
     autoApproveAfterParse: boolean = false,
+    approvedTypeNames?: string[],
   ): void {
     (async () => {
       try {
@@ -207,6 +219,7 @@ export class CostsService {
               itemsCount,
             );
           },
+          approvedTypeNames,
         );
 
         await this.updateParseProgress(sheetId, "Classifying program type", 90, items.length);
@@ -215,7 +228,24 @@ export class CostsService {
         }
 
         await this.updateParseProgress(sheetId, "Mapping to GoStork template", 95, items.length);
-        await this.saveParseResults(sheetId, items);
+
+        // A-la-carte fee schedules spanning several journeys (law firms,
+        // wellness menus) split into one program per journey - a single
+        // program summing every independently-purchasable service into one
+        // total is meaningless to parents. When a split applies it writes
+        // each sheet's item subset itself; otherwise fall through to the
+        // normal single-program save.
+        let allSheetIds: string[] = [sheetId];
+        if (classification?.programSplits && classification.programSplits.length >= 2) {
+          try {
+            allSheetIds = await this.applyProgramSplits(sheetId, classification.programSplits, items);
+          } catch (err: any) {
+            this.logger.warn(`[program-split] Split failed for sheet ${sheetId} (keeping single program): ${err.message}`);
+          }
+        }
+        if (allSheetIds.length === 1) {
+          await this.saveParseResults(sheetId, items);
+        }
 
         // Admin uploads skip the review queue: once parsing succeeds the
         // sheet flips straight to APPROVED. Mirrors the /submit endpoint's
@@ -223,11 +253,13 @@ export class CostsService {
         // terminal state, and prevents admin-uploaded sheets from sitting
         // in DRAFT with no Save bar visible to advance them.
         if (autoApproveAfterParse) {
-          try {
-            await this.approveSheet(sheetId);
-            this.logger.log(`Background parse: auto-approved sheet ${sheetId} (admin upload)`);
-          } catch (err: any) {
-            this.logger.warn(`Background parse: auto-approve failed for sheet ${sheetId}: ${err.message}`);
+          for (const sid of allSheetIds) {
+            try {
+              await this.approveSheet(sid);
+              this.logger.log(`Background parse: auto-approved sheet ${sid} (admin upload)`);
+            } catch (err: any) {
+              this.logger.warn(`Background parse: auto-approve failed for sheet ${sid}: ${err.message}`);
+            }
           }
         }
       } catch (err: any) {
@@ -235,6 +267,92 @@ export class CostsService {
         await this.markParseError(sheetId);
       }
     })();
+  }
+
+  /**
+   * Split one uploaded a-la-carte fee schedule into multiple programs (one
+   * per parent journey) per the AI's programSplits proposal. The original
+   * upload-first program becomes split[0]; each further split gets its own
+   * CostProgram + ProviderCostSheet referencing the SAME uploaded file.
+   * Safety: only fires when the sheet is its program's only sheet (the
+   * upload-first shape) - never rearranges an established program.
+   */
+  private async applyProgramSplits(
+    sheetId: string,
+    splits: { programName: string; serviceTypes: string[]; itemKeys: string[] }[],
+    parsedItems: Array<{ category: string; key: string; minValue: number | null; maxValue: number | null; isCustom: boolean; isIncluded: boolean; isTier?: boolean; comment: string | null }>,
+  ): Promise<string[]> {
+    const sheet = await this.prisma.providerCostSheet.findUnique({ where: { id: sheetId } });
+    if (!sheet?.programId) return [sheetId];
+    const siblingCount = await this.prisma.providerCostSheet.count({
+      where: { programId: sheet.programId, id: { not: sheetId } },
+    });
+    if (siblingCount > 0) return [sheetId];
+    const program = await this.prisma.costProgram.findUnique({ where: { id: sheet.programId } });
+    if (!program) return [sheetId];
+
+    const keyOf = (it: { category: string; key: string }) => `${it.category}::${it.key}`;
+    const subsets = splits
+      .map((sp) => {
+        const wanted = new Set(sp.itemKeys);
+        return { ...sp, items: parsedItems.filter((it) => wanted.has(keyOf(it))) };
+      })
+      .filter((sp) => sp.items.length > 0);
+    if (subsets.length < 2) return [sheetId];
+
+    this.logger.log(`[program-split] Splitting sheet ${sheetId} into ${subsets.length} programs: ${subsets.map((sp) => `"${sp.programName}" (${sp.items.length} items)`).join(", ")}`);
+
+    // Sibling programs are created FIRST: the client refetches the program
+    // list the moment the ORIGINAL sheet flips to Complete, so the siblings
+    // must already exist by then or the provider sees only one program
+    // until a manual refresh.
+    const siblingSheetIds: string[] = [];
+    for (const sp of subsets.slice(1)) {
+      const subTypes = this.deriveSubTypesLeaves(sp.serviceTypes, null);
+      const newProgram = await this.prisma.costProgram.create({
+        data: {
+          providerId: program.providerId,
+          providerTypeId: program.providerTypeId,
+          name: sp.programName,
+          country: program.country,
+          tab: null,
+          subType: null,
+          serviceTypes: sp.serviceTypes,
+          subTypes,
+        },
+      });
+      const newSheet = await this.prisma.providerCostSheet.create({
+        data: {
+          providerId: sheet.providerId,
+          providerTypeId: sheet.providerTypeId,
+          subType: null,
+          subTypes,
+          programId: newProgram.id,
+          filePath: sheet.filePath,
+          originalFileName: sheet.originalFileName,
+          isFixedCost: sheet.isFixedCost,
+          status: "PARSING",
+          parseStage: "Splitting programs",
+          parseProgress: 95,
+        },
+      });
+      await this.saveParseResults(newSheet.id, sp.items);
+      siblingSheetIds.push(newSheet.id);
+    }
+
+    // The original program becomes split[0] - renamed, retagged, and its
+    // sheet's items narrowed to the subset. This is what flips the original
+    // sheet to Complete, triggering the client's refetch.
+    const first = subsets[0];
+    const firstSubTypes = this.deriveSubTypesLeaves(first.serviceTypes, null);
+    await this.prisma.costProgram.update({
+      where: { id: program.id },
+      data: { name: first.programName, serviceTypes: first.serviceTypes, subTypes: firstSubTypes },
+    });
+    await this.prisma.providerCostSheet.update({ where: { id: sheetId }, data: { subTypes: firstSubTypes } });
+    await this.saveParseResults(sheetId, first.items);
+
+    return [sheetId, ...siblingSheetIds];
   }
 
   private async resolveTemplateFieldIds(
@@ -1387,9 +1505,12 @@ export class CostsService {
         // multi-service providers (e.g. Eggspecting: IVF Clinic + Surrogacy
         // + Egg Donor) get the "multi-service" union branch so the AI
         // doesn't force-classify a surrogacy PDF into an IVF subtype.
-        const activeServiceCount = await this.prisma.providerService.count({
+        const activeServices = await this.prisma.providerService.findMany({
           where: { providerId: sheet.providerId, status: "APPROVED" },
+          select: { providerType: { select: { name: true } } },
         });
+        const activeServiceCount = activeServices.length;
+        const approvedTypeNames = activeServices.map((sv) => sv.providerType?.name).filter(Boolean) as string[];
         let providerType: string | null = "multi-service";
         if (activeServiceCount <= 1 && sheet.providerTypeId) {
           const pt = await this.prisma.providerType.findUnique({
@@ -1410,12 +1531,30 @@ export class CostsService {
           providerType,
           sheet.originalFileName,
           sheet.subType || undefined,
+          false,
+          approvedTypeNames,
         );
       } catch (err: any) {
         this.logger.error(`Failed to resume sheet ${sheet.id}: ${err.message}`);
         await this.markParseError(sheet.id).catch(() => {});
       }
     }
+  }
+
+  /**
+   * Delete a sheet's GCS blob ONLY when no other sheet row references the
+   * same filePath. Program-split sheets share one uploaded file - deleting
+   * one split must not break its siblings' stored document.
+   */
+  private async deleteObjectIfUnreferenced(filePath: string, excludeSheetId: string) {
+    const stillReferenced = await this.prisma.providerCostSheet.count({
+      where: { filePath, id: { not: excludeSheetId } },
+    });
+    if (stillReferenced > 0) {
+      this.logger.log(`[program-split] Keeping shared blob ${filePath} (${stillReferenced} sibling sheet(s) reference it)`);
+      return;
+    }
+    await this.storage.deleteObject(filePath);
   }
 
   async cancelUpload(sheetId: string) {
@@ -1425,7 +1564,7 @@ export class CostsService {
     if (!sheet) throw new Error("Sheet not found");
 
     if (sheet.filePath) {
-      try { await this.storage.deleteObject(sheet.filePath); } catch {}
+      try { await this.deleteObjectIfUnreferenced(sheet.filePath, sheetId); } catch {}
     }
 
     await this.prisma.costItem.deleteMany({ where: { providerCostSheetId: sheetId } });
@@ -1441,7 +1580,7 @@ export class CostsService {
     if (!sheet) throw new Error("Sheet not found");
 
     if (sheet.filePath) {
-      await this.storage.deleteObject(sheet.filePath);
+      await this.deleteObjectIfUnreferenced(sheet.filePath, sheetId);
     }
 
     return this.prisma.providerCostSheet.update({
@@ -1478,7 +1617,7 @@ export class CostsService {
 
     for (const sheet of sheets) {
       if (sheet.filePath) {
-        try { await this.storage.deleteObject(sheet.filePath); } catch {}
+        try { await this.deleteObjectIfUnreferenced(sheet.filePath, sheet.id); } catch {}
       }
       await this.prisma.costItem.deleteMany({ where: { providerCostSheetId: sheet.id } });
     }
@@ -1668,6 +1807,12 @@ export class CostsService {
           tab: prior?.tab || null,
           subTypes: prior?.subTypes || [],
           isFixedCost: prior?.isFixedCost ?? null,
+          // The uploaded source document belongs to the program, not the
+          // version row - carry it forward so re-saving items on an APPROVED
+          // sheet doesn't orphan the PDF on the archived version.
+          filePath: prior?.filePath || null,
+          fileUrl: prior?.fileUrl || null,
+          originalFileName: prior?.originalFileName || null,
           programId: programId || null,
           status: "PENDING",
           version: nextVersion,
@@ -2050,7 +2195,7 @@ export class CostsService {
     const sheets = await this.prisma.providerCostSheet.findMany({ where: { programId } });
     for (const sheet of sheets) {
       if (sheet.filePath) {
-        try { await this.storage.deleteObject(sheet.filePath); } catch {}
+        try { await this.deleteObjectIfUnreferenced(sheet.filePath, sheet.id); } catch {}
       }
       await this.prisma.costItem.deleteMany({ where: { providerCostSheetId: sheet.id } });
     }

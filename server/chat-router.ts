@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { emitJourneyEvent } from "./journey-events";
 import multer from "multer";
 import { prisma } from "./db";
 import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession, refreshTemplateRoles, syncAgreementStatus } from "./pandadoc-service";
@@ -229,6 +230,74 @@ chatRouter.get("/api/online-status", requireAuth, async (req, res) => {
     res.json(result);
   } catch (e: any) {
     res.status(500).json({ message: e.message });
+  }
+});
+
+// ─── Phase 7A: journey timeline + event feed ────────────────────────────────
+// A journey is a (parent account x provider org) relationship; stages are
+// derived on read (journey-timeline.ts). Access: parents see their own
+// account; provider users are force-scoped to their own org; GoStork admins
+// see any pair.
+chatRouter.get("/api/journey/timeline", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
+    const isProviderUser = !!user.providerId && !isAdmin;
+
+    let parentAccountId: string | null = null;
+    let providerScope: string | null = (req.query.providerId as string) || null;
+
+    if (!isAdmin && !isProviderUser) {
+      // Parent: always their own account.
+      parentAccountId = user.parentAccountId || user.id;
+    } else {
+      const parentUserId = (req.query.parentUserId as string) || (req.query.parentAccountId as string) || null;
+      if (!parentUserId) return res.status(400).json({ message: "parentUserId required" });
+      const parent = await prisma.user.findUnique({ where: { id: parentUserId }, select: { parentAccountId: true } });
+      parentAccountId = parent?.parentAccountId || parentUserId;
+      if (isProviderUser) providerScope = user.providerId; // never another org's journey
+    }
+
+    const { buildJourneyTimelines } = await import("./journey-timeline");
+    const result = await buildJourneyTimelines(parentAccountId!, {
+      providerId: providerScope,
+      // Providers start at the consultation rung - pre-engagement stages are
+      // the parent's/admin's view.
+      includePreStages: !isProviderUser,
+    });
+    res.json(result);
+  } catch (e: any) {
+    console.error("[journey-timeline] failed:", e?.message);
+    res.status(500).json({ message: "Failed to build journey timeline" });
+  }
+});
+
+// Recent journey activity for the provider/admin sidebar feed.
+chatRouter.get("/api/journey/events", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
+    const isProviderUser = !!user.providerId && !isAdmin;
+    if (!isAdmin && !isProviderUser) return res.status(403).json({ message: "Forbidden" });
+
+    const parentUserId = (req.query.parentUserId as string) || null;
+    if (!parentUserId) return res.status(400).json({ message: "parentUserId required" });
+    const parent = await prisma.user.findUnique({ where: { id: parentUserId }, select: { parentAccountId: true } });
+    const parentAccountId = parent?.parentAccountId || parentUserId;
+    const providerScope = isProviderUser ? user.providerId : ((req.query.providerId as string) || null);
+
+    const events = await prisma.journeyEvent.findMany({
+      where: { parentAccountId, ...(providerScope ? { providerId: providerScope } : {}) },
+      orderBy: { createdAt: "desc" },
+      take: Math.min(parseInt(String(req.query.limit || "20"), 10) || 20, 50),
+      select: { id: true, eventType: true, actorRole: true, metadata: true, createdAt: true, providerId: true },
+    });
+    res.json({ events });
+  } catch (e: any) {
+    console.error("[journey-events] feed failed:", e?.message);
+    res.status(500).json({ message: "Failed to load journey events" });
   }
 });
 
@@ -1526,6 +1595,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
           attachmentMime: hasAttachment ? attachment!.mimeType : null,
         },
       });
+      void emitJourneyEvent({ eventType: "WHISPER_ANSWERED", parentUserId: (whisper as any).parentUserId, providerId: (whisper as any).providerId, sessionId: (whisper as any).sessionId, actorRole: "provider" });
 
       // Show the provider their answer + a confirmation so they can see what
       // was sent. If they attached a file, render it as an attachment card so
@@ -1733,6 +1803,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
         where: { id: session.id },
         data: { providerJoinedAt: new Date(), status: "PROVIDER_CONNECTED", updatedAt: new Date() },
       });
+      void emitJourneyEvent({ eventType: "PROVIDER_CONNECTED", parentUserId: session.userId, providerId: (session as any).providerId || null, sessionId: session.id, actorRole: "provider" });
       // Belt-and-suspenders with calendar.controller.ts: when this session flips
       // to PROVIDER_CONNECTED, sweep any leftover PENDING whispers on the same
       // parent+provider's OTHER (anonymous) sessions to AUTO_RESOLVED. The
@@ -1851,7 +1922,9 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
           },
         });
       }
+      void emitJourneyEvent({ eventType: "MATCH_ACCEPTED_BY_SURROGATE", parentUserId: session.userId, providerId: (session as any).providerId || null, sessionId: session.id, actorRole: "provider", metadata: { reportedBy: "provider" } });
     } else {
+      void emitJourneyEvent({ eventType: "MATCH_DECLINED_BY_SURROGATE", parentUserId: session.userId, providerId: (session as any).providerId || null, sessionId: session.id, actorRole: "provider", metadata: { reportedBy: "provider" } });
       if (parentUser?.parentAccountId) {
         await prisma.intendedParentProfile.update({
           where: { parentAccountId: parentUser.parentAccountId },
@@ -4288,6 +4361,7 @@ chatRouter.post("/api/billing/parent-confirm-ready", requireAuth, async (req, re
           // results share the direct path's shapes for the handling below.
           let result: Awaited<ReturnType<typeof billing.createInvoiceFromReadiness>> | null = null;
           if (cardData?.isMatchCall === true && cardData?.bookingId) {
+            void emitJourneyEvent({ eventType: "MATCH_ACCEPTED_BY_PARENT", parentUserId: session.userId, sessionId: providerSessionId, bookingId: cardData.bookingId, actorRole: "parent" });
             const matchRes = await billing.tryFinalizeMatch(cardData.bookingId);
             if (matchRes.status === "finalized") {
               console.log(`[parent-confirm-ready] Match finalized - invoice ${matchRes.invoiceId} sent (booking ${cardData.bookingId})`);
@@ -4944,6 +5018,7 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
                 uiCardData: { agreementId: agreement.id, celebration: "agreement_signed" },
               },
             }).catch(e => console.error("[PandaDoc webhook] Failed to post all-signed chat message:", e));
+            void emitJourneyEvent({ eventType: "AGREEMENT_SIGNED", parentUserId: agreement.parentUserId, providerId: agreement.providerId, sessionId: agreement.sessionId, metadata: { agreementId: agreement.id, documentType: agreement.documentType } });
 
             // Stage 13: fully signed + paid invoice -> journey handoff
             try {

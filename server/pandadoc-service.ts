@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { emitJourneyEvent } from "./journey-events";
 import { decryptNullable } from "./src/lib/encrypt";
 import { Storage } from "@google-cloud/storage";
 import * as path from "path";
@@ -495,6 +496,7 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
       where: { id: agreement.id },
       data: { status: "SENT", ...(pandaDocViewUrl ? { pandaDocViewUrl } : {}) },
     });
+    void emitJourneyEvent({ eventType: "AGREEMENT_SENT", parentUserId: agreement.parentUserId, providerId: agreement.providerId, sessionId: agreement.sessionId, metadata: { agreementId: agreement.id } });
 
     return await prisma.agreement.findUnique({ where: { id: agreement.id } });
   } catch (error) {
@@ -1124,6 +1126,7 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
       where: { id: agreement.id },
       data: { status: "SENT", ...(pandaDocViewUrl ? { pandaDocViewUrl } : {}) },
     });
+    void emitJourneyEvent({ eventType: "AGREEMENT_SENT", parentUserId: agreement.parentUserId, providerId: agreement.providerId, sessionId: agreement.sessionId, metadata: { agreementId: agreement.id } });
 
     const dbAgreement = await prisma.agreement.findUnique({ where: { id: agreement.id } });
 

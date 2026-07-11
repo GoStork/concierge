@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { hasBookingEnded } from "@/lib/booking-time";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -234,7 +235,7 @@ export default function BookingConfirmationPage() {
                 A calendar invitation has been sent to your email
               </p>
               <AddToCalendarButtons booking={booking} />
-              {booking.providerUser?.dailyRoomUrl && (
+              {booking.providerUser?.dailyRoomUrl && !hasBookingEnded(booking.scheduledAt, booking.duration) && (
                 <a
                   href={`/room/${booking.id}`}
                   className="flex items-center justify-center gap-2 mt-3 w-full py-2.5 px-4 rounded-[var(--radius)] bg-primary text-primary-foreground text-sm font-ui hover:bg-primary/90 transition-colors"

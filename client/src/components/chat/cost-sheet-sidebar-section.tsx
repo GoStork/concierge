@@ -391,8 +391,12 @@ export function CostSheetSidebarSection({
   const unitLabel = isSpermDonor ? "vial" : "egg lot";
   const unitLabelPlural = isSpermDonor ? "vials" : "egg lots";
 
+  // Read-only history mode with nothing to show (e.g. legal sessions that
+  // never get a cost sheet): render nothing, like InvoiceHistorySidebarSection.
+  if (readOnly && quotes.length === 0) return null;
+
   return (
-    <div className="space-y-3">
+    <div className={embedded ? "space-y-3" : "space-y-3 border-t pt-3"}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Receipt className="w-4 h-4" style={{ color: brandColor }} />

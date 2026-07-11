@@ -7,6 +7,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "./db";
+import { emitJourneyEvent } from "./journey-events";
 import path from "path";
 import fs from "fs";
 import { isUserOnline } from "./online-tracker";
@@ -1852,6 +1853,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       if (humanRequestPatternInProvider.test(userMessage) && !currentSession.humanRequested) {
         try {
           await prisma.aiChatSession.update({ where: { id: currentSessionId }, data: { humanRequested: true } });
+          void emitJourneyEvent({ eventType: "ESCALATED_TO_HUMAN", parentUserId: userId, sessionId: currentSessionId, actorRole: "parent" });
           humanEscalationTriggered = true;
           const admins = await prisma.user.findMany({ where: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } }, select: { id: true } });
           for (const admin of admins) {
@@ -4257,6 +4259,100 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       /\bi('?m| am) (?:a |the )?(?:woman|man)\b/i.test(allUserMessages);
     const phase1Complete = familyTypeKnown && mwGenderKnown;
 
+    // Phase 7A win-back: deterministic handling of the win-back quick
+    // replies. The win-back message carries uiCardData.winback; when it is
+    // the LAST assistant message, the parent's answer routes here - no
+    // model involved. "Reschedule" re-serves the original host's booking
+    // calendar; "not interested" asks the one churn-reason question; churn
+    // answers are recorded (CHURN_REASON) and cool the lead for provider+admin.
+    let winbackRescheduleCard: any = null;
+    let winbackChurnAskPayload: any = null;
+    const lastAssistantMsg = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
+    const wbPayload = ((lastAssistantMsg as any)?.uiCardData as any)?.winback || null;
+    const churnAskPayload = ((lastAssistantMsg as any)?.uiCardData as any)?.churnAsk || null;
+    if (wbPayload && !serverBypassServed) {
+      const wbMsg = userMessage.trim();
+      if (/reschedul/i.test(wbMsg)) {
+        if (wbPayload.hostSlug) {
+          winbackRescheduleCard = {
+            providerId: wbPayload.providerId || null,
+            providerName: wbPayload.providerName || "the provider",
+            providerLogo: null,
+            bookingUrl: `/book/${wbPayload.hostSlug}`,
+            iframeEnabled: true,
+            memberBookingSlug: wbPayload.hostSlug,
+            memberName: wbPayload.hostName || null,
+            memberPhoto: null,
+            aiSessionId: currentSessionId || undefined,
+            meetingSubtype: wbPayload.meetingSubtype || undefined,
+          };
+          finalContent = `Absolutely - here's ${wbPayload.hostName || wbPayload.providerName}'s calendar. Pick any time that works for you:`;
+        } else if (wbPayload.providerId) {
+          finalContent = `Absolutely - let's get that back on the books: [[CONSULTATION_BOOKING:${wbPayload.providerId}]]`;
+        } else {
+          finalContent = `Absolutely - I've flagged this to the GoStork team and they'll send you new times shortly. [[HUMAN_NEEDED]]`;
+        }
+        sse.sendToken(finalContent.replace(/\s*\[\[[^\]]*\]\]/g, "").trim());
+        serverBypassServed = true;
+        await emitJourneyEvent({ eventType: "WINBACK_RESPONSE", parentUserId: userId, providerId: wbPayload.providerId || null, sessionId: currentSessionId || null, bookingId: wbPayload.bookingId || null, actorRole: "parent", metadata: { response: "reschedule" } });
+        console.log(`[winback] Parent chose reschedule (booking ${wbPayload.bookingId})`);
+      } else if (/something came up|later\b|not (right )?now|need more time/i.test(wbMsg) && !/interested/i.test(wbMsg)) {
+        finalContent = `Of course - no rush at all. Whenever you're ready, just tell me and I'll pull up new times with ${wbPayload.providerName || "them"}. I'm here for anything else in the meantime.`;
+        sse.sendToken(finalContent);
+        serverBypassServed = true;
+        await emitJourneyEvent({ eventType: "WINBACK_RESPONSE", parentUserId: userId, providerId: wbPayload.providerId || null, sessionId: currentSessionId || null, bookingId: wbPayload.bookingId || null, actorRole: "parent", metadata: { response: "later" } });
+      } else if (/no longer interested|not interested/i.test(wbMsg)) {
+        finalContent = `Thanks for being upfront with me - that's completely fine, and I won't keep asking. If you're open to sharing, what changed? It helps us (and ${wbPayload.providerName || "the provider"}) do better. [[QUICK_REPLY:Found a match elsewhere|Costs|Not the right timing|Just exploring]]`;
+        winbackChurnAskPayload = { bookingId: wbPayload.bookingId || null, providerId: wbPayload.providerId || null, providerName: wbPayload.providerName || null };
+        sse.sendToken(finalContent.replace(/\s*\[\[QUICK_REPLY:[^\]]*\]\]/g, "").trim());
+        serverBypassServed = true;
+        await emitJourneyEvent({ eventType: "WINBACK_RESPONSE", parentUserId: userId, providerId: wbPayload.providerId || null, sessionId: currentSessionId || null, bookingId: wbPayload.bookingId || null, actorRole: "parent", metadata: { response: "not_interested" } });
+      }
+    } else if (churnAskPayload && !serverBypassServed) {
+      const reason = /found a match elsewhere|found (someone|them|one) (else|elsewhere|outside)/i.test(userMessage) ? "found_elsewhere"
+        : /^costs?[.!]?$|too expensive|price|cost/i.test(userMessage.trim()) ? "costs"
+        : /not the right timing|timing/i.test(userMessage) ? "timing"
+        : /just exploring|exploring/i.test(userMessage) ? "exploring"
+        : null;
+      if (reason) {
+        const closes: Record<string, string> = {
+          found_elsewhere: "I really appreciate you telling me - and congratulations on finding your path forward. If anything changes or you need a second opinion on anything at all, I'm always here.",
+          costs: "That's completely understandable - this journey is a big investment. If it would help, I can look for options with different price points, or we can revisit whenever the timing is better financially.",
+          timing: "Totally understood - timing matters more than anything in this journey. I'll be right here whenever you're ready to pick things back up.",
+          exploring: "That's exactly what I'm here for - explore as long as you like, no pressure whatsoever. Ask me anything as questions come up.",
+        };
+        finalContent = closes[reason];
+        sse.sendToken(finalContent);
+        serverBypassServed = true;
+        await emitJourneyEvent({ eventType: "CHURN_REASON", parentUserId: userId, providerId: churnAskPayload.providerId || null, sessionId: currentSessionId || null, bookingId: churnAskPayload.bookingId || null, actorRole: "parent", metadata: { reason } });
+        // Cool the lead: the provider's users + GoStork admins hear why.
+        try {
+          const parentRow = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, firstName: true } });
+          const parentName = parentRow?.firstName || parentRow?.name || "A parent";
+          const reasonLabel = reason === "found_elsewhere" ? "found a match elsewhere" : reason === "costs" ? "costs" : reason === "timing" ? "timing" : "still exploring";
+          const notifyIds: string[] = [];
+          if (churnAskPayload.providerId) {
+            const provUsers = await prisma.user.findMany({ where: { providerId: churnAskPayload.providerId }, select: { id: true } });
+            notifyIds.push(...provUsers.map((u) => u.id));
+          }
+          const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });
+          notifyIds.push(...admins.map((a) => a.id));
+          for (const uid of Array.from(new Set(notifyIds))) {
+            await prisma.inAppNotification.create({
+              data: {
+                userId: uid,
+                eventType: "LEAD_WENT_COLD",
+                payload: { parentName, providerId: churnAskPayload.providerId, bookingId: churnAskPayload.bookingId, reason, message: `${parentName} stepped back${churnAskPayload.providerName ? ` from ${churnAskPayload.providerName}` : ""} - reason: ${reasonLabel}.` },
+              },
+            }).catch(() => {});
+          }
+        } catch (e: any) {
+          console.error(`[winback] churn notify failed: ${e?.message}`);
+        }
+        console.log(`[winback] CHURN_REASON recorded: ${reason} (booking ${churnAskPayload.bookingId})`);
+      }
+    }
+
     // Deterministic lawyer connect - BOTH tiers. The model repeatedly
     // narrates fake "I've submitted a request, they'll reach out" text
     // instead of emitting [[LAWYER_CONNECT]] (and the whisper fallback then
@@ -6360,6 +6456,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               status: "PENDING",
             },
           });
+          void emitJourneyEvent({ eventType: "WHISPER_ASKED", parentUserId: userId, providerId: whisperProviderId, sessionId: currentSessionId || null, actorRole: "parent" });
 
           let whisperMatchCard: any = null;
           try {
@@ -7871,6 +7968,10 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     }
 
     const uiExtras: Record<string, any> = {};
+    // Phase 7A win-back: the reschedule reply re-serves the original host's
+    // calendar; the churn question carries its payload for the next turn.
+    if (!consultationCard && winbackRescheduleCard) consultationCard = winbackRescheduleCard;
+    if (winbackChurnAskPayload) uiExtras.churnAsk = winbackChurnAskPayload;
     if (matchCards.length > 0) uiExtras.matchCards = matchCards;
     if (doctorCards.length > 0) uiExtras.doctorCards = doctorCards;
     if (comparisonCards.length > 0) uiExtras.comparisonCards = comparisonCards;

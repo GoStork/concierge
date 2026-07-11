@@ -1,4 +1,5 @@
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { isVideoInviteExpired } from "@/lib/booking-time";
 import { AttachmentMessageCard } from "./attachment-message-card";
 import { formatMoneyCents } from "@/lib/format-money";
 import { CheckCircle2, FileText, Download, Video, CalendarDays, ExternalLink, UserCheck, Receipt, Paperclip, PenLine, Check, MessageSquare, Pencil, X } from "lucide-react";
@@ -254,7 +255,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
   if (msg.uiCardType === "video_invite") {
     const isProviderViewer = viewerRole === "provider";
     const videoBookingId = data.bookingId;
-    if (!videoBookingId) {
+    if (!videoBookingId || isVideoInviteExpired(msg.createdAt)) {
       return (
         <div className="mt-1" data-testid="video-invite-card">
           <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>

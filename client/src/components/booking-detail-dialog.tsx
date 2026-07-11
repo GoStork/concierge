@@ -254,7 +254,7 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
                 : booking.status}
             </span>
           </div>
-          {isConfirmed && booking.providerUser?.dailyRoomUrl && booking.meetingType !== "phone" && (
+          {isConfirmed && !hasPassed && booking.providerUser?.dailyRoomUrl && booking.meetingType !== "phone" && (
             <a
               href={`/room/${booking.id}`}
               target="_blank"

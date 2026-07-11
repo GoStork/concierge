@@ -17,6 +17,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiParam } from "@nestjs/swagger";
+import { emitJourneyEvent } from "../../../journey-events";
 import { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
@@ -2038,6 +2039,9 @@ export class UsersController {
       create: { userId: user.id, donorId, type },
       update: {},
     });
+    if (type === "favorite") {
+      void emitJourneyEvent({ eventType: "PROFILE_FAVORITED", parentUserId: user.id, actorRole: "parent", metadata: { entityType: "donor", entityId: donorId } });
+    }
     return { success: true };
   }
 
@@ -2109,6 +2113,9 @@ export class UsersController {
       create: { userId: user.id, entityType, entityId, type },
       update: {},
     });
+    if (type === "favorite") {
+      void emitJourneyEvent({ eventType: "PROFILE_FAVORITED", parentUserId: user.id, actorRole: "parent", metadata: { entityType, entityId } });
+    }
     return { success: true };
   }
 

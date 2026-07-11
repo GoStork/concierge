@@ -241,7 +241,7 @@ export async function generateAndAnnounceAgreement(opts: GenerateAndAnnounceOpts
 export async function maybeCompleteHandoff(sessionId: string): Promise<boolean> {
   const session = await prisma.aiChatSession.findUnique({
     where: { id: sessionId },
-    select: { id: true, userId: true, handoffCompletedAt: true, provider: { select: { name: true } }, user: { select: { firstName: true, name: true } } },
+    select: { id: true, userId: true, providerId: true, handoffCompletedAt: true, provider: { select: { name: true } }, user: { select: { firstName: true, name: true } } },
   });
   if (!session || session.handoffCompletedAt) return false;
 
@@ -258,6 +258,11 @@ export async function maybeCompleteHandoff(sessionId: string): Promise<boolean> 
     data: { handoffCompletedAt: new Date() },
   });
   if (claimed.count === 0) return false;
+
+  {
+    const { emitJourneyEvent } = await import("./journey-events");
+    void emitJourneyEvent({ eventType: "HANDOFF_COMPLETED", parentUserId: session.userId, providerId: (session as any).providerId || null, sessionId });
+  }
 
   const { advanceJourneyStage } = await import("./journey-stage");
   await advanceJourneyStage(session.userId, "Agreement Signed");

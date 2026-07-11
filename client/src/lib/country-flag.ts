@@ -177,6 +177,50 @@ export function countryNameToIsoCode(name: string): string | null {
   return OVERRIDES[lower] ?? buildNameToCode().get(lower) ?? null;
 }
 
+// ISO code -> the canonical country name used across the app (the COUNTRIES
+// list in country-autocomplete-input). Only codes whose Intl.DisplayNames
+// spelling diverges from ours need an entry; everything else falls through
+// to Intl with "&" / "St." normalized.
+const CODE_TO_NAME_OVERRIDES: Record<string, string> = {
+  US: "United States",
+  GB: "United Kingdom",
+  KR: "South Korea",
+  KP: "North Korea",
+  RU: "Russia",
+  TW: "Taiwan",
+  IR: "Iran",
+  SY: "Syria",
+  VN: "Vietnam",
+  CZ: "Czech Republic",
+  TZ: "Tanzania",
+  BO: "Bolivia",
+  LA: "Laos",
+  MD: "Moldova",
+  PS: "Palestine",
+  TR: "Turkey",
+  MM: "Myanmar",
+  CV: "Cabo Verde",
+  CG: "Congo",
+  ST: "Sao Tome and Principe",
+  KN: "Saint Kitts and Nevis",
+  LC: "Saint Lucia",
+  VC: "Saint Vincent and the Grenadines",
+};
+
+/** Converts an ISO 3166-1 alpha-2 code (e.g. "US") to the country name used in our pickers (e.g. "United States"). */
+export function isoCodeToCountryName(code: string): string | null {
+  const c = (code || "").trim().toUpperCase();
+  if (c.length !== 2) return null;
+  if (CODE_TO_NAME_OVERRIDES[c]) return CODE_TO_NAME_OVERRIDES[c];
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "region" }).of(c);
+    if (!name || name === c || name === "Unknown Region") return null;
+    return name.replace(/\s*&\s*/g, " and ").replace(/\bSt\./g, "Saint");
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Compact display name for a country, optimized for tight UI chips (e.g. the
  * country badge in the provider costs program rows where horizontal space is

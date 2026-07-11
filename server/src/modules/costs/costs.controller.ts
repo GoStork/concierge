@@ -206,10 +206,12 @@ export class CostsController {
       // subtype. Override to "multi-service" so the AI prompt uses the
       // union branch and the AI's content-detected serviceTypes drives
       // classification instead.
-      const activeServiceCount = await this.prisma.providerService.count({
+      const activeServices = await this.prisma.providerService.findMany({
         where: { providerId, status: "APPROVED" },
+        select: { providerType: { select: { name: true } } },
       });
-      const providerType = activeServiceCount > 1 ? "multi-service" : providerTypeFromClient;
+      const approvedTypeNames = activeServices.map((sv) => sv.providerType?.name).filter(Boolean) as string[];
+      const providerType = activeServices.length > 1 ? "multi-service" : providerTypeFromClient;
 
       // Admin uploads should auto-approve once parsing+classification
       // finishes. Without this the sheet sits in DRAFT after parse - the
@@ -222,7 +224,7 @@ export class CostsController {
       const isAdminUpload = user?.roles?.includes("GOSTORK_ADMIN") ?? false;
 
       if (providerType) {
-        this.costsService.runBackgroundParse(sheet.id, buffer, contentType, providerType, parsed.filename, subType, isAdminUpload);
+        this.costsService.runBackgroundParse(sheet.id, buffer, contentType, providerType, parsed.filename, subType, isAdminUpload, approvedTypeNames);
       }
 
       // Return the programId (whether pre-existing or auto-created in the

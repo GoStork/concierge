@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { hasBookingEnded } from "@/lib/booking-time";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -72,10 +73,9 @@ export default function AppointmentsPage() {
     );
   }
 
-  const now = new Date();
   const allBookings = bookings || [];
-  const upcoming = allBookings.filter((b: any) => new Date(b.scheduledAt) >= now && b.status !== "CANCELLED" && b.status !== "RESCHEDULED");
-  const past = allBookings.filter((b: any) => new Date(b.scheduledAt) < now || b.status === "CANCELLED" || b.status === "RESCHEDULED");
+  const upcoming = allBookings.filter((b: any) => !hasBookingEnded(b.scheduledAt, b.duration) && b.status !== "CANCELLED" && b.status !== "RESCHEDULED");
+  const past = allBookings.filter((b: any) => hasBookingEnded(b.scheduledAt, b.duration) || b.status === "CANCELLED" || b.status === "RESCHEDULED");
 
   const displayBookings = activeTab === "upcoming" ? upcoming : past;
 
@@ -113,7 +113,7 @@ export default function AppointmentsPage() {
         <div className="space-y-3">
           {displayBookings.map((booking: any) => {
             const start = new Date(booking.scheduledAt);
-            const isUpcoming = start >= now && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED";
+            const isUpcoming = !hasBookingEnded(booking.scheduledAt, booking.duration) && booking.status !== "CANCELLED" && booking.status !== "RESCHEDULED";
             const otherParty = booking.providerUserId === user?.id ? booking.parentUser : booking.providerUser;
             const otherPhotoSrc = getPhotoSrc(otherParty?.photoUrl);
 

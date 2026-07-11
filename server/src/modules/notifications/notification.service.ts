@@ -432,6 +432,41 @@ export class NotificationService implements OnModuleInit {
    * mirroring the cancellation fan-out. SMS reuses the cancelled templates (same meaning:
    * the meeting won't happen, please rebook); the branded email carries the precise wording.
    */
+  /**
+   * Phase 7A win-back: the single gentle email nudge sent 48h after an
+   * unanswered win-back message (no-show or canceled-not-rebooked call).
+   * One per booking - the sweep gates via winbackNudgedAt.
+   */
+  async sendWinbackNudgeEmail(booking: any) {
+    const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId }, include: { provider: true, scheduleConfig: true } as any }));
+    const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
+    if (!attendeeEmail) return;
+    const attendeeName = booking.attendeeName || booking.parentUser?.name || attendeeEmail;
+    const providerName = providerUser?.provider?.name || providerUser?.name || "your provider";
+    const base = getBaseUrl();
+    const brandData = await this.getBrandData();
+    const rebookLink = providerUser?.scheduleConfig?.bookingPageSlug ? `${base}/book/${providerUser.scheduleConfig.bookingPageSlug}` : `${base}/chat`;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Whenever you're ready",
+      greeting: `Hi ${esc(getFirstName(attendeeName))},`,
+      body: `Just a gentle check-in - your call with <strong>${esc(providerName)}</strong> never found a new time. There's no pressure at all: whenever you're ready, you can pick a new slot in one click, or reply in your GoStork chat and your concierge will take care of everything.`,
+      buttons: [
+        { label: "Pick a New Time", url: rebookLink },
+        { label: "Open My Chat", url: `${base}/chat` },
+      ],
+    });
+    await this.dispatchNotification({
+      userId: booking.parentUserId || booking.providerUserId,
+      bookingId: booking.id,
+      type: "EMAIL",
+      channel: "winback_nudge",
+      recipient: attendeeEmail,
+      subject: `Ready to rebook with ${providerName}? We're here`,
+      body: html,
+    });
+  }
+
   async sendBookingExpired(booking: any) {
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;

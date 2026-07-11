@@ -24,6 +24,7 @@
  * Eva says so plainly and the GoStork team is notified; nothing is faked.
  */
 import { prisma } from "./db";
+import { emitJourneyEvent } from "./journey-events";
 
 const LAWYER_TRIGGER_AGENCY_TYPES = ["Surrogacy Agency", "Egg Donor Agency"];
 
@@ -187,6 +188,7 @@ export async function connectLawyer(currentSessionId: string, parentUserId: stri
   }
 
   if (isNewSession) {
+    void emitJourneyEvent({ eventType: "LAWYER_CONNECTED", parentUserId, providerId: lawyer.id, sessionId: session.id });
     // Dual-audience intro in the NEW session.
     await prisma.aiChatMessage.create({
       data: {

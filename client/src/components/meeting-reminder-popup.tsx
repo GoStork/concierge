@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { format, isToday } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
-import { Video, X } from "lucide-react";
+import { hasBookingEnded } from "@/lib/booking-time";
+import { Video, X, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface ImminentBooking {
@@ -60,10 +62,13 @@ export function MeetingReminderPopup() {
       const res = await fetch("/api/calendar/bookings/imminent", { credentials: "include" });
       if (!res.ok) return;
       const data = await res.json();
-      if (data.booking && !getDismissedIds().has(data.booking.id)) {
+      const ended = data.booking
+        ? hasBookingEnded(data.booking.scheduledAt, data.booking.duration)
+        : false;
+      if (data.booking && !ended && !getDismissedIds().has(data.booking.id)) {
         setBooking(data.booking);
         setVisible(true);
-      } else if (!data.booking) {
+      } else if (!data.booking || ended) {
         setBooking(null);
         setVisible(false);
       }
@@ -130,6 +135,25 @@ export function MeetingReminderPopup() {
         <h2 className="text-xl font-display font-semibold mb-2" data-testid="text-meeting-title">
           Record This Consultation?
         </h2>
+
+        <div
+          className="w-full bg-secondary/50 rounded-[var(--radius)] px-4 py-3 mb-4 text-left"
+          data-testid="meeting-reminder-details"
+        >
+          <p className="text-sm font-medium text-foreground truncate" data-testid="text-meeting-subject">
+            {booking.subject || "Video Consultation"}
+          </p>
+          <p className="text-sm text-muted-foreground truncate" data-testid="text-meeting-counterparty">
+            with {booking.counterpartyName}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5" data-testid="text-meeting-time">
+            <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+            {isToday(new Date(booking.scheduledAt))
+              ? `Today at ${format(new Date(booking.scheduledAt), "h:mm a")}`
+              : format(new Date(booking.scheduledAt), "MMM d 'at' h:mm a")}
+            {" "}({booking.duration} min)
+          </p>
+        </div>
 
         <p className="text-sm text-muted-foreground mb-1 leading-relaxed">
           This call will be recorded and transcribed. You'll get a link to rewatch the video and review the transcript anytime.

@@ -25,6 +25,7 @@ import { Request, Response } from "express";
 import { DateTime } from "luxon";
 import { randomBytes, randomUUID, createHmac } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
+import { emitBookingLifecycleEvent } from "../../../journey-events";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { NotificationService } from "../notifications/notification.service";
 import { GoogleCalendarService } from "./google-calendar.service";
@@ -603,7 +604,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     const windowStart = new Date(now.getTime() - 15 * 60 * 1000);
     const windowEnd = new Date(now.getTime() + 5 * 60 * 1000);
 
-    const booking = await this.prisma.booking.findFirst({
+    const candidates = await this.prisma.booking.findMany({
       where: {
         OR: [{ providerUserId: user.id }, { parentUserId: { in: parentMemberIds } }],
         status: "CONFIRMED",
@@ -621,6 +622,13 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       },
       orderBy: { scheduledAt: "asc" },
     });
+
+    // A booking whose scheduledAt + duration is already in the past has ended -
+    // never prompt the user to join it (short meetings can end inside the
+    // 15-minute lookback window).
+    const booking = candidates.find(
+      (b) => new Date(b.scheduledAt).getTime() + (b.duration || 30) * 60 * 1000 > now.getTime(),
+    );
 
     if (!booking) return { booking: null };
 
@@ -905,6 +913,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
       },
     });
+    void emitBookingLifecycleEvent(booking.id, "SCHEDULED", "provider", { autoConfirmed: true });
 
     this.notifications.sendBookingConfirmation(booking).catch(() => {});
     this.syncBookingToGoogleCalendar(booking).catch(() => {});
@@ -955,6 +964,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
       },
     });
+    void emitBookingLifecycleEvent(booking.id, "SCHEDULED", "provider", { autoConfirmed: true });
 
     this.notifications.sendBookingConfirmation(booking).catch(() => {});
     this.syncBookingToGoogleCalendar(booking).catch(() => {});
@@ -1046,6 +1056,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     });
 
     if (body.status === "CANCELLED") {
+      void emitBookingLifecycleEvent(updated.id, "CANCELED", (data.cancelledByRole as any) || "parent");
       this.syncSurrogateStatusForMatchCall(updated as any, "release").catch(() => {});
       this.notifications.sendBookingCancellation(updated).catch(() => {});
       this.deleteGoogleCalendarEvent(updated).catch(() => {});
@@ -1086,6 +1097,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    void emitBookingLifecycleEvent(updated.id, "CONFIRMED", "provider");
     this.notifications.sendBookingConfirmation(updated).catch(() => {});
     this.syncBookingToGoogleCalendar(updated).catch(() => {});
     this.syncBookingToParentGoogleCalendar(updated).catch(() => {});
@@ -1389,6 +1401,7 @@ I'll check in with you right after the call. You've got this!`;
       },
     });
     this.syncSurrogateStatusForMatchCall(updated as any, "release").catch(() => {});
+    void emitBookingLifecycleEvent(updated.id, "CANCELED", "provider", { declined: true });
 
     this.notifications.sendBookingDeclinedToParent(updated).catch(() => {});
     this.deleteGoogleCalendarEvent(updated).catch(() => {});
@@ -1453,6 +1466,7 @@ I'll check in with you right after the call. You've got this!`;
         parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
       },
     });
+    void emitBookingLifecycleEvent(suggested.id, "RESCHEDULED", "provider", { suggestedTime: true });
 
     this.notifications.sendNewTimeSuggested(original, suggested).catch(() => {});
     this.deleteGoogleCalendarEvent(original).catch(() => {});
@@ -1514,6 +1528,7 @@ I'll check in with you right after the call. You've got this!`;
         parentUser: { select: { id: true, name: true, email: true, photoUrl: true } },
       },
     });
+    void emitBookingLifecycleEvent(newBooking.id, "RESCHEDULED", user.id === original.providerUserId ? "provider" : "parent");
 
     this.notifications.sendBookingRescheduled(original, newBooking, body.message || "").catch(() => {});
     this.deleteGoogleCalendarEvent(original).catch(() => {});
@@ -2210,6 +2225,7 @@ I'll check in with you right after the call. You've got this!`;
     });
 
     this.notifications.sendBookingSubmitted(booking).catch(() => {});
+    void emitBookingLifecycleEvent(booking.id, "SCHEDULED", "parent");
     this.emitBookingEvent("booking_created", booking, booking.parentUserId || undefined);
     this.fireCostSheetAutoDraft(booking.id);
 
@@ -2324,6 +2340,7 @@ I'll check in with you right after the call. You've got this!`;
         parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
       },
     });
+    void emitBookingLifecycleEvent(newBooking.id, "RESCHEDULED", hostIsRescheduling ? "provider" : "parent");
 
     if (hostIsRescheduling) {
       // Host rescheduled - send confirmation email directly (no approval needed)
@@ -2355,6 +2372,7 @@ I'll check in with you right after the call. You've got this!`;
       where: { publicToken: token },
       data: { status: "CANCELLED", cancelledAt: new Date(), cancelledByRole: "parent" },
     });
+    void emitBookingLifecycleEvent(updated.id, "CANCELED", "parent");
 
     this.notifications.sendBookingCancellation(updated).catch(() => {});
     this.deleteGoogleCalendarEvent(updated).catch(() => {});
@@ -2406,6 +2424,7 @@ I'll check in with you right after the call. You've got this!`;
       },
     });
 
+    void emitBookingLifecycleEvent(updated.id, "CONFIRMED", "provider");
     this.notifications.sendBookingConfirmation(updated).catch(() => {});
     this.syncBookingToGoogleCalendar(updated).catch(() => {});
     this.syncBookingToParentGoogleCalendar(updated).catch(() => {});
@@ -2493,6 +2512,7 @@ I'll check in with you right after the call. You've got this!`;
         parentUser: { select: { id: true, name: true, email: true, mobileNumber: true } },
       },
     });
+    void emitBookingLifecycleEvent(suggested.id, "RESCHEDULED", "provider", { suggestedTime: true });
 
     this.notifications.sendNewTimeSuggested(original, suggested).catch(() => {});
     this.deleteGoogleCalendarEvent(original).catch(() => {});

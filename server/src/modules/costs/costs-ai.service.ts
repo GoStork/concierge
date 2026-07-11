@@ -37,6 +37,11 @@ export interface ClassificationResult {
   // and the matcher can't distinguish a Fresh-donor program from a
   // Frozen-lot one for filter purposes.
   eggDonorSubType?: "fresh" | "frozen";
+  // Optional multi-program split for a-la-carte fee schedules that span
+  // several parent journeys (law firms, wellness menus). Each split becomes
+  // its own CostProgram; itemKeys reference "<category>::<key>" of the
+  // emitted items. Absent for normal single-program sheets.
+  programSplits?: { programName: string; serviceTypes: string[]; itemKeys: string[] }[];
 }
 
 @Injectable()
@@ -69,10 +74,17 @@ export class CostsAiService {
     const { GoogleGenerativeAI } = await import("@google/generative-ai");
     const genAI = new GoogleGenerativeAI(apiKey);
 
-    const providerType = await this.prisma.providerType.findFirst({
-      where: { name: { contains: providerTypeName, mode: "insensitive" } },
+    // Multi-service providers have no ProviderType row of their own - load
+    // the union of their approved types' templates so mapping/consolidation
+    // guidance survives the multi-service prompt branch.
+    const typeNamesForTemplates =
+      providerTypeName.toLowerCase() === "multi-service" && approvedTypeNames && approvedTypeNames.length > 0
+        ? approvedTypeNames
+        : [providerTypeName];
+    const providerTypes = await this.prisma.providerType.findMany({
+      where: { OR: typeNamesForTemplates.map((n) => ({ name: { contains: n, mode: "insensitive" as const } })) },
     });
-    const templateWhere: any = providerType ? { providerTypeId: providerType.id } : null;
+    const templateWhere: any = providerTypes.length > 0 ? { providerTypeId: { in: providerTypes.map((t) => t.id) } } : null;
     if (templateWhere && subType) {
       templateWhere.OR = [{ subType: null }, { subType }];
     }
@@ -333,6 +345,12 @@ Return ONLY a valid JSON array with objects having these exact fields:
     originalFileName: string,
     subType?: string,
     onProgress?: (info: { itemsCount: number; streaming: boolean }) => void | Promise<void>,
+    // Approved service-type names of the provider - lets a "multi-service"
+    // parse load the UNION of those types' cost templates. Without it a
+    // multi-service upload finds no ProviderType named "multi-service",
+    // loads ZERO templates, and the model free-forms granular items
+    // instead of consolidating to template fields.
+    approvedTypeNames?: string[],
   ): Promise<{
     items: Array<{
       category: string;
@@ -402,12 +420,17 @@ Return ONLY a valid JSON array with objects having these exact fields:
 
 This provider offers MULTIPLE services (e.g. IVF Clinic + Surrogacy Agency + Egg Donor Agency). You must FIRST decide which service the uploaded cost sheet covers by reading the document content, then pick the right classification path:
 
-STEP 1 - Emit "serviceTypes" array (1+ tags) from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal". Detection cues:
+STEP 1 - Emit "serviceTypes" array (1+ tags) from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal", "therapy", "genetic_counseling", "nutrition", "coaching", "doula". Detection cues:
 - "ivf_clinic": IVF cycle / FET / embryo creation / shipping embryos / PGT / embryo transfer / stimulation / retrieval done by a clinic, clinical fees stated.
 - "surrogacy": "Surrogate Compensation", "Surrogacy", "Gestational Carrier" / "GC fee", "Surrogate Insurance", "Surrogate Screening", "Surrogate Sign-on bonus", "Maternity Leave", "Lloyds of London", "Newborn Insurance", "Escrow", "Agency fee" in a surrogacy context.
 - "egg_donor": "Egg Donor Compensation", "Egg Donor Agency Fees", "Donor screening", "Donor IVF cycle", "Fresh Donor Cycle", "Frozen Egg Lot", "donor matching fee".
 - "legal": the WHOLE document is a law firm / attorney fee schedule - "Retainer", "Gestational Carrier Agreement drafting", "Donor Agreement review", "Pre-Birth Parentage Order", "Second-Parent Adoption", "Escrow management (legal)", hourly attorney rates. Do NOT use this tag for legal LINE ITEMS inside an agency or clinic cost sheet - those keep the agency/clinic tag.
 - "sperm_donor": "Sperm Donor", "Sperm Bank", "Vial of sperm", per-vial pricing.
+- "therapy": mental-health / counseling fee schedule - "therapy session", "psychological evaluation", "support group", per-session or package rates from a therapist practice.
+- "genetic_counseling": genetic counseling consults, carrier-screening review sessions, results-review appointments.
+- "nutrition": fertility nutrition consults, dietitian packages, meal-plan programs.
+- "coaching": fertility coaching sessions or packages (non-clinical guidance/support).
+- "doula": birth or postpartum doula support packages.
 A bundled sheet can have multiple tags (e.g. an Egg Donor agency that includes the surrogacy match -> ["egg_donor", "surrogacy"]).
 
 STEP 2 - Pick "subType" based on STEP 1:
@@ -560,11 +583,17 @@ programName: the document's branded program name (e.g. "Unlimited IVF Until Live
 
 country: the clinic's country of delivery. Use the full English name ("United States", "Mexico", "Colombia"). Default to "United States" when nothing in the document indicates otherwise.
 
-serviceTypes: an ARRAY of service-type tags from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal". A single cost sheet can be tagged with MULTIPLE if the program bundles services (e.g. an Egg Donor agency that includes the surrogacy match -> ["egg_donor", "surrogacy"]). Detection rules:
+serviceTypes: an ARRAY of service-type tags from: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal", "therapy", "genetic_counseling", "nutrition", "coaching", "doula". A single cost sheet can be tagged with MULTIPLE if the program bundles services (e.g. an Egg Donor agency that includes the surrogacy match -> ["egg_donor", "surrogacy"]). Detection rules:
 - "ivf_clinic" - any IVF cycle / FET / embryo creation / shipping embryos line items, OR the provider type itself is an IVF clinic.
 - "surrogacy" - presence of "Surrogate Compensation", "Surrogacy", "Gestational Carrier" / "GC fee", "Surrogate Insurance", "Surrogate Screening", "Lloyds of London", "Newborn Insurance".
 - "egg_donor" - presence of "Egg Donor Compensation", "Egg Donor Agency Fees", "Donor screening", "Donor IVF cycle", "Fresh Donor Cycle", "Frozen Egg Lot".
 - "sperm_donor" - presence of "Sperm Donor", "Sperm Bank", "Vial of sperm", per-vial pricing.
+- "legal" - the WHOLE document is a law firm / attorney fee schedule: "Retainer", "Attorney Fee", "Gestational Carrier/Surrogacy Agreement drafting", "Donor Agreement review", "Pre-Birth Parentage Order", "Second-Parent Adoption", hourly attorney rates. Do NOT use this tag for legal LINE ITEMS inside an agency or clinic cost sheet - those keep the agency/clinic tag.
+- "therapy": mental-health / counseling fee schedule - "therapy session", "psychological evaluation", "support group", per-session or package rates from a therapist practice.
+- "genetic_counseling": genetic counseling consults, carrier-screening review sessions, results-review appointments.
+- "nutrition": fertility nutrition consults, dietitian packages, meal-plan programs.
+- "coaching": fertility coaching sessions or packages (non-clinical guidance/support).
+- "doula": birth or postpartum doula support packages.
 Always emit at least one tag. If multiple service categories are clearly represented, emit them all.
 
 == OUTPUT ==
@@ -582,9 +611,12 @@ ${subtypeOutputSchema}
     "reasoning": "<one sentence>",
     "programName": "<label>",
     "country": "<country>",
-    "serviceTypes": [<one or more of: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal">]
+    "serviceTypes": [<one or more of: "ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal", "therapy", "genetic_counseling", "nutrition", "coaching", "doula">],
+    "programSplits": [ { "programName": "<label>", "serviceTypes": [<tags>], "itemKeys": ["<category>::<key>", ...] }, ... ]  <- OPTIONAL, usually omitted
   }
 }
+
+programSplits (OPTIONAL - omit for the vast majority of uploads): include ONLY when the document is an a-la-carte FEE SCHEDULE / service MENU covering MULTIPLE distinct parent journeys - e.g. a law firm listing gestational surrogacy matters AND egg/sperm/embryo donation matters AND an international package, or a wellness provider with separate per-journey offerings. Emit 2-4 splits. Each split: a concise Title Case programName (e.g. "Surrogacy Legal Services"), that journey's serviceTypes tags, and itemKeys = EVERY item belonging to that journey, written as "<category>::<key>" EXACTLY matching the category and key emitted in the items array. Items that apply to every journey (initial consultation, a general retainer) must be REPEATED in every split they apply to. Do NOT split a bundled package sold at one total price (agency or clinic packages) - splits are only for menus of independently-purchasable services.
 ${subtypeTrailingNote}`;
 
     let textContent: string | null = null;
@@ -795,7 +827,7 @@ ${subtypeTrailingNote}`;
       // serviceTypes - validate the AI's array against the allowed tokens.
       // Fall back to a single default tag derived from the provider type
       // so a malformed/missing field still gives the program a sensible tag.
-      const ALLOWED_TAGS = new Set(["ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal"]);
+      const ALLOWED_TAGS = new Set(["ivf_clinic", "surrogacy", "egg_donor", "sperm_donor", "legal", "therapy", "genetic_counseling", "nutrition", "coaching", "doula"]);
       const rawTags = Array.isArray(cls.serviceTypes) ? cls.serviceTypes : [];
       let serviceTypes = rawTags
         .map((t: any) => String(t).toLowerCase().trim())
@@ -811,6 +843,12 @@ ${subtypeTrailingNote}`;
           : isEggProvider ? "egg_donor"
           : providerTypeName.toLowerCase().includes("surrogacy") ? "surrogacy"
           : providerTypeName.toLowerCase().includes("sperm") ? "sperm_donor"
+          : providerTypeName.toLowerCase().includes("legal") ? "legal"
+          : providerTypeName.toLowerCase().includes("therapist") ? "therapy"
+          : providerTypeName.toLowerCase().includes("genetic") ? "genetic_counseling"
+          : providerTypeName.toLowerCase().includes("nutrition") ? "nutrition"
+          : providerTypeName.toLowerCase().includes("coach") ? "coaching"
+          : providerTypeName.toLowerCase().includes("doula") ? "doula"
           : null;
         if (defaultTag) serviceTypes = [defaultTag];
       }
@@ -870,6 +908,27 @@ ${subtypeTrailingNote}`;
         // No-subtype provider (surrogacy / sperm bank / etc.)
         classification = { tab: "" as any, subType: "" as any, isFixedCost, confidence, reasoning, programName, country, serviceTypes };
         this.logger.log(`parseAndClassify [${providerTypeName}]: ${items.length} items (fixed=${isFixedCost}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)})`);
+      }
+
+      // Optional multi-program split (a-la-carte fee schedules spanning
+      // several journeys - law firms, wellness menus). Validated here so
+      // downstream code can trust names/tags/keys; applied by
+      // CostsService.applyProgramSplits after items are saved.
+      if (classification) {
+        const rawSplits = Array.isArray((cls as any).programSplits) ? (cls as any).programSplits : [];
+        const programSplits = rawSplits
+          .map((sp: any) => ({
+            programName: String(sp?.programName || "").trim().slice(0, 60),
+            serviceTypes: (Array.isArray(sp?.serviceTypes) ? sp.serviceTypes : [])
+              .map((t: any) => String(t).toLowerCase().trim())
+              .filter((t: string) => ALLOWED_TAGS.has(t)),
+            itemKeys: (Array.isArray(sp?.itemKeys) ? sp.itemKeys : []).map((k: any) => String(k)),
+          }))
+          .filter((sp: any) => sp.programName && sp.itemKeys.length > 0);
+        if (programSplits.length >= 2) {
+          (classification as any).programSplits = programSplits;
+          this.logger.log(`parseAndClassify: multi-program split proposed - ${programSplits.map((s2: any) => `"${s2.programName}"(${s2.itemKeys.length})`).join(", ")}`);
+        }
       }
     } else {
       // Diagnostic: log what keys WERE in the parsed response so we can

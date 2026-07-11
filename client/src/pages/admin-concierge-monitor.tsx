@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
@@ -1020,11 +1021,12 @@ export default function AdminConciergeMonitor() {
               testId="concierge-monitor-profile"
               topSections={
                 <div className="border-b pb-4 mb-4" data-testid="match-status-section">
-                  <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Match Status</h4>
-                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium w-fit ${matchBadge.className}`} data-testid="badge-match-status">
+                  <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Journey</h4>
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium w-fit mb-3 ${matchBadge.className}`} data-testid="badge-match-status">
                     {matchBadge.icon}
                     {matchBadge.label}
                   </div>
+                  <JourneyTimelineCard parentUserId={detail.user.id} providerId={monitorProviderId} showEvents />
                 </div>
               }
               extraSections={

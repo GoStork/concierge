@@ -54,7 +54,7 @@ import {
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { SingleCountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
-import { getCountryFlag, getCountryShortName } from "@/lib/country-flag";
+import { getCountryFlag, getCountryShortName, isoCodeToCountryName } from "@/lib/country-flag";
 
 // Mirror of server/src/modules/costs/cost-templates-config.ts. Keep these
 // in sync. We don't import from server/ to avoid bundling server code.
@@ -143,8 +143,8 @@ function isIvfClinicType(name: string): boolean {
 }
 
 // All upload-first providers (IVF + Surrogacy + Egg Donor + Sperm Bank +
-// Egg Bank + multi-service). All get the AI dropzone + classification card
-// + tier section, but only IVF surfaces the 14-subtype dropdown.
+// Egg Bank + Legal + multi-service). All get the AI dropzone + classification
+// card + tier section, but only IVF surfaces the 14-subtype dropdown.
 function supportsUploadFirst(name: string): boolean {
   const lower = name.toLowerCase();
   if (lower === "multi-service") return true;
@@ -154,7 +154,13 @@ function supportsUploadFirst(name: string): boolean {
     || lower.includes("egg donor")
     || lower.includes("egg bank")
     || lower.includes("sperm bank")
-    || lower.includes("sperm donor");
+    || lower.includes("sperm donor")
+    || lower.includes("legal")
+    || lower.includes("therapist")
+    || lower.includes("genetic")
+    || lower.includes("nutrition")
+    || lower.includes("coach")
+    || lower.includes("doula");
 }
 
 // Subtype-having providers. IVF has the 14-subtype taxonomy. Egg donor has
@@ -316,6 +322,7 @@ function serviceTagsFromSubTypes(subTypes: string[] | null | undefined): string[
     else if (leaf === "egg_donor_fresh" || leaf === "egg_donor_frozen") tags.add("egg_donor");
     else if (leaf === "sperm_donor") tags.add("sperm_donor");
     else if (leaf === "legal") tags.add("legal");
+    else if (leaf === "therapy" || leaf === "genetic_counseling" || leaf === "nutrition" || leaf === "coaching" || leaf === "doula") tags.add(leaf);
     else tags.add("ivf_clinic"); // any IVF subtype id
   }
   return Array.from(tags);
@@ -332,6 +339,11 @@ const COVERAGE_LEAVES: { id: string; label: string; serviceTag: string }[] = [
   { id: "sperm_donor",       label: "Sperm Donor", serviceTag: "sperm_donor" },
   { id: "ivf",               label: "IVF",         serviceTag: "ivf_clinic" },
   { id: "legal",             label: "Legal",       serviceTag: "legal" },
+  { id: "therapy",           label: "Therapy",     serviceTag: "therapy" },
+  { id: "genetic_counseling", label: "Genetic Counseling", serviceTag: "genetic_counseling" },
+  { id: "nutrition",         label: "Nutrition",   serviceTag: "nutrition" },
+  { id: "coaching",          label: "Coaching",    serviceTag: "coaching" },
+  { id: "doula",             label: "Doula",       serviceTag: "doula" },
 ];
 
 // Backwards alias - some call sites still import NON_IVF_LEAVES.
@@ -720,8 +732,13 @@ const SERVICE_TYPE_LABELS: Record<string, string> = {
   egg_donor: "Egg Donor",
   sperm_donor: "Sperm Donor",
   legal: "Legal",
+  therapy: "Therapy",
+  genetic_counseling: "Genetic Counseling",
+  nutrition: "Nutrition",
+  coaching: "Coaching",
+  doula: "Doula",
 };
-const ALL_SERVICE_TYPES = ["surrogacy", "egg_donor", "sperm_donor", "ivf_clinic", "legal"] as const;
+const ALL_SERVICE_TYPES = ["surrogacy", "egg_donor", "sperm_donor", "ivf_clinic", "legal", "therapy", "genetic_counseling", "nutrition", "coaching", "doula"] as const;
 
 interface ServiceInfo {
   providerTypeId: string;
@@ -2782,6 +2799,11 @@ const SERVICE_LABELS: Record<string, string> = {
   "Egg Bank": "Egg Bank",
   "Sperm Bank": "Sperm Bank",
   "Legal Services": "Legal",
+  "Therapists": "Therapy",
+  "Genetic Counseling": "Genetic Counseling",
+  "Fertility Nutritionists": "Nutrition",
+  "Fertility Coaches": "Coaching",
+  "Doulas": "Doula",
 };
 
 function getServiceLabel(name: string): string {
@@ -2850,6 +2872,39 @@ function ProgramsView({
   // Inputs for the legacy "Add Program" form (still uses immediate create).
   const [formName, setFormName] = useState("");
   const [formCountry, setFormCountry] = useState("");
+
+  // Prefill the New Program country from the visitor's IP (same
+  // /api/geo/country the onboarding + phone picker use) so providers don't
+  // have to pick their own country by hand. Fetches once per mount (server
+  // caches per-IP anyway), fills only while the field is still empty so a
+  // manual pick is never overridden, and stays silent on failure - the
+  // provider just selects manually.
+  const geoCountryRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!isAddingProgram) return;
+    if (geoCountryRef.current !== undefined) {
+      const cached = geoCountryRef.current;
+      if (cached) setFormCountry(prev => (prev ? prev : cached));
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    (async () => {
+      try {
+        const res = await fetch("/api/geo/country", { credentials: "include", signal: controller.signal });
+        const json = res.ok ? await res.json() : null;
+        const name = typeof json?.countryCode === "string" ? isoCodeToCountryName(json.countryCode) : null;
+        geoCountryRef.current = name;
+        if (!cancelled && name) setFormCountry(prev => (prev ? prev : name));
+      } catch {
+        geoCountryRef.current = null;
+      } finally {
+        clearTimeout(timeout);
+      }
+    })();
+    return () => { cancelled = true; clearTimeout(timeout); controller.abort(); };
+  }, [isAddingProgram]);
 
   // Unified pending-edit bag. Keys = programId, values = the fields the
   // admin has changed since the last save. Empty bag = clean state, no
@@ -3284,6 +3339,11 @@ function ProgramsView({
       if (n.includes("egg donor") || n.includes("egg bank")) tags.add("egg_donor");
       if (n.includes("sperm bank") || n.includes("sperm donor")) tags.add("sperm_donor");
       if (n.includes("legal")) tags.add("legal");
+      if (n.includes("therapist")) tags.add("therapy");
+      if (n.includes("genetic")) tags.add("genetic_counseling");
+      if (n.includes("nutrition")) tags.add("nutrition");
+      if (n.includes("coach")) tags.add("coaching");
+      if (n.includes("doula")) tags.add("doula");
     }
     // Defensive: if mapping produced nothing (unknown provider type name)
     // fall back to the full set instead of locking the clinic out.
@@ -3332,9 +3392,9 @@ function ProgramsView({
         <p className="text-sm text-muted-foreground">
           {programs.length === 0 ? "No programs yet" : `${programs.length} program${programs.length !== 1 ? "s" : ""}`}
         </p>
-        {/* Legacy add-program button only for providers that don't support
-            upload-first (e.g. legal services). All fertility-tier providers
-            use the dropzone instead. */}
+        {/* Legacy add-program button only for provider types outside the
+            upload-first set (none today - every known type, legal included,
+            uses the dropzone). Kept as the fallback for unknown types. */}
         {canManage && !uploadFirstType && !isAddingProgram && (
           <Button size="sm" variant="outline" onClick={startAdd}>
             <Plus className="w-4 h-4 mr-1" />

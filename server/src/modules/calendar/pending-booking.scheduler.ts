@@ -1,6 +1,7 @@
 import * as cron from "node-cron";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationService } from "../notifications/notification.service";
+import { runCallOutcomeSweep, runCanceledNotRebookedSweep, runWinbackSilenceSweep } from "./call-outcome.sweep";
 
 /**
  * Keeps PENDING booking requests from silently rotting.
@@ -268,9 +269,25 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
     } catch (err: any) {
       console.error(`[surrogate-hold] Cron error: ${err.message}`);
     }
+    // Phase 7A: call-outcome classification + win-back automation.
+    try {
+      await runCallOutcomeSweep(prisma, notifications);
+    } catch (err: any) {
+      console.error(`[call-outcome] Cron error: ${err.message}`);
+    }
+    try {
+      await runCanceledNotRebookedSweep(prisma);
+    } catch (err: any) {
+      console.error(`[canceled-rebook] Cron error: ${err.message}`);
+    }
+    try {
+      await runWinbackSilenceSweep(prisma, notifications);
+    } catch (err: any) {
+      console.error(`[winback] Cron error: ${err.message}`);
+    }
   });
 
-  console.log("[pending-booking] Scheduler started - runs every 10 minutes (daily/urgent nudges + auto-expiry + readiness re-asks)");
+  console.log("[pending-booking] Scheduler started - runs every 10 minutes (nudges + auto-expiry + readiness re-asks + call outcomes + win-back)");
 }
 
 export function stopPendingBookingScheduler() {

@@ -746,6 +746,13 @@ model Booking {
   pendingReminderAt       DateTime?
   pendingUrgentSentAt     DateTime?
   expiredAt               DateTime?
+  // Phase 7A call-outcome classification (set by the elapsed sweep):
+  // COMPLETED | NO_SHOW_PARENT | NO_SHOW_PROVIDER | NO_SHOW_BOTH | UNVERIFIED
+  outcome                 String?
+  outcomeAt               DateTime?
+  // Win-back automation: first Eva touch + the one follow-up nudge (max 2).
+  winbackSentAt           DateTime?
+  winbackNudgedAt         DateTime?
   parentUser              User?               @relation("ParentBookings", fields: [parentUserId], references: [id])
   providerUser            User                @relation("ProviderBookings", fields: [providerUserId], references: [id])
   rescheduledFrom         Booking?            @relation("RescheduledBookings", fields: [rescheduledFromId], references: [id])
@@ -2349,4 +2356,26 @@ model AdminTaskDismissal {
   taskKey     String   @unique
   dismissedBy String?
   dismissedAt DateTime @default(now())
+}
+
+// Phase 7A: append-only journey event log. Every notable event in a parent's
+// journey with a provider - booking lifecycle + call outcomes, invoices,
+// agreements, matches, favorites, whispers, lawyer connect, bank checkout,
+// win-backs, churn reasons. Journey STAGES are derived from these plus
+// source-of-truth records; rows here are never updated or deleted.
+model JourneyEvent {
+  id              String   @id @default(uuid())
+  parentAccountId String
+  providerId      String?
+  sessionId       String?
+  bookingId       String?
+  eventType       String
+  actorRole       String? // "parent" | "provider" | "system" | "admin"
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  @@index([parentAccountId, createdAt])
+  @@index([providerId, eventType, createdAt])
+  @@index([bookingId])
+  @@index([eventType, createdAt])
 }

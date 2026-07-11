@@ -1,4 +1,5 @@
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
+import { emitJourneyEvent, emitInvoiceJourneyEvent } from "../../../journey-events";
 import { NotificationService } from "../notifications/notification.service";
 import { ConnectService } from "./connect.service";
 import { prisma as prismaClient } from "../../../db";
@@ -914,6 +915,8 @@ export class BillingService {
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
 
+    void emitInvoiceJourneyEvent(invoiceId, "INVOICE_SENT");
+
     const base = getBaseUrl();
     // Include the chat session in returnTo so post-payment redirects the
     // parent back to the exact conversation, not the generic /chat landing.
@@ -1149,6 +1152,7 @@ export class BillingService {
       lineItems: [{ serviceType, description: `${donorLabel} - ${bankTypeName} package (published total cost)`, amountCents: priceCents }],
       preferredServiceType: serviceType,
     });
+    void emitJourneyEvent({ eventType: "BANK_CHECKOUT_STARTED", parentUserId, providerId, sessionId: session.id, actorRole: "parent", metadata: { invoiceId: invoice.id, priceCents } });
     await this.sendPaymentNotificationsToParent(invoice.id);
 
     // Heads-up to the bank's users.
@@ -1542,6 +1546,7 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
       },
     });
     this.logger.log(`Invoice ${invoiceId} captured - PAID`);
+    void emitInvoiceJourneyEvent(invoiceId, "INVOICE_PAID", { path: "capture" });
     await this.stickSurrogateHoldOnPayment(invoiceId);
     await this.notifyAdminInvoicePaid(invoiceId);
     // Phase 5: clearance captured -> deposit is truly PAID -> agreement flow
@@ -1708,6 +1713,7 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
       },
     });
 
+    void emitInvoiceJourneyEvent(invoice.id, "INVOICE_PAID");
     await this.reflectPaymentInChat(invoice.id, "PAID");
     await this.stickSurrogateHoldOnPayment(invoice.id);
     await this.notifyAdminInvoicePaid(invoice.id);
@@ -2341,6 +2347,7 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     } catch (err: any) {
       return this.mapInvoiceCreationError(err);
     }
+    void emitJourneyEvent({ eventType: "MATCH_CONFIRMED", parentUserId: session.userId, providerId: session.providerId, sessionId: providerSessionId, bookingId, metadata: { invoiceId: invoice.id } });
 
     // Extend the surrogate's hold to cover the full payment window - the
     // expiry sweep must not release her while the invoice is live.

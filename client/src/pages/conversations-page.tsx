@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { isVideoInviteExpired } from "@/lib/booking-time";
 import { AttachmentMessageCard } from "@/components/chat/attachment-message-card";
 import { formatMoneyCents } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
@@ -430,7 +432,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
   if (msg.uiCardType === "video_invite") {
     const isProviderViewer = viewerRole === "provider";
     const videoBookingId = data.bookingId;
-    if (!videoBookingId) {
+    if (!videoBookingId || isVideoInviteExpired(msg.createdAt)) {
       return (
         <div className="mt-1" data-testid="video-invite-card">
           <div className="flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border-2 bg-muted/50 w-full text-left opacity-60" style={{ borderColor: brandColor }}>
@@ -2775,7 +2777,10 @@ const sendMessageMutation = useMutation({
                   ) : null}
                 {(hasJoined || isConsultationBooked) ? (
                   <div className="border-b pb-4 mb-4" data-testid="consultation-status-section">
-                    <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Match Status</h4>
+                    <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Journey</h4>
+                    <div className="mb-3">
+                      <JourneyTimelineCard parentUserId={detail.user.id} showEvents />
+                    </div>
                     <div className="space-y-2">
                       {journeyMatchStatus ? (
                         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] text-xs font-medium w-fit" data-testid="badge-journey-status">
@@ -2872,7 +2877,7 @@ const sendMessageMutation = useMutation({
                       drawer above the composer; these are the read-only history
                       lists, mirroring what the parent sees on their side. */}
                   {selectedSessionId && (
-                    <div className="border-t pt-4 mt-4">
+                    <div className="mt-4">
                       <CostSheetSidebarSection
                         sessionId={selectedSessionId}
                         brandColor={brandColor}
