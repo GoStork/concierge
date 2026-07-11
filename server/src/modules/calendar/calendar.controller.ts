@@ -205,10 +205,10 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
             select: { id: true },
           })
         : null)
-      // Legal chats are firm-level (no per-profile disambiguation) and are
-      // titled "Legal - <firm>" by connectLawyer, so the exact-title match
-      // above misses them and booking a call with the lawyer would spawn a
-      // duplicate 3-way chat. Reuse the existing legal session instead.
+      // Legal chats are firm-level (no per-profile disambiguation), so a
+      // differently-titled legacy legal session would be missed by the
+      // exact-title match above and booking would spawn a duplicate 3-way
+      // chat. Reuse any existing legal session with this firm instead.
       ?? (body.subjectType === "legal"
         ? await this.prisma.aiChatSession.findFirst({
             where: { userId: { in: accountIds }, providerId: consultProviderId, subjectType: "legal" },

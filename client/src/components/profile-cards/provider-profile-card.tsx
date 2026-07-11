@@ -1,7 +1,25 @@
 import { ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { InlineBookingCalendar } from "@/pages/concierge-chat-page";
+
+// Provider-type chip under the name. The card serves EVERY provider type
+// (agency, clinic, law firm, banks, wellness) - the label derives from the
+// provider's approved services instead of the old hardcoded "Agency".
+function providerTypeLabel(serviceNames: string[]): string {
+  const svc = serviceNames.map((n) => n.toLowerCase());
+  if (svc.some((n) => n.includes("legal"))) return "Law Firm";
+  if (svc.some((n) => n.includes("ivf") || n.includes("clinic"))) return "Clinic";
+  if (svc.some((n) => n.includes("surrogacy") || n.includes("egg donor"))) return "Agency";
+  if (svc.some((n) => n.includes("egg bank") || n.includes("sperm bank"))) return "Donor Bank";
+  if (svc.some((n) => n.includes("therapist"))) return "Therapy";
+  if (svc.some((n) => n.includes("genetic"))) return "Genetic Counseling";
+  if (svc.some((n) => n.includes("nutrition"))) return "Nutrition";
+  if (svc.some((n) => n.includes("coach"))) return "Coaching";
+  if (svc.some((n) => n.includes("doula"))) return "Doula";
+  return "Provider";
+}
 
 export interface ProviderProfileCardCalendar {
   slug: string;
@@ -49,6 +67,22 @@ export function ProviderProfileCard({
 }: ProviderProfileCardProps) {
   const navigate = useNavigate();
 
+  const providerQuery = useQuery({
+    queryKey: ["provider-card-type", providerId],
+    queryFn: async () => {
+      const res = await fetch(`/api/providers/${providerId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("provider fetch failed");
+      return res.json();
+    },
+    enabled: !!providerId,
+    staleTime: 5 * 60_000,
+  });
+  const serviceNames: string[] = (providerQuery.data?.services || [])
+    .map((sv: any) => sv?.providerType?.name)
+    .filter(Boolean);
+  const typeLabel = serviceNames.length > 0 ? providerTypeLabel(serviceNames) : null;
+  const isLawFirm = typeLabel === "Law Firm";
+
   if (!providerId && !providerName) return null;
 
   const initial = (providerName || "P").charAt(0);
@@ -72,9 +106,9 @@ export function ProviderProfileCard({
         )}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">{providerName || "Provider"}</p>
-          {/* The GoStork house profile is the concierge team, not an agency */}
-          {(providerName || "").trim().toLowerCase() !== "gostork" && (
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Agency</p>
+          {/* The GoStork house profile is the concierge team, not a provider */}
+          {(providerName || "").trim().toLowerCase() !== "gostork" && typeLabel && (
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{typeLabel}</p>
           )}
         </div>
       </div>
@@ -94,7 +128,7 @@ export function ProviderProfileCard({
 
       {calendar?.slug && (
         <div className="border-t pt-3">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Coordinator</p>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{isLawFirm ? "Attorney" : "Coordinator"}</p>
           {calendar.memberName && (
             <p className="text-sm font-medium mb-3">{calendar.memberName}</p>
           )}

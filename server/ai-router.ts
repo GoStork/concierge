@@ -4359,7 +4359,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     // pings the AGENCY with the lawyer ask). When the parent clearly asks to
     // be connected with a lawyer, skip the model entirely: announce the
     // connection and embed the attorney's booking calendar inline. The
-    // [[LAWYER_CALENDAR]] tag is processed downstream (card + connectLawyer).
+    // [[LAWYER_CALENDAR]] tag is processed downstream (firm card + calendar).
     let lawyerBypassPick: Awaited<ReturnType<typeof import("./lawyer-intro-flow").pickLawyerWithBooking>> = null;
     const lawyerAskRegex = /\b(connect|introduce|match|set me up|hook me up)\b[^.?!]{0,40}\b(lawyer|attorney|legal counsel)\b|^(yes[,! ]*)?(please )?(i (want|need|would like) |get me |find me )(a |an |to (talk|speak) (to|with) (a |an )?)?(fertility )?(lawyer|attorney)\b/i;
     const lawyerDeclineRegex = /\bnot right now\b|\bno thanks?\b|\bdon'?t (want|need)\b|\bmaybe later\b|^\s*no\b/i;
@@ -4370,8 +4370,8 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         if (lawyerBypassPick) {
           const memberFirst = lawyerBypassPick.member?.name ? String(lawyerBypassPick.member.name).trim() : null;
           finalContent = memberFirst && lawyerBypassPick.member?.slug
-            ? `You're in good hands - I've connected you with ${lawyerBypassPick.provider.name} and opened a chat with them in your conversations list. You can also schedule a call with ${memberFirst} directly right here: [[LAWYER_CALENDAR]]`
-            : `You're in good hands - I've connected you with ${lawyerBypassPick.provider.name} and opened a chat with them in your conversations list. Say hello and share where you are in the process. [[LAWYER_CALENDAR]]`;
+            ? `You're in good hands - ${lawyerBypassPick.provider.name} is our vetted fertility law partner. Here's their profile, and you can schedule a call with ${memberFirst} right here: [[LAWYER_CALENDAR]]`
+            : `You're in good hands - ${lawyerBypassPick.provider.name} is our vetted fertility law partner. Here's their profile: [[LAWYER_CALENDAR]]`;
           sse.sendToken(finalContent.replace(/\s*\[\[LAWYER_CALENDAR\]\]/g, "").trim());
           serverBypassServed = true;
           console.log(`[LAWYER BYPASS] Deterministic connect served (${lawyerBypassPick.provider.name}, member slug: ${lawyerBypassPick.member?.slug || "none"})`);
@@ -7704,24 +7704,25 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       finalContent = finalContent.replace(/\[\[AGREEMENT_PREVIEW\]\]/g, "").trim();
     }
 
-    // Phase 6: [[LAWYER_CONNECT]] - parent said yes to the lawyer intro (or
-    // asked for legal help). Side effect (auto-pick lawyer + 3-way chat)
-    // fires after the main message is saved; tag stripped here.
-    let lawyerConnectRequested = false;
-    if (finalContent.includes("[[LAWYER_CONNECT]]")) {
-      lawyerConnectRequested = true;
-      finalContent = finalContent.replace(/\[\[LAWYER_CONNECT\]\]/g, "").trim();
-    }
-
-    // [[LAWYER_CALENDAR]] - deterministic lawyer-connect bypass: open the
-    // legal chat (via connectLawyer post-save, breadcrumb suppressed) AND
-    // embed the attorney's booking calendar inline, same card the concierge
-    // and provider consultations use.
+    // Lawyer connect (reworked with 7A): [[LAWYER_CONNECT]] (model) and
+    // [[LAWYER_CALENDAR]] (deterministic bypass) both PRESENT the firm - the
+    // law-group profile card + the attorney's booking calendar. The 3-way
+    // legal chat is created ONLY when the parent books the call
+    // (calendar.controller createConsultationChatSession), exactly like
+    // every other provider type. No chat, no provider notification, and no
+    // journey rung before the booking.
     let lawyerCalendarServed = false;
-    if (finalContent.includes("[[LAWYER_CALENDAR]]")) {
-      finalContent = finalContent.replace(/\[\[LAWYER_CALENDAR\]\]/g, "").trim();
-      lawyerConnectRequested = true;
+    if (finalContent.includes("[[LAWYER_CONNECT]]") || finalContent.includes("[[LAWYER_CALENDAR]]")) {
+      finalContent = finalContent.replace(/\[\[LAWYER_CONNECT\]\]/g, "").replace(/\[\[LAWYER_CALENDAR\]\]/g, "").trim();
       lawyerCalendarServed = true;
+      if (!lawyerBypassPick) {
+        try {
+          const { pickLawyerWithBooking } = await import("./lawyer-intro-flow");
+          lawyerBypassPick = await pickLawyerWithBooking(userId);
+        } catch (e: any) {
+          console.error("[LAWYER_CALENDAR] pick failed:", e?.message);
+        }
+      }
       if (lawyerBypassPick) {
         // The firm card renders ABOVE the calendar: firm tabs + one face tab
         // per lawyer (LawGroupSwipeCard). Pushed after the MATCH_CARD
@@ -7734,23 +7735,25 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           photo: lawyerBypassPick.provider.logoUrl || undefined,
           reasons: [],
         });
-      }
-      if (!consultationCard && lawyerBypassPick?.member?.slug) {
-        consultationCard = {
-          providerId: lawyerBypassPick.provider.id,
-          providerName: lawyerBypassPick.provider.name,
-          providerLogo: lawyerBypassPick.provider.logoUrl,
-          bookingUrl: `/book/${lawyerBypassPick.member.slug}`,
-          iframeEnabled: true,
-          memberBookingSlug: lawyerBypassPick.member.slug,
-          memberName: lawyerBypassPick.member.name,
-          memberPhoto: lawyerBypassPick.member.photoUrl,
-          aiSessionId: currentSessionId || undefined,
-          subjectType: "legal",
-        };
-        console.log(`[LAWYER_CALENDAR] Card built: slug=${lawyerBypassPick.member.slug}, provider=${lawyerBypassPick.provider.name}`);
-      } else if (!consultationCard) {
-        console.warn("[LAWYER_CALENDAR] No bookable member on the legal provider - chat opens without a calendar card");
+        // The presentation IS the legal journey's "Exploring Profiles" rung.
+        void emitJourneyEvent({ eventType: "PROFILE_PRESENTED", parentUserId: userId, providerId: lawyerBypassPick.provider.id, sessionId: currentSessionId || null, metadata: { kind: "law_group" } });
+        if (!consultationCard && lawyerBypassPick.member?.slug) {
+          consultationCard = {
+            providerId: lawyerBypassPick.provider.id,
+            providerName: lawyerBypassPick.provider.name,
+            providerLogo: lawyerBypassPick.provider.logoUrl,
+            bookingUrl: `/book/${lawyerBypassPick.member.slug}`,
+            iframeEnabled: true,
+            memberBookingSlug: lawyerBypassPick.member.slug,
+            memberName: lawyerBypassPick.member.name,
+            memberPhoto: lawyerBypassPick.member.photoUrl,
+            aiSessionId: currentSessionId || undefined,
+            subjectType: "legal",
+          };
+          console.log(`[LAWYER_CALENDAR] Card built: slug=${lawyerBypassPick.member.slug}, provider=${lawyerBypassPick.provider.name}`);
+        }
+      } else {
+        console.warn("[LAWYER_CALENDAR] No approved Legal Services provider - nothing to present");
       }
     }
 
@@ -8023,15 +8026,6 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
-    if (lawyerConnectRequested && replySessionId) {
-      try {
-        const { connectLawyer } = await import("./lawyer-intro-flow");
-        await connectLawyer(replySessionId, userId, { skipBreadcrumb: lawyerCalendarServed });
-      } catch (e: any) {
-        console.error("[LAWYER_CONNECT] Failed to connect lawyer:", e?.message);
-      }
-    }
-
     // Standalone lawyer offer: inline reminders kept getting buried (quick
     // replies only render on the LAST message, and the model loves attaching
     // meeting cards below its text). So when the parent has an upcoming
@@ -8040,7 +8034,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // session (uiCardData.lawyerOffer marker); answering it either creates
     // the legal session (suppresses forever) or leaves the marker (never
     // re-posted).
-    if (hasUpcomingProviderConsult && replySessionId && !lawyerConnectRequested) {
+    if (hasUpcomingProviderConsult && replySessionId && !lawyerCalendarServed) {
       try {
         const [legalSession, alreadyOffered] = await Promise.all([
           prisma.aiChatSession.findFirst({ where: { userId, subjectType: "legal" }, select: { id: true } }),
@@ -8065,6 +8059,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                 photo: pick.provider.logoUrl || undefined,
                 reasons: [],
               }];
+              void emitJourneyEvent({ eventType: "PROFILE_PRESENTED", parentUserId: userId, providerId: pick.provider.id, sessionId: replySessionId, metadata: { kind: "law_group", viaOffer: true } });
             }
           } catch { /* offer still posts without the card */ }
           await prisma.aiChatMessage.create({

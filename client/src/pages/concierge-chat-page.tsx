@@ -36,6 +36,7 @@ import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
 import { AgencySwipeCard } from "@/components/marketplace/agency-swipe-card";
 import { LawGroupSwipeCard } from "@/components/marketplace/law-group-swipe-card";
+import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import {
   mapDatabaseDonorToSwipeProfile,
   mapDatabaseSurrogateToSwipeProfile,
@@ -2591,6 +2592,7 @@ export function ParentChatSidePanel({
   sessionId,
   profileAvailable,
   profileStatus,
+  providerId = null,
 }: {
   subjectInfo: ConsultationCardData | null;
   providerName: string | null;
@@ -2601,6 +2603,9 @@ export function ParentChatSidePanel({
   sessionId: string | null;
   profileAvailable?: boolean | null;
   profileStatus?: string | null;
+  /** Session's provider org - fallback for chats without a subject profile
+   *  (legal firm chats) so the Journey section always renders. */
+  providerId?: string | null;
 }) {
   const statusStyle = getDonorStatusStyle(profileStatus);
   const existingBooking =
@@ -2617,6 +2622,14 @@ export function ParentChatSidePanel({
   return (
     <div className="w-72 border-l overflow-y-auto bg-muted/30 hidden md:flex md:flex-col shrink-0">
       <div className="p-4 space-y-4">
+        {/* Phase 7A: the parent's journey with THIS provider - same shared
+            timeline the provider and admin sidebars show, self-scoped. */}
+        {(subjectInfo?.providerId || providerId) && (
+          <div className="border-b pb-4">
+            <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Journey</h4>
+            <JourneyTimelineCard providerId={subjectInfo?.providerId || providerId} testId="parent-chat-journey" />
+          </div>
+        )}
         {/* Compact photo + availability status - only when the full card below
             is NOT shown (no booking yet), so the name isn't duplicated. */}
         {subjectInfo && !existingBooking && (
@@ -2675,7 +2688,7 @@ export function ParentChatSidePanel({
         {(displayProviderName || sessionCalendarSlug?.slug) && (existingBooking || sessionCalendarSlug?.slug) && (
           <div className={subjectInfo && existingBooking ? "border-t pt-3" : ""}>
             <ProviderProfileCard
-              providerId={subjectInfo?.providerId}
+              providerId={subjectInfo?.providerId || providerId}
               providerName={displayProviderName}
               providerLogo={subjectInfo?.providerLogo || providerLogo}
               brandColor={brandColor}
@@ -2782,6 +2795,10 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [sessionSubjectInfo, setSessionSubjectInfo] = useState<{ subjectProfileId: string; subjectType: string; profilePhotoUrl?: string | null; providerLogo?: string | null; providerId?: string } | null>(null);
   // Provider logo for provider-direct sessions (no donor/surrogate subject), where sessionSubjectInfo stays null
   const [sessionProviderLogo, setSessionProviderLogo] = useState<string | null>(null);
+  // Provider org of this session - available even for chats without a
+  // subject profile (e.g. legal firm chats), so the Journey sidebar can
+  // always scope to the right provider.
+  const [sessionProviderId, setSessionProviderId] = useState<string | null>(null);
   const [conciergeBookingSlug, setConciergeBookingSlug] = useState<{ slug: string; memberName: string } | null>(null);
   const parentFileInputRef = useRef<HTMLInputElement>(null);
   const parentPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -3251,6 +3268,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       }
       if (data.humanAgentPhotoUrl) setHumanAgentPhotoUrl(data.humanAgentPhotoUrl);
       if (data.providerLogo) setSessionProviderLogo(data.providerLogo);
+      if (data.sessionProviderId) setSessionProviderId(data.sessionProviderId);
       if (data.subjectProfileId && data.subjectType) {
         setSessionSubjectInfo({
           subjectProfileId: data.subjectProfileId,
@@ -5497,6 +5515,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             sessionBookings={sessionBookings ?? null}
             brandColor={brandColor}
             sessionId={sessionId}
+            providerId={sessionProviderId}
           />
         )}
       </div>

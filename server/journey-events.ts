@@ -41,6 +41,7 @@ export type JourneyEventType =
   | "MATCH_CONFIRMED"
   | "MATCH_DECLINED"
   // Engagement
+  | "PROFILE_PRESENTED"
   | "PROFILE_FAVORITED"
   | "WHISPER_ASKED"
   | "WHISPER_ANSWERED"

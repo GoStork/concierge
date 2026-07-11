@@ -260,12 +260,8 @@ chatRouter.get("/api/journey/timeline", requireAuth, async (req, res) => {
     }
 
     const { buildJourneyTimelines } = await import("./journey-timeline");
-    const result = await buildJourneyTimelines(parentAccountId!, {
-      providerId: providerScope,
-      // Providers start at the consultation rung - pre-engagement stages are
-      // the parent's/admin's view.
-      includePreStages: !isProviderUser,
-    });
+    // Everyone sees the full ladder, Registered included (user decision).
+    const result = await buildJourneyTimelines(parentAccountId!, { providerId: providerScope });
     res.json(result);
   } catch (e: any) {
     console.error("[journey-timeline] failed:", e?.message);

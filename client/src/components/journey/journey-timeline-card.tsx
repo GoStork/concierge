@@ -23,6 +23,7 @@ interface StageOut {
   reachedAt: string | null;
   state: "done" | "current" | "upcoming";
   optional?: boolean;
+  tone?: "warning";
 }
 
 interface JourneyOut {
@@ -63,6 +64,7 @@ const EVENT_LABELS: Record<string, string> = {
   MATCH_DECLINED_BY_SURROGATE: "Surrogate side declined",
   MATCH_CONFIRMED: "Match confirmed",
   MATCH_DECLINED: "Match declined",
+  PROFILE_PRESENTED: "Profile presented",
   PROFILE_FAVORITED: "Profile favorited",
   WHISPER_ASKED: "Question sent to provider",
   WHISPER_ANSWERED: "Provider answered a question",
@@ -94,25 +96,34 @@ function fmtDate(iso: string | null): string | null {
 function StageRow({ stage, isLast }: { stage: StageOut; isLast: boolean }) {
   const done = stage.state === "done";
   const current = stage.state === "current";
+  const warning = stage.tone === "warning";
   return (
     <div className="flex gap-2.5" data-testid={`journey-stage-${stage.id}`}>
       <div className="flex flex-col items-center">
         <div
           className={
-            done
+            warning
+              ? "w-5 h-5 rounded-full flex items-center justify-center bg-[hsl(var(--brand-warning))]/15 ring-2 ring-[hsl(var(--brand-warning))] shrink-0"
+              : done
               ? "w-5 h-5 rounded-full flex items-center justify-center bg-primary text-primary-foreground shrink-0"
               : current
               ? "w-5 h-5 rounded-full flex items-center justify-center bg-primary/15 ring-2 ring-primary shrink-0"
-              : "w-5 h-5 rounded-full border-2 border-border bg-background shrink-0"
+              : "w-5 h-5 rounded-full border-2 border-primary/40 bg-background shrink-0"
           }
         >
-          {done && <Check className="w-3 h-3" />}
-          {current && <div className="w-2 h-2 rounded-full bg-primary" />}
+          {warning ? (
+            <AlertTriangle className="w-3 h-3 text-[hsl(var(--brand-warning))]" />
+          ) : (
+            <>
+              {done && <Check className="w-3 h-3" />}
+              {current && <div className="w-2 h-2 rounded-full bg-primary" />}
+            </>
+          )}
         </div>
-        {!isLast && <div className={`w-px flex-1 min-h-[10px] ${done ? "bg-primary/50" : "bg-border"}`} />}
+        {!isLast && <div className="w-px flex-1 min-h-[10px] bg-primary/50" />}
       </div>
-      <div className={`pb-2.5 ${isLast ? "pb-0" : ""} min-w-0`}>
-        <p className={`text-xs font-ui leading-5 ${current ? "font-semibold text-foreground" : done ? "text-foreground" : "text-muted-foreground"}`}>
+      <div className={`${isLast ? "pb-0" : "pb-2.5"} min-w-0 flex-1`} style={isLast ? undefined : { minHeight: 42 }}>
+        <p className={`text-xs font-ui leading-5 ${warning ? "font-semibold text-[hsl(var(--brand-warning))]" : current ? "font-semibold text-foreground" : done ? "text-foreground" : "text-muted-foreground"}`}>
           {stage.label}
           {stage.optional && stage.state === "upcoming" && <span className="text-muted-foreground font-normal"> (if needed)</span>}
         </p>
@@ -122,7 +133,54 @@ function StageRow({ stage, isLast }: { stage: StageOut; isLast: boolean }) {
   );
 }
 
+/**
+ * Decision-tree fork: the parent rung splits into two children - the main
+ * line continues straight down (e.g. "Consultation Completed"), and the
+ * branch ("No Show") sits to the RIGHT on the same row, reached by an elbow
+ * connector: the spine forks mid-gap, runs right, and curves down into the
+ * branch node's dot. Both children are FULL standard stage rows - identical
+ * dot / label / date anatomy, states rendered exactly like any other rung.
+ */
+function ForkRow({ main, branch, isLast }: { main: StageOut; branch: StageOut; isLast: boolean }) {
+  return (
+    <div className="relative grid grid-cols-2 pt-3">
+      {/* spine continuation down to the main child */}
+      <div className="absolute w-px" style={{ left: "10px", top: 0, height: "12px", backgroundColor: "hsl(var(--primary) / 0.5)" }} />
+      {/* elbow to the branch child: right along the top, rounded corner, down into its dot */}
+      <div
+        className="absolute"
+        style={{
+          left: "10px",
+          right: "calc(50% - 11px)",
+          top: 0,
+          height: "22px",
+          borderTop: "1px solid hsl(var(--primary) / 0.5)",
+          borderRight: "1px solid hsl(var(--primary) / 0.5)",
+          borderTopRightRadius: "8px",
+        }}
+      />
+      <StageRow stage={main} isLast={isLast} />
+      <StageRow stage={{ ...branch, tone: undefined }} isLast />
+    </div>
+  );
+}
+
 function JourneyBlock({ journey, showProviderName }: { journey: JourneyOut; showProviderName: boolean }) {
+  // Pull branch-type stages (no_show) off the main line; each attaches to
+  // the row that FOLLOWS it in the server order (the fork's sibling rung -
+  // e.g. no_show sits between consult_scheduled and consult_completed, so
+  // it renders beside consult_completed).
+  const mainStages: StageOut[] = [];
+  const branchBySibling = new Map<string, StageOut>();
+  for (let i = 0; i < journey.stages.length; i++) {
+    const st = journey.stages[i];
+    if (st.id === "no_show") {
+      const sibling = journey.stages[i + 1];
+      if (sibling) branchBySibling.set(sibling.id, st);
+      continue;
+    }
+    mainStages.push(st);
+  }
   return (
     <div data-testid={`journey-${journey.journeyType}-${journey.providerId}`}>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -138,9 +196,14 @@ function JourneyBlock({ journey, showProviderName }: { journey: JourneyOut; show
         </div>
       )}
       <div>
-        {journey.stages.map((st, i) => (
-          <StageRow key={st.id} stage={st} isLast={i === journey.stages.length - 1} />
-        ))}
+        {mainStages.map((st, i) => {
+          const branch = branchBySibling.get(st.id);
+          return branch ? (
+            <ForkRow key={st.id} main={st} branch={branch} isLast={i === mainStages.length - 1} />
+          ) : (
+            <StageRow key={st.id} stage={st} isLast={i === mainStages.length - 1} />
+          );
+        })}
       </div>
     </div>
   );

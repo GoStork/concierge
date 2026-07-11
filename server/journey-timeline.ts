@@ -8,19 +8,26 @@
  * correct. Stage = the highest rung that still has valid evidence
  * (a canceled-only consultation stops proving its rung).
  *
- * Ladders per journey type (locked in the 7A spec):
+ * Ladders per journey type (uniform language across provider types):
  *   agency (surrogacy / egg_donation):
  *     registered -> exploring -> consult_scheduled -> consult_completed ->
- *     matched -> deposit_paid -> agreement_signed -> handed_off
- *   ivf:  registered -> exploring -> consult_scheduled -> consult_completed ->
- *         deposit_paid -> (agreement_signed) -> handed_off
- *   bank: registered -> exploring -> donor_selected -> checkout -> paid ->
- *         (agreement_signed) -> handed_off
- *   legal: lawyer_connected -> call_booked -> call_completed ->
- *          retainer_paid -> agreement_signed -> handed_off
+ *     matched -> invoice_sent -> invoice_paid -> agreement_sent ->
+ *     agreement_signed -> handed_off
+ *   ivf:  same minus matched; agreement rungs optional
+ *   bank: registered -> exploring -> donor_selected -> checkout ->
+ *         invoice_paid -> (agreement_sent -> agreement_signed) -> handed_off
+ *   legal: registered -> exploring (the firm profile card presented) ->
+ *          consult_scheduled -> consult_completed -> invoice_sent ->
+ *          invoice_paid -> agreement_sent -> agreement_signed -> handed_off
  *
  * Optional rungs (parenthesised) are dropped from display when the journey
  * advanced past them without evidence.
+ *
+ * No Show is a BRANCH rung, not a regression: when the latest elapsed call
+ * was a no-show and nothing newer is booked, "Consultation Scheduled" stays
+ * done (the booking happened) and a warning-toned "No Show" rung renders
+ * where "Consultation Completed" would be. It disappears once a new call is
+ * booked or completed.
  */
 import { prisma } from "./db";
 
@@ -30,6 +37,7 @@ export interface JourneyStageOut {
   reachedAt: string | null;
   state: "done" | "current" | "upcoming";
   optional?: boolean;
+  tone?: "warning";
 }
 
 export interface JourneyOut {
@@ -195,17 +203,30 @@ export async function buildJourneyTimelines(
     const endOf = (bk: any) => new Date(bk.scheduledAt).getTime() + (bk.duration || 30) * 60 * 1000;
     const liveBooking = b.bookings.filter((bk) => ["PENDING", "CONFIRMED"].includes(bk.status) && endOf(bk) > nowMs);
     const completed = b.bookings.filter((bk) => bk.outcome === "COMPLETED" || bk.outcome === "UNVERIFIED");
+    const noShows = b.bookings.filter((bk) => ["NO_SHOW_PARENT", "NO_SHOW_PROVIDER", "NO_SHOW_BOTH"].includes(bk.outcome || ""));
     const everScheduledAt = b.bookings.length > 0 ? b.bookings.reduce<Date | null>((min, bk) => (!min || bk.createdAt < min ? bk.createdAt : min), null) : null;
-    const consultScheduledAt = liveBooking.length > 0 || completed.length > 0 ? everScheduledAt : null;
+    // A no-show still proves the call WAS scheduled - only pure cancellation
+    // (nothing live, completed, or attended-by-anyone) regresses the rung.
+    const consultScheduledAt = liveBooking.length > 0 || completed.length > 0 || noShows.length > 0 ? everScheduledAt : null;
     const consultCompletedAt = completed.length > 0 ? completed.reduce<Date | null>((min, bk) => (!min || bk.scheduledAt < min ? bk.scheduledAt : min), null) : null;
+    // No Show branch: latest elapsed call was missed and nothing newer is live.
+    const showNoShowRung = noShows.length > 0 && completed.length === 0 && liveBooking.length === 0;
+    const lastNoShowAt = noShows.length > 0 ? noShows.reduce<Date | null>((max, bk) => (!max || bk.scheduledAt > max ? bk.scheduledAt : max), null) : null;
 
     const matchEvent = b.events.find((e) => e.eventType === "MATCH_CONFIRMED");
     const depositInvoice = b.invoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT");
     const matchedAt = matchEvent?.createdAt || (journeyType === "surrogacy" || journeyType === "egg_donation" ? depositInvoice.find((i) => i.triggerSource === "AUTO_READINESS")?.createdAt || null : null);
+    const nonBankInvoices = b.invoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT");
+    const invoiceSentAt = nonBankInvoices.length > 0 ? nonBankInvoices.reduce<Date | null>((min, i) => (!min || i.createdAt < min ? i.createdAt : min), null) : null;
     const paidInvoice = b.invoices.filter((i) => i.status === "PAID" && i.paidAt);
     const paidAt = paidInvoice.length > 0 ? paidInvoice.reduce<Date | null>((min, i) => (!min || (i.paidAt && i.paidAt < min) ? i.paidAt : min), null) : null;
     const signed = b.agreements.filter((a) => a.status === "SIGNED");
     const signedAt = signed.length > 0 ? signed[0].signedAt || signed[0].createdAt : null;
+    // "Sent" evidence: any agreement that left draft (SENT covers rejected /
+    // expired too - the send still happened). AGREEMENT_SENT event wins on date.
+    const sentAgreements = b.agreements.filter((a) => ["SENT", "SIGNED", "REJECTED", "EXPIRED"].includes(a.status));
+    const agreementSentAt = b.events.find((e) => e.eventType === "AGREEMENT_SENT")?.createdAt
+      || (sentAgreements.length > 0 ? sentAgreements.reduce<Date | null>((min, a) => (!min || a.createdAt < min ? a.createdAt : min), null) : null);
     const handoffAt = b.sessions.map((s2) => s2.handoffCompletedAt).filter(Boolean).sort()[0] || null;
     const exploringAt = b.sessions.length > 0 ? b.sessions.reduce<Date | null>((min, s2) => (!min || s2.createdAt < min ? s2.createdAt : min), null) : everScheduledAt;
 
@@ -213,54 +234,66 @@ export async function buildJourneyTimelines(
     const checkoutAt = bankInvoices.length > 0 ? bankInvoices[0].createdAt : null;
     const bankPaidAt = bankInvoices.find((i) => i.status === "PAID")?.paidAt || null;
 
-    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean };
+    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; tone?: "warning" };
+    // Shared tail: invoice + agreement rungs read the same on every ladder.
+    const consultRungs: Rung[] = [
+      { id: "consult_scheduled", label: "Consultation Scheduled", at: consultScheduledAt },
+      ...(showNoShowRung ? [{ id: "no_show", label: "No Show", at: lastNoShowAt, tone: "warning" as const }] : []),
+      { id: "consult_completed", label: "Consultation Completed", at: consultCompletedAt },
+    ];
+    const moneyRungs = (optionalAgreement: boolean): Rung[] => [
+      { id: "invoice_sent", label: "Invoice Sent", at: invoiceSentAt },
+      { id: "invoice_paid", label: "Invoice Paid", at: paidAt },
+      { id: "agreement_sent", label: "Agreement Sent", at: agreementSentAt, ...(optionalAgreement ? { optional: true } : {}) },
+      { id: "agreement_signed", label: "Agreement Signed", at: signedAt, ...(optionalAgreement ? { optional: true } : {}) },
+    ];
+
     let rungs: Rung[];
     if (journeyType === "legal") {
+      // Legal's "exploring" = the firm profile card was presented to the
+      // parent (LAWYER_CONNECTED covers pre-rework history).
+      const legalExploringAt =
+        b.events.find((e) => e.eventType === "PROFILE_PRESENTED")?.createdAt
+        || b.events.find((e) => e.eventType === "LAWYER_CONNECTED")?.createdAt
+        || exploringAt;
       rungs = [
-        { id: "lawyer_connected", label: "Lawyer Connected", at: b.events.find((e) => e.eventType === "LAWYER_CONNECTED")?.createdAt || exploringAt },
-        { id: "call_booked", label: "Call Booked", at: consultScheduledAt },
-        { id: "call_completed", label: "Call Completed", at: consultCompletedAt },
-        { id: "retainer_paid", label: "Retainer Paid", at: paidAt },
-        { id: "agreement_signed", label: "Agreement Signed", at: signedAt },
+        { id: "registered", label: "Registered", at: registeredAt },
+        { id: "exploring", label: "Exploring Profiles", at: legalExploringAt },
+        ...consultRungs,
+        ...moneyRungs(false),
         { id: "handed_off", label: "Handed Off", at: handoffAt },
       ];
     } else if (journeyType === "bank") {
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
-        { id: "exploring", label: "Exploring Donors", at: exploringAt },
+        { id: "exploring", label: "Exploring Profiles", at: exploringAt },
         { id: "donor_selected", label: "Donor Selected", at: b.events.find((e) => e.eventType === "BANK_CHECKOUT_STARTED")?.createdAt || checkoutAt },
         { id: "checkout", label: "Checkout", at: checkoutAt },
-        { id: "paid", label: "Paid", at: bankPaidAt },
+        { id: "invoice_paid", label: "Invoice Paid", at: bankPaidAt },
+        { id: "agreement_sent", label: "Agreement Sent", at: agreementSentAt, optional: true },
         { id: "agreement_signed", label: "Agreement Signed", at: signedAt, optional: true },
         { id: "handed_off", label: "Handed Off", at: handoffAt },
       ];
     } else if (journeyType === "ivf") {
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
-        { id: "exploring", label: "Exploring Clinics", at: exploringAt },
-        { id: "consult_scheduled", label: "Consultation Scheduled", at: consultScheduledAt },
-        { id: "consult_completed", label: "Consultation Completed", at: consultCompletedAt },
-        { id: "deposit_paid", label: "Deposit Paid", at: paidAt },
-        { id: "agreement_signed", label: "Agreement Signed", at: signedAt, optional: true },
+        { id: "exploring", label: "Exploring Profiles", at: exploringAt },
+        ...consultRungs,
+        ...moneyRungs(true),
         { id: "handed_off", label: "Handed Off", at: handoffAt },
       ];
     } else {
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
-        { id: "exploring", label: "Exploring Matches", at: exploringAt },
-        { id: "consult_scheduled", label: "Consultation Scheduled", at: consultScheduledAt },
-        { id: "consult_completed", label: "Consultation Completed", at: consultCompletedAt },
+        { id: "exploring", label: "Exploring Profiles", at: exploringAt },
+        ...consultRungs,
         { id: "matched", label: "Matched", at: matchedAt },
-        { id: "deposit_paid", label: "Deposit Paid", at: paidAt },
-        { id: "agreement_signed", label: "Agreement Signed", at: signedAt },
+        ...moneyRungs(false),
         { id: "handed_off", label: "Handed Off", at: handoffAt },
       ];
     }
-
-    // Provider/admin sidebars start at the consultation rung.
-    if (opts?.includePreStages === false) {
-      rungs = rungs.filter((r) => !["registered", "exploring"].includes(r.id));
-    }
+    // Everyone - parents, providers, and admins - sees the full ladder,
+    // Registered included (user decision, 7A review).
 
     // Highest rung with evidence = current stage. Optional rungs without
     // evidence are dropped when a later rung has evidence; earlier gaps
@@ -277,6 +310,7 @@ export async function buildJourneyTimelines(
       reachedAt: iso(r.at as any),
       state: i < highestIdx ? "done" : i === highestIdx ? "current" : "upcoming",
       ...(r.optional ? { optional: true } : {}),
+      ...(r.tone ? { tone: r.tone } : {}),
     }));
 
     // Attention chips: churn beats no-show beats canceled-not-rebooked.

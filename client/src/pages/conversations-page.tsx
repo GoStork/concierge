@@ -2176,6 +2176,7 @@ const sendMessageMutation = useMutation({
             sessionId={selectedParentSession?.id ?? null}
             profileAvailable={selectedParentSession?.profileAvailable ?? null}
             profileStatus={selectedParentSession?.profileStatus ?? null}
+            providerId={selectedParentSession?.providerId ?? null}
           />
         )}
       </div>
