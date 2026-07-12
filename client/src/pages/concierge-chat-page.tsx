@@ -3507,16 +3507,48 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionBookings?.length, isInline]);
 
-  // Track whether user is near the bottom so we know if auto-scroll should fire
+  // Track whether user is near the bottom so we know if auto-scroll should fire.
+  // A user scrolling UP during the typing animation must also cancel forceScrollRef,
+  // otherwise the 18ms typing tick keeps yanking them back to the bottom.
   useEffect(() => {
     const container = document.querySelector('[data-testid="concierge-messages"]') as HTMLElement | null;
     if (!container) return;
+    let lastScrollTop = container.scrollTop;
+    let touchActive = false;
+    const cancelAutoFollow = () => {
+      forceScrollRef.current = false;
+      userNearBottom.current = false;
+    };
     const onScroll = () => {
       const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      const scrolledUp = container.scrollTop < lastScrollTop - 1;
+      lastScrollTop = container.scrollTop;
+      // Every programmatic scroll here goes down, so an upward move is the user - except
+      // when scrollHeight shrinks and the browser clamps scrollTop (distFromBottom stays ~0),
+      // hence the distance threshold. An active touch drag is always the user.
+      if (scrolledUp && (touchActive || distFromBottom > 30)) {
+        cancelAutoFollow();
+        return;
+      }
       userNearBottom.current = distFromBottom < 120;
     };
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) cancelAutoFollow();
+    };
+    const onTouchStart = () => { touchActive = true; };
+    const onTouchEnd = () => { touchActive = false; };
     container.addEventListener("scroll", onScroll, { passive: true });
-    return () => container.removeEventListener("scroll", onScroll);
+    container.addEventListener("wheel", onWheel, { passive: true });
+    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchend", onTouchEnd, { passive: true });
+    container.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      container.removeEventListener("wheel", onWheel);
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchend", onTouchEnd);
+      container.removeEventListener("touchcancel", onTouchEnd);
+    };
   }, []);
 
   // Synchronously scroll to bottom before the first paint to prevent the booking card
