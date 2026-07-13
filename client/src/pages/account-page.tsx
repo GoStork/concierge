@@ -34,6 +34,7 @@ import ProviderKnowledgeTab from "@/components/provider-knowledge-tab";
 import ConciergeSettingsTab from "@/components/concierge-settings-tab";
 import DocumentsTab from "@/components/documents-tab";
 import ScrapersSummaryPage from "@/pages/scrapers-summary-page";
+import AdminTestRunnerPage from "@/pages/admin-test-runner-page";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InsurancePicker } from "@/components/ui/insurance-picker";
@@ -83,6 +84,7 @@ const allTabs = [
   { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
   { to: '/account/scrapers', label: 'Scrapers', icon: RefreshCw, roles: 'admin' as const },
+  { to: '/account/test-runner', label: 'Test Runner', icon: FlaskConical, roles: 'admin' as const },
 ];
 
 function AccountTab() {
@@ -1733,7 +1735,7 @@ export default function AccountPage() {
     '/account', '/account/company', '/account/team', '/account/members',
     '/account/calendar', '/account/costs', '/account/documents',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors', '/account/doctors',
-    '/account/knowledge', '/account/concierge', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers',
+    '/account/knowledge', '/account/concierge', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers', '/account/test-runner',
   ];
 
   const tabs = [...allTabs, ...donorTabs].filter(tab => {
@@ -1865,6 +1867,9 @@ export default function AccountPage() {
         } />
         {isAdmin && (
           <Route path="scrapers/*" element={<ScrapersSummaryPage />} />
+        )}
+        {isAdmin && (
+          <Route path="test-runner" element={<AdminTestRunnerPage />} />
         )}
         {showEggDonors && providerId && (
           <Route path="egg-donors" element={<ProfileDatabasePanel providerId={providerId} type="egg-donor" />} />

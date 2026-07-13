@@ -70,7 +70,6 @@ import ProviderHomePage from "@/pages/provider-home-page";
 import AdminHomePage from "@/pages/admin-home-page";
 import AdminAgreementsPage from "@/pages/admin-agreements-page";
 import ProviderBillingPage from "@/pages/provider-billing-page";
-import AdminTestRunnerPage from "@/pages/admin-test-runner-page";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -203,7 +202,7 @@ function AppRoutes() {
         <Route path="/provider/cost-sheets" element={<ProtectedRoute><ProviderCostSheetsPage /></ProtectedRoute>} />
         <Route path="/provider/agreements" element={<ProtectedRoute><ProviderAgreementsPage /></ProtectedRoute>} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
-        <Route path="/admin/test-runner" element={<ProtectedRoute><AdminTestRunnerPage /></ProtectedRoute>} />
+        <Route path="/admin/test-runner" element={<Navigate to="/account/test-runner" replace />} />
         <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />
         <Route path="/admin/branding" element={<Navigate to="/account/branding" replace />} />
         <Route path="/account/*" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
