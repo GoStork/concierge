@@ -40,6 +40,29 @@ function useDebounce(value: string, delay: number) {
   return debounced;
 }
 
+// Which automations are LIVE for a provider - mirrors the adoption logic on
+// the admin Home dashboard (chat-router admin dashboard endpoint). Agreement
+// automation counts when the provider set a mode themselves, or inherited
+// the rollout flag.
+const AUTOMATION_OPTIONS = [
+  { value: "All", label: "All Automations" },
+  { value: "cost_sheet", label: "Cost-sheet drafts" },
+  { value: "invoice", label: "Invoice drafts" },
+  { value: "agreement", label: "Agreement drafts" },
+  { value: "all_on", label: "All automations on" },
+  { value: "none", label: "No automations" },
+] as const;
+
+function providerAutomations(p: any): { cost_sheet: boolean; invoice: boolean; agreement: boolean } {
+  const f = (p?.autoFeaturesEnabled as any) || {};
+  const mode = p?.agreementAutomation;
+  return {
+    cost_sheet: f.autoCostSheetDraft === true,
+    invoice: f.autoInvoiceDraft === true,
+    agreement: mode === "approval" || mode === "auto_send" || (mode == null && f.autoAgreementDraft === true),
+  };
+}
+
 export default function AdminProvidersPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -52,6 +75,7 @@ export default function AdminProvidersPage() {
   const locationSearch = searchParams.get("loc") || "";
   const providerType = searchParams.get("type") || "All";
   const statusFilter = searchParams.get("status") || "All";
+  const automationFilter = searchParams.get("automation") || "All";
   const sortBy = searchParams.get("sort") || "newest";
 
   const updateParam = useCallback((key: string, value: string, defaultValue: string) => {
@@ -67,12 +91,13 @@ export default function AdminProvidersPage() {
   const setLocationSearch = useCallback((v: string) => updateParam("loc", v, ""), [updateParam]);
   const setProviderType = useCallback((v: string) => updateParam("type", v, "All"), [updateParam]);
   const setStatusFilter = useCallback((v: string) => updateParam("status", v, "All"), [updateParam]);
+  const setAutomationFilter = useCallback((v: string) => updateParam("automation", v, "All"), [updateParam]);
   const setSortBy = useCallback((v: string) => updateParam("sort", v, "newest"), [updateParam]);
-  const hasActiveFilters = !!(searchQuery || locationSearch || providerType !== "All" || statusFilter !== "All");
+  const hasActiveFilters = !!(searchQuery || locationSearch || providerType !== "All" || statusFilter !== "All" || automationFilter !== "All");
   const clearFilters = useCallback(() => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      ["q", "loc", "type", "status"].forEach(k => next.delete(k));
+      ["q", "loc", "type", "status", "automation"].forEach(k => next.delete(k));
       return next;
     }, { replace: true });
   }, [setSearchParams]);
@@ -106,8 +131,17 @@ export default function AdminProvidersPage() {
   });
 
   const providers = useMemo(() => {
-    if (!rawProviders || !isClientSort) return rawProviders;
-    const sorted = [...rawProviders];
+    let rows = rawProviders;
+    if (rows && automationFilter !== "All") {
+      rows = rows.filter((p: any) => {
+        const a = providerAutomations(p);
+        if (automationFilter === "all_on") return a.cost_sheet && a.invoice && a.agreement;
+        if (automationFilter === "none") return !a.cost_sheet && !a.invoice && !a.agreement;
+        return a[automationFilter as "cost_sheet" | "invoice" | "agreement"] === true;
+      });
+    }
+    if (!rows || !isClientSort) return rows;
+    const sorted = [...rows];
     if (sortBy === "services_asc") {
       sorted.sort((a: any, b: any) => (a.services?.length || 0) - (b.services?.length || 0));
     } else if (sortBy === "services_desc") {
@@ -118,7 +152,7 @@ export default function AdminProvidersPage() {
       sorted.sort((a: any, b: any) => (b.locations?.length || 0) - (a.locations?.length || 0));
     }
     return sorted;
-  }, [rawProviders, sortBy, isClientSort]);
+  }, [rawProviders, sortBy, isClientSort, automationFilter]);
 
   const { data: providerTypes } = useQuery<any[]>({
     queryKey: ["/api/provider-types"],
@@ -222,6 +256,23 @@ export default function AdminProvidersPage() {
             </div>
           </PopoverContent>
         </Popover>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant={automationFilter !== "All" ? "default" : "outline"} size="sm" className="shrink-0 h-8 text-xs rounded-full gap-1" data-testid="select-automation-filter">
+              {AUTOMATION_OPTIONS.find((o) => o.value === automationFilter)?.label || "All Automations"}
+              <ChevronDown className="w-3 h-3" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-52 p-2" align="start">
+            <div className="space-y-1">
+              {AUTOMATION_OPTIONS.map((opt) => (
+                <Button key={opt.value} variant={automationFilter === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => setAutomationFilter(opt.value)} data-testid={`automation-${opt.value}`}>
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
         <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="admin-providers-clear-filters" />
       </div>
@@ -263,6 +314,7 @@ export default function AdminProvidersPage() {
                   {sortBy === "services_asc" ? <ArrowUp className="w-3.5 h-3.5" /> : sortBy === "services_desc" ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />}
                 </button>
               </TableHead>
+              <TableHead className="hidden lg:table-cell whitespace-nowrap">Automations</TableHead>
               <TableHead className="hidden lg:table-cell whitespace-nowrap">
                 <button
                   type="button"
@@ -351,6 +403,25 @@ export default function AdminProvidersPage() {
                         </Button>
                       )}
                     </div>
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    {(() => {
+                      const a = providerAutomations(provider);
+                      const tags = [
+                        a.cost_sheet && "Cost sheets",
+                        a.invoice && "Invoices",
+                        a.agreement && "Agreements",
+                      ].filter(Boolean) as string[];
+                      return tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1" data-testid={`automations-${provider.id}`}>
+                          {tags.map((t) => (
+                            <Badge key={t} className="text-xs bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))] hover:bg-[hsl(var(--brand-success))]/15">{t}</Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">-</span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell whitespace-nowrap">
                     <span className="text-sm">{provider.locations?.length || 0} location(s)</span>

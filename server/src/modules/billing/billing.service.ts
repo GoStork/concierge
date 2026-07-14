@@ -1143,6 +1143,8 @@ export class BillingService {
       },
     });
 
+    void emitJourneyEvent({ eventType: "COST_SHEET_SHARED", parentUserId, providerId, sessionId: session.id, actorRole: "system", metadata: { quoteId: quote.id, bank: true } });
+
     const invoice = await this.createInvoice({
       sessionId: session.id,
       providerId,

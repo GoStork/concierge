@@ -12,7 +12,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookingDetailDialog } from "@/components/booking-detail-dialog";
-import { useNavigate } from "react-router-dom";
+import { useNavigate , Link } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -293,7 +293,7 @@ export default function AdminHomePage() {
 
       {/* Platform funnel - last 30 days */}
       <Card className="p-5 space-y-3">
-        <SectionHeader icon={<TrendingUp className="w-5 h-5 text-primary" />} title="Platform funnel" />
+        <SectionHeader icon={<TrendingUp className="w-5 h-5 text-primary" />} title="Platform funnel" viewAllTo="/admin/analytics" viewAllLabel="Journey Analytics" />
         <p className="text-xs text-muted-foreground -mt-2">Last 30 days (Matched and On Hold are current counts)</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatTile label="Active sessions" value={data?.funnel.activeSessions ?? 0} />
@@ -418,12 +418,18 @@ export default function AdminHomePage() {
 
       {/* Automation adoption */}
       <Card className="p-5 space-y-3">
-        <SectionHeader icon={<Zap className="w-5 h-5 text-primary" />} title="Automation adoption" viewAllTo="/admin/providers" viewAllLabel="Providers" />
-        <p className="text-xs text-muted-foreground -mt-2">Providers with each automation live, out of {data?.adoption.total ?? 0} approved providers</p>
+        <SectionHeader icon={<Zap className="w-5 h-5 text-primary" />} title="Automation adoption" viewAllTo="/admin/providers?automation=all_on" viewAllLabel="Providers" />
+        <p className="text-xs text-muted-foreground -mt-2">Providers with each automation live, out of {data?.adoption.total ?? 0} approved providers. Click a tile to see who.</p>
         <div className="grid grid-cols-3 gap-3">
-          <StatTile label="Cost-sheet drafts" value={`${data?.adoption.costSheet ?? 0}/${data?.adoption.total ?? 0}`} hint="on booking" />
-          <StatTile label="Invoice drafts" value={`${data?.adoption.invoice ?? 0}/${data?.adoption.total ?? 0}`} hint="on parent-ready" />
-          <StatTile label="Agreement drafts" value={`${data?.adoption.agreement ?? 0}/${data?.adoption.total ?? 0}`} hint="on invoice-paid" />
+          <Link to="/admin/providers?automation=cost_sheet" className="block" data-testid="adoption-link-cost-sheet">
+            <StatTile label="Cost-sheet drafts" value={`${data?.adoption.costSheet ?? 0}/${data?.adoption.total ?? 0}`} hint="on booking" />
+          </Link>
+          <Link to="/admin/providers?automation=invoice" className="block" data-testid="adoption-link-invoice">
+            <StatTile label="Invoice drafts" value={`${data?.adoption.invoice ?? 0}/${data?.adoption.total ?? 0}`} hint="on parent-ready" />
+          </Link>
+          <Link to="/admin/providers?automation=agreement" className="block" data-testid="adoption-link-agreement">
+            <StatTile label="Agreement drafts" value={`${data?.adoption.agreement ?? 0}/${data?.adoption.total ?? 0}`} hint="on invoice-paid" />
+          </Link>
         </div>
       </Card>
 

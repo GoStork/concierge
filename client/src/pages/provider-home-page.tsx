@@ -29,6 +29,7 @@ import {
   CalendarClock,
   BarChart3,
   Landmark,
+  Route,
 } from "lucide-react";
 import { AgreementRows } from "@/components/agreements-list";
 import { QueueRow, SectionHeader } from "@/components/home/home-sections";
@@ -119,6 +120,19 @@ export default function ProviderHomePage() {
     },
     ...fresh,
   });
+
+  // Journey funnel headline KPIs - same endpoint as the Journey Funnel tab
+  // (server force-scopes provider users to their own org).
+  const funnelKpisQuery = useQuery({
+    queryKey: ["journey-funnel-home"],
+    queryFn: async () => {
+      const res = await fetch(`/api/journey/funnel`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load funnel KPIs");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  const funnelKpis = funnelKpisQuery.data;
 
   // Last-30-days engagement KPIs - same endpoint the full Performance page
   // (sponsorship dashboard in "performance" mode) reads.
@@ -368,8 +382,8 @@ export default function ProviderHomePage() {
 
       {/* Performance - last 30 days engagement across all profiles */}
       <Card className="p-5 space-y-3">
-        <SectionHeader icon={<BarChart3 className="w-5 h-5 text-primary" />} title="Performance" viewAllTo="/performance" viewAllLabel="Full report" />
-        <p className="text-xs text-muted-foreground -mt-2">Last 30 days, across all your profiles</p>
+        <SectionHeader icon={<BarChart3 className="w-5 h-5 text-primary" />} title="Profile Performance" viewAllTo="/performance?tab=profiles" viewAllLabel="Full report" />
+        <p className="text-xs text-muted-foreground -mt-2">Marketing engagement, last 30 days across all your profiles</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Impressions</p>
@@ -392,14 +406,39 @@ export default function ProviderHomePage() {
             <p className="text-[11px] text-muted-foreground">about your profiles</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Consultations</p>
-            <p className="text-lg font-heading font-bold">{(kpis?.consultations ?? 0).toLocaleString()}</p>
-            <p className="text-[11px] text-muted-foreground">booked - account-level</p>
-          </div>
-          <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Hot Leads</p>
             <p className="text-lg font-heading font-bold">{(kpis?.hotLeads ?? 0).toLocaleString()}</p>
             <p className="text-[11px] text-muted-foreground">account-level</p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Journey Funnel - the parent-journey side, mirroring the Journey
+          Funnel tab on the Performance page (same endpoint, same numbers).
+          Kept strictly separate from profile/marketing metrics above. */}
+      <Card className="p-5 space-y-3">
+        <SectionHeader icon={<Route className="w-5 h-5 text-primary" />} title="Journey Funnel" viewAllTo="/performance?tab=funnel" viewAllLabel="Full funnel" />
+        <p className="text-xs text-muted-foreground -mt-2">Parents moving through their journey with you - all time</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Engaged parents</p>
+            <p className="text-lg font-heading font-bold">{(funnelKpis?.kpis?.accountsWithJourney ?? 0).toLocaleString()}</p>
+            <p className="text-[11px] text-muted-foreground">connected with you</p>
+          </div>
+          <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Consultations</p>
+            <p className="text-lg font-heading font-bold">{(funnelKpis?.leaks?.consultationsScheduled ?? 0).toLocaleString()}</p>
+            <p className="text-[11px] text-muted-foreground">scheduled</p>
+          </div>
+          <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Handed off</p>
+            <p className="text-lg font-heading font-bold">{(funnelKpis?.kpis?.handedOffTotal ?? 0).toLocaleString()}</p>
+            <p className="text-[11px] text-muted-foreground">journeys completed</p>
+          </div>
+          <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Conversion</p>
+            <p className="text-lg font-heading font-bold">{funnelKpis?.kpis?.overallConversionPct != null ? `${funnelKpis.kpis.overallConversionPct}%` : "-"}</p>
+            <p className="text-[11px] text-muted-foreground">engaged to handed off</p>
           </div>
         </div>
       </Card>

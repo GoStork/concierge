@@ -644,8 +644,9 @@ export default function AdminConciergeMonitor() {
       PROVIDER_CONNECTED: "Connected",
       MATCH_CALL: "Match Call",
       MATCHED: "Matched",
-      DEPOSIT_PAID: "Deposit Paid",
+      DEPOSIT_PAID: "Invoice Paid",
       AGREEMENT_SIGNED: "Agreement Signed",
+      HANDED_OFF: "Handed Off",
     };
     return row?.matchStatus ? labels[row.matchStatus] || null : null;
   })();

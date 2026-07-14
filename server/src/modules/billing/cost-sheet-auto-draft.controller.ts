@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { Request } from "express";
+import { emitJourneyEvent } from "../../../journey-events";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { NotificationService } from "../notifications/notification.service";
 import { CostSheetAutoDraftService } from "./cost-sheet-auto-draft.service";
@@ -319,6 +320,7 @@ export class CostSheetAutoDraftController {
       data: { parentAcknowledgedAt: new Date() },
       select: { parentAcknowledgedAt: true },
     });
+    void emitJourneyEvent({ eventType: "COST_SHEET_OPENED", parentUserId: user.id, providerId: quote.providerId, sessionId, actorRole: "parent", metadata: { quoteId } });
     this.logger.log(`Parent acknowledged cost sheet: quote=${quoteId} at ${updated.parentAcknowledgedAt?.toISOString()}`);
 
     // Tell the PROVIDER side what just happened - uiCardType "provider_only"

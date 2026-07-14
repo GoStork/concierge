@@ -17,6 +17,7 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { emitJourneyEvent } from "../../../journey-events";
 import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { BillingService, humanizeLineServiceType, providerTypeNameToServiceType } from "./billing.service";
@@ -171,6 +172,8 @@ export class CostSheetController {
         },
       });
     });
+
+    void emitJourneyEvent({ eventType: "COST_SHEET_SHARED", parentUserId: session.userId, providerId: session.providerId, sessionId, actorRole: "provider", metadata: { quoteId: quote.id } });
 
     // Post the inline chat card for both parent and provider to see.
     await this.db.aiChatMessage.create({

@@ -1669,5 +1669,58 @@ RULES:
    - Do NOT bring up lawyers or legal counsel in this closing yourself - the system posts the lawyer offer as its own separate message right after yours. Only respond to it per the LAWYER CONNECT rules when the parent answers.
 9. FAVORITES DURING PREP: if the parent favorites another profile while prep is pending, confirm the favorite in ONE sentence and note the agency can discuss her on the upcoming call (do NOT offer to schedule another call, do NOT ask if they have questions or want more profiles) - then ask the next missing prep item in the SAME reply. Prep continuation beats the FAVORITE flow's follow-up.`,
     },
+    // Phase 7B: journey-handoff wrap-up copy. NOT an AI prompt - these are
+    // the "what happens next" bullets appended to the system congratulations
+    // message when a journey completes its handoff (agreement signed +
+    // invoice paid). One section per journey type, editable in the admin
+    // concierge UI. {providerName} is replaced with the provider's name.
+    {
+      key: "handoff_wrapup_surrogacy",
+      label: "[Phase 7B] Handoff wrap-up - Surrogacy",
+      description: "What-happens-next bullets appended to the handoff congratulations for surrogacy journeys. {providerName} is replaced automatically.",
+      content: `Here's what typically happens next on your surrogacy journey:
+- {providerName} completes your surrogate's final medical and psychological screening
+- The escrow account is funded and your legal team wraps up any remaining details
+- Your clinic coordinates the medical cycle - medications, embryo transfer, and monitoring
+- {providerName} walks with you through every milestone, from heartbeat confirmation to delivery day`,
+    },
+    {
+      key: "handoff_wrapup_egg_donation",
+      label: "[Phase 7B] Handoff wrap-up - Egg Donation",
+      description: "What-happens-next bullets for egg donation journeys. {providerName} is replaced automatically.",
+      content: `Here's what typically happens next on your egg donation journey:
+- {providerName} completes your donor's medical and genetic screening
+- The donor's cycle is scheduled and synchronized with your clinic's plan
+- Your clinic handles retrieval, fertilization, and embryo creation - you'll get updates at every step
+- {providerName} stays your point of contact for the donor side of the journey`,
+    },
+    {
+      key: "handoff_wrapup_ivf",
+      label: "[Phase 7B] Handoff wrap-up - IVF",
+      description: "What-happens-next bullets for IVF clinic journeys. {providerName} is replaced automatically.",
+      content: `Here's what typically happens next with your clinic:
+- {providerName} finalizes your personalized treatment plan and medication calendar
+- Monitoring visits track how your cycle responds, with the plan adjusted as needed
+- Retrieval, fertilization, and transfer are scheduled at the right moments
+- {providerName}'s care team is your first call for anything medical from here`,
+    },
+    {
+      key: "handoff_wrapup_bank",
+      label: "[Phase 7B] Handoff wrap-up - Donor Bank",
+      description: "What-happens-next bullets for egg/sperm bank purchases. {providerName} is replaced automatically.",
+      content: `Here's what typically happens next:
+- {providerName} coordinates shipping your donor material to your clinic (or arranges storage)
+- Your clinic confirms receipt and quality on arrival
+- From there your clinic takes over the clinical steps - {providerName} remains available for anything about your order`,
+    },
+    {
+      key: "handoff_wrapup_legal",
+      label: "[Phase 7B] Handoff wrap-up - Legal",
+      description: "What-happens-next bullets for legal journeys. {providerName} is replaced automatically.",
+      content: `Here's what typically happens next on the legal side:
+- {providerName} drives your contracts through execution with all parties
+- Parentage work (pre-birth orders or post-birth steps) is prepared and filed at the right time
+- Your attorney keeps you informed at each legal milestone - reach out to them directly with any legal questions`,
+    },
   ];
 }

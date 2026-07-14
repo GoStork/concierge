@@ -1443,7 +1443,9 @@ export class UsersController {
       // Connected -> Match Call -> Matched (double-yes) -> Deposit Paid ->
       // Agreement Signed (handoff).
       const journeyStatus =
-        cs.handoffCompletedAt || rowAgreements.some((a: any) => a.status === "SIGNED")
+        cs.handoffCompletedAt
+          ? "HANDED_OFF"
+          : rowAgreements.some((a: any) => a.status === "SIGNED")
           ? "AGREEMENT_SIGNED"
           : rowInvoices.some((inv: any) => inv.status === "PAID")
             ? "DEPOSIT_PAID"

@@ -1,15 +1,48 @@
+import { useSearchParams } from "react-router-dom";
 import { SponsorshipDashboard } from "@/components/sponsorship/sponsorship-dashboard";
+import { JourneyFunnelDashboard } from "@/components/journey/journey-funnel";
 
 /**
- * Provider-only top-level "Performance" tab: the same analytics surface as the
- * sponsorship dashboard, but across ALL of the provider's marketplace profiles
- * (with an All-profiles / Sponsored-only scope toggle). Reuses the dashboard in
- * "performance" mode - no duplicated analytics logic.
+ * Provider-only top-level "Performance" tab, split into two sub-tabs (tab
+ * state lives in the URL so back-button returns to the exact view):
+ *  - Profile Performance: the sponsorship/engagement analytics across all
+ *    of the provider's marketplace profiles (SponsorshipDashboard).
+ *  - Journey Funnel: how parents move through their journey with this
+ *    provider, from first consultation to handoff (Phase 7C).
  */
 export default function PerformancePage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "funnel" ? "funnel" : "profiles";
+  const setTab = (t: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", t);
+    setSearchParams(next, { replace: true });
+  };
+
   return (
-    <div className="max-w-[1400px] mx-auto w-full px-4 sm:px-6 py-6">
-      <SponsorshipDashboard mode="performance" />
+    <div className="max-w-[1400px] mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+      <div className="inline-flex rounded-lg border border-border overflow-hidden" data-testid="performance-tabs">
+        {([["profiles", "Profile Performance"], ["funnel", "Journey Funnel"]] as const).map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => setTab(v)}
+            className={`px-4 py-2 text-sm font-ui transition-colors ${tab === v ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+            data-testid={`performance-tab-${v}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "profiles" ? (
+        <SponsorshipDashboard mode="performance" />
+      ) : (
+        <div>
+          <h2 className="text-xl font-heading mb-1">Journey Funnel</h2>
+          <p className="text-sm text-muted-foreground mb-4">How parents move through their journey with you - from first consultation to handoff.</p>
+          <JourneyFunnelDashboard scope="provider" />
+        </div>
+      )}
     </div>
   );
 }

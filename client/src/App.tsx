@@ -43,6 +43,7 @@ import RecordingPage from "@/pages/recording-page";
 import ProviderProfilePage from "@/pages/provider-profile-page";
 import DoctorProfilePage from "@/pages/doctor-profile-page";
 import PerformancePage from "@/pages/performance-page";
+import AdminAnalyticsPage from "@/pages/admin-analytics-page";
 import ParentNewAppointmentPage from "@/pages/parent-new-appointment-page";
 import CdcClinicSuccessRatesPage from "@/pages/cdc-clinic-success-rates-page";
 import ForgotPasswordPage from "@/pages/forgot-password-page";
@@ -202,6 +203,7 @@ function AppRoutes() {
         <Route path="/provider/cost-sheets" element={<ProtectedRoute><ProviderCostSheetsPage /></ProtectedRoute>} />
         <Route path="/provider/agreements" element={<ProtectedRoute><ProviderAgreementsPage /></ProtectedRoute>} />
         <Route path="/admin/concierge-monitor" element={<ProtectedRoute><AdminConciergeMonitor /></ProtectedRoute>} />
+        <Route path="/admin/analytics" element={<ProtectedRoute><AdminAnalyticsPage /></ProtectedRoute>} />
         <Route path="/admin/test-runner" element={<Navigate to="/account/test-runner" replace />} />
         <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />
         <Route path="/admin/branding" element={<Navigate to="/account/branding" replace />} />

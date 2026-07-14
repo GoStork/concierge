@@ -2474,6 +2474,30 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         }
       }
 
+      // Phase 7B: Eva stands down for handed-off journeys. Once a journey
+      // with a provider completed its handoff (signed + paid), Eva must not
+      // re-offer consultations, matching, or curation in that lane - the
+      // provider runs the journey from here. Journey questions get
+      // redirected to the provider's chat.
+      const accountIdsForHandoff = userRecord?.parentAccountId
+        ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+        : [userId];
+      const handedOffSessions = await prisma.aiChatSession.findMany({
+        where: {
+          userId: { in: accountIdsForHandoff },
+          handoffCompletedAt: { not: null },
+          providerId: { not: null },
+        },
+        select: { providerId: true, provider: { select: { name: true } } },
+      }).catch(() => [] as any[]);
+      const handedOffProviders = Array.from(
+        new Map(handedOffSessions.map((hs: any) => [hs.providerId, hs.provider?.name || "the provider"])).entries(),
+      ) as [string, string][];
+      if (handedOffProviders.length > 0) {
+        const names = handedOffProviders.map(([, n]) => n).join(", ");
+        parts.push(`JOURNEY HANDED OFF (CRITICAL): the parent's journey with ${names} is COMPLETE - agreement signed, payment made, and the journey formally handed off to the provider. NEVER offer consultations, matching, curation, or new profiles for that journey again, and NEVER emit [[CONSULTATION_BOOKING]] or [[CURATION]] for ${names}. If the parent asks about that journey's next steps, warmly point them to their direct chat with ${names} - the provider runs the journey from here - while you remain available for anything else (other journeys, questions, a NEW journey of a different type is fine).`);
+      }
+
       // POST-BOOKING CALL PREP: once a consultation is booked (journeyStage flips to
       // "Consultation Requested" in the calendar controller / FAVORITE flow SAVE),
       // drive the short agency-prep intake for whatever is still missing so the
@@ -2499,6 +2523,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
                 select: {
                   provider: {
                     select: {
+                      id: true,
                       name: true,
                       services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
                     },
@@ -2532,6 +2557,25 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         const consultIsIvfClinic = consultTypeNames.some((n: string) => /ivf|clinic/i.test(n));
         if (profile?.isFirstIvf == null && consultIsIvfClinic) prepMissing.push("whether this is their first IVF journey");
         if (!profile?.surrogateBudget && profile?.needsSurrogate !== false) prepMissing.push("their budget comfort range for the journey");
+        if (prepMissing.length === 0) {
+          // Phase 7C: prep intake complete for this consult - once per
+          // account+provider (checked every turn while the consult is
+          // upcoming, so dedupe against the event log).
+          void (async () => {
+            try {
+              const provId = (upcomingProviderConsult.providerUser?.provider as any)?.id || null;
+              const acct = userRecord?.parentAccountId || userId;
+              const prior = await prisma.journeyEvent.findFirst({
+                where: { parentAccountId: acct, providerId: provId, eventType: "PREP_INTAKE_COMPLETED" },
+                select: { id: true },
+              });
+              if (!prior) {
+                await emitJourneyEvent({ eventType: "PREP_INTAKE_COMPLETED", parentAccountId: acct, providerId: provId, actorRole: "parent" });
+                console.log(`[journey-events] PREP_INTAKE_COMPLETED for account ${acct} / provider ${provId}`);
+              }
+            } catch { /* best-effort */ }
+          })();
+        }
         if (prepMissing.length > 0) {
           parts.push(`CALL PREP MODE - ACTIVE: The parent's consultation call is ALREADY BOOKED and confirmed - do NOT offer the calendar again, do NOT emit [[CONSULTATION_BOOKING]], do NOT ask about scheduling or time preferences. Follow the POST-BOOKING CALL PREP section. Items still missing for the provider: ${prepMissing.map((m, i) => `(${i + 1}) ${m}`).join("; ")}. When the parent agrees to prep (e.g. "Let's do it") or sends any message while prep is pending, ask the FIRST missing item immediately - one question per message, IN THE ORDER LISTED, framed as preparing for their call. THIS OVERRIDES THE FAVORITE FLOW: if the parent just favorited a profile, confirm the favorite in ONE sentence (note the agency can discuss her on the upcoming call - do NOT offer to schedule another call, do NOT ask if they have questions or want more profiles), then ask the next missing prep item in the SAME reply. NEVER refuse the save - the system already saved it when the heart was tapped; if the profile has a hard incompatibility (e.g. not open to single parents), keep the confirmation, add ONE short heads-up sentence about it, and STILL ask the next prep item. Everything else about the parent is already saved - do not re-ask it.`);
         }
@@ -7491,6 +7535,22 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           console.error("[CONSULTATION] Error validating providerId against latest match card:", e);
         }
       }
+      // Phase 7B deterministic guard: a handed-off journey never gets a new
+      // consultation card for that provider, no matter what the model emitted.
+      try {
+        const me = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+        const ids = me?.parentAccountId
+          ? (await prisma.user.findMany({ where: { parentAccountId: me.parentAccountId }, select: { id: true } })).map((u) => u.id)
+          : [userId];
+        const handedOff = await prisma.aiChatSession.findFirst({
+          where: { userId: { in: ids }, providerId: consultProviderId, handoffCompletedAt: { not: null } },
+          select: { id: true },
+        });
+        if (handedOff) {
+          console.log(`[CONSULTATION] Provider ${consultProviderId} journey is handed off - dropping consultation card`);
+          consultProviderId = "";
+        }
+      } catch { /* fail open - the directive still guards */ }
       try {
         const cpResult = await mcpClient!.callTool({
           name: "resolve_provider",

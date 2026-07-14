@@ -136,6 +136,19 @@ export async function emitInvoiceJourneyEvent(
   }
 }
 
+/** INVOICE_OPENED, first open only - later page loads are noise. */
+export async function emitInvoiceOpenedOnce(invoiceId: string): Promise<void> {
+  try {
+    const prior = await prisma.journeyEvent.findFirst({
+      where: { eventType: "INVOICE_OPENED", metadata: { path: ["invoiceId"], equals: invoiceId } },
+      select: { id: true },
+    });
+    if (!prior) await emitInvoiceJourneyEvent(invoiceId, "INVOICE_OPENED");
+  } catch (e: any) {
+    console.error(`[journey-events] emitInvoiceOpenedOnce failed for ${invoiceId}: ${e?.message}`);
+  }
+}
+
 /**
  * Booking lifecycle emitter: loads the booking, resolves the provider org,
  * skips GoStork house calls, and emits the right CONSULTATION_* /

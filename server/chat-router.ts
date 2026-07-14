@@ -269,6 +269,36 @@ chatRouter.get("/api/journey/timeline", requireAuth, async (req, res) => {
   }
 });
 
+// Phase 7C: journey funnel analytics. Admin sees any scope (aggregate or a
+// single provider); provider users are force-scoped to their own org.
+chatRouter.get("/api/journey/funnel", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
+    const isProviderUser = !!user.providerId && !isAdmin;
+    if (!isAdmin && !isProviderUser) return res.status(403).json({ message: "Forbidden" });
+
+    const providerId = isProviderUser ? user.providerId : ((req.query.providerId as string) || null);
+    const journeyType = (req.query.journeyType as string) || null;
+    const from = req.query.from ? new Date(String(req.query.from)) : null;
+    const to = req.query.to ? new Date(String(req.query.to)) : null;
+
+    const { buildJourneyFunnel } = await import("./journey-funnel");
+    const data = await buildJourneyFunnel({
+      providerId,
+      journeyType,
+      from: from && !isNaN(from.getTime()) ? from : null,
+      to: to && !isNaN(to.getTime()) ? to : null,
+      providerScope: isProviderUser,
+    });
+    res.json(data);
+  } catch (e: any) {
+    console.error("[journey-funnel] failed:", e?.message);
+    res.status(500).json({ message: "Failed to build funnel" });
+  }
+});
+
 // Recent journey activity for the provider/admin sidebar feed.
 chatRouter.get("/api/journey/events", requireAuth, async (req, res) => {
   try {
@@ -5025,6 +5055,17 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
             }
           }
 
+        } else if (newState === "document.viewed") {
+          // Phase 7C: first view only - PandaDoc re-fires on every open.
+          try {
+            const prior = await prisma.journeyEvent.findFirst({
+              where: { eventType: "AGREEMENT_VIEWED", metadata: { path: ["agreementId"], equals: agreement.id } },
+              select: { id: true },
+            });
+            if (!prior) {
+              void emitJourneyEvent({ eventType: "AGREEMENT_VIEWED", parentUserId: agreement.parentUserId, providerId: agreement.providerId, sessionId: agreement.sessionId, actorRole: "parent", metadata: { agreementId: agreement.id } });
+            }
+          } catch { /* best-effort */ }
         } else if (newState === "document.rejected") {
           await prisma.agreement.update({
             where: { id: agreement.id },

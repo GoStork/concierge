@@ -489,6 +489,9 @@ export class BillingController {
       throw new HttpException("Invoice not found", HttpStatus.NOT_FOUND);
     }
 
+    // Phase 7C: loading the pay page = the parent opened the invoice.
+    void import("../../../journey-events").then((m) => m.emitInvoiceOpenedOnce(invoice.id)).catch(() => {});
+
     // Only return safe fields for the public payment page
     return {
       id: invoice.id,

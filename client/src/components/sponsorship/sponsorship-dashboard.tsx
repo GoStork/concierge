@@ -130,37 +130,34 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
           performance (all-profiles) view, which is analytics-only. */}
       {!isAdmin && !isPerformance && <BoostProfilesCard onChanged={refetchAll} />}
 
-      {/* Scope toggle (performance tab only): all profiles vs sponsored only. */}
-      {isPerformance && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-muted-foreground">Showing</span>
-          <div className="inline-flex rounded-lg border border-border overflow-hidden">
-            {([["all", "All profiles"], ["sponsored", "Sponsored only"]] as const).map(([v, label]) => (
-              <button key={v} onClick={() => setScope(v)}
-                className={`px-3 py-1.5 text-sm transition-colors ${scope === v ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
-                data-testid={`scope-${v}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Date range - scopes every metric below; deltas compare vs the prior period. */}
-      {showFullAnalytics && (
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-sm font-heading text-foreground">Performance</span>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex rounded-lg border border-border overflow-hidden">
-            {([["all", "All time"], ["30", "Last 30 days"], ["7", "Last 7 days"], ["custom", "Custom"]] as const).map(([v, label]) => (
-              <button key={v} onClick={() => setRange(v)}
-                className={`px-3 py-1.5 text-sm transition-colors ${range === v ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
-                data-testid={`range-${v}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          {range === "custom" && (
+      {/* ONE filter bar (user decision, 7C polish): scope, date range, and
+          profile type sit together instead of three stacked rows. The same
+          segmented controls, shared state - just one line. */}
+      {(isPerformance || showFullAnalytics) && (
+        <div className="flex items-center gap-2.5 flex-wrap" data-testid="performance-filter-bar">
+          {isPerformance && (
+            <div className="inline-flex rounded-lg border border-border overflow-hidden">
+              {([["all", "All profiles"], ["sponsored", "Sponsored only"]] as const).map(([v, label]) => (
+                <button key={v} onClick={() => setScope(v)}
+                  className={`px-3 py-1.5 text-sm transition-colors ${scope === v ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+                  data-testid={`scope-${v}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {showFullAnalytics && (
+            <div className="inline-flex rounded-lg border border-border overflow-hidden">
+              {([["all", "All time"], ["30", "Last 30 days"], ["7", "Last 7 days"], ["custom", "Custom"]] as const).map(([v, label]) => (
+                <button key={v} onClick={() => setRange(v)}
+                  className={`px-3 py-1.5 text-sm transition-colors ${range === v ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+                  data-testid={`range-${v}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {showFullAnalytics && range === "custom" && (
             <div className="flex items-center gap-1.5 text-sm">
               <input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm" data-testid="range-from" />
@@ -169,25 +166,17 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm" data-testid="range-to" />
             </div>
           )}
-        </div>
-      </div>
-      )}
-
-      {/* Page-level type filter: scopes every type-attributable metric below.
-          Hot leads + Consultations stay account-level (tagged). Only shown when
-          the provider sponsors more than one type. */}
-      {showFullAnalytics && (a?.availableTypes?.length ?? 0) > 1 && (
-        <div className="flex items-center gap-2 flex-wrap -mt-2">
-          <span className="text-sm text-muted-foreground">Profile type</span>
-          <div className="inline-flex rounded-lg border border-border overflow-hidden flex-wrap" data-testid="page-type-filter">
-            {(["all", ...a.availableTypes] as string[]).map((t) => (
-              <button key={t} onClick={() => setTypeFilter(t)}
-                className={`px-3 py-1.5 text-sm transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
-                data-testid={`page-type-${t}`}>
-                {t === "all" ? "All types" : TYPE_LABELS[t] || t}
-              </button>
-            ))}
-          </div>
+          {showFullAnalytics && (a?.availableTypes?.length ?? 0) > 1 && (
+            <div className="inline-flex rounded-lg border border-border overflow-hidden flex-wrap" data-testid="page-type-filter">
+              {(["all", ...a.availableTypes] as string[]).map((t) => (
+                <button key={t} onClick={() => setTypeFilter(t)}
+                  className={`px-3 py-1.5 text-sm transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"}`}
+                  data-testid={`page-type-${t}`}>
+                  {t === "all" ? "All types" : TYPE_LABELS[t] || t}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

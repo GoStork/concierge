@@ -61,7 +61,7 @@ const TYPE_LABEL: Record<JourneyOut["journeyType"], string> = {
   legal: "Legal",
 };
 
-function classifyJourneyType(serviceNames: string[], subjectTypes: string[]): JourneyOut["journeyType"] {
+export function classifyJourneyType(serviceNames: string[], subjectTypes: string[]): JourneyOut["journeyType"] {
   const svc = serviceNames.map((s) => s.toLowerCase());
   const subj = subjectTypes.map((s) => (s || "").toLowerCase()).filter(Boolean);
   if (svc.some((s) => s.includes("legal")) || subj.includes("legal")) return "legal";
@@ -304,11 +304,13 @@ export async function buildJourneyTimelines(
     highestIdx = -1;
     rungs.forEach((r, i) => { if (r.at) highestIdx = Math.max(highestIdx, i); });
 
+    // A reached FINAL rung is done, not "current" - the journey is over,
+    // so a handed-off tree renders fully checked (user decision, 7B).
     const stages: JourneyStageOut[] = rungs.map((r, i) => ({
       id: r.id,
       label: r.label,
       reachedAt: iso(r.at as any),
-      state: i < highestIdx ? "done" : i === highestIdx ? "current" : "upcoming",
+      state: i < highestIdx ? "done" : i === highestIdx ? (i === rungs.length - 1 ? "done" : "current") : "upcoming",
       ...(r.optional ? { optional: true } : {}),
       ...(r.tone ? { tone: r.tone } : {}),
     }));

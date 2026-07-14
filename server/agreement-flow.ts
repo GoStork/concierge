@@ -241,7 +241,7 @@ export async function generateAndAnnounceAgreement(opts: GenerateAndAnnounceOpts
 export async function maybeCompleteHandoff(sessionId: string): Promise<boolean> {
   const session = await prisma.aiChatSession.findUnique({
     where: { id: sessionId },
-    select: { id: true, userId: true, providerId: true, handoffCompletedAt: true, provider: { select: { name: true } }, user: { select: { firstName: true, name: true } } },
+    select: { id: true, userId: true, providerId: true, subjectType: true, handoffCompletedAt: true, provider: { select: { name: true, services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } } } }, user: { select: { firstName: true, name: true } } },
   });
   if (!session || session.handoffCompletedAt) return false;
 
@@ -269,12 +269,30 @@ export async function maybeCompleteHandoff(sessionId: string): Promise<boolean> 
 
   const providerName = session.provider?.name || "your provider";
   const parentName = session.user?.firstName || session.user?.name || "The parent";
+
+  // Phase 7B: per-journey-type "what happens next" bullets, editable in the
+  // admin concierge UI (handoff_wrapup_* sections). Appended to the
+  // congratulations so the parent knows exactly what the provider drives
+  // from here. Missing/blank section -> congratulations only.
+  let wrapupText = "";
+  try {
+    const { classifyJourneyType } = await import("./journey-timeline");
+    const serviceNames = (session.provider?.services || []).map((sv: any) => sv.providerType?.name || "").filter(Boolean);
+    const journeyType = classifyJourneyType(serviceNames, [session.subjectType || ""]);
+    const section = await prisma.conciergePromptSection.findUnique({ where: { key: `handoff_wrapup_${journeyType}` } });
+    if (section?.content?.trim()) {
+      wrapupText = `\n\n${section.content.trim().replace(/\{providerName\}/g, providerName)}`;
+    }
+  } catch (e: any) {
+    console.warn(`[handoff] wrap-up section lookup failed: ${e?.message}`);
+  }
+
   const { resolveSessionSenderName } = await import("./chat-router");
   await prisma.aiChatMessage.create({
     data: {
       sessionId,
       role: "assistant",
-      content: `Congratulations! Your ${signedAgreement.documentType.toLowerCase()} with ${providerName} is fully signed and your payment is complete. Your journey together officially begins - ${providerName} will guide you through the next steps from here, and I'm always around if you need anything.`,
+      content: `Congratulations! Your ${signedAgreement.documentType.toLowerCase()} with ${providerName} is fully signed and your payment is complete. Your journey together officially begins - ${providerName} will guide you through the next steps from here, and I'm always around if you need anything.${wrapupText}`,
       senderType: "system",
       senderName: await resolveSessionSenderName(sessionId),
       uiCardData: {
