@@ -717,6 +717,10 @@ model Booking {
   duration                Int
   meetingType             String              @default("video")
   meetingSubtype          String? // "DOCTOR_CONSULTATION" | "MATCH_CALL" | null
+  // The chat thread this call belongs to (set when the booking spawns or
+  // reuses a consultation session). Lets the journey sidebar scope the
+  // consultation rungs per thread; null = legacy/unlinked, counts org-level.
+  sessionId               String?
   status                  String              @default("PENDING")
   meetingUrl              String?
   notes                   String?

@@ -9,6 +9,7 @@ import { ComparisonCard } from "@/components/chat/comparison-card";
 import { createPortal } from "react-dom";
 import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
+import { DonorReleaseWarningButtons } from "@/components/chat/special-message-card";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -2495,6 +2496,11 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
 
   if (msg.uiCardType === "partner_info_request" && sessionId) {
     return <PartnerInfoRequestCard data={data} messageId={msg.id} sessionId={String(sessionId)} brandColor={brandColor} />;
+  }
+
+  // Egg-donor hold release countdown - parent chooses pay-soon vs release.
+  if (msg.uiCardType === "donor_release_warning") {
+    return <DonorReleaseWarningButtons messageId={msg.id || ""} data={data} brandColor={brandColor} viewerRole="parent" />;
   }
 
   if (msg.uiCardType === "cost_sheet") {

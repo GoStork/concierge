@@ -2,6 +2,7 @@ import * as cron from "node-cron";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationService } from "../notifications/notification.service";
 import { runCallOutcomeSweep, runCanceledNotRebookedSweep, runWinbackSilenceSweep } from "./call-outcome.sweep";
+import { runDonorHoldSweep, runStrandedAgreementSweep } from "../billing/donor-hold.sweep";
 
 /**
  * Keeps PENDING booking requests from silently rotting.
@@ -196,6 +197,12 @@ export async function runSurrogateHoldExpiryCheck(prisma: PrismaService) {
     where: {
       reservedByParentId: { not: null },
       reservationExpiresAt: { not: null, lte: now },
+      // MATCHED + live reservation = the post-double-yes payment window.
+      // That case is NOT silently released anymore - the hold-decision
+      // negotiation (runDonorHoldSweep) asks the provider, then warns the
+      // parent, before anything is released. Only the plain 24h decision
+      // hold (ON_HOLD) auto-releases here.
+      status: { not: "MATCHED" },
     },
     select: { id: true, externalId: true, firstName: true, reservedByParentId: true },
   });
@@ -252,6 +259,14 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
   runPendingBookingCheck(prisma, notifications).catch(err => {
     console.error(`[pending-booking] Startup check error: ${err.message}`);
   });
+  // Stranded drafts are BORN at restarts - sweep immediately at boot, and
+  // pick the hold-decision conversation back up without waiting a cycle.
+  runStrandedAgreementSweep(prisma).catch(err => {
+    console.error(`[stranded-agreement] Startup sweep error: ${err.message}`);
+  });
+  runDonorHoldSweep(prisma).catch(err => {
+    console.error(`[donor-hold] Startup sweep error: ${err.message}`);
+  });
 
   scheduledTask = cron.schedule("*/10 * * * *", async () => {
     try {
@@ -284,6 +299,18 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
       await runWinbackSilenceSweep(prisma, notifications);
     } catch (err: any) {
       console.error(`[winback] Cron error: ${err.message}`);
+    }
+    // Egg-donor hold decision flow (overdue deposit -> provider decides ->
+    // parent gets a final window) + stranded-agreement failure marking.
+    try {
+      await runDonorHoldSweep(prisma);
+    } catch (err: any) {
+      console.error(`[donor-hold] Cron error: ${err.message}`);
+    }
+    try {
+      await runStrandedAgreementSweep(prisma);
+    } catch (err: any) {
+      console.error(`[stranded-agreement] Cron error: ${err.message}`);
     }
   });
 

@@ -15,6 +15,143 @@ import { InvoiceCard } from "@/components/invoice-card";
 import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
 
+// Egg-donor hold decision (provider-only card): the deposit is overdue and
+// the donor has been sitting ON_HOLD - the provider chooses to keep holding
+// her or start the release countdown (which warns the parent first).
+function DonorHoldDecisionButtons({ messageId, data, brandColor }: {
+  messageId: string;
+  data: { donorLabel?: string | null; parentName?: string | null; resolvedAt?: string | null; resolvedAs?: string | null };
+  brandColor: string;
+}) {
+  const [resolvedAs, setResolvedAs] = useState<string | null>(data.resolvedAt ? data.resolvedAs || "resolved" : null);
+  const [pending, setPending] = useState(false);
+  const donorLabel = data.donorLabel || "the donor";
+  const decide = async (action: "release" | "keep") => {
+    setPending(true);
+    try {
+      await apiRequest("POST", `/api/donor-hold/${messageId}/decision`, { action });
+      setResolvedAs(action === "keep" ? "keep_holding" : "release_requested");
+    } catch {
+      // Leave buttons active so the provider can retry.
+    } finally {
+      setPending(false);
+    }
+  };
+  if (resolvedAs) {
+    const isKeep = resolvedAs === "keep_holding";
+    const label =
+      isKeep ? `Holding ${donorLabel} - I'll check back if still unpaid`
+      : resolvedAs === "release_requested" ? `${data.parentName || "The parent"} notified - final payment window running`
+      : resolvedAs === "paid" ? "Deposit paid - she's in a cycle"
+      : "Hold released";
+    return (
+      <div className={`mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${isKeep || resolvedAs === "paid" ? "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]" : "bg-muted text-muted-foreground"}`}>
+        <Check className="w-3.5 h-3.5" />
+        {label}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-2">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => decide("keep")}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+        style={{ backgroundColor: brandColor }}
+        data-testid={`donor-hold-keep-${messageId}`}
+      >
+        <Check className="w-3.5 h-3.5" />
+        Keep holding her
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => decide("release")}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-background border border-border text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
+        data-testid={`donor-hold-release-${messageId}`}
+      >
+        <X className="w-3.5 h-3.5" />
+        Ok, release her
+      </button>
+    </div>
+  );
+}
+
+// Parent-side release countdown: pay soon (extends once) or release now.
+// Providers/admins watching the same card see its status, not the buttons.
+// Exported: the parent chat surface (ConciergeChatPage) has its own card
+// renderer and mounts this directly.
+export function DonorReleaseWarningButtons({ messageId, data, brandColor, viewerRole }: {
+  messageId: string;
+  data: { donorLabel?: string | null; releaseAt?: string | null; answered?: string | null; resolvedAt?: string | null; resolvedAs?: string | null };
+  brandColor: string;
+  viewerRole: string;
+}) {
+  const [state, setState] = useState<"open" | "extended" | "released" | "paid">(
+    data.resolvedAt ? (data.resolvedAs === "paid" ? "paid" : "released") : data.answered === "pay_soon" ? "extended" : "open",
+  );
+  const [pending, setPending] = useState(false);
+  const donorLabel = data.donorLabel || "the donor";
+  const respond = async (action: "release" | "pay_soon") => {
+    setPending(true);
+    try {
+      await apiRequest("POST", `/api/donor-release/${messageId}/respond`, { action });
+      setState(action === "release" ? "released" : "extended");
+      queryClient.invalidateQueries({ queryKey: ["/api/chat-session"] });
+    } catch {
+      // Leave buttons active so the parent can retry.
+    } finally {
+      setPending(false);
+    }
+  };
+  if (state !== "open") {
+    const label =
+      state === "extended" ? "Hold extended - complete the deposit to make it official"
+      : state === "paid" ? "Deposit paid - she's officially yours"
+      : `${donorLabel} released`;
+    const positive = state !== "released";
+    return (
+      <div className={`mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${positive ? "bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]" : "bg-muted text-muted-foreground"}`}>
+        {positive ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+        {label}
+      </div>
+    );
+  }
+  if (viewerRole !== "parent") {
+    return (
+      <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]">
+        Waiting on the parent - releases automatically if unpaid
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-2">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => respond("pay_soon")}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+        style={{ backgroundColor: brandColor }}
+        data-testid={`donor-release-pay-soon-${messageId}`}
+      >
+        <Check className="w-3.5 h-3.5" />
+        I will pay soon
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => respond("release")}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-background border border-border text-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
+        data-testid={`donor-release-now-${messageId}`}
+      >
+        <X className="w-3.5 h-3.5" />
+        Ok, release her
+      </button>
+    </div>
+  );
+}
+
 // Phase 4: provider-side match readiness buttons. The agency answers on the
 // surrogate's behalf after a match call; "yes" plus the parent's yes fires
 // the 24h deposit invoice, "no" releases the hold and Eva tells the parent.
@@ -215,6 +352,16 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
         brandColor={brandColor}
       />
     );
+  }
+
+  // Egg-donor hold: overdue deposit -> provider decides (hidden from parents).
+  if (msg.uiCardType === "donor_hold_decision" && viewerRole !== "parent") {
+    return <DonorHoldDecisionButtons messageId={msg.id} data={data} brandColor={brandColor} />;
+  }
+
+  // Egg-donor hold: release countdown - the parent answers, others watch.
+  if (msg.uiCardType === "donor_release_warning") {
+    return <DonorReleaseWarningButtons messageId={msg.id} data={data} brandColor={brandColor} viewerRole={viewerRole || "parent"} />;
   }
 
   // Phase 3: provider-only auto-drafted invoice awaiting approval.

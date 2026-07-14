@@ -19,6 +19,7 @@ import { Request, Response } from "express";
 import geoip from "geoip-lite";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { BillingService } from "./billing.service";
+import { releaseSubjectHold, RELEASE_COUNTDOWN_MS, PAY_SOON_EXTENSION_MS, fmtHoldDeadline } from "./donor-hold.sweep";
 import { SponsorshipService } from "../sponsorship/sponsorship.service";
 import * as stripeService from "../../../stripe-service";
 import { prisma } from "../../../db";
@@ -1035,6 +1036,185 @@ export class BillingController {
       }).catch(() => {});
     }
     return { ok: true, result: matchRes.status };
+  }
+
+  /**
+   * Egg-donor hold decision: the provider answers the overdue-deposit card.
+   * "keep" snoozes the hold (sweep re-asks in a few days); "release" gives
+   * the parent a final countdown window via a donor_release_warning card.
+   */
+  @Post("api/donor-hold/:messageId/decision")
+  @UseGuards(SessionOrJwtGuard)
+  async respondDonorHoldDecision(
+    @Req() req: Request,
+    @Param("messageId") messageId: string,
+    @Body() body: { action: "release" | "keep" },
+  ) {
+    const user = req.user as any;
+    if (!["release", "keep"].includes(body?.action)) {
+      throw new HttpException("action (release|keep) required", HttpStatus.BAD_REQUEST);
+    }
+    const msg = await this.db.aiChatMessage.findUnique({ where: { id: messageId } });
+    if (!msg || msg.uiCardType !== "donor_hold_decision") {
+      throw new HttpException("Hold decision card not found", HttpStatus.NOT_FOUND);
+    }
+    const session = await this.db.aiChatSession.findUnique({
+      where: { id: msg.sessionId },
+      select: { id: true, userId: true, providerId: true },
+    });
+    if (!session || !user.providerId || session.providerId !== user.providerId) {
+      throw new HttpException("Not authorized for this session", HttpStatus.FORBIDDEN);
+    }
+    const data = (msg.uiCardData as any) || {};
+    if (data.resolvedAt) return { ok: true, alreadyResolved: true, resolvedAs: data.resolvedAs };
+    const donorLabel = data.donorLabel || "the donor";
+    const parentName = data.parentName || "the parent";
+
+    if (body.action === "keep") {
+      await this.db.aiChatMessage.update({
+        where: { id: messageId },
+        data: { uiCardData: { ...data, resolvedAt: new Date().toISOString(), resolvedAs: "keep_holding", resolvedByUserId: user.id } },
+      });
+      await this.db.aiChatMessage.create({
+        data: {
+          sessionId: msg.sessionId,
+          role: "assistant",
+          content: `Got it - I'll keep ${donorLabel} on hold for ${parentName}. If the deposit is still unpaid in a few days, I'll check in with you again.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "provider_only",
+        },
+      }).catch(() => {});
+      return { ok: true, result: "keep_holding" };
+    }
+
+    // release: warn the parent with a final window before the hold ends.
+    const releaseAt = new Date(Date.now() + RELEASE_COUNTDOWN_MS);
+    await this.db.aiChatMessage.update({
+      where: { id: messageId },
+      data: { uiCardData: { ...data, resolvedAt: new Date().toISOString(), resolvedAs: "release_requested", resolvedByUserId: user.id } },
+    });
+    await this.db.aiChatMessage.create({
+      data: {
+        sessionId: msg.sessionId,
+        role: "assistant",
+        content: `A heads-up about ${donorLabel}: your deposit is still unpaid, so her hold is set to end ${fmtHoldDeadline(releaseAt)}. Complete the payment before then and she's officially yours - or let me know if you'd rather release her now.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardType: "donor_release_warning",
+        uiCardData: {
+          providerContent: `I've let ${parentName} know ${donorLabel} will be released ${fmtHoldDeadline(releaseAt)} unless the deposit is completed - I'll keep you posted on their answer.`,
+          donorId: data.donorId,
+          donorLabel,
+          subjectType: data.subjectType || "egg_donor",
+          invoiceId: data.invoiceId,
+          parentName,
+          releaseAt: releaseAt.toISOString(),
+          answered: null,
+          resolvedAt: null,
+          resolvedAs: null,
+        },
+      },
+    }).catch(() => {});
+    // In-app nudge to every member of the parent account.
+    const owner = await this.db.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+    const memberIds = owner?.parentAccountId
+      ? (await this.db.user.findMany({ where: { parentAccountId: owner.parentAccountId }, select: { id: true } })).map((u: any) => u.id)
+      : [session.userId];
+    for (const uid of memberIds) {
+      await this.db.inAppNotification.create({
+        data: {
+          userId: uid,
+          eventType: "DONOR_HOLD_RELEASE_WARNING",
+          payload: { sessionId: session.id, donorLabel, releaseAt: releaseAt.toISOString(), message: `${donorLabel} will be released ${fmtHoldDeadline(releaseAt)} unless your deposit is completed.` },
+        },
+      }).catch(() => {});
+    }
+    return { ok: true, result: "release_requested", releaseAt: releaseAt.toISOString() };
+  }
+
+  /**
+   * Parent answers the release warning: "release" frees the donor
+   * immediately; "pay_soon" extends the countdown once (payment itself is
+   * the real resolution - it flips her IN_CYCLE and closes all cards).
+   */
+  @Post("api/donor-release/:messageId/respond")
+  @UseGuards(SessionOrJwtGuard)
+  async respondDonorReleaseWarning(
+    @Req() req: Request,
+    @Param("messageId") messageId: string,
+    @Body() body: { action: "release" | "pay_soon" },
+  ) {
+    const user = req.user as any;
+    if (!["release", "pay_soon"].includes(body?.action)) {
+      throw new HttpException("action (release|pay_soon) required", HttpStatus.BAD_REQUEST);
+    }
+    const msg = await this.db.aiChatMessage.findUnique({ where: { id: messageId } });
+    if (!msg || msg.uiCardType !== "donor_release_warning") {
+      throw new HttpException("Release warning card not found", HttpStatus.NOT_FOUND);
+    }
+    const session = await this.db.aiChatSession.findUnique({
+      where: { id: msg.sessionId },
+      select: { id: true, userId: true, providerId: true },
+    });
+    if (!session) throw new HttpException("Session not found", HttpStatus.NOT_FOUND);
+    const owner = await this.db.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+    const sameAccount = session.userId === user.id
+      || (!!owner?.parentAccountId && owner.parentAccountId === user.parentAccountId);
+    if (!sameAccount) throw new HttpException("Not authorized for this session", HttpStatus.FORBIDDEN);
+
+    const data = (msg.uiCardData as any) || {};
+    if (data.resolvedAt) return { ok: true, alreadyResolved: true, resolvedAs: data.resolvedAs };
+    const donorLabel = data.donorLabel || "the donor";
+    const parentName = data.parentName || "the parent";
+
+    if (body.action === "release") {
+      await releaseSubjectHold(this.db, {
+        donorId: data.donorId,
+        donorLabel,
+        sessionId: msg.sessionId,
+        subjectType: data.subjectType || "egg_donor",
+        invoiceId: data.invoiceId || null,
+        parentUserId: session.userId,
+        providerId: session.providerId,
+        parentName,
+        reason: "released_by_parent",
+      });
+      return { ok: true, result: "released" };
+    }
+
+    // pay_soon: one-time extension; expiry sweep still enforces the new deadline.
+    if (data.answered === "pay_soon") return { ok: true, alreadyAnswered: true, releaseAt: data.releaseAt };
+    const newReleaseAt = new Date(Date.now() + PAY_SOON_EXTENSION_MS);
+    await this.db.aiChatMessage.update({
+      where: { id: messageId },
+      data: { uiCardData: { ...data, answered: "pay_soon", answeredAt: new Date().toISOString(), answeredByUserId: user.id, releaseAt: newReleaseAt.toISOString() } },
+    });
+    await this.db.aiChatMessage.create({
+      data: {
+        sessionId: msg.sessionId,
+        role: "assistant",
+        content: `No problem - I've extended your hold on ${donorLabel} until ${fmtHoldDeadline(newReleaseAt)}. Complete the deposit before then and she's officially yours.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardData: {
+          providerContent: `${parentName} says they'll complete the deposit soon - I've extended ${donorLabel}'s hold until ${fmtHoldDeadline(newReleaseAt)}.`,
+        },
+      },
+    }).catch(() => {});
+    if (session.providerId) {
+      const providerUsers = await this.db.user.findMany({ where: { providerId: session.providerId }, select: { id: true } });
+      for (const pu of providerUsers) {
+        await this.db.inAppNotification.create({
+          data: {
+            userId: pu.id,
+            eventType: "DONOR_HOLD_EXTENDED",
+            payload: { sessionId: session.id, donorLabel, releaseAt: newReleaseAt.toISOString(), message: `${parentName} says they'll pay soon - ${donorLabel}'s hold extended until ${fmtHoldDeadline(newReleaseAt)}.` },
+          },
+        }).catch(() => {});
+      }
+    }
+    return { ok: true, result: "extended", releaseAt: newReleaseAt.toISOString() };
   }
 
   @Post("api/sessions/:sessionId/invoice-draft/:messageId/reject")

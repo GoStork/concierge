@@ -1253,6 +1253,10 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
         "readiness_prompt",
         "invoice",
         "cost_sheet",
+        // Egg-donor hold countdown: the parent decides "release her" vs
+        // "I will pay soon" (the provider-side donor_hold_decision card
+        // stays hidden - it's not in this list).
+        "donor_release_warning",
         // System-sent file attachments (e.g. the Match Call prep guide Eva
         // sends when a match call is scheduled).
         "attachment",

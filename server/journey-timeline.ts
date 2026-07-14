@@ -122,7 +122,7 @@ export async function buildJourneyTimelines(
       where: { parentUserId: { in: memberIds }, ...(opts?.providerId ? { providerUser: { providerId: opts.providerId } } : {}) },
       select: {
         id: true, status: true, outcome: true, scheduledAt: true, createdAt: true, cancelledAt: true,
-        cancelledByRole: true, meetingSubtype: true, duration: true,
+        cancelledByRole: true, meetingSubtype: true, duration: true, sessionId: true,
         providerUser: { select: { providerId: true, roles: true, provider: { select: { name: true } } } },
       },
     }),
@@ -212,12 +212,17 @@ export async function buildJourneyTimelines(
     // Consultation evidence. A booking proves "scheduled" while it is live
     // (PENDING/CONFIRMED in the future) or once it actually completed;
     // canceled/expired/no-show bookings stop proving the rung.
+    // Session scoping: bookings LINKED to a different thread are excluded;
+    // legacy/unlinked bookings (sessionId null) keep counting everywhere.
+    const scopedBookings = opts?.sessionId
+      ? b.bookings.filter((bk: any) => !bk.sessionId || bk.sessionId === opts.sessionId)
+      : b.bookings;
     const nowMs = Date.now();
     const endOf = (bk: any) => new Date(bk.scheduledAt).getTime() + (bk.duration || 30) * 60 * 1000;
-    const liveBooking = b.bookings.filter((bk) => ["PENDING", "CONFIRMED"].includes(bk.status) && endOf(bk) > nowMs);
-    const completed = b.bookings.filter((bk) => bk.outcome === "COMPLETED" || bk.outcome === "UNVERIFIED");
-    const noShows = b.bookings.filter((bk) => ["NO_SHOW_PARENT", "NO_SHOW_PROVIDER", "NO_SHOW_BOTH"].includes(bk.outcome || ""));
-    const everScheduledAt = b.bookings.length > 0 ? b.bookings.reduce<Date | null>((min, bk) => (!min || bk.createdAt < min ? bk.createdAt : min), null) : null;
+    const liveBooking = scopedBookings.filter((bk) => ["PENDING", "CONFIRMED"].includes(bk.status) && endOf(bk) > nowMs);
+    const completed = scopedBookings.filter((bk) => bk.outcome === "COMPLETED" || bk.outcome === "UNVERIFIED");
+    const noShows = scopedBookings.filter((bk) => ["NO_SHOW_PARENT", "NO_SHOW_PROVIDER", "NO_SHOW_BOTH"].includes(bk.outcome || ""));
+    const everScheduledAt = scopedBookings.length > 0 ? scopedBookings.reduce<Date | null>((min, bk) => (!min || bk.createdAt < min ? bk.createdAt : min), null) : null;
     // A no-show still proves the call WAS scheduled - only pure cancellation
     // (nothing live, completed, or attended-by-anyone) regresses the rung.
     const consultScheduledAt = liveBooking.length > 0 || completed.length > 0 || noShows.length > 0 ? everScheduledAt : null;

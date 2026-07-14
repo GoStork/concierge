@@ -267,6 +267,13 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`[CONSULTATION] Created session ${targetSessionId} for provider ${consultProviderId}`);
     }
 
+    // Link the booking to its thread so the journey sidebar can scope the
+    // consultation rungs per chat (null stays org-level for legacy rows).
+    await this.prisma.booking.update({
+      where: { id: booking.id },
+      data: { sessionId: targetSessionId },
+    }).catch((e: any) => this.logger.warn(`[CONSULTATION] Booking->session link failed: ${e.message}`));
+
     // Phase 6: first call with a surrogacy / egg-donation agency = the
     // commitment signal for the one-time lawyer-intro offer (fire and
     // forget; internally idempotent via lawyerIntroOfferedAt).

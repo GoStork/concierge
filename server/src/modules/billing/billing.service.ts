@@ -2492,6 +2492,22 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
       });
       if (!session?.subjectProfileId) return;
       const subjType = (session.subjectType || "").toLowerCase();
+      // Payment settles the hold conversation for ANY subject type - close
+      // open decision / release-warning cards so nothing keeps counting
+      // down or nagging (must run before the surrogate branch's early
+      // return).
+      const holdCards = await this.prisma.aiChatMessage.findMany({
+        where: { sessionId: invoice.sessionId, uiCardType: { in: ["donor_hold_decision", "donor_release_warning"] } },
+        select: { id: true, uiCardData: true },
+      });
+      for (const c of holdCards) {
+        const dd = (c.uiCardData as any) || {};
+        if (dd.resolvedAt) continue;
+        await this.prisma.aiChatMessage.update({
+          where: { id: c.id },
+          data: { uiCardData: { ...dd, resolvedAt: new Date().toISOString(), resolvedAs: "paid" } },
+        }).catch(() => {});
+      }
       if (subjType.includes("surrog")) {
         const res = await this.prisma.surrogate.updateMany({
           where: {
