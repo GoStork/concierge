@@ -6743,9 +6743,13 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       try {
         const parsed = JSON.parse(mcMatch[1]);
         if (!parsed) continue;
-        // Accept `id` as a fallback when AI used the wrong field name for providerId.
-        // The AI sometimes emits id: "<uuid>" instead of providerId: "<uuid>".
+        // Accept `id` / `entityId` as fallbacks when AI used the wrong field
+        // name for providerId, and `entityType` for type. Seen in the wild:
+        // {"entityId": "<profile uuid>", "entityType": "Surrogate"} - a fully
+        // usable card that was being skipped for "missing required fields".
         if (!parsed.providerId && parsed.id) parsed.providerId = parsed.id;
+        if (!parsed.providerId && parsed.entityId) parsed.providerId = parsed.entityId;
+        if (!parsed.type && parsed.entityType) parsed.type = parsed.entityType;
         // Repair the classic field swap: the model sometimes puts the AGENCY
         // id in providerId and the actual profile UUID in entityId - the
         // client then fetches a profile with the agency id and renders
@@ -6925,6 +6929,39 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // Skip the MATCH_CARD fallback entirely when the AI emitted DOCTOR_CARD tags -
     // a doctor recommendation is its own card type, not a missing MATCH_CARD.
     if (matchCards.length === 0 && doctorCardTags.length === 0 && lastSearchToolResults.length > 0) {
+      // Tolerant tool-result parser: MCP search results sometimes carry raw
+      // control chars inside string fields (invalid JSON) and/or extra JSON
+      // blocks after the results array - the old indexOf("[")/lastIndexOf("]")
+      // slice threw on both, silently killing the card fallback. Sanitize
+      // control chars (safe: they are whitespace outside strings and invalid
+      // inside them) and bracket-match the FIRST array only.
+      const parseToolResultArray = (body: string): any[] => {
+        if (!body) return [];
+        const clean = body.replace(/[\u0000-\u001f]/g, " ");
+        const start = clean.indexOf("[");
+        if (start === -1) {
+          try { const p = JSON.parse(clean); return Array.isArray(p) ? p : []; } catch { return []; }
+        }
+        let depth = 0, inStr = false, esc = false;
+        for (let i = start; i < clean.length; i++) {
+          const ch = clean[i];
+          if (inStr) {
+            if (esc) esc = false;
+            else if (ch === "\\") esc = true;
+            else if (ch === '"') inStr = false;
+            continue;
+          }
+          if (ch === '"') inStr = true;
+          else if (ch === "[") depth++;
+          else if (ch === "]") {
+            depth--;
+            if (depth === 0) {
+              try { const p = JSON.parse(clean.substring(start, i + 1)); return Array.isArray(p) ? p : []; } catch { return []; }
+            }
+          }
+        }
+        return [];
+      };
       const matchIntroPattern = /(?:meet|introducing|found|here(?:'s| is)|check (?:out|her|his|their)|i(?:'ve| have) (?:got|a)|first up|special to show|great (?:fit|match|option|choice|pick)|perfect (?:fit|match|option|choice)|top (?:option|pick|choice)|premier|recommend|someone.*really|stands?\s*out|option for you|show you)/i;
       // Most robust signal: the AI named one of the just-searched providers in its
       // prose (e.g. "Reproductive Medicine Associates ... is a premier option").
@@ -6934,10 +6971,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       let resultNameInProse = false;
       for (const sr of lastSearchToolResults) {
         try {
-          const body: string = sr.resultText || "";
-          const s = body.indexOf("[");
-          const e = body.lastIndexOf("]");
-          const arr = s !== -1 && e !== -1 ? JSON.parse(body.substring(s, e + 1)) : [];
+          const arr = parseToolResultArray(sr.resultText || "");
           if (Array.isArray(arr) && arr.some((r: any) => {
             const n = String(r?.name || r?.displayName || "").toLowerCase();
             return n.length > 4 && plainForName.includes(n);
@@ -6958,16 +6992,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           // Doctor results are not MATCH_CARD material - they render as DOCTOR_CARDs.
           if (searchResult.toolName === "search_doctors") continue;
           try {
-            const resultBody = searchResult.resultText;
-            const jsonStart = resultBody.indexOf("[");
-            const jsonEnd = resultBody.lastIndexOf("]");
-            let results: any[] = [];
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-              results = JSON.parse(resultBody.substring(jsonStart, jsonEnd + 1));
-            } else {
-              const parsed = JSON.parse(resultBody);
-              results = Array.isArray(parsed) ? parsed : [];
-            }
+            const results: any[] = parseToolResultArray(searchResult.resultText || "");
 
             if (results.length > 0) {
               const toolTypeMap: Record<string, string> = {
