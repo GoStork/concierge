@@ -2627,7 +2627,7 @@ export function ParentChatSidePanel({
         {(subjectInfo?.providerId || providerId) && (
           <div className="border-b pb-4">
             <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Journey</h4>
-            <JourneyTimelineCard providerId={subjectInfo?.providerId || providerId} testId="parent-chat-journey" />
+            <JourneyTimelineCard providerId={subjectInfo?.providerId || providerId} sessionId={sessionId} testId="parent-chat-journey" />
           </div>
         )}
         {/* Compact photo + availability status - only when the full card below
@@ -5425,7 +5425,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             return (
               <div className="absolute left-2 bottom-full mb-2 z-40 pointer-events-none">
                 <div className={parentPlusOpen ? "pointer-events-auto" : ""}>
-                  <ChatPlusDrawer open={parentPlusOpen} actions={tiles} brandColor={brandColor} />
+                  <ChatPlusDrawer open={parentPlusOpen} actions={tiles} brandColor={brandColor} onDismiss={() => setParentPlusOpen(false)} />
                 </div>
               </div>
             );
@@ -5487,6 +5487,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               onClick={() => setParentPlusOpen(v => !v)}
               disabled={parentUploading}
               aria-label={parentPlusOpen ? "Close actions" : "More actions"}
+              data-plus-toggle="true"
               data-testid="btn-attach"
             >
               {parentUploading ? (

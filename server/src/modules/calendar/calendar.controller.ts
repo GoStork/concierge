@@ -186,7 +186,31 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     if (!provider) return;
 
     const parentName = booking.parentUser.name || booking.attendeeName || "Parent";
-    const sessionTitle = body.profileLabel || provider?.name || null;
+    // Session title guard: some booking paths (e.g. the win-back reschedule
+    // card) carry no subject label, and one path passed the Eva chat's own
+    // title through - which created a 3-way session titled "AI Concierge
+    // Chat" that looked like a duplicate Eva session and hid the whole
+    // provider flow inside "the AI chat". Never accept a generic/blank
+    // label: derive from the subject profile, else fall back to the
+    // provider name.
+    let sessionTitle: string | null = body.profileLabel || null;
+    if (!sessionTitle || /^ai concierge/i.test(sessionTitle.trim())) {
+      sessionTitle = null;
+      if (body.subjectProfileId) {
+        const subjType = (body.subjectType || "").toLowerCase();
+        const lookup = subjType.includes("egg")
+          ? this.prisma.eggDonor
+          : subjType.includes("sperm")
+            ? this.prisma.spermDonor
+            : this.prisma.surrogate;
+        const subj = await (lookup as any).findUnique({ where: { id: body.subjectProfileId }, select: { externalId: true } }).catch(() => null);
+        if (subj?.externalId) {
+          const prefix = subjType.includes("egg") ? "Egg Donor" : subjType.includes("sperm") ? "Sperm Donor" : "Surrogate";
+          sessionTitle = `${prefix} #${subj.externalId}`;
+        }
+      }
+      sessionTitle = sessionTitle || provider?.name || null;
+    }
 
     // Check for existing provider session with same title
     const parentAccount = await this.prisma.user.findUnique({
@@ -2227,7 +2251,6 @@ I'll check in with you right after the call. You've got this!`;
     this.notifications.sendBookingSubmitted(booking).catch(() => {});
     void emitBookingLifecycleEvent(booking.id, "SCHEDULED", "parent");
     this.emitBookingEvent("booking_created", booking, booking.parentUserId || undefined);
-    this.fireCostSheetAutoDraft(booking.id);
 
     let parentAccountMembers: { id: string; name: string | null; email: string }[] = [];
     if (booking.parentUser) {
@@ -2246,11 +2269,19 @@ I'll check in with you right after the call. You've got this!`;
       }
     }
 
-    // Create 3-way chat session when booking originates from AI concierge consultation
+    // Create 3-way chat session when booking originates from AI concierge
+    // consultation. The cost-sheet auto-draft is chained AFTER session
+    // creation: it targets the parent+provider's most recently updated
+    // session, and firing it concurrently made the draft card land on the
+    // Eva chat (a race - the consultation thread didn't exist yet). The
+    // journey then continued in the thread while the draft sat orphaned in
+    // the Eva session, leaving a permanently stale Home work-queue item.
     if (body.aiSessionId && booking.parentUser) {
-      this.createConsultationChatSession(body, booking).catch((e) =>
-        this.logger.error(`Failed to create consultation chat session: ${e.message}`),
-      );
+      this.createConsultationChatSession(body, booking)
+        .catch((e) => this.logger.error(`Failed to create consultation chat session: ${e.message}`))
+        .finally(() => this.fireCostSheetAutoDraft(booking.id));
+    } else {
+      this.fireCostSheetAutoDraft(booking.id);
     }
 
     return { ...booking, parentAccountMembers };

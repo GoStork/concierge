@@ -81,7 +81,20 @@ export function classifyJourneyType(serviceNames: string[], subjectTypes: string
  */
 export async function buildJourneyTimelines(
   parentAccountId: string,
-  opts?: { providerId?: string | null; includePreStages?: boolean },
+  opts?: {
+    providerId?: string | null;
+    /**
+     * Scope the money/terminal rungs (matched, invoices, agreement, handoff)
+     * to ONE session's evidence. A parent can run several profile threads
+     * with the same provider org - without this, every chat's sidebar
+     * inherits the org-level terminal state (e.g. "Handed Off" showing on a
+     * profile that never went anywhere). Consultation rungs and
+     * registered/exploring stay relationship-level (bookings aren't
+     * session-linked).
+     */
+    sessionId?: string | null;
+    includePreStages?: boolean;
+  },
 ): Promise<{ registeredAt: string | null; journeys: JourneyOut[] }> {
   const members = await prisma.user.findMany({
     where: { OR: [{ parentAccountId }, { id: parentAccountId }] },
@@ -115,15 +128,15 @@ export async function buildJourneyTimelines(
     }),
     prisma.invoice.findMany({
       where: { parentUserId: { in: memberIds }, ...(opts?.providerId ? { providerId: opts.providerId } : {}) },
-      select: { id: true, providerId: true, status: true, createdAt: true, paidAt: true, triggerSource: true },
+      select: { id: true, providerId: true, sessionId: true, status: true, createdAt: true, paidAt: true, triggerSource: true },
     }),
     prisma.agreement.findMany({
       where: { parentUserId: { in: memberIds }, ...(opts?.providerId ? { providerId: opts.providerId } : {}) },
-      select: { id: true, providerId: true, status: true, createdAt: true, signedAt: true },
+      select: { id: true, providerId: true, sessionId: true, status: true, createdAt: true, signedAt: true },
     }),
     prisma.journeyEvent.findMany({
       where: { parentAccountId, ...(opts?.providerId ? { providerId: opts.providerId } : {}) },
-      select: { providerId: true, eventType: true, createdAt: true },
+      select: { providerId: true, sessionId: true, eventType: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     }),
   ]);
@@ -213,24 +226,30 @@ export async function buildJourneyTimelines(
     const showNoShowRung = noShows.length > 0 && completed.length === 0 && liveBooking.length === 0;
     const lastNoShowAt = noShows.length > 0 ? noShows.reduce<Date | null>((max, bk) => (!max || bk.scheduledAt > max ? bk.scheduledAt : max), null) : null;
 
-    const matchEvent = b.events.find((e) => e.eventType === "MATCH_CONFIRMED");
-    const depositInvoice = b.invoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT");
+    // Session scoping (see opts.sessionId doc): money/terminal evidence only.
+    const sid = opts?.sessionId || null;
+    const scopedInvoices = sid ? b.invoices.filter((i) => i.sessionId === sid) : b.invoices;
+    const scopedAgreements = sid ? b.agreements.filter((a) => a.sessionId === sid) : b.agreements;
+    const scopedSessions = sid ? b.sessions.filter((s2) => s2.id === sid) : b.sessions;
+
+    const matchEvent = b.events.find((e) => e.eventType === "MATCH_CONFIRMED" && (!sid || e.sessionId === sid));
+    const depositInvoice = scopedInvoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT");
     const matchedAt = matchEvent?.createdAt || (journeyType === "surrogacy" || journeyType === "egg_donation" ? depositInvoice.find((i) => i.triggerSource === "AUTO_READINESS")?.createdAt || null : null);
-    const nonBankInvoices = b.invoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT");
+    const nonBankInvoices = scopedInvoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT");
     const invoiceSentAt = nonBankInvoices.length > 0 ? nonBankInvoices.reduce<Date | null>((min, i) => (!min || i.createdAt < min ? i.createdAt : min), null) : null;
-    const paidInvoice = b.invoices.filter((i) => i.status === "PAID" && i.paidAt);
+    const paidInvoice = scopedInvoices.filter((i) => i.status === "PAID" && i.paidAt);
     const paidAt = paidInvoice.length > 0 ? paidInvoice.reduce<Date | null>((min, i) => (!min || (i.paidAt && i.paidAt < min) ? i.paidAt : min), null) : null;
-    const signed = b.agreements.filter((a) => a.status === "SIGNED");
+    const signed = scopedAgreements.filter((a) => a.status === "SIGNED");
     const signedAt = signed.length > 0 ? signed[0].signedAt || signed[0].createdAt : null;
     // "Sent" evidence: any agreement that left draft (SENT covers rejected /
     // expired too - the send still happened). AGREEMENT_SENT event wins on date.
-    const sentAgreements = b.agreements.filter((a) => ["SENT", "SIGNED", "REJECTED", "EXPIRED"].includes(a.status));
-    const agreementSentAt = b.events.find((e) => e.eventType === "AGREEMENT_SENT")?.createdAt
+    const sentAgreements = scopedAgreements.filter((a) => ["SENT", "SIGNED", "REJECTED", "EXPIRED"].includes(a.status));
+    const agreementSentAt = b.events.find((e) => e.eventType === "AGREEMENT_SENT" && (!sid || e.sessionId === sid))?.createdAt
       || (sentAgreements.length > 0 ? sentAgreements.reduce<Date | null>((min, a) => (!min || a.createdAt < min ? a.createdAt : min), null) : null);
-    const handoffAt = b.sessions.map((s2) => s2.handoffCompletedAt).filter(Boolean).sort()[0] || null;
+    const handoffAt = scopedSessions.map((s2) => s2.handoffCompletedAt).filter(Boolean).sort()[0] || null;
     const exploringAt = b.sessions.length > 0 ? b.sessions.reduce<Date | null>((min, s2) => (!min || s2.createdAt < min ? s2.createdAt : min), null) : everScheduledAt;
 
-    const bankInvoices = b.invoices.filter((i) => i.triggerSource === "BANK_CHECKOUT");
+    const bankInvoices = scopedInvoices.filter((i) => i.triggerSource === "BANK_CHECKOUT");
     const checkoutAt = bankInvoices.length > 0 ? bankInvoices[0].createdAt : null;
     const bankPaidAt = bankInvoices.find((i) => i.status === "PAID")?.paidAt || null;
 

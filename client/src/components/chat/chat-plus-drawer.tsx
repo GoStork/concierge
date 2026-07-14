@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { LucideIcon } from "lucide-react";
 
 export interface ChatPlusAction {
@@ -20,6 +21,13 @@ interface ChatPlusDrawerProps {
   open: boolean;
   actions: ChatPlusAction[];
   brandColor: string;
+  /**
+   * Called when the user clicks/taps anywhere OUTSIDE the drawer while it is
+   * open, so the host can close it. Clicks on the host's toggle button are
+   * ignored (mark it with `data-plus-toggle`) - it manages its own open/close
+   * state, and dismissing here too would make its toggle immediately reopen.
+   */
+  onDismiss?: () => void;
 }
 
 /**
@@ -46,9 +54,25 @@ const DEFAULT_COLORS: Record<string, string> = {
  * Lives ABOVE the composer (not as a popup/modal) so it works identically
  * on desktop and mobile and respects the project's "no modals" guideline.
  */
-export function ChatPlusDrawer({ open, actions, brandColor }: ChatPlusDrawerProps) {
+export function ChatPlusDrawer({ open, actions, brandColor, onDismiss }: ChatPlusDrawerProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open || !onDismiss) return;
+    const handler = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (rootRef.current?.contains(target)) return; // menu row clicks run their action
+      if (target.closest("[data-plus-toggle]")) return; // + button toggles itself
+      onDismiss();
+    };
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
+  }, [open, onDismiss]);
+
   return (
     <div
+      ref={rootRef}
       className="overflow-hidden transition-[max-height,opacity] duration-200 ease-out"
       style={{
         maxHeight: open ? 480 : 0,

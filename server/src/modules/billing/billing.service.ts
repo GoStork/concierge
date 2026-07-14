@@ -473,9 +473,13 @@ export class BillingService {
     // admin dashboard) IS the invoice. Flip them to "superseded" so the
     // provider chat never shows an actionable draft next to a live invoice.
     // The approve endpoint overwrites its own card to "approved" right after.
+    // Pending COST-SHEET drafts are equally moot once an invoice exists -
+    // the journey has moved past the quoting stage, and leaving them
+    // unresolved keeps a stale "review cost sheet" item in the provider's
+    // Home work queue forever.
     try {
       const pendingDrafts = await this.prisma.aiChatMessage.findMany({
-        where: { sessionId, uiCardType: "invoice_draft_approval" },
+        where: { sessionId, uiCardType: { in: ["invoice_draft_approval", "cost_sheet_draft_approval"] } },
         select: { id: true, uiCardData: true },
       });
       for (const d of pendingDrafts) {
@@ -495,6 +499,30 @@ export class BillingService {
       }
     } catch (e: any) {
       this.logger.warn(`Failed to supersede pending invoice drafts for session ${sessionId}: ${e.message}`);
+    }
+
+    // Fresh egg donors go ON HOLD the moment the parent commits ("I'm ready"
+    // after the consultation -> AUTO_READINESS invoice). No hold machinery
+    // like surrogates (no reservation columns) - the agency releases her
+    // manually if the invoice is never paid; payment flips her to IN_CYCLE
+    // (stickSubjectStatusOnPayment). Choke point: every readiness path
+    // (auto-create, draft approval, match finalize) lands here.
+    if (params.triggerSource === "AUTO_READINESS") {
+      try {
+        const sess = await this.prisma.aiChatSession.findUnique({
+          where: { id: sessionId },
+          select: { subjectProfileId: true, subjectType: true },
+        });
+        if (sess?.subjectProfileId && (sess.subjectType || "").toLowerCase().includes("egg")) {
+          const held = await this.prisma.eggDonor.updateMany({
+            where: { id: sess.subjectProfileId, status: "AVAILABLE" },
+            data: { status: "ON_HOLD" },
+          });
+          if (held.count > 0) this.logger.log(`Egg donor ${sess.subjectProfileId} ON_HOLD (readiness invoice ${invoice.id})`);
+        }
+      } catch (e: any) {
+        this.logger.warn(`Egg donor readiness hold failed for session ${sessionId}: ${e.message}`);
+      }
     }
 
     return invoice;
@@ -2455,24 +2483,42 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     try {
       const invoice = await this.prisma.invoice.findUnique({
         where: { id: invoiceId },
-        select: { sessionId: true, parentUserId: true },
+        select: { sessionId: true, parentUserId: true, triggerSource: true },
       });
       if (!invoice?.sessionId) return;
       const session = await this.prisma.aiChatSession.findUnique({
         where: { id: invoice.sessionId },
         select: { subjectType: true, subjectProfileId: true },
       });
-      if (!session?.subjectProfileId || !(session.subjectType || "").toLowerCase().includes("surrog")) return;
-      const res = await this.prisma.surrogate.updateMany({
-        where: {
-          id: session.subjectProfileId,
-          reservedByParentId: invoice.parentUserId,
-          reservationExpiresAt: { not: null },
-        },
-        data: { reservationExpiresAt: null, status: "MATCHED" },
-      });
-      if (res.count > 0) {
-        this.logger.log(`Surrogate ${session.subjectProfileId} hold made permanent + status MATCHED (invoice ${invoiceId} paid)`);
+      if (!session?.subjectProfileId) return;
+      const subjType = (session.subjectType || "").toLowerCase();
+      if (subjType.includes("surrog")) {
+        const res = await this.prisma.surrogate.updateMany({
+          where: {
+            id: session.subjectProfileId,
+            reservedByParentId: invoice.parentUserId,
+            reservationExpiresAt: { not: null },
+          },
+          data: { reservationExpiresAt: null, status: "MATCHED" },
+        });
+        if (res.count > 0) {
+          this.logger.log(`Surrogate ${session.subjectProfileId} hold made permanent + status MATCHED (invoice ${invoiceId} paid)`);
+        }
+        return;
+      }
+      // Fresh egg donors: the paid deposit makes the commitment final - she
+      // is now IN A CYCLE with this family and unavailable to everyone else
+      // (ON_HOLD started at the readiness "I'm ready"; AVAILABLE covers
+      // legacy journeys that predate the hold). Bank purchases (frozen eggs
+      // / sperm vials) are inventory, not exclusivity - never flip those.
+      if (subjType.includes("egg") && invoice.triggerSource !== "BANK_CHECKOUT") {
+        const res = await this.prisma.eggDonor.updateMany({
+          where: { id: session.subjectProfileId, status: { in: ["AVAILABLE", "ON_HOLD"] } },
+          data: { status: "IN_CYCLE" },
+        });
+        if (res.count > 0) {
+          this.logger.log(`Egg donor ${session.subjectProfileId} status IN_CYCLE (invoice ${invoiceId} paid)`);
+        }
       }
     } catch (e: any) {
       this.logger.warn(`stickSurrogateHoldOnPayment failed for invoice ${invoiceId}: ${e.message}`);

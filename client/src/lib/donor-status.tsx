@@ -1,14 +1,18 @@
 import { ReactNode } from "react";
 
 // Canonical donor / surrogate / sperm-donor statuses surfaced to the UI.
-// INACTIVE is omitted here because INACTIVE rows are never rendered
-// (marketplace / chat / AI all filter them out at the API layer); if you
-// see "INACTIVE" land in the UI, something upstream is leaking.
+// INACTIVE profiles never appear in marketplace/search results, but chat
+// rows keep referencing a profile after it leaves the roster - those rows
+// must communicate "no longer available" (red), not fall back to a mute
+// gray that reads like nothing happened.
 // PENDING and MATCHED apply to egg donors + surrogates; SOLD_OUT applies
 // to sperm donors. AVAILABLE is universal.
-// ON_HOLD applies to surrogates only: a match call is scheduled or the 24h
-// post-call decision hold is running - she stays visible but isn't bookable.
-export type DonorStatus = "AVAILABLE" | "ON_HOLD" | "PENDING" | "MATCHED" | "SOLD_OUT";
+// ON_HOLD: surrogates - a match call is scheduled or the 24h post-call
+// decision hold is running; egg donors - a parent confirmed "I'm ready"
+// after the consultation and their deposit invoice is live.
+// IN_CYCLE applies to fresh egg donors only: the deposit was paid - she is
+// in a donation cycle with a family and unavailable to everyone else.
+export type DonorStatus = "AVAILABLE" | "ON_HOLD" | "PENDING" | "MATCHED" | "SOLD_OUT" | "INACTIVE" | "IN_CYCLE";
 
 export interface StatusBadgeStyle {
   label: string;
@@ -38,15 +42,27 @@ const STYLES: Record<DonorStatus, StatusBadgeStyle> = {
   },
   MATCHED: {
     label: "Matched",
-    description: "Matched with another family",
-    pillClassName: "bg-muted text-muted-foreground",
-    dotClassName: "bg-muted-foreground/50",
+    description: "Matched with a family",
+    pillClassName: "bg-accent/15 text-[hsl(var(--accent))]",
+    dotClassName: "bg-[hsl(var(--accent))]",
   },
   SOLD_OUT: {
     label: "Sold Out",
     description: "No vials currently in stock",
     pillClassName: "bg-destructive/15 text-destructive",
     dotClassName: "bg-destructive",
+  },
+  INACTIVE: {
+    label: "No Longer Available",
+    description: "This profile is no longer available",
+    pillClassName: "bg-destructive/15 text-destructive",
+    dotClassName: "bg-destructive",
+  },
+  IN_CYCLE: {
+    label: "In Cycle",
+    description: "In a donation cycle with a family",
+    pillClassName: "bg-accent/15 text-[hsl(var(--accent))]",
+    dotClassName: "bg-[hsl(var(--accent))]",
   },
 };
 

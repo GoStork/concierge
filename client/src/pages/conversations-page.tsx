@@ -786,24 +786,47 @@ export default function ConversationsPage() {
     refetchOnMount: "always",
   });
 
+  // Eva/concierge sessions live at /chat/concierge?session=<id> - a shape with
+  // NO path params. The provider effects below must treat that param as a
+  // valid selection, or the clear-effect wipes the selection the row click
+  // just made (first click showed "Select a conversation", second click worked).
+  const urlConciergeSession = searchParams.get("session");
+
   // Resolve provider selectedSessionId from URL params when sessions load
   useEffect(() => {
-    if (!isProvider || !urlEntityId || !urlSubjectId) return;
+    if (!isProvider) return;
     const sessions = providerSessionsQuery.data || [];
-    const match = sessions.find(s => s.userId === urlEntityId && s.subjectProfileId === urlSubjectId)
+    if (!urlEntityId && urlConciergeSession) {
+      const match = sessions.find(s => s.id === urlConciergeSession);
+      if (match && selectedSessionId !== match.id) {
+        _setSelectedSessionId(match.id);
+      }
+      return;
+    }
+    if (!urlEntityId || !urlSubjectId) return;
+    // An Eva Q&A session and the direct provider thread can share the SAME
+    // userId + subjectProfileId (Eva matched the same surrogate), making the
+    // /chat/:entityId/:subjectId URL ambiguous. Prefer the provider thread -
+    // Eva sessions have their own /chat/concierge?session= URL shape, so a
+    // path-param URL always means the direct thread was intended.
+    const isEvaSession = (s: any) =>
+      !!s.matchmakerId && !s.providerJoinedAt && s.status !== "CONSULTATION_BOOKED" && s.status !== "PROVIDER_CONNECTED";
+    const candidates = sessions.filter(s => s.userId === urlEntityId && s.subjectProfileId === urlSubjectId);
+    const match = candidates.find(s => !isEvaSession(s))
+      || candidates[0]
       || sessions.find(s => s.userId === urlEntityId && s.id === urlSubjectId);
     if (match && selectedSessionId !== match.id) {
       _setSelectedSessionId(match.id);
     }
-  }, [isProvider, urlEntityId, urlSubjectId, providerSessionsQuery.data]);
+  }, [isProvider, urlEntityId, urlSubjectId, urlConciergeSession, providerSessionsQuery.data]);
 
   // Clear provider selection when the browser back button returns to /chat (no URL params)
   useEffect(() => {
     if (!isProvider) return;
-    if (!urlEntityId && !urlSubjectId && selectedSessionId) {
+    if (!urlEntityId && !urlSubjectId && !urlConciergeSession && selectedSessionId) {
       _setSelectedSessionId(null);
     }
-  }, [isProvider, urlEntityId, urlSubjectId]);
+  }, [isProvider, urlEntityId, urlSubjectId, urlConciergeSession]);
 
   // Auto-restore the last viewed chat when landing on /chat with no selection.
   // Only fires once per component mount so the browser back button doesn't re-trigger it.
@@ -1618,6 +1641,12 @@ const sendMessageMutation = useMutation({
 
   const profile = detail?.user?.parentAccount?.intendedParentProfile;
   const selectedSession = (providerSessionsQuery.data || []).find(s => s.id === selectedSessionId);
+  // Eva Q&A chats aren't profile threads - their sidebar keeps the full
+  // relationship journey; profile threads scope to their own evidence.
+  const selectedIsConciergeOnly = !!selectedSession && !!(selectedSession as any).matchmakerId
+    && !selectedSession.providerJoinedAt
+    && selectedSession.status !== "CONSULTATION_BOOKED"
+    && selectedSession.status !== "PROVIDER_CONNECTED";
   const hasJoined = !!detail?.providerJoinedAt;
   const isConsultationBooked = selectedSession?.status === "CONSULTATION_BOOKED" || detail?.status === "CONSULTATION_BOOKED";
   const isWhisperPhase = !hasJoined && !isConsultationBooked && (selectedSession?.pendingQuestions || 0) > 0;
@@ -1874,15 +1903,12 @@ const sendMessageMutation = useMutation({
                         <Building2 className="w-3 h-3 text-muted-foreground" />
                       )}
                     </div>
-                    <span className="text-xs font-medium truncate flex-1 text-foreground/80">
+                    <span className="text-xs font-medium truncate min-w-0 text-foreground/80">
                       {first.providerName}
                     </span>
                     {first.providerId && onlineStatuses[first.providerId] && (
-                      <span className="text-[10px] font-medium text-[hsl(var(--brand-success))]">Online</span>
+                      <span className="text-[10px] font-medium text-[hsl(var(--brand-success))] flex-shrink-0">Online</span>
                     )}
-                    <span className="text-[10px] text-muted-foreground">
-                      {sessions.length} {sessions.length === 1 ? "match" : "matches"}
-                    </span>
                   </div>
                   {/* Donor/surrogate rows - flat, full-width chat rows */}
                   {sessions.map(session => {
@@ -1919,11 +1945,13 @@ const sendMessageMutation = useMutation({
                               </div>
                             )}
                           </div>
-                          {session.subjectProfileId && (() => {
+                          {/* Availability dot only on profile threads (same rule as the
+                              provider list) - never on Eva rows. */}
+                          {session.subjectProfileId && !(session.matchmakerId && !session.providerJoinedAt && session.status !== "CONSULTATION_BOOKED" && session.status !== "PROVIDER_CONNECTED") && (() => {
                             const dotStyle = getDonorStatusStyle(session.profileStatus);
                             return (
                               <span
-                                className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${dotStyle?.dotClassName || "bg-muted-foreground/50"}`}
+                                className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${dotStyle?.dotClassName || "bg-destructive"}`}
                                 title={dotStyle?.description || "Profile no longer in marketplace"}
                               />
                             );
@@ -1932,7 +1960,10 @@ const sendMessageMutation = useMutation({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-medium text-sm font-ui truncate">{session.title || session.matchmakerName || "Conversation"}</span>
-                            {session.subjectProfileId && <DonorStatusPill status={session.profileStatus} />}
+                            {/* Profile-status pill only on direct profile threads (same rule
+                                as the provider list) - Eva rows about the same surrogate
+                                would show a duplicate "Matched" badge. */}
+                            {session.subjectProfileId && !(session.matchmakerId && !session.providerJoinedAt && session.status !== "CONSULTATION_BOOKED" && session.status !== "PROVIDER_CONNECTED") && <DonorStatusPill status={session.profileStatus} />}
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               <span className={`text-[11px] ${session.unreadCount > 0 ? "font-semibold" : "text-muted-foreground"}`} style={session.unreadCount > 0 ? { color: brandColor } : undefined}>{timeAgo(session.lastMessageAt)}</span>
                               {session.unreadCount > 0 && (
@@ -2281,15 +2312,12 @@ const sendMessageMutation = useMutation({
                     <User className="w-3 h-3 text-muted-foreground" />
                   )}
                 </div>
-                <span className="text-xs font-medium truncate flex-1 text-foreground/80">
+                <span className="text-xs font-medium truncate min-w-0 text-foreground/80">
                   {first.userName || "Prospective Parent"}
                 </span>
                 {onlineStatuses[first.userId] && (
-                  <span className="text-[10px] font-medium text-[hsl(var(--brand-success))]">Online</span>
+                  <span className="text-[10px] font-medium text-[hsl(var(--brand-success))] flex-shrink-0">Online</span>
                 )}
-                <span className="text-[10px] text-muted-foreground">
-                  {groupSessions.length} {groupSessions.length === 1 ? "match" : "matches"}
-                </span>
               </div>
               {/* Donor/surrogate rows - flat, full-width chat rows */}
               {groupSessions.map(s => {
@@ -2336,11 +2364,13 @@ const sendMessageMutation = useMutation({
                           </div>
                         )}
                       </div>
-                      {s.subjectProfileId && (() => {
+                      {/* Availability dot only on profile threads - on an Eva row it
+                          reads as (wrong) presence for "the AI". */}
+                      {s.subjectProfileId && !((s as any).matchmakerId && !s.providerJoinedAt && s.status !== "CONSULTATION_BOOKED" && s.status !== "PROVIDER_CONNECTED") && (() => {
                         const dotStyle = getDonorStatusStyle(s.profileStatus);
                         return (
                           <span
-                            className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${dotStyle?.dotClassName || "bg-muted-foreground/50"}`}
+                            className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background ${dotStyle?.dotClassName || "bg-destructive"}`}
                             title={dotStyle?.description || "Profile no longer in marketplace"}
                           />
                         );
@@ -2350,7 +2380,10 @@ const sendMessageMutation = useMutation({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
-                          {s.subjectProfileId && <DonorStatusPill status={s.profileStatus} />}
+                          {/* Profile-status pill only on direct profile threads - an Eva Q&A
+                              row referencing the same surrogate would wear a confusing
+                              second "Matched" badge (user feedback, 7B UAT). */}
+                          {s.subjectProfileId && !((s as any).matchmakerId && !s.providerJoinedAt && s.status !== "CONSULTATION_BOOKED" && s.status !== "PROVIDER_CONNECTED") && <DonorStatusPill status={s.profileStatus} />}
                           {slaLabel && (
                             <span
                               className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${slaTone} flex-shrink-0`}
@@ -2739,6 +2772,7 @@ const sendMessageMutation = useMutation({
                       relationshipStatus={detail?.user?.relationshipStatus}
                       sessionQueryKey="/api/provider/concierge-sessions"
                       embedded
+                      autoStart
                       onClose={() => setProviderInlinePanel(null)}
                     />
                   ) : undefined
@@ -2781,7 +2815,7 @@ const sendMessageMutation = useMutation({
                   <div className="border-b pb-4 mb-4" data-testid="consultation-status-section">
                     <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Journey</h4>
                     <div className="mb-3">
-                      <JourneyTimelineCard parentUserId={detail.user.id} showEvents />
+                      <JourneyTimelineCard parentUserId={detail.user.id} sessionId={selectedIsConciergeOnly ? undefined : selectedSessionId} showEvents />
                     </div>
                     <div className="space-y-2">
                       {journeyMatchStatus ? (

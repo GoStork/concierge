@@ -124,6 +124,28 @@ async function computeProfileAvailability(
   }
   return result;
 }
+
+/**
+ * Viewer-facing status remap: an IN_CYCLE egg donor reads as "Matched" on
+ * the thread of the family she matched with (the session carrying the PAID
+ * commitment invoice) - for the parent, their provider, and admin views of
+ * that same thread. Everyone else (other parents' rows, marketplace, AI
+ * search) keeps "In Cycle". Mutates profileStatus in place.
+ */
+async function applyMatchedLabelForInCycle(
+  items: { id?: string | null; profileStatus?: string | null }[],
+): Promise<void> {
+  const inCycle = items.filter(s => s.profileStatus === "IN_CYCLE" && s.id);
+  if (inCycle.length === 0) return;
+  const paid = await prisma.invoice.findMany({
+    where: { sessionId: { in: inCycle.map(s => s.id!) }, status: "PAID", triggerSource: { not: "BANK_CHECKOUT" } },
+    select: { sessionId: true },
+  }).catch(() => [] as { sessionId: string }[]);
+  const paidSessions = new Set(paid.map(p => p.sessionId));
+  for (const s of inCycle) {
+    if (paidSessions.has(s.id!)) s.profileStatus = "MATCHED";
+  }
+}
 function isAdminUser(user: any): boolean {
   return getUserRoles(user).includes("GOSTORK_ADMIN");
 }
@@ -261,7 +283,11 @@ chatRouter.get("/api/journey/timeline", requireAuth, async (req, res) => {
 
     const { buildJourneyTimelines } = await import("./journey-timeline");
     // Everyone sees the full ladder, Registered included (user decision).
-    const result = await buildJourneyTimelines(parentAccountId!, { providerId: providerScope });
+    // sessionId scopes the money/terminal rungs to one chat's evidence -
+    // the chat sidebars pass it so a profile thread that never advanced
+    // doesn't inherit the org-level "Handed Off" ladder.
+    const sessionId = (req.query.sessionId as string) || null;
+    const result = await buildJourneyTimelines(parentAccountId!, { providerId: providerScope, sessionId });
     res.json(result);
   } catch (e: any) {
     console.error("[journey-timeline] failed:", e?.message);
@@ -461,6 +487,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
         s.profileStatus = entry.status;
       }
     }
+    await applyMatchedLabelForInCycle(result);
 
     res.json(result);
   } catch (e) {
@@ -683,6 +710,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
         s.profileStatus = entry.status;
       }
     }
+    await applyMatchedLabelForInCycle(result);
 
     res.json(result);
   } catch (e: any) {
@@ -719,13 +747,15 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
     if (!session) return res.status(404).json({ message: "Session not found" });
     const adminDetailAvail = await computeProfileAvailability([session as any]);
     const adminDetailEntry = (session as any).subjectProfileId ? adminDetailAvail.get((session as any).subjectProfileId) : null;
+    const adminDetailRow = { id: session.id, profileStatus: adminDetailEntry ? adminDetailEntry.status : null };
+    await applyMatchedLabelForInCycle([adminDetailRow]);
     const adminDetailMatchmaker = session.matchmakerId
       ? await prisma.matchmaker.findUnique({ where: { id: session.matchmakerId }, select: { name: true, avatarUrl: true, title: true } }).catch(() => null)
       : null;
     res.json({
       ...session,
       profileAvailable: adminDetailEntry ? adminDetailEntry.available : null,
-      profileStatus: adminDetailEntry ? adminDetailEntry.status : null,
+      profileStatus: adminDetailRow.profileStatus,
       matchmakerName: adminDetailMatchmaker?.name || null,
       matchmakerAvatar: adminDetailMatchmaker?.avatarUrl || null,
       matchmakerTitle: adminDetailMatchmaker?.title || null,
@@ -1278,6 +1308,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
         s.profileStatus = entry.status;
       }
     }
+    await applyMatchedLabelForInCycle(result);
 
     res.json(result);
   } catch (e: any) {
@@ -1369,6 +1400,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     const provDetailEntry = (session as any).subjectProfileId ? provDetailAvail.get((session as any).subjectProfileId) : null;
     (responseSession as any).profileAvailable = provDetailEntry ? provDetailEntry.available : null;
     (responseSession as any).profileStatus = provDetailEntry ? provDetailEntry.status : null;
+    await applyMatchedLabelForInCycle([responseSession as any]);
 
     res.json(responseSession);
   } catch (e: any) {

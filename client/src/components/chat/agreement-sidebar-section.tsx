@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,13 @@ interface AgreementSidebarSectionProps {
   sessionQueryKey?: string;
   /** Inline-above-composer mode: hides the agreement-status widget, shows X close. */
   embedded?: boolean;
+  /**
+   * Fire generate-and-send immediately on mount instead of showing a
+   * do-nothing intermediate button (there is nothing to configure in the
+   * happy path). The panel only stays visible for states that need input:
+   * the partner-info form, or an error with a retry button.
+   */
+  autoStart?: boolean;
   onClose?: () => void;
 }
 
@@ -36,6 +43,7 @@ export function AgreementSidebarSection({
   readOnly = false,
   sessionQueryKey,
   embedded = false,
+  autoStart = false,
   onClose,
 }: AgreementSidebarSectionProps) {
   const queryClient = useQueryClient();
@@ -100,6 +108,17 @@ export function AgreementSidebarSection({
     },
   });
 
+  // autoStart: kick off generation the moment the panel mounts - the happy
+  // path needs zero configuration, so an intermediate "Generate & Send"
+  // button was a pointless extra click (user feedback, 7B UAT).
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (!autoStart || readOnly || !sessionId || autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    generateAgreementMutation.mutate({ sessionId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, readOnly, sessionId]);
+
   const agr = agreement;
   const signers = Object.entries((agr?.signerStatus ?? {}) as Record<string, any>);
   const isSingle = signers.length <= 1;
@@ -123,28 +142,35 @@ export function AgreementSidebarSection({
         )}
       </div>
 
-      <Button
-        size="sm"
-        className="w-full gap-1.5 text-xs"
-        style={readOnly ? undefined : { backgroundColor: brandColor }}
-        onClick={() => {
-          if (readOnly || !sessionId || partnerRequired) return;
-          setPartnerFields({ firstName: "", lastName: "", email: "" });
-          setPartnerFieldError(null);
-          setSkipPartner(false);
-          generateAgreementMutation.reset();
-          generateAgreementMutation.mutate({ sessionId });
-        }}
-        disabled={readOnly || generateAgreementMutation.isPending || !!partnerRequired}
-        data-testid="btn-generate-agreement"
-        variant={readOnly ? "outline" : "default"}
-      >
-        {generateAgreementMutation.isPending && !partnerRequired
-          ? <Loader2 className="w-3 h-3 animate-spin" />
-          : <FileText className="w-3 h-3" />
-        }
-        Generate &amp; Send Agreement
-      </Button>
+      {autoStart && generateAgreementMutation.isPending && !partnerRequired ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5" data-testid="agreement-sending-status">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          Generating &amp; sending the agreement...
+        </div>
+      ) : (!autoStart || generateAgreementMutation.isError) && (
+        <Button
+          size="sm"
+          className="w-full gap-1.5 text-xs"
+          style={readOnly ? undefined : { backgroundColor: brandColor }}
+          onClick={() => {
+            if (readOnly || !sessionId || partnerRequired) return;
+            setPartnerFields({ firstName: "", lastName: "", email: "" });
+            setPartnerFieldError(null);
+            setSkipPartner(false);
+            generateAgreementMutation.reset();
+            generateAgreementMutation.mutate({ sessionId });
+          }}
+          disabled={readOnly || generateAgreementMutation.isPending || !!partnerRequired}
+          data-testid="btn-generate-agreement"
+          variant={readOnly ? "outline" : "default"}
+        >
+          {generateAgreementMutation.isPending && !partnerRequired
+            ? <Loader2 className="w-3 h-3 animate-spin" />
+            : <FileText className="w-3 h-3" />
+          }
+          {autoStart ? "Try Again" : <>Generate &amp; Send Agreement</>}
+        </Button>
+      )}
 
       {/* Partner info form - shown when template has 2 parent roles but no 2nd member */}
       {!readOnly && partnerRequired && (
@@ -213,6 +239,10 @@ export function AgreementSidebarSection({
                 setPartnerFieldError(null);
                 setSkipPartner(false);
                 generateAgreementMutation.reset();
+                // autoStart panels exist only to complete the send - if the
+                // provider backs out of the partner form, dismiss the drawer
+                // instead of leaving an empty shell behind.
+                if (autoStart && onClose) onClose();
               }}
             >
               Cancel

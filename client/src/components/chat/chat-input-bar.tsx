@@ -261,7 +261,7 @@ export function ChatInputBar({
       {hasPlus && (
         <div className="absolute left-3 bottom-full mb-2 z-40 pointer-events-none">
           <div className={plusOpen && !inlinePanel ? "pointer-events-auto" : ""}>
-            <ChatPlusDrawer open={plusOpen && !inlinePanel} actions={allActions} brandColor={brandColor} />
+            <ChatPlusDrawer open={plusOpen && !inlinePanel} actions={allActions} brandColor={brandColor} onDismiss={() => setPlusOpen(false)} />
           </div>
         </div>
       )}
@@ -342,6 +342,7 @@ export function ChatInputBar({
             onClick={() => setPlusOpen((v) => !v)}
             disabled={busy}
             aria-label={plusOpen ? "Close actions" : "More actions"}
+            data-plus-toggle="true"
             data-testid={`btn-${testIdPrefix}-plus`}
           >
             <Plus

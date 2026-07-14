@@ -212,6 +212,7 @@ function JourneyBlock({ journey, showProviderName }: { journey: JourneyOut; show
 export function JourneyTimelineCard({
   parentUserId,
   providerId,
+  sessionId,
   showEvents = false,
   variant = "sidebar",
   testId = "journey-timeline",
@@ -220,6 +221,13 @@ export function JourneyTimelineCard({
   parentUserId?: string | null;
   /** Scope to one provider org (providers are force-scoped server-side). */
   providerId?: string | null;
+  /**
+   * Scope the money/terminal rungs to ONE chat's evidence. Chat sidebars
+   * pass the open session so a profile thread that never advanced doesn't
+   * inherit the org-level terminal state (e.g. "Handed Off" via a sibling
+   * profile). Home/overview surfaces omit it for the full relationship view.
+   */
+  sessionId?: string | null;
   /** Provider/admin: collapsible recent-activity feed under the timeline. */
   showEvents?: boolean;
   variant?: "sidebar" | "home";
@@ -230,10 +238,11 @@ export function JourneyTimelineCard({
   const params = new URLSearchParams();
   if (parentUserId) params.set("parentUserId", parentUserId);
   if (providerId) params.set("providerId", providerId);
+  if (sessionId) params.set("sessionId", sessionId);
   const qs = params.toString();
 
   const timelineQuery = useQuery({
-    queryKey: ["journey-timeline", parentUserId || "self", providerId || "all"],
+    queryKey: ["journey-timeline", parentUserId || "self", providerId || "all", sessionId || "org"],
     queryFn: async () => {
       const res = await fetch(`/api/journey/timeline${qs ? `?${qs}` : ""}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load journey");

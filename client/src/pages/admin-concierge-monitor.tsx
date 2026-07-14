@@ -1027,7 +1027,9 @@ export default function AdminConciergeMonitor() {
                     {matchBadge.icon}
                     {matchBadge.label}
                   </div>
-                  <JourneyTimelineCard parentUserId={detail.user.id} providerId={monitorProviderId} showEvents />
+                  {/* Provider threads scope the money/terminal rungs to this chat;
+                      Eva sessions (no providerId) keep the full relationship view. */}
+                  <JourneyTimelineCard parentUserId={detail.user.id} providerId={monitorProviderId} sessionId={monitorProviderId ? selectedSessionId : undefined} showEvents />
                 </div>
               }
               extraSections={
