@@ -590,8 +590,9 @@ const JOURNEY_STATUS_LABELS: Record<string, string> = {
   PROVIDER_CONNECTED: "Connected",
   MATCH_CALL: "Match Call",
   MATCHED: "Matched",
-  DEPOSIT_PAID: "Deposit Paid",
+  DEPOSIT_PAID: "Invoice Paid",
   AGREEMENT_SIGNED: "Agreement Signed",
+  HANDED_OFF: "Handed Off",
 };
 
 function ProviderParentContactsView({ providerId }: { providerId: string }) {
@@ -881,8 +882,9 @@ function MatchStatusBadge({ status }: { status: string | null | undefined }) {
     PROVIDER_CONNECTED: { label: "Connected", bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
     MATCH_CALL: { label: "Match Call", bg: "hsl(var(--brand-warning) / 0.15)", fg: "hsl(var(--brand-warning))" },
     MATCHED: { label: "Matched", bg: "hsl(var(--accent) / 0.15)", fg: "hsl(var(--accent))" },
-    DEPOSIT_PAID: { label: "Deposit Paid", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
+    DEPOSIT_PAID: { label: "Invoice Paid", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
     AGREEMENT_SIGNED: { label: "Agreement Signed", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
+    HANDED_OFF: { label: "Handed Off", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
   };
   const entry = map[status];
   if (!entry) {

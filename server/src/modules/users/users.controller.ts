@@ -1060,7 +1060,7 @@ export class UsersController {
         })
       : [];
     const overviewMatchedById = new Map(overviewMatched.map(su => [su.id, su.reservedByParentId]));
-    const LADDER = ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "MATCH_CALL", "MATCHED", "DEPOSIT_PAID", "AGREEMENT_SIGNED"];
+    const LADDER = ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "MATCH_CALL", "MATCHED", "DEPOSIT_PAID", "AGREEMENT_SIGNED", "HANDED_OFF"];
     const rank = (st: string | null) => (st ? LADDER.indexOf(st) : -1);
     const statusByUser = new Map<string, string>();
     const bump = (userId: string, st: string) => {
@@ -1068,7 +1068,7 @@ export class UsersController {
     };
     for (const cs of sessions) {
       bump(cs.userId, cs.status);
-      if (cs.handoffCompletedAt) bump(cs.userId, "AGREEMENT_SIGNED");
+      if (cs.handoffCompletedAt) bump(cs.userId, "HANDED_OFF");
       if (cs.subjectProfileId && overviewMatchedById.get(cs.subjectProfileId) === cs.userId) bump(cs.userId, "MATCHED");
     }
     for (const uid of Array.from(matchCallUsers)) { if (uid) bump(uid as string, "MATCH_CALL"); }
@@ -1428,6 +1428,16 @@ export class UsersController {
       }
     }
 
+    // Handoff is a JOURNEY-level (parent account x provider org) fact, not a
+    // per-session one: the signed agreement and paid invoice can live on two
+    // different sessions of the same journey (e.g. Surrogate #24054 signed,
+    // #25714 paid). Any handed-off session marks the whole account handed
+    // off with this provider - matching the timeline's org-level bucketing.
+    const handedOffAccounts = new Set<string>();
+    for (const cs of chatSessions) {
+      if (cs.userId && cs.handoffCompletedAt) handedOffAccounts.add(accountKey(cs.userId));
+    }
+
     // Build the rows: one per chat session.
     const rows: any[] = [];
     const accountsWithSession = new Set<string>();
@@ -1443,7 +1453,7 @@ export class UsersController {
       // Connected -> Match Call -> Matched (double-yes) -> Deposit Paid ->
       // Agreement Signed (handoff).
       const journeyStatus =
-        cs.handoffCompletedAt
+        cs.handoffCompletedAt || handedOffAccounts.has(key)
           ? "HANDED_OFF"
           : rowAgreements.some((a: any) => a.status === "SIGNED")
           ? "AGREEMENT_SIGNED"

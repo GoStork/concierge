@@ -2495,7 +2495,11 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       ) as [string, string][];
       if (handedOffProviders.length > 0) {
         const names = handedOffProviders.map(([, n]) => n).join(", ");
-        parts.push(`JOURNEY HANDED OFF (CRITICAL): the parent's journey with ${names} is COMPLETE - agreement signed, payment made, and the journey formally handed off to the provider. NEVER offer consultations, matching, curation, or new profiles for that journey again, and NEVER emit [[CONSULTATION_BOOKING]] or [[CURATION]] for ${names}. If the parent asks about that journey's next steps, warmly point them to their direct chat with ${names} - the provider runs the journey from here - while you remain available for anything else (other journeys, questions, a NEW journey of a different type is fine).`);
+        parts.push(`JOURNEY HANDED OFF (CRITICAL): the parent's journey with ${names} is COMPLETE - agreement signed, payment made, and the journey formally handed off to the provider. Rules:
+1. NEVER offer or schedule consultations with ${names} and NEVER emit [[CONSULTATION_BOOKING]] for ${names}. If the parent asks to schedule or coordinate with ${names}, warmly point them to their direct chat with ${names} - the provider manages the calendar and next steps from here.
+2. If the parent asks to see MORE surrogates/donors/profiles in that same journey lane, do NOT refuse - real journeys change (matches fall through, some parents pursue a second journey in parallel). But do NOT show profiles yet either. FIRST ask, warmly and without judgment, what is prompting the new search, with quick replies adapted to their journey, e.g. [[QUICK_REPLY:My match fell through|I want a second surrogate in parallel|I'm not happy with the agency|Just exploring]]. Ask ONLY this one question - no profiles, no [[CURATION]], no [[MATCH_CARD]] in that message.
+3. AFTER the parent answers the why-question, acknowledge their reason empathetically and THEN proceed with the NORMAL matching flow (search tools + [[MATCH_CARD]]). Tailor to the answer: if the match fell through or they are unhappy with the agency, be supportive (never defensive of the agency) and include profiles from OTHER agencies; if they want a second journey in parallel, celebrate that and search normally.
+4. Everything else stays fully available - other journeys, general questions, and a NEW journey of a DIFFERENT type needs no why-question at all.`);
       }
 
       // POST-BOOKING CALL PREP: once a consultation is booked (journeyStage flips to
@@ -6754,6 +6758,47 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             parsed.ownerProviderId = parsed.ownerProviderId || parsed.providerId;
             parsed.providerId = parsed.entityId;
             console.log(`[ai-router] MATCH_CARD repaired swapped providerId/entityId (profile=${parsed.providerId})`);
+          }
+        }
+        // Verify a profile-type card's providerId is actually a PROFILE row.
+        // The model sometimes puts the AGENCY id in providerId with no
+        // entityId at all (seen post-handoff: card said "Surrogate #23062"
+        // but carried Family Creations' provider id) - the client then
+        // fetches /marketplace/profile/surrogate/<agency-id>, 404s, and
+        // renders "Profile unavailable". Resolve the real profile from the
+        // display number in the card name; if unresolvable, drop the card so
+        // the search-results fallback rebuilds it from DB truth.
+        {
+          const profileModelByType: Record<string, any> = {
+            "surrogate": prisma.surrogate,
+            "egg donor": prisma.eggDonor,
+            "sperm donor": prisma.spermDonor,
+          };
+          const typeKey = String(parsed.type || "").toLowerCase();
+          const profileModel = profileModelByType[typeKey];
+          if (profileModel && mcLooksUuid(parsed.providerId)) {
+            const asProfile = await profileModel.findUnique({ where: { id: parsed.providerId }, select: { id: true } }).catch(() => null);
+            if (!asProfile) {
+              const agencyRow = await prisma.provider.findUnique({ where: { id: parsed.providerId }, select: { id: true } }).catch(() => null);
+              const displayNum = String(parsed.name || "").match(/#\s*(\d{2,})/);
+              let repaired: any = null;
+              if (displayNum) {
+                repaired = agencyRow
+                  ? await profileModel.findFirst({ where: { externalId: displayNum[1], providerId: agencyRow.id }, select: { id: true, providerId: true } }).catch(() => null)
+                  : null;
+                if (!repaired) {
+                  repaired = await profileModel.findFirst({ where: { externalId: displayNum[1] }, select: { id: true, providerId: true } }).catch(() => null);
+                }
+              }
+              if (repaired) {
+                parsed.ownerProviderId = parsed.ownerProviderId || repaired.providerId || (agencyRow ? agencyRow.id : undefined);
+                parsed.providerId = repaired.id;
+                console.log(`[ai-router] MATCH_CARD repaired agency-id card via display number #${displayNum?.[1]} (profile=${parsed.providerId})`);
+              } else {
+                console.warn(`[ai-router] MATCH_CARD providerId is not a ${typeKey} profile (${parsed.providerId}) and no repair found - dropping card for fallback`);
+                continue;
+              }
+            }
           }
         }
         // Reject invalid providerIds - these are not real DB UUIDs:
