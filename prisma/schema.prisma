@@ -535,18 +535,35 @@ model ProviderMemberLocation {
 // scores, treatment metadata tags) is modeled after those sites; the data is ours.
 model ProviderReview {
   id                 String          @id @default(uuid())
-  providerId         String // always set (clinic-level)
+  providerId         String // always set (org-level)
   memberId           String? // set when the review is about a specific doctor
   authorUserId       String // the IP who booked - verification anchor
+  // Phase 8: shared-account reviews - one review per parent account per
+  // target (enforced in code; NULL memberId makes a DB unique index moot).
+  parentAccountId    String?
   source             String          @default("gostork_verified")
   // recommend bucket: "STRONGLY_RECOMMEND" | "NEUTRAL" | "DONT_RECOMMEND"
+  // (derived from rating in Phase 8: 4-5 / 3 / 1-2)
   recommendation     String
-  overallScore       Int? // 0-10
-  // entity-specific sub-dimensions as JSON:
-  //   clinic: { operations, scheduling, billing, nursing, lgbtqCare, attentionToDetail }
-  //   doctor: { humanity, communication, frequencySeen, lgbtqCare, responsiveness }
+  overallScore       Int? // legacy 0-10 (unused by Phase 8)
+  // Phase 8 primary rating: 1-5 stars.
+  rating             Int?
+  // Category ratings as JSON (1-5 each):
+  //   orgs:    { communication, transparency, responsiveness, support }
+  //   doctors: { communication, expertise, care }
   subScores          Json?
   bodyText           String?
+  // Phase 8 journey context: which journey + the stage at last update.
+  journeyType        String? // surrogacy | egg_donation | ivf | bank | legal
+  stage              String? // consult_completed | matched | handed_off
+  anonymous          Boolean         @default(false)
+  visibility         String          @default("PUBLIC") // PUBLIC | PRIVATE_FEEDBACK
+  aiScreenNotes      String? // why the AI screen flagged it (PENDING status)
+  flaggedByProviderAt DateTime?
+  flagReason         String?
+  providerReply      String?
+  providerReplyAt    DateTime?
+  providerReplyUserId String?
   // structured metadata tags (FertilityIQ pattern)
   treatmentYearStart Int?
   treatmentYearEnd   Int?

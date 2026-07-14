@@ -363,7 +363,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       where: { userId: { in: accountUserIds } },
       orderBy: { updatedAt: "desc" },
       include: {
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         provider: { select: { id: true, name: true, logoUrl: true } },
       },
     });
@@ -586,7 +586,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: [{ humanRequested: "desc" }, { updatedAt: "desc" }],
@@ -1120,7 +1120,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: { updatedAt: "desc" },
@@ -1351,7 +1351,10 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     const showIdentity = isJoined || isConsultationBooked;
 
     const providerMessages = session.messages.filter(m =>
-      m.senderType === "system" || m.senderType === "provider"
+      (m.senderType === "system" || m.senderType === "provider")
+      // Review prompts are parent-private: a provider must never see that
+      // (or when) the parent was asked to rate them.
+      && m.uiCardType !== "review_prompt"
     );
 
     let accountMembers: { id: string; name: string | null; firstName: string | null; lastName: string | null }[] = [];

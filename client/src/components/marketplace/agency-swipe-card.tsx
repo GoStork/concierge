@@ -170,6 +170,8 @@ export function AgencySwipeCard({
     team: teamMembers,
     locations: provider.locations || [],
     compact: isMobile,
+    reviewCount: provider.reviewCount ?? null,
+    avgOverallScore: provider.avgOverallScore ?? null,
   });
 
   return (

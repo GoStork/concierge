@@ -312,6 +312,13 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
     } catch (err: any) {
       console.error(`[stranded-agreement] Cron error: ${err.message}`);
     }
+    // Phase 8: post-handoff review check-ins (+1 reminder after 3 days).
+    try {
+      const { runReviewCheckinSweep } = await import("../../../review-prompts");
+      await runReviewCheckinSweep(prisma);
+    } catch (err: any) {
+      console.error(`[review-checkin] Cron error: ${err.message}`);
+    }
   });
 
   console.log("[pending-booking] Scheduler started - runs every 10 minutes (nudges + auto-expiry + readiness re-asks + call outcomes + win-back)");

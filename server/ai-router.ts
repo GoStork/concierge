@@ -1235,7 +1235,9 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       orderBy: { createdAt: "asc" },
       select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true, deliveredAt: true, readAt: true },
     });
-    const filteredMessages = isProvider ? messages : messages.filter((m: any) => {
+    // Review prompts are parent-private - providers never see them.
+    const providerSafe = messages.filter((m: any) => m.uiCardType !== "review_prompt");
+    const filteredMessages = isProvider ? providerSafe : messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
       if (m.uiCardType === "provider_only") return false;
@@ -1257,6 +1259,8 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
         // "I will pay soon" (the provider-side donor_hold_decision card
         // stays hidden - it's not in this list).
         "donor_release_warning",
+        // Phase 8: Eva's review ask (parent-only by definition).
+        "review_prompt",
         // System-sent file attachments (e.g. the Match Call prep guide Eva
         // sends when a match call is scheduled).
         "attachment",

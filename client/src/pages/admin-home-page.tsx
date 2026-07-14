@@ -28,7 +28,9 @@ import {
   TrendingUp,
   Zap,
   Video,
+  Star,
 } from "lucide-react";
+import { StarDisplay } from "@/components/reviews/reviews-ui";
 import { QueueRow, SectionHeader, StatTile } from "@/components/home/home-sections";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { derivePayoutStatus } from "@/lib/payout-status";
@@ -47,6 +49,45 @@ interface AdminDashboard {
   upcomingMeetings: Array<{ id: string; scheduledAt: string; subject: string | null; status: string; hostUserId: string | null; parentName: string; providerName: string }>;
   recentInvoices: Array<{ id: string; status: string; amountCents: number; serviceType: string | null; createdAt: string; parentName: string; providerName: string | null }>;
   recentPayouts: Array<{ id: string; amountCents: number; paidAt: string | null; payoutInitiatedAt: string | null; payoutFailedAt: string | null; stripeTransferId: string | null; bankPayoutCompletedAt: string | null; bankPayoutFailedAt: string | null; status: string; providerName: string | null; parentName: string }>;
+}
+
+/** Phase 8: the newest few parent reviews, linking to the full /admin/reviews queue. */
+function LatestReviewsCard() {
+  const q = useQuery<any[]>({
+    queryKey: ["/api/admin/reviews", "home"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/reviews", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load reviews");
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+  const rows = (q.data || []).slice(0, 3);
+  return (
+    <Card className="p-5 space-y-3">
+      <SectionHeader icon={<Star className="w-5 h-5 text-primary" />} title="Latest parent reviews" viewAllTo="/admin/reviews" viewAllLabel="Review Queue" />
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-2">No reviews yet - parents are invited after consultations, matches, and handoff.</p>
+      ) : (
+        <div className="divide-y">
+          {rows.map((r) => (
+            <div key={r.id} className="flex items-center gap-3 py-3">
+              <StarDisplay value={r.rating} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {r.providerName}{r.memberName ? ` - ${r.memberName}` : ""}
+                  {r.visibility === "PRIVATE_FEEDBACK" && <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded-full bg-secondary text-foreground">Private</span>}
+                  {r.flaggedByProviderAt && <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]">Flagged</span>}
+                </p>
+                {r.text && <p className="text-xs text-muted-foreground truncate">{r.text}</p>}
+              </div>
+              <Link to="/admin/reviews" className="text-xs text-primary hover:underline shrink-0">Open</Link>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 function fmtWhen(iso: string) {
@@ -306,6 +347,9 @@ export default function AdminHomePage() {
           <StatTile label="Net Income" value={formatCents(data?.money.totalFees ?? 0)} hint="GoStork Fees - all time" />
         </div>
       </Card>
+
+      {/* Phase 8: latest parent reviews (auto-published; this is the human backstop) */}
+      <LatestReviewsCard />
 
       {/* Deposit deadlines (upcoming, not yet overdue) */}
       {(data?.dueInvoices || []).filter(i => !i.overdue).length > 0 && (

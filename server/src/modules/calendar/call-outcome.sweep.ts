@@ -188,6 +188,21 @@ export async function runCallOutcomeSweep(prisma: PrismaService, notifications: 
       console.log(`[call-outcome] Booking ${booking.id} -> ${outcome}${isBacklog ? " (backlog, no win-back)" : ""}`);
       if (isBacklog) continue;
 
+      // Phase 8: a completed first call with a real provider unlocks the
+      // review checkpoint - Eva asks in the parent's concierge chat
+      // (internally idempotent per account+provider+stage).
+      if (outcome === "COMPLETED" && booking.parentUserId && booking.providerUser?.provider?.id) {
+        const provName = (booking.providerUser.provider.name || "").trim().toLowerCase();
+        if (provName !== "gostork") {
+          const { maybePostReviewPrompt } = await import("../../../review-prompts");
+          await maybePostReviewPrompt({
+            parentUserId: booking.parentUserId,
+            providerId: booking.providerUser.provider.id,
+            stage: "consult_completed",
+          }).catch(() => {});
+        }
+      }
+
       // Parent didn't show (alone or both absent) -> Eva win-back.
       if (outcome === "NO_SHOW_PARENT" || outcome === "NO_SHOW_BOTH") {
         await sendWinback(prisma, booking, "no_show");

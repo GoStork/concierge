@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
 import { DonorReleaseWarningButtons } from "@/components/chat/special-message-card";
+import { ReviewPromptCard } from "@/components/reviews/reviews-ui";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -2501,6 +2502,11 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
   // Egg-donor hold release countdown - parent chooses pay-soon vs release.
   if (msg.uiCardType === "donor_release_warning") {
     return <DonorReleaseWarningButtons messageId={msg.id || ""} data={data} brandColor={brandColor} viewerRole="parent" />;
+  }
+
+  // Phase 8: Eva's review ask (parent-only - excluded from provider feeds server-side).
+  if (msg.uiCardType === "review_prompt") {
+    return <ReviewPromptCard messageId={msg.id || ""} data={data} />;
   }
 
   if (msg.uiCardType === "cost_sheet") {

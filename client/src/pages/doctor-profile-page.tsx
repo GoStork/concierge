@@ -13,6 +13,8 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileCloseButton } from "@/components/mobile-profile-close-header";
+import { useAuth } from "@/hooks/use-auth";
+import { ReviewsSection } from "@/components/reviews/reviews-ui";
 
 // CDC metric codes (mirrors ivf-success-rates-section.tsx) used to pick a headline rate.
 const OWN_METRIC = "pct_intended_retrievals_live_births";
@@ -40,6 +42,7 @@ export default function DoctorProfilePage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { user } = useAuth();
 
   const { data: doctor, isLoading, isError } = useQuery<any>({
     queryKey: ["/api/providers/doctors", slug],
@@ -301,31 +304,17 @@ export default function DoctorProfilePage() {
           })}
       </ProfileSection>
 
-      {/* Reviews */}
+      {/* Reviews - shared Phase 8 component (list + eligible-parent self-serve form). */}
       <ProfileSection title="Patient Reviews" data-testid="section-reviews">
-          {hasReviews ? (
-            <div className="space-y-4">
-              {reviews.map((r) => (
-                <div key={r.id} className="border-b border-border/30 pb-3 last:border-0">
-                  <div className="flex flex-wrap gap-1.5 mb-1">
-                    {r.ageRangeLabel && <Badge variant="secondary" className="text-[10px]">Age {r.ageRangeLabel}</Badge>}
-                    {r.ivfCycles != null && <Badge variant="secondary" className="text-[10px]">{r.ivfCycles} IVF</Badge>}
-                    {(r.diagnoses || []).map((d: string) => (
-                      <Badge key={d} variant="outline" className="text-[10px]">{d}</Badge>
-                    ))}
-                  </div>
-                  {r.bodyText && <p className="text-base text-foreground">{r.bodyText}</p>}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center text-center py-6 gap-2">
-              <Star className="w-7 h-7 text-muted-foreground/30" />
-              <p className="text-base text-foreground">No verified reviews yet.</p>
-              <p className="text-xs text-muted-foreground/70 max-w-sm">
-                GoStork reviews come from intended parents after a verified consultation, so every review is from someone who actually met with this doctor.
-              </p>
-            </div>
+          <ReviewsSection
+            memberId={doctor.id}
+            targetLabel={doctor.name}
+            isParent={!!(user as any)?.parentAccountId && !(user as any)?.providerId}
+          />
+          {!hasReviews && (
+            <p className="text-xs text-muted-foreground/70 max-w-sm mt-2">
+              GoStork reviews come from intended parents after a verified consultation, so every review is from someone who actually met with this doctor.
+            </p>
           )}
       </ProfileSection>
     </div>

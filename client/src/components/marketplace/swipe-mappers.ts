@@ -1008,6 +1008,9 @@ export function getClinicTabs(opts: {
   // Mobile cards are shorter - cap the Locations/Doctors lists tighter so the
   // bubbles don't overflow up into the header.
   compact?: boolean;
+  // Phase 8: verified-parent rating aggregates (display-only).
+  reviewCount?: number | null;
+  avgOverallScore?: number | string | null;
   // CDC ART profile (from Provider.cdcServices / cdcExperience / cdcCycleStats).
   cdcServices?: Record<string, boolean> | null;
   cdcExperience?: Record<string, number> | null;
@@ -1032,6 +1035,9 @@ export function getClinicTabs(opts: {
 
   // Tab 1 (Overview) - Founded year + the About description (plain text) below it.
   const overviewStats: TabItem[] = [];
+  if ((opts.reviewCount || 0) > 0 && opts.avgOverallScore != null) {
+    overviewStats.push({ label: `★ ${Number(opts.avgOverallScore).toFixed(1)} (${opts.reviewCount} parent review${opts.reviewCount !== 1 ? "s" : ""})`, value: "" });
+  }
   if (opts.yearFounded != null) overviewStats.push({ label: `Founded ${opts.yearFounded}`, value: "" });
   const tab1Groups: TabGroup[] = [];
   if (overviewStats.length > 0) tab1Groups.push({ title: "Overview", layoutType: "text", items: overviewStats });
@@ -1288,6 +1294,9 @@ export function getAgencyTabs(opts: {
   team?: { name: string; title?: string | null }[];
   // Mobile cards are shorter - cap the team/locations lists tighter.
   compact?: boolean;
+  // Phase 8: verified-parent rating aggregates (display-only).
+  reviewCount?: number | null;
+  avgOverallScore?: number | string | null;
 }): TabSection[] {
   const tabs: TabSection[] = [];
 
@@ -1310,6 +1319,9 @@ export function getAgencyTabs(opts: {
     .map((l) => [l.city, l.state].filter(Boolean).join(", "))
     .filter((s) => s.trim() !== "");
   const stats: TabItem[] = [];
+  if ((opts.reviewCount || 0) > 0 && opts.avgOverallScore != null) {
+    stats.push({ label: `★ ${Number(opts.avgOverallScore).toFixed(1)} (${opts.reviewCount} parent review${opts.reviewCount !== 1 ? "s" : ""})`, value: "" });
+  }
   if (opts.yearFounded != null) stats.push({ label: `Founded ${opts.yearFounded}`, value: "" });
   if (opts.numberOfBabiesBorn != null) stats.push({ label: `${opts.numberOfBabiesBorn}+ babies born`, value: "" });
   if (opts.timeToMatch) stats.push({ label: `Match in ${opts.timeToMatch}`, value: "" });
@@ -1501,7 +1513,7 @@ export function getDoctorTabs(
   if ((doctor.reviewCount || 0) > 0) {
     const rev: TabItem[] = [];
     if (doctor.recommendPct != null) rev.push({ label: `${doctor.recommendPct}% would recommend`, value: "", icon: ThumbsUp });
-    if (doctor.avgOverallScore != null) rev.push({ label: `${Number(doctor.avgOverallScore).toFixed(1)}/10 overall`, value: "", icon: Star });
+    if (doctor.avgOverallScore != null) rev.push({ label: `${Number(doctor.avgOverallScore).toFixed(1)}/5 overall`, value: "", icon: Star });
     rev.push({ label: `${doctor.reviewCount} verified review${doctor.reviewCount !== 1 ? "s" : ""}`, value: "", icon: Award });
     tabs.push({ layoutType: "icon_list", title: "Reviews", items: rev });
   }

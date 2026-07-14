@@ -1175,8 +1175,14 @@ export class ProvidersController {
     // Published, GoStork-verified reviews for any of this person's member rows (Phase 7 populates these).
     const memberIds = memberRows.map((m) => m.id);
     const reviews = await this.prisma.providerReview.findMany({
-      where: { memberId: { in: memberIds }, status: "PUBLISHED" },
+      where: { memberId: { in: memberIds }, status: "PUBLISHED", visibility: "PUBLIC" },
       orderBy: { createdAt: "desc" },
+      // Sanitized: never ship reviewer identifiers or moderation notes to the client.
+      select: {
+        id: true, rating: true, bodyText: true, subScores: true, anonymous: true,
+        stage: true, ageRangeLabel: true, ivfCycles: true, diagnoses: true,
+        providerReply: true, providerReplyAt: true, createdAt: true, updatedAt: true,
+      },
     });
 
     return {

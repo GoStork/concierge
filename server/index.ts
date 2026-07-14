@@ -118,6 +118,9 @@ export function log(message: string, source = "nestjs") {
 
   app.use("/api/ai-concierge", aiRouter);
   app.use(chatRouter);
+  // Phase 8: Reviews & Ratings (docs/reviews-ratings-spec.md).
+  const { reviewsRouter } = await import("./reviews-router");
+  app.use(reviewsRouter);
 
   // Tiny client-side crash sink. The root ErrorBoundary POSTs here when a
   // React render crash happens so we have the message + component stack in

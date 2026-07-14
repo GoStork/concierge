@@ -17,6 +17,7 @@ import { dedupeProviderLocations } from "@/lib/format-location";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileCloseButton } from "@/components/mobile-profile-close-header";
+import { ReviewsSection, RatingBadge } from "@/components/reviews/reviews-ui";
 
 function FieldItem({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
@@ -129,6 +130,7 @@ export default function ProviderProfilePage() {
           <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-provider-name">
             {provider.name}
           </h1>
+          <RatingBadge avg={provider.avgOverallScore} count={provider.reviewCount} />
           <div className="flex flex-wrap gap-1 mt-1">
             {approvedServices.map((s: any) => (
               <Badge key={s.id} variant="secondary" className="text-xs" data-testid={`badge-service-${s.id}`}>
@@ -398,6 +400,17 @@ export default function ProviderProfilePage() {
                 </div>
               ))}
             </div>
+        </ProfileSection>
+      )}
+
+      {/* Phase 8: verified-parent reviews (display-only; self-serve write when eligible). */}
+      {!window.location.pathname.startsWith("/admin/") && (
+        <ProfileSection title="Parent Reviews" data-testid="section-reviews">
+          <ReviewsSection
+            providerId={provider.id}
+            targetLabel={provider.name}
+            isParent={!!(user as any)?.parentAccountId && !(user as any)?.providerId}
+          />
         </ProfileSection>
       )}
     </div>

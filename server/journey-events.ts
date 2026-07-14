@@ -66,7 +66,11 @@ export type JourneyEventType =
   | "WINBACK_SENT"
   | "WINBACK_RESPONSE"
   | "CHURN_REASON"
-  | "REENGAGED";
+  | "REENGAGED"
+  // Reviews (Phase 8)
+  | "REVIEW_PROMPTED"
+  | "REVIEW_SUBMITTED"
+  | "REVIEW_UPDATED";
 
 export type JourneyActor = "parent" | "provider" | "system" | "admin";
 

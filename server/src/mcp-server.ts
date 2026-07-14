@@ -3245,6 +3245,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         id: true,
         name: true,
         logoUrl: true,
+        // Phase 8: verified-parent ratings, display-only (never rank by them).
+        reviewCount: true,
+        avgOverallScore: true,
         surrogacyTwinsAllowed: true,
         surrogacyCitizensNotAllowed: true,
         partnerProviderIds: true,

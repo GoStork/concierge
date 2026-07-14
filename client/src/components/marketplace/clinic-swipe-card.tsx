@@ -184,6 +184,8 @@ export function ClinicSwipeCard({
     reasons,
     yearFounded: provider.yearFounded ?? null,
     about: provider.about ?? null,
+    reviewCount: provider.reviewCount ?? null,
+    avgOverallScore: provider.avgOverallScore ?? null,
     matchedCycles,
     matchedBabies,
     locations: provider.locations || [],

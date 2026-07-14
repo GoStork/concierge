@@ -2378,6 +2378,10 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
       return this.mapInvoiceCreationError(err);
     }
     void emitJourneyEvent({ eventType: "MATCH_CONFIRMED", parentUserId: session.userId, providerId: session.providerId, sessionId: providerSessionId, bookingId, metadata: { invoiceId: invoice.id } });
+    // Phase 8: the match unlocks the "matched" review checkpoint.
+    import("../../../review-prompts")
+      .then(({ maybePostReviewPrompt }) => maybePostReviewPrompt({ parentUserId: session.userId, providerId: session.providerId!, stage: "matched" }))
+      .catch(() => {});
 
     // Extend the surrogate's hold to cover the full payment window - the
     // expiry sweep must not release her while the invoice is live.
@@ -2534,6 +2538,16 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
         });
         if (res.count > 0) {
           this.logger.log(`Egg donor ${session.subjectProfileId} status IN_CYCLE (invoice ${invoiceId} paid)`);
+        }
+        // Phase 8: for egg donors the paid deposit IS the match moment -
+        // unlock the "matched" review checkpoint.
+        if (invoice.parentUserId) {
+          const inv2 = await this.prisma.invoice.findUnique({ where: { id: invoiceId }, select: { providerId: true } }).catch(() => null);
+          if (inv2?.providerId) {
+            import("../../../review-prompts")
+              .then(({ maybePostReviewPrompt }) => maybePostReviewPrompt({ parentUserId: invoice.parentUserId!, providerId: inv2.providerId, stage: "matched" }))
+              .catch(() => {});
+          }
         }
       }
     } catch (e: any) {
