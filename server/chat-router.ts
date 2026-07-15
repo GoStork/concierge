@@ -126,24 +126,37 @@ async function computeProfileAvailability(
 }
 
 /**
- * Viewer-facing status remap: an IN_CYCLE egg donor reads as "Matched" on
- * the thread of the family she matched with (the session carrying the PAID
- * commitment invoice) - for the parent, their provider, and admin views of
- * that same thread. Everyone else (other parents' rows, marketplace, AI
- * search) keeps "In Cycle". Mutates profileStatus in place.
+ * Viewer-facing status remap: on the thread of the family a profile actually
+ * committed to (the session carrying a PAID commitment invoice or a SIGNED
+ * agreement), harsh roster statuses read as "Matched" - for the parent,
+ * their provider, and admin views of that same thread:
+ *  - IN_CYCLE egg donor -> "Matched" (everyone else keeps "In Cycle")
+ *  - INACTIVE surrogate/donor (left the roster BECAUSE she matched here) ->
+ *    "Matched" (everyone else keeps the red "No Longer Available")
+ * Mutates profileStatus in place.
  */
 async function applyMatchedLabelForInCycle(
   items: { id?: string | null; profileStatus?: string | null }[],
 ): Promise<void> {
-  const inCycle = items.filter(s => s.profileStatus === "IN_CYCLE" && s.id);
-  if (inCycle.length === 0) return;
-  const paid = await prisma.invoice.findMany({
-    where: { sessionId: { in: inCycle.map(s => s.id!) }, status: "PAID", triggerSource: { not: "BANK_CHECKOUT" } },
-    select: { sessionId: true },
-  }).catch(() => [] as { sessionId: string }[]);
-  const paidSessions = new Set(paid.map(p => p.sessionId));
-  for (const s of inCycle) {
-    if (paidSessions.has(s.id!)) s.profileStatus = "MATCHED";
+  const targets = items.filter(s => (s.profileStatus === "IN_CYCLE" || s.profileStatus === "INACTIVE") && s.id);
+  if (targets.length === 0) return;
+  const sessionIds = targets.map(s => s.id!);
+  const [paid, signed] = await Promise.all([
+    prisma.invoice.findMany({
+      where: { sessionId: { in: sessionIds }, status: "PAID", triggerSource: { not: "BANK_CHECKOUT" } },
+      select: { sessionId: true },
+    }).catch(() => [] as { sessionId: string }[]),
+    prisma.agreement.findMany({
+      where: { sessionId: { in: sessionIds }, status: "SIGNED" },
+      select: { sessionId: true },
+    }).catch(() => [] as { sessionId: string | null }[]),
+  ]);
+  const committedSessions = new Set([
+    ...paid.map(p => p.sessionId),
+    ...signed.map(a => a.sessionId).filter(Boolean) as string[],
+  ]);
+  for (const s of targets) {
+    if (committedSessions.has(s.id!)) s.profileStatus = "MATCHED";
   }
 }
 function isAdminUser(user: any): boolean {
@@ -3260,10 +3273,89 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
 
     const sessions = await prisma.aiChatSession.findMany({
       where: { userId: { in: memberIds } },
-      select: { id: true, provider: { select: { name: true } } },
+      select: { id: true, title: true, status: true, createdAt: true, handoffCompletedAt: true, providerId: true, provider: { select: { name: true } } },
     });
     const sessionIds = sessions.map(s => s.id);
     const providerNameBySession = new Map(sessions.map(s => [s.id, s.provider?.name || null]));
+    const sessionById = new Map(sessions.map(s => [s.id, s]));
+
+    // Missed calls that still need rebooking - derived per SESSION, not per
+    // org journey: the org journey may already be handed off for a different
+    // match while a parallel thread (another surrogate/donor) has a freshly
+    // missed call. A session qualifies while its LATEST outcome-bearing call
+    // is a parent-side no-show, nothing new is booked, and the thread hasn't
+    // progressed (no paid invoice, not handed off).
+    const linkedBookings = sessionIds.length
+      ? await prisma.booking.findMany({
+          where: { parentUserId: { in: memberIds }, sessionId: { in: sessionIds } },
+          select: { sessionId: true, scheduledAt: true, duration: true, status: true, outcome: true, meetingSubtype: true },
+        })
+      : [];
+    const bookingsBySession = new Map<string, typeof linkedBookings>();
+    for (const bk of linkedBookings) {
+      const arr = bookingsBySession.get(bk.sessionId as string) || [];
+      arr.push(bk);
+      bookingsBySession.set(bk.sessionId as string, arr);
+    }
+    const nowMs = Date.now();
+    const rescheduleCandidates: Array<{ sessionId: string; missedAt: Date; callLabel: string }> = [];
+    for (const [sid, bks] of bookingsBySession) {
+      const sess = sessionById.get(sid);
+      if (!sess || sess.status === "ARCHIVED" || sess.handoffCompletedAt) continue;
+      const live = bks.some(bk => ["PENDING", "CONFIRMED"].includes(bk.status) && new Date(bk.scheduledAt).getTime() + (bk.duration || 30) * 60 * 1000 > nowMs);
+      if (live) continue;
+      const latestOutcome = bks
+        .filter(bk => bk.outcome)
+        .sort((a, z) => new Date(z.scheduledAt).getTime() - new Date(a.scheduledAt).getTime())[0];
+      if (!latestOutcome || !["NO_SHOW_PARENT", "NO_SHOW_BOTH"].includes(latestOutcome.outcome as string)) continue;
+      rescheduleCandidates.push({
+        sessionId: sid,
+        missedAt: latestOutcome.scheduledAt,
+        callLabel: latestOutcome.meetingSubtype === "MATCH_CALL" ? "Match Call"
+          : latestOutcome.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call"
+          : "consultation",
+      });
+    }
+    // Accountability scope (user decision, 7B UAT): missed calls are per-CHAT
+    // until the parent has PAID an invoice with that organization - after
+    // that the relationship is per-ORGANIZATION and the provider owns
+    // scheduling, so missed calls on parallel threads with the same org are
+    // not the parent's action items. The one way back to per-chat is an
+    // explicit post-handoff restart ([[JOURNEY_RESTART]] -> JOURNEY_RESTARTED
+    // event): threads created after the restart count again.
+    let dropPaidOrg: (c: { sessionId: string }) => boolean = () => false;
+    if (rescheduleCandidates.length) {
+      const paidProviderIds = new Set((await prisma.invoice.findMany({
+        where: { parentUserId: { in: memberIds }, status: "PAID" },
+        select: { providerId: true },
+      })).map(i => i.providerId));
+      const restarts = await prisma.journeyEvent.findMany({
+        where: { parentAccountId: me?.parentAccountId || user.id, eventType: "JOURNEY_RESTARTED" },
+        select: { providerId: true, createdAt: true },
+      });
+      const latestRestartByProvider = new Map<string, Date>();
+      for (const r of restarts) {
+        if (!r.providerId) continue;
+        const prev = latestRestartByProvider.get(r.providerId);
+        if (!prev || r.createdAt > prev) latestRestartByProvider.set(r.providerId, r.createdAt);
+      }
+      dropPaidOrg = (c) => {
+        const sess = sessionById.get(c.sessionId);
+        if (!sess?.providerId || !paidProviderIds.has(sess.providerId)) return false;
+        const restartAt = latestRestartByProvider.get(sess.providerId);
+        // Paid org: drop unless this thread started AFTER an explicit restart.
+        return !(restartAt && sess.createdAt > restartAt);
+      };
+    }
+    const callsToReschedule = rescheduleCandidates
+      .filter(c => !dropPaidOrg(c))
+      .map(c => ({
+        sessionId: c.sessionId,
+        missedAt: c.missedAt,
+        callLabel: c.callLabel,
+        providerName: providerNameBySession.get(c.sessionId) || null,
+        subjectLabel: sessionById.get(c.sessionId)?.title || null,
+      }));
 
     // Proposed call times the parent hasn't confirmed yet
     const proposedCards = sessionIds.length
@@ -3362,7 +3454,7 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
         providerName: a.provider?.name || null,
       }));
 
-    res.json({ pendingProposals, awaitingMySignature, prepDocs });
+    res.json({ pendingProposals, awaitingMySignature, prepDocs, callsToReschedule });
   } catch (e: any) {
     console.error("Parent dashboard queue error:", e);
     res.status(500).json({ message: e.message });

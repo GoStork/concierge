@@ -49,7 +49,7 @@ export interface JourneyOut {
   sessionId: string | null;
   stages: JourneyStageOut[];
   currentStageId: string | null;
-  attention: { kind: string; label: string } | null;
+  attention: { kind: string; label: string; actionable?: boolean } | null;
   lastActivityAt: string | null;
 }
 
@@ -345,12 +345,23 @@ export async function buildJourneyTimelines(
     const reengaged = [...b.events].reverse().find((e) => e.eventType === "REENGAGED");
     const lastNoShow = [...b.events].reverse().find((e) => e.eventType.endsWith("_NO_SHOW_PARENT") || e.eventType.endsWith("_NO_SHOW_BOTH"));
     const lastCancelNoRebook = [...b.events].reverse().find((e) => e.eventType === "CANCELED_NOT_REBOOKED");
+    // Call-level warnings expire once the relationship has visibly moved on:
+    // (a) the journey progressed past the consultation phase (match / money /
+    // agreement / handoff evidence), or (b) a later call actually happened.
+    // Without this, a stray missed extra call sticks to the sidebar forever
+    // even on a journey that is already paid and out for signature.
+    const PROGRESS_RUNGS = new Set(["matched", "invoice_sent", "invoice_paid", "agreement_sent", "agreement_signed", "handed_off", "donor_selected", "checkout"]);
+    const progressedPastConsult = rungs.some((r) => r.at && PROGRESS_RUNGS.has(r.id));
+    const completedAfterNoShow = lastNoShowAt != null && completed.some((bk) => bk.scheduledAt > lastNoShowAt);
+    const callWarningStale = progressedPastConsult || completedAfterNoShow;
     if (churn && (!reengaged || reengaged.createdAt < churn.createdAt)) {
       attention = { kind: "dormant", label: "Journey paused by parent" };
-    } else if (lastNoShow && liveBooking.length === 0 && (!reengaged || reengaged.createdAt < lastNoShow.createdAt)) {
-      attention = { kind: "no_show", label: "Call missed - follow-up sent" };
-    } else if (lastCancelNoRebook && liveBooking.length === 0 && (!reengaged || reengaged.createdAt < lastCancelNoRebook.createdAt)) {
-      attention = { kind: "canceled", label: "Call canceled - not rebooked" };
+    } else if (lastNoShow && liveBooking.length === 0 && !callWarningStale && (!reengaged || reengaged.createdAt < lastNoShow.createdAt)) {
+      // actionable: the parent (or both sides) missed it and nothing new is
+      // booked - the parent home renders a "reschedule" to-do from this.
+      attention = { kind: "no_show", label: "Call missed - follow-up sent", actionable: true };
+    } else if (lastCancelNoRebook && liveBooking.length === 0 && !callWarningStale && (!reengaged || reengaged.createdAt < lastCancelNoRebook.createdAt)) {
+      attention = { kind: "canceled", label: "Call canceled - not rebooked", actionable: true };
     }
 
     const activityDates = [

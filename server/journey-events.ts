@@ -68,6 +68,7 @@ export type JourneyEventType =
   | "CHURN_REASON"
   | "REENGAGED"
   // Reviews (Phase 8)
+  | "JOURNEY_RESTARTED"
   | "REVIEW_PROMPTED"
   | "REVIEW_SUBMITTED"
   | "REVIEW_UPDATED";

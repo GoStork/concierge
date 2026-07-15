@@ -39,6 +39,7 @@ interface DashboardQueue {
   pendingProposals: Array<{ messageId: string; sessionId: string; createdAt: string; providerName: string | null; callLabel: string; subjectLabel: string | null }>;
   awaitingMySignature: Array<{ agreementId: string; documentType: string; sessionId: string; createdAt: string; providerName: string | null }>;
   prepDocs: Array<{ messageId: string; sessionId: string; createdAt: string; providerName: string | null; callLabel: string; scheduledAt: string | null; url: string; fileName: string }>;
+  callsToReschedule?: Array<{ sessionId: string; missedAt: string | null; callLabel: string; providerName: string | null; subjectLabel: string | null }>;
 }
 
 function fmtWhen(iso: string) {
@@ -111,6 +112,11 @@ export default function ParentHomePage() {
     ...fresh,
   });
 
+  // Missed calls that still need rebooking - derived server-side PER SESSION
+  // (dashboard-queue), because the org-level journey may already be handed
+  // off for one match while a parallel thread has a freshly missed call.
+  const callsToReschedule = queue?.callsToReschedule || [];
+
   const unpaidInvoices = invoices.filter((i: any) => i.status === "AWAITING_PAYMENT");
   const costSheets = costSheetData?.quotes || [];
   const unackedCostSheets = costSheets.filter((cs: any) => !cs.supersededAt && !cs.parentAcknowledgedAt);
@@ -128,6 +134,7 @@ export default function ParentHomePage() {
     (queue?.pendingProposals.length || 0) +
     (queue?.prepDocs?.length || 0) +
     unackedCostSheets.length +
+    callsToReschedule.length +
     (unreadMessages > 0 ? 1 : 0);
 
   return (
@@ -162,6 +169,16 @@ export default function ParentHomePage() {
           </div>
         ) : (
           <div className="space-y-2">
+            {callsToReschedule.map((c: any) => (
+              <QueueRow
+                key={`reschedule-${c.sessionId}`}
+                icon={<CalendarClock className="w-4 h-4" />}
+                title={`Reschedule your ${c.callLabel} with ${c.providerName || "your provider"}${c.subjectLabel ? ` (${c.subjectLabel})` : ""}`}
+                detail={c.missedAt ? `The call on ${fmtWhen(c.missedAt)} was missed - pick a new time in chat` : "Your last call was missed - pick a new time in chat"}
+                cta="Rebook"
+                onClick={() => navigate(`/chat/${c.sessionId}`)}
+              />
+            ))}
             {unpaidInvoices.map((inv: any) => (
               <QueueRow
                 key={inv.id}

@@ -2507,7 +2507,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 1. NEVER offer or schedule consultations with ${names} and NEVER emit [[CONSULTATION_BOOKING]] for ${names}. If the parent asks to schedule or coordinate with ${names}, warmly point them to their direct chat with ${names} - the provider manages the calendar and next steps from here.
 2. If the parent asks to see MORE surrogates/donors/profiles in that same journey lane, do NOT refuse - real journeys change (matches fall through, some parents pursue a second journey in parallel). But do NOT show profiles yet either. FIRST ask, warmly and without judgment, what is prompting the new search, with quick replies adapted to their journey, e.g. [[QUICK_REPLY:My match fell through|I want a second surrogate in parallel|I'm not happy with the agency|Just exploring]]. Ask ONLY this one question - no profiles, no [[CURATION]], no [[MATCH_CARD]] in that message.
 3. AFTER the parent answers the why-question, acknowledge their reason empathetically and THEN proceed with the NORMAL matching flow (search tools + [[MATCH_CARD]]). Tailor to the answer: if the match fell through or they are unhappy with the agency, be supportive (never defensive of the agency) and include profiles from OTHER agencies; if they want a second journey in parallel, celebrate that and search normally.
-4. Everything else stays fully available - other journeys, general questions, and a NEW journey of a DIFFERENT type needs no why-question at all.`);
+4. RESTART MARKER: if (and ONLY if) the parent's answer means their completed journey ENDED and they are starting over - the match fell through, or they are unhappy and leaving the agency - include the hidden tag [[JOURNEY_RESTART:PROVIDER_ID]] in that same reply, using the provider id from this list: ${handedOffProviders.map(([id, n]) => `${n} = ${id}`).join("; ")}. Do NOT emit it for "second journey in parallel" or "just exploring" - the existing journey continues in those cases.
+5. Everything else stays fully available - other journeys, general questions, and a NEW journey of a DIFFERENT type needs no why-question at all.`);
       }
 
       // POST-BOOKING CALL PREP: once a consultation is booked (journeyStage flips to
@@ -6298,6 +6299,31 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         console.error("Failed to process HOT_LEAD:", e);
       }
       finalContent = finalContent.replace(/\[\[HOT_LEAD:.*?\]\]/g, "").trim();
+
+      // [[JOURNEY_RESTART:PROVIDER_ID]] - the parent explicitly said their
+      // handed-off journey ended (match fell through / leaving the agency).
+      // Records a durable JourneyEvent so accountability flips back to
+      // per-chat for sessions created after this moment (dashboard-queue
+      // reschedule rows use it as the post-handoff restart marker).
+      const restartMatch = finalContent.match(/\[\[JOURNEY_RESTART:([a-zA-Z0-9-]+)\]\]/);
+      if (restartMatch) {
+        try {
+          const restartProviderId = restartMatch[1];
+          const providerExists = await prisma.provider.findUnique({ where: { id: restartProviderId }, select: { id: true } });
+          if (providerExists) {
+            await emitJourneyEvent({
+              eventType: "JOURNEY_RESTARTED",
+              parentUserId: userId,
+              providerId: restartProviderId,
+              sessionId: currentSessionId,
+              actorRole: "parent",
+            });
+          }
+        } catch (e) {
+          console.error("Failed to process JOURNEY_RESTART:", e);
+        }
+        finalContent = finalContent.replace(/\[\[JOURNEY_RESTART:.*?\]\]/g, "").trim();
+      }
 
       // NOTE: Prep doc email is NOT sent here. The match call prep guide should only
       // be sent when an actual surrogate match call is scheduled by the provider/agency,
