@@ -2513,16 +2513,20 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
         }).catch(() => {});
       }
       if (subjType.includes("surrog")) {
+        // The paid deposit is authoritative: she's MATCHED with this family
+        // even if the hold/reservation step never ran (some flows - winback
+        // reschedules, direct agreements - skip the double-yes hold, which
+        // used to leave her AVAILABLE forever). Only a reservation held by a
+        // DIFFERENT parent blocks the flip.
         const res = await this.prisma.surrogate.updateMany({
           where: {
             id: session.subjectProfileId,
-            reservedByParentId: invoice.parentUserId,
-            reservationExpiresAt: { not: null },
+            OR: [{ reservedByParentId: invoice.parentUserId }, { reservedByParentId: null }],
           },
-          data: { reservationExpiresAt: null, status: "MATCHED" },
+          data: { reservationExpiresAt: null, reservedByParentId: invoice.parentUserId, status: "MATCHED" },
         });
         if (res.count > 0) {
-          this.logger.log(`Surrogate ${session.subjectProfileId} hold made permanent + status MATCHED (invoice ${invoiceId} paid)`);
+          this.logger.log(`Surrogate ${session.subjectProfileId} status MATCHED (invoice ${invoiceId} paid)`);
         }
         return;
       }

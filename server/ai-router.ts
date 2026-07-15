@@ -2505,7 +2505,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         const names = handedOffProviders.map(([, n]) => n).join(", ");
         parts.push(`JOURNEY HANDED OFF (CRITICAL): the parent's journey with ${names} is COMPLETE - agreement signed, payment made, and the journey formally handed off to the provider. Rules:
 1. NEVER offer or schedule consultations with ${names} and NEVER emit [[CONSULTATION_BOOKING]] for ${names}. If the parent asks to schedule or coordinate with ${names}, warmly point them to their direct chat with ${names} - the provider manages the calendar and next steps from here.
-2. If the parent asks to see MORE surrogates/donors/profiles in that same journey lane, do NOT refuse - real journeys change (matches fall through, some parents pursue a second journey in parallel). But do NOT show profiles yet either. FIRST ask, warmly and without judgment, what is prompting the new search, with quick replies adapted to their journey, e.g. [[QUICK_REPLY:My match fell through|I want a second surrogate in parallel|I'm not happy with the agency|Just exploring]]. Ask ONLY this one question - no profiles, no [[CURATION]], no [[MATCH_CARD]] in that message.
+2. If the parent asks to see MORE surrogates/donors/profiles in that same journey lane, do NOT refuse - real journeys change (matches fall through, some parents pursue a second journey in parallel). But do NOT show profiles yet either. FIRST ask, warmly and without judgment, what is prompting the new search, with quick replies adapted to their journey, e.g. [[QUICK_REPLY:My match fell through|I want a second surrogate in parallel|I'm not happy with the agency|Just exploring]]. Ask ONLY this one question - no profiles, no [[CURATION]], no [[MATCH_CARD]] in that message. This OVERRIDES the FAVORITE flow: if the parent hearts/favorites a profile in this lane, confirm the save in ONE sentence and ask this why-question - do NOT propose a consultation and do NOT show another profile.
 3. AFTER the parent answers the why-question, acknowledge their reason empathetically and THEN proceed with the NORMAL matching flow (search tools + [[MATCH_CARD]]). Tailor to the answer: if the match fell through or they are unhappy with the agency, be supportive (never defensive of the agency) and include profiles from OTHER agencies; if they want a second journey in parallel, celebrate that and search normally.
 4. RESTART MARKER: if (and ONLY if) the parent's answer means their completed journey ENDED and they are starting over - the match fell through, or they are unhappy and leaving the agency - include the hidden tag [[JOURNEY_RESTART:PROVIDER_ID]] in that same reply, using the provider id from this list: ${handedOffProviders.map(([id, n]) => `${n} = ${id}`).join("; ")}. Do NOT emit it for "second journey in parallel" or "just exploring" - the existing journey continues in those cases.
 5. Everything else stays fully available - other journeys, general questions, and a NEW journey of a DIFFERENT type needs no why-question at all.`);
@@ -5522,12 +5522,48 @@ ${phase0Section}`;
     const proposesConsultation = /\[\[CONSULTATION_BOOKING:/i.test(finalContent) ||
       /\[\[BANK_CHECKOUT:/i.test(finalContent) || // bank donors are ready inventory - no consultation step
       (/consultation/i.test(finalContent) && /\[\[QUICK_REPLY:/i.test(finalContent));
+
+    // POST-HANDOFF OVERRIDE (7B-4): hearting a profile represented by an org
+    // whose journey with this account is already handed off must NOT lead to
+    // a consultation offer (handed-off rule 1) or fresh match cards - the
+    // why-question comes first (rule 2). The FAVORITE enforcement below would
+    // do the opposite, so this check outranks it and REPLACES any reply that
+    // skipped the why-question.
+    let favoritedHandedOffOrg = false;
+    let favoritedMcType = "";
+    if (isHeartButtonAction && currentSessionId) {
+      try {
+        const mc = await findLatestMatchCard(currentSessionId);
+        favoritedMcType = (mc?.type || "").toLowerCase();
+        if (mc?.providerId) {
+          const acctIds = userRecord?.parentAccountId
+            ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+            : [userId];
+          favoritedHandedOffOrg = !!(await prisma.aiChatSession.findFirst({
+            where: { userId: { in: acctIds }, providerId: mc.providerId, handoffCompletedAt: { not: null } },
+            select: { id: true },
+          }));
+        }
+      } catch { /* fall through to the normal FAVORITE flow */ }
+    }
+    if (isHeartButtonAction && favoritedHandedOffOrg) {
+      const asksWhy = /\[\[QUICK_REPLY:[^\]]*fell through/i.test(finalContent);
+      if (!asksWhy) {
+        console.log(`[FAVORITE INTERCEPT] Favorited profile belongs to a handed-off org - replacing with the why-question (7B-4)`);
+        const pron = favoritedMcType.includes("sperm") ? "him"
+          : (favoritedMcType.includes("clinic") || favoritedMcType.includes("agency") || favoritedMcType.includes("doctor")) ? "them" : "her";
+        const laneNoun = favoritedMcType.includes("donor") ? "donor" : favoritedMcType.includes("surrogate") ? "surrogate" : "match";
+        finalContent =
+          `I've saved ${pron} to your favorites! Since your journey in this lane is already officially underway and handed off, help me understand what's prompting the new search - just so I can point you in the right direction. [[QUICK_REPLY:My match fell through|I want a second ${laneNoun} in parallel|I'm not happy with the agency|Just exploring]]`;
+      }
+    }
+
     // With a consultation already booked, "schedule a call" must NOT be enforced -
     // the CALL PREP MODE directive drives the post-favorite behavior instead.
     if (isHeartButtonAction && hasUpcomingProviderConsult) {
       console.log(`[FAVORITE INTERCEPT] Skipped - consultation already booked, call-prep directive owns the follow-up`);
     }
-    if (isHeartButtonAction && !hasUpcomingProviderConsult && !proposesConsultation && currentSessionId) {
+    if (isHeartButtonAction && !favoritedHandedOffOrg && !hasUpcomingProviderConsult && !proposesConsultation && currentSessionId) {
       console.log(`[FAVORITE INTERCEPT] Heart action but AI reply has no consultation offer. Enforcing FAVORITE flow Step 2.`);
       try {
         const likedName = (userMessage.match(/^i like (.+?)!\s*save as favorite/i)?.[1] || "").trim();
