@@ -847,6 +847,9 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   const showExperiencedOnly = useAppSelector((state) => state.ui.showExperiencedOnly);
   const { user } = useAuth();
   const { viewedIds, previousVisitAt } = useMarketplaceViewContext();
+  // Hook MUST live above the empty-state early return below - calling it
+  // conditionally flips the hook count when a filter empties the list.
+  const { toast } = useToast();
 
   const userCountry = (user as any)?.country || null;
   const userIdentification = (user as any)?.identification || null;
@@ -984,7 +987,6 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
   // Bank skip-to-checkout: parents can buy Egg Bank / Sperm Bank donors with
   // a published total cost directly - one click creates the session + cost
   // sheet + invoice and lands in the new chat. Agency donors never get this.
-  const { toast } = useToast();
   const isParentViewer = !(user as any)?.providerId && !((user as any)?.roles || []).includes("GOSTORK_ADMIN");
   const bankTypeName = type === "egg-donor" ? "Egg Bank" : type === "sperm-donor" ? "Sperm Bank" : null;
   const checkoutFor = (donor: any) => {

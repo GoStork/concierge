@@ -133,12 +133,15 @@ async function computeProfileAvailability(
  *  - IN_CYCLE egg donor -> "Matched" (everyone else keeps "In Cycle")
  *  - INACTIVE surrogate/donor (left the roster BECAUSE she matched here) ->
  *    "Matched" (everyone else keeps the red "No Longer Available")
+ *  - PENDING (agency roster says pending) -> "Matched" on the committed
+ *    thread only; the paying family should never read "Pending" about
+ *    their own match (user decision, 7B UAT). Everyone else keeps Pending.
  * Mutates profileStatus in place.
  */
 async function applyMatchedLabelForInCycle(
   items: { id?: string | null; profileStatus?: string | null }[],
 ): Promise<void> {
-  const targets = items.filter(s => (s.profileStatus === "IN_CYCLE" || s.profileStatus === "INACTIVE") && s.id);
+  const targets = items.filter(s => (s.profileStatus === "IN_CYCLE" || s.profileStatus === "INACTIVE" || s.profileStatus === "PENDING") && s.id);
   if (targets.length === 0) return;
   const sessionIds = targets.map(s => s.id!);
   const [paid, signed] = await Promise.all([
