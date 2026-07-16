@@ -135,6 +135,18 @@ export function ClinicSwipeCard({
     return () => { cancelled = true; };
   }, [providerId, parentAccountId]);
 
+  // Phase 4: does this parent meet the clinic's matching requirements?
+  // Same shared evaluator the AI search + booking check use. Providers and
+  // admins browsing the marketplace get no badge (parentAccountId gate).
+  // MUST stay above the !provider early return - in chatMode the provider
+  // self-fetch resolves after the first render, and a hook that only appears
+  // on later renders crashes React ("Rendered more hooks").
+  const requirementsCheck = useMemo(() => {
+    if (!parentAccountId || !provider) return null;
+    const ctx = deriveIvfParentContext(user as any, parentProfile || null);
+    return evaluateIvfRequirements(ivfRequirementsFromProvider(provider), ctx);
+  }, [parentAccountId, provider, user, parentProfile]);
+
   if (!provider) {
     return (
       <div className="w-full h-full rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center py-12">
@@ -250,15 +262,6 @@ export function ClinicSwipeCard({
   const tabs = [...clinicTabs, ...doctorTabs];
   const successBadge = isTop10 ? "Top 10%" : null;
   const logoSrc = getPhotoSrc(provider.logoUrl) || null;
-
-  // Phase 4: does this parent meet the clinic's matching requirements?
-  // Same shared evaluator the AI search + booking check use. Providers and
-  // admins browsing the marketplace get no badge (parentAccountId gate).
-  const requirementsCheck = useMemo(() => {
-    if (!parentAccountId || !provider) return null;
-    const ctx = deriveIvfParentContext(user as any, parentProfile || null);
-    return evaluateIvfRequirements(ivfRequirementsFromProvider(provider), ctx);
-  }, [parentAccountId, provider, user, parentProfile]);
 
   return (
     <SwipeDeckCard
