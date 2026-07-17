@@ -205,6 +205,54 @@ function normalizeSpermSource(val: string, parentGender?: string | null): string
   return val;
 }
 
+// -------------------------------------------------------------------------
+// Journey-aware conversation_flow slicing (Tier 2 latency)
+// The conversation_flow prompt section is ~92KB covering EVERY journey; Gemini
+// re-prefills the full system prompt on every chained tool round, so match
+// turns paid ~43K tokens of prefill per round (16-40s turns). This slices the
+// section down to what THIS turn can actually use:
+//   - Intake (Phases 0-2, ~48KB) only before tier2Active - Tier2 activates at
+//     the first [[CURATION]], by which point the biological baseline is done.
+//     (The Tier1-error fallback path reaches Tier2 pre-curation and keeps it.)
+//   - Each match cycle (A clinic / B egg donor / C sperm donor / D surrogate)
+//     only when the parent's profile, registered services, or recent chat
+//     show that journey is in scope. Country routing rides with cycle D.
+// The DB section stays ONE admin-editable blob - slicing is at read time off
+// stable header markers. Any missing/reordered marker falls back to the full
+// section with a loud log (never silently drop instructions).
+// -------------------------------------------------------------------------
+const CF_PHASE3 = "=== PHASE 3: PROGRESSIVE MATCH CYCLES ===";
+const CF_CYCLE_A = "--- MATCH CYCLE A: IVF CLINIC ---";
+const CF_CYCLE_B = "--- MATCH CYCLE B: EGG DONOR ---";
+const CF_CYCLE_C = "--- MATCH CYCLE C: SPERM DONOR ---";
+const CF_CYCLE_D = "--- MATCH CYCLE D: SURROGATE ---";
+const CF_COUNTRY = "=== COUNTRY ROUTING";
+const CF_WRAPUP = "=== PHASE 4: WRAP-UP ===";
+function sliceConversationFlow(full: string, inc: { intake: boolean; A: boolean; B: boolean; C: boolean; D: boolean }): string {
+  const iP3 = full.indexOf(CF_PHASE3);
+  const iA = full.indexOf(CF_CYCLE_A);
+  const iB = full.indexOf(CF_CYCLE_B);
+  const iC = full.indexOf(CF_CYCLE_C);
+  const iD = full.indexOf(CF_CYCLE_D);
+  const iCountry = full.indexOf(CF_COUNTRY);
+  const iWrap = full.indexOf(CF_WRAPUP);
+  if (iP3 < 0 || iA < 0 || iB < 0 || iC < 0 || iD < 0 || iCountry < 0 || iWrap < 0
+      || !(iP3 < iA && iA < iB && iB < iC && iC < iD && iD < iCountry && iCountry < iWrap)) {
+    console.warn("[PROMPT SLICE] conversation_flow markers missing or reordered - using FULL section");
+    return full;
+  }
+  const parts: string[] = [];
+  if (inc.intake) parts.push(full.slice(0, iP3));
+  parts.push(full.slice(iP3, iA)); // Phase 3 orchestration rules (cycle ordering, curation gate, pivots)
+  if (inc.A) parts.push(full.slice(iA, iB));
+  if (inc.B) parts.push(full.slice(iB, iC));
+  if (inc.C) parts.push(full.slice(iC, iD));
+  if (inc.D) parts.push(full.slice(iD, iCountry));
+  if (inc.D) parts.push(full.slice(iCountry, iWrap)); // country routing is surrogacy-path-only
+  parts.push(full.slice(iWrap));
+  return parts.join("\n");
+}
+
 // Post-process Gemini Tier 1 output: inject [[QUICK_REPLY:...]] tags for known
 // questions when Gemini drops them. Only fires when no [[QUICK_REPLY:]] is present.
 function injectMissingQuickReplies(content: string): string {
@@ -380,8 +428,13 @@ async function callTier2Claude(
     ? [{ functionDeclarations: openAiTools.map((t: any) => ({ name: t.function.name, description: t.function.description || "", parameters: t.function.parameters })) }]
     : undefined;
 
+  // thinkingBudget 0 disables the hidden reasoning phase, same as Tier1. Measured
+  // 2026-07-17: with thinking on, call1 median was ~7s REGARDLESS of prompt size
+  // (a 30% prompt cut moved nothing) - the reasoning phase, not prefill, dominated
+  // Tier2 latency. TIER2_THINKING=1 restores it for A/B comparison.
   const model = geminiAI.getGenerativeModel({
     model: "gemini-3.5-flash",
+    ...(process.env.TIER2_THINKING === "1" ? {} : { generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }),
     ...(geminiTools ? { tools: geminiTools as any } : {}),
     systemInstruction: { parts: [{ text: fullSystem }] },
   });
@@ -392,6 +445,21 @@ async function callTier2Claude(
   const searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
   const t0 = Date.now();
   const searchToolNames = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics", "find_lookalike_matches"];
+  // Per-turn cap on REPEATED calls to the same search tool. The model sometimes
+  // hunts for a "perfect" result by re-calling the same search 5-8 times in one
+  // turn (each retry re-prefills the full system prompt = +3-7s), even hitting
+  // MAX_TOOL_ROUNDS. The tools already relax filters server-side, so a repeat
+  // search rarely returns anything new - after 2 calls the model is told to
+  // present from what it already has.
+  const searchCallCounts = new Map<string, number>();
+  const overSearchLimit = (fc: { name: string }): string | null => {
+    if (!searchToolNames.includes(fc.name)) return null;
+    const n = (searchCallCounts.get(fc.name) || 0) + 1;
+    searchCallCounts.set(fc.name, n);
+    if (n <= 2) return null;
+    console.log(`[TIER2] ${fc.name} call #${n} this turn - short-circuited (present from prior results)`);
+    return `SEARCH LIMIT REACHED for this turn. You have already called ${fc.name} twice - do NOT search again. The tool already relaxed filters automatically, so a repeat search will not surface different results. Present the best match from the results you ALREADY received above using ONE [[MATCH_CARD]] now, and be transparent with the parent about any preference that could not be fully matched.`;
+  };
   console.log(`[TIER2] start: history=${chatHistory.length} turns, system=${fullSystem.length} chars, tools=${openAiTools.length}`);
 
   // After search_surrogacy_agencies returns, reorder the agency list cheapest-first
@@ -746,6 +814,11 @@ async function callTier2Claude(
         const functionResponses: any[] = [];
         for (const fc of functionCalls) {
           if (mcpClientRef) {
+            const overLimitMsg = overSearchLimit(fc as any);
+            if (overLimitMsg) {
+              functionResponses.push({ functionResponse: { name: fc.name, response: { output: overLimitMsg } } });
+              continue;
+            }
             const tMcp = Date.now();
             try {
               injectAuthUser(fc as any);
@@ -807,6 +880,11 @@ async function callTier2Claude(
         const moreResponses: any[] = [];
         for (const fc of moreFunctionCalls) {
           if (mcpClientRef) {
+            const overLimitMsg = overSearchLimit(fc as any);
+            if (overLimitMsg) {
+              moreResponses.push({ functionResponse: { name: fc.name, response: { output: overLimitMsg } } });
+              continue;
+            }
             const tMcp = Date.now();
             try {
               injectAuthUser(fc as any);
@@ -2820,7 +2898,50 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     // Try loading prompt sections from DB (admin-editable)
     const dbSections = await getPromptSections();
-    const biologicalMasterLogicFromDb = dbSections ? assemblePromptFromSections(dbSections, [
+
+    // Journey-aware slimming: replace conversation_flow with only the blocks
+    // this turn can use (see sliceConversationFlow). Signals are generous -
+    // a cycle is dropped only when the profile EXPLICITLY rules it out AND no
+    // registered service or recent chat message brings it back into scope.
+    let sectionsForPrompt = dbSections;
+    const fullCf = dbSections?.get("conversation_flow");
+    if (dbSections && fullCf) {
+      const svc = services.map((s: string) => s.toLowerCase());
+      const recentUserText = (Array.isArray(chatHistory) ? chatHistory : [])
+        .slice(-12)
+        .filter((m: any) => m.role === "user")
+        .map((m: any) => m.content || "")
+        .join(" ")
+        .toLowerCase();
+      const eggSrc = (profile?.eggSource || "").toLowerCase();
+      const spermSrc = (profile?.spermSource || "").toLowerCase();
+      const carrierVal = (profile?.carrier || "").toLowerCase();
+      const eggOwnPartner = !!eggSrc && !eggSrc.includes("donor") && (eggSrc.includes("own") || eggSrc.includes("partner"));
+      const spermOwn = !!spermSrc && !spermSrc.includes("donor");
+      const carrierSelf = carrierVal.includes("self");
+      const inc = {
+        intake: !currentSession?.tier2Active,
+        A: profile?.needsClinic !== false
+          || svc.some((s: string) => s.includes("clinic") || s.includes("ivf"))
+          || /\b(clinic|ivf|doctor)\b/.test(recentUserText),
+        B: (profile?.needsEggDonor !== false && !eggOwnPartner)
+          || svc.some((s: string) => s.includes("egg"))
+          || /egg donor|egg donation|donor egg/.test(recentUserText),
+        C: !spermOwn
+          || svc.some((s: string) => s.includes("sperm"))
+          || /sperm/.test(recentUserText),
+        D: (profile?.needsSurrogate !== false && !carrierSelf)
+          || svc.some((s: string) => s.includes("surroga"))
+          || /surrogat|gestational/.test(recentUserText),
+      };
+      const slicedCf = sliceConversationFlow(fullCf, inc);
+      if (slicedCf.length < fullCf.length) {
+        sectionsForPrompt = new Map(dbSections);
+        sectionsForPrompt.set("conversation_flow", slicedCf);
+        console.log(`[PROMPT SLICE] conversation_flow ${fullCf.length} -> ${slicedCf.length} chars (intake=${inc.intake} A=${inc.A} B=${inc.B} C=${inc.C} D=${inc.D})`);
+      }
+    }
+    const biologicalMasterLogicFromDb = sectionsForPrompt ? assemblePromptFromSections(sectionsForPrompt, [
       "expert_persona", "ui_components", "conversation_flow", "matching_rules",
       "match_blurb_rules", "protocols", "post_match_behavior", "agency_confidentiality", "general_behavior",
       "post_booking_call_prep",
@@ -3528,13 +3649,22 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const skipDirectives: string[] = [];
 
     const mentionsEggDonor = /egg\s*donor|need.*egg|donor\s*egg/i.test(allUserMessages);
-    const hasEggDonor = /have.*egg\s*donor|already.*egg\s*donor|egg\s*donor.*already/i.test(allUserMessages);
     const mentionsSurrogate = /surrogate|surrogacy|need.*surrogate/i.test(allUserMessages);
-    const hasSurrogate = /have.*surrogate|already.*surrogate|surrogate.*already/i.test(allUserMessages);
     const mentionsClinic = /ivf\s*clinic|fertility\s*clinic|need.*clinic|clinic/i.test(allUserMessages);
-    const hasClinic = /have.*clinic|already.*clinic|clinic.*already/i.test(allUserMessages);
     const mentionsSpermDonor = /sperm\s*donor|need.*sperm/i.test(allUserMessages);
-    const hasSpermDonor = /have.*sperm\s*donor|already.*sperm/i.test(allUserMessages);
+    // "Already has X" must be detected per SINGLE message. These were previously
+    // tested against ALL user messages joined into one string, so ".*" matched
+    // across message boundaries: "I need help finding a clinic" + a later
+    // "I already have an egg donor" satisfied /clinic.*already/ and flipped
+    // alreadyHasClinic=true, derailing intake into the what's-your-clinic's-name
+    // branch (MW-04's chronic flake). Bounded gaps + a negation guard keep
+    // "I don't have a clinic yet" from counting as having one.
+    const userMsgList = chatHistory.filter(m => m.role === "user").map(m => (m.content || "").toLowerCase()).concat([userMessage.toLowerCase()]);
+    const saidHas = (re: RegExp) => userMsgList.some(m => re.test(m) && !/don'?t|do not|not yet|haven'?t|need help finding/i.test(m));
+    const hasEggDonor = saidHas(/have.{0,40}egg\s*donor|already.{0,40}egg\s*donor|egg\s*donor.{0,25}already/i);
+    const hasSurrogate = saidHas(/have.{0,40}surrogate|already.{0,40}surrogate|surrogate.{0,25}already/i);
+    const hasClinic = saidHas(/have.{0,40}clinic|already.{0,40}clinic|clinic.{0,25}already/i);
+    const hasSpermDonor = saidHas(/have.{0,40}sperm\s*donor|already.{0,40}sperm/i);
     // Detect gay male from chat text OR from DB profile (gender=male + LGBTQ/Gay orientation).
     // "Solo man" + "Yes" to LGBTQ+ does not match the regex, so we must also check the DB.
     const genderLower = (userRecord?.gender || "").toLowerCase();
@@ -5283,7 +5413,11 @@ ${phase0Section}`;
         // (DB audit 2026-07-16: clinicPriority was null after a full clinic
         // intake). The priority-aware clinic ranking depends on it - persist
         // the answer deterministically, same pattern as D1 SAVE FALLBACK.
-        if (userRecord?.parentAccountId && userMessage && !profile?.clinicPriority) {
+        // STRICT question check: justAnsweredA5's loose regex also matches the
+        // CURATION summary ("...priorities for a clinic"), which made this save
+        // a NON-A5 answer (e.g. "First time") as clinicPriority in some flows.
+        const lastAiWasA5Question = /most important to you when choosing a clinic|what matters most.*in a clinic/i.test(lastAiContent || "");
+        if (lastAiWasA5Question && userRecord?.parentAccountId && userMessage && !profile?.clinicPriority) {
           try {
             await prisma.intendedParentProfile.update({
               where: { parentAccountId: userRecord.parentAccountId },
