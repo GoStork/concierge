@@ -211,25 +211,25 @@ function chatDateLabel(dateStr: string): string {
 // and Phase 1 question after the parent answers the engagement question below.
 const PHASE0_SURROGACY = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching dozens of agencies on your own, we've brought everything together in one place with full transparent pricing and no surprises. We partner with over 60 surrogacy agencies, and it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
+Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you scrolling through endless profiles across dozens of surrogacy agency websites, I get to know your situation, search our network of 60+ surrogacy agencies for you, and bring you one great match at a time - with full transparent pricing and no surprises. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
 
 Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
 const PHASE0_EGG_DONOR = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of searching across dozens of agency websites, we've pulled everything into one place with full transparent pricing. We work with 30 egg donor agencies and have over 10,000 egg donors in our database. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
+Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you scrolling through thousands of donor profiles across dozens of agency websites, I get to know your situation, search our network of 30 egg donor agencies with over 10,000 donors for you, and bring you one great match at a time - with full transparent pricing and no surprises. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
 
 Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
 const PHASE0_CLINIC = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching IVF clinics across dozens of websites, we've brought over 30 vetted clinics into one place with full transparent pricing. And it's completely free for intended parents - the clinics pay us a referral fee and are not allowed to pass that cost on to you.
+Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you researching and comparing dozens of IVF clinic websites, I get to know your situation, search our network of 30+ vetted IVF clinics for you, and bring you one great match at a time - with full transparent pricing and no surprises. And it's completely free for intended parents - the clinics pay us a referral fee and are not allowed to pass that cost on to you.
 
 Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
 const PHASE0_GENERAL = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching providers across dozens of websites, we've brought everything together in one place with full transparent pricing. We partner with over 60 surrogacy agencies, 30 egg donor agencies with 10,000+ donors, and 30+ IVF clinics. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you.
+Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you researching providers across dozens of websites, I get to know your situation, search our entire network for you - 60+ surrogacy agencies, 30 egg donor agencies with 10,000+ donors, and 30+ IVF clinics - and bring you one great match at a time, with full transparent pricing and no surprises. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you.
 
 Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 

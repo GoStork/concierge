@@ -1609,25 +1609,25 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
 function buildServerPhase0(services: string[]): string {
   const PHASE0_SURROGACY = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching dozens of agencies on your own, we've brought everything together in one place with full transparent pricing and no surprises. We partner with over 60 surrogacy agencies, and it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
+Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you scrolling through endless profiles across dozens of surrogacy agency websites, I get to know your situation, search our network of 60+ surrogacy agencies for you, and bring you one great match at a time - with full transparent pricing and no surprises. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
 
 Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
   const PHASE0_EGG_DONOR = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of searching across dozens of agency websites, we've pulled everything into one place with full transparent pricing. We work with 30 egg donor agencies and have over 10,000 egg donors in our database. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
+Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you scrolling through thousands of donor profiles across dozens of agency websites, I get to know your situation, search our network of 30 egg donor agencies with over 10,000 donors for you, and bring you one great match at a time - with full transparent pricing and no surprises. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
 
 Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
   const PHASE0_CLINIC = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching IVF clinics across dozens of websites, we've brought over 30 vetted clinics into one place with full transparent pricing. And it's completely free for intended parents - the clinics pay us a referral fee and are not allowed to pass that cost on to you.
+Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you researching and comparing dozens of IVF clinic websites, I get to know your situation, search our network of 30+ vetted IVF clinics for you, and bring you one great match at a time - with full transparent pricing and no surprises. And it's completely free for intended parents - the clinics pay us a referral fee and are not allowed to pass that cost on to you.
 
 Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
   const PHASE0_GENERAL = `Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of researching providers across dozens of websites, we've brought everything together in one place with full transparent pricing. We partner with over 60 surrogacy agencies, 30 egg donor agencies with 10,000+ donors, and 30+ IVF clinics. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you.
+Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you researching providers across dozens of websites, I get to know your situation, search our entire network for you - 60+ surrogacy agencies, 30 egg donor agencies with 10,000+ donors, and 30+ IVF clinics - and bring you one great match at a time, with full transparent pricing and no surprises. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you.
 
 Where are you in your journey right now - just starting to explore, or have you already done some research?`;
 
@@ -4772,7 +4772,7 @@ PHASE 0 OVERRIDES (apply ONLY while delivering the GoStork education intro - not
 4. The education message is MANDATORY before any matching can begin
 NOTE: Once Phase 0 is complete, the MANDATORY QUESTIONS YOU MUST NOT ASK block above takes full effect - honor all skip directives.`;
 
-      const tier1SystemPrompt = `You are ${matchmaker?.name || "Adam"}, the AI concierge for GoStork, a fertility marketplace.${matchmaker?.personalityPrompt ? ` ${matchmaker.personalityPrompt}` : ""}
+      const tier1SystemPrompt = `You are ${matchmaker?.name || "Adam"}, the AI concierge for GoStork, a fertility matching concierge service.${matchmaker?.personalityPrompt ? ` ${matchmaker.personalityPrompt}` : ""}
 USER: ${tier1Name} | Services: ${tier1Services}
 
 ${skipRulesPreamble}
@@ -4781,26 +4781,28 @@ RULES: One question per message. Copy question text and [[QUICK_REPLY:]] tags EX
 === PHASE 0: GOSTORK INTRODUCTION ===
 After parent confirms services ("Yes, that's right"):
 
-1. Acknowledge briefly (1 sentence). Then deliver Part 1 using the EXACT TEMPLATE below. NEVER output curly braces, brackets, or placeholders - always substitute the literal phrase before sending. The "We have ..." numbers sentence is MANDATORY - never omit it.
+1. Acknowledge briefly (1 sentence). Then deliver Part 1 using the EXACT TEMPLATE below. NEVER output curly braces, brackets, or placeholders - always substitute the literal phrase before sending. The "That network is the largest in the industry: ..." numbers sentence is MANDATORY - never omit it.
 
 PART 1 TEMPLATE:
 "Before we dive in, let me give you a quick picture of how GoStork works.
 
-GoStork is a fertility marketplace - think of us like Kayak or Expedia for fertility. Instead of {RESEARCH} on your own, we've brought everything together in one place with full transparent pricing and no surprises. We have {NUMBERS}. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you."
+Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker for your fertility journey: instead of {RESEARCH} on your own, I get to know your situation, search our entire network for you, and bring you one great match at a time - hand-picked to fit you. That network is the largest in the industry: {NUMBERS} - all with full transparent pricing and no surprises.
+
+And I don't stop at the match. I book your calls, prep you for them, and handle agreements and payments - everything in one place, from first question to signed contract. It's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you."
 End with: "Does that make sense so far?" [[QUICK_REPLY:Yes, makes sense!|I have a question]]
 
 {RESEARCH} - pick the one matching the parent's services:
-- Sperm donation only -> "searching across dozens of sperm bank websites"
-- Egg donation only -> "researching dozens of egg donor agencies"
-- Surrogacy only -> "researching dozens of surrogacy agencies"
-- IVF clinic only -> "researching IVF clinics"
-- Egg + Sperm -> "researching across dozens of egg donor agency and sperm bank websites"
-- Egg + Surrogacy -> "researching across dozens of egg donor and surrogacy agency websites"
-- Egg + IVF -> "researching across dozens of egg donor agency websites and IVF clinics"
-- Sperm + Surrogacy -> "researching across dozens of surrogacy agency and sperm bank websites"
-- Sperm + IVF -> "researching across dozens of sperm bank websites and IVF clinics"
-- Surrogacy + IVF -> "researching across dozens of surrogacy agency websites and IVF clinics"
-- 3+ services -> name every relevant surface, joined with commas + "and" (e.g. "researching across dozens of egg donor agency, surrogacy agency, and sperm bank websites and IVF clinics")
+- Sperm donation only -> "scrolling through thousands of donor profiles across dozens of sperm bank websites"
+- Egg donation only -> "scrolling through thousands of donor profiles across dozens of egg donor agency websites"
+- Surrogacy only -> "scrolling through endless profiles across dozens of surrogacy agency websites"
+- IVF clinic only -> "researching and comparing dozens of IVF clinic websites"
+- Egg + Sperm -> "scrolling through thousands of donor profiles across dozens of egg donor agency and sperm bank websites"
+- Egg + Surrogacy -> "scrolling through thousands of profiles across dozens of egg donor and surrogacy agency websites"
+- Egg + IVF -> "scrolling through thousands of donor profiles across dozens of egg donor agency websites and comparing IVF clinics"
+- Sperm + Surrogacy -> "scrolling through thousands of profiles across dozens of surrogacy agency and sperm bank websites"
+- Sperm + IVF -> "scrolling through thousands of donor profiles across dozens of sperm bank websites and comparing IVF clinics"
+- Surrogacy + IVF -> "scrolling through endless profiles across dozens of surrogacy agency websites and comparing IVF clinics"
+- 3+ services -> name every relevant surface, joined with commas + "and" (e.g. "scrolling through thousands of profiles across dozens of egg donor agency, surrogacy agency, and sperm bank websites and comparing IVF clinics")
 
 {NUMBERS} - pick or combine by parent's services (2 services use "and"; 3+ use commas + final "and"):
 - Sperm donation -> "10+ sperm banks with 1,500+ donors"
@@ -4809,12 +4811,12 @@ End with: "Does that make sense so far?" [[QUICK_REPLY:Yes, makes sense!|I have 
 - IVF clinic -> "30+ IVF clinics"
 
 EXAMPLES (every selected service appears in BOTH {RESEARCH} and {NUMBERS}):
-- Sperm only: "...Instead of searching across dozens of sperm bank websites on your own... We have 10+ sperm banks with 1,500+ donors. And it's completely free..."
-- Egg + Sperm: "...Instead of researching across dozens of egg donor agency and sperm bank websites on your own... We have 30 egg donor agencies with 10,000+ donors and 10+ sperm banks with 1,500+ donors. And it's completely free..."
-- All four: "...We have 60+ surrogacy agencies, 30 egg donor agencies with 10,000+ donors, 10+ sperm banks with 1,500+ donors, and 30+ IVF clinics. And it's completely free..."
+- Sperm only: "...instead of scrolling through thousands of donor profiles across dozens of sperm bank websites on your own... That network is the largest in the industry: 10+ sperm banks with 1,500+ donors - all with full transparent pricing and no surprises. ... It's completely free..."
+- Egg + Sperm: "...instead of scrolling through thousands of donor profiles across dozens of egg donor agency and sperm bank websites on your own... That network is the largest in the industry: 30 egg donor agencies with 10,000+ donors and 10+ sperm banks with 1,500+ donors - all with full transparent pricing and no surprises. ... It's completely free..."
+- All four: "...That network is the largest in the industry: 60+ surrogacy agencies, 30 egg donor agencies with 10,000+ donors, 10+ sperm banks with 1,500+ donors, and 30+ IVF clinics - all with full transparent pricing and no surprises. ... It's completely free..."
 
 HARD RULES:
-- ALWAYS include the "We have {NUMBERS}." sentence - it is MANDATORY.
+- ALWAYS include the "That network is the largest in the industry: {NUMBERS}" sentence - it is MANDATORY.
 - MULTI-SERVICE: if parent selected N services (N>=2), BOTH {RESEARCH} and {NUMBERS} MUST name all N services. Never drop a service.
 - ONLY include numbers for services the parent actually selected. NEVER quote egg donor numbers to a sperm-only parent, etc.
 - NEVER leave curly braces, brackets, slashes, or the literal text "RESEARCH" / "NUMBERS" in the output.
@@ -4983,7 +4985,7 @@ ${phase0Section}`;
       const lastAiMessage = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
       // Part 1 detection: Gemini may rephrase the ending question, so check for
       // the GoStork marketplace education content rather than the exact closing line.
-      const lastAiWasPart1 = /GoStork is a fertility marketplace|Kayak or Expedia for fertility|providers pay us a referral fee|completely free for intended parents/i.test(lastAiMessage?.content || "") &&
+      const lastAiWasPart1 = /matching concierge service|giant directory and wish you luck|GoStork is a fertility marketplace|Kayak or Expedia for fertility|providers pay us a referral fee|completely free for intended parents/i.test(lastAiMessage?.content || "") &&
         !/personally vetted by eran amir|no waiting lists/i.test(lastAiMessage?.content || "");
       const part2AlreadyDelivered = chatHistory.some((m: any) =>
         m.role === "assistant" && /personally vetted by eran amir|no waiting lists/i.test(m.content || "")
@@ -5054,7 +5056,7 @@ ${phase0Section}`;
       // Also catch "I have a question" after Part 1 (before Part 2 is delivered).
       // Without this, Gemini handles it and says "What would you like to know?" which
       // matches the dead-end pattern /what would you like/, triggering a retry + flash.
-      const lastAiWasPart1ForQA = /does that make sense so far|GoStork is a fertility marketplace|Kayak or Expedia for fertility/i.test(lastAiMessage?.content || "");
+      const lastAiWasPart1ForQA = /does that make sense so far|matching concierge service|giant directory and wish you luck|GoStork is a fertility marketplace|Kayak or Expedia for fertility/i.test(lastAiMessage?.content || "");
       if ((lastAiWasPhase0Education || lastAiWasPart1ForQA) && userSaysHasQuestions) {
         finalContent = "Of course! What would you like to know?";
         sse.sendToken(finalContent);
@@ -6100,24 +6102,46 @@ NEVER promise to search without actually calling the search tool. NEVER end with
 
         // Has embryos - hasEmbryos/embryoCount/embryosTested use non-null DB defaults (false/0/false),
         // so == null checks always fail. Use !== true to detect "not yet confirmed as true".
+        // NEGATION FIRST: "No, I don't have frozen embryos yet" contains the literal
+        // substring "have frozen embryos", so the positive regex must never be checked
+        // before negation (2026-07-17 bug: saved hasEmbryos=true, then the age answer
+        // "49" became embryoCount, and clinic cards flagged "doesn't accept embryo
+        // transfers from other clinics" for a parent with no embryos at all).
+        const lastAiMsgText = ([...chatHistory].reverse().find(m => m.role === "assistant")?.content || "") as string;
+        const lastAiAskedHasEmbryos = /frozen embryos/i.test(lastAiMsgText);
+        const msgNegates = /\b(no|don'?t|do not|not yet|haven'?t|have not|never|nope)\b/i.test(msg);
         if (extractedProfile?.hasEmbryos !== true) {
           const embryoCountMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b/);
-          if (embryoCountMatch) {
+          if ((msgNegates && (/\bembryos?\b/i.test(msg) || lastAiAskedHasEmbryos))
+              || (lastAiAskedHasEmbryos && /^working\b/i.test(msg.trim()))) {
+            // "No, I don't have frozen embryos yet" / bare "No, not yet" / "Working on
+            // them now" answers to the embryos question - all mean no frozen embryos yet
+            // (prompt spec Step 1: No/Working -> hasEmbryos=false)
+            autoProfileData.hasEmbryos = false;
+          } else if (embryoCountMatch) {
             autoProfileData.hasEmbryos = true;
             autoProfileData.embryoCount = parseInt(embryoCountMatch[1], 10);
           } else if (/\bhave (frozen )?embryos?\b|\bwe have embryos?\b/.test(msg)) {
             autoProfileData.hasEmbryos = true;
-          } else if (/\bno (frozen )?embryos?\b|\bdon't have embryos?\b/.test(msg)) {
-            autoProfileData.hasEmbryos = false;
+          } else if (lastAiAskedHasEmbryos && /^(yes|yes, i do|yeah|yep|yup|we do|i do)\b/i.test(msg.trim())) {
+            // Bare QR affirmative to "Do you already have frozen embryos?" - the intake
+            // bypass serves that question without Gemini, so no SAVE tag ever fires
+            autoProfileData.hasEmbryos = true;
           }
         }
 
         // Embryo count update even when hasEmbryos is already true
-        // embryoCount defaults to 0 (non-null), so check for 0 rather than null
+        // embryoCount defaults to 0 (non-null), so check for 0 rather than null.
+        // A BARE number only counts when the question on the table was actually
+        // about embryo count - "49" answering "How old are you?" must never land
+        // here (it did: embryoCount=49 for a 49-year-old with zero embryos).
         if ((extractedProfile?.hasEmbryos === true || autoProfileData.hasEmbryos === true) && !extractedProfile?.embryoCount && !autoProfileData.embryoCount) {
-          const embryoCountUpdateMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b|^(\d+)$|^(\d+)\s*\+?$/);
-          if (embryoCountUpdateMatch) {
-            const count = parseInt(embryoCountUpdateMatch[1] || embryoCountUpdateMatch[3] || embryoCountUpdateMatch[4], 10);
+          const lastAiAskedEmbryoCount = /how many embryos|number of embryos|embryos do you have/i.test(lastAiMsgText);
+          const inlineCountMatch = msg.match(/\b(\d+)\s*(frozen\s+)?embryos?\b/);
+          const bareCountMatch = lastAiAskedEmbryoCount ? msg.match(/^(\d+)\s*\+?$/) : null;
+          const rawCount = inlineCountMatch?.[1] || bareCountMatch?.[1];
+          if (rawCount) {
+            const count = parseInt(rawCount, 10);
             if (!isNaN(count) && count > 0 && count <= 50) {
               autoProfileData.embryoCount = count;
             }
