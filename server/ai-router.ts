@@ -253,6 +253,78 @@ function sliceConversationFlow(full: string, inc: { intake: boolean; A: boolean;
   return parts.join("\n");
 }
 
+// Shared by the clinic MATCH_CARD enrichment AND the ready-turn server-side
+// pre-search: derive the egg provider's age (chat scan first - ages were just
+// discussed - then DB fallback) and the first-time-IVF answer from the same
+// signals, so the searched success rates and the card's rates can never
+// disagree.
+function deriveEggProviderAge(chatHistory: any[], userRecord: any, profileEggSource: string | null | undefined, isMaleParent: boolean, resolvedEggSource: string): number | null {
+  if (resolvedEggSource === "donor") return null;
+  const esSaved = (profileEggSource || "").toLowerCase();
+  let isPartnerEggs = esSaved.includes("partner") || (isMaleParent && resolvedEggSource === "own_eggs");
+  if (!isPartnerEggs) {
+    for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
+      if (chatHistory[i].role !== "user") continue;
+      const c = (chatHistory[i].content || "").toLowerCase();
+      if (/partner'?s?\s*eggs?/i.test(c)) { isPartnerEggs = true; break; }
+    }
+  }
+  let eggProviderAge: number | null = null;
+  const ageQuestionPatterns = isPartnerEggs
+    ? [/how old is your partner/i, /partner.*age/i, /age.*partner/i, /partner.*old/i]
+    : [/how old are you/i, /your age/i, /old are you/i];
+  for (let i = 0; i < chatHistory.length - 1; i++) {
+    if (chatHistory[i].role !== "assistant") continue;
+    const aiMsg = chatHistory[i].content || "";
+    if (ageQuestionPatterns.some(p => p.test(aiMsg)) && chatHistory[i + 1]?.role === "user") {
+      const ageMatch = (chatHistory[i + 1].content || "").match(/\b(\d{2})\b/);
+      if (ageMatch) {
+        const age = parseInt(ageMatch[1], 10);
+        if (age >= 18 && age <= 55) { eggProviderAge = age; break; }
+      }
+    }
+  }
+  if (eggProviderAge === null) {
+    if (isPartnerEggs && userRecord?.partnerAge) {
+      eggProviderAge = Number(userRecord.partnerAge);
+    } else if (!isPartnerEggs && userRecord?.dateOfBirth) {
+      eggProviderAge = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    }
+  }
+  if (eggProviderAge === null) {
+    for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
+      if (chatHistory[i].role !== "user") continue;
+      const c = chatHistory[i].content || "";
+      const ageMatch = c.match(/\b(\d{2})\b/);
+      if (ageMatch && c.length < 50) {
+        const age = parseInt(ageMatch[1], 10);
+        if (age >= 20 && age <= 50) { eggProviderAge = age; break; }
+      }
+    }
+  }
+  return eggProviderAge;
+}
+function ageToAgeGroup(age: number): string {
+  return age < 35 ? "under_35" : age <= 37 ? "35_37" : age <= 40 ? "38_40" : "over_40";
+}
+function deriveIsNewPatient(chatHistory: any[]): boolean | null {
+  for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
+    const c = (chatHistory[i].content || "").toLowerCase();
+    if (chatHistory[i].role === "user") {
+      if (/first.?time|new to ivf|never done|^first$|^new$/i.test(c)) return true;
+      if (/done.*(ivf|before)|i'?ve done|not my first|been through|returning|had prior|prior cycle/i.test(c)) return false;
+    }
+    if (chatHistory[i].role === "assistant" && /first time.*ivf|been through.*before/i.test(c)) {
+      if (i + 1 < chatHistory.length && chatHistory[i + 1].role === "user") {
+        const answer = (chatHistory[i + 1].content || "").toLowerCase();
+        if (/first|new|^yes/i.test(answer)) return true;
+        if (/before|done|no|prior|returning/i.test(answer)) return false;
+      }
+    }
+  }
+  return null;
+}
+
 // Post-process Gemini Tier 1 output: inject [[QUICK_REPLY:...]] tags for known
 // questions when Gemini drops them. Only fires when no [[QUICK_REPLY:]] is present.
 function injectMissingQuickReplies(content: string): string {
@@ -358,6 +430,11 @@ async function callTier2Claude(
   authUserId: string | null = null,
   lookalikePhotoUrl: string | null = null,
   freshPhotoUpload: boolean = false,
+  // Ready-turn optimization: a search the server already KNOWS must run
+  // (e.g. search_clinics after a clinic curation + "ready"). Executed here
+  // before the first model call and handed to Gemini with its results, so the
+  // usual two rounds (decide-to-search, then write) collapse into one.
+  preSearch: { name: string; args: Record<string, unknown> } | null = null,
 ): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
   const hasTools = openAiTools.length > 0;
 
@@ -433,7 +510,9 @@ async function callTier2Claude(
   // (a 30% prompt cut moved nothing) - the reasoning phase, not prefill, dominated
   // Tier2 latency. TIER2_THINKING=1 restores it for A/B comparison.
   const model = geminiAI.getGenerativeModel({
-    model: "gemini-3.5-flash",
+    // TIER2_MODEL overrides for A/B (e.g. gemini-3.1-flash-lite); default stays
+    // the flagship - the whole 73-test suite is tuned against it.
+    model: process.env.TIER2_MODEL || "gemini-3.5-flash",
     ...(process.env.TIER2_THINKING === "1" ? {} : { generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }),
     ...(geminiTools ? { tools: geminiTools as any } : {}),
     systemInstruction: { parts: [{ text: fullSystem }] },
@@ -740,13 +819,15 @@ async function callTier2Claude(
   // replace (the client already rebuilds the message from the processed
   // content at done). freshPhotoUpload keeps its full suppression.
   const streamTurn = async (message: any): Promise<{ text: string; functionCalls: any[]; response: any }> => {
-    // Tier2 true streaming is OPT-IN (TIER2_STREAM=1) and OFF by default:
-    // A/B testing 2026-07-17 showed Gemini's streamGenerateContent with tools
-    // enabled measurably degrades structured output - MW-03/MW-19 dropped their
-    // [[MATCH_CARD]] tags 8/8 attempts with streaming on vs passing with it off,
-    // and streaming runs produced finishReason=MALFORMED_RESPONSE empties.
-    // Revisit when the Gemini API stabilizes streaming + function calling.
-    if (process.env.TIER2_STREAM !== "1") {
+    // Tier2 true streaming is ON by default (TIER2_STREAM=0 is the kill switch).
+    // History: under the OLD conditions (173KB prompt + model-driven search
+    // chains) streaming dropped [[MATCH_CARD]] tags 8/8 on MW-03/MW-19 and
+    // produced MALFORMED_RESPONSE empties. After the journey-sliced prompt,
+    // ready-turn pre-search, and search-repeat cap landed (2026-07-17), the
+    // same tests went green with streaming on: 4/4 former victims passed and
+    // the full suite held baseline (71/73, both failures known flakes). If
+    // match cards start vanishing again, flip TIER2_STREAM=0 first.
+    if (process.env.TIER2_STREAM === "0") {
       const r = await chat.sendMessage(message);
       const resp = r.response;
       const fcs = resp.functionCalls() || [];
@@ -784,6 +865,34 @@ async function callTier2Claude(
     }
     return { text, functionCalls, response };
   };
+
+  // READY-TURN PRE-SEARCH: run the known-required search server-side and hand
+  // Gemini the results inside the same message - one writing pass instead of
+  // decide-to-search + write. Falls back to the normal model-driven flow on
+  // any failure (loudly logged, never fabricated).
+  if (preSearch && mcpClientRef) {
+    try {
+      const fcLike = { name: preSearch.name, args: { ...preSearch.args } };
+      injectAuthUser(fcLike);
+      searchCallCounts.set(fcLike.name, 1); // counts toward the per-turn repeat cap
+      const tPre = Date.now();
+      const toolResult = await mcpClientRef.callTool({ name: fcLike.name, arguments: fcLike.args }, undefined, { timeout: 180_000 });
+      let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
+      resultText = await maybeReorderCountryPrograms(fcLike.name, resultText);
+      resultText = await maybeRerankClinicsByPriorities(fcLike.name, resultText, fcLike.args);
+      const MAX_TOOL_RESULT = 8000;
+      if (resultText.length > MAX_TOOL_RESULT) {
+        resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first result above as a [[MATCH_CARD]] only]";
+      }
+      console.log(`[TIER2 PRE-SEARCH] ${fcLike.name} executed server-side in ${Date.now() - tPre}ms (result=${resultText.length} chars)`);
+      searchToolResults.push({ toolName: fcLike.name, resultText, toolArgs: fcLike.args });
+      toolCallsExecuted = true;
+      toolRoundCount = 1;
+      currentMessage = `${userMessage}\n\n[SERVER NOTE: ${fcLike.name} was ALREADY EXECUTED for this turn using the parent's saved profile - authoritative results below. Do NOT call ${fcLike.name} again. Write the presentation NOW following the match cycle's AFTER-MATCHES rules: a short personalized intro and ONE [[MATCH_CARD]] for the FIRST result.]\n\nTOOL RESULTS:\n${resultText}`;
+    } catch (e: any) {
+      console.log(`[TIER2 PRE-SEARCH] ${preSearch.name} failed (${e.message}) - falling back to model-driven search`);
+    }
+  }
 
   while (true) {
     if (!toolCallsExecuted) {
@@ -2102,6 +2211,26 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true },
     });
 
+    // Kick off the Tier2-only expensive lookups (expert guidance rules,
+    // answered whispers, knowledge-base RAG incl. its OpenAI embedding call)
+    // EARLY so they overlap with the entire user-context assembly below,
+    // instead of running serially after it (~300ms off Tier2 pre-work).
+    // Every branch resolves (per-item .catch), so this can never produce an
+    // unhandled rejection while later awaits run.
+    const useTier2Early = !!(currentSession?.tier2Active);
+    const tier2LookupsPromise: Promise<[string, any[], any[]]> = useTier2Early
+      ? (Promise.all([
+          getExpertGuidanceRules().catch(() => ""),
+          prisma.silentQuery.findMany({
+            where: { parentUserId: userId, sessionId: currentSessionId, status: "ANSWERED" },
+            select: { questionText: true, answerText: true, providerId: true },
+            orderBy: { updatedAt: "desc" },
+            take: 5,
+          }).catch(() => [] as any[]),
+          searchKnowledgeBase(String(req.body.message || ""), req.body.providerId || undefined, 5).catch(() => [] as any[]),
+        ]) as Promise<[string, any[], any[]]>)
+      : Promise.resolve(["", [], []] as [string, any[], any[]]);
+
     // If a GoStork human concierge has joined and not yet concluded, silence the AI
     if (currentSession?.humanJoinedAt && !currentSession.humanConcludedAt) {
       const sse = setupSSE(res);
@@ -2786,12 +2915,11 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // re-offer consultations, matching, or curation in that lane - the
       // provider runs the journey from here. Journey questions get
       // redirected to the provider's chat.
-      const accountIdsForHandoff = userRecord?.parentAccountId
-        ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
-        : [userId];
+      // Single query via the user relation - previously two sequential
+      // round-trips (account member ids, then sessions).
       const handedOffSessions = await prisma.aiChatSession.findMany({
         where: {
-          userId: { in: accountIdsForHandoff },
+          user: userRecord?.parentAccountId ? { parentAccountId: userRecord.parentAccountId } : { id: userId },
           handoffCompletedAt: { not: null },
           providerId: { not: null },
         },
@@ -3543,20 +3671,11 @@ IMPORTANT RULES:
     const userMessage = req.body.message || "";
     const ragProviderId = req.body.providerId || undefined;
 
-    // Skip expensive Tier 2-only operations for Tier 1 (Gemini Flash) sessions
-    const useTier2Early = !!(currentSession?.tier2Active);
-    const [guidanceRules, answeredWhispers, knowledgeResults] = useTier2Early
-      ? await Promise.all([
-          getExpertGuidanceRules(),
-          prisma.silentQuery.findMany({
-            where: { parentUserId: userId, sessionId: currentSessionId, status: "ANSWERED" },
-            select: { questionText: true, answerText: true, providerId: true },
-            orderBy: { updatedAt: "desc" },
-            take: 5,
-          }).catch(() => [] as any[]),
-          searchKnowledgeBase(userMessage, ragProviderId, 5).catch(() => [] as any[]),
-        ])
-      : ["", [], []]; // Tier 1: skip all expensive lookups
+    // Tier 2-only expensive lookups - ALREADY RUNNING since right after the
+    // session load (tier2LookupsPromise kicked off ~1s of pre-work earlier);
+    // Tier 1 sessions resolved instantly with empty values.
+    void ragProviderId; // retained for the debug/readability of req.body.providerId above
+    const [guidanceRules, answeredWhispers, knowledgeResults] = await tier2LookupsPromise;
 
     let answeredWhispersContext = "";
     if (answeredWhispers.length > 0) {
@@ -4798,6 +4917,37 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // Force tool use when parent says "ready" after CURATION - prevents AI from fabricating match results.
       // Only force if no match cards have been shown yet in this session (otherwise Tier2 handles it naturally).
       const forceToolUseForSearch = userSaidReady && curationAlreadySent && needsTools && presentedProviderIds.size === 0;
+
+      // Ready-turn pre-search (clinic only - deterministic): after a clinic
+      // curation + "ready", the search is not a model decision, it's ordered.
+      // Execute it server-side with args derived from the SAME shared helpers
+      // the card enrichment uses, collapsing the turn to one writing pass.
+      // Donor/surrogate searches stay model-driven - mapping free-text
+      // preferences to filters is the model's judgment call.
+      let preSearchForReady: { name: string; args: Record<string, unknown> } | null = null;
+      if (forceToolUseForSearch && /perfect clinic matches|clinic matches now|find your clinic matches/i.test(String(lastAiMsg?.content || ""))) {
+        const genderL = (userRecord?.gender || "").toLowerCase();
+        const isFemaleP = /\b(female|woman|girl)\b/.test(genderL) || genderL === "f";
+        const isMaleP = !isFemaleP && (/\b(male|man|boy)\b/.test(genderL) || genderL === "m");
+        const orientL = (userRecord?.sexualOrientation || "").toLowerCase();
+        const relL = (userRecord?.relationshipStatus || "").toLowerCase();
+        const eggL = (profile?.eggSource || "").toLowerCase();
+        const donorEggs = (isMaleP && (orientL.includes("gay") || relL.includes("single")))
+          || eggL.includes("donor")
+          || (!eggL && profile?.needsEggDonor === true);
+        const args: Record<string, unknown> = { eggSource: donorEggs ? "donor" : "own_eggs", limit: 10 };
+        if (!donorEggs) {
+          const age = deriveEggProviderAge(conversationMessages, userRecord, profile?.eggSource, isMaleP, "own_eggs");
+          if (age != null) args.ageGroup = ageToAgeGroup(age);
+          const isNew = deriveIsNewPatient(conversationMessages);
+          if (isNew != null) args.isNewPatient = isNew;
+        }
+        if (userRecord?.state) args.state = userRecord.state;
+        if (userRecord?.city) args.city = userRecord.city;
+        if (presentedProviderIds.size > 0) args.excludeIds = Array.from(presentedProviderIds);
+        preSearchForReady = { name: "search_clinics", args };
+      }
+
       console.log(`[LATENCY] pre-work before Tier2: ${Date.now() - tReq}ms (session load, profile, RAG, prompt assembly)`);
       const tier2Result = await callTier2Claude(
         systemPromptForTiers,
@@ -4810,6 +4960,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         userId,
         currentSession?.lastUploadedPhotoUrl ?? null,
         isFreshLookalikeUpload,
+        preSearchForReady,
       );
       // If Claude executed a search tool but returned empty text, retry once with an explicit
       // instruction to present the results. This happens when Claude calls the tool successfully
@@ -7949,102 +8100,23 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         card.eggSource = resolvedEggSource;
         console.log(`[CLINIC CARD] eggSource resolution: aiCalledWithDonor=${aiCalledWithDonor}, gender="${userRecord?.gender}", orientation="${userRecord?.sexualOrientation}", profileEggSource="${profile?.eggSource}", needsEggDonor=${profile?.needsEggDonor}, isGayCouple=${isGayCouple}, isSingleMale=${isSingleMale}, resolved="${resolvedEggSource}"`);
 
-        // Step 2: Determine egg provider's age from profile/user data or chat history
-        let eggProviderAge: number | null = null;
-        if (resolvedEggSource !== "donor") {
-          // Check if partner's eggs → use partner's age
-          const esSaved = (profile?.eggSource || "").toLowerCase();
-
-          // Determine if eggs come from the partner (not the logged-in parent)
-          // This is true when: profile says "partner", OR male parent using "own eggs" (must be partner's),
-          // OR chat history shows "partner's eggs" / "my partner's eggs"
-          let isPartnerEggs = esSaved.includes("partner") || (isMaleParent && resolvedEggSource === "own_eggs");
-
-          // Also scan chat history for "partner's eggs" answers
-          if (!isPartnerEggs) {
-            for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
-              if (chatHistory[i].role !== "user") continue;
-              const c = (chatHistory[i].content || "").toLowerCase();
-              if (/partner'?s?\s*eggs?/i.test(c)) { isPartnerEggs = true; break; }
-            }
-          }
-
-          // FIRST try chat history scan (most reliable - ages were just discussed)
-          // Look for the AI asking about the egg provider's age, then grab the user's answer
-          {
-            const ageQuestionPatterns = isPartnerEggs
-              ? [/how old is your partner/i, /partner.*age/i, /age.*partner/i, /partner.*old/i]
-              : [/how old are you/i, /your age/i, /old are you/i];
-            for (let i = 0; i < chatHistory.length - 1; i++) {
-              if (chatHistory[i].role !== "assistant") continue;
-              const aiMsg = chatHistory[i].content || "";
-              if (ageQuestionPatterns.some(p => p.test(aiMsg)) && chatHistory[i + 1]?.role === "user") {
-                const answer = chatHistory[i + 1].content || "";
-                const ageMatch = answer.match(/\b(\d{2})\b/);
-                if (ageMatch) {
-                  const age = parseInt(ageMatch[1], 10);
-                  if (age >= 18 && age <= 55) { eggProviderAge = age; break; }
-                }
-              }
-            }
-          }
-
-          // Fallback to DB values if chat scan found nothing
-          if (eggProviderAge === null) {
-            if (isPartnerEggs && userRecord?.partnerAge) {
-              eggProviderAge = Number(userRecord.partnerAge);
-            } else if (!isPartnerEggs && userRecord?.dateOfBirth) {
-              eggProviderAge = Math.floor((Date.now() - new Date(userRecord.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-            }
-          }
-
-          // Last resort: scan backwards for any age-like answer
-          if (eggProviderAge === null) {
-            for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
-              if (chatHistory[i].role !== "user") continue;
-              const c = chatHistory[i].content || "";
-              const ageMatch = c.match(/\b(\d{2})\b/);
-              if (ageMatch && c.length < 50) {
-                const age = parseInt(ageMatch[1], 10);
-                if (age >= 20 && age <= 50) { eggProviderAge = age; break; }
-              }
-            }
-          }
-        }
+        // Step 2: Determine egg provider's age (shared helper - same derivation
+        // the ready-turn server-side pre-search uses)
+        const eggProviderAge = deriveEggProviderAge(chatHistory, userRecord, profile?.eggSource, isMaleParent, resolvedEggSource);
 
         if (resolvedEggSource === "donor") {
           // For donor eggs, age group and new patient status are irrelevant
           delete card.ageGroup;
           delete card.isNewPatient;
         } else if (eggProviderAge !== null) {
-          if (eggProviderAge < 35) card.ageGroup = "under_35";
-          else if (eggProviderAge <= 37) card.ageGroup = "35_37";
-          else if (eggProviderAge <= 40) card.ageGroup = "38_40";
-          else card.ageGroup = "over_40";
+          card.ageGroup = ageToAgeGroup(eggProviderAge);
         } else {
           card.ageGroup = card.ageGroup || "under_35";
         }
 
-        // Step 3: Determine isNewPatient from chat history (skip for donor eggs - not relevant)
+        // Step 3: Determine isNewPatient (shared helper; skip for donor eggs - not relevant)
         if (resolvedEggSource !== "donor") {
-          let resolvedIsNew: boolean | null = null;
-          for (let i = chatHistory.length - 1; i >= Math.max(0, chatHistory.length - 30); i--) {
-            const c = (chatHistory[i].content || "").toLowerCase();
-            if (chatHistory[i].role === "user") {
-              if (/first.?time|new to ivf|never done|^first$|^new$/i.test(c)) { resolvedIsNew = true; break; }
-              if (/done.*(ivf|before)|i'?ve done|not my first|been through|returning|had prior|prior cycle/i.test(c)) { resolvedIsNew = false; break; }
-            }
-            // Also check AI questions to provide context
-            if (chatHistory[i].role === "assistant" && /first time.*ivf|been through.*before/i.test(c)) {
-              // The next user message after this is the answer - check it
-              if (i + 1 < chatHistory.length && chatHistory[i + 1].role === "user") {
-                const answer = (chatHistory[i + 1].content || "").toLowerCase();
-                if (/first|new|^yes/i.test(answer)) { resolvedIsNew = true; break; }
-                if (/before|done|no|prior|returning/i.test(answer)) { resolvedIsNew = false; break; }
-              }
-            }
-          }
-          card.isNewPatient = resolvedIsNew ?? false;
+          card.isNewPatient = deriveIsNewPatient(chatHistory) ?? false;
         }
 
         // Step 4: Build the label
