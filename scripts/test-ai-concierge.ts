@@ -1357,6 +1357,26 @@ const TEST_CASES: TestCase[] = [
   },
 
   {
+    id: "MW-02C", persona: "man-woman",
+    name: "MW-02C: Same as MW-02 but A5 = multi-priority (Success rates, Cost)",
+    desc: "Multi-priority A5 answer - exercises the A5 SAVE FALLBACK persistence and the priority-aware clinic re-ranking (cost fetch via CostsService + composite sort) in ai-router",
+    interestedServices: [],
+    messages: msgs(
+      P0, I_MW_MAN, CLINIC_NEED, EMB_NO,
+      "My partner's eggs", "My own", CARRIER_PARTNER,
+      "35", "33", "No", "First time",
+      "Success rates, Cost",
+      { send: "ready", assert: { hasMatchCard: true } },
+    ),
+    db: [
+      { field: "eggSource", expected: "Partner eggs" },
+      { field: "clinicPriority", expected: "Success rates, Cost" },
+      // Explicit partner-eggs answer must clear any stale needsEggDonor inference
+      { field: "needsEggDonor", expected: false },
+    ],
+  },
+
+  {
     id: "MW-03", persona: "man-woman",
     name: "MW-03: No embryos · Donor eggs · His sperm · She carries · Needs egg donor + clinic (Woman speaking)",
     desc: "MW couple with donor eggs, self-carry",

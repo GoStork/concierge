@@ -174,6 +174,18 @@ function normalizeEggSource(val: string, _parentGender?: string | null): string 
   if (v.includes("own egg") || v === "her own" || v === "my own eggs" || v === "own eggs") return "Own eggs";
   return val;
 }
+// An explicit own/partner egg source contradicts a stale needsEggDonor=true
+// (e.g. inferred from an Egg Donor service registration in a prior journey).
+// Clear the flag in the same write so donor-signal checks downstream (clinic
+// card enrichment, cost program matching) can't resurrect donor mode. An
+// explicit needsEggDonor in the same payload wins.
+function clearStaleNeedsEggDonor(data: Record<string, any>) {
+  if (typeof data.eggSource !== "string" || data.needsEggDonor !== undefined) return;
+  const v = data.eggSource.toLowerCase();
+  if (!v.includes("donor") && (v.includes("own") || v.includes("partner"))) {
+    data.needsEggDonor = false;
+  }
+}
 function normalizeSpermSource(val: string, parentGender?: string | null): string {
   const v = val.toLowerCase().trim().replace(/^a\s+/, "");
   if (v.includes("sperm donor") || v === "donor sperm" || v === "sperm donor") return "Sperm donor";
@@ -309,6 +321,12 @@ async function callTier2Claude(
     // so enforcement never depends on the model remembering to pass args.
     if (authUserId && fc.name === "search_clinics") {
       fc.args = { ...(fc.args || {}), userId: authUserId };
+      // Widen the candidate pool: priority re-ranking (cost / location / volume
+      // of cycles) needs more than the success-rate top 5 to choose from - a
+      // cheap or nearby clinic ranked #6 by success rate must be able to
+      // surface. maybeRerankClinicsByPriorities trims back to 5 after sorting.
+      const requestedLimit = Number((fc.args as any).limit) || 0;
+      if (requestedLimit < 10) (fc.args as any).limit = 10;
     }
     // Look-alike face match: both the parent identity and the photo to match
     // are server-supplied (never trust model-supplied values). photoUrl is the
@@ -451,6 +469,187 @@ async function callTier2Claude(
     }
   };
 
+  // After search_clinics returns, re-rank the clinics by the parent's stated
+  // A5 priorities ("What's most important to you when choosing a clinic?").
+  // The MCP tool sorts by success rate alone; when the parent said cost,
+  // location, or volume of cycles matter, those MUST shape the order -
+  // otherwise asking A5 is theater. Cost comes from the same parent-matched
+  // CostsService programs the profile page uses (via nest-app-ref, like the
+  // agency reorder above). Falls through silently on any failure - ordering
+  // is a quality improvement, not a correctness gate.
+  const CLINIC_PRIORITY_PATTERNS: { dim: string; re: RegExp }[] = [
+    { dim: "success", re: /success/i },
+    { dim: "cost", re: /\bcost|price|pricing|afford|budget|cheap|expensive/i },
+    { dim: "location", re: /location|close to|near me|nearby|distance|local|drive|commute/i },
+    { dim: "volume", re: /volume|number of cycles|cycles per year/i },
+    { dim: "physicianGender", re: /physician gender|doctor gender|(female|male|woman|man) (doctor|physician)/i },
+  ];
+  const maybeRerankClinicsByPriorities = async (toolName: string, resultText: string, toolArgs: any): Promise<string> => {
+    if (toolName !== "search_clinics" || !parentAccountId) return resultText;
+    try {
+      // 1. Gather the parent's stated priorities: profile first, then the chat
+      //    answer to the A5 question (Eva often misses the [[SAVE]] for A5 -
+      //    the A5 SAVE FALLBACK also patches it, but Tier2-only paths where
+      //    the bypass never fired still need the chat scan).
+      let rawPriorities = "";
+      try {
+        const profileRow = await prisma.intendedParentProfile.findUnique({
+          where: { parentAccountId },
+          select: { clinicPriority: true, clinicPriorityTags: true },
+        });
+        rawPriorities = [profileRow?.clinicPriority, profileRow?.clinicPriorityTags].filter(Boolean).join(", ");
+      } catch { /* profile lookup is best-effort */ }
+      if (!rawPriorities) {
+        const nonSystem = messages.filter((m: any) => m.role !== "system");
+        for (let i = nonSystem.length - 1; i > 0; i--) {
+          const q = nonSystem[i - 1];
+          if (q.role === "assistant" && typeof q.content === "string" && /most important.*choosing a clinic|matters most.*clinic/i.test(q.content)) {
+            const ans = nonSystem[i];
+            if (ans?.role === "user" && typeof ans.content === "string") rawPriorities = ans.content;
+            break;
+          }
+        }
+      }
+      if (!rawPriorities) return resultText;
+
+      const dims = new Set<string>();
+      for (const p of CLINIC_PRIORITY_PATTERNS) if (p.re.test(rawPriorities)) dims.add(p.dim);
+      // Free-text priorities we can't score numerically (e.g. "LGBTQ friendly",
+      // "bedside manner") - surfaced to Eva so she addresses them explicitly.
+      const otherPriorities = rawPriorities
+        .split(/,|\band\b|\+|\//i)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 2 && !CLINIC_PRIORITY_PATTERNS.some((p) => p.re.test(s)));
+      if (dims.size === 0 && otherPriorities.length === 0) return resultText;
+
+      // 2. Parse the tool's JSON payload
+      const jsonStart = resultText.indexOf("[");
+      const jsonEnd = resultText.lastIndexOf("]");
+      if (jsonStart < 0 || jsonEnd <= jsonStart) return resultText;
+      let before = resultText.slice(0, jsonStart);
+      const after = resultText.slice(jsonEnd + 1);
+      let clinics: any[] = JSON.parse(resultText.slice(jsonStart, jsonEnd + 1));
+      if (!Array.isArray(clinics) || clinics.length === 0) return resultText;
+
+      const notes: string[] = [];
+
+      // 3. Cost: parent-matched program starting cost per clinic, so cost can
+      //    be ranked AND so Eva never invents pricing for a clinic without any.
+      if (dims.has("cost")) {
+        try {
+          const { getNestApp } = await import("./nest-app-ref");
+          const nestApp = getNestApp();
+          const { CostsService } = await import("./src/modules/costs/costs.service");
+          const costsService: any = nestApp ? nestApp.get(CostsService) : null;
+          if (costsService) {
+            await Promise.all(clinics.map(async (c: any) => {
+              try {
+                const res = await costsService.getProviderParentPrograms(c.id, parentAccountId);
+                const totals = (res?.programs || [])
+                  .map((p: any) => Number(p.minTotal))
+                  .filter((n: number) => Number.isFinite(n) && n > 0);
+                c.costMinTotal = totals.length > 0 ? Math.min(...totals) : null;
+                c.costProgramCount = (res?.programs || []).length;
+              } catch {
+                c.costMinTotal = null;
+                c.costProgramCount = 0;
+              }
+            }));
+            const missingCost = clinics.filter((c: any) => c.costMinTotal == null).map((c: any) => c.name);
+            notes.push(`COST: the parent said COST matters. Each clinic carries costMinTotal - the authoritative parent-matched program starting cost from the DB - use it when discussing price.${missingCost.length > 0 ? ` These clinics have NO published pricing for this parent: ${missingCost.join(", ")}. NEVER state, estimate, or imply a price for them and NEVER praise their pricing - be transparent that they haven't published pricing yet and offer to request it for the parent.` : ""}`);
+          }
+        } catch (e: any) {
+          console.log(`[CLINIC RANK] cost fetch failed: ${e.message}`);
+        }
+      }
+
+      // 4. Location: the parent's own city/state (User record, else search args)
+      let parentCity: string | null = null;
+      let parentState: string | null = null;
+      if (dims.has("location")) {
+        if (authUserId) {
+          try {
+            const u = await prisma.user.findUnique({ where: { id: authUserId }, select: { city: true, state: true } });
+            parentCity = u?.city || null;
+            parentState = u?.state || null;
+          } catch { /* best-effort */ }
+        }
+        if (!parentCity && !parentState) {
+          parentCity = toolArgs?.city || null;
+          parentState = toolArgs?.state || toolArgs?.location || null;
+        }
+      }
+      const locationScore = (c: any): number => {
+        const cityL = (parentCity || "").toLowerCase().trim();
+        const stateL = (parentState || "").toLowerCase().trim();
+        if (!cityL && !stateL) return 0;
+        let best = 0;
+        for (const loc of Array.isArray(c.locations) ? c.locations : []) {
+          const ll = String(loc).toLowerCase();
+          if (cityL && ll.includes(cityL)) return 1;
+          if (stateL) {
+            // 2-letter state codes need token-exact matching ("ny" is inside "sunnyvale")
+            const stateHit = stateL.length <= 2 ? ll.split(/[^a-z]+/).includes(stateL) : ll.includes(stateL);
+            if (stateHit) best = Math.max(best, 0.6);
+          }
+        }
+        return best;
+      };
+
+      // 5. Physician gender: no structured preference field exists - hand it to Eva
+      if (dims.has("physicianGender")) {
+        notes.push(`PHYSICIAN GENDER: the parent said physician gender matters. Ask which gender they prefer (if the conversation hasn't established it), then use search_doctors with providerGender to surface a matching doctor at the recommended clinic.`);
+      }
+
+      // 6. Composite score over the scorable priorities, equal weights. Success
+      //    rate stays a tiebreaker even when not selected, never a hidden rank.
+      const scorable = ["success", "cost", "location", "volume"].filter((d) => dims.has(d));
+      const rerank = scorable.some((d) => d !== "success") && clinics.length >= 2;
+      if (rerank) {
+        const rates = clinics.map((c: any) => parseFloat(c.successRate) || 0);
+        const maxRate = Math.max(...rates, 0);
+        const cyclesArr = clinics.map((c: any) => Number(c.cycleCount) || 0);
+        const maxCycles = Math.max(...cyclesArr, 0);
+        const knownCosts = clinics
+          .map((c: any) => (typeof c.costMinTotal === "number" && c.costMinTotal > 0 ? c.costMinTotal : null))
+          .filter((n: number | null): n is number => n != null);
+        const cheapest = knownCosts.length > 0 ? Math.min(...knownCosts) : null;
+        for (const c of clinics) {
+          const parts: number[] = [];
+          for (const d of scorable) {
+            if (d === "success") parts.push(maxRate > 0 ? (parseFloat(c.successRate) || 0) / maxRate : 0);
+            else if (d === "volume") parts.push(maxCycles > 0 ? (Number(c.cycleCount) || 0) / maxCycles : 0);
+            else if (d === "location") parts.push(locationScore(c));
+            else if (d === "cost") parts.push(cheapest != null && typeof c.costMinTotal === "number" && c.costMinTotal > 0 ? cheapest / c.costMinTotal : 0);
+          }
+          c.priorityScore = parts.length > 0 ? Number((parts.reduce((a, b) => a + b, 0) / parts.length).toFixed(3)) : 0;
+        }
+        clinics.sort((a: any, b: any) => {
+          if (b.priorityScore !== a.priorityScore) return b.priorityScore - a.priorityScore;
+          const ra = parseFloat(a.successRate) || 0;
+          const rb = parseFloat(b.successRate) || 0;
+          if (rb !== ra) return rb - ra;
+          return (b.sponsored ? 1 : 0) - (a.sponsored ? 1 : 0);
+        });
+        notes.push(`RANKING: the clinics above are sorted by a composite of the parent's stated priorities (${scorable.join(", ")}) - each carries priorityScore. Present them IN THIS ORDER, and when you recommend one, explain the fit against EVERY priority the parent named (not just success rates).`);
+      }
+      if (otherPriorities.length > 0) {
+        notes.push(`OTHER PRIORITIES: the parent also said these matter: ${otherPriorities.join("; ")}. Address each one explicitly when presenting a clinic - if you have no data for one, say so honestly instead of ignoring it.`);
+      }
+
+      // 7. Trim the widened pool back down so the prompt stays lean - after
+      //    re-ranking, the top 5 are the right 5 for THIS parent.
+      if (clinics.length > 5) clinics = clinics.slice(0, 5);
+      before = before.replace(/Found \d+ IVF clinics/, `Found ${clinics.length} IVF clinics`);
+
+      console.log(`[CLINIC RANK] priorities="${rawPriorities.slice(0, 80)}" dims=[${[...dims].join(",")}] reranked=${rerank} order=${clinics.map((c: any) => c.name).join(" > ")}`);
+      return before + JSON.stringify(clinics, null, 2) + after + (notes.length > 0 ? "\n\n" + notes.join("\n\n") : "");
+    } catch (e: any) {
+      console.log(`[CLINIC RANK] rerank failed: ${e.message}`);
+      return resultText;
+    }
+  };
+
   let currentMessage: any = userMessage;
   // Multi-step tool chain support. Gemini frequently chains 2-4 tool calls before
   // producing the final text (e.g. search_surrogates -> resolve_match_card ->
@@ -495,6 +694,7 @@ async function callTier2Claude(
               const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> }, undefined, { timeout: 180_000 });
               let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
               resultText = await maybeReorderCountryPrograms(fc.name, resultText);
+              resultText = await maybeRerankClinicsByPriorities(fc.name, resultText, fc.args);
               // Truncate large search results: 29KB of surrogate data overwhelms Gemini's
               // second-round context, causing it to return 0 chars. We only need the first
               // 1-2 results to show a match card - truncate to keep the round-trip manageable.
@@ -559,6 +759,7 @@ async function callTier2Claude(
               const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> }, undefined, { timeout: 180_000 });
               let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
               resultText = await maybeReorderCountryPrograms(fc.name, resultText);
+              resultText = await maybeRerankClinicsByPriorities(fc.name, resultText, fc.args);
               const MAX_TOOL_RESULT = 8000;
               if (searchToolNames.includes(fc.name) && resultText.length > MAX_TOOL_RESULT) {
                 resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first result above as a [[MATCH_CARD]] only]";
@@ -2197,7 +2398,12 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         if (curCarrier == null) inf.carrier = "Gestational surrogate";
         if (curNeedsSurrogate == null) inf.needsSurrogate = true;
       }
-      if (registeredForEggDonor && curNeedsEggDonor == null && !hasEmbryos) {
+      // Never infer needsEggDonor over an explicit own/partner egg source - the
+      // registration may be from an abandoned or parallel journey, and the stale
+      // flag flips clinic cards + cost matching into donor mode (2026-07-16 bug).
+      const curEggLower = (curEggSource || "").toLowerCase();
+      const eggIsOwnOrPartner = !!curEggLower && !curEggLower.includes("donor") && (curEggLower.includes("own") || curEggLower.includes("partner"));
+      if (registeredForEggDonor && curNeedsEggDonor == null && !hasEmbryos && !eggIsOwnOrPartner) {
         inf.needsEggDonor = true;
       }
       if (registeredForSpermDonor && curSpermSource == null && !hasEmbryos) {
@@ -5054,6 +5260,20 @@ ${phase0Section}`;
         sse.sendToken(curationText);
         serverBypassServed = true;
         console.log("[A5 CURATION BYPASS] Served clinic curation directly - Gemini skipped");
+        // A5 SAVE FALLBACK: since this bypass skips Gemini entirely, no
+        // [[SAVE:{"clinicPriority":...}]] tag is ever emitted for the A5 answer
+        // (DB audit 2026-07-16: clinicPriority was null after a full clinic
+        // intake). The priority-aware clinic ranking depends on it - persist
+        // the answer deterministically, same pattern as D1 SAVE FALLBACK.
+        if (userRecord?.parentAccountId && userMessage && !profile?.clinicPriority) {
+          try {
+            await prisma.intendedParentProfile.update({
+              where: { parentAccountId: userRecord.parentAccountId },
+              data: { clinicPriority: userMessage.slice(0, 300) },
+            });
+            console.log(`[A5 SAVE FALLBACK] Saved clinicPriority="${userMessage.slice(0, 80)}"`);
+          } catch { /* profile row may not exist yet - the chat-scan fallback in the reranker covers it */ }
+        }
       } else if (!useTier2 && phase1Complete && needsSurrogate && !needsClinic && !registeredForClinic && chatMentionsSpermSource &&
           // Also block if Step 0 (clinic question) was asked in this session - means clinic is in scope
           // even if the user's answer didn't contain the word "clinic" (e.g. clicked "Yes, I need help")
@@ -5245,6 +5465,7 @@ ${phase0Section}`;
                 }
               }
               if (Object.keys(earlyData).length > 0) {
+                clearStaleNeedsEggDonor(earlyData);
                 await prisma.intendedParentProfile.upsert({
                   where: { parentAccountId: userRecord.parentAccountId },
                   update: earlyData,
@@ -6050,6 +6271,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           console.log(`[AUTO-EXTRACT] Saved user fields for ${userId}:`, autoUserData);
         }
         if (Object.keys(autoProfileData).length > 0 && userRecord.parentAccountId) {
+          clearStaleNeedsEggDonor(autoProfileData);
           const existingAutoProfile = extractedProfile || await prisma.intendedParentProfile.findUnique({ where: { parentAccountId: userRecord.parentAccountId } });
           if (existingAutoProfile) {
             await prisma.intendedParentProfile.update({ where: { parentAccountId: userRecord.parentAccountId }, data: autoProfileData });
@@ -6284,6 +6506,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           await prisma.user.update({ where: { id: userRecord.id }, data: userData });
         }
         if (Object.keys(profileData).length > 0) {
+          clearStaleNeedsEggDonor(profileData);
           const parentAccountId = userRecord.parentAccountId;
           if (parentAccountId) {
             const existing = await prisma.intendedParentProfile.findUnique({ where: { parentAccountId } });
@@ -7505,22 +7728,32 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // Signal 0 (strongest): Check what the AI actually passed to search_clinics
         const clinicSearchArgs = lastSearchToolResults.find(r => r.toolName === "search_clinics")?.toolArgs;
         const aiCalledWithDonor = clinicSearchArgs?.eggSource === "donor";
+        const aiCalledWithOwn = clinicSearchArgs?.eggSource === "own_eggs";
+        // Profile explicitly names an own/partner egg source (not donor)
+        const profileSaysOwnPartner = !!profileEggSource && !profileEggSource.includes("donor") && (profileEggSource.includes("own") || profileEggSource.includes("partner"));
 
-        // Check all donor signals - ANY of these means donor eggs
-        const isDonor =
-          // Signal 0: AI explicitly called search_clinics with eggSource="donor"
-          aiCalledWithDonor ||
-          // Signal 1: Gay male couple or single male - biologically must use donor
-          isGayCouple || isSingleMale ||
-          // Signal 2: Profile eggSource contains "donor"
-          profileEggSource.includes("donor") ||
-          // Signal 3: Profile says they need an egg donor
-          profile?.needsEggDonor === true;
-
-        if (isDonor) {
+        // Signals in priority order. Explicit statements (search args, profile
+        // eggSource) OUTRANK the needsEggDonor flag - that flag can be a stale
+        // inference from a prior journey (service registration), and letting it
+        // trump an explicit "Partner eggs" rendered donor-egg rates on a card
+        // the AI had correctly searched as own-eggs (2026-07-16 bug).
+        if (isGayCouple || isSingleMale) {
+          // Biology first: no female partner means eggs must come from a donor
           resolvedEggSource = "donor";
-        } else if (profileEggSource && !profileEggSource.includes("donor")) {
-          // Profile explicitly says own/partner eggs
+        } else if (aiCalledWithDonor) {
+          resolvedEggSource = "donor";
+        } else if (profileEggSource.includes("donor")) {
+          resolvedEggSource = "donor";
+        } else if (aiCalledWithOwn) {
+          resolvedEggSource = "own_eggs";
+        } else if (profileSaysOwnPartner) {
+          resolvedEggSource = "own_eggs";
+        } else if (profile?.needsEggDonor === true) {
+          // Weakest donor signal - only when nothing explicit contradicts it
+          resolvedEggSource = "donor";
+        } else if (profileEggSource) {
+          // Any other explicit non-donor value (e.g. "Donated embryos") - same
+          // own-eggs treatment the previous logic gave it
           resolvedEggSource = "own_eggs";
         } else {
           // Scan chat history for egg source answers AND identity clues
