@@ -1605,38 +1605,6 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
   }
 });
 
-// Phase 0 templates - duplicated from client so server can build them with correct services
-function buildServerPhase0(services: string[]): string {
-  const PHASE0_SURROGACY = `Before we dive in, let me give you a quick picture of how GoStork works.
-
-Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you scrolling through endless profiles across dozens of surrogacy agency websites, I get to know your situation, search our network of 60+ surrogacy agencies for you, and bring you one great match at a time - with full transparent pricing and no surprises. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
-
-Where are you in your journey right now - just starting to explore, or have you already done some research?`;
-
-  const PHASE0_EGG_DONOR = `Before we dive in, let me give you a quick picture of how GoStork works.
-
-Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you scrolling through thousands of donor profiles across dozens of agency websites, I get to know your situation, search our network of 30 egg donor agencies with over 10,000 donors for you, and bring you one great match at a time - with full transparent pricing and no surprises. And it's completely free for intended parents - the agencies pay us a referral fee and are not allowed to pass that cost on to you.
-
-Where are you in your journey right now - just starting to explore, or have you already done some research?`;
-
-  const PHASE0_CLINIC = `Before we dive in, let me give you a quick picture of how GoStork works.
-
-Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you researching and comparing dozens of IVF clinic websites, I get to know your situation, search our network of 30+ vetted IVF clinics for you, and bring you one great match at a time - with full transparent pricing and no surprises. And it's completely free for intended parents - the clinics pay us a referral fee and are not allowed to pass that cost on to you.
-
-Where are you in your journey right now - just starting to explore, or have you already done some research?`;
-
-  const PHASE0_GENERAL = `Before we dive in, let me give you a quick picture of how GoStork works.
-
-Most fertility sites hand you a giant directory and wish you luck. GoStork is the opposite - a matching concierge service. Think of me as your personal matchmaker: instead of you researching providers across dozens of websites, I get to know your situation, search our entire network for you - 60+ surrogacy agencies, 30 egg donor agencies with 10,000+ donors, and 30+ IVF clinics - and bring you one great match at a time, with full transparent pricing and no surprises. And it's completely free for intended parents - providers pay us a referral fee and are not allowed to pass that cost on to you.
-
-Where are you in your journey right now - just starting to explore, or have you already done some research?`;
-
-  if (services.includes("Surrogate")) return PHASE0_SURROGACY;
-  if (services.includes("Egg Donor")) return PHASE0_EGG_DONOR;
-  if (services.includes("Fertility Clinic")) return PHASE0_CLINIC;
-  return PHASE0_GENERAL;
-}
-
 aiRouter.post("/init-session", async (req: Request, res: Response) => {
   try {
     if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
