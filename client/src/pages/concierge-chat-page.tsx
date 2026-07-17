@@ -1345,7 +1345,7 @@ function ConsultationBookingCard({
   onCallbackSubmitted?: () => void;
   onBookingConfirmed?: (meta: { providerId?: string; subjectProfileId?: string | null }) => void;
 }) {
-  const [callbackExpanded, setCallbackExpanded] = useState(false);
+  const [callbackExpanded, setCallbackExpanded] = useState(true);
   const [callbackName, setCallbackName] = useState(userName || "");
   const [callbackEmail, setCallbackEmail] = useState(userEmail || "");
   const [callbackMessage, setCallbackMessage] = useState("");

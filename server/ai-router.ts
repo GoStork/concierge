@@ -119,11 +119,16 @@ async function callTier1Gemini(
     history,
   });
 
+  // Stream deltas to the client AS THEY ARRIVE - the reply appears word by word
+  // in real time instead of all at once after full generation. The rare
+  // post-processing edits below (trailing-question strip) are reconciled by the
+  // client's final "done" replace, which rebuilds the message from the
+  // processed content.
   const result = await chat.sendMessageStream(userMessage);
   let fullText = "";
   for await (const chunk of result.stream) {
     const text = chunk.text();
-    if (text) fullText += text;
+    if (text) { fullText += text; sse.sendToken(text); }
   }
 
   // Strip questions that Gemini bundles at the end of long educational messages.
@@ -147,10 +152,8 @@ async function callTier1Gemini(
     }
   }
 
-  // Fake-stream the (possibly processed) response
-  for (const char of fullText) {
-    sse.sendToken(char);
-  }
+  // Tokens were already streamed live above - the client's "done" replace picks
+  // up any post-processing (trailing-question strip) applied to fullText.
   return fullText;
 }
 
@@ -659,6 +662,61 @@ async function callTier2Claude(
   const MAX_TOOL_ROUNDS = 8;
   let toolRoundCount = 0;
 
+  // TRUE STREAMING with a peek window. Previously every tool-enabled round used
+  // non-streaming sendMessage and the full reply was fake-streamed only after
+  // complete generation - the parent stared at "typing" for the entire
+  // generation time. Now text deltas forward to the SSE as Gemini produces
+  // them. The first PEEK_CHARS stay buffered so a round that opens with a
+  // functionCall part remains silent exactly like before; the rare
+  // text-then-functionCall mix is reconciled by the client's final "done"
+  // replace (the client already rebuilds the message from the processed
+  // content at done). freshPhotoUpload keeps its full suppression.
+  const streamTurn = async (message: any): Promise<{ text: string; functionCalls: any[]; response: any }> => {
+    // Tier2 true streaming is OPT-IN (TIER2_STREAM=1) and OFF by default:
+    // A/B testing 2026-07-17 showed Gemini's streamGenerateContent with tools
+    // enabled measurably degrades structured output - MW-03/MW-19 dropped their
+    // [[MATCH_CARD]] tags 8/8 attempts with streaming on vs passing with it off,
+    // and streaming runs produced finishReason=MALFORMED_RESPONSE empties.
+    // Revisit when the Gemini API stabilizes streaming + function calling.
+    if (process.env.TIER2_STREAM !== "1") {
+      const r = await chat.sendMessage(message);
+      const resp = r.response;
+      const fcs = resp.functionCalls() || [];
+      const txt = fcs.length === 0 ? (resp.text() || "") : (() => { try { return resp.text() || ""; } catch { return ""; } })();
+      if (!freshPhotoUpload && fcs.length === 0 && txt) {
+        for (const word of txt.split(" ")) sse.sendToken(word + " ");
+      }
+      return { text: txt, functionCalls: fcs, response: resp };
+    }
+    const result = await chat.sendMessageStream(message);
+    let text = "";
+    let forwarded = 0;
+    let sawFunctionCall = false;
+    const PEEK_CHARS = 80;
+    for await (const chunk of result.stream) {
+      // NOTE: .functionCalls() and .text() are read separately so a throw in one
+      // can never drop the other's content for the same chunk.
+      try {
+        if (!sawFunctionCall && (chunk.functionCalls?.()?.length ?? 0) > 0) sawFunctionCall = true;
+      } catch { /* candidate without function parts */ }
+      let t = "";
+      try { t = chunk.text(); } catch { /* blocked/partless chunk */ }
+      if (!t) continue;
+      text += t;
+      if (!freshPhotoUpload && !sawFunctionCall && text.length >= PEEK_CHARS) {
+        sse.sendToken(text.slice(forwarded));
+        forwarded = text.length;
+      }
+    }
+    const response = await result.response;
+    const functionCalls = response.functionCalls() || [];
+    // Flush the tail (or a short-but-final reply that never crossed the peek window)
+    if (!freshPhotoUpload && functionCalls.length === 0 && text.length > forwarded) {
+      sse.sendToken(text.slice(forwarded));
+    }
+    return { text, functionCalls, response };
+  };
+
   while (true) {
     if (!toolCallsExecuted) {
       if (!hasTools) {
@@ -676,13 +734,13 @@ async function callTier2Claude(
         return { content: fullText, toolCallsExecuted: false, searchToolResults };
       }
 
-      // Has tools - non-streaming first pass to detect function calls
+      // Has tools - stream the first pass; per-chunk functionCalls detection
+      // keeps tool-call turns silent while pure-text turns stream live.
       const tCall = Date.now();
-      const response = await chat.sendMessage(currentMessage);
-      const functionCalls = response.response.functionCalls();
-      console.log(`[TIER2] call1 done in ${Date.now() - tCall}ms, functionCalls=${functionCalls?.length ?? 0}`);
+      const { text: firstText, functionCalls } = await streamTurn(currentMessage);
+      console.log(`[TIER2] call1 done in ${Date.now() - tCall}ms, functionCalls=${functionCalls.length}`);
 
-      if (functionCalls && functionCalls.length > 0) {
+      if (functionCalls.length > 0) {
         toolCallsExecuted = true;
         toolRoundCount = 1;
         const functionResponses: any[] = [];
@@ -716,12 +774,9 @@ async function callTier2Claude(
         }
         currentMessage = functionResponses;
       } else {
-        // Model chose text instead of calling tools - fake-stream the buffered text
-        const text = response.response.text();
-        const words = text.split(" ");
-        if (!freshPhotoUpload) for (const word of words) { sse.sendToken(word + " "); await new Promise((r) => setTimeout(r, 0)); }
+        // Model chose text instead of calling tools - already streamed live by streamTurn
         console.log(`[TIER2] DONE (text w/ tools enabled) in ${Date.now() - t0}ms`);
-        return { content: text, toolCallsExecuted: false, searchToolResults };
+        return { content: firstText, toolCallsExecuted: false, searchToolResults };
       }
     } else {
       // ROOT CAUSE FIX for "Stream AND response.text() both empty - Gemini produced no
@@ -740,10 +795,9 @@ async function callTier2Claude(
       // more tools, execute those if so, otherwise extract text. A MAX_TOOL_ROUNDS cap
       // (declared above the while) prevents infinite tool chains.
       const tStream2 = Date.now();
-      const response = await chat.sendMessage(currentMessage);
-      const moreFunctionCalls = response.response.functionCalls();
+      const { text: roundText, functionCalls: moreFunctionCalls, response: roundResponse } = await streamTurn(currentMessage);
 
-      if (moreFunctionCalls && moreFunctionCalls.length > 0) {
+      if (moreFunctionCalls.length > 0) {
         if (toolRoundCount >= MAX_TOOL_ROUNDS) {
           console.warn(`[TIER2] Hit MAX_TOOL_ROUNDS=${MAX_TOOL_ROUNDS} - bailing. Attempted: ${moreFunctionCalls.map(f => f.name).join(",")}`);
           return { content: "", toolCallsExecuted: true, searchToolResults };
@@ -780,19 +834,11 @@ async function callTier2Claude(
         continue; // loop back for another round
       }
 
-      // Model produced text (no more tools) - extract and stream it.
-      const textContent = response.response.text();
-      let fullText = textContent || "";
-      if (fullText) {
-        // Fake-stream the text - we used non-streaming sendMessage to detect chained tool calls.
-        // Suppressed on a fresh look-alike upload: the model often drafts a blurb about a
-        // not-yet-shown donor, which the server then overrides; streaming it first causes a
-        // visible swap. Hold the tokens and let the corrected final message arrive at once.
-        const words = fullText.split(" ");
-        if (!freshPhotoUpload) for (const word of words) { sse.sendToken(word + " "); await new Promise((r) => setTimeout(r, 0)); }
-      } else {
+      // Model produced text (no more tools) - streamTurn already forwarded it live.
+      let fullText = roundText || "";
+      if (!fullText) {
         // Truly empty after no more tool calls. Diagnostic log so the next dev knows why.
-        const candidates = (response.response as any)?.candidates || [];
+        const candidates = (roundResponse as any)?.candidates || [];
         const cand0 = candidates[0] || {};
         const finishReason = cand0?.finishReason || "UNKNOWN";
         const partsCount = cand0?.content?.parts?.length || 0;
@@ -802,7 +848,7 @@ async function callTier2Claude(
           p.functionResponse ? `fnResp(${p.functionResponse.name})` :
           JSON.stringify(p).slice(0, 80)
         );
-        const usageMetadata = (response.response as any)?.usageMetadata;
+        const usageMetadata = (roundResponse as any)?.usageMetadata;
         console.warn(`[TIER2] After ${toolRoundCount} tool round(s), Gemini returned no text - finishReason=${finishReason} parts=${partsCount} [${partKinds.join(",")}]${usageMetadata ? ` tokens(in=${usageMetadata.promptTokenCount},out=${usageMetadata.candidatesTokenCount})` : ""}`);
       }
       console.log(`[TIER2] DONE (after ${toolRoundCount} tool round(s)) in ${Date.now() - tStream2}ms (${fullText.length} chars). Total TIER2 ${Date.now() - t0}ms`);
@@ -1828,6 +1874,7 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
 });
 
 aiRouter.post("/chat", async (req: Request, res: Response) => {
+  const tReq = Date.now(); // request received - [LATENCY] logs measure pre-model work from here
   try {
     if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
       return res.status(401).json({ error: "Not authenticated" });
@@ -4621,6 +4668,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // Force tool use when parent says "ready" after CURATION - prevents AI from fabricating match results.
       // Only force if no match cards have been shown yet in this session (otherwise Tier2 handles it naturally).
       const forceToolUseForSearch = userSaidReady && curationAlreadySent && needsTools && presentedProviderIds.size === 0;
+      console.log(`[LATENCY] pre-work before Tier2: ${Date.now() - tReq}ms (session load, profile, RAG, prompt assembly)`);
       const tier2Result = await callTier2Claude(
         systemPromptForTiers,
         messages,
@@ -5325,6 +5373,7 @@ ${phase0Section}`;
         const tier1Messages = messages.filter((m: any) => m.role !== "system");
         const geminiErrorPhrases = /having trouble connecting|trouble connecting|i('m| am) sorry.*connecting|please try again.*moment|experiencing.*issues|temporarily unavailable/i;
         try {
+          console.log(`[LATENCY] pre-work before Tier1: ${Date.now() - tReq}ms`);
           finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
           // Gemini sometimes returns a generic "having trouble connecting" string instead of throwing.
           // Detect this and fall back to Tier 2 so the user gets a real response.
