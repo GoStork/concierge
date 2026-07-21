@@ -145,14 +145,14 @@ export function ReviewForm({
   return (
     <div className="space-y-3 rounded-[var(--radius)] border bg-secondary/30 p-3" data-testid="review-form">
       <div>
-        <p className="text-xs font-medium mb-1">Overall experience with {targetLabel}</p>
+        <p className="text-base font-semibold text-foreground mb-1">Overall experience with {targetLabel}</p>
         <StarRatingInput value={rating} onChange={setRating} />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         {categories.map((c) => (
           <div key={c.key} className="flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">{c.label}</span>
-            <StarRatingInput value={cats[c.key] || 0} onChange={(v) => setCats((p) => ({ ...p, [c.key]: v }))} size={16} />
+            <span className="text-sm text-foreground">{c.label}</span>
+            <StarRatingInput value={cats[c.key] || 0} onChange={(v) => setCats((p) => ({ ...p, [c.key]: v }))} size={19} />
           </div>
         ))}
       </div>
@@ -163,34 +163,37 @@ export function ReviewForm({
         className="w-full text-sm rounded-[var(--radius)] border bg-background p-2 min-h-[70px] font-ui"
         data-testid="review-text"
       />
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} className="rounded border-input accent-primary w-3.5 h-3.5" />
-        <span className="text-xs text-muted-foreground">Post anonymously (shown as "Verified GoStork Parent")</span>
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} className="rounded border-input accent-primary w-4 h-4 mt-0.5" />
+        <span className="text-sm text-foreground">
+          Hide my name
+          <span className="block text-xs text-muted-foreground">Reviews only ever show your first name and last initial (e.g. "Sarah K."). Check this to show "Verified GoStork Parent" instead.</span>
+        </span>
       </label>
       {error && <p className="text-xs text-destructive">{error}</p>}
       {rating > 0 && rating <= 2 ? (
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-foreground">
             Sorry it wasn't a great experience. You can post this publicly, or share it privately with the GoStork team - we'll follow up either way.
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" className="text-xs" disabled={pending} onClick={() => submit("PUBLIC")} data-testid="review-submit-public">
+            <Button size="sm" disabled={pending} onClick={() => submit("PUBLIC")} data-testid="review-submit-public">
               {pending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
               Post publicly
             </Button>
-            <Button size="sm" variant="outline" className="text-xs" disabled={pending} onClick={() => submit("PRIVATE_FEEDBACK")} data-testid="review-submit-private">
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => submit("PRIVATE_FEEDBACK")} data-testid="review-submit-private">
               Share privately with GoStork
             </Button>
-            {onCancel && <Button size="sm" variant="ghost" className="text-xs" onClick={onCancel}>Cancel</Button>}
+            {onCancel && <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>}
           </div>
         </div>
       ) : (
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" className="text-xs" disabled={pending || !rating} onClick={() => submit("PUBLIC")} data-testid="review-submit">
+          <Button size="sm" disabled={pending || !rating} onClick={() => submit("PUBLIC")} data-testid="review-submit">
             {pending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
             {existing?.rating ? "Update review" : "Submit review"}
           </Button>
-          {onCancel && <Button size="sm" variant="ghost" className="text-xs" onClick={onCancel}>Cancel</Button>}
+          {onCancel && <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>}
         </div>
       )}
     </div>
@@ -219,7 +222,7 @@ export function ReviewPromptCard({ messageId, data }: {
     return (
       <div className="mt-1.5" data-testid={`review-prompt-${messageId}`}>
         <div className="rounded-[var(--radius)] border bg-secondary/30 px-3 py-2 inline-flex items-center gap-3">
-          <span className="text-xs font-medium">Rate {providerName}:</span>
+          <span className="text-sm font-medium text-foreground">Rate {providerName}:</span>
           <StarRatingInput
             value={startRating}
             onChange={(v) => { setStartRating(v); setOpen(true); }}

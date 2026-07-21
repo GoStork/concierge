@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, MessageCircle, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ConciergeMemoryTab } from "@/components/concierge-memory-tab";
 
 interface ChatSession {
   id: string;
@@ -214,6 +215,9 @@ export default function ConciergeSettingsTab() {
           </div>
         )}
       </Card>
+
+      {/* Cross-thread memory lives with the concierge settings - one AI tab. */}
+      <ConciergeMemoryTab />
     </div>
   );
 }

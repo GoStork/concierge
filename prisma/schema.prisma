@@ -533,6 +533,26 @@ model ProviderMemberLocation {
 // our own post-consultation flow (only users who booked can review) - never
 // scraped from FertilityIQ/ZocDoc. Structure (recommend buckets, sub-dimension
 // scores, treatment metadata tags) is modeled after those sites; the data is ours.
+// Durable CROSS-THREAD concierge memory (ported from AI-Health's UserMemory):
+// small, parent-visible/editable facts about the family (soft preferences,
+// constraints, decisions, personal context) injected into EVERY session of the
+// account - the Eva chat AND provider threads. Holds only what the structured
+// IntendedParentProfile ([[SAVE]] fields) can't. Newer conflicting facts
+// supersede old ones (active=false), and the parent can view/edit/delete
+// everything on their Profile page so stale memories never fester.
+model ConciergeMemory {
+  id              String   @id @default(uuid())
+  parentAccountId String
+  kind            String   @default("FACT") // PREFERENCE | CONSTRAINT | GOAL | FACT | DECISION
+  text            String
+  source          String   @default("MANUAL") // CHAT_AUTO | USER_SAID | MANUAL
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([parentAccountId, active])
+}
+
 model ProviderReview {
   id                 String          @id @default(uuid())
   providerId         String // always set (org-level)
@@ -1546,6 +1566,13 @@ model AiChatSession {
   // matcher (find_lookalike_matches) searches against this photo; the AI
   // router injects it into the tool args (never trusts a model-supplied URL).
   lastUploadedPhotoUrl String?
+  // Rolling conversation summary (ported from AI-Health): turns older than the
+  // model's recent-history window are folded into this compact summary in the
+  // background, so a years-long thread keeps its gist without re-sending
+  // every message. summarizedThrough = createdAt watermark of the last folded
+  // message (nothing is folded twice).
+  historySummary     String?
+  summarizedThrough  DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

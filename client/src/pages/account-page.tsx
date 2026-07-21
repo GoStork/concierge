@@ -1831,6 +1831,8 @@ export default function AccountPage() {
         <Route path="documents" element={<DocumentsTab />} />
         <Route path="team" element={<TeamTab />} />
         <Route path="members" element={<ParentMembersTab />} />
+        {/* Memory merged into the AI Concierge tab - keep old links working. */}
+        <Route path="memory" element={<Navigate to="/account/concierge" replace />} />
         <Route path="calendar" element={<CalendarTab />} />
         {(isProvider || isAdmin) && providerId && (
           <Route path="billing" element={

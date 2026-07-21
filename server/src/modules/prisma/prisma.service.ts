@@ -207,6 +207,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.aiChatMessage;
   }
 
+  get conciergeMemory() {
+    return prisma.conciergeMemory;
+  }
+
   get conciergePromptSection() {
     return prisma.conciergePromptSection;
   }

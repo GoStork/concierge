@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
+import { memoryBlock, captureExplicitMemory, maybeUpdateSessionSummary, accountIdForUser } from "./concierge-memory";
 import path from "path";
 import fs from "fs";
 import { isUserOnline } from "./online-tracker";
@@ -914,7 +915,7 @@ async function callTier2Claude(
       // Has tools - stream the first pass; per-chunk functionCalls detection
       // keeps tool-call turns silent while pure-text turns stream live.
       const tCall = Date.now();
-      const { text: firstText, functionCalls } = await streamTurn(currentMessage);
+      const { text: firstText, functionCalls, response: firstResponse } = await streamTurn(currentMessage);
       console.log(`[TIER2] call1 done in ${Date.now() - tCall}ms, functionCalls=${functionCalls.length}`);
 
       if (functionCalls.length > 0) {
@@ -958,6 +959,12 @@ async function callTier2Claude(
       } else {
         // Model chose text instead of calling tools - already streamed live by streamTurn
         console.log(`[TIER2] DONE (text w/ tools enabled) in ${Date.now() - t0}ms`);
+        if (!firstText) {
+          // Empty text + no tool calls: surface WHY (finishReason SAFETY /
+          // RECITATION / MAX_TOKENS etc.) instead of failing silently.
+          const cand0 = (firstResponse as any)?.candidates?.[0];
+          console.warn(`[TIER2] Empty no-tools response - finishReason=${cand0?.finishReason || "UNKNOWN"} safety=${JSON.stringify(cand0?.safetyRatings || null)} promptFeedback=${JSON.stringify((firstResponse as any)?.promptFeedback || null)}`);
+        }
         return { content: firstText, toolCallsExecuted: false, searchToolResults };
       }
     } else {
@@ -2208,7 +2215,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
-      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true },
+      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true, historySummary: true },
     });
 
     // Kick off the Tier2-only expensive lookups (expert guidance rules,
@@ -2715,6 +2722,38 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }),
     );
 
+    // NEAR-DUPLICATE COLLAPSE: a lifetime thread accumulates repeats (the
+    // same intake exchange across journeys, echoed replies) and a window
+    // full of near-identical turns is exactly what provokes Gemini into
+    // producing yet another duplicate. Collapse older turns that are >=90%
+    // word-identical to a LATER turn of the same role - the model sees only
+    // the newest occurrence; the visible thread is untouched. Scoped to the
+    // tail that can actually reach the model's history window.
+    {
+      const DEDUP_SCAN = 60;
+      const start = Math.max(0, messages.length - DEDUP_SCAN);
+      const wordsOf = (s: any) => String(typeof s === "string" ? s : JSON.stringify(s))
+        .replace(/\[\[[^\]]*\]\]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+      const tailWords = messages.slice(start).map((m) => (m.role === "system" ? null : wordsOf(m.content)));
+      const drop = new Set<number>();
+      for (let i = 0; i < tailWords.length; i++) {
+        const a = tailWords[i];
+        if (!a || a.length < 12) continue;
+        for (let j = i + 1; j < tailWords.length; j++) {
+          if (messages[start + i].role !== messages[start + j].role) continue;
+          const b = tailWords[j];
+          if (!b || b.length < 12 || Math.abs(a.length - b.length) / Math.max(a.length, b.length) > 0.25) continue;
+          const bSet = new Set(b);
+          const overlap = a.filter((w) => bSet.has(w)).length / a.length;
+          if (overlap >= 0.9) { drop.add(start + i); break; } // later copy survives
+        }
+      }
+      if (drop.size > 0) {
+        console.log(`[HISTORY DEDUPE] Collapsed ${drop.size} near-duplicate turn(s) out of the model window`);
+        for (const idx of [...drop].sort((x, y) => y - x)) messages.splice(idx, 1);
+      }
+    }
+
     let personalityBlock = "You are Eva, the expert fertility concierge for GoStork.";
     let initialGreeting: string | null = null;
     if (matchmaker) {
@@ -2749,6 +2788,52 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     let hasUpcomingProviderConsult = false;
     if (userRecord) {
       const parts: string[] = [];
+
+      // --- LONG-THREAD CONTINUITY (ported from AI-Health) ---
+      // Rolling summary of turns older than the model's recent-history window,
+      // plus the durable cross-thread family memory. Both defer to the live
+      // profile/data blocks on any conflict.
+      if ((currentSession as any)?.historySummary) {
+        parts.push(
+          `EARLIER IN THIS CONVERSATION (summary of turns before the recent messages - use it for continuity, ` +
+          `but defer to the CURRENT profile and data blocks for any fact or number):\n${(currentSession as any).historySummary}`,
+        );
+      }
+      try {
+        const acctIdForMemory = userRecord?.parentAccountId || userId;
+        const memBlock = await memoryBlock(acctIdForMemory);
+        if (memBlock) parts.push(memBlock);
+        // Explicit "remember that..." capture - awaited only when the message
+        // actually asks to remember (rare), so no latency for normal turns.
+        if (!isSystemTrigger && req.body.message) {
+          const captured = await captureExplicitMemory(acctIdForMemory, String(req.body.message));
+          if (captured) {
+            parts.push(`The parent JUST asked you to remember something and it is now saved: "${captured}". Briefly confirm you've noted it (one warm sentence) as part of your reply, then continue with their request.`);
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[memory] injection failed: ${e?.message}`);
+      }
+
+      // PROFILE CONTRADICTION DETECTOR (deterministic - the prompt-section
+      // rule lives in the intake slice, which is dropped on later-journey
+      // turns): the parent mentions a spouse/partner while the saved profile
+      // says single/solo. Highest-stakes field - it flips the biological
+      // journey tree - so force the confirm-then-save protocol.
+      if (!isSystemTrigger && req.body.message) {
+        const mentionsSpouse = /\b(my|our)\s+(wife|husband|spouse|partner)\b/i.test(String(req.body.message));
+        const savedSingle = /single|solo/i.test(String(userRecord?.relationshipStatus || "")) || /solo_/i.test(String(profile?.familyType || ""));
+        if (mentionsSpouse && savedSingle) {
+          parts.push(
+            `PROFILE CONTRADICTION - CONFIRM FIRST (CRITICAL): The parent's profile says they are SINGLE/SOLO, but ` +
+            `their latest message mentions a spouse/partner. Do NOT ignore this and do NOT silently assume. In your ` +
+            `reply, warmly confirm in ONE short question whether to update their profile (e.g. "Quick check - I have ` +
+            `you down as single, but you mentioned your wife. Should I update that? It changes some of the options ` +
+            `I'll line up for you."), then continue helping with their actual request. Emit the [[SAVE:...]] for the ` +
+            `corrected relationship/family fields ONLY after they confirm.`,
+          );
+        }
+      }
 
       // --- IDENTITY ---
       parts.push(`The user's name is ${firstName}.`);
@@ -6924,6 +7009,83 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       finalContent += " [[HUMAN_NEEDED]]";
     }
 
+    // ANTI-ECHO GUARD: Gemini occasionally parrots its own previous message
+    // near-verbatim instead of writing a fresh reply - worst on match-card
+    // turns, where the card renders followed by the SAME intake question the
+    // parent just answered. Detect heavy overlap with the last assistant turn
+    // and force one corrective retry; if the retry echoes too, keep the cards
+    // but swap the stale text for a minimal lead-in.
+    try {
+      const lastAssistantForEcho = [...chatHistory].reverse().find((m: any) => m.role === "assistant" && typeof m.content === "string");
+      const echoWords = (s: string) => s.replace(/\[\[[^\]]*\]\]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+      if (lastAssistantForEcho && finalContent) {
+        const prevW = echoWords(lastAssistantForEcho.content);
+        const currW = echoWords(finalContent);
+        if (currW.length > 15 && prevW.length > 15) {
+          const prevSet = new Set(prevW);
+          const overlap = currW.filter((w) => prevSet.has(w)).length / currW.length;
+          if (overlap > 0.9) {
+            console.log(`[ANTI-ECHO] Reply repeats the previous assistant message (${(overlap * 100).toFixed(0)}% overlap) - retrying`);
+            const hadCard = /\[\[(MATCH_CARD|DOCTOR_CARD):/i.test(finalContent);
+            messages.push({
+              role: "user",
+              content: `SYSTEM OVERRIDE: Your reply repeated your PREVIOUS message almost verbatim${hadCard ? " after the match card" : ""}. The parent ALREADY answered that question - never re-ask it. Respond again, and follow ALL of these rules:
+1. Do NOT re-greet or re-introduce the task (no "I would love to help you find..." again) - you are MID-conversation; continue naturally from the parent's latest answer.
+2. START by briefly acknowledging what the parent just told you (e.g. their stated preferences) and treat it as saved - never ask for it again.
+3. ${hadCard ? "Keep the exact same [[MATCH_CARD]]/[[DOCTOR_CARD]] tag(s) and write a warm, personalized introduction for THAT specific profile following the MATCH BLURB rules (positives only)." : "Then continue with the NEXT step of the flow (or answer their question directly) - never restart from the beginning."}`,
+            });
+            const echoRetry = await claudeRetry(messages).catch(() => "");
+            messages.pop();
+            const retryW = echoRetry ? echoWords(echoRetry) : [];
+            const retryEchoes = retryW.length > 0 ? (retryW.filter((w) => prevSet.has(w)).length / retryW.length) > 0.9 : true;
+            const retryKeepsCards = !hadCard || /\[\[(MATCH_CARD|DOCTOR_CARD):/i.test(echoRetry || "");
+            if (echoRetry && !retryEchoes && retryKeepsCards) {
+              finalContent = echoRetry;
+            } else if (hadCard) {
+              const tags = finalContent.match(/\[\[[^\]]*\]\]/g) || [];
+              finalContent = `Here's a match based on exactly what you shared - take a look: ${tags.join(" ")}`.trim();
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[ANTI-ECHO] guard error:", e);
+    }
+
+    // FALSE-ESCALATION GUARD: the model sometimes imitates the escalation
+    // protocol for plain matching requests ("can you help me find a sperm
+    // donor?"), pinging every admin and derailing the flow. HUMAN_NEEDED only
+    // stands when the parent actually asked for a human. Otherwise strip the
+    // tag, the escalation quick replies, and the "I've notified the team"
+    // sentences - and if nothing meaningful remains, answer the matching ask
+    // with a warm kickoff so the next turn runs the normal intake.
+    const matchingHelpIntent = /\b(find|show|match|search|looking for|help (?:me|us))\b[\s\S]{0,60}\b(donor|surrogate|clinic|agency|doctor|match|profile)/i;
+    const scheduleConciergeIntent = /(schedule|book|set up).{0,40}(call|meeting).{0,40}(concierge|gostork|team|human)/i;
+    if (finalContent.includes("[[HUMAN_NEEDED]]")
+        && !humanRequestPatterns.test(userMsg)
+        && !scheduleConciergeIntent.test(userMsg)
+        && matchingHelpIntent.test(userMsg)) {
+      console.log(`[HUMAN_NEEDED GUARD] Matching request escalated by mistake - stripping escalation framing`);
+      finalContent = finalContent
+        .replace(/\[\[HUMAN_NEEDED\]\]/g, "")
+        .replace(/\s*\[\[QUICK_REPLY:Keep making progress\|I'll wait for the team\|Schedule a video call\]\]/gi, "")
+        .split(/(?<=[.!?])\s+/)
+        .filter(s => !/notified[\s\S]{0,60}(team|concierge)|jump in shortly|join (?:our|the) chat shortly|in the meantime|how would you like to proceed/i.test(s))
+        .join(" ")
+        .trim();
+      if (finalContent.replace(/\[\[.*?\]\]/g, "").trim().length < 25) {
+        finalContent = "Absolutely - I'd love to help with that! Tell me what matters most to you and I'll take it from there.";
+      }
+    }
+
+    // Stale escalation quick replies: the "Keep making progress / I'll wait /
+    // Schedule a video call" trio belongs to the escalation message ONLY, but
+    // the model keeps appending it to every later reply in a conversation
+    // that once escalated. If this reply isn't itself an escalation, drop it.
+    if (!finalContent.includes("[[HUMAN_NEEDED]]")) {
+      finalContent = finalContent.replace(/\s*\[\[QUICK_REPLY:Keep making progress\|I'll wait for the team\|Schedule a video call\]\]/gi, "").trim();
+    }
+
     let humanNeeded = false;
     if (finalContent.includes("[[HUMAN_NEEDED]]")) {
       humanNeeded = true;
@@ -8686,6 +8848,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         where: { id: savedUserMsg.id },
         data: { deliveredAt: now, readAt: now },
       }).catch(() => {});
+    }
+
+    // Roll turns that scrolled out of the recent window into the session's
+    // running summary (background - no added latency; batched internally).
+    if (replySessionId) {
+      void maybeUpdateSessionSummary(replySessionId).catch(() => {});
     }
 
     if (agreementPreviewRequested && replySessionId) {

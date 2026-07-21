@@ -72,22 +72,6 @@ export async function maybePostReviewPrompt(opts: {
 
     const { accountId, memberIds } = await accountIdsFor(opts.parentUserId);
 
-    // Already asked at this stage (or later)? Cards carry providerId + stage.
-    const STAGE_ORDER: ReviewStage[] = ["consult_completed", "matched", "handed_off"];
-    const existingPrompts = await prisma.aiChatMessage.findMany({
-      where: {
-        uiCardType: "review_prompt",
-        session: { userId: { in: memberIds } },
-        uiCardData: { path: ["providerId"], equals: opts.providerId },
-      },
-      select: { uiCardData: true },
-    });
-    const askedIdx = existingPrompts.reduce((max, p) => {
-      const idx = STAGE_ORDER.indexOf(((p.uiCardData as any) || {}).stage);
-      return Math.max(max, idx);
-    }, -1);
-    if (askedIdx >= STAGE_ORDER.indexOf(opts.stage)) return;
-
     const existingReview = await prisma.providerReview.findFirst({
       where: { parentAccountId: accountId, providerId: opts.providerId, memberId: null },
       select: { id: true, rating: true },
@@ -96,26 +80,56 @@ export async function maybePostReviewPrompt(opts: {
     const sessionId = await findEvaSession(memberIds);
     if (!sessionId) return;
 
-    await prisma.aiChatMessage.create({
-      data: {
-        sessionId,
-        role: "assistant",
-        content: promptCopy(opts.stage, provider.name, !!existingReview),
-        senderType: "system",
-        senderName: "GoStork",
-        uiCardType: "review_prompt",
-        uiCardData: {
-          providerId: opts.providerId,
-          providerName: provider.name,
-          memberId: null,
-          stage: opts.stage,
-          existingReviewId: existingReview?.id || null,
-          existingRating: existingReview?.rating || null,
-          submitted: false,
-          remindedAt: null,
+    // Check + insert under a Postgres advisory lock: the scheduler runs on
+    // MORE THAN ONE machine against the same DB (local dev + the always-on
+    // iMac), and their 10-min crons fire in the same second - an app-level
+    // check alone produced duplicate prompt cards ~50ms apart. The xact lock
+    // serializes writers on (account x provider), and the loser's re-check
+    // then sees the winner's card.
+    const STAGE_ORDER: ReviewStage[] = ["consult_completed", "matched", "handed_off"];
+    const lockKey = `review-prompt:${accountId}:${opts.providerId}`;
+    let posted = false;
+    await prisma.$transaction(async (tx) => {
+      // $executeRaw, not $queryRaw: the lock function returns void, which
+      // prisma's row deserializer rejects.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const existingPrompts = await tx.aiChatMessage.findMany({
+        where: {
+          uiCardType: "review_prompt",
+          session: { userId: { in: memberIds } },
+          uiCardData: { path: ["providerId"], equals: opts.providerId },
         },
-      },
+        select: { uiCardData: true },
+      });
+      const askedIdx = existingPrompts.reduce((max, p) => {
+        const idx = STAGE_ORDER.indexOf(((p.uiCardData as any) || {}).stage);
+        return Math.max(max, idx);
+      }, -1);
+      if (askedIdx >= STAGE_ORDER.indexOf(opts.stage)) return;
+
+      await tx.aiChatMessage.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content: promptCopy(opts.stage, provider.name, !!existingReview),
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "review_prompt",
+          uiCardData: {
+            providerId: opts.providerId,
+            providerName: provider.name,
+            memberId: null,
+            stage: opts.stage,
+            existingReviewId: existingReview?.id || null,
+            existingRating: existingReview?.rating || null,
+            submitted: false,
+            remindedAt: null,
+          },
+        },
+      });
+      posted = true;
     });
+    if (!posted) return;
     void emitJourneyEvent({
       eventType: "REVIEW_PROMPTED",
       parentAccountId: accountId,
@@ -169,10 +183,15 @@ export async function runReviewCheckinSweep(prismaArg?: any): Promise<void> {
   for (const card of stale) {
     const d = (card.uiCardData as any) || {};
     if (d.submitted || d.remindedAt) continue;
-    await db.aiChatMessage.update({
-      where: { id: card.id },
-      data: { uiCardData: { ...d, remindedAt: new Date().toISOString() } },
-    }).catch(() => {});
+    // Conditional claim: only ONE process may win the remindedAt write (the
+    // sweep runs on multiple machines) - the loser's rowcount is 0 and it
+    // skips posting, so the parent never gets two reminders.
+    const claimed: number = await db.$executeRaw`
+      UPDATE "AiChatMessage"
+      SET "uiCardData" = jsonb_set("uiCardData", '{remindedAt}', to_jsonb(now()::text))
+      WHERE id = ${card.id}::uuid AND ("uiCardData"->>'remindedAt') IS NULL
+    `.catch(() => 0);
+    if (!claimed) continue;
     await db.aiChatMessage.create({
       data: {
         sessionId: card.sessionId,

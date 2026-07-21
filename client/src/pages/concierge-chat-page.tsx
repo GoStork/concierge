@@ -3630,8 +3630,15 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         const unseenMsgs = newMsgs.filter((m: any) => m.id && !knownMessageIds.current.has(m.id));
         if (unseenMsgs.length > 0) {
           unseenMsgs.forEach((m: any) => knownMessageIds.current.add(m.id));
+          // A fetched USER message supersedes its optimistic (id-less) bubble -
+          // without this, a send that got persisted server-side but errored
+          // mid-stream (silent retry / reconnect) renders the same user
+          // message twice: once optimistic, once from the poll.
+          const incomingUserTexts = new Set(
+            unseenMsgs.filter((m: any) => m.role === "user").map((m: any) => (m.content || "").trim()),
+          );
           setMessages((prev) => [
-            ...prev,
+            ...prev.filter((m) => !(m.role === "user" && !m.id && incomingUserTexts.has((m.content || "").trim()))),
             ...unseenMsgs.map((m: any) => {
               const extras = m.uiCardData || {};
               return {
