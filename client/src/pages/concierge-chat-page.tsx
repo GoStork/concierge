@@ -2595,7 +2595,16 @@ export function ParentChatSidePanel({
     sessionBookings?.[0] ??
     null;
 
-  const displayProviderName = subjectInfo?.providerName || providerName;
+  // Post-booking the agency identity is REVEALED (the booking itself is the
+  // consent moment) - but subjectInfo can still carry the PRE-booking masked
+  // snapshot ("the Surrogate's Agency") from the old consultation card. Once
+  // any booking exists on the session, prefer the session's real provider
+  // name; with no booking yet the mask stands.
+  const MASKED_AGENCY = /^the (surrogate|egg donor|sperm donor)'s agency$/i;
+  const displayProviderName =
+    subjectInfo?.providerName && MASKED_AGENCY.test(subjectInfo.providerName) && existingBooking && providerName
+      ? providerName
+      : (subjectInfo?.providerName || providerName);
 
   return (
     <div className="w-72 border-l overflow-y-auto bg-muted/30 hidden md:flex md:flex-col shrink-0">

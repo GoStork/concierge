@@ -4995,8 +4995,74 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       }
     }
 
+    // Deterministic review update/leave bypass - BOTH tiers. The model has no
+    // way to (re)surface a review card, so it free-texts a rating interrogation
+    // instead. When the parent asks to update or leave a rating/review, serve a
+    // short confirmation and post the review card into THIS session - which
+    // also fixes prompts stranded in another Eva thread of the same account.
+    let reviewCardRequest: { providerId: string; providerName: string; existing: { id: string; rating: number | null; stage: string | null } | null } | null = null;
+    const reviewAskRegex = /\b(update|change|edit|revise|redo)\b[^.?!]{0,60}\b(rating|review)\b|\b(leave|write|give|add|submit)\b[^.?!]{0,60}\b(review|rating)\b/i;
+    if (!serverBypassServed && !isSystemTrigger && currentSessionId && reviewAskRegex.test(userMessage)) {
+      try {
+        const acct = userRecord?.parentAccountId || userId;
+        const myReviews = await prisma.providerReview.findMany({
+          where: { parentAccountId: acct, memberId: null },
+          select: { id: true, rating: true, stage: true, providerId: true, provider: { select: { name: true } } },
+          orderBy: { updatedAt: "desc" },
+        });
+        const msgLc = userMessage.toLowerCase();
+        const nameMatches = (name: string) => {
+          const lc = (name || "").toLowerCase().trim();
+          if (!lc) return false;
+          if (msgLc.includes(lc)) return true;
+          const toks = lc.split(/[^a-z0-9]+/).filter((t) => t.length >= 4);
+          const hits = toks.filter((t) => msgLc.includes(t));
+          return hits.some((t) => t.length >= 6) || hits.length >= 2;
+        };
+        let target = myReviews.find((r) => nameMatches(r.provider?.name || ""));
+        if (!target && myReviews.length === 1) target = myReviews[0];
+        if (target) {
+          reviewCardRequest = { providerId: target.providerId, providerName: target.provider?.name || "the provider", existing: { id: target.id, rating: target.rating, stage: target.stage } };
+          finalContent = `Of course! Here's your current review of ${reviewCardRequest.providerName} - tap "Update review" on the card below to change your stars or comments.`;
+          sse.sendToken(finalContent);
+          serverBypassServed = true;
+        } else if (myReviews.length > 1) {
+          const opts = myReviews.slice(0, 4).map((r) => `Update my ${r.provider?.name || "provider"} review`).join("|");
+          finalContent = `Happy to! Which review would you like to update? [[QUICK_REPLY:${opts}]]`;
+          sse.sendToken(finalContent.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim());
+          serverBypassServed = true;
+        } else {
+          // No reviews yet: if a journey provider is review-eligible, post a fresh ask.
+          const { eligibleStage } = await import("./reviews-router");
+          const memberIds = userRecord?.parentAccountId
+            ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+            : [userId];
+          const journeyProviders = await prisma.aiChatSession.findMany({
+            where: { userId: { in: memberIds }, providerId: { not: null } },
+            select: { providerId: true, provider: { select: { name: true } } },
+            distinct: ["providerId"],
+          });
+          const named = journeyProviders.find((s) => nameMatches(s.provider?.name || ""));
+          for (const c of (named ? [named] : journeyProviders)) {
+            const elig = await eligibleStage(acct, c.providerId!);
+            if (elig.eligible) {
+              reviewCardRequest = { providerId: c.providerId!, providerName: c.provider?.name || "the provider", existing: null };
+              finalContent = `I'd love that! Here's the review card for ${reviewCardRequest.providerName} - tap the stars below to get started.`;
+              sse.sendToken(finalContent);
+              serverBypassServed = true;
+              break;
+            }
+          }
+          if (!serverBypassServed) console.log("[REVIEW BYPASS] No reviewable provider found - falling through to the model");
+        }
+        if (serverBypassServed) console.log(`[REVIEW BYPASS] Served (${reviewCardRequest ? reviewCardRequest.providerName : "which-provider picker"})`);
+      } catch (e: any) {
+        console.error("[REVIEW BYPASS] failed - falling through to the model:", e?.message);
+      }
+    }
+
     if (serverBypassServed && finalContent) {
-      // Canned lawyer reply already streamed - skip both model tiers.
+      // Canned bypass reply already streamed - skip both model tiers.
     } else if (useTier2) {
       // Tier 2: Claude Sonnet 4.6 with full prompt + caching + tools
       // Force tool use when parent says "ready" after CURATION - prevents AI from fabricating match results.
@@ -8871,6 +8937,40 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         await postBankCheckoutCard(replySessionId, bankCheckoutDonorId);
       } catch (e: any) {
         console.error("[BANK_CHECKOUT] Failed to post checkout card:", e?.message);
+      }
+    }
+
+    // Review bypass: drop the review card right below the confirmation reply.
+    // Existing review -> submitted chip with the "Update review" opener;
+    // no review yet -> the fresh star-row ask.
+    if (reviewCardRequest && replySessionId) {
+      try {
+        const ex = reviewCardRequest.existing;
+        await prisma.aiChatMessage.create({
+          data: {
+            sessionId: replySessionId,
+            role: "assistant",
+            senderType: "system",
+            senderName: "GoStork",
+            content: ex
+              ? `Your review of ${reviewCardRequest.providerName}:`
+              : `How was your experience with ${reviewCardRequest.providerName}? Your rating helps other families choose well.`,
+            uiCardType: "review_prompt",
+            uiCardData: {
+              providerId: reviewCardRequest.providerId,
+              providerName: reviewCardRequest.providerName,
+              memberId: null,
+              stage: ex?.stage || "handed_off",
+              existingReviewId: ex?.id || null,
+              existingRating: ex?.rating || null,
+              submitted: !!ex,
+              submittedRating: ex?.rating || null,
+              remindedAt: null,
+            },
+          },
+        });
+      } catch (e: any) {
+        console.error("[REVIEW BYPASS] card post failed:", e?.message);
       }
     }
 

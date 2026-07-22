@@ -122,7 +122,13 @@ export function ReviewForm({
       queryClient.invalidateQueries({ queryKey: ["review-eligibility", providerId, memberId || "org"] });
       onSubmitted?.({ status: data.status, visibility: data.visibility });
     } catch (e: any) {
-      setError(e?.message || "Failed to save your review - please try again.");
+      // Gateway/tunnel failures surface as raw HTML pages - never dump those
+      // into the form. Show server JSON messages when short and clean.
+      const raw = String(e?.message || "");
+      const friendly = raw && raw.length < 160 && !/<[a-z!]/i.test(raw)
+        ? raw
+        : "Connection hiccup - your review wasn't saved. Please try again.";
+      setError(friendly);
     } finally {
       setPending(false);
     }
@@ -148,7 +154,9 @@ export function ReviewForm({
         <p className="text-base font-semibold text-foreground mb-1">Overall experience with {targetLabel}</p>
         <StarRatingInput value={rating} onChange={setRating} />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+      {/* One category per row, always stacked - the two-column layout on wide
+          pages read as if only half the categories were editable. */}
+      <div className="space-y-2.5 max-w-md">
         {categories.map((c) => (
           <div key={c.key} className="flex items-center justify-between gap-2">
             <span className="text-sm text-foreground">{c.label}</span>
@@ -208,13 +216,58 @@ export function ReviewPromptCard({ messageId, data }: {
   const [open, setOpen] = useState(false);
   const [startRating, setStartRating] = useState(0);
   const [submitted, setSubmitted] = useState(!!data.submitted);
+  const [updating, setUpdating] = useState(false);
   const providerName = data.providerName || "your provider";
 
+  // Reopening a submitted card for an update: pull the saved review so the
+  // form comes back pre-filled (same endpoint the profile page uses).
+  const existingQuery = useQuery<any>({
+    queryKey: ["review-eligibility", data.providerId, data.memberId || "org"],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (data.memberId) params.set("memberId", data.memberId);
+      else params.set("providerId", data.providerId);
+      const res = await fetch(`/api/reviews/eligibility?${params}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: updating,
+    staleTime: 10_000,
+  });
+
+  if (submitted && updating) {
+    const existing = existingQuery.data?.existing;
+    if (existingQuery.isLoading) {
+      return <div className="mt-1.5 text-xs text-muted-foreground">Loading your review...</div>;
+    }
+    return (
+      <div className="mt-1.5 max-w-md">
+        <ReviewForm
+          providerId={data.providerId}
+          memberId={data.memberId || undefined}
+          targetLabel={providerName}
+          existing={existing ? { rating: existing.rating, categories: existing.subScores, text: existing.bodyText, anonymous: existing.anonymous } : null}
+          onSubmitted={() => setUpdating(false)}
+          onCancel={() => setUpdating(false)}
+        />
+      </div>
+    );
+  }
   if (submitted) {
     return (
-      <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]" data-testid={`review-prompt-done-${messageId}`}>
-        <Check className="w-3.5 h-3.5" />
-        Review submitted{data.submittedRating ? <StarDisplay value={data.submittedRating} size={12} /> : null}
+      <div className="mt-1.5 inline-flex items-center gap-2" data-testid={`review-prompt-done-${messageId}`}>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[hsl(var(--brand-success))]/10 text-[hsl(var(--brand-success))]">
+          <Check className="w-3.5 h-3.5" />
+          Review submitted{data.submittedRating ? <StarDisplay value={data.submittedRating} size={12} /> : null}
+        </span>
+        <button
+          type="button"
+          className="text-xs text-primary underline underline-offset-2 hover:opacity-80"
+          onClick={() => setUpdating(true)}
+          data-testid={`review-prompt-update-${messageId}`}
+        >
+          Update review
+        </button>
       </div>
     );
   }

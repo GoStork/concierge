@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { InlineBookingCalendar } from "@/pages/concierge-chat-page";
+import { RatingBadge } from "@/components/reviews/reviews-ui";
 
 // Provider-type chip under the name. The card serves EVERY provider type
 // (agency, clinic, law firm, banks, wellness) - the label derives from the
@@ -109,6 +110,11 @@ export function ProviderProfileCard({
           {/* The GoStork house profile is the concierge team, not a provider */}
           {(providerName || "").trim().toLowerCase() !== "gostork" && typeLabel && (
             <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{typeLabel}</p>
+          )}
+          {/* Verified-parent rating - hidden while the agency identity is masked
+              pre-booking (a rating on an anonymous card is just noise). */}
+          {!/^the (surrogate|egg donor|sperm donor)'s agency$/i.test(providerName || "") && (
+            <RatingBadge avg={providerQuery.data?.avgOverallScore} count={providerQuery.data?.reviewCount} size={11} />
           )}
         </div>
       </div>

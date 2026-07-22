@@ -90,7 +90,7 @@ function reviewerLabel(author: { firstName?: string | null; name?: string | null
  * with this provider? Banks have no consultations - Invoice Paid acts as
  * their "matched" unlock.
  */
-async function eligibleStage(accountId: string, providerId: string): Promise<{ eligible: boolean; stage: string | null; journeyType: string | null }> {
+export async function eligibleStage(accountId: string, providerId: string): Promise<{ eligible: boolean; stage: string | null; journeyType: string | null }> {
   const { buildJourneyTimelines } = await import("./journey-timeline");
   const { journeys } = await buildJourneyTimelines(accountId, { providerId });
   const j = journeys[0];
@@ -339,7 +339,18 @@ reviewsRouter.post("/api/reviews", requireAuth, async (req, res) => {
     });
     for (const p of prompts) {
       const d = (p.uiCardData as any) || {};
-      if (d.submitted) continue;
+      // Already-resolved cards still refresh their stars: the parent can
+      // update the review from the chat chip, and the chip must show the
+      // NEW rating, not the one from the first submission.
+      if (d.submitted) {
+        if (d.submittedRating !== rating) {
+          await prisma.aiChatMessage.update({
+            where: { id: p.id },
+            data: { uiCardData: { ...d, submittedRating: rating, updatedAtIso: new Date().toISOString() } },
+          }).catch(() => {});
+        }
+        continue;
+      }
       await prisma.aiChatMessage.update({
         where: { id: p.id },
         data: { uiCardData: { ...d, submitted: true, submittedRating: rating, submittedAt: new Date().toISOString() } },
