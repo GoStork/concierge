@@ -369,6 +369,24 @@ reviewsRouter.post("/api/reviews", requireAuth, async (req, res) => {
         reviewId: review.id, providerId, memberId: memberId ?? null, rating,
         message: `A ${rating}-star review of ${targetLabel} just published.`,
       });
+      // First publication only (updates don't re-ping): email the coordinator
+      // handling this parent (CC provider admins) with a reply link, plus
+      // in-app notifications. Fire-and-forget - publishing never blocks on it.
+      if (!existing) {
+        const authorRow = await prisma.user.findUnique({ where: { id: user.id }, select: { firstName: true, name: true } });
+        const memberRow = memberId ? await prisma.providerMember.findUnique({ where: { id: memberId }, select: { name: true } }) : null;
+        import("./notify-provider-review")
+          .then(({ notifyProviderNewReview }) => notifyProviderNewReview({
+            reviewId: review.id,
+            providerId,
+            authorUserId: user.id,
+            reviewerLabel: reviewerLabel(authorRow, anonymous === true),
+            rating,
+            text: (text || "").trim() || null,
+            memberName: memberRow?.name || null,
+          }))
+          .catch((e) => console.error("[REVIEW NOTIFY] dispatch failed:", e?.message));
+      }
     } else {
       await notifyAdmins("REVIEW_PENDING", {
         reviewId: review.id, providerId, rating,
@@ -433,6 +451,20 @@ reviewsRouter.post("/api/reviews/:id/flag", requireAuth, async (req, res) => {
       reviewId: review.id, providerId: review.providerId,
       message: `A provider flagged a review for re-check: ${(req.body?.reason || "no reason given").slice(0, 200)}`,
     });
+    // Email the GoStork team too (the flag also lands in the admin home
+    // "Needs attention" queue via the dashboard endpoint).
+    {
+      const providerRow = await prisma.provider.findUnique({ where: { id: review.providerId }, select: { name: true } });
+      import("./notify-provider-review")
+        .then(({ notifyAdminsReviewFlagged }) => notifyAdminsReviewFlagged({
+          reviewId: review.id,
+          providerName: providerRow?.name || "A provider",
+          rating: review.rating,
+          reviewText: review.bodyText,
+          flagReason: (req.body?.reason || "").trim() || null,
+        }))
+        .catch((e) => console.error("[REVIEW FLAG NOTIFY] dispatch failed:", e?.message));
+    }
     res.json({ ok: true });
   } catch (e: any) {
     console.error("[reviews] flag failed:", e?.message);
@@ -537,6 +569,17 @@ reviewsRouter.post("/api/admin/reviews/:id/remove", requireAuth, async (req, res
       data: { status: "REJECTED", aiScreenNotes: (req.body?.reason || "").trim() || review.aiScreenNotes },
     });
     await updateReviewAggregates(review.providerId, review.memberId);
+    // The provider hears the outcome - especially when they flagged it.
+    import("./notify-provider-review")
+      .then(({ notifyProviderReviewOutcome }) => notifyProviderReviewOutcome({
+        reviewId: review.id,
+        providerId: review.providerId,
+        authorUserId: review.authorUserId,
+        rating: review.rating,
+        outcome: "removed",
+        wasFlagged: !!review.flaggedByProviderAt,
+      }))
+      .catch((e) => console.error("[REVIEW OUTCOME NOTIFY] dispatch failed:", e?.message));
     res.json({ ok: true });
   } catch (e: any) {
     console.error("[reviews] remove failed:", e?.message);
@@ -555,6 +598,18 @@ reviewsRouter.post("/api/admin/reviews/:id/restore", requireAuth, async (req, re
       data: { status: "PUBLISHED", flaggedByProviderAt: null, flagReason: null },
     });
     await updateReviewAggregates(review.providerId, review.memberId);
+    // Outcome depends on what "restore" resolved: clearing a flag on a live
+    // review = "kept after re-check"; re-publishing a removed one = "republished".
+    import("./notify-provider-review")
+      .then(({ notifyProviderReviewOutcome }) => notifyProviderReviewOutcome({
+        reviewId: review.id,
+        providerId: review.providerId,
+        authorUserId: review.authorUserId,
+        rating: review.rating,
+        outcome: review.status === "REJECTED" ? "republished" : "kept",
+        wasFlagged: !!review.flaggedByProviderAt,
+      }))
+      .catch((e) => console.error("[REVIEW OUTCOME NOTIFY] dispatch failed:", e?.message));
     res.json({ ok: true });
   } catch (e: any) {
     console.error("[reviews] restore failed:", e?.message);

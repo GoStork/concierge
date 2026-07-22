@@ -202,7 +202,8 @@ export default function AdminHomePage() {
     (data?.escalations.length || 0) +
     (data?.pendingMeetings?.length || 0) +
     (data?.dueInvoices.filter(i => i.overdue).length || 0) +
-    (data?.failedPayouts.length || 0);
+    (data?.failedPayouts.length || 0) +
+    ((data as any)?.flaggedReviews?.length || 0);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6 pb-24 md:pb-6">
@@ -226,6 +227,17 @@ export default function AdminHomePage() {
           </div>
         ) : (
           <div className="space-y-2">
+            {((data as any)?.flaggedReviews || []).map((r: any) => (
+              <QueueRow
+                key={r.taskKey}
+                icon={<Star className="w-4 h-4" />}
+                title={`${r.providerName || "A provider"} flagged a ${r.rating ?? "?"}-star review for re-check`}
+                detail={r.flagReason ? `"${r.flagReason}" - flagged ${fmtWhen(r.flaggedAt)}` : `Flagged ${fmtWhen(r.flaggedAt)}`}
+                cta="Review"
+                onClick={() => navigate("/admin/reviews?filter=flagged")}
+                onDismiss={() => dismiss.mutate(r.taskKey)}
+              />
+            ))}
             {(data?.escalations || []).map(e => (
               <QueueRow
                 key={e.sessionId}

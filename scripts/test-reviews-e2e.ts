@@ -162,6 +162,11 @@ async function main() {
 
     const mineList = await (await fetch(`${BASE}/api/reviews/mine`, { headers: hdr(provAuth) })).json();
     check("provider /mine lists the public review", Array.isArray(mineList) && mineList.some((r: any) => r.id === post1Body.reviewId), `n=${Array.isArray(mineList) ? mineList.length : "?"}`);
+
+    // Phase 8 provider notifications: the fresh unanswered review appears in
+    // the provider work queue until a reply is posted.
+    const q1 = await (await fetch(`${BASE}/api/provider/dashboard-queue`, { headers: hdr(provAuth) })).json();
+    check("work queue lists the unanswered review", (q1.reviewsAwaitingReply || []).some((r: any) => r.reviewId === post1Body.reviewId), `n=${q1.reviewsAwaitingReply?.length ?? "?"}`);
     const privateVisibleToProvider = Array.isArray(mineList) && created.reviewIds.length > 1 && mineList.some((r: any) => r.id === created.reviewIds[1]);
     check("private feedback hidden from provider /mine", !privateVisibleToProvider);
 
@@ -169,6 +174,8 @@ async function main() {
       method: "POST", headers: hdr(provAuth), body: JSON.stringify({ text: "Thank you! We loved working with you." }),
     });
     check("provider reply accepted", reply.ok, `${reply.status}`);
+    const q2 = await (await fetch(`${BASE}/api/provider/dashboard-queue`, { headers: hdr(provAuth) })).json();
+    check("work queue clears after reply", !(q2.reviewsAwaitingReply || []).some((r: any) => r.reviewId === post1Body.reviewId));
     const pub3 = await (await fetch(`${BASE}/api/reviews/provider/${providerId}`, { headers: hdr(parent.auth) })).json();
     const withReply = (pub3.reviews || []).find((r: any) => r.id === post1Body.reviewId);
     check("reply visible on public list", !!withReply?.providerReply, withReply?.providerReply);
@@ -195,8 +202,15 @@ async function main() {
     const pub4 = await (await fetch(`${BASE}/api/reviews/provider/${providerId}`, { headers: hdr(parent.auth) })).json();
     check("removed review gone from public list", !(pub4.reviews || []).some((r: any) => r.id === post1Body.reviewId));
 
+    await new Promise((r) => setTimeout(r, 1500)); // outcome notify is fire-and-forget
+    const removedNotif = await prisma.inAppNotification.findFirst({ where: { userId: provUser.id, eventType: "REVIEW_REMOVED" } });
+    check("provider notified of removal outcome", !!removedNotif);
+
     const restore = await fetch(`${BASE}/api/admin/reviews/${post1Body.reviewId}/restore`, { method: "POST", headers: hdr(adminAuth) });
     check("admin restore ok", restore.ok, `${restore.status}`);
+    await new Promise((r) => setTimeout(r, 1500)); // outcome notify is fire-and-forget
+    const republishedNotif = await prisma.inAppNotification.findFirst({ where: { userId: provUser.id, eventType: "REVIEW_REPUBLISHED" } });
+    check("provider notified of republish outcome", !!republishedNotif);
     const pub5 = await (await fetch(`${BASE}/api/reviews/provider/${providerId}`, { headers: hdr(parent.auth) })).json();
     check("restored review back on public list", (pub5.reviews || []).some((r: any) => r.id === post1Body.reviewId));
 

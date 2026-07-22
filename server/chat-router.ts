@@ -231,6 +231,28 @@ export async function resolveSessionSenderName(
 
 export const chatRouter = Router();
 
+// JWT Bearer fallback (mobile clients + test scripts) - same contract as
+// aiRouter / reviewsRouter; Passport session auth still takes precedence.
+chatRouter.use(async (req: any, _res: any, next: any) => {
+  if (!req.isAuthenticated?.()) {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      try {
+        const jwt = (await import("jsonwebtoken")).default;
+        const payload = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET || "dev-jwt-secret-change-me") as any;
+        if (payload?.sub) {
+          const jwtUser = await prisma.user.findUnique({ where: { id: payload.sub } });
+          if (jwtUser && !jwtUser.isDisabled) {
+            req.user = jwtUser;
+            req.isAuthenticated = () => true;
+          }
+        }
+      } catch { /* invalid token - continue unauthenticated */ }
+    }
+  }
+  next();
+});
+
 // Returns online status for a list of user IDs (or provider IDs).
 // Query: ?userIds=id1,id2 or ?providerIds=id1,id2
 chatRouter.get("/api/online-status", requireAuth, async (req, res) => {
@@ -3491,6 +3513,7 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
       signed30,
       paidInvoices,
       providers,
+      flaggedReviewRows,
     ] = await Promise.all([
       prisma.aiChatSession.findMany({
         where: { humanRequested: true, humanConcludedAt: null },
@@ -3542,6 +3565,14 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
       prisma.provider.findMany({
         where: { services: { some: { status: "APPROVED" } } },
         select: { id: true, autoFeaturesEnabled: true, agreementAutomation: true },
+      }),
+      // Phase 8: reviews a provider flagged for re-check - resolved by admin
+      // Remove (REJECTED) or Restore (clears the flag) in /admin/reviews.
+      prisma.providerReview.findMany({
+        where: { flaggedByProviderAt: { not: null }, status: "PUBLISHED" },
+        orderBy: { flaggedByProviderAt: "desc" },
+        take: 10,
+        select: { id: true, rating: true, flagReason: true, flaggedByProviderAt: true, provider: { select: { name: true } } },
       }),
     ]);
 
@@ -3624,6 +3655,16 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
     }
 
     res.json({
+      flaggedReviews: flaggedReviewRows
+        .map(r => ({
+          reviewId: r.id,
+          rating: r.rating,
+          flagReason: r.flagReason,
+          flaggedAt: r.flaggedByProviderAt,
+          providerName: r.provider?.name || null,
+          taskKey: `review-flag:${r.id}:${r.flaggedByProviderAt ? new Date(r.flaggedByProviderAt).getTime() : 0}`,
+        }))
+        .filter(r => !dismissedKeys.has(r.taskKey)),
       escalations: escalations
         .map(e => ({
           sessionId: e.id,
@@ -3817,12 +3858,46 @@ chatRouter.get("/api/provider/dashboard-queue", requireAuth, async (req, res) =>
         totalCents: ((c.uiCardData as any) || {}).totalCents ?? null,
       }));
 
-    const [pendingWhispers, agreementsAwaiting] = await Promise.all([
+    const [pendingWhispers, reviewsAwaitingReply, agreementsAwaiting] = await Promise.all([
       prisma.silentQuery.findMany({
         where: { providerId: user.providerId, status: "PENDING" },
         orderBy: { createdAt: "desc" },
         take: 20,
         select: { id: true, questionText: true, createdAt: true },
+      }),
+      // Phase 8: fresh published reviews the provider hasn't responded to -
+      // resolves naturally when a reply is posted (or the review is flagged).
+      prisma.providerReview.findMany({
+        where: {
+          providerId: user.providerId,
+          status: "PUBLISHED",
+          visibility: "PUBLIC",
+          providerReply: null,
+          flaggedByProviderAt: null,
+          createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        select: { id: true, rating: true, bodyText: true, createdAt: true, anonymous: true, authorUserId: true, member: { select: { name: true } } },
+      }).then(async (rows) => {
+        const authors = await prisma.user.findMany({
+          where: { id: { in: rows.map(r => r.authorUserId) } },
+          select: { id: true, name: true, firstName: true },
+        });
+        const byId = new Map(authors.map(a => [a.id, a]));
+        return rows.map(r => {
+          const a = byId.get(r.authorUserId);
+          const first = a?.firstName || (a?.name || "").split(" ")[0] || "A parent";
+          const last = (a?.name || "").split(" ").slice(1).join(" ");
+          return {
+            reviewId: r.id,
+            rating: r.rating,
+            text: r.bodyText,
+            createdAt: r.createdAt,
+            memberName: r.member?.name || null,
+            reviewerLabel: r.anonymous ? "Verified GoStork Parent" : (last ? `${first} ${last.charAt(0).toUpperCase()}.` : first),
+          };
+        });
       }),
       prisma.agreement.findMany({
         where: { providerId: user.providerId, status: "SENT" },
@@ -3840,6 +3915,7 @@ chatRouter.get("/api/provider/dashboard-queue", requireAuth, async (req, res) =>
     res.json({
       openApprovals,
       pendingWhispers,
+      reviewsAwaitingReply,
       agreementsAwaiting: agreementsAwaiting.map(a => {
         const ss = (a.signerStatus as Record<string, any>) || {};
         const signers = Object.values(ss);

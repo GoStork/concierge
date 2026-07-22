@@ -130,7 +130,16 @@ export default function ProviderProfilePage() {
           <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-provider-name">
             {provider.name}
           </h1>
-          <RatingBadge avg={provider.avgOverallScore} count={provider.reviewCount} />
+          {/* Clickable: jumps to the Parent Reviews section below. */}
+          <button
+            type="button"
+            onClick={() => document.getElementById("parent-reviews-section")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            className="block hover:opacity-75 transition-opacity"
+            aria-label="Jump to reviews"
+            data-testid="hero-rating-jump"
+          >
+            <RatingBadge avg={provider.avgOverallScore} count={provider.reviewCount} />
+          </button>
           <div className="flex flex-wrap gap-1 mt-1">
             {approvedServices.map((s: any) => (
               <Badge key={s.id} variant="secondary" className="text-xs" data-testid={`badge-service-${s.id}`}>
@@ -405,6 +414,7 @@ export default function ProviderProfilePage() {
 
       {/* Phase 8: verified-parent reviews (display-only; self-serve write when eligible). */}
       {!window.location.pathname.startsWith("/admin/") && (
+        <div id="parent-reviews-section" className="scroll-mt-24">
         <ProfileSection title="Parent Reviews" data-testid="section-reviews">
           <ReviewsSection
             providerId={provider.id}
@@ -412,6 +422,7 @@ export default function ProviderProfilePage() {
             isParent={!!(user as any)?.parentAccountId && !(user as any)?.providerId}
           />
         </ProfileSection>
+        </div>
       )}
     </div>
   );

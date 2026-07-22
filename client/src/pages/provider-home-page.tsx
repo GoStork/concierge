@@ -30,6 +30,7 @@ import {
   BarChart3,
   Landmark,
   Route,
+  Star,
 } from "lucide-react";
 import { AgreementRows } from "@/components/agreements-list";
 import { QueueRow, SectionHeader } from "@/components/home/home-sections";
@@ -40,6 +41,7 @@ import { derivePayoutStatus } from "@/lib/payout-status";
 interface ProviderQueue {
   openApprovals: Array<{ messageId: string; sessionId: string; type: string; createdAt: string; parentName: string; documentType: string | null; totalCents: number | null }>;
   pendingWhispers: Array<{ id: string; questionText: string; createdAt: string }>;
+  reviewsAwaitingReply?: Array<{ reviewId: string; rating: number; text: string | null; createdAt: string; memberName: string | null; reviewerLabel: string }>;
   agreementsAwaiting: Array<{ agreementId: string; documentType: string; createdAt: string; parentName: string; signedCount: number; signerCount: number }>;
 }
 
@@ -200,6 +202,7 @@ export default function ProviderHomePage() {
   const queueCount =
     (queue?.openApprovals.length || 0) +
     (queue?.pendingWhispers.length || 0) +
+    (queue?.reviewsAwaitingReply?.length || 0) +
     pendingBookings.length +
     (unreadMessages > 0 ? 1 : 0);
 
@@ -267,6 +270,16 @@ export default function ProviderHomePage() {
                 detail={w.questionText.length > 90 ? `${w.questionText.slice(0, 90)}...` : w.questionText}
                 cta="Answer"
                 onClick={() => navigate("/chat")}
+              />
+            ))}
+            {(queue?.reviewsAwaitingReply || []).map(r => (
+              <QueueRow
+                key={r.reviewId}
+                icon={<Star className="w-4 h-4" />}
+                title={`New ${r.rating}-star review from ${r.reviewerLabel}${r.memberName ? ` (about ${r.memberName})` : ""}`}
+                detail={r.text ? (r.text.length > 90 ? `${r.text.slice(0, 90)}...` : r.text) : "A public reply shows prospective families how you engage"}
+                cta="Reply"
+                onClick={() => navigate("/performance?tab=reviews")}
               />
             ))}
           </div>

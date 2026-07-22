@@ -491,9 +491,15 @@ export function SwipeDeckCard({
                             </div>
                           ) : group.layoutType === "text" ? (
                             <div className="flex flex-col gap-1.5">
-                              {group.items.map((item, i) => (
-                                <p key={`${item.label}-${i}`} className="text-foreground font-body" style={{ fontSize: '14px', lineHeight: 1.5 }}>{item.label}</p>
-                              ))}
+                              {group.items.map((item, i) => {
+                                const TextIcon = item.icon;
+                                return (
+                                  <p key={`${item.label}-${i}`} className="text-foreground font-body flex items-center gap-1.5" style={{ fontSize: '14px', lineHeight: 1.5 }}>
+                                    {TextIcon && <TextIcon className={`w-4 h-4 shrink-0 ${item.iconClassName || "text-[hsl(var(--accent))]"}`} />}
+                                    {item.label}
+                                  </p>
+                                );
+                              })}
                             </div>
                           ) : (
                             <div className="flex flex-wrap gap-1.5">
@@ -1012,9 +1018,15 @@ export function SwipeDeckCard({
                         </div>
                       ) : group.layoutType === "text" ? (
                         <div className="flex flex-col gap-1.5">
-                          {group.items.map((item, i) => (
-                            <p key={`${item.label}-${i}`} className="text-white font-body" style={{ fontSize: 'var(--card-overlay-size, 16px)', lineHeight: 1.5 }}>{item.label}</p>
-                          ))}
+                          {group.items.map((item, i) => {
+                            const TextIcon = item.icon;
+                            return (
+                              <p key={`${item.label}-${i}`} className="text-white font-body flex items-center gap-1.5" style={{ fontSize: 'var(--card-overlay-size, 16px)', lineHeight: 1.5 }}>
+                                {TextIcon && <TextIcon className={`w-4 h-4 shrink-0 ${item.iconClassName || "text-white/80"}`} />}
+                                {item.label}
+                              </p>
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="flex flex-wrap gap-1.5">

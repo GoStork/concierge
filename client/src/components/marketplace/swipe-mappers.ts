@@ -111,6 +111,8 @@ export interface TabItem {
   label: string;
   value: string;
   icon?: LucideIcon;
+  /** Overrides the renderer's default icon color (e.g. brand-warning stars). */
+  iconClassName?: string;
   lineBreakBefore?: boolean;
 }
 
@@ -1036,7 +1038,7 @@ export function getClinicTabs(opts: {
   // Tab 1 (Overview) - Founded year + the About description (plain text) below it.
   const overviewStats: TabItem[] = [];
   if ((opts.reviewCount || 0) > 0 && opts.avgOverallScore != null) {
-    overviewStats.push({ label: `★ ${Number(opts.avgOverallScore).toFixed(1)} (${opts.reviewCount} parent review${opts.reviewCount !== 1 ? "s" : ""})`, value: "" });
+    overviewStats.push({ label: `${Number(opts.avgOverallScore).toFixed(1)} (${opts.reviewCount} parent review${opts.reviewCount !== 1 ? "s" : ""})`, value: "", icon: Star, iconClassName: "fill-[hsl(var(--brand-warning))] text-[hsl(var(--brand-warning))]" });
   }
   if (opts.yearFounded != null) overviewStats.push({ label: `Founded ${opts.yearFounded}`, value: "" });
   const tab1Groups: TabGroup[] = [];
@@ -1320,7 +1322,7 @@ export function getAgencyTabs(opts: {
     .filter((s) => s.trim() !== "");
   const stats: TabItem[] = [];
   if ((opts.reviewCount || 0) > 0 && opts.avgOverallScore != null) {
-    stats.push({ label: `★ ${Number(opts.avgOverallScore).toFixed(1)} (${opts.reviewCount} parent review${opts.reviewCount !== 1 ? "s" : ""})`, value: "" });
+    stats.push({ label: `${Number(opts.avgOverallScore).toFixed(1)} (${opts.reviewCount} parent review${opts.reviewCount !== 1 ? "s" : ""})`, value: "", icon: Star, iconClassName: "fill-[hsl(var(--brand-warning))] text-[hsl(var(--brand-warning))]" });
   }
   if (opts.yearFounded != null) stats.push({ label: `Founded ${opts.yearFounded}`, value: "" });
   if (opts.numberOfBabiesBorn != null) stats.push({ label: `${opts.numberOfBabiesBorn}+ babies born`, value: "" });
@@ -1513,7 +1515,7 @@ export function getDoctorTabs(
   if ((doctor.reviewCount || 0) > 0) {
     const rev: TabItem[] = [];
     if (doctor.recommendPct != null) rev.push({ label: `${doctor.recommendPct}% would recommend`, value: "", icon: ThumbsUp });
-    if (doctor.avgOverallScore != null) rev.push({ label: `${Number(doctor.avgOverallScore).toFixed(1)}/5 overall`, value: "", icon: Star });
+    if (doctor.avgOverallScore != null) rev.push({ label: `${Number(doctor.avgOverallScore).toFixed(1)}/5 overall`, value: "", icon: Star, iconClassName: "fill-[hsl(var(--brand-warning))] text-[hsl(var(--brand-warning))]" });
     rev.push({ label: `${doctor.reviewCount} verified review${doctor.reviewCount !== 1 ? "s" : ""}`, value: "", icon: Award });
     tabs.push({ layoutType: "icon_list", title: "Reviews", items: rev });
   }
