@@ -1578,6 +1578,26 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
     },
   });
 
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ profileId, status }: { profileId: string; status: string }) => {
+      const res = await apiRequest(
+        "PATCH",
+        `/api/providers/${providerId}/donors/${type}/${profileId}`,
+        { status },
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [`/api/providers/${providerId}/${endpoint}`],
+      });
+      toast({ title: "Status updated", variant: "success" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update status", description: err.message, variant: "destructive" });
+    },
+  });
+
   const togglePremiumMutation = useMutation({
     mutationFn: async ({ profileId, premium }: { profileId: string; premium: boolean }) => {
       const res = await apiRequest(
@@ -1654,6 +1674,9 @@ function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; prov
               : undefined,
             onToggleVisibility: (profileId, hidden) => toggleVisibilityMutation.mutate({ profileId, hidden }),
             onTogglePremium: (profileId, premium) => togglePremiumMutation.mutate({ profileId, premium }),
+            status: d.status,
+            onSetStatus: (profileId, status) => updateStatusMutation.mutate({ profileId, status }),
+            statusUpdating: updateStatusMutation.isPending && updateStatusMutation.variables?.profileId === d.id,
             onSponsor: handleSponsor,
             sponsored: campaign ? campaignItemByEntity.has(d.id) : (!!d.sponsoredUntil && new Date(d.sponsoredUntil).getTime() > Date.now()),
           } : undefined}

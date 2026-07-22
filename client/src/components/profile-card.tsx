@@ -1,9 +1,11 @@
-import { User, EyeOff, Eye, Pencil, Crown, Award, Trash2, Sparkles, ShieldAlert } from "lucide-react";
+import { useState } from "react";
+import { User, EyeOff, Eye, Pencil, Crown, Award, Trash2, Sparkles, ShieldAlert, ChevronDown, Check, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getPhotoSrc, getProfileTypeLabel, getProfileCardSummary, getProfileDetails } from "@/lib/profile-utils";
 import type { ProfileType } from "@/lib/profile-utils";
-import { getDonorStatusStyle } from "@/lib/donor-status";
+import { getDonorStatusStyle, PROVIDER_SETTABLE_STATUSES } from "@/lib/donor-status";
 import { resolveEggDonorHeadlineStatus, normalizeProfileStatus } from "@/components/marketplace/swipe-mappers";
 
 interface AdminControls {
@@ -16,6 +18,11 @@ interface AdminControls {
   sponsored?: boolean;
   isHidden: boolean;
   isPremium: boolean;
+  // Inline status selector: when provided, replaces the VIEW button (the
+  // whole card already opens the profile) with a status pill + popover.
+  status?: string | null;
+  onSetStatus?: (profileId: string, status: string) => void;
+  statusUpdating?: boolean;
 }
 
 interface ProfileCardProps {
@@ -71,6 +78,64 @@ function NewBadge({ profileId }: { profileId: string }) {
   );
 }
 
+// Compact status pill that opens a popover with the statuses a provider can
+// set for this profile type (mirrors the parent-facing Status filter options).
+function StatusSelector({ profileId, type, status, onSetStatus, updating }: {
+  profileId: string;
+  type: ProfileType;
+  status: string | null | undefined;
+  onSetStatus: (profileId: string, status: string) => void;
+  updating?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = (status || "AVAILABLE").toString().toUpperCase();
+  const currentStyle = getDonorStatusStyle(current);
+  const options = PROVIDER_SETTABLE_STATUSES[type] || [];
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={`flex-1 min-w-0 py-2 px-2 rounded-[var(--radius)] text-xs font-ui inline-flex items-center justify-center gap-1.5 transition-opacity hover:opacity-80 disabled:opacity-60 ${currentStyle?.pillClassName || "bg-secondary text-foreground"}`}
+          onClick={(e) => e.stopPropagation()}
+          disabled={updating}
+          title="Set this profile's status"
+          data-testid={`btn-status-${type}-${profileId}`}
+        >
+          {updating
+            ? <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+            : <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${currentStyle?.dotClassName || "bg-muted-foreground"}`} />}
+          <span className="truncate">{currentStyle?.label || current}</span>
+          <ChevronDown className="w-3 h-3 flex-shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-48 p-1" align="start" onClick={(e) => e.stopPropagation()}>
+        {options.map((opt) => {
+          const optStyle = getDonorStatusStyle(opt)!;
+          const active = opt === current;
+          return (
+            <button
+              key={opt}
+              className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-[var(--radius)] text-xs font-ui text-left transition-colors ${active ? "bg-secondary" : "hover:bg-secondary/60"}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen(false);
+                if (!active) onSetStatus(profileId, opt);
+              }}
+              title={optStyle.description}
+              data-testid={`option-status-${opt.toLowerCase()}-${profileId}`}
+            >
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${optStyle.dotClassName}`} />
+              <span className="flex-1">{optStyle.label}</span>
+              {active && <Check className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
+            </button>
+          );
+        })}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, adminControls }: ProfileCardProps) {
   let photoUrl = getPhotoSrc(profile.photoUrl);
   if (!photoUrl && Array.isArray(profile.photos)) {
@@ -106,7 +171,8 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
     : normalizeProfileStatus(profile.status);
   const statusStyle = headlineStatus !== "AVAILABLE" ? getDonorStatusStyle(headlineStatus) : null;
   const statusPillBg =
-    headlineStatus === "PENDING"  ? "bg-[hsl(var(--brand-warning))]/90 text-white" :
+    headlineStatus === "PENDING" || headlineStatus === "ON_HOLD"
+                                  ? "bg-[hsl(var(--brand-warning))]/90 text-white" :
     headlineStatus === "SOLD_OUT" ? "bg-destructive/90 text-destructive-foreground" :
     /* MATCHED */                   "bg-muted-foreground/80 text-background";
 
@@ -226,13 +292,23 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
       )}
 
       <div className="p-3 pt-0 flex gap-2">
-        <button
-          className="flex-1 py-2 rounded-[var(--radius)] text-xs font-ui text-primary-foreground bg-primary hover:bg-primary/90 transition-colors"
-          onClick={(e) => { e.stopPropagation(); onNavigate?.(); }}
-          data-testid={isMarketplace ? `button-view-profile-${profile.id}` : `btn-view-${type}-${profile.id}`}
-        >
-          {isMarketplace ? "View Profile" : "VIEW"}
-        </button>
+        {adminControls?.onSetStatus && !isMarketplace ? (
+          <StatusSelector
+            profileId={profile.id}
+            type={type}
+            status={adminControls.status ?? profile.status}
+            onSetStatus={adminControls.onSetStatus}
+            updating={adminControls.statusUpdating}
+          />
+        ) : (
+          <button
+            className="flex-1 py-2 rounded-[var(--radius)] text-xs font-ui text-primary-foreground bg-primary hover:bg-primary/90 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onNavigate?.(); }}
+            data-testid={isMarketplace ? `button-view-profile-${profile.id}` : `btn-view-${type}-${profile.id}`}
+          >
+            {isMarketplace ? "View Profile" : "VIEW"}
+          </button>
+        )}
         {adminControls && (
           <>
             {adminControls.onEdit && (

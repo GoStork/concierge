@@ -66,6 +66,16 @@ const STYLES: Record<DonorStatus, StatusBadgeStyle> = {
   },
 };
 
+// Statuses a provider can set manually on their own roster, per profile
+// type - mirrors the Status filter options parents see for that type.
+// Egg-donor ON_HOLD and IN_CYCLE are system-managed by the deposit billing
+// sweep, so they are shown when active but not offered as manual choices.
+export const PROVIDER_SETTABLE_STATUSES: Record<string, DonorStatus[]> = {
+  "surrogate": ["AVAILABLE", "ON_HOLD", "PENDING", "MATCHED"],
+  "egg-donor": ["AVAILABLE", "PENDING", "MATCHED", "SOLD_OUT"],
+  "sperm-donor": ["AVAILABLE", "SOLD_OUT"],
+};
+
 export function getDonorStatusStyle(status: string | null | undefined): StatusBadgeStyle | null {
   if (!status) return null;
   return STYLES[status as DonorStatus] || null;
