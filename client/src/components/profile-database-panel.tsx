@@ -1476,6 +1476,9 @@ function ProfileDataSection({ data }: { data: Record<string, any> }) {
 function ProfileCardGrid({ profiles, providerId, type }: { profiles: any[]; providerId: string; type: ProfileType }) {
   const navigate = useNavigate();
   const { toast } = useToast();
+  // Without this, `confirm` below resolves to window.confirm, which shows a
+  // native "[object Object]" dialog instead of the branded confirm bar.
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isAdmin = (user as any)?.roles?.includes("GOSTORK_ADMIN");
