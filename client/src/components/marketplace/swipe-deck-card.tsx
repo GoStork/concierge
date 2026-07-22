@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowUp, Undo2, X, Heart, Send, ShoppingBag,
   Check, Flower2, Crown, Award, TrendingUp, MapPin, Sparkles, Clock,
+  CalendarPlus,
 } from "lucide-react";
 import type { TabSection } from "./swipe-mappers";
 import { getDonorStatusStyle } from "@/lib/donor-status";
@@ -40,6 +41,11 @@ interface SwipeDeckCardProps {
   frozenLotStatus?: "AVAILABLE" | "SOLD_OUT" | null;
   isExperienced?: boolean;
   isPremium?: boolean;
+  // Provider/GoStork-admin only: ISO date the profile row was first synced or
+  // manually uploaded (EggDonor/Surrogate/SpermDonor.createdAt). Renders an
+  // "Added <date>" chip in the badge row. Callers MUST pass null/undefined for
+  // parent viewers - parents never see upload dates.
+  uploadedAt?: string | null;
   // True while the provider is paying to sponsor (boost) this profile.
   sponsored?: boolean;
   // Always-visible pill in the badge row (e.g. "Top 10%") - used by clinic and
@@ -106,6 +112,7 @@ export function SwipeDeckCard({
   frozenLotStatus,
   isExperienced = false,
   isPremium = false,
+  uploadedAt = null,
   sponsored = false,
   successBadge = null,
   titleLogoUrl = null,
@@ -816,6 +823,17 @@ export function SwipeDeckCard({
                 >
                   <Award className="w-3 h-3" />
                   Experienced
+                </Badge>
+              )}
+              {uploadedAt && (
+                <Badge
+                  className="bg-secondary/90 text-secondary-foreground font-ui px-2 py-0.5 gap-1"
+                  style={{ fontSize: 'var(--badge-text-size, 11px)' }}
+                  data-testid={`badge-uploaded-${id}`}
+                  title="Date this profile was synced or manually uploaded (visible to providers and GoStork admins only)"
+                >
+                  <CalendarPlus className="w-3 h-3" />
+                  Added {new Date(uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                 </Badge>
               )}
             </div>

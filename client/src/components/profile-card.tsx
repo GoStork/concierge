@@ -288,6 +288,16 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
               <span className="text-muted-foreground">{value}</span>
             </p>
           ))}
+          {/* Sync/upload date - the admin variant only renders on provider and
+              GoStork-admin surfaces, so parents never see this. */}
+          {profile.createdAt && (
+            <p className="text-xs leading-snug truncate" data-testid={`text-uploaded-${profile.id}`}>
+              <span className="font-heading text-foreground">Added:</span>{" "}
+              <span className="text-muted-foreground">
+                {new Date(profile.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+              </span>
+            </p>
+          )}
         </div>
       )}
 
