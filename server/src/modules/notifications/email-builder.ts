@@ -24,6 +24,22 @@ function tintHex(hex: string, ratio: number): string {
   return `#${tr.toString(16).padStart(2, "0")}${tg.toString(16).padStart(2, "0")}${tb.toString(16).padStart(2, "0")}`;
 }
 
+/**
+ * Build a safe CSS font stack from a brand font setting. The DB value may be
+ * a plain font name ("DM Sans") OR a full CSS stack pasted from the UI
+ * ('-apple-system, BlinkMacSystemFont, "SF Pro Text", ...'). Full stacks must
+ * be used as-is, and double quotes must be normalized to single quotes -
+ * these strings are injected into double-quoted style="" attributes, where an
+ * embedded double quote terminates the attribute and silently destroys every
+ * declaration after it.
+ */
+function toFontStack(font: string, fallback: string): string {
+  const cleaned = (font || "").replace(/"/g, "'").trim();
+  if (!cleaned) return fallback;
+  if (cleaned.includes(",")) return cleaned;
+  return `'${cleaned}',${fallback}`;
+}
+
 /** Darken a hex color by a given ratio (0 = original, 1 = black) */
 function shadeHex(hex: string, ratio: number): string {
   const m = hex.match(/^#?([0-9a-fA-F]{6})$/);
@@ -74,7 +90,7 @@ export async function fetchEmailBrandData(prisma: { siteSettings: { findFirst: (
       defaults.successColor = s.successColor || defaults.successColor;
       defaults.warningColor = s.warningColor || defaults.warningColor;
       defaults.errorColor = s.errorColor || defaults.errorColor;
-      defaults.companyName = s.companyName || defaults.companyName;
+      defaults.companyName = (s.companyName || defaults.companyName).trim();
       // Email header has a dark (brandColor) background - prefer dark-mode icon logo.
       // Priority: dark icon > light icon > dark full > light full
       const rawLogo = s.darkLogoUrl || s.logoUrl || s.darkLogoWithNameUrl || s.logoWithNameUrl || "";
@@ -120,10 +136,8 @@ export async function fetchEmailBrandData(prisma: { siteSettings: { findFirst: (
       else defaults.buttonRadius = "9999px";
       const containerRadiusRem = typeof s.containerRadius === "number" ? s.containerRadius : 0.75;
       defaults.containerRadius = `${Math.round(containerRadiusRem * 16)}px`;
-      const hf = defaults.headingFont;
-      defaults.headingFontStack = `'${hf}',Georgia,serif`;
-      const bf = defaults.bodyFont;
-      defaults.bodyFontStack = `'${bf}',Arial,sans-serif`;
+      defaults.headingFontStack = toFontStack(defaults.headingFont, "Georgia,serif");
+      defaults.bodyFontStack = toFontStack(defaults.bodyFont, "Arial,sans-serif");
     }
   } catch {
   }
@@ -173,18 +187,22 @@ export function buildBrandedEmail(
 
   const detailsHtml = opts.detailRows?.length
     ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:${tintHex(brand.backgroundColor, 0.02)};border-radius:${brand.containerRadius};overflow:hidden;">
-${opts.detailRows.map(r => `<tr><td width="160" style="padding:10px 16px;color:${brand.mutedForegroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};white-space:nowrap;vertical-align:top;">${r.label}</td><td style="padding:10px 16px;color:${brand.foregroundColor};font-size:14px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;word-break:break-word;">${r.value}</td></tr>`).join("\n")}
+${opts.detailRows.map(r => `<tr><td width="160" style="padding:10px 16px;color:${brand.mutedForegroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};white-space:nowrap;vertical-align:top;">${r.label}</td><td style="padding:10px 16px;color:${brand.foregroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;word-break:break-word;">${r.value}</td></tr>`).join("\n")}
 </table>` : "";
 
   const alertHtml = opts.alertBox
-    ? `<div style="background:${alertBg[opts.alertBox.type]};border-left:4px solid ${alertBorderColor[opts.alertBox.type]};padding:14px 16px;border-radius:4px;margin:16px 0;font-size:14px;font-family:${brand.bodyFontStack};color:${alertTextColor[opts.alertBox.type]};">${opts.alertBox.text}</div>` : "";
+    ? `<div style="background:${alertBg[opts.alertBox.type]};border-left:4px solid ${alertBorderColor[opts.alertBox.type]};padding:14px 16px;border-radius:4px;margin:16px 0;font-size:15px;font-family:${brand.bodyFontStack};color:${alertTextColor[opts.alertBox.type]};">${opts.alertBox.text}</div>` : "";
 
+  // Buttons stack vertically by default (one per row, centered). Never place
+  // them side by side: two buttons exceed a phone's viewport width, which
+  // widens the layout viewport and defeats the max-width media query that
+  // would have stacked them - the email then renders zoomed-out and tiny.
   const buttonsHtml = opts.buttons?.length
-    ? `<table cellpadding="0" cellspacing="0" style="margin:24px auto;" align="center"><tr>${opts.buttons.map(b =>
-        `<td style="padding:0 6px;"><table cellpadding="0" cellspacing="0"><tr><td style="background:${btnColor(b.variant)};border-radius:${btnRadius};border:${btnBorder(b.variant)};"><a href="${b.url}" style="display:inline-block;padding:12px 24px;color:${btnTextColor(b.variant)};text-decoration:none;font-weight:600;font-size:14px;font-family:${brand.bodyFontStack};">${b.label}</a></td></tr></table></td>`
-      ).join("")}</tr></table>` : "";
+    ? `<table class="email-btns" cellpadding="0" cellspacing="0" style="margin:20px auto;" align="center">${opts.buttons.map(b =>
+        `<tr><td align="center" style="padding:6px 0;"><table class="email-btn" cellpadding="0" cellspacing="0"><tr><td align="center" style="background:${btnColor(b.variant)};border-radius:${btnRadius};border:${btnBorder(b.variant)};"><a class="email-btn-a" href="${b.url}" style="display:inline-block;padding:14px 32px;color:${btnTextColor(b.variant)};text-decoration:none;font-weight:600;font-size:16px;font-family:${brand.bodyFontStack};">${b.label}</a></td></tr></table></td></tr>`
+      ).join("")}</table>` : "";
 
-  const footerHtml = opts.footer ? `<p style="color:${brand.mutedForegroundColor};font-size:12px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid ${brand.borderColor};font-family:${brand.bodyFontStack};">${opts.footer}</p>` : "";
+  const footerHtml = opts.footer ? `<p style="color:${brand.mutedForegroundColor};font-size:13px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid ${brand.borderColor};font-family:${brand.bodyFontStack};">${opts.footer}</p>` : "";
 
   return `<!DOCTYPE html>
 <html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml">
@@ -197,26 +215,34 @@ ${opts.detailRows.map(r => `<tr><td width="160" style="padding:10px 16px;color:$
 :root { color-scheme: light; }
 body { color-scheme: light; }
 [data-ogsc] .og-dark { display: none !important; }
+@media only screen and (max-width: 480px) {
+  td.email-content { padding: 28px 20px !important; }
+  table.email-btns { width: 100% !important; }
+  table.email-btn { width: 100% !important; }
+  a.email-btn-a { display: block !important; text-align: center !important; }
+}
 </style>
 </head>
 <body style="margin:0;padding:0;background-color:${tintHex(brand.backgroundColor, 0.03)};font-family:${brand.bodyFontStack};color-scheme:light;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:${tintHex(brand.backgroundColor, 0.03)};padding:40px 20px;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background-color:${brand.cardColor};border-radius:${brand.containerRadius};overflow:hidden;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:${tintHex(brand.backgroundColor, 0.03)};">
+<tr><td align="center" style="padding:32px 16px;">
+<!--[if mso]><table width="600" cellpadding="0" cellspacing="0"><tr><td><![endif]-->
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:${brand.cardColor};border-radius:${brand.containerRadius};overflow:hidden;">
 <tr><td style="background-color:${brand.brandColor} !important;padding:30px;text-align:center;mso-padding-alt:0px;">
 ${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="${esc(brand.companyName)}" style="max-height:40px;margin-bottom:8px;" />` : ""}
 <h1 style="color:${brand.primaryForegroundColor};font-family:${brand.headingFontStack};font-size:24px;margin:0;">${esc(brand.companyName)}</h1>
 </td></tr>
-<tr><td style="padding:40px 30px;">
-<h2 style="font-family:${brand.headingFontStack};color:${brand.brandColor};font-size:22px;margin:0 0 16px;">${opts.title}</h2>
-<p style="color:${brand.foregroundColor};font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 12px;">${opts.greeting}</p>
-<div style="color:${brand.foregroundColor};font-size:15px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 16px;">${opts.body}</div>
+<tr><td class="email-content" style="padding:40px 30px;">
+<h2 style="color:${brand.brandColor};font-size:26px;margin:0 0 16px;font-family:${brand.headingFontStack};">${opts.title}</h2>
+<p style="color:${brand.foregroundColor};font-size:16px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 12px;">${opts.greeting}</p>
+<div style="color:${brand.foregroundColor};font-size:16px;line-height:1.6;font-family:${brand.bodyFontStack};margin:0 0 16px;">${opts.body}</div>
 ${detailsHtml}
 ${alertHtml}
 ${buttonsHtml}
 ${footerHtml}
 </td></tr>
 </table>
+<!--[if mso]></td></tr></table><![endif]-->
 </td></tr>
 </table>
 </body>
