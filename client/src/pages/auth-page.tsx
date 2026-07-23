@@ -11,10 +11,17 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { useEffect, useRef, useCallback } from "react";
 import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
 
-// Generic browse pages are never worth returning to after login - the
-// role-based landing (/dashboard -> chat) wins. Deep links (agreements,
-// chat sessions, pay pages) are still honored via returnTo.
-const GENERIC_RETURN_PATHS = new Set(["/", "/login", "/auth", "/dashboard", "/home", "/marketplace", "/chat", "/provider/home"]);
+// Generic pages are never worth returning to after login - the role-based
+// landing (/dashboard -> chat) wins. Only multi-segment deep links (a specific
+// agreement, chat session, pay link, or profile) are honored via returnTo,
+// minus the role home pages, which are single destinations, not deep links.
+const GENERIC_RETURN_PATHS = new Set(["/provider/home", "/admin/home"]);
+function isDeepLinkReturn(returnTo: string | undefined): boolean {
+  if (!returnTo) return false;
+  const path = returnTo.split("?")[0].replace(/\/+$/, "");
+  if (GENERIC_RETURN_PATHS.has(path)) return false;
+  return path.split("/").filter(Boolean).length >= 2;
+}
 
 export default function AuthPage() {
   const { user, loginMutation } = useAuth();
@@ -29,9 +36,7 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (user) {
-      const returnPath = (returnTo || "").split("?")[0].replace(/\/+$/, "") || "/";
-      const isDeepLink = returnTo && !GENERIC_RETURN_PATHS.has(returnPath);
-      navigate(isDeepLink ? returnTo : "/dashboard", { replace: true });
+      navigate(isDeepLinkReturn(returnTo) ? returnTo : "/dashboard", { replace: true });
     }
   }, [user, navigate, returnTo]);
 
