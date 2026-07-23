@@ -25,6 +25,7 @@ import { VideoService } from "./video.service";
 import { NotificationService } from "../notifications/notification.service";
 import { BookingEventsService } from "../calendar/booking-events.service";
 import { CalendarController } from "../calendar/calendar.controller";
+import { maybeCompleteBookingEarly } from "../calendar/call-outcome.sweep";
 import { BillingService } from "../billing/billing.service";
 import { hasProviderRole, hasAnyRole, isBillingManagerOnly } from "../../../../shared/roles";
 
@@ -175,17 +176,17 @@ export class VideoController {
       }
     }
 
-    const room = await this.videoService.createRoom();
-
     const subject = `Ad-hoc Video Call${session.provider?.name ? ` - ${session.provider.name}` : ""}`;
 
+    // createBookingInternal provisions the per-booking Daily room for video
+    // bookings - no need to create one here.
     const booking = await this.calendarController.createBookingInternal({
       providerUserId: providerUserId!,
       parentUserId,
       scheduledAt: new Date(),
       duration: 30,
       meetingType: "video",
-      meetingUrl: room.url,
+      meetingUrl: null,
       subject,
       attendeeName,
       attendeeEmails,
@@ -502,6 +503,14 @@ export class VideoController {
       );
     }
 
+    // Early completion: a call held (and finished) before its scheduled end
+    // flips the booking to COMPLETED right away instead of waiting for the
+    // outcome sweep. Internally guarded (both sides joined + minimum time
+    // together + outcome not yet set), so calling unconditionally is safe.
+    maybeCompleteBookingEarly(this.prisma, bookingId).catch((err) =>
+      this.logger.error(`Early completion check failed: ${err.message}`),
+    );
+
     // When the leaver is the parent (not provider/admin), return their private
     // concierge session id so the client can redirect them straight to the chat
     // where the post-call "How did your consultation go?" readiness prompt lands -
@@ -792,6 +801,10 @@ export class VideoController {
             this.logger.error(`Post-call follow-up failed: ${err.message}`),
           );
         }
+        // Early completion check (guarded internally, see markCallEnded).
+        maybeCompleteBookingEarly(this.prisma, activeBooking.id).catch((err) =>
+          this.logger.error(`Early completion check failed: ${err.message}`),
+        );
       }
     } else if (eventType === "recording.ready-to-download") {
       const recordingId = payload?.recording_id;

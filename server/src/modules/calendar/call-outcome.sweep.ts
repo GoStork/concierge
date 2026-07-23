@@ -132,6 +132,95 @@ async function sendWinback(prisma: PrismaService, booking: SweepBooking, kind: "
   console.log(`[winback] Sent ${kind} win-back for booking ${booking.id} (${providerName}) in session ${sessionId}`);
 }
 
+/**
+ * Mark a booking COMPLETED: set the outcome, emit the journey event
+ * (CONSULTATION_COMPLETED / MATCH_CALL_COMPLETED), and fire the completion
+ * hooks (review checkpoint, Intended Parent Form). Shared by the sweep and
+ * the early-completion path. The updateMany claim is atomic - the sweep,
+ * markCallEnded, and the Daily webhook can all race here; exactly one
+ * caller wins and emits.
+ */
+export async function finalizeCompletedBooking(
+  prisma: PrismaService,
+  booking: SweepBooking,
+  opts: { backlog?: boolean; early?: boolean } = {},
+): Promise<boolean> {
+  const claimed = await prisma.booking.updateMany({
+    where: { id: booking.id, outcome: null },
+    data: { outcome: "COMPLETED", outcomeAt: new Date() },
+  });
+  if (claimed.count === 0) return false;
+
+  await emitJourneyEvent({
+    eventType: bookingEventType("COMPLETED", booking.meetingSubtype),
+    parentUserId: booking.parentUserId,
+    providerId: booking.providerUser?.provider?.id || null,
+    bookingId: booking.id,
+    metadata: { outcome: "COMPLETED", scheduledAt: booking.scheduledAt, backlog: !!opts.backlog, early: !!opts.early },
+  });
+  if (opts.backlog) return true;
+
+  // Phase 8: a completed first call with a real provider unlocks the review
+  // checkpoint; a surrogacy call also prompts the Intended Parent Form
+  // (both internally idempotent).
+  if (booking.parentUserId && booking.providerUser?.provider?.id) {
+    const provName = (booking.providerUser.provider.name || "").trim().toLowerCase();
+    if (provName !== "gostork") {
+      const { maybePostReviewPrompt } = await import("../../../review-prompts");
+      await maybePostReviewPrompt({
+        parentUserId: booking.parentUserId,
+        providerId: booking.providerUser.provider.id,
+        stage: "consult_completed",
+      }).catch(() => {});
+      const { maybePromptIpForm } = await import("../../../ip-form-flow");
+      await maybePromptIpForm({
+        parentUserId: booking.parentUserId,
+        providerId: booking.providerUser.provider.id,
+      }).catch(() => {});
+    }
+  }
+  return true;
+}
+
+// A call that ends before its scheduled slot only counts as completed early
+// when both sides were verifiably in the room TOGETHER for at least this
+// long - one side clicking the link to test can never trip it. Kept at 1
+// minute for easy manual testing; the sweep (end-of-slot + 30min grace)
+// remains the backstop for anything shorter.
+const EARLY_COMPLETE_MIN_TOGETHER_MS = 60 * 1000;
+
+/**
+ * Early completion: called when a video call ends (markCallEnded / Daily
+ * meeting.ended webhook). If both participants joined and overlapped for
+ * the minimum window, the booking completes immediately instead of waiting
+ * for the outcome sweep at scheduled-end + grace. All guards are internal -
+ * safe to call unconditionally on every call-ended signal.
+ */
+export async function maybeCompleteBookingEarly(prisma: PrismaService, bookingId: string): Promise<boolean> {
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    include: sweepInclude as any,
+  });
+  if (!booking) return false;
+  if (booking.outcome || booking.status !== "CONFIRMED" || booking.meetingType !== "video") return false;
+  // BOTH explicit join stamps required - actualStartedAt alone only proves
+  // someone (possibly just the parent testing the link) entered the room.
+  if (!booking.parentJoinedMeetingAt || !booking.providerJoinedMeetingAt) return false;
+
+  const endedMs = booking.actualEndedAt ? new Date(booking.actualEndedAt).getTime() : Date.now();
+  // Time TOGETHER starts at the later of the two joins (stamps refresh on
+  // every join, so a rejoin restarts the clock).
+  const togetherSinceMs = Math.max(
+    new Date(booking.parentJoinedMeetingAt).getTime(),
+    new Date(booking.providerJoinedMeetingAt).getTime(),
+  );
+  if (endedMs - togetherSinceMs < EARLY_COMPLETE_MIN_TOGETHER_MS) return false;
+
+  const done = await finalizeCompletedBooking(prisma, booking, { early: true });
+  if (done) console.log(`[call-outcome] Booking ${booking.id} -> COMPLETED (early - call held before scheduled end)`);
+  return done;
+}
+
 export async function runCallOutcomeSweep(prisma: PrismaService, notifications: NotificationService): Promise<void> {
   const now = Date.now();
   const candidates = await prisma.booking.findMany({
@@ -159,12 +248,17 @@ export async function runCallOutcomeSweep(prisma: PrismaService, notifications: 
       // months-old call means nothing. Never brand history as a no-show.
       if (isBacklogCall && outcome !== "COMPLETED") outcome = "UNVERIFIED";
 
+      if (outcome === "COMPLETED") {
+        await finalizeCompletedBooking(prisma, booking, { backlog: isBacklogCall });
+        console.log(`[call-outcome] Booking ${booking.id} -> COMPLETED${isBacklogCall ? " (backlog, no win-back)" : ""}`);
+        continue;
+      }
+
       await prisma.booking.update({ where: { id: booking.id }, data: { outcome, outcomeAt: new Date() } });
 
       const isBacklog = isBacklogCall;
       const eventBase =
-        outcome === "COMPLETED" ? "COMPLETED"
-        : outcome === "NO_SHOW_PARENT" ? "NO_SHOW_PARENT"
+        outcome === "NO_SHOW_PARENT" ? "NO_SHOW_PARENT"
         : outcome === "NO_SHOW_PROVIDER" ? "NO_SHOW_PROVIDER"
         : outcome === "NO_SHOW_BOTH" ? "NO_SHOW_BOTH"
         : null;
@@ -187,29 +281,6 @@ export async function runCallOutcomeSweep(prisma: PrismaService, notifications: 
       }
       console.log(`[call-outcome] Booking ${booking.id} -> ${outcome}${isBacklog ? " (backlog, no win-back)" : ""}`);
       if (isBacklog) continue;
-
-      // Phase 8: a completed first call with a real provider unlocks the
-      // review checkpoint - Eva asks in the parent's concierge chat
-      // (internally idempotent per account+provider+stage).
-      if (outcome === "COMPLETED" && booking.parentUserId && booking.providerUser?.provider?.id) {
-        const provName = (booking.providerUser.provider.name || "").trim().toLowerCase();
-        if (provName !== "gostork") {
-          const { maybePostReviewPrompt } = await import("../../../review-prompts");
-          await maybePostReviewPrompt({
-            parentUserId: booking.parentUserId,
-            providerId: booking.providerUser.provider.id,
-            stage: "consult_completed",
-          }).catch(() => {});
-          // Intended Parent Form: a completed first call with a SURROGACY
-          // agency prompts the form (internally idempotent per account and
-          // gated to surrogacy providers inside maybePromptIpForm).
-          const { maybePromptIpForm } = await import("../../../ip-form-flow");
-          await maybePromptIpForm({
-            parentUserId: booking.parentUserId,
-            providerId: booking.providerUser.provider.id,
-          }).catch(() => {});
-        }
-      }
 
       // Parent didn't show (alone or both absent) -> Eva win-back.
       if (outcome === "NO_SHOW_PARENT" || outcome === "NO_SHOW_BOTH") {

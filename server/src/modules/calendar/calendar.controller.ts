@@ -25,6 +25,8 @@ import { Request, Response } from "express";
 import { DateTime } from "luxon";
 import { randomBytes, randomUUID, createHmac } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
+import { createDailyRoom, isExternalMeetingUrl } from "../../lib/daily-room";
+import { getBaseUrl } from "../../lib/get-base-url";
 import { emitBookingLifecycleEvent } from "../../../journey-events";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { NotificationService } from "../notifications/notification.service";
@@ -893,6 +895,25 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     }));
   }
 
+  /**
+   * Per-booking video room. Every video booking gets its OWN Daily room so
+   * two parents of the same provider can never collide in one live call
+   * (previous slot running over, early joiners, stale links). An external
+   * (Zoom/Meet) link the provider configured is respected as-is. If Daily
+   * provisioning fails we fall back to the shared link with a loud log -
+   * a degraded booking beats a failed one.
+   */
+  private async provisionBookingRoom(sharedLink: string | null): Promise<string | null> {
+    if (isExternalMeetingUrl(sharedLink)) return sharedLink;
+    try {
+      const room = await createDailyRoom();
+      return room.url;
+    } catch (err: any) {
+      this.logger.error(`Per-booking Daily room creation FAILED - falling back to shared provider link: ${err.message}`);
+      return sharedLink;
+    }
+  }
+
   @Post("bookings")
   @UseGuards(SessionOrJwtGuard)
   async createBooking(@Req() req: Request, @Body() body: any) {
@@ -913,7 +934,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     } else if (body.meetingUrl !== undefined) {
       meetingUrl = body.meetingUrl || null;
     } else {
-      meetingUrl = config?.meetingLink || null;
+      meetingUrl = await this.provisionBookingRoom(config?.meetingLink || null);
     }
 
     let parentUserId = body.parentUserId || null;
@@ -974,6 +995,12 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
      *  in her lifecycle emails. */
     attendeeDetails?: Record<string, { name?: string; phone?: string }> | null;
   }) {
+    // Callers pass the provider's shared link (or null) - upgrade video
+    // bookings to a per-booking Daily room; external links pass through.
+    const meetingUrl = input.meetingType === "video"
+      ? await this.provisionBookingRoom(input.meetingUrl)
+      : input.meetingUrl;
+
     const booking = await this.prisma.booking.create({
       data: {
         providerUserId: input.providerUserId,
@@ -982,7 +1009,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         duration: input.duration,
         meetingType: input.meetingType,
         status: "CONFIRMED",
-        meetingUrl: input.meetingUrl,
+        meetingUrl,
         subject: input.subject,
         attendeeName: input.attendeeName,
         attendeeEmails: input.attendeeEmails,
@@ -2165,6 +2192,11 @@ I'll check in with you right after the call. You've got this!`;
     const slotEnd = new Date(scheduledAt.getTime() + duration * 60 * 1000);
     const bufferMs = (config.bufferTime || 0) * 60 * 1000;
 
+    // Provision the per-booking room BEFORE the transaction (no external API
+    // calls inside a tx). If the slot turns out to conflict, the orphan Daily
+    // room is harmless - private, token-gated, never referenced.
+    const bookingRoomUrl = await this.provisionBookingRoom(config.meetingLink || null);
+
     const booking = await this.prisma.$transaction(async (tx) => {
       const potentialConflicts = await tx.booking.findMany({
         where: {
@@ -2235,7 +2267,7 @@ I'll check in with you right after the call. You've got this!`;
           parentConfirmed: true,
           providerConfirmed: false,
           confirmToken: randomUUID(),
-          meetingUrl: config.meetingLink || null,
+          meetingUrl: bookingRoomUrl,
           subject: meetingSubtype === "MATCH_CALL"
             ? `Match Call with ${config.user.name || config.user.email}`
             : meetingSubtype === "DOCTOR_CONSULTATION"
@@ -3519,14 +3551,12 @@ I'll check in with you right after the call. You've got this!`;
         }
       }
 
-      let meetingLink = booking.meetingUrl;
-      if (!meetingLink && booking.meetingType === "video") {
-        const providerUser = await this.prisma.user.findUnique({
-          where: { id: booking.providerUserId },
-          select: { dailyRoomUrl: true },
-        });
-        meetingLink = providerUser?.dailyRoomUrl || null;
-      }
+      // Internal (Daily) rooms sync as the in-app /room/:bookingId page so
+      // joins go through tokens, consent, and attendance tracking - never
+      // the raw daily.co URL. External links (Zoom/Meet) pass through.
+      const meetingLink = booking.meetingType !== "video" ? null
+        : isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl
+        : `${getBaseUrl()}/room/${booking.id}`;
 
       const googleEventId = await this.googleCalendar.createEvent(
         booking.providerUserId,
@@ -3580,14 +3610,11 @@ I'll check in with you right after the call. You've got this!`;
       const startTime = new Date(booking.scheduledAt);
       const endTime = new Date(startTime.getTime() + booking.duration * 60 * 1000);
 
-      let parentMeetingLink = booking.meetingUrl;
-      if (!parentMeetingLink && booking.meetingType === "video") {
-        const prov = await this.prisma.user.findUnique({
-          where: { id: booking.providerUserId },
-          select: { dailyRoomUrl: true },
-        });
-        parentMeetingLink = prov?.dailyRoomUrl || null;
-      }
+      // Same rule as the provider-side sync: internal rooms surface as the
+      // in-app /room/:bookingId page, external links pass through.
+      const parentMeetingLink = booking.meetingType !== "video" ? null
+        : isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl
+        : `${getBaseUrl()}/room/${booking.id}`;
 
       for (const memberId of memberUserIds) {
         try {
@@ -3738,14 +3765,12 @@ I'll check in with you right after the call. You've got this!`;
         }
       }
 
-      let meetingLink = booking.meetingUrl;
-      if (!meetingLink && booking.meetingType === "video") {
-        const providerUser = await this.prisma.user.findUnique({
-          where: { id: booking.providerUserId },
-          select: { dailyRoomUrl: true },
-        });
-        meetingLink = providerUser?.dailyRoomUrl || null;
-      }
+      // Internal (Daily) rooms sync as the in-app /room/:bookingId page so
+      // joins go through tokens, consent, and attendance tracking - never
+      // the raw daily.co URL. External links (Zoom/Meet) pass through.
+      const meetingLink = booking.meetingType !== "video" ? null
+        : isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl
+        : `${getBaseUrl()}/room/${booking.id}`;
 
       const outlookEventId = await this.microsoftCalendar.createEvent(
         booking.providerUserId,
@@ -3799,14 +3824,11 @@ I'll check in with you right after the call. You've got this!`;
       const startTime = new Date(booking.scheduledAt);
       const endTime = new Date(startTime.getTime() + booking.duration * 60 * 1000);
 
-      let parentMeetingLink = booking.meetingUrl;
-      if (!parentMeetingLink && booking.meetingType === "video") {
-        const prov = await this.prisma.user.findUnique({
-          where: { id: booking.providerUserId },
-          select: { dailyRoomUrl: true },
-        });
-        parentMeetingLink = prov?.dailyRoomUrl || null;
-      }
+      // Same rule as the provider-side sync: internal rooms surface as the
+      // in-app /room/:bookingId page, external links pass through.
+      const parentMeetingLink = booking.meetingType !== "video" ? null
+        : isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl
+        : `${getBaseUrl()}/room/${booking.id}`;
 
       for (const memberId of memberUserIds) {
         try {

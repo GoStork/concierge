@@ -3,6 +3,7 @@ import { createHmac } from "crypto";
 import { StorageService } from "../storage/storage.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationService } from "../notifications/notification.service";
+import { createDailyRoom } from "../../lib/daily-room";
 
 const DAILY_API_BASE = "https://api.daily.co/v1";
 
@@ -106,28 +107,7 @@ export class VideoService implements OnModuleInit {
   }
 
   async createRoom(): Promise<{ url: string; name: string }> {
-    const res = await fetch(`${DAILY_API_BASE}/rooms`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.getApiKey()}`,
-      },
-      body: JSON.stringify({
-        privacy: "private",
-        properties: {
-          enable_knocking: true,
-          enable_prejoin_ui: false,
-        },
-      }),
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Daily.co create room failed: ${err}`);
-    }
-
-    const data = await res.json();
-    return { url: data.url, name: data.name };
+    return createDailyRoom();
   }
 
   async ensurePrejoinDisabled(roomName: string): Promise<void> {

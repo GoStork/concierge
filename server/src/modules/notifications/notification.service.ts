@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { formatMoneyCents } from "../../lib/format-money";
 import { formatPhoneDisplay } from "../../lib/format-phone";
 import { getBaseUrl } from "../../lib/get-base-url";
+import { isExternalMeetingUrl } from "../../lib/daily-room";
 import { esc, buildBrandedEmail, fetchEmailBrandData } from "./email-builder";
 import { type NightlySyncResult } from "../providers/profile-sync.service";
 
@@ -603,7 +604,7 @@ export class NotificationService implements OnModuleInit {
     const detailsLink = `${base}/booking/${booking.publicToken}`;
     // Reconstruct GoStork internal room URLs with current base URL to avoid stale stored domains (e.g. old Replit URLs).
     // Only use booking.meetingUrl as-is for external meeting links (Zoom, Google Meet, etc.)
-    const joinLink = (booking.meetingUrl && !booking.meetingUrl.includes("/room/")) ? booking.meetingUrl : videoRoomLink;
+    const joinLink = isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl : videoRoomLink;
 
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
       title: `${cc.isCall ? cc.noun : "Meeting"} Confirmed`,
@@ -826,7 +827,7 @@ export class NotificationService implements OnModuleInit {
     const newDateStr = formatDate(newDate, newBooking.bookerTimezone);
     const newTimeStr = formatTime(newDate, newBooking.bookerTimezone);
     const detailsLink = `${base}/booking/${newBooking.publicToken}`;
-    const joinLink = (newBooking.meetingUrl && !newBooking.meetingUrl.includes("/room/")) ? newBooking.meetingUrl : videoRoomLink;
+    const joinLink = isExternalMeetingUrl(newBooking.meetingUrl) ? newBooking.meetingUrl : videoRoomLink;
 
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
       title: `${cc.isCall ? cc.noun : "Meeting"} Rescheduled`,
@@ -1639,7 +1640,7 @@ export class NotificationService implements OnModuleInit {
           const dateStr = formatDate(scheduledAt, booking.bookerTimezone);
           const timeStr = formatTime(scheduledAt, booking.bookerTimezone);
           const detailsLink = `${base}/booking/${booking.publicToken}`;
-          const joinLink = (booking.meetingUrl && !booking.meetingUrl.includes("/room/")) ? booking.meetingUrl : reminderVideoRoomLink;
+          const joinLink = isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl : reminderVideoRoomLink;
           const location = booking.meetingType === "phone" ? "Phone Call" : "Video Call";
           const staffMember = booking.providerUser?.name || "";
 
@@ -1695,7 +1696,7 @@ export class NotificationService implements OnModuleInit {
               "1": getFirstName(isProvider ? booking.providerUser?.name : attendeeName),
               "2": otherPartyName,
               "3": reminderLabel,
-              "4": (booking.meetingUrl && !booking.meetingUrl.includes("/room/")) ? booking.meetingUrl : `${base}/room/${booking.id}`,
+              "4": isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl : `${base}/room/${booking.id}`,
             },
           );
         }
