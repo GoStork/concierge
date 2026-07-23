@@ -251,9 +251,9 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
           key: "exp_meet_surrogate_children", required: true,
           label:
             "It may be important for the surrogate's children to know where the baby is going after the birth. Are you willing to meet and develop a relationship with the surrogate's children?",
-          widget: "textarea",
+          widget: "yes_no",
         },
-        { key: "exp_tell_child", required: true, label: "Do you intend to tell your child(ren) about the surrogate one day?", widget: "textarea" },
+        { key: "exp_tell_child", required: true, label: "Do you intend to tell your child(ren) about the surrogate one day?", widget: "yes_no" },
       ],
     },
     {
