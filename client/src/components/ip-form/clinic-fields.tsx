@@ -30,6 +30,7 @@ function FieldLabel({ question }: { question: IpFormQuestionDef }) {
 }
 
 interface ClinicNameValue { name?: string; providerId?: string | null }
+export interface ClinicHit { id: string; name: string; phone: string | null }
 
 export function clinicProviderIdOf(value: any): string | null {
   return value && typeof value === "object" ? value.providerId || null : null;
@@ -40,14 +41,14 @@ function clinicNameText(value: any): string {
   return value.name || "";
 }
 
-export function ClinicNameField({ question, value, onChange, disabled }: { question: IpFormQuestionDef; value: any; onChange: (v: ClinicNameValue) => void; disabled?: boolean }) {
+export function ClinicNameField({ question, value, onChange, onSelectClinic, disabled }: { question: IpFormQuestionDef; value: any; onChange: (v: ClinicNameValue) => void; onSelectClinic?: (c: ClinicHit) => void; disabled?: boolean }) {
   return (
     <div className="space-y-1.5" data-testid="ipform-clinic-name">
       <FieldLabel question={question} />
-      <AsyncAutocomplete<{ id: string; name: string }>
+      <AsyncAutocomplete<ClinicHit>
         value={clinicNameText(value)}
         onChangeText={(text) => onChange({ name: text, providerId: null })}
-        onSelect={(c) => onChange({ name: c.name, providerId: c.id })}
+        onSelect={(c) => { onChange({ name: c.name, providerId: c.id }); onSelectClinic?.(c); }}
         fetchItems={async (q) => (await getJson(`/api/ip-form/clinic-search?q=${encodeURIComponent(q)}`))?.clinics || []}
         itemLabel={(c) => c.name}
         renderItem={(c) => c.name}

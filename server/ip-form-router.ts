@@ -313,7 +313,7 @@ ipFormRouter.get("/api/ip-form/clinic-search", requireAuth, async (req, res) => 
         name: { contains: q, mode: "insensitive" },
         services: { some: { providerType: { name: "IVF Clinic" } } },
       },
-      select: { id: true, name: true },
+      select: { id: true, name: true, phone: true },
       take: 10,
       orderBy: { name: "asc" },
     });

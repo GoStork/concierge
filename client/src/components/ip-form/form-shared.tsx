@@ -9,6 +9,17 @@ import { QuestionField, IpFormQuestionDef } from "@/components/ip-form/question-
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ClinicNameField, DoctorNameField, ClinicAddressField, clinicProviderIdOf } from "@/components/ip-form/clinic-fields";
+import { parsePhoneNumber } from "libphonenumber-js";
+
+/** Parse a clinic's stored E.164 into the phone-widget value shape. */
+function parseClinicPhone(e164: string): { e164: string; display: string; isoCode: string | null; isValid?: boolean } {
+  try {
+    const p = parsePhoneNumber(e164);
+    return { e164: p.number, display: p.formatNational(), isoCode: p.country || null, isValid: p.isValid() };
+  } catch {
+    return { e164, display: e164, isoCode: null };
+  }
+}
 
 export interface IpFormSectionDef {
   id: string;
@@ -281,6 +292,7 @@ export function SectionQuestions({
   // Fertility clinic section: the selected clinic (from clinic_name) scopes the
   // RE and address pickers.
   const clinicNameQ = section.questions.find((q) => q.key === "clinic_name");
+  const clinicPhoneQ = section.questions.find((q) => q.key === "clinic_phone");
   const clinicProviderId = clinicNameQ ? clinicProviderIdOf(answers.get(answerKey(clinicNameQ.id, 0))) : null;
 
   const renderList = (questions: typeof activeQuestions, slot: number) => (
@@ -293,7 +305,14 @@ export function SectionQuestions({
         if (q.key === "clinic_name") {
           return (
             <div key={`${q.id}:${slot}`}>
-              <ClinicNameField question={q} value={answers.get(answerKey(q.id, slot))} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />
+              <ClinicNameField
+                question={q}
+                value={answers.get(answerKey(q.id, slot))}
+                onChange={(v) => onAnswer(q.id, slot, v)}
+                // Picking a clinic auto-fills its phone number.
+                onSelectClinic={(c) => { if (c.phone && clinicPhoneQ) onAnswer(clinicPhoneQ.id, slot, parseClinicPhone(c.phone)); }}
+                disabled={!editable}
+              />
             </div>
           );
         }
