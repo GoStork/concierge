@@ -183,6 +183,12 @@ export function findMissingRequired(
 
   const missing: { questionId: string; key: string; label: string; sectionKey: string; parentSlot: number }[] = [];
   for (const s of sections) {
+    // "I don't have a fertility clinic yet" waives the clinic section's
+    // required fields.
+    if (s.key === "clinic") {
+      const noneQ = s.questions.find((q: any) => q.key === "clinic_none");
+      if (noneQ && normalizedAnswer(answerMap.get(answerKey(noneQ.id, 0))) === "yes") continue;
+    }
     for (const q of s.questions) {
       if (!q.isActive || !q.required) continue;
       for (const slot of slotsFor(s, q, hasSecondParent)) {

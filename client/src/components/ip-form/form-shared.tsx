@@ -92,6 +92,11 @@ export function sectionMissingCount(
   hasSecondParent: boolean,
   allQuestionsById: Map<string, IpFormSectionDef["questions"][number]>,
 ): number {
+  // "No fertility clinic yet" marks the clinic section complete.
+  if (section.key === "clinic") {
+    const noneQ = section.questions.find((q) => q.key === "clinic_none");
+    if (noneQ && normalized(answers.get(answerKey(noneQ.id, 0))) === "yes") return 0;
+  }
   let missing = 0;
   for (const q of section.questions) {
     if (!q.isActive || !q.required) continue;
@@ -306,6 +311,10 @@ export function SectionQuestions({
   const clinicNameQ = section.questions.find((q) => q.key === "clinic_name");
   const clinicPhoneQ = section.questions.find((q) => q.key === "clinic_phone");
   const clinicProviderId = clinicNameQ ? clinicProviderIdOf(answers.get(answerKey(clinicNameQ.id, 0))) : null;
+  // "I don't have a fertility clinic yet" - rendered as a checkbox at the top;
+  // when checked the clinic detail fields hide and their required-ness is waived.
+  const clinicNoneQ = section.questions.find((q) => q.key === "clinic_none" && q.isActive);
+  const clinicNone = clinicNoneQ ? normalized(answers.get(answerKey(clinicNoneQ.id, 0))) === "yes" : false;
 
   const renderList = (questions: typeof activeQuestions, slot: number) => (
     <div className="space-y-5">
@@ -376,7 +385,19 @@ export function SectionQuestions({
   // section - ahead of the per-parent blocks - because it drives the two-vs-
   // solo split and carries the escape-hatch checkbox.
   const maritalQ = sharedQs.find((q) => q.key === "ip_marital_status");
-  const otherSharedQs = sharedQs.filter((q) => q.key !== "ip_marital_status");
+  // clinic_none renders as its own top checkbox; keep it out of the field list.
+  const otherSharedQs = sharedQs.filter((q) => q.key !== "ip_marital_status" && q.key !== "clinic_none");
+  const clinicNoneBlock = clinicNoneQ ? (
+    <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="ipform-clinic-none">
+      <Checkbox
+        checked={clinicNone}
+        onCheckedChange={(c) => onAnswer(clinicNoneQ.id, 0, c ? "yes" : "no")}
+        disabled={!canEdit(clinicNoneQ, 0)}
+        data-testid="ipform-clinic-none-checkbox"
+      />
+      {clinicNoneQ.label}
+    </label>
+  ) : null;
   const maritalBlock = maritalQ ? (
     <div className="space-y-1.5" data-testid="ipform-marital-block">
       <QuestionField
@@ -418,25 +439,31 @@ export function SectionQuestions({
   return (
     <div className="space-y-6">
       {section.description && <p className="text-sm text-muted-foreground">{section.description}</p>}
+      {clinicNoneBlock}
       {maritalBlock}
-      {perParentQs.length > 0 &&
-        slots.map((slot) => {
-          const anyEditable = perParentQs.some((q) => canEdit(q, slot));
-          return (
-            <div key={slot} className="space-y-4">
-              <h3 className="text-base font-heading font-semibold flex items-center gap-2">
-                {parentSlotHeading(slot, memberNames)}
-                {!anyEditable && <Lock className="w-3.5 h-3.5 text-muted-foreground" />}
-              </h3>
-              {renderList(perParentQs, slot)}
+      {/* When "no clinic yet" is checked, the clinic fields are hidden. */}
+      {!clinicNone && (
+        <>
+          {perParentQs.length > 0 &&
+            slots.map((slot) => {
+              const anyEditable = perParentQs.some((q) => canEdit(q, slot));
+              return (
+                <div key={slot} className="space-y-4">
+                  <h3 className="text-base font-heading font-semibold flex items-center gap-2">
+                    {parentSlotHeading(slot, memberNames)}
+                    {!anyEditable && <Lock className="w-3.5 h-3.5 text-muted-foreground" />}
+                  </h3>
+                  {renderList(perParentQs, slot)}
+                </div>
+              );
+            })}
+          {otherSharedQs.length > 0 && (
+            <div className="space-y-5">
+              {perParentQs.length > 0 && <h3 className="text-base font-heading font-semibold">Shared Details</h3>}
+              {renderList(otherSharedQs, 0)}
             </div>
-          );
-        })}
-      {otherSharedQs.length > 0 && (
-        <div className="space-y-5">
-          {perParentQs.length > 0 && <h3 className="text-base font-heading font-semibold">Shared Details</h3>}
-          {renderList(otherSharedQs, 0)}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

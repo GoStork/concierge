@@ -348,6 +348,7 @@ export function generateIpFormPdf(args: {
           }
           if (variant === "surrogate" && q.excludeFromSurrogatePdf) continue;
           if (q.widget === "photos") continue; // rendered by the photos section grid
+          if (q.key === "clinic_none") continue; // the escape checkbox is not a printed field
           if (!conditionMet(q, slot, section.perParent)) continue;
           let raw = answerFor(q, slot);
           // Mailing address defaults to "same as residential" - an absent
@@ -453,6 +454,14 @@ export function generateIpFormPdf(args: {
         // ── Shared section (may contain per-parent question blocks) ──
         sectionTitle(section.title);
         if (section.description) paragraph(section.description);
+        // "No fertility clinic yet": print a note instead of empty clinic fields.
+        if (section.key === "clinic") {
+          const noneQ = section.questions.find((q) => q.key === "clinic_none");
+          if (noneQ && normalized(answerFor(noneQ, 0)) === "yes") {
+            paragraph("The intended parents do not have a fertility clinic yet.", TEXT_DARK);
+            continue;
+          }
+        }
         const perParentQs = activeQuestions.filter((q) => q.perParent);
         const sharedQs = activeQuestions.filter((q) => !q.perParent);
         if (perParentQs.length) {
