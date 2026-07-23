@@ -27,8 +27,8 @@ const TEXT_MUTED = "#6b7280";
 const VALUE_BG = "#f0f0ef";
 
 const PAGE_MARGIN = 50;
-const HEADER_H = 110; // logo zone at the top of every page
-const FOOTER_LIMIT = 742; // LETTER height 792 - 50
+const HEADER_H = 92; // logo zone at the top of every page
+const FOOTER_LIMIT = 750; // LETTER height 792 - 42
 
 interface PdfQuestion {
   id: string;
@@ -293,20 +293,46 @@ export function generateIpFormPdf(args: {
       const questionById = new Map<string, PdfQuestion>();
       for (const s of args.sections) for (const q of s.questions) questionById.set(q.id, q);
 
+      // Compact layout: short fields pack two per row, long fields (textarea /
+      // address) span the full width. This mirrors the legacy form so each
+      // section fits its page instead of orphaning a couple of fields onto the
+      // next one. When a section genuinely overflows, the continuation page
+      // reprints "<Title> (Continued)".
+      const GUTTER = 16;
+      const colWidth = (contentWidth - GUTTER) / 2;
+      const LABEL_SIZE = 9;
+      const VALUE_SIZE = 9.5;
+      const BOX_PAD_X = 7;
+      const BOX_MIN_SHORT = 16;
+      const BOX_MIN_TALL = 30; // multi-line answers (textarea) get a taller box
+      const ROW_GAP = 6;
+
+      // The section title reprinted on any mid-section page break. Null while a
+      // title is being drawn (so its own space check doesn't reprint itself).
+      let activeSectionTitle: string | null = null;
+
       const ensureSpace = (needed: number) => {
-        if (doc.y + needed > FOOTER_LIMIT) doc.addPage();
+        if (doc.y + needed > FOOTER_LIMIT) {
+          doc.addPage();
+          if (activeSectionTitle) {
+            doc.fillColor(primary).font("Helvetica-Bold").fontSize(20).text(`${activeSectionTitle} (Continued)`, contentLeft, doc.y, { width: contentWidth });
+            doc.moveDown(0.4);
+          }
+        }
       };
 
       const sectionTitle = (title: string) => {
-        ensureSpace(60);
-        doc.fillColor(primary).font("Helvetica-Bold").fontSize(22).text(title, contentLeft, doc.y, { width: contentWidth });
-        doc.moveDown(0.5);
+        activeSectionTitle = null;
+        ensureSpace(50);
+        doc.fillColor(primary).font("Helvetica-Bold").fontSize(20).text(title, contentLeft, doc.y, { width: contentWidth });
+        doc.moveDown(0.4);
+        activeSectionTitle = title;
       };
 
       const subHeading = (text: string) => {
-        ensureSpace(40);
-        doc.fillColor(TEXT_DARK).font("Helvetica-Bold").fontSize(13).text(text, contentLeft, doc.y, { width: contentWidth });
-        doc.moveDown(0.4);
+        ensureSpace(36);
+        doc.fillColor(primary).font("Helvetica-Bold").fontSize(12).text(text, contentLeft, doc.y, { width: contentWidth });
+        doc.moveDown(0.15);
       };
 
       const paragraph = (text: string, color = TEXT_MUTED) => {
@@ -315,19 +341,32 @@ export function generateIpFormPdf(args: {
         doc.moveDown(0.5);
       };
 
-      /** Label over a filled value box, full content width. */
-      const questionRow = (label: string, value: string) => {
-        doc.font("Helvetica").fontSize(10);
-        const labelH = doc.heightOfString(label, { width: contentWidth });
-        const valueText = value || " ";
-        const valueH = Math.max(18, doc.heightOfString(valueText, { width: contentWidth - 16 }) + 10);
-        ensureSpace(labelH + valueH + 14);
-        doc.fillColor(TEXT_DARK).font("Helvetica").fontSize(10).text(label, contentLeft, doc.y, { width: contentWidth });
-        const boxY = doc.y + 3;
-        doc.roundedRect(contentLeft, boxY, contentWidth, valueH, 3).fill(VALUE_BG);
-        doc.fillColor(TEXT_DARK).font("Helvetica").fontSize(10).text(valueText, contentLeft + 8, boxY + 5, { width: contentWidth - 16 });
-        doc.y = boxY + valueH + 10;
-        doc.x = contentLeft;
+      const labelH = (label: string, w: number) => {
+        doc.font("Helvetica").fontSize(LABEL_SIZE);
+        return doc.heightOfString(label, { width: w });
+      };
+      const boxH = (value: string, w: number, tall: boolean) => {
+        doc.font("Helvetica").fontSize(VALUE_SIZE);
+        const h = doc.heightOfString(value || " ", { width: w - BOX_PAD_X * 2 });
+        return Math.max(tall ? BOX_MIN_TALL : BOX_MIN_SHORT, h + 8);
+      };
+      const cellH = (label: string, value: string, w: number, tall: boolean) => labelH(label, w) + 2 + boxH(value, w, tall);
+
+      /** Draw one label-over-boxed-value cell at (x,y); returns the content bottom Y.
+       *  A tall box whose text exceeds the page (a long letter) fills its
+       *  background only to the page bottom and lets the text flow onto the next
+       *  pages, so it never wastes a blank page or leaves the value clipped. */
+      const drawCell = (x: number, y: number, w: number, label: string, value: string, tall: boolean) => {
+        doc.fillColor(TEXT_DARK).font("Helvetica").fontSize(LABEL_SIZE).text(label, x, y, { width: w });
+        const lh = labelH(label, w);
+        const by = y + lh + 2;
+        const bh = boxH(value, w, tall);
+        const overflows = tall && by + bh > FOOTER_LIMIT;
+        const fillH = overflows ? FOOTER_LIMIT - by : bh;
+        if (fillH > 4) doc.roundedRect(x, by, w, fillH, 3).fill(VALUE_BG);
+        doc.fillColor(TEXT_DARK).font("Helvetica").fontSize(VALUE_SIZE).text(value || " ", x + BOX_PAD_X, by + 4, { width: w - BOX_PAD_X * 2 });
+        // For flowed text, doc.y is already the true end on the last page.
+        return overflows ? doc.y : by + bh;
       };
 
       /** Answer lookup respecting slot; conditional visibility check. */
@@ -340,29 +379,63 @@ export function generateIpFormPdf(args: {
         return normalized(answerMap.get(`${q.conditionalOnQuestionId}:${parentSlot}`)) === normalized(q.conditionalTriggerValue);
       };
 
+      // Full-width widgets span the page; only free-text (textarea) also gets a
+      // taller box. Addresses span full width but stay single-line height.
+      const isFullWidth = (widget: string) => widget === "textarea" || widget === "address";
+      const isTall = (widget: string) => widget === "textarea";
+
       const renderQuestions = (section: PdfSection, questions: PdfQuestion[], slot: number) => {
+        // Build the visible items first, then lay them out (short fields 2-up).
+        const items: { label: string; value: string; fullWidth: boolean; tall: boolean }[] = [];
         for (const q of questions) {
-          if (!q.isActive) {
-            // Deactivated questions still render when they carry an answer.
-            if (answerFor(q, slot) == null) continue;
-          }
+          if (!q.isActive && answerFor(q, slot) == null) continue; // deactivated but answered still prints
           if (variant === "surrogate" && q.excludeFromSurrogatePdf) continue;
-          if (q.widget === "photos") continue; // rendered by the photos section grid
+          if (q.widget === "photos") continue; // rendered by the photos grid
           if (q.key === "clinic_none") continue; // the escape checkbox is not a printed field
           if (!conditionMet(q, slot, section.perParent)) continue;
           let raw = answerFor(q, slot);
-          // Mailing address defaults to "same as residential" - an absent
-          // answer or an explicit sameAsResidential flag both resolve to the
-          // residential address for this slot.
+          // Mailing address defaults to "same as residential".
           if (q.key === "ip_mailing_address" && (raw == null || raw.sameAsResidential)) {
             const residentialQ = section.questions.find((x) => x.key === "ip_residential_address");
             raw = residentialQ ? answerFor(residentialQ, slot) : raw;
           }
-          questionRow(q.label, displayValue(q.widget, raw));
+          items.push({ label: q.label, value: displayValue(q.widget, raw), fullWidth: isFullWidth(q.widget), tall: isTall(q.widget) });
+        }
+
+        let i = 0;
+        while (i < items.length) {
+          const it = items[i];
+          if (it.fullWidth) {
+            // A tall box (letter) only needs room to START on this page - it
+            // flows onto following pages. A single-line full-width box (address)
+            // must fit whole.
+            const need = it.tall ? labelH(it.label, contentWidth) + BOX_MIN_TALL + ROW_GAP : cellH(it.label, it.value, contentWidth, false) + ROW_GAP;
+            ensureSpace(need);
+            const bottom = drawCell(contentLeft, doc.y, contentWidth, it.label, it.value, it.tall);
+            doc.y = bottom + ROW_GAP;
+            doc.x = contentLeft;
+            i++;
+          } else {
+            // Pair with the next short field, if any.
+            const pair = i + 1 < items.length && !items[i + 1].fullWidth ? items[i + 1] : null;
+            const rowH = Math.max(cellH(it.label, it.value, colWidth, false), pair ? cellH(pair.label, pair.value, colWidth, false) : 0);
+            ensureSpace(rowH + ROW_GAP);
+            const rowTop = doc.y;
+            drawCell(contentLeft, rowTop, colWidth, it.label, it.value, false);
+            if (pair) drawCell(contentLeft + colWidth + GUTTER, rowTop, colWidth, pair.label, pair.value, false);
+            doc.y = rowTop + rowH + ROW_GAP;
+            doc.x = contentLeft;
+            i += pair ? 2 : 1;
+          }
         }
       };
 
       const slots: (1 | 2)[] = hasSecondParent ? [1, 2] : [1];
+
+      // Each major section starts a fresh page - EXCEPT the first rendered one,
+      // which uses the initial page pdfkit already created (no blank page 1).
+      let firstSection = true;
+      const startSection = () => { if (!firstSection) doc.addPage(); firstSection = false; };
 
       for (const section of args.sections) {
         if (variant === "surrogate" && section.excludeFromSurrogatePdf) continue;
@@ -374,8 +447,9 @@ export function generateIpFormPdf(args: {
         // ── Photos: 2-column grid of pre-fetched buffers ──
         if (section.key === "photos") {
           if (!args.photoBuffers.length) continue;
-          doc.addPage();
+          startSection();
           sectionTitle(section.title);
+          activeSectionTitle = null; // the grid manages its own paging below
           const cell = (contentWidth - 24) / 2;
           let col = 0;
           let rowY = doc.y + 6;
@@ -383,6 +457,7 @@ export function generateIpFormPdf(args: {
             if (rowY + cell > FOOTER_LIMIT) {
               doc.addPage();
               sectionTitle(`${section.title} (Continued)`);
+              activeSectionTitle = null;
               rowY = doc.y + 6;
               col = 0;
             }
@@ -402,7 +477,7 @@ export function generateIpFormPdf(args: {
 
         // ── Acknowledgment: legal text + signature per parent ──
         if (section.key === "acknowledgment") {
-          doc.addPage();
+          startSection();
           sectionTitle(section.title);
           const legalText = (section.description || IP_FORM_ACKNOWLEDGMENT_TEXT).replace(/\{\{AGENCY_NAME\}\}/g, brand.agencyName);
           for (const slot of slots) {
@@ -437,13 +512,11 @@ export function generateIpFormPdf(args: {
         }
 
         if (!activeQuestions.length) continue;
-        doc.addPage();
 
-        // ── Per-parent SECTION: repeat whole section per parent ──
+        // ── Per-parent SECTION: one page per parent ──
         if (section.perParent) {
-          for (let i = 0; i < slots.length; i++) {
-            const slot = slots[i];
-            if (i > 0) doc.addPage();
+          for (const slot of slots) {
+            startSection();
             sectionTitle(`Intended Parent ${slot} | ${section.title}`);
             if (section.description) paragraph(section.description);
             renderQuestions(section, activeQuestions, slot);
@@ -452,6 +525,7 @@ export function generateIpFormPdf(args: {
         }
 
         // ── Shared section (may contain per-parent question blocks) ──
+        startSection();
         sectionTitle(section.title);
         if (section.description) paragraph(section.description);
         // "No fertility clinic yet": print a note instead of empty clinic fields.
@@ -468,6 +542,7 @@ export function generateIpFormPdf(args: {
           for (const slot of slots) {
             subHeading(`Intended Parent (${slot})`);
             renderQuestions(section, perParentQs, slot);
+            doc.moveDown(0.1);
           }
         }
         renderQuestions(section, sharedQs, 0);
