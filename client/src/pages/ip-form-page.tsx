@@ -595,19 +595,23 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
             {mode === "member" ? (hasMember2 ? "Send reminder" : "Create account and invite") : "Email the signing link"}
           </Button>
           {guestLink && (
-            <div className="flex items-center gap-2">
-              <Input readOnly value={guestLink} className="text-xs" data-testid="ipform-guest-link" />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  navigator.clipboard.writeText(guestLink);
-                  toast({ title: "Link copied" });
-                }}
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </Button>
+            <div className="space-y-1">
+              <Label className="text-xs">Signing link for your partner</Label>
+              <div className="flex items-center gap-2">
+                <Input readOnly value={guestLink} className="text-xs" data-testid="ipform-guest-link" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(guestLink);
+                    toast({ title: "Link copied" });
+                  }}
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">We emailed this link to them. You can also copy it and share it directly.</p>
             </div>
           )}
         </div>
