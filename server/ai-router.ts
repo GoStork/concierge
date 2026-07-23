@@ -809,6 +809,12 @@ async function callTier2Claude(
   // the card after the lookups. Hard cap to prevent infinite loops.
   const MAX_TOOL_ROUNDS = 8;
   let toolRoundCount = 0;
+  // forceToolUse: this turn is ORDERED to search (ready-after-curation with no cards shown
+  // for the pending service). If the model answers with text and no tool call anyway, retry
+  // once with an explicit correction instead of accepting the drift (calendar offers for
+  // never-presented providers, re-curation, etc.). One retry only - a second refusal is
+  // returned as-is so the failure stays loud rather than looping.
+  let forcedSearchRetryDone = false;
 
   // TRUE STREAMING with a peek window. Previously every tool-enabled round used
   // non-streaming sendMessage and the full reply was fake-streamed only after
@@ -956,6 +962,17 @@ async function callTier2Claude(
           }
         }
         currentMessage = functionResponses;
+      } else if (forceToolUse && !forcedSearchRetryDone) {
+        // Search was mandatory this turn but the model wrote text instead. Correct it once.
+        // Any partially streamed text is reconciled by the client's final "done" replace
+        // (same mechanism the anti-echo guard relies on).
+        forcedSearchRetryDone = true;
+        console.log(`[TIER2 FORCE-SEARCH] required search tool not called (model wrote ${firstText.length} chars instead) - corrective retry`);
+        currentMessage = `SYSTEM ENFORCEMENT - YOUR PREVIOUS REPLY WAS REJECTED AND NOT SHOWN TO THE PARENT.
+The parent said "ready" after a [[CURATION]] summary for a service whose matches have NOT been shown yet. This turn MUST call the appropriate search tool (search_surrogates, search_surrogacy_agencies, search_egg_donors, search_sperm_donors, or search_clinics).
+- Do NOT offer a consultation, calendar, or booking - no provider for this service has been presented yet.
+- Do NOT send [[CURATION]] again and do NOT ask more questions.
+Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH_CARD]].`;
       } else {
         // Model chose text instead of calling tools - already streamed live by streamTurn
         console.log(`[TIER2] DONE (text w/ tools enabled) in ${Date.now() - t0}ms`);
@@ -4206,7 +4223,11 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       // narrative replies.
       const lastUserMsg = ((messages || []).filter((m: any) => m.role === "user").at(-1)?.content || "").toString();
       const shortMsg = lastUserMsg.length <= 60 ? lastUserMsg : "";
-      if (askedD1 && shortMsg) {
+      // A short message that is PURELY a list of the three supported countries can
+      // only be a D1 answer - accept it even when the last AI message asked something
+      // else (out-of-order answers are when Eva needs the fallback most).
+      const pureCountryList = /^\s*(usa|united states|mexico|colombia)((\s*,\s*|\s+(and|\+|&)\s+)(usa|united states|mexico|colombia))*\s*[.!]?\s*$/i.test(shortMsg);
+      if ((askedD1 || pureCountryList) && shortMsg) {
         const picks: string[] = [];
         if (/\b(usa|united states|america|us\b)/i.test(shortMsg)) picks.push("USA");
         if (/\bmexico\b/i.test(shortMsg)) picks.push("Mexico");
@@ -4227,6 +4248,60 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
           } catch (e: any) {
             console.log(`[D1 SAVE FALLBACK] Failed to patch: ${e.message}`);
           }
+        }
+      }
+    }
+
+    // When a fallback below completes the D-set on THIS turn, this turn is the
+    // MANDATORY-STOP turn (only [[CURATION]] is legal) - the search gate keys off it.
+    let dSaveJustPatched = false;
+
+    // D2/D3 SAVE FALLBACKS - same failure mode as D1 above: Gemini skips the
+    // [[SAVE]] tag for the termination (D2) and twins (D3) answers, so the
+    // profile's D-cycle stays incomplete forever, skip directives never fire,
+    // and the deterministic search gate can't tell when the intake is done.
+    // The D2 quick-reply strings ("Pro-choice surrogate"/"Pro-life surrogate")
+    // are unique to that question, so they save even when the parent answers a
+    // turn late (out-of-order answers are exactly when Eva loses the thread).
+    if (!profile?.surrogateTermination && userRecord?.parentAccountId) {
+      const lastUserMsgD = ((messages || []).filter((m: any) => m.role === "user").at(-1)?.content || "").toString().trim();
+      const m2 = /^pro-?(choice|life)\s+surrogate[.!]?$/i.exec(lastUserMsgD);
+      if (m2) {
+        const value = m2[1].toLowerCase() === "choice" ? "Pro-choice surrogate" : "Pro-life surrogate";
+        try {
+          await prisma.intendedParentProfile.upsert({
+            where: { parentAccountId: userRecord.parentAccountId },
+            update: { surrogateTermination: value },
+            create: { parentAccountId: userRecord.parentAccountId, surrogateTermination: value },
+          });
+          (profile as any).surrogateTermination = value;
+          dSaveJustPatched = true;
+          console.log(`[D2 SAVE FALLBACK] Patched surrogateTermination=${value} for account ${userRecord.parentAccountId} (Eva missed the SAVE tag)`);
+        } catch (e: any) {
+          console.log(`[D2 SAVE FALLBACK] Failed to patch: ${e.message}`);
+        }
+      }
+    }
+    // D3 twins: the quick replies are shared with the clinic-cycle A3 question,
+    // so only treat them as the SURROGATE answer once the D-cycle is underway
+    // (countries already saved) and the surrogate value is still missing.
+    if (profile?.surrogateCountries && profile?.surrogateTwins == null && userRecord?.parentAccountId) {
+      const lastUserMsgD = ((messages || []).filter((m: any) => m.role === "user").at(-1)?.content || "").toString().trim();
+      const value = /^hoping (for|to have) twins[.!]?$/i.test(lastUserMsgD) ? "Yes"
+        : /^singleton( only| pregnancy)?[.!]?$/i.test(lastUserMsgD) ? "No"
+        : null;
+      if (value) {
+        try {
+          await prisma.intendedParentProfile.upsert({
+            where: { parentAccountId: userRecord.parentAccountId },
+            update: { surrogateTwins: value },
+            create: { parentAccountId: userRecord.parentAccountId, surrogateTwins: value },
+          });
+          (profile as any).surrogateTwins = value;
+          dSaveJustPatched = true;
+          console.log(`[D3 SAVE FALLBACK] Patched surrogateTwins=${value} for account ${userRecord.parentAccountId} (Eva missed the SAVE tag)`);
+        } catch (e: any) {
+          console.log(`[D3 SAVE FALLBACK] Failed to patch: ${e.message}`);
         }
       }
     }
@@ -4290,12 +4365,22 @@ MANDATORY RULE - NEVER ASK QUESTIONS ALREADY ANSWERED:
 Before asking ANY question, check if the parent already provided the answer. If yes, skip it silently and move to the next unanswered step. NEVER announce you are skipping.
 `;
 
-    // Collect all previously-presented match card provider IDs to prevent re-suggesting
+    // Collect all previously-presented match card provider IDs to prevent re-suggesting.
+    // Also bucket the card TYPES: the ready-turn force-search guard must be per-service -
+    // a clinic card shown in phase 1 must not disable forcing the surrogate search in
+    // phase 2 of the same session (TD-11 chronic failure).
     const presentedProviderIds = new Set<string>();
+    const presentedCardTypes = new Set<string>();
     for (const msg of chatHistory) {
       const cards = (msg as any).uiCardData?.matchCards || [];
       for (const card of cards) {
         if (card?.providerId) presentedProviderIds.add(card.providerId);
+        const t = String(card?.type || "").toLowerCase();
+        if (t.includes("clinic")) presentedCardTypes.add("clinic");
+        else if (t.includes("egg")) presentedCardTypes.add("egg");
+        else if (t.includes("sperm")) presentedCardTypes.add("sperm");
+        else if (t.includes("agency") || t.includes("countryprogram")) presentedCardTypes.add("agency");
+        else if (t.includes("surrogate")) presentedCardTypes.add("surrogate");
       }
     }
     const alreadyPresentedContext = presentedProviderIds.size > 0
@@ -4845,6 +4930,11 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     let needsRetry = false; // true when all AI tiers failed - tell client to silently retry
     let serverBypassServed = false; // true when a server-side hardcoded bypass served the response
     let lastSearchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
+    // Mirrors blockSurrogateSearchThisTurn (computed in the Tier2 branch) for the card
+    // post-processing below: on a gate-blocked turn no surrogate card may render either -
+    // otherwise the MATCH_CARD fallback manufactures one from stale tool results, the
+    // "surrogate presented" bucket gets polluted, and the ready-turn force never fires.
+    let surrogateCardGateActive = false;
     const tierCallStart = Date.now();
 
     // Extract the system prompt text (first message in messages array after unshift)
@@ -5066,8 +5156,64 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     } else if (useTier2) {
       // Tier 2: Claude Sonnet 4.6 with full prompt + caching + tools
       // Force tool use when parent says "ready" after CURATION - prevents AI from fabricating match results.
-      // Only force if no match cards have been shown yet in this session (otherwise Tier2 handles it naturally).
-      const forceToolUseForSearch = userSaidReady && curationAlreadySent && needsTools && presentedProviderIds.size === 0;
+      // Per-SERVICE guard: skip forcing only when cards for the service this ready refers to
+      // were already shown (then "ready" may legitimately mean booking, not searching). A session
+      // that finished the clinic phase and is now mid-surrogate-curation MUST still force the
+      // surrogate search - the old session-global presentedProviderIds.size===0 guard let the
+      // model drift to a calendar offer for a never-presented agency (TD-11 chronic failure).
+      const lastAiL = lastAiContent.toLowerCase();
+      // What satisfies the surrogate need depends on the parent's D1 countries:
+      // international-only parents (PATH A) get AGENCY cards as their match, so an
+      // agency card counts. USA or mixed parents (PATH B/C) are owed a surrogate
+      // PROFILE card - a mid-intake agency card (D1 cost education gone rogue) must
+      // NOT disable the ready-turn force for them.
+      const dCountries = String(profile?.surrogateCountries || "");
+      const internationalOnly = !!dCountries
+        && !/\busa\b|\bunited states\b/i.test(dCountries)
+        && /\bmexico\b|\bcolombia\b/i.test(dCountries);
+      const surrogateSatisfied = presentedCardTypes.has("surrogate")
+        || (internationalOnly && presentedCardTypes.has("agency"));
+      const typeSatisfied = (svc: string) => svc === "surrogate" ? surrogateSatisfied : presentedCardTypes.has(svc);
+      // "surroga" stem: curation summaries say "surrogacy" ("open to surrogacy in
+      // USA or Colombia"), which /surrogate/ misses - that gap made pendingReadyService
+      // null and silently disabled the ready-turn force. Message sniffing first, then
+      // fall back to the profile's outstanding needs that have no cards yet.
+      const pendingReadyService =
+        /surroga|carrier|agency/.test(lastAiL) ? "surrogate" :
+        /egg donor/.test(lastAiL) ? "egg" :
+        /sperm donor/.test(lastAiL) ? "sperm" :
+        /clinic|ivf/.test(lastAiL) ? "clinic" :
+        (profile?.needsSurrogate && !surrogateSatisfied) ? "surrogate" :
+        (profile?.needsEggDonor && !presentedCardTypes.has("egg")) ? "egg" : null;
+      const forceToolUseForSearch = userSaidReady && curationAlreadySent && needsTools &&
+        (presentedProviderIds.size === 0 ||
+          (pendingReadyService != null && !typeSatisfied(pendingReadyService)));
+
+      // DETERMINISTIC SEARCH GATE (surrogate D-cycle). The prompt's SEARCH GATE rule
+      // ("no search until D-intake complete + [[CURATION]] + ready") keeps getting jumped
+      // when parents answer out of order: the model searches and shows a surrogate card
+      // mid-D-intake, and the later "ready" then reads as a booking confirmation instead
+      // of the search trigger (TD-11 chronic). Enforce server-side: search_surrogates is
+      // simply not callable this turn while the profile's D-answers are incomplete, or on
+      // the turn right after the D3 (twins) question where the ONLY valid action is the
+      // curation summary. Ready-turns and sessions that already presented a surrogate/
+      // agency card are always exempt (those turns legitimately search or book).
+      const surrogateDIncomplete = profile?.surrogateTwins == null
+        || !profile?.surrogateTermination
+        || !(profile?.surrogateAgeRange || profile?.surrogateCountries || profile?.surrogateExperience);
+      const d3AskedLastTurn = /hoping (for|to have) twins|twins.*singleton|singleton pregnancy/i.test(lastAiL);
+      const blockSurrogateSearchThisTurn = !userSaidReady
+        && !surrogateSatisfied
+        && (surrogateDIncomplete || d3AskedLastTurn || dSaveJustPatched);
+      surrogateCardGateActive = blockSurrogateSearchThisTurn;
+      const toolsForTurn = needsTools && openAiTools.length > 0
+        ? (blockSurrogateSearchThisTurn
+            ? openAiTools.filter((t: any) => t?.function?.name !== "search_surrogates")
+            : openAiTools)
+        : [];
+      if (blockSurrogateSearchThisTurn && needsTools && openAiTools.length > 0) {
+        console.log(`[SEARCH GATE] search_surrogates withheld this turn (dIncomplete=${surrogateDIncomplete}, d3Asked=${d3AskedLastTurn}) - D-cycle must finish before matching`);
+      }
 
       // Ready-turn pre-search (clinic only - deterministic): after a clinic
       // curation + "ready", the search is not a model decision, it's ordered.
@@ -5103,7 +5249,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       const tier2Result = await callTier2Claude(
         systemPromptForTiers,
         messages,
-        needsTools && openAiTools.length > 0 ? openAiTools : [],
+        toolsForTurn,
         sse,
         mcpClient,
         forceToolUseForSearch,
@@ -7597,6 +7743,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         if (!parsed.providerId && parsed.id) parsed.providerId = parsed.id;
         if (!parsed.providerId && parsed.entityId) parsed.providerId = parsed.entityId;
         if (!parsed.type && parsed.entityType) parsed.type = parsed.entityType;
+        // Gate-blocked turn: the D-cycle is still collecting preferences, so a surrogate
+        // card is premature by design (SEARCH GATE) no matter where the model got the id.
+        if (surrogateCardGateActive && /surrogate/i.test(String(parsed.type || ""))) {
+          console.log(`[SEARCH GATE] Suppressed premature surrogate MATCH_CARD (${parsed.providerId || parsed.name || "?"}) - D-cycle incomplete`);
+          continue;
+        }
         // Repair the classic field swap: the model sometimes puts the AGENCY
         // id in providerId and the actual profile UUID in entityId - the
         // client then fetches a profile with the agency id and renders
@@ -7853,6 +8005,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               const cardType = searchResult.toolName === "find_lookalike_matches"
                 ? (searchResult.toolArgs?.entityType || "Egg Donor")
                 : (toolTypeMap[searchResult.toolName] || "Surrogate");
+              // Gate-blocked turn: never manufacture a surrogate card mid-D-intake
+              // (stale agency results otherwise become "Surrogate"-typed cards here).
+              if (surrogateCardGateActive && /surrogate/i.test(cardType)) {
+                console.log(`[SEARCH GATE] Suppressed fallback surrogate card from ${searchResult.toolName} - D-cycle incomplete`);
+                continue;
+              }
 
               let matched = results[0];
               if (mentionedNameMatch) {
