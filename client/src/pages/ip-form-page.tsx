@@ -27,7 +27,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { OptionPills } from "@/components/ui/option-pills";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -46,7 +45,7 @@ import {
 
 interface IpFormBundle {
   sections: IpFormSectionDef[];
-  response: { id: string; status: string; hasSecondParent: boolean; parent2Mode: string | null; submittedAt: string | null };
+  response: { id: string; status: string; hasSecondParent: boolean; hasSecondParentManual: boolean; parent2Mode: string | null; submittedAt: string | null };
   answers: { questionId: string; parentSlot: number; value: any }[];
   signatures: { parentSlot: number; fullLegalName: string; signedAt: string; method: string; signatureImageUrl: string }[];
   mySlot: 1 | 2 | null;
@@ -134,7 +133,16 @@ export default function IpFormPage() {
     dirtyRef.current = new Map();
     setSaveState("saving");
     try {
-      await apiRequest("PATCH", "/api/ip-form/answers", { answers: items });
+      const res = await apiRequest("PATCH", "/api/ip-form/answers", { answers: items });
+      // The server re-derives two-vs-solo from IP1's marital status and hands
+      // the fresh value back - apply it so the second-parent sections appear
+      // or vanish right after the parent picks their relationship status.
+      const body = await res.json().catch(() => null);
+      if (body?.response) {
+        queryClient.setQueryData<IpFormBundle>(["/api/ip-form"], (old) =>
+          old ? { ...old, response: { ...old.response, hasSecondParent: body.response.hasSecondParent, hasSecondParentManual: body.response.hasSecondParentManual } } : old,
+        );
+      }
       setSaveState("saved");
     } catch (e: any) {
       // Re-queue so nothing is lost; surface the failure.
@@ -182,6 +190,20 @@ export default function IpFormPage() {
 
   const signaturesDone =
     !!data?.signatures?.find((s) => s.parentSlot === 1) && (!hasSecondParent || !!data?.signatures?.find((s) => s.parentSlot === 2));
+
+  // Escape hatch: explicitly set two-vs-solo, overriding the marital-status
+  // inference. Optimistically update so the sections show/hide immediately.
+  const setSecondParent = async (value: boolean) => {
+    queryClient.setQueryData<IpFormBundle>(["/api/ip-form"], (old) =>
+      old ? { ...old, response: { ...old.response, hasSecondParent: value, hasSecondParentManual: true } } : old,
+    );
+    try {
+      await apiRequest("PATCH", "/api/ip-form", { hasSecondParent: value });
+    } catch (e: any) {
+      toast({ title: "Could not update", description: e?.message, variant: "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/ip-form"] });
+    }
+  };
 
   const submitForm = async () => {
     await flushAnswers();
@@ -281,23 +303,27 @@ export default function IpFormPage() {
             )}
           </div>
 
+          {/* No upfront "are there two of you?" question - we infer it from
+              IP1's relationship status below. This subtle line reflects the
+              inference and lets a parent correct the rare mismatch (married
+              but solo, or single/divorced with a co-parent). */}
           {activeSection.key === "profile" && !submitted && !isViewer && (
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Are there two intended parents on this journey?</Label>
-              <OptionPills
-                options={[{ value: "yes", label: "Yes, we're two" }, { value: "no", label: "No, it's just me" }]}
-                value={hasSecondParent ? "yes" : "no"}
-                onChange={async (v) => {
-                  if (!v) return;
-                  try {
-                    await apiRequest("PATCH", "/api/ip-form", { hasSecondParent: v === "yes" });
-                    queryClient.invalidateQueries({ queryKey: ["/api/ip-form"] });
-                  } catch (e: any) {
-                    toast({ title: "Could not update", description: e?.message, variant: "destructive" });
-                  }
-                }}
-                testIdPrefix="ipform-second-parent"
-              />
+            <div className="rounded-[var(--radius)] bg-secondary/40 px-3 py-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-1" data-testid="ipform-second-parent-hint">
+              {hasSecondParent ? (
+                <>
+                  <span>This form is set up for you and a second intended parent.</span>
+                  <button type="button" className="font-medium text-primary hover:underline" onClick={() => setSecondParent(false)} data-testid="ipform-set-solo">
+                    It's just me
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span>This form is set up for just you.</span>
+                  <button type="button" className="font-medium text-primary hover:underline" onClick={() => setSecondParent(true)} data-testid="ipform-set-two">
+                    I have a second intended parent
+                  </button>
+                </>
+              )}
             </div>
           )}
 

@@ -42,6 +42,20 @@ export interface DefaultIpFormSection {
   questions: DefaultIpFormQuestion[];
 }
 
+/**
+ * Marital statuses (from the ip_marital_status question options) that imply a
+ * second intended parent on the journey. Drives IpFormResponse.hasSecondParent
+ * so parents don't answer a redundant "are there two of you?" question - IP1's
+ * relationship status already tells us. A manual override always wins.
+ */
+export const TWO_PARENT_MARITAL_STATUSES = ["Partnered", "Married"];
+
+export function maritalImpliesTwoParents(value: unknown): boolean {
+  // Pre-answer default: show both parents. Safer than hiding a needed signer.
+  if (typeof value !== "string" || !value.trim()) return true;
+  return TWO_PARENT_MARITAL_STATUSES.includes(value.trim());
+}
+
 /** Legal text for the acknowledgment section. {{AGENCY_NAME}} is replaced with the downloading agency's name at PDF render time. */
 export const IP_FORM_ACKNOWLEDGMENT_TEXT =
   "By submitting this questionnaire, I certify the information I provided on and in connection with this form is true and correct to the best of my knowledge. I am giving {{AGENCY_NAME}} permission to share this information with potential surrogates for the purpose of matching. I also understand that any false statements or deliberate omissions on this form may subject me to legal actions for fraudulent misrepresentation.";

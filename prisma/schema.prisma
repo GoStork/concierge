@@ -2494,8 +2494,12 @@ model IpFormResponse {
   id              String    @id @default(uuid())
   parentAccountId String    @unique
   status          String    @default("DRAFT") // "DRAFT" | "SUBMITTED"
-  // Solo parents flip this off; slot-2 answers/signature stop being required.
+  // Whether a second intended parent is on this journey. Derived from IP1's
+  // marital status (Partnered/Married => two) so parents skip a redundant
+  // upfront question - UNLESS hasSecondParentManual is set, in which case the
+  // parent's explicit choice (the escape hatch) wins and derivation stops.
   hasSecondParent Boolean   @default(true)
+  hasSecondParentManual Boolean @default(false)
   parent2Mode     String? // "member" | "guest"
   promptedAt      DateTime? // when Eva's card was posted - anchors the reminder ladder
   submittedAt     DateTime?

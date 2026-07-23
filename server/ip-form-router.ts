@@ -21,6 +21,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
+import { maritalImpliesTwoParents } from "./ip-form-defaults";
 
 export const ipFormRouter = Router();
 
@@ -115,6 +116,26 @@ async function loadResponseBundle(responseId: string) {
     prisma.ipFormSignature.findMany({ where: { responseId }, orderBy: { parentSlot: "asc" } }),
   ]);
   return { answers, signatures };
+}
+
+/**
+ * Re-derive hasSecondParent from IP1's marital status, unless the parent
+ * manually overrode it via the escape hatch. Returns the up-to-date response
+ * (persisting a change only when the derived value actually differs). This is
+ * why parents don't have to answer a separate "are there two of you?"
+ * question - their relationship status already answers it.
+ */
+async function reconcileHasSecondParent(response: any): Promise<any> {
+  if (response.hasSecondParentManual) return response;
+  const maritalQ = await prisma.ipFormQuestion.findUnique({ where: { key: "ip_marital_status" }, select: { id: true } });
+  if (!maritalQ) return response;
+  const ans = await prisma.ipFormAnswer.findUnique({
+    where: { responseId_questionId_parentSlot: { responseId: response.id, questionId: maritalQ.id, parentSlot: 1 } },
+    select: { value: true },
+  });
+  const derived = maritalImpliesTwoParents(ans?.value);
+  if (derived === response.hasSecondParent) return response;
+  return prisma.ipFormResponse.update({ where: { id: response.id }, data: { hasSecondParent: derived } });
 }
 
 /**
@@ -249,7 +270,10 @@ ipFormRouter.get("/api/ip-form", requireAuth, async (req, res) => {
   const user = (req as any).user;
   try {
     const { accountId, memberIds } = await accountOf(user.id);
-    const [sections, response] = await Promise.all([loadIpFormTemplate(), getOrCreateResponse(accountId)]);
+    const [sections, rawResponse] = await Promise.all([loadIpFormTemplate(), getOrCreateResponse(accountId)]);
+    // Always open with two-vs-solo reflecting IP1's current marital status
+    // (unless manually overridden), so the inference is right from load.
+    const response = await reconcileHasSecondParent(rawResponse);
     const { answers, signatures } = await loadResponseBundle(response.id);
     const guestToken = await prisma.ipFormGuestToken.findFirst({
       where: { responseId: response.id, revokedAt: null, expiresAt: { gt: new Date() } },
@@ -285,7 +309,10 @@ ipFormRouter.patch("/api/ip-form", requireAuth, async (req, res) => {
     if (response.status === "SUBMITTED") return res.status(409).json({ message: "Form already submitted" });
     const hasSecondParent = req.body?.hasSecondParent;
     if (typeof hasSecondParent !== "boolean") return res.status(400).json({ message: "hasSecondParent must be boolean" });
-    const updated = await prisma.ipFormResponse.update({ where: { id: response.id }, data: { hasSecondParent } });
+    // Explicit choice (escape hatch): lock it so marital-status changes no
+    // longer flip it. This is the ONLY place hasSecondParentManual turns on
+    // besides inviting a second parent.
+    const updated = await prisma.ipFormResponse.update({ where: { id: response.id }, data: { hasSecondParent, hasSecondParentManual: true } });
     res.json({ response: updated });
   } catch (e: any) {
     console.error(`[ip-form] PATCH failed: ${e?.message}`);
@@ -333,7 +360,11 @@ ipFormRouter.patch("/api/ip-form/answers", requireAuth, async (req, res) => {
       });
       saved++;
     }
-    res.json({ saved });
+    // Marital status just changed? Re-derive two-vs-solo and hand the fresh
+    // value back so the client can show/hide the second-parent sections
+    // without a full refetch.
+    const reconciled = await reconcileHasSecondParent(response);
+    res.json({ saved, response: { hasSecondParent: reconciled.hasSecondParent, hasSecondParentManual: reconciled.hasSecondParentManual } });
   } catch (e: any) {
     console.error(`[ip-form] answers PATCH failed: ${e?.message}`);
     res.status(500).json({ message: "Failed to save answers" });
@@ -379,7 +410,7 @@ ipFormRouter.post("/api/ip-form/invite-parent2", requireAuth, async (req, res) =
     if (response.status === "SUBMITTED") return res.status(409).json({ message: "Form already submitted" });
     const mode = req.body?.mode;
     if (mode === "member") {
-      await prisma.ipFormResponse.update({ where: { id: response.id }, data: { parent2Mode: "member", hasSecondParent: true } });
+      await prisma.ipFormResponse.update({ where: { id: response.id }, data: { parent2Mode: "member", hasSecondParent: true, hasSecondParentManual: true } });
       return res.json({ ok: true, mode });
     }
     if (mode === "guest") {
@@ -394,7 +425,7 @@ ipFormRouter.post("/api/ip-form/invite-parent2", requireAuth, async (req, res) =
       const row = await prisma.ipFormGuestToken.create({
         data: { responseId: response.id, token, email, name, expiresAt: new Date(Date.now() + GUEST_TOKEN_TTL_MS) },
       });
-      await prisma.ipFormResponse.update({ where: { id: response.id }, data: { parent2Mode: "guest", hasSecondParent: true } });
+      await prisma.ipFormResponse.update({ where: { id: response.id }, data: { parent2Mode: "guest", hasSecondParent: true, hasSecondParentManual: true } });
       const { getBaseUrl } = await import("./src/lib/get-base-url");
       const link = `${getBaseUrl()}/ip-form/guest/${token}`;
       const { sendIpFormGuestInvite } = await import("./notify-ip-form");
@@ -417,12 +448,15 @@ ipFormRouter.post("/api/ip-form/submit", requireAuth, async (req, res) => {
     const response = await getOrCreateResponse(accountId);
     if (response.status === "SUBMITTED") return res.status(409).json({ message: "Form already submitted" });
 
+    // Make sure two-vs-solo is current before validating (marital status may
+    // have changed right before submit).
+    const effective = await reconcileHasSecondParent(response);
     const sections = await loadIpFormTemplate();
     const { answers, signatures } = await loadResponseBundle(response.id);
-    const missing = findMissingRequired(sections, answers as any, response.hasSecondParent);
+    const missing = findMissingRequired(sections, answers as any, effective.hasSecondParent);
     const missingSignatures: number[] = [];
     if (!signatures.find((s) => s.parentSlot === 1)) missingSignatures.push(1);
-    if (response.hasSecondParent && !signatures.find((s) => s.parentSlot === 2)) missingSignatures.push(2);
+    if (effective.hasSecondParent && !signatures.find((s) => s.parentSlot === 2)) missingSignatures.push(2);
     if (missing.length || missingSignatures.length) {
       return res.status(422).json({ message: "Form incomplete", missing, missingSignatures });
     }
