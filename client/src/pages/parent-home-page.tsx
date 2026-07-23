@@ -144,19 +144,7 @@ export default function ParentHomePage() {
         <p className="text-sm text-muted-foreground mt-1">Here's where your journey stands.</p>
       </div>
 
-      {/* Phase 7A: journey timelines - one card per active journey, every
-          type the parent is running in parallel (surrogacy, egg donation,
-          IVF, banks, legal). Derived server-side; parents see their own
-          account automatically. */}
-      <Card className="p-5 space-y-3">
-        <SectionHeader
-          icon={<Map className="w-5 h-5 text-primary" />}
-          title="Your Journeys"
-        />
-        <JourneyTimelineCard variant="home" testId="home-journeys" />
-      </Card>
-
-      {/* Action queue */}
+      {/* Action queue - always first so pending items are never below the fold */}
       <Card className="p-5 space-y-3">
         <SectionHeader
           icon={<CheckCircle2 className="w-5 h-5 text-primary" />}
@@ -249,6 +237,18 @@ export default function ParentHomePage() {
             ))}
           </div>
         )}
+      </Card>
+
+      {/* Phase 7A: journey timelines - one card per active journey, every
+          type the parent is running in parallel (surrogacy, egg donation,
+          IVF, banks, legal). Derived server-side; parents see their own
+          account automatically. */}
+      <Card className="p-5 space-y-3">
+        <SectionHeader
+          icon={<Map className="w-5 h-5 text-primary" />}
+          title="Your Journeys"
+        />
+        <JourneyTimelineCard variant="home" testId="home-journeys" />
       </Card>
 
       {/* Upcoming meetings */}
