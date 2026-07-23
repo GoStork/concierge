@@ -346,12 +346,15 @@ export async function buildJourneyTimelines(
         { id: "agreement_sent", label: "Agreement Sent", at: agreementSentAt },
         { id: "agreement_signed", label: "Agreement Signed", at: signedAt },
       ];
-      // Intended Parent Form rung (surrogacy only): appears once the form was
-      // prompted or submitted for this account. Rendered right after the
-      // consultation - the agency cannot schedule a match call without it.
+      // Intended Parent Form rung (surrogacy only), right after the
+      // consultation - the agency cannot schedule a match call without it, so
+      // parents see the step coming from day one. optional: true keeps
+      // pre-feature journeys clean: an unevidenced optional rung below the
+      // highest evidenced rung is dropped by the filter, so an old
+      // handed-off journey never shows a phantom "Parent Form Submitted".
       const ipFormRungs: Rung[] =
-        journeyType === "surrogacy" && ipFormResponse && (ipFormResponse.promptedAt || ipFormResponse.submittedAt)
-          ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse.submittedAt }]
+        journeyType === "surrogacy"
+          ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse?.submittedAt || null, optional: true }]
           : [];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
