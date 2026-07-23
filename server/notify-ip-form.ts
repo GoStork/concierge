@@ -3,10 +3,10 @@
  *
  * Channels:
  *   Email - buildBrandedEmail on SendGrid (mock-logged without an API key).
- *   SMS   - Twilio Content Template. The ContentSid comes from
- *           TWILIO_TEMPLATE_IP_FORM_REMINDER (registering the template in
- *           Twilio is an ops step); SMS is skipped with a log line until the
- *           env var is set. Raw plain-text SMS is never sent.
+ *   SMS   - Twilio Content Template when IP_FORM_REMINDER_CONTENT_SID is a
+ *           real SID; until that template is registered it falls back to a
+ *           raw-body SMS via the same Twilio account (the app's established
+ *           pattern - see POST_CALL_FOLLOWUP_PARENT in notification.service).
  *   In-app- InAppNotification rows (IP_FORM_* event types).
  *
  * Test-data suppression: recipients on @gostork-test.com are logged, not
@@ -40,6 +40,39 @@ async function sendEmail(to: string[], subject: string, html: string, brandCompa
   });
   if (!resp.ok) {
     console.error(`[IP FORM NOTIFY] SendGrid error: ${resp.status} - ${await resp.text()}`);
+  }
+}
+
+// Same convention as TWILIO_TEMPLATES in notification.service.ts: hardcoded
+// content SID, PLACEHOLDER until the template is registered in Twilio - the
+// raw-body fallback below keeps SMS working either way.
+const IP_FORM_REMINDER_CONTENT_SID = "PLACEHOLDER"; // TODO: create Twilio Content Template; falls back to sendRawSms
+
+/** Raw-body SMS (clone of NotificationService.sendRawSms - E.164 normalize, prefer MessagingService). */
+async function sendRawSms(to: string, body: string): Promise<void> {
+  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+  const twilioToken = process.env.TWILIO_AUTH_TOKEN;
+  const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
+  const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  if (!twilioSid || !twilioToken || (!twilioFrom && !twilioMessagingServiceSid)) {
+    console.log(`[IP FORM NOTIFY] [SMS MOCK] To: ${to}, Body: ${body}`);
+    return;
+  }
+  let normalizedTo = to.replace(/[\s\-\(\)]/g, "");
+  if (!normalizedTo.startsWith("+")) normalizedTo = `+1${normalizedTo}`;
+  const paramsInit: Record<string, string> = { To: normalizedTo, Body: body };
+  if (twilioMessagingServiceSid) paramsInit.MessagingServiceSid = twilioMessagingServiceSid;
+  else paramsInit.From = twilioFrom!;
+  const resp = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: "Basic " + Buffer.from(`${twilioSid}:${twilioToken}`).toString("base64"),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams(paramsInit).toString(),
+  });
+  if (!resp.ok) {
+    console.error(`[IP FORM NOTIFY] Twilio raw SMS error: ${resp.status} - ${await resp.text()}`);
   }
 }
 
@@ -243,15 +276,18 @@ export async function sendIpFormParentNudge(params: {
   }
 
   if (params.channels.includes("sms") && (await claim("sms"))) {
-    const contentSid = process.env.TWILIO_TEMPLATE_IP_FORM_REMINDER;
-    if (!contentSid) {
-      console.log(`[IP FORM NOTIFY] TWILIO_TEMPLATE_IP_FORM_REMINDER not set - SMS reminder skipped`);
-    } else {
-      for (const m of memberUsers) {
-        if (!m.mobileNumber || isTestEmail(m.email)) continue;
+    const contentSid = IP_FORM_REMINDER_CONTENT_SID;
+    for (const m of memberUsers) {
+      if (!m.mobileNumber || isTestEmail(m.email)) continue;
+      if (contentSid && !contentSid.includes("PLACEHOLDER")) {
         await sendSmsTemplate(m.mobileNumber, contentSid, { "1": getFirstName(m.name), "2": formUrl }).catch((e) =>
           console.error(`[IP FORM NOTIFY] SMS failed: ${e?.message}`),
         );
+      } else {
+        await sendRawSms(
+          m.mobileNumber,
+          `Hi ${getFirstName(m.name)}, your GoStork Intended Parent Form is still waiting. Your surrogacy agency needs it before a match call can be scheduled - it takes about 20-30 minutes and saves as you go: ${formUrl}`,
+        ).catch((e) => console.error(`[IP FORM NOTIFY] SMS failed: ${e?.message}`));
       }
     }
   }
