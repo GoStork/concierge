@@ -165,11 +165,15 @@ function WidgetInput({ question: q, value, onChange, disabled }: { question: IpF
       );
     }
     case "phone": {
-      const phone = value && typeof value === "object" && !Array.isArray(value) ? value : { e164: "", display: "" };
+      const phone = value && typeof value === "object" && !Array.isArray(value) ? value : { e164: "", display: "", isoCode: null };
       return (
         <PhoneInput
           value={phone.e164 || ""}
           displayValue={phone.display || ""}
+          // Restore the saved country on reload - without this the picker
+          // resets to "Select country" and the country code leaks into the
+          // number box.
+          defaultIsoCode={phone.isoCode || undefined}
           onChange={({ e164, display, isValid, isoCode }) => onChange({ e164, display, isValid, isoCode })}
           disabled={disabled}
           data-testid={`ipform-phone-${q.key}`}
