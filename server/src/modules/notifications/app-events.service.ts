@@ -83,6 +83,7 @@ export class AppEventsService {
         "parent_ready_to_proceed",
         "PARENT_READY_TO_PROCEED",
         "IP_FORM_PARTNER_SIGNED",
+        "IP_FORM_SUBMITTED",
       ];
 
       const unseen = await this.prisma.inAppNotification.findMany({

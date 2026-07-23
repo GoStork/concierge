@@ -366,6 +366,34 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate, queryClient]);
 
+  const handleIpFormSubmittedEvent = useCallback((data: any) => {
+    if (data.type !== "ip_form_submitted") return;
+    playNotificationChime();
+    const parents = data.parentNames || "An intended parent";
+    const { id: toastId } = toast({
+      title: `${parents} submitted their Intended Parent Form`,
+      description: "You can download the PDF and share the surrogate version.",
+      variant: "success",
+      action: (
+        <Button
+          size="sm"
+          variant="default"
+          className="gap-1 shrink-0"
+          onClick={() => { dismiss(toastId); navigate("/provider/parent-forms"); }}
+          data-testid="button-view-parent-form-from-toast"
+        >
+          View form
+        </Button>
+      ),
+      duration: 30000,
+    });
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification(`${parents} submitted their Intended Parent Form`, { body: "Download it from Parent Forms.", icon: "/favicon.ico", tag: `ip-form-submitted-${data.responseId}` });
+      } catch {}
+    }
+  }, [toast, dismiss, navigate]);
+
   const handleChatSessionUpdatedEvent = useCallback((data: any) => {
     if (data.type !== "chat_session_updated") return;
     // A new chat message was posted server-side (e.g. post-call readiness prompt).
@@ -450,6 +478,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleChatSessionUpdatedEvent(data);
         handleParentReadyEvent(data);
         handleIpFormPartnerSignedEvent(data);
+        handleIpFormSubmittedEvent(data);
       } catch {}
     };
 
@@ -469,7 +498,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent, handleIpFormSubmittedEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);
