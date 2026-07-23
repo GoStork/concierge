@@ -426,9 +426,40 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         parentProfile?.isFirstIvf == null ||
         (!parentProfile?.surrogateBudget && parentProfile?.needsSurrogate !== false);
 
+      // INTERNATIONAL PROGRAM - SECOND CALL: an international surrogacy agency is
+      // paired with a partner IVF/egg-donor clinic (Provider.partnerProviderIds).
+      // Booking the agency covers only ONE leg of the program - proactively offer
+      // the partner clinic call right here so the parent gets both calls, one
+      // after the other. Takes priority over the call-prep nudge.
+      let partnerClinicName: string | null = null;
+      try {
+        const agencyRec = await this.prisma.provider.findUnique({
+          where: { id: consultProviderId },
+          select: { partnerProviderIds: true },
+        });
+        const partnerIds = Array.isArray(agencyRec?.partnerProviderIds)
+          ? (agencyRec!.partnerProviderIds as any[]).map(String).filter(Boolean)
+          : [];
+        if (partnerIds.length > 0) {
+          const alreadyBooked = await this.prisma.aiChatSession.findFirst({
+            where: { userId: { in: accountIds }, providerId: { in: partnerIds }, status: "CONSULTATION_BOOKED" },
+            select: { id: true },
+          });
+          if (!alreadyBooked) {
+            const clinic = await this.prisma.provider.findFirst({ where: { id: { in: partnerIds } }, select: { name: true } });
+            partnerClinicName = clinic?.name || null;
+          }
+        }
+      } catch (e: any) {
+        this.logger.warn(`[CONSULTATION] Partner-clinic offer lookup failed: ${e?.message}`);
+      }
+
       let continueText: string;
       let confirmQuickReplies: string[] | null = null;
-      if (prepMissing) {
+      if (partnerClinicName) {
+        continueText = `One more step to get your whole program set up: this program also includes the IVF and egg-donor care, handled by ${partnerClinicName}. Want me to set up a quick call with them too, so both sides of your journey are covered?`;
+        confirmQuickReplies = [`Yes, set up the call with ${partnerClinicName}`, "Not right now"];
+      } else if (prepMissing) {
         continueText = `While we wait for your call, let's make sure ${provider.name} comes fully prepared. They'll ask a few standard questions on the call - if we cover them now, I'll have your details ready for them and you can spend the call on what really matters. Ready for a couple of quick questions?`;
         confirmQuickReplies = ["Let's do it", "Maybe later"];
       } else if (nextGoals.length === 0) {

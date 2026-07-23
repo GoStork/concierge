@@ -205,6 +205,8 @@ export default function AdminProviderEditPage() {
   const [lgbtqCare, setLgbtqCare] = useState(false);
   const [clinicOffersVideo, setClinicOffersVideo] = useState(false);
   const [biometricMatchingAuthorized, setBiometricMatchingAuthorized] = useState(false);
+  const [collectsIntendedParentForm, setCollectsIntendedParentForm] = useState(false);
+  const [requiresIdPhotocopy, setRequiresIdPhotocopy] = useState(false);
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editYearFounded, setEditYearFounded] = useState("");
@@ -268,6 +270,8 @@ export default function AdminProviderEditPage() {
       setLgbtqCare(provider.lgbtqCare || false);
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
       setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? true);
+      setCollectsIntendedParentForm((provider as any).collectsIntendedParentForm ?? false);
+      setRequiresIdPhotocopy((provider as any).requiresIdPhotocopy ?? false);
       setEditWebsite(provider.websiteUrl || "");
       setEditEmail(provider.email || "");
       setEditPhone(provider.phone || "");
@@ -351,7 +355,7 @@ export default function AdminProviderEditPage() {
     }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, lgbtqCare, clinicOffersVideo, biometricMatchingAuthorized, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, partnerProviderIds, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, lgbtqCare, clinicOffersVideo, biometricMatchingAuthorized, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, partnerProviderIds, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert, collectsIntendedParentForm, requiresIdPhotocopy]);
 
   const editScrapeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -421,6 +425,8 @@ export default function AdminProviderEditPage() {
       ivfSurrogatePlacentaPrevia,
       ivfSurrogatePreeclampsia,
       ivfSurrogateMentalHealthHistory: ivfSurrogateMentalHealthHistory || null,
+      collectsIntendedParentForm,
+      requiresIdPhotocopy,
     };
 
     try {
@@ -834,6 +840,20 @@ export default function AdminProviderEditPage() {
                   <Checkbox className="mt-0.5" checked={biometricMatchingAuthorized} onCheckedChange={(v) => setBiometricMatchingAuthorized(!!v)} data-testid="checkbox-edit-biometric" />
                   <span>
                     <span className="font-ui">Look-alike face matching authorized</span> - agency has obtained donor/surrogate biometric consent; GoStork indexes their faceprints for parent resemblance search. Turning off removes this agency's faceprints from the index.
+                  </span>
+                </label>
+              )}
+              <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
+                <Checkbox className="mt-0.5" checked={collectsIntendedParentForm} onCheckedChange={(v) => setCollectsIntendedParentForm(!!v)} data-testid="checkbox-edit-collects-ip-form" />
+                <span>
+                  <span className="font-ui">Collects the Intended Parent Form</span> - after a consultation, parents are prompted to complete the form and this provider can download it. Surrogacy agencies get the full form; other providers (e.g. international IVF clinics) get the short version (basic info + ID).
+                </span>
+              </label>
+              {collectsIntendedParentForm && (
+                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
+                  <Checkbox className="mt-0.5" checked={requiresIdPhotocopy} onCheckedChange={(v) => setRequiresIdPhotocopy(!!v)} data-testid="checkbox-edit-requires-id-photocopy" />
+                  <span>
+                    <span className="font-ui">Requires a copy of each parent's ID document</span> - parents must upload a photo/scan of their passport or government ID. Requested automatically when this provider connects, even if the form was already submitted.
                   </span>
                 </label>
               )}

@@ -495,6 +495,7 @@ ipFormRouter.patch("/api/ip-form/answers", requireAuth, async (req, res) => {
     for (const s of sections) for (const q of s.questions) questionMeta.set(q.id, { section: s, question: q });
 
     let saved = 0;
+    let fileUploadedPostSubmit = false;
     for (const item of items) {
       const meta = questionMeta.get(item?.questionId);
       if (!meta) continue;
@@ -509,6 +510,13 @@ ipFormRouter.patch("/api/ip-form/answers", requireAuth, async (req, res) => {
         update: { value: item.value ?? null, updatedByUserId: user.id },
       });
       saved++;
+      if (submitted && question.widget === "file" && item.value) fileUploadedPostSubmit = true;
+    }
+    // A supplemental ID scan just landed on an already-submitted form - tell the
+    // providers that require it.
+    if (fileUploadedPostSubmit) {
+      const { notifyProvidersPhotocopyUploaded } = await import("./notify-ip-form");
+      void notifyProvidersPhotocopyUploaded(response.id).catch((e: any) => console.error(`[ip-form] photocopy-uploaded notify failed: ${e?.message}`));
     }
     // Marital status just changed? Re-derive two-vs-solo and hand the fresh
     // value back so the client can show/hide the second-parent sections

@@ -51,6 +51,56 @@ async function findEvaSession(memberIds: string[]): Promise<string | null> {
 }
 
 /**
+ * A provider that requires the ID photocopy has connected, but the form was
+ * already prompted/submitted. Send a targeted, once-per-provider request to
+ * upload the scan(s) still missing - the field stays editable post-submit.
+ */
+async function maybeRequestPhotocopy(
+  response: { id: string; status: string; hasSecondParent: boolean },
+  memberIds: string[],
+  provider: { id: string; name: string | null },
+): Promise<void> {
+  try {
+    const photoQ = await prisma.ipFormQuestion.findUnique({ where: { key: "priv_id_photocopy" }, select: { id: true } });
+    if (!photoQ) return;
+    const slots = response.hasSecondParent ? [1, 2] : [1];
+    const answers = await prisma.ipFormAnswer.findMany({ where: { responseId: response.id, questionId: photoQ.id }, select: { parentSlot: true, value: true } });
+    const have = new Set(
+      answers.filter((a) => a.value && (typeof a.value === "string" ? a.value : (a.value as any).url)).map((a) => a.parentSlot),
+    );
+    if (slots.every((s) => have.has(s))) return; // all scans already uploaded
+    // Dedupe per provider via the reminder ledger (unique constraint).
+    try {
+      await prisma.ipFormReminder.create({ data: { responseId: response.id, channel: "photocopy", reminderType: `photocopy_${provider.id}` } });
+    } catch {
+      return; // already requested for this provider
+    }
+    const sessionId = await findEvaSession(memberIds);
+    if (sessionId) {
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content:
+            `${provider.name} needs a photo or scan of each intended parent's ID document (passport or government ID) before moving forward. ` +
+            `You can add it to your Intended Parent Form under "Private Information" - it only takes a moment, and it stays private to ${provider.name}. ` +
+            `Your form is otherwise all set; this is the only thing outstanding.`,
+          senderType: "system",
+          senderName: "GoStork",
+        },
+      });
+    }
+    const { sendIpFormPhotocopyRequest } = await import("./notify-ip-form");
+    void sendIpFormPhotocopyRequest({ responseId: response.id, providerName: provider.name || "Your provider" }).catch((e: any) =>
+      console.error(`[ip-form] photocopy request notify failed: ${e?.message}`),
+    );
+    console.log(`[ip-form] Requested ID photocopy for response ${response.id} (provider ${provider.name})`);
+  } catch (e: any) {
+    console.error(`[ip-form] maybeRequestPhotocopy failed: ${e?.message}`);
+  }
+}
+
+/**
  * Post the "please fill your Intended Parent Form" prompt once per account.
  * Fire-and-forget safe. Gated to providers with an APPROVED surrogacy
  * service; the GoStork house provider never triggers it.
@@ -62,17 +112,27 @@ export async function maybePromptIpForm(opts: { parentUserId: string; providerId
       select: {
         id: true,
         name: true,
+        collectsIntendedParentForm: true,
+        requiresIdPhotocopy: true,
         services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
       },
     });
     if (!provider) return;
     if ((provider.name || "").trim().toLowerCase() === "gostork") return;
+    // Any provider that collects the IP form triggers it (surrogacy agencies +
+    // international IVF clinics), not just surrogacy.
+    if (!provider.collectsIntendedParentForm) return;
     const isSurrogacy = provider.services.some((s) => (s.providerType?.name || "").toLowerCase().includes("surrogacy"));
-    if (!isSurrogacy) return;
 
     const { accountId, memberIds } = await accountIdsFor(opts.parentUserId);
     const existing = await prisma.ipFormResponse.findUnique({ where: { parentAccountId: accountId } });
-    if (existing?.promptedAt || existing?.status === "SUBMITTED") return;
+    // Already have a form? A provider that requires the ID photocopy still needs
+    // it - send a targeted supplemental request (the scan stays editable even
+    // after submission) rather than re-prompting the whole form.
+    if ((existing?.promptedAt || existing?.status === "SUBMITTED")) {
+      if (provider.requiresIdPhotocopy && existing) await maybeRequestPhotocopy(existing, memberIds, provider);
+      return;
+    }
 
     const sessionId = await findEvaSession(memberIds);
 
@@ -96,16 +156,19 @@ export async function maybePromptIpForm(opts: { parentUserId: string; providerId
     const response = await prisma.ipFormResponse.findUnique({ where: { parentAccountId: accountId } });
 
     if (sessionId) {
+      // Keep this narrative in sync with the kickoff email in notify-ip-form.ts.
+      const surrogacyCopy =
+        `What a milestone - your first call with ${provider.name} is done! Here's what comes next on your journey: your Match Call, a video call with a surrogate who could be carrying for your family.\n\n` +
+        `Before that call can be scheduled, ${provider.name} needs your Intended Parent Form. This is how a potential surrogate gets to know you - your story, your photos, and a personal letter from you to her. She reads it and decides whether she'd like to meet you, so this form is what unlocks your match call.\n\n` +
+        `It takes about 20-30 minutes, saves as you go, and both partners can fill their parts in parallel. I'm right here if you'd like help with any question - especially the letter, that one deserves a little love!`;
+      const ivfCopy =
+        `Great - your first call with ${provider.name} is done! The next step is a short Intended Parent Form so they have your basic details on file before your doctor consultation is confirmed.\n\n` +
+        `It's quick - your contact information and a copy of each parent's ID document (passport or government ID). It saves as you go, and both partners can fill their parts in parallel. I'm right here if you have any questions!`;
       await prisma.aiChatMessage.create({
         data: {
           sessionId,
           role: "assistant",
-          // Keep this narrative in sync with the kickoff email in
-          // notify-ip-form.ts - the parent should hear ONE story everywhere.
-          content:
-            `What a milestone - your first call with ${provider.name} is done! Here's what comes next on your journey: your Match Call, a video call with a surrogate who could be carrying for your family.\n\n` +
-            `Before that call can be scheduled, ${provider.name} needs your Intended Parent Form. This is how a potential surrogate gets to know you - your story, your photos, and a personal letter from you to her. She reads it and decides whether she'd like to meet you, so this form is what unlocks your match call.\n\n` +
-            `It takes about 20-30 minutes, saves as you go, and both partners can fill their parts in parallel. I'm right here if you'd like help with any question - especially the letter, that one deserves a little love!`,
+          content: isSurrogacy ? surrogacyCopy : ivfCopy,
           senderType: "system",
           senderName: "GoStork",
           uiCardType: "ip_form_prompt",

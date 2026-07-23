@@ -1312,6 +1312,56 @@ async function findLatestMatchCard(sessionId: string): Promise<any | null> {
   return null;
 }
 
+/**
+ * International programs bundle a surrogacy AGENCY with one or more partner
+ * IVF / egg-donor clinics (Provider.partnerProviderIds - e.g. Colombia's
+ * Bioética agency + Inser clinic). A program means the parent books TWO calls,
+ * one after the other: the agency first, then the clinic. Given the agency id
+ * this returns its partner clinics, each flagged with whether this parent
+ * account has already booked it (an existing CONSULTATION_BOOKED session or an
+ * upcoming booking with that clinic). Used by (1) the consultation-booking
+ * guard so a legitimate partner-clinic id is not rewritten back to the agency,
+ * and (2) the directives that drive the sequential "agency, then clinic" offer.
+ */
+async function getProgramPartnerClinics(
+  agencyId: string,
+  accountIds: string[],
+): Promise<Array<{ id: string; name: string; booked: boolean }>> {
+  const agency = await prisma.provider
+    .findUnique({ where: { id: agencyId }, select: { partnerProviderIds: true } })
+    .catch(() => null);
+  const ids = Array.isArray(agency?.partnerProviderIds)
+    ? (agency!.partnerProviderIds as any[]).map(String).filter(Boolean)
+    : [];
+  if (ids.length === 0) return [];
+  const clinics = await prisma.provider
+    .findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+    .catch(() => [] as any[]);
+  const bookedIds = new Set<string>();
+  try {
+    const sessions = await prisma.aiChatSession.findMany({
+      where: { userId: { in: accountIds }, providerId: { in: ids }, status: "CONSULTATION_BOOKED" },
+      select: { providerId: true },
+    });
+    for (const s of sessions) if (s.providerId) bookedIds.add(s.providerId);
+    const bookings = await prisma.booking.findMany({
+      where: {
+        parentUserId: { in: accountIds },
+        status: { in: ["PENDING", "CONFIRMED"] },
+        providerUser: { providerId: { in: ids } },
+      },
+      select: { providerUser: { select: { providerId: true } } },
+    });
+    for (const b of bookings) {
+      const pid = (b as any).providerUser?.providerId;
+      if (pid) bookedIds.add(pid);
+    }
+  } catch {
+    /* best-effort - "booked" just defaults to false and the offer still fires */
+  }
+  return clinics.map((c: any) => ({ id: c.id, name: c.name, booked: bookedIds.has(c.id) }));
+}
+
 // Latest card the parent is looking at, across BOTH card storage paths:
 // matchCards (egg/sperm donors, surrogates, IVF clinics, surrogacy agencies) and
 // doctorCards (doctors, keyed by slug). Used to attribute per-profile inquiries.
@@ -3085,6 +3135,32 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         // the buried lawyer offer).
         const consultProvName = upcomingProviderConsult.providerUser?.provider?.name || "the provider";
         parts.push(`CALL ALREADY BOOKED: the parent already has a consultation call scheduled with ${consultProvName}. NEVER offer to schedule another consultation with ${consultProvName} and NEVER emit [[CONSULTATION_BOOKING]] for them - reference the existing upcoming call instead (next steps happen ON that call). Scheduling with a DIFFERENT provider they newly engage is still fine.`);
+
+        // INTERNATIONAL PROGRAM - SECOND CALL: if the just-booked provider is a
+        // surrogacy agency paired with a partner IVF/egg-donor clinic (an
+        // international program), booking the agency covers only ONE of the two
+        // legs. Surface the unbooked partner clinic's id + name and explicitly
+        // authorize its booking - otherwise CALL PREP MODE below would suppress
+        // the second [[CONSULTATION_BOOKING]] and the parent never gets the
+        // clinic call.
+        let partnerClinicPending = false;
+        try {
+          const bookedProvId = (upcomingProviderConsult.providerUser?.provider as any)?.id || null;
+          if (bookedProvId) {
+            const acctIds = userRecord?.parentAccountId
+              ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+              : [userId];
+            const unbooked = (await getProgramPartnerClinics(bookedProvId, acctIds)).filter((p) => !p.booked);
+            if (unbooked.length > 0) {
+              partnerClinicPending = true;
+              const list = unbooked.map((p) => `${p.name} (providerId: ${p.id})`).join("; ");
+              parts.push(`PARTNER IVF CLINIC PENDING (international program): ${consultProvName} is one leg of an international program that ALSO includes a partner IVF/egg-donor clinic the parent has NOT booked yet: ${list}. This clinic is a SEPARATE provider, so the "call already booked" rule does NOT apply to it and this is the exception to CALL PREP MODE below. Offer to set up that clinic call next (warm, one message), and when the parent agrees emit [[CONSULTATION_BOOKING:<the clinic providerId listed above>]] using the CLINIC's id (never the agency id). Offer this BEFORE diving into call-prep questions.`);
+            }
+          }
+        } catch {
+          /* best-effort - the directive is additive */
+        }
+
         const prepMissing: string[] = [];
         if (!userRecord?.gender || !userRecord?.relationshipStatus) prepMissing.push("family type - who is on this journey (Phase 1 identity question)");
         if (!userRecord?.dateOfBirth) prepMissing.push("their age (save as birthYear = current year minus age)");
@@ -3121,7 +3197,32 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           })();
         }
         if (prepMissing.length > 0) {
-          parts.push(`CALL PREP MODE - ACTIVE: The parent's consultation call is ALREADY BOOKED and confirmed - do NOT offer the calendar again, do NOT emit [[CONSULTATION_BOOKING]], do NOT ask about scheduling or time preferences. Follow the POST-BOOKING CALL PREP section. Items still missing for the provider: ${prepMissing.map((m, i) => `(${i + 1}) ${m}`).join("; ")}. When the parent agrees to prep (e.g. "Let's do it") or sends any message while prep is pending, ask the FIRST missing item immediately - one question per message, IN THE ORDER LISTED, framed as preparing for their call. THIS OVERRIDES THE FAVORITE FLOW: if the parent just favorited a profile, confirm the favorite in ONE sentence (note the agency can discuss her on the upcoming call - do NOT offer to schedule another call, do NOT ask if they have questions or want more profiles), then ask the next missing prep item in the SAME reply. NEVER refuse the save - the system already saved it when the heart was tapped; if the profile has a hard incompatibility (e.g. not open to single parents), keep the confirmation, add ONE short heads-up sentence about it, and STILL ask the next prep item. Everything else about the parent is already saved - do not re-ask it.`);
+          parts.push(`CALL PREP MODE - ACTIVE: The parent's consultation call is ALREADY BOOKED and confirmed - do NOT offer the calendar again, do NOT emit [[CONSULTATION_BOOKING]]${partnerClinicPending ? " (EXCEPTION: you MAY and SHOULD still book the partner IVF clinic named in the PARTNER IVF CLINIC PENDING directive above - offer that clinic call before starting prep)" : ""}, do NOT ask about scheduling or time preferences. Follow the POST-BOOKING CALL PREP section. Items still missing for the provider: ${prepMissing.map((m, i) => `(${i + 1}) ${m}`).join("; ")}. When the parent agrees to prep (e.g. "Let's do it") or sends any message while prep is pending, ask the FIRST missing item immediately - one question per message, IN THE ORDER LISTED, framed as preparing for their call. THIS OVERRIDES THE FAVORITE FLOW: if the parent just favorited a profile, confirm the favorite in ONE sentence (note the agency can discuss her on the upcoming call - do NOT offer to schedule another call, do NOT ask if they have questions or want more profiles), then ask the next missing prep item in the SAME reply. NEVER refuse the save - the system already saved it when the heart was tapped; if the profile has a hard incompatibility (e.g. not open to single parents), keep the confirmation, add ONE short heads-up sentence about it, and STILL ask the next prep item. Everything else about the parent is already saved - do not re-ask it.`);
+        }
+      }
+
+      // INTERNATIONAL PROGRAM - SEQUENTIAL TWO-CALL BOOKING (pre-booking path):
+      // a CountryProgram card bundles the surrogacy agency with its partner IVF
+      // clinic. When the parent is looking at such a card (and has NOT yet
+      // booked - the post-booking block above already handles the after-booking
+      // case), surface the partner clinic's id + name so the model offers BOTH
+      // calls one after the other and can emit the clinic's [[CONSULTATION_BOOKING]]
+      // with the right id even after the agency search scrolled out of context.
+      if (currentSessionId && !hasUpcomingProviderConsult) {
+        try {
+          const latestCard = await findLatestMatchCard(currentSessionId);
+          if (latestCard?.type === "CountryProgram" && latestCard?.providerId) {
+            const acctIds = userRecord?.parentAccountId
+              ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+              : [userId];
+            const unbooked = (await getProgramPartnerClinics(latestCard.providerId, acctIds)).filter((p) => !p.booked);
+            if (unbooked.length > 0) {
+              const list = unbooked.map((p) => `${p.name} (providerId: ${p.id})`).join("; ");
+              parts.push(`INTERNATIONAL PROGRAM - TWO CALLS: The ${latestCard.country || "international"} program the parent is looking at bundles a surrogacy agency with a partner IVF/egg-donor clinic: ${list}. This is a TWO-provider program, so when the parent moves to schedule, offer a consultation with BOTH - the surrogacy agency FIRST (agency id = ${latestCard.providerId}), then the IVF clinic. Present them ONE AT A TIME (never two booking cards in one message): confirm and book the agency, tell the parent the program also includes the IVF clinic and offer that call as the next step, and when they agree emit [[CONSULTATION_BOOKING:<the clinic providerId listed above>]] using the CLINIC's id (never the agency id).`);
+            }
+          }
+        } catch {
+          /* best-effort - the directive is additive */
         }
       }
 
@@ -8554,8 +8655,26 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           const latestMc = await findLatestMatchCard(currentSessionId);
           const correctOwnerId = latestMc?.ownerProviderId || null;
           if (correctOwnerId && correctOwnerId !== consultProviderId) {
-            console.warn(`[CONSULTATION] Provider ID mismatch: AI used "${consultProviderId}" but latest match card's ownerProviderId is "${correctOwnerId}". Overriding to latest match card's agency.`);
-            consultProviderId = correctOwnerId;
+            // EXCEPTION - international program second call: a CountryProgram
+            // card's ownerProviderId is the surrogacy agency, but the parent's
+            // program also includes a partner IVF clinic. When the AI is
+            // intentionally booking that partner clinic (the second of the two
+            // sequential calls), consultProviderId is a legitimate partner of
+            // the agency - do NOT rewrite it back to the agency.
+            let isPartnerClinic = false;
+            try {
+              const acctIds = userRecord?.parentAccountId
+                ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+                : [userId];
+              const partners = await getProgramPartnerClinics(correctOwnerId, acctIds);
+              isPartnerClinic = partners.some((p) => p.id === consultProviderId);
+            } catch { /* fall through to override */ }
+            if (isPartnerClinic) {
+              console.log(`[CONSULTATION] Keeping partner IVF clinic id "${consultProviderId}" - it is a partner of program agency "${correctOwnerId}" (international two-call flow); not overriding.`);
+            } else {
+              console.warn(`[CONSULTATION] Provider ID mismatch: AI used "${consultProviderId}" but latest match card's ownerProviderId is "${correctOwnerId}". Overriding to latest match card's agency.`);
+              consultProviderId = correctOwnerId;
+            }
           }
         } catch (e) {
           console.error("[CONSULTATION] Error validating providerId against latest match card:", e);

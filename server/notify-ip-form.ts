@@ -230,7 +230,7 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
   if (!names.length) names = memberUsers.map((m) => m.name).filter(Boolean) as string[];
   const parentNames = names.join(" & ") || "An intended parent";
 
-  // Connected provider orgs (session or booking) with an APPROVED surrogacy service.
+  // Connected provider orgs (session or booking) that collect the IP form.
   const [sessions, bookings] = await Promise.all([
     prisma.aiChatSession.findMany({ where: { userId: { in: memberIds }, providerId: { not: null } }, select: { providerId: true } }),
     prisma.booking.findMany({
@@ -243,19 +243,25 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
   for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
   if (!providerIds.size) return;
 
-  const surrogacyProviders = await prisma.provider.findMany({
+  const formProviders = await prisma.provider.findMany({
     where: {
       id: { in: [...providerIds] },
-      services: { some: { status: "APPROVED", providerType: { name: { contains: "surrogacy", mode: "insensitive" } } } },
+      collectsIntendedParentForm: true,
     },
-    select: { id: true, name: true },
+    select: {
+      id: true,
+      name: true,
+      // Surrogate-safe variant is only offered to surrogacy agencies.
+      services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
+    },
   });
-  if (!surrogacyProviders.length) return;
+  if (!formProviders.length) return;
 
   const brand = await fetchEmailBrandData(prisma);
   const formsUrl = `${getBaseUrl()}/provider/parent-forms`;
 
-  for (const provider of surrogacyProviders) {
+  for (const provider of formProviders) {
+    const isSurrogacy = provider.services.some((s) => (s.providerType?.name || "").toLowerCase().includes("surrogacy"));
     const providerUsers = await prisma.user.findMany({
       where: { providerId: provider.id, isDisabled: false },
       select: { id: true, email: true },
@@ -283,16 +289,16 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
         data: {
           sessionId: sharedSession.id,
           role: "assistant",
-          content: `Your Intended Parent Form is submitted and shared with ${provider.name}. This is what a potential surrogate reviews before your match call.`,
+          content: `Your Intended Parent Form is submitted and shared with ${provider.name}.${isSurrogacy ? " This is what a potential surrogate reviews before your match call." : ""}`,
           senderType: "system",
           senderName: "GoStork",
           uiCardType: "ip_form_submitted",
           uiCardData: {
             // Provider/admin see the download card; parents read `content`.
-            providerContent: `${parentNames} submitted and signed their Intended Parent Form. Download the full PDF or the surrogate-safe version below.`,
+            providerContent: `${parentNames} submitted and signed their Intended Parent Form. Download the full PDF${isSurrogacy ? " or the surrogate-safe version" : ""} below.`,
             ipFormResponseId: responseId,
             parentNames,
-            surrogateAvailable: true,
+            surrogateAvailable: isSurrogacy,
           },
         },
       }).catch(() => {});
@@ -306,14 +312,113 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
       greeting: `Good news!`,
       body:
         `<strong>${esc(parentNames)}</strong> completed and signed their Intended Parent Form. ` +
-        `You can now download the PDF (with your agency's branding) and share the surrogate version with candidates ahead of a match call.`,
+        (isSurrogacy
+          ? `You can now download the PDF (with your branding) and share the surrogate version with candidates ahead of a match call.`
+          : `You can now download the PDF (with your branding) from your Parent Forms page.`),
       buttons: [{ label: "View and Download the Form", url: formsUrl }],
     });
     await sendEmail(providerUsers.map((u) => u.email).filter(Boolean) as string[], `${parentNames} submitted their Intended Parent Form`, html, brand.companyName).catch(
       (e) => console.error(`[IP FORM NOTIFY] provider email failed: ${e?.message}`),
     );
   }
-  console.log(`[IP FORM NOTIFY] Submission ${responseId} announced to ${surrogacyProviders.length} surrogacy provider(s)`);
+  console.log(`[IP FORM NOTIFY] Submission ${responseId} announced to ${formProviders.length} form-collecting provider(s)`);
+}
+
+/**
+ * A supplemental ID photocopy was uploaded after submission - notify the
+ * connected providers that require it (in-app + shared chat message).
+ */
+export async function notifyProvidersPhotocopyUploaded(responseId: string): Promise<void> {
+  const response = await prisma.ipFormResponse.findUnique({ where: { id: responseId } });
+  if (!response) return;
+  const memberUsers = await prisma.user.findMany({
+    where: { OR: [{ parentAccountId: response.parentAccountId }, { id: response.parentAccountId }] },
+    select: { id: true, name: true },
+  });
+  const memberIds = memberUsers.map((m) => m.id);
+  const nameQ = await prisma.ipFormQuestion.findUnique({ where: { key: "ip_full_legal_name" }, select: { id: true } });
+  let names: string[] = [];
+  if (nameQ) {
+    const rows = await prisma.ipFormAnswer.findMany({ where: { responseId, questionId: nameQ.id, parentSlot: { in: [1, 2] } }, orderBy: { parentSlot: "asc" } });
+    names = rows.map((a) => (typeof a.value === "string" ? a.value.trim() : "")).filter(Boolean);
+  }
+  if (!names.length) names = memberUsers.map((m) => m.name).filter(Boolean) as string[];
+  const parentNames = names.join(" & ") || "An intended parent";
+
+  const [sessions, bookings] = await Promise.all([
+    prisma.aiChatSession.findMany({ where: { userId: { in: memberIds }, providerId: { not: null } }, select: { providerId: true } }),
+    prisma.booking.findMany({ where: { parentUserId: { in: memberIds } }, select: { providerUser: { select: { providerId: true } } } }),
+  ]);
+  const providerIds = new Set<string>();
+  for (const s of sessions) if (s.providerId) providerIds.add(s.providerId);
+  for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
+  if (!providerIds.size) return;
+  const providers = await prisma.provider.findMany({
+    where: { id: { in: [...providerIds] }, collectsIntendedParentForm: true, requiresIdPhotocopy: true },
+    select: { id: true, name: true },
+  });
+  for (const provider of providers) {
+    const providerUsers = await prisma.user.findMany({ where: { providerId: provider.id, isDisabled: false }, select: { id: true } });
+    for (const pu of providerUsers) {
+      void prisma.inAppNotification.create({ data: { userId: pu.id, eventType: "IP_FORM_SUBMITTED", payload: { responseId, parentNames } } }).catch(() => {});
+    }
+    const sharedSession = await prisma.aiChatSession.findFirst({ where: { userId: { in: memberIds }, providerId: provider.id }, orderBy: { updatedAt: "desc" }, select: { id: true } });
+    if (sharedSession) {
+      void prisma.aiChatMessage.create({
+        data: {
+          sessionId: sharedSession.id,
+          role: "assistant",
+          content: `Your ID document is uploaded and shared with ${provider.name}.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "ip_form_submitted",
+          uiCardData: { providerContent: `${parentNames} uploaded the requested ID document. Re-download their Intended Parent Form to get it.`, ipFormResponseId: responseId, parentNames, surrogateAvailable: false },
+        },
+      }).catch(() => {});
+    }
+  }
+}
+
+/**
+ * Supplemental ID-photocopy request to the parent(s): email + SMS + in-app.
+ * Fired when a provider that requires the scan connects and it's still missing.
+ */
+export async function sendIpFormPhotocopyRequest(params: { responseId: string; providerName: string }): Promise<void> {
+  const response = await prisma.ipFormResponse.findUnique({ where: { id: params.responseId } });
+  if (!response) return;
+  const members = await prisma.user.findMany({
+    where: { OR: [{ parentAccountId: response.parentAccountId }, { id: response.parentAccountId }] },
+    select: { id: true, name: true, email: true, mobileNumber: true },
+  });
+  if (!members.length) return;
+  const formUrl = `${getBaseUrl()}/ip-form?section=private`;
+
+  const brand = await fetchEmailBrandData(prisma);
+  const emailTargets = members.map((m) => m.email).filter((e) => e && !isTestEmail(e)) as string[];
+  if (emailTargets.length) {
+    const html = buildBrandedEmail(brand, {
+      title: "One more thing for your Intended Parent Form",
+      greeting: `Hi ${esc(getFirstName(members[0]?.name))},`,
+      body:
+        `<strong>${esc(params.providerName)}</strong> needs a photo or scan of each intended parent's ID document (passport or government ID) before moving forward. ` +
+        `Everything else on your form is set - just add the ID document under Private Information and you're done. It stays private to ${esc(params.providerName)}.`,
+      buttons: [{ label: "Add my ID document", url: formUrl }],
+    });
+    await sendEmail(emailTargets, `Action needed: add your ID document for ${params.providerName}`, html, brand.companyName).catch((e) =>
+      console.error(`[IP FORM NOTIFY] photocopy email failed: ${e?.message}`),
+    );
+  }
+  for (const m of members) {
+    if (m.mobileNumber && !isTestEmail(m.email)) {
+      await sendRawSms(
+        m.mobileNumber,
+        `Hi ${getFirstName(m.name)}, ${params.providerName} needs a copy of each parent's ID document to continue. Add it to your GoStork Intended Parent Form here: ${formUrl}`,
+      ).catch((e) => console.error(`[IP FORM NOTIFY] photocopy SMS failed: ${e?.message}`));
+    }
+    void prisma.inAppNotification
+      .create({ data: { userId: m.id, eventType: "IP_FORM_PHOTOCOPY_REQUEST", payload: { responseId: response.id, providerName: params.providerName } } })
+      .catch(() => {});
+  }
 }
 
 /**

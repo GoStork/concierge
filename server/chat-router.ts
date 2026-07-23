@@ -4015,11 +4015,11 @@ chatRouter.get("/api/provider/dashboard-queue", requireAuth, async (req, res) =>
     // surrogacy services), and only recent submissions so the task clears.
     let ipFormsToReview: Array<{ responseId: string; parentNames: string; submittedAt: Date; hasSecondParent: boolean }> = [];
     try {
-      const isSurrogacyProvider = await prisma.provider.findFirst({
-        where: { id: user.providerId, services: { some: { status: "APPROVED", providerType: { name: { contains: "surrogacy", mode: "insensitive" } } } } },
+      const collectsForm = await prisma.provider.findFirst({
+        where: { id: user.providerId, collectsIntendedParentForm: true },
         select: { id: true },
       });
-      if (isSurrogacyProvider) {
+      if (collectsForm) {
         const [connSessions, connBookings] = await Promise.all([
           prisma.aiChatSession.findMany({ where: { providerId: user.providerId, userId: { not: undefined } }, select: { userId: true } }),
           prisma.booking.findMany({ where: { providerUser: { providerId: user.providerId }, parentUserId: { not: null } }, select: { parentUserId: true } }),

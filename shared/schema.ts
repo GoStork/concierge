@@ -273,6 +273,9 @@ export const insertProviderSchema = z.object({
   // Look-alike face matching authorization (agency attests donor biometric consent)
   biometricMatchingAuthorized: z.boolean().optional(),
   biometricMatchingAuthorizedAt: z.union([z.string(), z.date()]).nullable().optional(),
+  // Intended Parent Form collection + ID photocopy requirement
+  collectsIntendedParentForm: z.boolean().optional(),
+  requiresIdPhotocopy: z.boolean().optional(),
   // IVF Clinic matching requirements
   ivfTwinsAllowed: z.boolean().optional(),
   ivfGenderSelectionAllowed: z.boolean().nullable().optional(),

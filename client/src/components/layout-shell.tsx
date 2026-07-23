@@ -411,6 +411,23 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     });
   }, [toast, dismiss, navigate]);
 
+  const handleIpFormPhotocopyRequestEvent = useCallback((data: any) => {
+    if (data.type !== "ip_form_photocopy_request") return;
+    playNotificationChime();
+    const provider = data.providerName || "Your provider";
+    const { id: toastId } = toast({
+      title: "One more thing for your Intended Parent Form",
+      description: `${provider} needs a copy of each parent's ID document.`,
+      variant: "warning",
+      action: (
+        <Button size="sm" variant="default" className="gap-1 shrink-0" onClick={() => { dismiss(toastId); navigate("/ip-form?section=private"); }} data-testid="button-ip-form-photocopy-from-toast">
+          Add ID document
+        </Button>
+      ),
+      duration: 30000,
+    });
+  }, [toast, dismiss, navigate]);
+
   const handleChatSessionUpdatedEvent = useCallback((data: any) => {
     if (data.type !== "chat_session_updated") return;
     // A new chat message was posted server-side (e.g. post-call readiness prompt).
@@ -497,6 +514,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleIpFormPartnerSignedEvent(data);
         handleIpFormSubmittedEvent(data);
         handleIpFormSentEvent(data);
+
+        handleIpFormPhotocopyRequestEvent(data);
       } catch {}
     };
 
@@ -516,7 +535,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent, handleIpFormSubmittedEvent, handleIpFormSentEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent, handleIpFormSubmittedEvent, handleIpFormSentEvent, handleIpFormPhotocopyRequestEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);

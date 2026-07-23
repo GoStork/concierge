@@ -373,10 +373,16 @@ export async function buildJourneyTimelines(
         { id: "handed_off", label: "Handed Off", at: handoffAt },
       ];
     } else if (journeyType === "ivf") {
+      // International IVF clinics collect a short Intended Parent Form too;
+      // dropIfPassed hides the rung on journeys that never had one.
+      const ivfIpFormRungs: Rung[] = ipFormResponse?.submittedAt
+        ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse.submittedAt, dropIfPassed: true, doneWhenReached: true }]
+        : [];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
         { id: "exploring", label: "Exploring Profiles", at: exploringAt },
         ...consultRungs,
+        ...ivfIpFormRungs,
         ...moneyRungs(true),
         { id: "handed_off", label: "Handed Off", at: handoffAt },
       ];
