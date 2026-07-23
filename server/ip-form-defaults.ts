@@ -39,6 +39,8 @@ export interface DefaultIpFormSection {
   description?: string;
   perParent?: boolean;
   excludeFromSurrogatePdf?: boolean;
+  /** Program types this section applies to. Empty/undefined = core (all parents). */
+  appliesTo?: string[];
   questions: DefaultIpFormQuestion[];
 }
 
@@ -107,6 +109,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
       title: "Fertility Clinic Information",
       // Clinical/logistics detail - agency-only, not part of the surrogate packet.
       excludeFromSurrogatePdf: true,
+      appliesTo: ["surrogacy"],
       questions: [
         // Escape hatch rendered as a checkbox at the top; when "yes" it hides
         // the clinic fields and waives their required-ness.
@@ -124,6 +127,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
       title: "Embryo Information",
       // Clinical detail - agency-only, not part of the surrogate packet.
       excludeFromSurrogatePdf: true,
+      appliesTo: ["surrogacy"],
       questions: [
         { key: "embryo_gc_reason", label: "What is the reason for using a gestational carrier?", widget: "textarea", required: true },
         { key: "embryo_count", label: "How many embryos do you have?", widget: "number", required: true },
@@ -184,6 +188,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
     {
       key: "personal_info",
       title: "Personal Information",
+      appliesTo: ["surrogacy"],
       perParent: true,
       questions: [
         { key: "personal_first_name", label: "First Name (ONLY)", widget: "text", required: true },
@@ -217,6 +222,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
     {
       key: "expectations",
       title: "Surrogate Expectations",
+      appliesTo: ["surrogacy"],
       questions: [
         {
           key: "exp_important_selecting",
@@ -266,6 +272,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
     {
       key: "delivery",
       title: "Delivery Expectations",
+      appliesTo: ["surrogacy"],
       questions: [
         { key: "del_at_delivery", required: true, label: "Do you plan to be at the delivery?", widget: "yes_no" },
         { key: "del_cord_blood", required: true, label: "Do you plan to bank the cord blood?", widget: "yes_no" },
@@ -284,6 +291,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
     {
       key: "letter",
       title: "Letter to the Surrogate",
+      appliesTo: ["surrogacy"],
       description:
         "Please provide a letter addressed to the surrogate. In this letter, please explain why you have decided to seek the assistance of a surrogate. Explain what your journey has been like up to this point. Any additional information you would like to provide about yourself is appreciated.",
       questions: [{ key: "letter_text", label: "Your letter", widget: "textarea", required: true }],
@@ -292,6 +300,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
       key: "photos",
       title: "Photos",
       description: "Upload photos of you and your family. These photos will be shared with potential surrogates.",
+      appliesTo: ["surrogacy"],
       questions: [{ key: "photos_upload", label: "Your photos", widget: "photos", required: true }],
     },
     {
@@ -305,6 +314,9 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
         { key: "priv_id_issuing_authority", required: true, label: "Issuing Authority", widget: "text", perParent: true, excludeFromSurrogatePdf: true },
         { key: "priv_id_number", required: true, label: "ID Number", widget: "text", perParent: true, excludeFromSurrogatePdf: true },
         { key: "priv_id_expiration", required: true, label: "Expiration Date", widget: "date", perParent: true, excludeFromSurrogatePdf: true },
+        // Photo/scan of the ID document. Optional by default; required at submit
+        // when a connected provider has requiresIdPhotocopy. Agency-only.
+        { key: "priv_id_photocopy", label: "ID Document Photocopy (passport or government ID)", widget: "file", perParent: true, excludeFromSurrogatePdf: true },
         // Shared yes/no + explain
         {
           key: "priv_cps", required: true,

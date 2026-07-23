@@ -61,6 +61,10 @@ model Provider {
   // lack donor consent turn it OFF, which removes their faceprints.
   // See docs/biometric-consent-donor-terms.md and [[project_lookalike_face_matching]].
   biometricMatchingAuthorized           Boolean                     @default(true)
+  // Intended Parent Form: does this provider collect it (prompt the parent +
+  // download it), and does it require a photocopy of each parent's ID document.
+  collectsIntendedParentForm            Boolean                     @default(false)
+  requiresIdPhotocopy                   Boolean                     @default(false)
   biometricMatchingAuthorizedAt         DateTime?
   // Legal Services Phase 1: states the firm is licensed in (USPS codes,
   // e.g. ["CA","NY"]). Drives Stage 3a state-match check for LAWYER
@@ -2451,6 +2455,11 @@ model IpFormSection {
   perParent   Boolean @default(false)
   // Section stripped from the surrogate-facing PDF variant (private section).
   excludeFromSurrogatePdf Boolean @default(false)
+  // Program types this section applies to (e.g. ["surrogacy"], ["surrogacy","ivf"]).
+  // Empty = core: shown to every parent regardless of their providers' program.
+  // A parent sees a section when it is core OR its appliesTo intersects the set
+  // of program types across the providers they've consulted.
+  appliesTo   String[] @default([])
   isActive    Boolean @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

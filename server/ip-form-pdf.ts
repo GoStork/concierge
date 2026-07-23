@@ -49,6 +49,7 @@ interface PdfSection {
   description: string | null;
   perParent: boolean;
   excludeFromSurrogatePdf: boolean;
+  appliesTo?: string[];
   questions: PdfQuestion[];
 }
 
@@ -155,15 +156,24 @@ export async function buildIpFormPdfForProvider(opts: {
   responseId: string;
   providerId: string | null;
   variant: "full" | "surrogate";
+  // Program types the downloading provider represents; sections are filtered to
+  // core + these tags. Null/undefined = no filter (admin sees everything).
+  programTypes?: string[] | null;
 }): Promise<{ buffer: Buffer; fileName: string }> {
   const response = await prisma.ipFormResponse.findUnique({ where: { id: opts.responseId } });
   if (!response) throw new Error("Response not found");
 
-  const sections = (await prisma.ipFormSection.findMany({
+  let sections = (await prisma.ipFormSection.findMany({
     where: { isActive: true },
     orderBy: { sortOrder: "asc" },
     include: { questions: { orderBy: { sortOrder: "asc" } } },
   })) as unknown as PdfSection[];
+  // Restrict to the provider's program (surrogacy agency -> surrogacy sections;
+  // IVF clinic -> core + ivf). A core section (no appliesTo) always shows.
+  if (opts.programTypes && opts.programTypes.length) {
+    const pt = opts.programTypes;
+    sections = sections.filter((s) => !(s.appliesTo || []).length || (s.appliesTo || []).some((t) => pt.includes(t)));
+  }
 
   const answers = (await prisma.ipFormAnswer.findMany({ where: { responseId: response.id } })) as unknown as PdfAnswer[];
   const signatureRows = (await prisma.ipFormSignature.findMany({
@@ -210,6 +220,22 @@ export async function buildIpFormPdfForProvider(opts: {
     const buf = await fetchImageBuffer(sig.signatureImageUrl);
     if (buf) signatureBuffers.set(sig.parentSlot, buf);
   }
+  // ID-document photocopies (file widget): pre-fetch image scans per parent so
+  // the PDF can render them; PDFs/other files render as an "attached" note.
+  const photocopyBuffers = new Map<number, Buffer>();
+  const fileQuestions = sections.flatMap((s) => s.questions).filter((q) => q.widget === "file");
+  for (const fq of fileQuestions) {
+    for (const slot of [1, 2]) {
+      const a = answers.find((x) => x.questionId === fq.id && (x.parentSlot || 0) === slot);
+      const val = a?.value as any;
+      const url = val && typeof val === "object" ? val.url : typeof val === "string" ? val : null;
+      const ct = val && typeof val === "object" ? String(val.contentType || "") : "";
+      if (url && (ct.startsWith("image/") || /\.(jpe?g|png|webp|gif)$/i.test(String(url)))) {
+        const buf = await fetchImageBuffer(url);
+        if (buf) photocopyBuffers.set(slot, buf);
+      }
+    }
+  }
 
   const nameQ = sections.flatMap((s) => s.questions).find((q) => q.key === "ip_full_legal_name");
   const names: string[] = [];
@@ -225,6 +251,7 @@ export async function buildIpFormPdfForProvider(opts: {
     signatures: signatureRows,
     signatureBuffers,
     photoBuffers,
+    photocopyBuffers,
     hasSecondParent: response.hasSecondParent,
     submittedAt: response.submittedAt,
     brand: { agencyName, primaryColor, logoBuffer },
@@ -242,6 +269,7 @@ export function generateIpFormPdf(args: {
   signatures: PdfSignature[];
   signatureBuffers: Map<number, Buffer>;
   photoBuffers: Buffer[];
+  photocopyBuffers?: Map<number, Buffer>;
   hasSecondParent: boolean;
   submittedAt: Date | null;
   brand: IpFormPdfBrand;
@@ -386,7 +414,7 @@ export function generateIpFormPdf(args: {
 
       const renderQuestions = (section: PdfSection, questions: PdfQuestion[], slot: number) => {
         // Build the visible items first, then lay them out (short fields 2-up).
-        const items: { label: string; value: string; fullWidth: boolean; tall: boolean }[] = [];
+        const items: { label: string; value: string; fullWidth: boolean; tall: boolean; fileSlot?: number }[] = [];
         for (const q of questions) {
           if (!q.isActive && answerFor(q, slot) == null) continue; // deactivated but answered still prints
           if (variant === "surrogate" && q.excludeFromSurrogatePdf) continue;
@@ -399,12 +427,43 @@ export function generateIpFormPdf(args: {
             const residentialQ = section.questions.find((x) => x.key === "ip_residential_address");
             raw = residentialQ ? answerFor(residentialQ, slot) : raw;
           }
+          // ID document photocopy (file widget): render the scan if it's an
+          // image, else a note. Skip entirely when no file was uploaded.
+          if (q.widget === "file") {
+            const val = raw as any;
+            const name = val && typeof val === "object" ? String(val.name || "") : "";
+            const hasFile = !!(val && (typeof val === "string" ? val : val.url));
+            if (!hasFile) continue;
+            const hasImg = args.photocopyBuffers?.has(slot);
+            items.push({ label: q.label, value: hasImg ? "" : `Attached: ${name || "ID document"}`, fullWidth: true, tall: false, fileSlot: slot });
+            continue;
+          }
           items.push({ label: q.label, value: displayValue(q.widget, raw), fullWidth: isFullWidth(q.widget), tall: isTall(q.widget) });
         }
 
         let i = 0;
         while (i < items.length) {
           const it = items[i];
+          if (it.fileSlot != null) {
+            const buf = args.photocopyBuffers?.get(it.fileSlot);
+            const imgH = buf ? 150 : 0;
+            ensureSpace(labelH(it.label, contentWidth) + (buf ? imgH : BOX_MIN_SHORT) + ROW_GAP + 6);
+            doc.fillColor(TEXT_DARK).font("Helvetica").fontSize(LABEL_SIZE).text(it.label, contentLeft, doc.y, { width: contentWidth });
+            let y = doc.y + labelH(it.label, contentWidth) + 2;
+            if (buf) {
+              try { doc.image(buf, contentLeft, y, { fit: [200, imgH] }); } catch { /* skip */ }
+              y += imgH;
+            } else {
+              const bh = boxH(it.value, contentWidth, false);
+              doc.roundedRect(contentLeft, y, contentWidth, bh, 3).fill(VALUE_BG);
+              doc.fillColor(TEXT_DARK).font("Helvetica").fontSize(VALUE_SIZE).text(it.value, contentLeft + BOX_PAD_X, y + 4, { width: contentWidth - BOX_PAD_X * 2 });
+              y += bh;
+            }
+            doc.y = y + ROW_GAP;
+            doc.x = contentLeft;
+            i++;
+            continue;
+          }
           if (it.fullWidth) {
             // A tall box (letter) only needs room to START on this page - it
             // flows onto following pages. A single-line full-width box (address)

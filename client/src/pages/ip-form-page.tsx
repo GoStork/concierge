@@ -217,11 +217,15 @@ export default function IpFormPage() {
   }, [flushAnswers]);
 
   const canEdit = useCallback(
-    () => {
+    (question?: IpFormSectionDef["questions"][number]) => {
       // Any non-viewer member can fill any field (including the other parent's
       // details) - one partner commonly completes the whole form. Only the
       // signature is per-parent, and that lives in its own block.
-      if (submitted || isViewer) return false;
+      if (isViewer) return false;
+      // The ID photocopy is a supplemental document: it stays editable even
+      // after submission, so a later provider that requires it can be satisfied
+      // without re-opening the whole form.
+      if (submitted) return question?.widget === "file";
       return true;
     },
     [submitted, isViewer],

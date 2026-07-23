@@ -231,6 +231,75 @@ async function providerHasSurrogacyService(providerId: string): Promise<boolean>
   return services.some((s) => (s.providerType?.name || "").toLowerCase().includes("surrogacy"));
 }
 
+/**
+ * Program types a provider represents for the IP form, from its APPROVED
+ * service types: "surrogacy" (surrogacy agency) and/or "ivf" (IVF/fertility
+ * clinic). Drives which template sections apply. A form-collecting provider
+ * with no recognized program type still gets the core sections.
+ */
+async function providerProgramTypes(providerId: string): Promise<string[]> {
+  const services = await prisma.providerService.findMany({
+    where: { providerId, status: "APPROVED" },
+    include: { providerType: { select: { name: true } } },
+  });
+  const types = new Set<string>();
+  for (const s of services) {
+    const name = (s.providerType?.name || "").toLowerCase();
+    if (name.includes("surrogacy")) types.add("surrogacy");
+    if (name.includes("ivf") || name.includes("clinic")) types.add("ivf");
+  }
+  return [...types];
+}
+
+/**
+ * Union of program types across every provider the account has consulted that
+ * collects the IP form. Determines which sections the parent fills. Falls back
+ * to ["surrogacy"] when the account was prompted but no connected provider is
+ * currently flagged (legacy data / pre-toggle prompts), so existing surrogacy
+ * parents keep seeing the full form.
+ */
+async function accountProgramTypes(memberIds: string[]): Promise<string[]> {
+  const [sessions, bookings] = await Promise.all([
+    prisma.aiChatSession.findMany({ where: { userId: { in: memberIds }, providerId: { not: null } }, select: { providerId: true } }),
+    prisma.booking.findMany({ where: { parentUserId: { in: memberIds } }, select: { providerUser: { select: { providerId: true } } } }),
+  ]);
+  const providerIds = new Set<string>();
+  for (const s of sessions) if (s.providerId) providerIds.add(s.providerId);
+  for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
+  if (!providerIds.size) return ["surrogacy"];
+  const collecting = await prisma.provider.findMany({
+    where: { id: { in: [...providerIds] }, collectsIntendedParentForm: true },
+    select: { id: true },
+  });
+  const types = new Set<string>();
+  for (const p of collecting) for (const t of await providerProgramTypes(p.id)) types.add(t);
+  return types.size ? [...types] : ["surrogacy"];
+}
+
+/** A section is shown to a parent when it's core (no appliesTo) or its tags intersect the account's program types. */
+function sectionAppliesToPrograms(section: { appliesTo?: string[] | null }, programTypes: string[]): boolean {
+  const tags = section.appliesTo || [];
+  if (!tags.length) return true; // core
+  return tags.some((t) => programTypes.includes(t));
+}
+
+/** Whether any connected provider requires an ID photocopy. */
+async function accountRequiresIdPhotocopy(memberIds: string[]): Promise<boolean> {
+  const [sessions, bookings] = await Promise.all([
+    prisma.aiChatSession.findMany({ where: { userId: { in: memberIds }, providerId: { not: null } }, select: { providerId: true } }),
+    prisma.booking.findMany({ where: { parentUserId: { in: memberIds } }, select: { providerUser: { select: { providerId: true } } } }),
+  ]);
+  const providerIds = new Set<string>();
+  for (const s of sessions) if (s.providerId) providerIds.add(s.providerId);
+  for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
+  if (!providerIds.size) return false;
+  const req = await prisma.provider.findFirst({
+    where: { id: { in: [...providerIds] }, collectsIntendedParentForm: true, requiresIdPhotocopy: true },
+    select: { id: true },
+  });
+  return !!req;
+}
+
 /** Full legal names from answers (fallback: account member names). */
 function parentNamesFrom(answers: { questionId: string; parentSlot: number | null; value: any }[], questions: any[], fallback: string[]): string[] {
   const nameQ = questions.find((q) => q.key === "ip_full_legal_name");
@@ -277,11 +346,16 @@ ipFormRouter.get("/api/ip-form", requireAuth, async (req, res) => {
   const user = (req as any).user;
   try {
     const { accountId, memberIds } = await accountOf(user.id);
-    const [sections, rawResponse] = await Promise.all([loadIpFormTemplate(), getOrCreateResponse(accountId)]);
+    const [allSections, rawResponse] = await Promise.all([loadIpFormTemplate(), getOrCreateResponse(accountId)]);
     // Always open with two-vs-solo reflecting IP1's current marital status
     // (unless manually overridden), so the inference is right from load.
     const response = await reconcileHasSecondParent(rawResponse);
     const { answers, signatures } = await loadResponseBundle(response.id);
+    // Show only the sections the account's connected providers actually need
+    // (surrogacy agency -> full form; IVF clinic -> basic info + ID/photocopy).
+    const programTypes = await accountProgramTypes(memberIds);
+    const sections = allSections.filter((s) => sectionAppliesToPrograms(s as any, programTypes));
+    const idPhotocopyRequired = await accountRequiresIdPhotocopy(memberIds);
     const guestToken = await prisma.ipFormGuestToken.findFirst({
       where: { responseId: response.id, revokedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" },
@@ -299,6 +373,8 @@ ipFormRouter.get("/api/ip-form", requireAuth, async (req, res) => {
       mySlot: slotOf(user),
       guestInvite: guestToken,
       members,
+      programTypes,
+      idPhotocopyRequired,
     });
   } catch (e: any) {
     console.error(`[ip-form] GET failed: ${e?.message}`);
@@ -406,7 +482,9 @@ ipFormRouter.patch("/api/ip-form/answers", requireAuth, async (req, res) => {
   try {
     const { accountId } = await accountOf(user.id);
     const response = await getOrCreateResponse(accountId);
-    if (response.status === "SUBMITTED") return res.status(409).json({ message: "Form already submitted" });
+    // A submitted form is locked - EXCEPT the ID photocopy (file widget), a
+    // supplemental document a later provider can still require.
+    const submitted = response.status === "SUBMITTED";
 
     const items = Array.isArray(req.body?.answers) ? req.body.answers : [];
     if (!items.length) return res.status(400).json({ message: "answers array required" });
@@ -421,6 +499,7 @@ ipFormRouter.patch("/api/ip-form/answers", requireAuth, async (req, res) => {
       const meta = questionMeta.get(item?.questionId);
       if (!meta) continue;
       const { section, question } = meta;
+      if (submitted && question.widget !== "file") continue; // only supplemental docs after submit
       const isPerParent = section.perParent || question.perParent;
       const slot: number = isPerParent ? (item.parentSlot === 2 ? 2 : 1) : 0;
       if (slot === 2 && !response.hasSecondParent) continue;
@@ -519,14 +598,18 @@ ipFormRouter.post("/api/ip-form/submit", requireAuth, async (req, res) => {
   const mySlot = slotOf(user);
   if (!mySlot) return res.status(403).json({ message: "Viewers cannot submit" });
   try {
-    const { accountId } = await accountOf(user.id);
+    const { accountId, memberIds } = await accountOf(user.id);
     const response = await getOrCreateResponse(accountId);
     if (response.status === "SUBMITTED") return res.status(409).json({ message: "Form already submitted" });
 
     // Make sure two-vs-solo is current before validating (marital status may
     // have changed right before submit).
     const effective = await reconcileHasSecondParent(response);
-    const sections = await loadIpFormTemplate();
+    // Validate only the sections the parent actually fills (their providers'
+    // program types). The ID photocopy is a supplemental doc, never a submit
+    // blocker - it's requested separately when a provider needs it.
+    const programTypes = await accountProgramTypes(memberIds);
+    const sections = (await loadIpFormTemplate()).filter((s) => sectionAppliesToPrograms(s as any, programTypes));
     const { answers, signatures } = await loadResponseBundle(response.id);
     const missing = findMissingRequired(sections, answers as any, effective.hasSecondParent);
     const missingSignatures: number[] = [];
@@ -756,6 +839,9 @@ ipFormRouter.get("/api/provider/ip-forms/:responseId/pdf", requireAuth, async (r
     // Tenant gate: the provider must actually be connected to this account.
     const providerId = user.providerId;
     let brandProviderId = providerId;
+    // Sections the DOWNLOADING provider sees: their program types (surrogacy
+    // agency -> surrogacy sections; IVF clinic -> core + ivf). Admin: everything.
+    let programTypes: string[] | null = null;
     if (!isAdmin(user) || providerId) {
       const memberIds = (
         await prisma.user.findMany({
@@ -765,8 +851,14 @@ ipFormRouter.get("/api/provider/ip-forms/:responseId/pdf", requireAuth, async (r
       ).map((u) => u.id);
       const connected = await providerConnectedToAccount(providerId, memberIds);
       if (!connected) return res.status(403).json({ message: "Forbidden" });
-      if (!(await providerHasSurrogacyService(providerId))) {
-        return res.status(403).json({ message: "Only surrogacy agencies can download this form" });
+      const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { collectsIntendedParentForm: true } });
+      if (!provider?.collectsIntendedParentForm) {
+        return res.status(403).json({ message: "This provider does not collect the Intended Parent Form" });
+      }
+      programTypes = await providerProgramTypes(providerId);
+      // The surrogate-safe variant only makes sense for surrogacy agencies.
+      if (variant === "surrogate" && !programTypes.includes("surrogacy")) {
+        return res.status(403).json({ message: "The surrogate version is only available to surrogacy agencies" });
       }
     }
     if (!brandProviderId) {
@@ -780,6 +872,7 @@ ipFormRouter.get("/api/provider/ip-forms/:responseId/pdf", requireAuth, async (r
       responseId: response.id,
       providerId: brandProviderId,
       variant: variant as "full" | "surrogate",
+      programTypes,
     });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);

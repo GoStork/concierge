@@ -10,7 +10,7 @@
  */
 import { useRef, useState } from "react";
 import { format } from "date-fns";
-import { CalendarIcon, ImagePlus, Loader2, X } from "lucide-react";
+import { CalendarIcon, FileText, ImagePlus, Loader2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -167,6 +167,8 @@ function WidgetInput({ question: q, value, onChange, disabled }: { question: IpF
       );
     case "photos":
       return <PhotosInput value={Array.isArray(value) ? value : []} onChange={onChange} disabled={disabled} />;
+    case "file":
+      return <FileInput value={value && typeof value === "object" ? value : null} onChange={onChange} disabled={disabled} />;
     default:
       return (
         <Input
@@ -203,6 +205,69 @@ function DateField({ question: q, value, onChange, disabled }: { question: IpFor
         />
       </PopoverContent>
     </Popover>
+  );
+}
+
+interface FileValue { url: string; name: string; contentType: string }
+
+/** Single-file upload (image or PDF) - used for the ID document photocopy.
+ *  Stores { url, name, contentType }; the file goes to the private GCS bucket. */
+function FileInput({ value, onChange, disabled }: { value: FileValue | null; onChange: (v: FileValue | null) => void; disabled?: boolean }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isImage = !!value && (value.contentType?.startsWith("image/") || /\.(jpe?g|png|webp|gif)$/i.test(value.url || ""));
+
+  const pick = async (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    setError(null);
+    setUploading(true);
+    try {
+      const url = await uploadFile(file, file.name);
+      onChange({ url, name: file.name, contentType: file.type || "" });
+    } catch (e: any) {
+      setError(e?.message || "Upload failed - please try again");
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {value ? (
+        <div className="flex items-center gap-3 rounded-[var(--radius)] border border-border bg-secondary/30 p-2 max-w-md" data-testid="ipform-file-preview">
+          {isImage ? (
+            <img src={getPhotoSrc(value.url) || value.url} alt={value.name} className="w-14 h-14 rounded object-cover border border-border shrink-0" />
+          ) : (
+            <div className="w-14 h-14 rounded bg-background border border-border flex items-center justify-center shrink-0">
+              <FileText className="w-6 h-6 text-primary" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{value.name || "Uploaded document"}</p>
+            <a href={getPhotoSrc(value.url) || value.url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">View</a>
+          </div>
+          {!disabled && (
+            <button type="button" onClick={() => onChange(null)} className="rounded-full border border-border p-1 opacity-80 hover:opacity-100" aria-label="Remove file" data-testid="ipform-file-remove">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      ) : null}
+      {!disabled && (
+        <div>
+          <input ref={inputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => pick(e.target.files)} data-testid="ipform-file-input" />
+          <Button type="button" variant="outline" disabled={uploading} onClick={() => inputRef.current?.click()} data-testid="ipform-file-add">
+            {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ImagePlus className="w-4 h-4 mr-2" />}
+            {value ? "Replace file" : "Upload file"}
+          </Button>
+          <p className="text-xs text-muted-foreground mt-1">A clear photo or PDF scan. Kept private - shared only with the agency/clinic that requested it.</p>
+        </div>
+      )}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+    </div>
   );
 }
 
