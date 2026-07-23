@@ -286,7 +286,11 @@ export async function buildJourneyTimelines(
       .sort((a: any, z: any) => new Date(a).getTime() - new Date(z).getTime())[0] || null;
     const clearanceFailed = !clearanceClearedAt && escrowInvoices.some((i: any) => i.medicalClearanceStatus === "FAILED");
 
-    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; tone?: "warning" };
+    // optional: skippable step - renders "(if needed)" and is dropped when
+    // the journey passed it without evidence. dropIfPassed: REQUIRED step
+    // that only gets the drop behavior (for rungs introduced after old
+    // journeys already progressed past them) - no "(if needed)" label.
+    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; dropIfPassed?: boolean; tone?: "warning" };
     // Shared tail: invoice + agreement rungs read the same on every ladder.
     const consultRungs: Rung[] = [
       { id: "consult_scheduled", label: "Consultation Scheduled", at: consultScheduledAt },
@@ -348,13 +352,12 @@ export async function buildJourneyTimelines(
       ];
       // Intended Parent Form rung (surrogacy only), right after the
       // consultation - the agency cannot schedule a match call without it, so
-      // parents see the step coming from day one. optional: true keeps
-      // pre-feature journeys clean: an unevidenced optional rung below the
-      // highest evidenced rung is dropped by the filter, so an old
-      // handed-off journey never shows a phantom "Parent Form Submitted".
+      // parents see the step coming from day one. It is REQUIRED (not
+      // "(if needed)"); dropIfPassed keeps pre-feature journeys clean by
+      // hiding the rung on old journeys that progressed past it without one.
       const ipFormRungs: Rung[] =
         journeyType === "surrogacy"
-          ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse?.submittedAt || null, optional: true }]
+          ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse?.submittedAt || null, dropIfPassed: true }]
           : [];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
@@ -374,7 +377,7 @@ export async function buildJourneyTimelines(
     // inherit "done" only below the highest evidenced rung.
     let highestIdx = -1;
     rungs.forEach((r, i) => { if (r.at) highestIdx = Math.max(highestIdx, i); });
-    rungs = rungs.filter((r, i) => !(r.optional && !r.at && i < highestIdx));
+    rungs = rungs.filter((r, i) => !((r.optional || r.dropIfPassed) && !r.at && i < highestIdx));
     highestIdx = -1;
     rungs.forEach((r, i) => { if (r.at) highestIdx = Math.max(highestIdx, i); });
 
