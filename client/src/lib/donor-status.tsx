@@ -81,6 +81,23 @@ export function getDonorStatusStyle(status: string | null | undefined): StatusBa
   return STYLES[status as DonorStatus] || null;
 }
 
+/**
+ * True when a chat session's subject is a MARKETPLACE profile (surrogate /
+ * egg donor / sperm donor) - the only subjects the availability dot applies
+ * to. Non-marketplace subjects (CountryProgram, legal, Clinic, doctor) have
+ * no profileStatus, and without this guard they hit the red "no longer in
+ * marketplace" fallback, which parents misread as a presence indicator.
+ * subjectType casing is historically inconsistent ("Surrogate"/"surrogate"/
+ * "SURROGATE"/"sperm-donor"), so match normalized substrings. Legacy donor
+ * threads with a null subjectType still qualify when their profileStatus
+ * actually resolved.
+ */
+export function isMarketplaceProfileSubject(subjectType: string | null | undefined, profileStatus?: string | null): boolean {
+  const t = (subjectType || "").toLowerCase();
+  if (t.includes("surrog") || t.includes("donor")) return true;
+  return !subjectType && !!profileStatus;
+}
+
 // Render the small status pill next to a donor/surrogate name. Returns null
 // for AVAILABLE (no pill needed - presence on the list is the signal) and
 // for null status (status not yet resolved).

@@ -8,7 +8,7 @@ import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { deriveChatPalette } from "@/lib/chat-palette";
-import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
+import { DonorStatusPill, getDonorStatusStyle, isMarketplaceProfileSubject } from "@/lib/donor-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageStatus } from "@/components/ui/message-status";
@@ -574,7 +574,7 @@ export default function AdminConciergeMonitor() {
                         </div>
                       )}
                     </div>
-                    {s.subjectProfileId && (() => {
+                    {s.subjectProfileId && isMarketplaceProfileSubject(s.subjectType, s.profileStatus) && (() => {
                       const dotStyle = getDonorStatusStyle(s.profileStatus);
                       return (
                         <span

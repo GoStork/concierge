@@ -30,7 +30,7 @@ import { hasProviderRole } from "@shared/roles";
 import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { deriveChatPalette } from "@/lib/chat-palette";
-import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
+import { DonorStatusPill, getDonorStatusStyle, isMarketplaceProfileSubject } from "@/lib/donor-status";
 import { useMarketplaceViewContext, recordProfileView } from "@/lib/profile-views";
 import { format } from "date-fns";
 import ConciergeChatPage, { ParentChatSidePanel, type ParentSidePanelData } from "@/pages/concierge-chat-page";
@@ -1898,7 +1898,7 @@ const sendMessageMutation = useMutation({
                   <div className="mx-4 mt-3 mb-2 px-3 py-1.5 rounded-[var(--radius)] flex items-center gap-2 bg-secondary/40">
                     <div className="w-4 h-4 rounded flex-shrink-0 overflow-hidden bg-background flex items-center justify-center">
                       {first.providerLogo ? (
-                        <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-4 h-4 object-contain" />
+                        <img src={getPhotoSrc(first.providerLogo) || undefined} alt="" className="w-4 h-4 object-contain" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                       ) : (
                         <Building2 className="w-3 h-3 text-muted-foreground" />
                       )}
@@ -1935,6 +1935,7 @@ const sendMessageMutation = useMutation({
                                 src={getPhotoSrc(session.providerLogo) || undefined}
                                 alt={session.title || ""}
                                 className="w-12 h-12 rounded-full object-contain p-1 bg-background border"
+                                onError={(e) => { e.currentTarget.style.display = "none"; }}
                               />
                             ) : (
                               <div
@@ -1945,9 +1946,11 @@ const sendMessageMutation = useMutation({
                               </div>
                             )}
                           </div>
-                          {/* Availability dot only on profile threads (same rule as the
-                              provider list) - never on Eva rows. */}
-                          {session.subjectProfileId && !(session.matchmakerId && !session.providerJoinedAt && session.status !== "CONSULTATION_BOOKED" && session.status !== "PROVIDER_CONNECTED") && (() => {
+                          {/* Availability dot only on MARKETPLACE profile threads (same
+                              rule as the provider list) - never on Eva rows, and never on
+                              CountryProgram/legal/clinic subjects where the red fallback
+                              reads as (wrong) presence. */}
+                          {session.subjectProfileId && isMarketplaceProfileSubject(session.subjectType, session.profileStatus) && !(session.matchmakerId && !session.providerJoinedAt && session.status !== "CONSULTATION_BOOKED" && session.status !== "PROVIDER_CONNECTED") && (() => {
                             const dotStyle = getDonorStatusStyle(session.profileStatus);
                             return (
                               <span
@@ -2049,9 +2052,9 @@ const sendMessageMutation = useMutation({
             >
               <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-muted relative">
                 {selectedParentSession!.profilePhotoUrl ? (
-                  <img src={getPhotoSrc(selectedParentSession!.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" />
+                  <img src={getPhotoSrc(selectedParentSession!.profilePhotoUrl) || undefined} alt="" className="w-10 h-10 rounded-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                 ) : parentHeaderAvatar ? (
-                  <img src={parentHeaderAvatar} alt="" className="w-10 h-10 rounded-full object-contain p-0.5 bg-background border" />
+                  <img src={parentHeaderAvatar} alt="" className="w-10 h-10 rounded-full object-contain p-0.5 bg-background border" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
                     <User className="w-4 h-4 text-muted-foreground" />
@@ -2070,7 +2073,7 @@ const sendMessageMutation = useMutation({
                 <div className="flex items-center gap-1 mt-0.5 min-w-0">
                   <span className="text-[11px] text-muted-foreground flex-shrink-0">via</span>
                   {parentHeaderAvatar && (
-                    <img src={parentHeaderAvatar} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0 bg-white border border-border/40" />
+                    <img src={parentHeaderAvatar} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0 bg-white border border-border/40" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                   )}
                   <span className="text-[11px] text-muted-foreground truncate">{parentHeaderName}</span>
                 </div>
@@ -2085,7 +2088,7 @@ const sendMessageMutation = useMutation({
             <>
               <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
                 {parentHeaderAvatar ? (
-                  <img src={parentHeaderAvatar} alt={parentHeaderName} className={`w-10 h-10 rounded-full ${hasProvider ? "object-contain p-0.5 bg-background border" : "object-cover"}`} />
+                  <img src={parentHeaderAvatar} alt={parentHeaderName} className={`w-10 h-10 rounded-full ${hasProvider ? "object-contain p-0.5 bg-background border" : "object-cover"}`} onError={(e) => { e.currentTarget.style.display = "none"; }} />
                 ) : (
                   <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold" style={{ backgroundColor: brandColor }}>
                     {parentHeaderName.charAt(0)}
@@ -2364,9 +2367,10 @@ const sendMessageMutation = useMutation({
                           </div>
                         )}
                       </div>
-                      {/* Availability dot only on profile threads - on an Eva row it
-                          reads as (wrong) presence for "the AI". */}
-                      {s.subjectProfileId && !((s as any).matchmakerId && !s.providerJoinedAt && s.status !== "CONSULTATION_BOOKED" && s.status !== "PROVIDER_CONNECTED") && (() => {
+                      {/* Availability dot only on MARKETPLACE profile threads - on an Eva
+                          row it reads as (wrong) presence for "the AI", and on
+                          CountryProgram/legal subjects the red fallback misleads too. */}
+                      {s.subjectProfileId && isMarketplaceProfileSubject(s.subjectType, s.profileStatus) && !((s as any).matchmakerId && !s.providerJoinedAt && s.status !== "CONSULTATION_BOOKED" && s.status !== "PROVIDER_CONNECTED") && (() => {
                         const dotStyle = getDonorStatusStyle(s.profileStatus);
                         return (
                           <span
