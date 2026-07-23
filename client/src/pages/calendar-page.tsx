@@ -1016,7 +1016,7 @@ export default function CalendarPage() {
       return prev;
     });
   }, [isMobile]);
-  const [showList, setShowList] = useState(false);
+  const [showList, setShowList] = useState(isMobile);
   const [pastMeetingsTab, setPastMeetingsTab] = useState<"meetings" | "recordings" | "transcripts">("meetings");
   const [sidebarTab, setSidebarTab] = useState<"upcoming" | "past" | "recordings" | "transcripts">("upcoming");
   const [googleReconnecting, setGoogleReconnecting] = useState(false);

@@ -121,9 +121,9 @@ function DashboardRoute() {
   if (isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY') {
     return <Navigate to="/chat" replace />;
   }
-  // GoStork admins land on the command center; providers on their Home.
+  // GoStork admins land on the command center; providers land in their chat inbox.
   if (isAdmin) return <Navigate to="/admin/home" replace />;
-  if (isProvider) return <Navigate to="/provider/home" replace />;
+  if (isProvider) return <Navigate to="/chat" replace />;
   return <Navigate to="/marketplace" replace />;
 }
 
