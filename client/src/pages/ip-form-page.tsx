@@ -502,6 +502,7 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
   const [mode, setMode] = useState<"member" | "guest" | null>(null);
   const [name, setName] = useState(data.guestInvite?.name || "");
   const [email, setEmail] = useState(data.guestInvite?.email || "");
+  const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [guestLink, setGuestLink] = useState<string | null>(null);
 
@@ -528,11 +529,11 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
   const inviteGuest = async () => {
     setBusy(true);
     try {
-      const res = await apiRequest("POST", "/api/ip-form/invite-parent2", { mode: "guest", email: email.trim(), name: name.trim() });
+      const res = await apiRequest("POST", "/api/ip-form/invite-parent2", { mode: "guest", email: email.trim(), name: name.trim(), phone: phone.trim() });
       const body = await res.json();
       setGuestLink(body.link || null);
       queryClient.invalidateQueries({ queryKey: ["/api/ip-form"] });
-      toast({ title: "Signing link sent", description: `${name || email} got a private link by email to fill their sections and sign.` });
+      toast({ title: "Signing link sent", description: `${name || email} got a private link${phone.trim() ? " by email and text" : " by email"} to fill their sections and sign.` });
     } catch (e: any) {
       toast({ title: "Could not send link", description: e?.message, variant: "destructive" });
     } finally {
@@ -583,6 +584,12 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="partner@email.com" data-testid="ipform-invite-email" />
             </div>
           </div>
+          {mode === "guest" && (
+            <div className="space-y-1">
+              <Label className="text-xs">Their mobile number <span className="text-muted-foreground font-normal">(optional - we'll text them the link too)</span></Label>
+              <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 555 123 4567" data-testid="ipform-invite-phone" />
+            </div>
+          )}
           {mode === "member" && hasMember2 && (
             <p className="text-xs text-muted-foreground">Your partner already has an account on this journey - this just reminds them about the form.</p>
           )}

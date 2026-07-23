@@ -459,6 +459,9 @@ ipFormRouter.post("/api/ip-form/sign", requireAuth, async (req, res) => {
       create: { responseId: response.id, parentSlot: mySlot, fullLegalName: fullLegalName.trim(), signatureImageUrl, method, signedByUserId: user.id },
       update: { fullLegalName: fullLegalName.trim(), signatureImageUrl, method, signedByUserId: user.id, signedAt: new Date() },
     });
+    // Let the other account member(s) know a signature landed.
+    const { notifyPartnerSigned } = await import("./notify-ip-form");
+    void notifyPartnerSigned({ responseId: response.id, signedSlot: mySlot, signerName: fullLegalName.trim(), signerUserId: user.id });
     res.json({ signature });
   } catch (e: any) {
     console.error(`[ip-form] sign failed: ${e?.message}`);
@@ -487,6 +490,7 @@ ipFormRouter.post("/api/ip-form/invite-parent2", requireAuth, async (req, res) =
     if (mode === "guest") {
       const email = (req.body?.email || "").trim();
       const name = (req.body?.name || "").trim() || null;
+      const phone = (req.body?.phone || "").trim() || null;
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ message: "A valid email is required" });
       await prisma.ipFormGuestToken.updateMany({
         where: { responseId: response.id, revokedAt: null },
@@ -500,7 +504,7 @@ ipFormRouter.post("/api/ip-form/invite-parent2", requireAuth, async (req, res) =
       const { getBaseUrl } = await import("./src/lib/get-base-url");
       const link = `${getBaseUrl()}/ip-form/guest/${token}`;
       const { sendIpFormGuestInvite } = await import("./notify-ip-form");
-      void sendIpFormGuestInvite({ email, name, inviterName: user.name || user.firstName || "Your partner", link });
+      void sendIpFormGuestInvite({ email, name, phone, inviterName: user.name || user.firstName || "Your partner", link });
       return res.json({ ok: true, mode, link, guestInvite: { email: row.email, name: row.name, createdAt: row.createdAt, expiresAt: row.expiresAt } });
     }
     res.status(400).json({ message: "mode must be member or guest" });
@@ -663,6 +667,9 @@ ipFormRouter.post("/api/ip-form/guest/:token/sign", guestThrottle, async (req, r
       },
       update: { fullLegalName: fullLegalName.trim(), signatureImageUrl, method, guestTokenId: tokenRow.id, signedAt: new Date() },
     });
+    // A guest (parent 2) just signed - notify the account member(s) who invited them.
+    const { notifyPartnerSigned } = await import("./notify-ip-form");
+    void notifyPartnerSigned({ responseId: tokenRow.responseId, signedSlot: tokenRow.parentSlot, signerName: fullLegalName.trim() });
     res.json({ signature: { parentSlot: signature.parentSlot, fullLegalName: signature.fullLegalName, signedAt: signature.signedAt } });
   } catch (e: any) {
     console.error(`[ip-form] guest sign failed: ${e?.message}`);

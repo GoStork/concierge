@@ -40,7 +40,7 @@ interface DashboardQueue {
   awaitingMySignature: Array<{ agreementId: string; documentType: string; sessionId: string; createdAt: string; providerName: string | null }>;
   prepDocs: Array<{ messageId: string; sessionId: string; createdAt: string; providerName: string | null; callLabel: string; scheduledAt: string | null; url: string; fileName: string }>;
   callsToReschedule?: Array<{ sessionId: string; missedAt: string | null; callLabel: string; providerName: string | null; subjectLabel: string | null }>;
-  ipFormPending?: Array<{ responseId: string; promptedAt: string; signedSlots: number[]; hasSecondParent: boolean }>;
+  ipFormPending?: Array<{ responseId: string; promptedAt: string; signedSlots: number[]; hasSecondParent: boolean; lastSectionKey?: string | null }>;
 }
 
 function fmtWhen(iso: string) {
@@ -179,22 +179,26 @@ export default function ParentHomePage() {
                 onClick={() => window.open(`/pay/${inv.paymentToken}`, "_blank")}
               />
             ))}
-            {(queue?.ipFormPending || []).map(f => (
-              <QueueRow
-                key={`ipform-${f.responseId}`}
-                icon={<FileText className="w-4 h-4" />}
-                title="Finish your Intended Parent Form"
-                detail={
-                  f.signedSlots.length === 0
-                    ? "Your agency shares it with potential surrogates - a match call can't be scheduled without it"
-                    : f.hasSecondParent && f.signedSlots.length === 1
-                    ? "One signature in - the second parent still needs to sign"
-                    : "Almost done - review and submit"
-                }
-                cta="Continue"
-                onClick={() => navigate("/ip-form")}
-              />
-            ))}
+            {(queue?.ipFormPending || []).map(f => {
+              // Once the second parent has signed, the only thing left is submit.
+              const readyToSubmit = f.hasSecondParent ? f.signedSlots.includes(2) : f.signedSlots.includes(1);
+              return (
+                <QueueRow
+                  key={`ipform-${f.responseId}`}
+                  icon={<FileText className="w-4 h-4" />}
+                  title={readyToSubmit ? "Submit your Intended Parent Form" : "Finish your Intended Parent Form"}
+                  detail={
+                    f.signedSlots.length === 0
+                      ? "Your agency shares it with potential surrogates - a match call can't be scheduled without it"
+                      : f.hasSecondParent && f.signedSlots.length === 1
+                      ? "One signature in - the second parent still needs to sign"
+                      : "Almost done - review and submit"
+                  }
+                  cta={readyToSubmit ? "Submit" : "Continue"}
+                  onClick={() => navigate(f.lastSectionKey ? `/ip-form?section=${encodeURIComponent(f.lastSectionKey)}` : "/ip-form")}
+                />
+              );
+            })}
             {(queue?.awaitingMySignature || []).map(a => (
               <QueueRow
                 key={a.agreementId}

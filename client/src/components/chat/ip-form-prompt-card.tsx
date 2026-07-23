@@ -16,11 +16,38 @@ export function IpFormPromptCard({ data, brandColor }: { data: any; brandColor: 
   const navigate = useNavigate();
   const providerName: string = data?.providerName || "your surrogacy agency";
 
-  const { data: form } = useQuery<{ response?: { status?: string } }>({
+  const { data: form } = useQuery<{
+    response?: { status?: string; hasSecondParent?: boolean };
+    sections?: { key: string; sortOrder: number; questions: { id: string }[] }[];
+    answers?: { questionId: string }[];
+    signatures?: { parentSlot: number }[];
+  }>({
     queryKey: ["/api/ip-form"],
     staleTime: 30_000,
   });
   const submitted = form?.response?.status === "SUBMITTED";
+  const answers = form?.answers || [];
+  const signatures = form?.signatures || [];
+  const hasSecondParent = form?.response?.hasSecondParent ?? false;
+  const started = answers.length > 0 || signatures.length > 0;
+  // Once the second parent has signed (or the sole parent, solo journeys), the
+  // only thing left is submit.
+  const readyToSubmit = hasSecondParent ? signatures.some((s) => s.parentSlot === 2) : signatures.some((s) => s.parentSlot === 1);
+
+  // Resume point: furthest answered section; once signed, land on the sign page.
+  const sections = form?.sections || [];
+  const answeredIds = new Set(answers.map((a) => a.questionId));
+  let resumeKey: string | null = null;
+  let bestOrder = -1;
+  for (const s of sections) {
+    if (s.questions?.some((q) => answeredIds.has(q.id)) && s.sortOrder > bestOrder) {
+      bestOrder = s.sortOrder;
+      resumeKey = s.key;
+    }
+  }
+  if (signatures.length && sections.some((s) => s.key === "acknowledgment")) resumeKey = "acknowledgment";
+  const openForm = () => navigate(resumeKey ? `/ip-form?section=${encodeURIComponent(resumeKey)}` : "/ip-form");
+  const ctaLabel = readyToSubmit ? "Submit My Form" : started ? "Finish My Form" : "Start My Form";
 
   return (
     <div
@@ -46,8 +73,8 @@ export function IpFormPromptCard({ data, brandColor }: { data: any; brandColor: 
           </div>
         ) : (
           <>
-            <Button className="w-full" onClick={() => navigate("/ip-form")} data-testid="ip-form-prompt-open">
-              Start My Form
+            <Button className="w-full" onClick={openForm} data-testid="ip-form-prompt-open">
+              {ctaLabel}
             </Button>
             <p className="text-[11px] text-muted-foreground mt-1.5 text-center">
               About 20-30 minutes - saves as you go, and both partners can fill it in parallel.

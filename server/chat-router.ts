@@ -3519,6 +3519,25 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
     const ipFormSignatures = ipFormResponse
       ? await prisma.ipFormSignature.findMany({ where: { responseId: ipFormResponse.id }, select: { parentSlot: true } })
       : [];
+    // Resume point for "Continue": the furthest section (by sortOrder) that has
+    // an answer. Once anyone has signed, the acknowledgment (last) section is
+    // the natural landing spot for review + submit.
+    let ipFormLastSectionKey: string | null = null;
+    if (ipFormResponse && ipFormResponse.status === "DRAFT" && ipFormResponse.promptedAt) {
+      const answered = await prisma.ipFormAnswer.findMany({ where: { responseId: ipFormResponse.id }, select: { questionId: true } });
+      if (answered.length) {
+        const furthest = await prisma.ipFormQuestion.findFirst({
+          where: { id: { in: answered.map(a => a.questionId) }, isActive: true },
+          orderBy: { section: { sortOrder: "desc" } },
+          select: { section: { select: { key: true } } },
+        }).catch(() => null);
+        ipFormLastSectionKey = furthest?.section?.key || null;
+      }
+      if (ipFormSignatures.length) {
+        const ack = await prisma.ipFormSection.findFirst({ where: { key: "acknowledgment", isActive: true }, select: { key: true } }).catch(() => null);
+        if (ack) ipFormLastSectionKey = ack.key;
+      }
+    }
     const ipFormPending =
       ipFormResponse && ipFormResponse.status === "DRAFT" && ipFormResponse.promptedAt
         ? [{
@@ -3526,6 +3545,7 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
             promptedAt: ipFormResponse.promptedAt,
             signedSlots: ipFormSignatures.map(s => s.parentSlot),
             hasSecondParent: ipFormResponse.hasSecondParent,
+            lastSectionKey: ipFormLastSectionKey,
           }]
         : [];
 

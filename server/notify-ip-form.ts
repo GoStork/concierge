@@ -106,10 +106,11 @@ function getFirstName(name: string | null | undefined): string {
   return (name || "").trim().split(/\s+/)[0] || "there";
 }
 
-/** Guest signing link email for parent 2 (no GoStork account). */
+/** Guest signing link email (+ optional SMS) for parent 2 (no GoStork account). */
 export async function sendIpFormGuestInvite(params: {
   email: string;
   name: string | null;
+  phone?: string | null;
   inviterName: string;
   link: string;
 }): Promise<void> {
@@ -131,8 +132,74 @@ export async function sendIpFormGuestInvite(params: {
       footer: "If you weren't expecting this, you can ignore this email - nothing is shared without your signature.",
     });
     await sendEmail([params.email], "Action needed: sign your Intended Parent Form", html, brand.companyName);
+    if (params.phone) {
+      await sendRawSms(
+        params.phone,
+        `${params.inviterName} started your GoStork Intended Parent Form and needs your signature. Review your sections and sign here (private link, expires in 30 days): ${params.link}`,
+      ).catch((e) => console.error(`[IP FORM NOTIFY] guest invite SMS failed: ${e?.message}`));
+    }
   } catch (e: any) {
     console.error(`[IP FORM NOTIFY] guest invite failed: ${e?.message}`);
+  }
+}
+
+/**
+ * A partner just signed - tell the OTHER account members (email + SMS + in-app)
+ * so they know the form is ready to submit. Used when parent 2 signs (the main
+ * case: parent 1 fills the form, sends the link, and needs to know it's signed)
+ * and symmetrically when a member signs.
+ */
+export async function notifyPartnerSigned(params: {
+  responseId: string;
+  signedSlot: number;
+  signerName: string | null;
+  signerUserId?: string | null;
+}): Promise<void> {
+  try {
+    const response = await prisma.ipFormResponse.findUnique({ where: { id: params.responseId } });
+    if (!response) return;
+    const members = await prisma.user.findMany({
+      where: { OR: [{ parentAccountId: response.parentAccountId }, { id: response.parentAccountId }] },
+      select: { id: true, name: true, email: true, mobileNumber: true },
+    });
+    // Everyone except whoever just signed (guests have no user id, so all members are notified).
+    const recipients = members.filter((m) => !params.signerUserId || m.id !== params.signerUserId);
+    if (!recipients.length) return;
+    const signer = getFirstName(params.signerName) === "there" ? "Your partner" : (params.signerName || "").trim();
+    const formUrl = `${getBaseUrl()}/ip-form`;
+
+    // In-app
+    for (const m of recipients) {
+      void prisma.inAppNotification
+        .create({ data: { userId: m.id, eventType: "IP_FORM_PARTNER_SIGNED", payload: { responseId: response.id, signerName: signer, signedSlot: params.signedSlot } } })
+        .catch(() => {});
+    }
+
+    // Email + SMS (skip test recipients)
+    const brand = await fetchEmailBrandData(prisma);
+    const emailTargets = recipients.map((m) => m.email).filter((e) => e && !isTestEmail(e)) as string[];
+    if (emailTargets.length) {
+      const html = buildBrandedEmail(brand, {
+        title: `${signer} signed your Intended Parent Form`,
+        greeting: `Hi ${esc(getFirstName(recipients[0]?.name))},`,
+        body:
+          `<strong>${esc(signer)}</strong> just reviewed and signed your Intended Parent Form. ` +
+          `That was the last signature it needed - you can now review everything and submit it so your surrogacy agency can share it ahead of your match call.`,
+        buttons: [{ label: "Review and Submit the Form", url: formUrl }],
+      });
+      await sendEmail(emailTargets, `${signer} signed your Intended Parent Form`, html, brand.companyName).catch((e) =>
+        console.error(`[IP FORM NOTIFY] partner-signed email failed: ${e?.message}`),
+      );
+    }
+    for (const m of recipients) {
+      if (!m.mobileNumber || isTestEmail(m.email)) continue;
+      await sendRawSms(
+        m.mobileNumber,
+        `Good news ${getFirstName(m.name)} - ${signer} signed your GoStork Intended Parent Form. It's ready to review and submit: ${formUrl}`,
+      ).catch((e) => console.error(`[IP FORM NOTIFY] partner-signed SMS failed: ${e?.message}`));
+    }
+  } catch (e: any) {
+    console.error(`[IP FORM NOTIFY] partner-signed notify failed: ${e?.message}`);
   }
 }
 
