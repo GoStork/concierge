@@ -67,7 +67,11 @@ export default function IpFormGuestPage() {
   const mySlot = data?.mySlot ?? 2;
   const hasSecondParent = data?.response?.hasSecondParent ?? true;
 
-  const activeKey = searchParams.get("section") || sections[0]?.key || "profile";
+  // The emailed link is "to sign", so open on the acknowledgment/sign section
+  // by default (the partner fills the rest). The stepper still lets them page
+  // back through every section to review before signing.
+  const hasAck = sections.some((s) => s.key === "acknowledgment");
+  const activeKey = searchParams.get("section") || (hasAck ? "acknowledgment" : sections[0]?.key) || "profile";
   const activeIndex = Math.max(0, sections.findIndex((s) => s.key === activeKey));
   const activeSection = sections[activeIndex];
 
@@ -165,8 +169,8 @@ export default function IpFormGuestPage() {
           <div>
             <h1 className="text-2xl font-heading font-bold">Intended Parent Form</h1>
             <p className="text-sm text-muted-foreground">
-              {data.guestName ? `Hi ${data.guestName}! ` : ""}Your partner started this form. Please review it, complete the sections
-              marked Intended Parent {mySlot}, and sign at the end. Shared sections are shown for context and are edited by your partner.
+              {data.guestName ? `Hi ${data.guestName}! ` : ""}Your partner filled out this form. Please review it and add your signature
+              below. Use the tabs above to browse any section - your partner completes the rest.
             </p>
           </div>
         </div>
