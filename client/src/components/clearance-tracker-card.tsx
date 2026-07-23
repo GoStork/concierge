@@ -2,6 +2,10 @@
  * In-chat clearance tracker card.
  * Rendered when uiCardType === "clearance_tracker".
  * Used for AT_CLEARANCE surrogacy flow - shows vault status and clearance actions.
+ *
+ * Shown to BOTH sides of the shared session: the parent sees "your funds",
+ * the agency sees "{parent}'s funds". Either side can resolve the screening
+ * outcome - the endpoint verifies the caller belongs to this escrow.
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -12,10 +16,15 @@ import { Button } from "@/components/ui/button";
 interface ClearanceTrackerData {
   invoiceId: string;
   providerName: string;
+  parentName?: string | null;
   medicalClearanceStatus?: string | null;
   isProtected?: boolean;
   confirmAction?: string;
   failAction?: string;
+  resolvedAt?: string | null;
+  /** How the escrow resolved: "voided" (hold canceled) or "refunded"
+   *  (vault funds returned) on failure; "captured"/"released" on success. */
+  resolution?: string | null;
 }
 
 interface ClearanceTrackerCardProps {
@@ -24,8 +33,10 @@ interface ClearanceTrackerCardProps {
 }
 
 export function ClearanceTrackerCard({ data, isParent = true }: ClearanceTrackerCardProps) {
+  const queryClient = useQueryClient();
   const [actionTaken, setActionTaken] = useState(false);
   const [result, setResult] = useState<"cleared" | "failed" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const clearanceMutation = useMutation({
     mutationFn: async (cleared: boolean) => {
@@ -35,16 +46,25 @@ export function ClearanceTrackerCard({ data, isParent = true }: ClearanceTracker
         credentials: "include",
         body: JSON.stringify({ invoiceId: data.invoiceId, cleared }),
       });
-      if (!res.ok) throw new Error("Failed to update clearance");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message || "Failed to update clearance");
+      }
       return res.json();
     },
     onSuccess: (_, cleared) => {
       setActionTaken(true);
+      setActionError(null);
       setResult(cleared ? "cleared" : "failed");
+      // The action reshapes the whole session (invoice PAID/voided, new
+      // system messages, surrogate status) - refetch everything active.
+      queryClient.invalidateQueries();
     },
+    onError: (err: Error) => setActionError(err.message),
   });
 
   const status = data.medicalClearanceStatus;
+  const parentLabel = data.parentName || "The parent";
 
   return (
     <div className="rounded-xl border overflow-hidden max-w-sm" style={{ background: "hsl(var(--background))" }}>
@@ -62,14 +82,16 @@ export function ClearanceTrackerCard({ data, isParent = true }: ClearanceTracker
         <div className="flex items-start gap-2 text-sm">
           <Shield className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "hsl(var(--brand-success))" }} />
           <p className="text-muted-foreground">
-            Your funds are securely held by GoStork. They will only be released to {data.providerName} after medical clearance is confirmed.
+            {isParent
+              ? `Your funds are securely held by GoStork. They will only be released to ${data.providerName} after medical clearance is confirmed.`
+              : `${parentLabel}'s funds are securely held by GoStork. They will be released to you after medical clearance is confirmed.`}
           </p>
         </div>
 
         {/* Current clearance status */}
         {status === "PENDING" && !actionTaken && (
           <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "hsl(var(--brand-warning) / 0.1)", color: "hsl(var(--brand-warning))" }}>
-            Medical clearance pending - we'll check in with you as the screening progresses
+            Medical clearance pending - we'll check in as the screening progresses
           </div>
         )}
 
@@ -83,12 +105,20 @@ export function ClearanceTrackerCard({ data, isParent = true }: ClearanceTracker
         {(status === "FAILED" || result === "failed") && (
           <div className="flex items-center gap-2 text-sm" style={{ color: "hsl(var(--brand-error))" }}>
             <XCircle className="w-4 h-4" />
-            <span>Clearance failed - your hold has been released. GoStork Guarantee is active.</span>
+            <span>
+              {data.resolution === "refunded"
+                ? (isParent
+                    ? "Clearance failed - your full refund is on its way (5-10 business days). GoStork Guarantee is active."
+                    : `Clearance failed - ${parentLabel}'s vaulted deposit has been fully refunded. No funds were released.`)
+                : (isParent
+                    ? "Clearance failed - your hold has been released. GoStork Guarantee is active."
+                    : `Clearance failed - ${parentLabel}'s hold has been released. No funds changed hands.`)}
+            </span>
           </div>
         )}
 
-        {/* Parent actions - only when status is PENDING and no action taken */}
-        {isParent && status === "PENDING" && !actionTaken && (
+        {/* Resolution actions - either side of the escrow can answer */}
+        {status === "PENDING" && !actionTaken && (
           <div className="space-y-2 pt-1">
             <p className="text-xs text-muted-foreground font-medium">Has the surrogate passed medical screening?</p>
             <div className="flex gap-2">
@@ -113,6 +143,9 @@ export function ClearanceTrackerCard({ data, isParent = true }: ClearanceTracker
                 Failed
               </Button>
             </div>
+            {actionError && (
+              <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{actionError}</p>
+            )}
           </div>
         )}
       </div>

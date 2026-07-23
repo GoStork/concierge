@@ -3,6 +3,8 @@ import { PrismaService } from "../prisma/prisma.service";
 import { NotificationService } from "../notifications/notification.service";
 import { runCallOutcomeSweep, runCanceledNotRebookedSweep, runWinbackSilenceSweep } from "./call-outcome.sweep";
 import { runDonorHoldSweep, runStrandedAgreementSweep } from "../billing/donor-hold.sweep";
+import { runClearanceCheckinSweep } from "../billing/clearance.sweep";
+import type { BillingService } from "../billing/billing.service";
 
 /**
  * Keeps PENDING booking requests from silently rotting.
@@ -249,7 +251,7 @@ export async function runSurrogateHoldExpiryCheck(prisma: PrismaService) {
   }
 }
 
-export function startPendingBookingScheduler(prisma: PrismaService, notifications: NotificationService) {
+export function startPendingBookingScheduler(prisma: PrismaService, notifications: NotificationService, billingService?: BillingService) {
   if (scheduledTask) {
     console.log("[pending-booking] Scheduler already running");
     return;
@@ -267,6 +269,12 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
   runDonorHoldSweep(prisma).catch(err => {
     console.error(`[donor-hold] Startup sweep error: ${err.message}`);
   });
+  // Escrow holds nearing expiry must not wait a cycle after a long downtime.
+  if (billingService) {
+    billingService.runEscrowConversionSweep().catch(err => {
+      console.error(`[escrow-conversion] Startup sweep error: ${err.message}`);
+    });
+  }
 
   scheduledTask = cron.schedule("*/10 * * * *", async () => {
     try {
@@ -311,6 +319,22 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
       await runStrandedAgreementSweep(prisma);
     } catch (err: any) {
       console.error(`[stranded-agreement] Cron error: ${err.message}`);
+    }
+    // AT_CLEARANCE escrow check-ins (durable replacement for the old
+    // setTimeout follow-ups, which died on every server restart).
+    try {
+      await runClearanceCheckinSweep();
+    } catch (err: any) {
+      console.error(`[clearance-checkin] Cron error: ${err.message}`);
+    }
+    // Hybrid escrow: convert day-6 card holds into captured vault funds
+    // before Stripe's ~7-day authorization window silently expires.
+    if (billingService) {
+      try {
+        await billingService.runEscrowConversionSweep();
+      } catch (err: any) {
+        console.error(`[escrow-conversion] Cron error: ${err.message}`);
+      }
     }
     // Phase 8: post-handoff review check-ins (+1 reminder after 3 days).
     try {

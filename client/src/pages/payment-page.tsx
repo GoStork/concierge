@@ -580,9 +580,9 @@ export default function PaymentPage() {
 
         {isAtClearance && (
           <div className="rounded-lg border px-4 py-4 text-sm space-y-1" style={{ borderColor: "hsl(var(--primary) / 0.3)", background: "hsl(var(--primary) / 0.05)" }}>
-            <p className="font-semibold" style={{ color: "hsl(var(--primary))" }}>Secure Vault - No Charge Yet</p>
+            <p className="font-semibold" style={{ color: "hsl(var(--primary))" }}>GoStork Secure Vault</p>
             <p className="text-muted-foreground">
-              Your card will be <strong>authorized only</strong> today. The charge is released to {invoice.providerName} only after your surrogate passes medical clearance. If she fails, your hold is instantly canceled at no cost.
+              Your card will be <strong>authorized only</strong> today - no charge yet. Nothing is released to {invoice.providerName} until your surrogate passes medical clearance. If screening is still in progress when the card hold nears its 7-day limit, we complete the charge and hold the full amount safely in GoStork's vault instead. If clearance fails, any hold is instantly canceled - and vaulted funds are refunded in full. Bank wires are held in the vault the same way.
             </p>
           </div>
         )}
@@ -665,13 +665,14 @@ export default function PaymentPage() {
         )}
 
         {/*
-          Wire transfer is offered alongside the card form for AWAITING_PAYMENT
-          invoices that are NOT escrow holds. customer_balance cannot be
-          manual-captured, so it's incompatible with the AT_CLEARANCE flow -
-          the backend will reject the request anyway, but hiding the UI is
-          cleaner.
+          Wire transfer is offered alongside the card form for all
+          AWAITING_PAYMENT invoices. For escrow (AT_CLEARANCE) invoices the
+          wire skips the card-hold phase and lands directly in GoStork's
+          vault - funds are only released to the provider after medical
+          clearance is confirmed, and clearance failure triggers a full
+          refund (hybrid escrow flow).
         */}
-        {invoice.status === "AWAITING_PAYMENT" && !isAtClearance && !isMock && (
+        {invoice.status === "AWAITING_PAYMENT" && !isMock && (
           <>
             <div className="flex items-center gap-3 my-2">
               <div className="h-px flex-1 bg-border" />

@@ -20,10 +20,11 @@ import {
   retrieveBankTransferInstructions,
   createRefund,
   createTransferReversal,
+  capturePaymentIntent,
   type WireInstructions,
 } from "../../../stripe-service";
 
-const formatCents = (cents: number) => formatMoneyCents(cents);
+const formatCents = (cents: number, currency?: string) => formatMoneyCents(cents, currency || "USD");
 
 // Maps provider type names to human-readable service types
 function resolveServiceType(providerTypeName: string | undefined): string {
@@ -420,6 +421,18 @@ export class BillingService {
       } as any;
     }
 
+    // AT_CLEARANCE escrow: surrogacy deposits from providers who chose the
+    // "After medical clearance" milestone are authorize-only. Stamping
+    // medicalClearanceStatus = PENDING here is what routes the whole flow:
+    // create-payment-intent reads it to pick manual capture (card hold, not
+    // charge), the payment page shows "Authorize Hold", wire transfers are
+    // blocked, and the authorized webhook posts the vault tracker card.
+    // BANK_CHECKOUT (frozen inventory) is never an escrow deposit.
+    const isEscrowDeposit =
+      provider.depositMilestone === "AT_CLEARANCE" &&
+      triggerSource !== "BANK_CHECKOUT" &&
+      (hasLineItems ? lineItems![0].serviceType === "SURROGACY" : primaryServiceType === "SURROGACY");
+
     const invoice = await this.prisma.invoice.create({
       data: {
         providerId,
@@ -441,6 +454,7 @@ export class BillingService {
         dueAt: dueAt || null,
         status: "AWAITING_PAYMENT",
         isProtected: true,
+        medicalClearanceStatus: isEscrowDeposit ? "PENDING" : null,
       },
     });
 
@@ -1472,95 +1486,276 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     }
   }
 
-  // ─── Schedule clearance follow-up check-ins (AT_CLEARANCE flow) ─────────────
+  // ─── Stripe authorization / capture / void (AT_CLEARANCE flow) ───────────
+  //
+  // NOTE: clearance check-in reminders are NOT scheduled here. They run from
+  // runClearanceCheckinSweep (clearance.sweep.ts) on the shared 10-minute
+  // scheduler - durable across restarts and cross-process safe, unlike the
+  // old setTimeout-based follow-ups this replaced.
 
-  scheduleClearanceFollowUps(invoiceId: string, averageClearanceDays: number) {
-    const checkInDays = [
-      Math.max(1, averageClearanceDays - 7),
-      averageClearanceDays,
-      averageClearanceDays + 7,
-    ];
-
-    for (const day of checkInDays) {
-      const delay = day * 24 * 60 * 60 * 1000;
-      const reminderType = `clearance_day${day}`;
-      setTimeout(() => this.sendClearanceCheckIn(invoiceId, reminderType), delay);
-      this.logger.log(`Scheduled clearance check-in at day ${day} for invoice ${invoiceId}`);
-    }
-  }
-
-  private async sendClearanceCheckIn(invoiceId: string, reminderType: string) {
+  // Everything that happens the moment escrow protection lands: sticks the
+  // surrogate hold (funds are committed, the expiry sweeps must not release
+  // her during screening) and posts the vault tracker card in the shared
+  // chat. Two entry shapes:
+  //   "hold"  - the authorized webhook placed a card hold (failure = the
+  //             hold is instantly canceled, nothing was charged)
+  //   "vault" - funds were captured directly into GoStork's balance (wire
+  //             payment; failure = full refund)
+  // Check-in cadence comes from the clearance sweep.
+  private async onEscrowAuthorized(invoiceId: string, variant: "hold" | "vault" = "hold") {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
-      include: { parentUser: true },
+      include: {
+        parentUser: { select: { firstName: true, name: true } },
+      },
     });
-    if (!invoice || invoice.status !== "AUTHORIZED") return;
+    if (!invoice?.sessionId) return;
 
-    const content = `Just checking in on your journey with ${invoice.providerName}. Has your surrogate passed her medical screening? Please let us know so we can process your payment and move to the next step.`;
+    await this.stickSurrogateHoldOnPayment(invoiceId);
 
+    const parentName = invoice.parentUser?.firstName || invoice.parentUser?.name || "The parent";
+    const failureClause = variant === "hold"
+      ? "If clearance fails, your hold is instantly canceled at no cost."
+      : "If clearance fails, you receive a full refund.";
     await this.prisma.aiChatMessage.create({
       data: {
         sessionId: invoice.sessionId,
         role: "assistant",
-        content,
+        content: `Your funds are now securely held in GoStork's vault. We will release them to ${invoice.providerName} once the surrogate passes her medical clearance. ${failureClause} Your match is protected by the GoStork Guarantee.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardType: "clearance_tracker",
         uiCardData: {
           invoiceId: invoice.id,
           providerName: invoice.providerName,
-          medicalClearanceStatus: invoice.medicalClearanceStatus,
+          parentName,
+          medicalClearanceStatus: "PENDING",
+          isProtected: true,
           confirmAction: "CONFIRM_CLEARANCE",
           failAction: "REPORT_CLEARANCE_FAILURE",
+          providerContent: `${parentName}'s deposit of ${formatCents(invoice.serviceAmount)} is ${variant === "hold" ? "authorized and held" : "secured"} in GoStork's vault. It will be released to you as soon as medical clearance is confirmed - you can confirm the screening outcome right on this card.`,
         },
       },
     });
 
-    await this.prisma.invoiceReminder.create({
-      data: { invoiceId, channel: "chat", reminderType },
-    });
+    this.logger.log(`Invoice ${invoiceId} escrow ${variant} secured - tracker card posted (check-ins run from clearance sweep)`);
   }
 
-  // ─── Stripe authorization / capture / void (AT_CLEARANCE flow) ───────────
+  // ─── Hybrid escrow: day-6 hold -> vault conversion ────────────────────────
+  //
+  // A plain card authorization expires after ~7 days, but medical clearance
+  // averages ~21. The hybrid flow keeps the fee-free hold for fast
+  // clearances, and on day 6 - one day before Stripe would silently expire
+  // the hold - captures the funds INTO GoStork's vault: the invoice becomes
+  // PAID while medicalClearanceStatus stays PENDING, and the
+  // CLEARANCE_PENDING gate in ConnectService keeps every cent away from the
+  // provider until clearance is confirmed. Runs from the shared 10-minute
+  // scheduler on both hosts; the AUTHORIZED->PAID updateMany claim decides
+  // which host runs the side effects.
+  private static readonly ESCROW_CONVERT_AFTER_MS = 6 * 24 * 60 * 60 * 1000;
 
-  async placeAuthorization(invoiceId: string, authorizationId: string) {
-    await this.prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
+  async runEscrowConversionSweep(): Promise<void> {
+    const cutoff = new Date(Date.now() - BillingService.ESCROW_CONVERT_AFTER_MS);
+    const holds = await this.prisma.invoice.findMany({
+      where: {
         status: "AUTHORIZED",
-        stripePaymentIntentId: authorizationId,
-        authorizedAt: new Date(),
         medicalClearanceStatus: "PENDING",
+        authorizedAt: { not: null, lte: cutoff },
       },
+      select: { id: true },
     });
+    for (const h of holds) {
+      try {
+        await this.convertEscrowHoldToVault(h.id);
+      } catch (e: any) {
+        this.logger.error(`Escrow vault conversion failed for invoice ${h.id}: ${e?.message}`);
+      }
+    }
+  }
 
-    // Post clearance tracker card in chat
+  private async convertEscrowHoldToVault(invoiceId: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
-      include: { parentUser: true },
+      include: { parentUser: { select: { firstName: true, name: true } } },
     });
-    if (invoice) {
+    if (!invoice?.stripePaymentIntentId) return;
+    if (invoice.status !== "AUTHORIZED" || invoice.medicalClearanceStatus !== "PENDING") return;
+
+    // Capture the hold. "already captured" means confirm-clearance or the
+    // other host's sweep won a race - fall through to the DB claim, which
+    // decides who runs the side effects. A canceled/expired PI means the
+    // hold lapsed (e.g. this sweep was down past day 7) - reopen the
+    // invoice for payment instead of pretending funds exist.
+    let transactionId = invoice.stripePaymentIntentId;
+    try {
+      const captured = await capturePaymentIntent(invoice.stripePaymentIntentId);
+      transactionId = captured.transactionId;
+    } catch (e: any) {
+      const msg = e?.message || "";
+      if (/already been captured|already captured/i.test(msg)) {
+        // fall through to the claim
+      } else if (/status of canceled|status of cancelled|expired/i.test(msg)) {
+        await this.handleLapsedEscrowHold(invoice.id, msg);
+        return;
+      } else {
+        throw e; // transient (network, Stripe 5xx) - stay AUTHORIZED, next tick retries
+      }
+    }
+
+    // Cross-process claim: exactly one host flips AUTHORIZED -> PAID.
+    const claimed = await this.prisma.invoice.updateMany({
+      where: { id: invoiceId, status: "AUTHORIZED" },
+      data: {
+        status: "PAID",
+        paidAt: new Date(),
+        capturedAt: new Date(),
+        stripeTransactionId: transactionId,
+        // medicalClearanceStatus stays PENDING - that IS the vault state.
+      },
+    });
+    if (claimed.count === 0) return;
+
+    this.logger.log(`Invoice ${invoiceId} escrow hold converted to vault - captured, clearance still pending`);
+    void emitInvoiceJourneyEvent(invoiceId, "INVOICE_PAID", { path: "escrow_vault_conversion" });
+
+    // Dual-audience conversion notice. The tracker card stays PENDING - only
+    // the vault's backing changed (hold -> captured funds), not its state.
+    try {
+      const parentName = invoice.parentUser?.firstName || invoice.parentUser?.name || "The parent";
+      const amount = formatCents(invoice.serviceAmount, invoice.currency);
       await this.prisma.aiChatMessage.create({
         data: {
           sessionId: invoice.sessionId,
           role: "assistant",
-          content: `Your funds are now securely held in GoStork's vault. We will release them to ${invoice.providerName} once the surrogate passes her medical clearance. If clearance fails, your hold is instantly canceled at no cost. Your match is protected by the GoStork Guarantee.`,
+          content: `A quick update on your protected deposit: card holds expire after 7 days, so to keep your funds secured while medical screening continues, we've completed the charge of ${amount}. The full amount now sits in GoStork's vault - nothing is released to ${invoice.providerName} until clearance is confirmed, and if clearance fails you'll receive a full refund.`,
           senderType: "system",
           senderName: "GoStork",
-          uiCardType: "clearance_tracker",
+          uiCardType: "text",
           uiCardData: {
-            invoiceId: invoice.id,
-            providerName: invoice.providerName,
-            medicalClearanceStatus: "PENDING",
-            isProtected: true,
-            confirmAction: "CONFIRM_CLEARANCE",
-            failAction: "REPORT_CLEARANCE_FAILURE",
+            providerContent: `${parentName}'s deposit of ${amount} has moved from a card hold into GoStork's vault while screening continues. It will be released to you the moment medical clearance is confirmed.`,
           },
         },
       });
+    } catch (e: any) {
+      this.logger.warn(`Failed to post vault conversion message for ${invoiceId}: ${e?.message}`);
     }
 
-    this.logger.log(`Invoice ${invoiceId} authorized (pre-auth placed)`);
+    // Receipt + admin heads-up + agreement automation (journey stage
+    // "Deposit Paid"). The provider transfer is deliberately NOT fired here,
+    // and any indirect caller is blocked by the CLEARANCE_PENDING gate.
+    await this.emitPaymentReceipt(invoiceId).catch(e =>
+      this.logger.warn(`Receipt emission failed for ${invoiceId} (vault conversion): ${e?.message}`),
+    );
+    await this.notifyAdminInvoicePaid(invoiceId).catch(() => {});
+    await this.tryDraftAgreementOnPaid(invoiceId).catch(e =>
+      this.logger.warn(`Agreement auto-draft failed for ${invoiceId} (vault conversion): ${e?.message}`),
+    );
+  }
+
+  // The hold expired before we could convert it (sweep down past day 7, or
+  // an issuer that voids early). Reopen the invoice so the parent can pay
+  // again - loudly, to parent, provider, and admins. The surrogate stays
+  // reserved; the donor-hold sweep polices the now-overdue invoice.
+  private async handleLapsedEscrowHold(invoiceId: string, stripeMsg: string) {
+    const reopened = await this.prisma.invoice.updateMany({
+      where: { id: invoiceId, status: "AUTHORIZED" },
+      data: { status: "AWAITING_PAYMENT", authorizedAt: null },
+    });
+    if (reopened.count === 0) return;
+    this.logger.error(`Escrow hold LAPSED for invoice ${invoiceId} (${stripeMsg}) - reopened for payment`);
+
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: { select: { firstName: true, name: true } } },
+    });
+    if (!invoice) return;
+    const parentName = invoice.parentUser?.firstName || invoice.parentUser?.name || "The parent";
+
+    // Flip the chat invoice card back to payable.
+    try {
+      const cardMsg = await this.prisma.aiChatMessage.findFirst({
+        where: { sessionId: invoice.sessionId, uiCardType: "invoice", uiCardData: { path: ["invoiceId"], equals: invoice.id } },
+        select: { id: true, uiCardData: true },
+      });
+      if (cardMsg) {
+        await this.prisma.aiChatMessage.update({
+          where: { id: cardMsg.id },
+          data: { uiCardData: { ...((cardMsg.uiCardData as any) || {}), status: "AWAITING_PAYMENT" } },
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to reopen invoice card for ${invoiceId}: ${e?.message}`);
+    }
+
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: invoice.sessionId,
+        role: "assistant",
+        content: `Heads up: the card hold protecting your deposit with ${invoice.providerName} has expired, so no funds are currently secured. Please complete the payment again from the invoice above - your match protection resumes the moment the new authorization lands.`,
+        senderType: "system",
+        senderName: "GoStork",
+        uiCardData: {
+          providerContent: `${parentName}'s card hold for the deposit expired before medical clearance completed. We've asked them to re-authorize - we'll confirm here as soon as the deposit is secured again.`,
+        },
+      },
+    }).catch(() => {});
+
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" } },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      await this.prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "ESCROW_HOLD_LAPSED",
+          payload: {
+            invoiceId: invoice.id,
+            parentName,
+            providerName: invoice.providerName,
+            amount: formatCents(invoice.serviceAmount),
+            message: `Escrow hold lapsed for ${parentName}'s ${formatCents(invoice.serviceAmount)} deposit with ${invoice.providerName} - invoice reopened, parent asked to re-authorize.`,
+          },
+        },
+      }).catch(() => {});
+    }
+  }
+
+  // Flip every clearance_tracker card for this invoice to its final state so
+  // no viewer (parent, provider, admin monitor) is left with live buttons on
+  // an already-resolved escrow. The card component renders from
+  // uiCardData.medicalClearanceStatus, so this is what the OTHER side sees
+  // after one side clicks Cleared/Failed.
+  private async resolveClearanceTrackerCards(
+    invoiceId: string,
+    finalStatus: "CLEARED" | "FAILED",
+    // How the escrow resolved - the card copy differs (a voided hold
+    // vanishes instantly; a vault refund takes 5-10 business days).
+    resolution?: "voided" | "refunded" | "released" | "captured",
+  ) {
+    try {
+      const cards = await this.prisma.aiChatMessage.findMany({
+        where: { uiCardType: "clearance_tracker", uiCardData: { path: ["invoiceId"], equals: invoiceId } },
+        select: { id: true, uiCardData: true },
+      });
+      for (const c of cards) {
+        const dd = (c.uiCardData as any) || {};
+        if (dd.medicalClearanceStatus === finalStatus && dd.resolution === resolution) continue;
+        await this.prisma.aiChatMessage.update({
+          where: { id: c.id },
+          data: {
+            uiCardData: {
+              ...dd,
+              medicalClearanceStatus: finalStatus,
+              ...(resolution ? { resolution } : {}),
+              resolvedAt: new Date().toISOString(),
+            },
+          },
+        }).catch(() => {});
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to resolve clearance tracker cards for ${invoiceId}: ${e?.message}`);
+    }
   }
 
   async captureAuthorization(invoiceId: string, transactionId: string) {
@@ -1577,6 +1772,14 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     });
     this.logger.log(`Invoice ${invoiceId} captured - PAID`);
     void emitInvoiceJourneyEvent(invoiceId, "INVOICE_PAID", { path: "capture" });
+    await this.resolveClearanceTrackerCards(invoiceId, "CLEARED", "captured");
+    // The capture path never gets a chat confirmation from the succeeded
+    // webhook (it early-returns on the already-PAID invoice), so post it
+    // here - same for the receipt.
+    await this.reflectPaymentInChat(invoiceId, "PAID");
+    await this.emitPaymentReceipt(invoiceId).catch(e =>
+      this.logger.warn(`Payment receipt emission failed for ${invoiceId} (capture path): ${e?.message}`),
+    );
     await this.stickSurrogateHoldOnPayment(invoiceId);
     await this.notifyAdminInvoicePaid(invoiceId);
     // Phase 5: clearance captured -> deposit is truly PAID -> agreement flow
@@ -1602,6 +1805,9 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     }
   }
 
+  // Failed clearance while the money was still a card HOLD: cancel the
+  // authorization (the controller already voided the PaymentIntent) and run
+  // the shared failure machinery. No funds ever moved.
   async voidAuthorization(invoiceId: string) {
     await this.prisma.invoice.update({
       where: { id: invoiceId },
@@ -1611,21 +1817,111 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
         clearanceConfirmedAt: new Date(),
       },
     });
+    await this.resolveClearanceTrackerCards(invoiceId, "FAILED", "voided");
+    await this.handleClearanceFailureFallout(invoiceId, "voided");
+    this.logger.log(`Invoice ${invoiceId} voided - clearance failed`);
+  }
 
+  // ─── Hybrid escrow: resolving a VAULT-state invoice (PAID + clearance
+  // PENDING - the funds were captured into GoStork's balance) ──────────────
+
+  /** Clearance confirmed on vaulted funds: stamp CLEARED and release the
+   *  provider transfer that the CLEARANCE_PENDING gate has been blocking. */
+  async releaseEscrowVault(invoiceId: string) {
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { medicalClearanceStatus: "CLEARED", clearanceConfirmedAt: new Date() },
+    });
+    await this.resolveClearanceTrackerCards(invoiceId, "CLEARED", "released");
+
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: { select: { firstName: true, name: true } } },
+    });
+    if (invoice) {
+      const parentName = invoice.parentUser?.firstName || invoice.parentUser?.name || "The parent";
+      const amount = formatCents(invoice.serviceAmount, invoice.currency);
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: invoice.sessionId,
+          role: "assistant",
+          content: `Wonderful news - medical clearance is confirmed! 🎉 Your deposit of ${amount} has been released from GoStork's vault to ${invoice.providerName}, and your journey moves to the next step.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardData: {
+            providerContent: `Medical clearance confirmed for ${parentName}'s match! Their vaulted deposit of ${amount} has been released - your payout is on its way.`,
+            celebration: "payment_received",
+          },
+        },
+      }).catch(() => {});
+    }
+
+    try {
+      const r = await this.connectService.createTransferForPaidInvoice(invoiceId);
+      if (r.status === "failed") {
+        await this.notifyAdminTransferFailed(invoiceId, r.reason).catch(() => {});
+      }
+    } catch (e: any) {
+      this.logger.warn(`Vault release transfer raised unexpectedly for ${invoiceId}: ${e?.message}`);
+    }
+    this.logger.log(`Invoice ${invoiceId} escrow vault released - clearance confirmed`);
+  }
+
+  /** Clearance failed on vaulted funds: full refund to the parent through
+   *  the existing refund pipeline (charge.refunded webhook stamps REFUNDED
+   *  and posts the refund confirmation), plus the shared failure fallout. */
+  async refundEscrowVault(invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { id: true, stripeTransactionId: true, stripePaymentIntentId: true, serviceAmount: true },
+    });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    const paymentIntentId = invoice.stripeTransactionId || invoice.stripePaymentIntentId;
+    if (!paymentIntentId) throw new BadRequestException("No captured payment on file to refund");
+
+    // Refund FIRST - if Stripe rejects, fail loudly and leave the escrow
+    // PENDING so the admin sees a stuck vault, not a phantom refund.
+    await createRefund({
+      paymentIntentId,
+      reason: "requested_by_customer",
+      metadata: { invoiceId, refundContext: "clearance_failed" },
+    });
+
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { medicalClearanceStatus: "FAILED", clearanceConfirmedAt: new Date() },
+    });
+    await this.resolveClearanceTrackerCards(invoiceId, "FAILED", "refunded");
+    await this.handleClearanceFailureFallout(invoiceId, "refunded");
+    this.logger.log(`Invoice ${invoiceId} escrow vault refunded - clearance failed`);
+  }
+
+  // Shared fallout for a failed clearance, whichever way the money went
+  // back: GoStork Guarantee messaging (copy varies: a voided hold vanishes
+  // instantly, a refund takes 5-10 business days), admin redirect
+  // notifications, and releasing the surrogate from the match.
+  private async handleClearanceFailureFallout(invoiceId: string, path: "voided" | "refunded") {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: { parentUser: true },
     });
     if (invoice) {
+      const parentName = invoice.parentUser?.firstName || invoice.parentUser?.name || "The parent";
+      const parentContent = path === "voided"
+        ? `We're sorry to hear that your surrogate did not pass medical clearance. Your card hold has been fully released - no charges were made. Because you paid through GoStork, you're protected by the GoStork Guarantee: you're free to start fresh with any other agency on our platform whenever you're ready. Our team will reach out to help you with your next steps.`
+        : `We're sorry to hear that your surrogate did not pass medical clearance. A full refund of ${formatCents(invoice.serviceAmount, invoice.currency)} is on its way from GoStork's vault - it usually lands within 5-10 business days. Because you paid through GoStork, you're protected by the GoStork Guarantee: you're free to start fresh with any other agency on our platform whenever you're ready. Our team will reach out to help you with your next steps.`;
+      const providerContent = path === "voided"
+        ? `Medical clearance was not passed, so ${parentName}'s held deposit has been released back to them - no funds changed hands. The GoStork team has been notified and will follow up with ${parentName} on next steps.`
+        : `Medical clearance was not passed, so ${parentName}'s vaulted deposit has been fully refunded to them - no funds were released to you. The GoStork team has been notified and will follow up with ${parentName} on next steps.`;
       await this.prisma.aiChatMessage.create({
         data: {
           sessionId: invoice.sessionId,
           role: "assistant",
-          content: `We're sorry to hear that your surrogate did not pass medical clearance. Your card hold has been fully released - no charges were made. Because you paid through GoStork, you're protected by the GoStork Guarantee: you're free to start fresh with any other agency on our platform whenever you're ready. Our team will reach out to help you with your next steps.`,
+          content: parentContent,
           senderType: "system",
           senderName: "GoStork",
           uiCardType: "text",
-          uiCardData: null,
+          uiCardData: { providerContent },
         },
       });
 
@@ -1645,14 +1941,36 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
               parentUserId: invoice.parentUserId,
               providerName: invoice.providerName,
               amount: formatCents(invoice.serviceAmount),
-              message: `GoStork Guarantee activated: ${invoice.parentUser.name || "Parent"}'s surrogate from ${invoice.providerName} failed medical clearance. Deposit of ${formatCents(invoice.serviceAmount)} ready to redirect.`,
+              resolution: path,
+              message: `GoStork Guarantee activated: ${invoice.parentUser.name || "Parent"}'s surrogate from ${invoice.providerName} failed medical clearance. Deposit of ${formatCents(invoice.serviceAmount)} ${path === "voided" ? "hold released" : "refunded"} - ready to redirect.`,
             },
           },
         });
       }
     }
 
-    this.logger.log(`Invoice ${invoiceId} voided - clearance failed`);
+    // Release the parent's claim on the surrogate - she failed medical
+    // screening, so she must not stay MATCHED to this family. She does NOT
+    // go back to AVAILABLE automatically (a failed screening is the agency's
+    // call to re-list); ON_HOLD keeps her out of the marketplace until the
+    // agency updates her status from their roster.
+    if (invoice?.sessionId) {
+      try {
+        const session = await this.prisma.aiChatSession.findUnique({
+          where: { id: invoice.sessionId },
+          select: { subjectProfileId: true, subjectType: true },
+        });
+        if (session?.subjectProfileId && (session.subjectType || "").toLowerCase().includes("surrog")) {
+          await this.prisma.surrogate.updateMany({
+            where: { id: session.subjectProfileId, reservedByParentId: invoice.parentUserId },
+            data: { reservedByParentId: null, reservationExpiresAt: null, status: "ON_HOLD" },
+          });
+          this.logger.log(`Surrogate ${session.subjectProfileId} released from match (clearance failed, invoice ${invoiceId})`);
+        }
+      } catch (e: any) {
+        this.logger.warn(`Failed to release surrogate after clearance failure for ${invoiceId}: ${e?.message}`);
+      }
+    }
   }
 
   // ─── Stripe webhook handler ───────────────────────────────────────────────
@@ -1685,12 +2003,15 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
         this.logger.warn(`No invoice found for Stripe PaymentIntent ${paymentIntentId} (invoiceId hint: ${invoiceId || "none"})`);
         return;
       }
-      if (invoice.status === "AUTHORIZED") return;
+      if (invoice.status === "AUTHORIZED" || invoice.status === "PAID") return;
       await this.prisma.invoice.update({
         where: { id: invoice.id },
         data: { status: "AUTHORIZED", authorizedAt: new Date(), paymentMethod: "CARD" },
       });
       await this.reflectPaymentInChat(invoice.id, "AUTHORIZED");
+      await this.onEscrowAuthorized(invoice.id).catch(e =>
+        this.logger.warn(`Escrow-authorized follow-up failed for ${invoice.id}: ${e?.message}`),
+      );
       this.logger.log(`Invoice ${invoice.id} AUTHORIZED via Stripe (AT_CLEARANCE)`);
       return;
     }
@@ -1746,6 +2067,15 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     void emitInvoiceJourneyEvent(invoice.id, "INVOICE_PAID");
     await this.reflectPaymentInChat(invoice.id, "PAID");
     await this.stickSurrogateHoldOnPayment(invoice.id);
+    // Escrow invoice paid by a method that captures immediately (wire /
+    // bank transfer - no hold phase possible): the funds land straight in
+    // the vault. Post the tracker card; the CLEARANCE_PENDING gate below
+    // keeps the transfer blocked until clearance is confirmed.
+    if (invoice.medicalClearanceStatus === "PENDING") {
+      await this.onEscrowAuthorized(invoice.id, "vault").catch(e =>
+        this.logger.warn(`Vault tracker card failed for ${invoice.id}: ${e?.message}`),
+      );
+    }
     await this.notifyAdminInvoicePaid(invoice.id);
     // Phase 5: auto-draft/send the agreement now that the deposit is paid,
     // and complete the stage 13 handoff if the agreement was already signed
@@ -2609,6 +2939,23 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
     if (!invoice) throw new NotFoundException("Invoice not found");
 
+    // Escrow (AT_CLEARANCE) invoices hold an uncaptured card authorization.
+    // Marking one PAID without capturing would record revenue that never
+    // moved - capture first, and fail LOUDLY if Stripe rejects so the admin
+    // sees the real problem instead of a silently inconsistent invoice.
+    let escrowCapture: { transactionId: string } | null = null;
+    if (invoice.status === "AUTHORIZED" && invoice.medicalClearanceStatus === "PENDING" && invoice.stripePaymentIntentId) {
+      try {
+        escrowCapture = await capturePaymentIntent(invoice.stripePaymentIntentId);
+      } catch (e: any) {
+        throw new BadRequestException(
+          `This invoice holds an uncaptured escrow authorization and Stripe refused the capture: ${e?.message}. ` +
+          `Resolve the hold via the clearance flow (or in the Stripe Dashboard) before marking paid.`,
+        );
+      }
+      await this.resolveClearanceTrackerCards(invoiceId, "CLEARED", "captured");
+    }
+
     const updated = await this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
@@ -2616,6 +2963,12 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
         paidAt: new Date(),
         manualOverride: true,
         adminNotes: notes,
+        ...(escrowCapture ? {
+          stripeTransactionId: escrowCapture.transactionId,
+          capturedAt: new Date(),
+          medicalClearanceStatus: "CLEARED",
+          clearanceConfirmedAt: new Date(),
+        } : {}),
       },
     });
 
@@ -2859,17 +3212,17 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     if (!invoice) return { error: "Invoice not found", statusCode: 404 };
 
     // Block any state where a wire would be wrong: already-paid, expired,
-    // cancelled, or escrow-hold flow (customer_balance cannot be manual-
-    // captured, so it can't back AT_CLEARANCE invoices). Surface the actual
-    // status so the UI can show something useful instead of a generic 400.
+    // cancelled. Surface the actual status so the UI can show something
+    // useful instead of a generic 400.
+    //
+    // Escrow (AT_CLEARANCE) invoices ARE wire-eligible under the hybrid
+    // flow: customer_balance can't be manual-captured, so the wire skips
+    // the hold phase and lands straight in the vault - the succeeded
+    // webhook marks the invoice PAID with clearance still PENDING, and the
+    // CLEARANCE_PENDING transfer gate keeps the funds from the provider
+    // until clearance is confirmed.
     if (["PAID", "PAYMENT_PROCESSING", "EXPIRED", "CANCELLED", "REFUNDED"].includes(invoice.status)) {
       return { error: `Invoice is ${invoice.status}; wire transfer not available`, statusCode: 400 };
-    }
-    if (invoice.medicalClearanceStatus === "PENDING") {
-      return {
-        error: "Wire transfers are not available for escrow-hold invoices. Please use a card.",
-        statusCode: 400,
-      };
     }
     if (!invoice.parentUser?.email) {
       return { error: "Parent email missing on invoice", statusCode: 400 };

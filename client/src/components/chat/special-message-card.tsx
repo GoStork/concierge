@@ -12,6 +12,7 @@ import { InvoiceDraftApprovalCard } from "./invoice-draft-approval-card";
 import { AgreementDraftApprovalCard } from "./agreement-draft-approval-card";
 import { ProposedTimesCard } from "./proposed-times-card";
 import { InvoiceCard } from "@/components/invoice-card";
+import { ClearanceTrackerCard } from "@/components/clearance-tracker-card";
 import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
 
@@ -552,6 +553,14 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <Download className="w-4 h-4 text-muted-foreground shrink-0" />
         </a>
+      </div>
+    );
+  }
+
+  if (msg.uiCardType === "clearance_tracker") {
+    return (
+      <div className="mt-1" data-testid="clearance-tracker-card">
+        <ClearanceTrackerCard data={data as any} isParent={viewerRole === "parent"} />
       </div>
     );
   }

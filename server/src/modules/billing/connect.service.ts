@@ -710,7 +710,7 @@ export class ConnectService {
    */
   async createTransferForPaidInvoice(invoiceId: string): Promise<
     | { status: "transferred"; transferId: string }
-    | { status: "skipped"; reason: "ALREADY_TRANSFERRED" | "ZERO_PAYOUT" | "PROVIDER_NOT_READY"; message: string }
+    | { status: "skipped"; reason: "ALREADY_TRANSFERRED" | "ZERO_PAYOUT" | "PROVIDER_NOT_READY" | "CLEARANCE_PENDING"; message: string }
     | { status: "deferred"; nextAttemptAt: Date; message: string }
     | { status: "failed"; reason: string }
   > {
@@ -725,10 +725,26 @@ export class ConnectService {
         stripeTransferId: true,
         payoutInitiatedAt: true,
         payoutAttemptCount: true,
+        medicalClearanceStatus: true,
       },
     });
     if (!invoice) return { status: "failed", reason: "Invoice not found" };
     if (invoice.status !== "PAID") return { status: "skipped", reason: "PROVIDER_NOT_READY", message: `Invoice not PAID (status=${invoice.status})` };
+    // Escrow vault gate - THE choke point for held funds. A PAID invoice
+    // with clearance still PENDING is money sitting in GoStork's vault
+    // (hybrid AT_CLEARANCE flow): the parent has been charged, but nothing
+    // may reach the provider until medical clearance is confirmed. Every
+    // transfer path (payment webhook, capture, admin mark-paid, payout
+    // retry sweep, admin retry endpoint) routes through this method, so
+    // this single check protects them all. releaseEscrowVault clears the
+    // PENDING status and re-invokes the transfer.
+    if (invoice.medicalClearanceStatus === "PENDING") {
+      return {
+        status: "skipped",
+        reason: "CLEARANCE_PENDING",
+        message: "Funds held in GoStork vault - medical clearance not confirmed yet",
+      };
+    }
     if (invoice.stripeTransferId) {
       return { status: "skipped", reason: "ALREADY_TRANSFERRED", message: `Already transferred via ${invoice.stripeTransferId}` };
     }

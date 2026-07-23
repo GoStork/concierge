@@ -673,8 +673,51 @@ export class BillingController {
     const { invoiceId, cleared } = body;
     if (!invoiceId) throw new HttpException("invoiceId required", HttpStatus.BAD_REQUEST);
 
-    const inv = await this.db.invoice.findUnique({ where: { id: invoiceId } });
+    const inv = await this.db.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { parentUser: { select: { id: true, parentAccountId: true } } },
+    });
     if (!inv) throw new HttpException("Invoice not found", HttpStatus.NOT_FOUND);
+
+    // Only the people in this escrow may resolve it: the parent (any member
+    // of the shared parent account), the agency's own users, or a GoStork
+    // admin. Anyone else with a session token gets a 403 - capturing or
+    // voiding someone else's held funds must never be reachable.
+    const user = req.user as any;
+    const isAdmin = !!user?.roles?.includes("GOSTORK_ADMIN");
+    const isParent =
+      user?.id === inv.parentUserId ||
+      (!!user?.parentAccountId && user.parentAccountId === inv.parentUser?.parentAccountId);
+    const isProviderUser = !!user?.providerId && user.providerId === inv.providerId;
+    if (!isAdmin && !isParent && !isProviderUser) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+
+    // State guard: only a LIVE escrow can be resolved. Two live shapes in
+    // the hybrid flow:
+    //   hold  - AUTHORIZED + PENDING: card hold, not yet captured
+    //   vault - PAID + PENDING: day-6 conversion (or wire) captured the
+    //           funds into GoStork's balance; the CLEARANCE_PENDING gate is
+    //           blocking the provider transfer
+    // Anything else is already resolved - block double captures / double
+    // refunds and clicks on stale cards after the other side answered.
+    const isHold = inv.status === "AUTHORIZED" && inv.medicalClearanceStatus === "PENDING";
+    const isVault = inv.status === "PAID" && inv.medicalClearanceStatus === "PENDING";
+    if (!isHold && !isVault) {
+      throw new HttpException(
+        `This escrow is already resolved (invoice is ${inv.status}, clearance ${inv.medicalClearanceStatus || "not pending"}).`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (isVault) {
+      if (cleared) {
+        await this.billingService.releaseEscrowVault(invoiceId);
+      } else {
+        await this.billingService.refundEscrowVault(invoiceId);
+      }
+      return { success: true };
+    }
 
     const paymentIntentId = inv.stripePaymentIntentId;
     if (!paymentIntentId) throw new HttpException("No payment authorization on file", HttpStatus.BAD_REQUEST);

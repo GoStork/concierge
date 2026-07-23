@@ -389,7 +389,6 @@ export default function AdminProviderEditPage() {
       yearFounded: editYearFounded ? parseInt(editYearFounded) : null,
       logoUrl: editLogoUrl || null,
       isTestData,
-      partnerProviderIds: partnerProviderIds.length > 0 ? partnerProviderIds : null,
       ivfTwinsAllowed,
       ivfGenderSelectionAllowed,
       ivfTransferFromOtherClinics,
