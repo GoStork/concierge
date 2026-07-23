@@ -216,13 +216,14 @@ export default function IpFormPage() {
   }, [flushAnswers]);
 
   const canEdit = useCallback(
-    (question: IpFormSectionDef["questions"][number], slot: number) => {
+    () => {
+      // Any non-viewer member can fill any field (including the other parent's
+      // details) - one partner commonly completes the whole form. Only the
+      // signature is per-parent, and that lives in its own block.
       if (submitted || isViewer) return false;
-      // Private ID block: each parent edits only their own document details.
-      if (activeSection?.key === "private" && (question.perParent || activeSection.perParent) && slot !== mySlot) return false;
       return true;
     },
-    [submitted, isViewer, activeSection, mySlot],
+    [submitted, isViewer],
   );
 
   const signaturesDone =

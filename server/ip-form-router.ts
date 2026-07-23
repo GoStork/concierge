@@ -395,9 +395,9 @@ ipFormRouter.patch("/api/ip-form", requireAuth, async (req, res) => {
 
 /**
  * Batched autosave. Body: { answers: [{ questionId, parentSlot, value }] }.
- * Own-slot-only questions: private-section per-parent ID fields (a partner
- * should not edit the other's passport data). Everything else is editable by
- * any non-viewer member - one partner commonly fills for both.
+ * Any non-viewer member can fill any field, including the other parent's
+ * details - one partner commonly completes the whole form. Only the signature
+ * is per-parent (each parent signs their own; enforced on the sign endpoint).
  */
 ipFormRouter.patch("/api/ip-form/answers", requireAuth, async (req, res) => {
   const user = (req as any).user;
@@ -424,8 +424,6 @@ ipFormRouter.patch("/api/ip-form/answers", requireAuth, async (req, res) => {
       const isPerParent = section.perParent || question.perParent;
       const slot: number = isPerParent ? (item.parentSlot === 2 ? 2 : 1) : 0;
       if (slot === 2 && !response.hasSecondParent) continue;
-      // Own-slot lock for private ID fields.
-      if (section.key === "private" && isPerParent && slot !== mySlot) continue;
       await prisma.ipFormAnswer.upsert({
         where: { responseId_questionId_parentSlot: { responseId: response.id, questionId: question.id, parentSlot: slot } },
         create: { responseId: response.id, questionId: question.id, parentSlot: slot, value: item.value ?? null, updatedByUserId: user.id },
