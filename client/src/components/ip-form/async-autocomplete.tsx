@@ -102,7 +102,7 @@ export function AsyncAutocomplete<T>({
             <button
               key={i}
               type="button"
-              className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-secondary"
               onMouseDown={(e) => { e.preventDefault(); pick(it); }}
               data-testid={`${testId}-option-${i}`}
             >

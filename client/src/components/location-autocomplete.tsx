@@ -286,7 +286,7 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
             <button
               key={idx}
               type="button"
-              className={`w-full text-left px-3 py-2 text-sm flex items-start gap-2 hover:bg-accent ${highlightIdx === idx ? "bg-accent" : ""}`}
+              className={`w-full text-left px-3 py-2 text-sm flex items-start gap-2 hover:bg-secondary ${highlightIdx === idx ? "bg-secondary" : ""}`}
               onMouseDown={e => { e.preventDefault(); selectResult(r); }}
               data-testid={`location-suggestion-${idx}`}
             >
