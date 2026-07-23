@@ -1693,8 +1693,8 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       orderBy: { createdAt: "asc" },
       select: { id: true, role: true, content: true, senderType: true, senderName: true, createdAt: true, uiCardType: true, uiCardData: true, deliveredAt: true, readAt: true },
     });
-    // Review prompts are parent-private - providers never see them.
-    const providerSafe = messages.filter((m: any) => m.uiCardType !== "review_prompt");
+    // Review prompts + IP form nudges are parent-private - providers never see them.
+    const providerSafe = messages.filter((m: any) => m.uiCardType !== "review_prompt" && m.uiCardType !== "ip_form_prompt");
     const filteredMessages = isProvider ? providerSafe : messages.filter((m: any) => {
       const data = m.uiCardData as any;
       if (data?.whisperQuestionId) return false;
@@ -1719,6 +1719,8 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
         "donor_release_warning",
         // Phase 8: Eva's review ask (parent-only by definition).
         "review_prompt",
+        // Intended Parent Form nudge (parent-only by definition).
+        "ip_form_prompt",
         // System-sent file attachments (e.g. the Match Call prep guide Eva
         // sends when a match call is scheduled).
         "attachment",

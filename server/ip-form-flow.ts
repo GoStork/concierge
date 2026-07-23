@@ -100,11 +100,12 @@ export async function maybePromptIpForm(opts: { parentUserId: string; providerId
         data: {
           sessionId,
           role: "assistant",
+          // Keep this narrative in sync with the kickoff email in
+          // notify-ip-form.ts - the parent should hear ONE story everywhere.
           content:
-            `Now that you've had your first call with ${provider.name}, there's one important next step: your Intended Parent Form. ` +
-            `${provider.name} shares it (with your photos and letter) with potential surrogates so they can get to know your family and decide whether to meet you - ` +
-            `a match call can't be scheduled until it's submitted. It takes about 20-30 minutes, saves as you go, and both partners can fill it in parallel. ` +
-            `I'm here if any question is unclear!`,
+            `What a milestone - your first call with ${provider.name} is done! Here's what comes next on your journey: your Match Call, a video call with a surrogate who could be carrying for your family.\n\n` +
+            `Before that call can be scheduled, ${provider.name} needs your Intended Parent Form. This is how a potential surrogate gets to know you - your story, your photos, and a personal letter from you to her. She reads it and decides whether she'd like to meet you, so this form is what unlocks your match call.\n\n` +
+            `It takes about 20-30 minutes, saves as you go, and both partners can fill their parts in parallel. I'm right here if you'd like help with any question - especially the letter, that one deserves a little love!`,
           senderType: "system",
           senderName: "GoStork",
           uiCardType: "ip_form_prompt",

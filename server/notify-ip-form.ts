@@ -244,7 +244,6 @@ export async function sendIpFormParentNudge(params: {
   if (!memberUsers.length) return;
 
   const formUrl = `${getBaseUrl()}/ip-form`;
-  const agencyPart = params.providerName ? `${params.providerName} needs` : "Your surrogacy agency needs";
 
   const claim = async (channel: string): Promise<boolean> => {
     if (!params.reminderType) return true;
@@ -260,19 +259,32 @@ export async function sendIpFormParentNudge(params: {
 
   if (params.channels.includes("email") && (await claim("email"))) {
     const brand = await fetchEmailBrandData(prisma);
+    const agencyName = params.providerName || "your surrogacy agency";
+    const isKickoff = !params.reminderType;
+    // ONE story everywhere - keep in sync with Eva's chat message in
+    // ip-form-flow.ts: consultation done -> next milestone is the Match Call
+    // with a surrogate -> the agency shares this form so she can decide to
+    // meet you -> the form unlocks the match call.
+    const storyBody =
+      `Here's what comes next on your journey: your <strong>Match Call</strong> - a video call with a surrogate who could be carrying for your family.<br/><br/>` +
+      `Before that call can be scheduled, ${esc(agencyName)} needs your Intended Parent Form. This is how a potential surrogate gets to know you - your story, your photos, and a personal letter from you to her. ` +
+      `She reads it and decides whether she'd like to meet you, so <strong>this form is what unlocks your match call</strong>.<br/><br/>` +
+      `It takes about 20-30 minutes, saves as you go, and both partners can fill their parts in parallel - finish it in as many sittings as you need.`;
     const html = buildBrandedEmail(brand, {
-      title: "Your Intended Parent Form is waiting",
+      title: isKickoff ? "One step closer to meeting your surrogate" : "Your Intended Parent Form is still waiting",
       greeting: `Hi ${esc(getFirstName(memberUsers[0]?.name))},`,
-      body:
-        `${esc(agencyPart)} your completed Intended Parent Form before they can present you to potential surrogates. ` +
-        `The surrogate reads it to get to know your family and decide whether to meet you for a match call - ` +
-        `<strong>a match call cannot be scheduled until the form is submitted</strong>.<br/><br/>` +
-        `It takes about 20-30 minutes, saves as you go, and you can finish it in more than one sitting.`,
-      buttons: [{ label: "Continue My Form", url: formUrl }],
+      body: isKickoff
+        ? `What a milestone - your first call with ${esc(agencyName)} is done!<br/><br/>${storyBody}`
+        : `Just a gentle nudge from us - your Intended Parent Form isn't finished yet, and it's the one thing standing between you and your match call.<br/><br/>${storyBody}`,
+      buttons: [{ label: isKickoff ? "Start My Form" : "Continue My Form", url: formUrl }],
+      footer: "Questions about any part of the form? Ask Eva in your GoStork chat - she can even help you draft your letter.",
     });
-    await sendEmail(memberUsers.map((m) => m.email).filter(Boolean) as string[], "Finish your Intended Parent Form to unlock your match call", html, brand.companyName).catch(
-      (e) => console.error(`[IP FORM NOTIFY] parent email failed: ${e?.message}`),
-    );
+    await sendEmail(
+      memberUsers.map((m) => m.email).filter(Boolean) as string[],
+      isKickoff ? "Your match call is next - one form unlocks it" : "Your match call is waiting on your Intended Parent Form",
+      html,
+      brand.companyName,
+    ).catch((e) => console.error(`[IP FORM NOTIFY] parent email failed: ${e?.message}`));
   }
 
   if (params.channels.includes("sms") && (await claim("sms"))) {
