@@ -154,7 +154,15 @@ export function SectionStepper({
   return (
     <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1" data-testid="ipform-stepper">
       {sections.map((s, i) => {
-        const complete = s.key === "acknowledgment" ? signaturesDone : s.questions.length > 0 && sectionMissingCount(s, answers, hasSecondParent, byId) === 0;
+        // A section shows "complete" only once it's actually satisfied: no
+        // missing required AND (it has required fields, or the parent has
+        // entered at least one answer). Otherwise an all-optional section
+        // (e.g. Delivery Expectations) would read as done before it's opened.
+        const hasRequired = s.questions.some((q) => q.isActive && q.required);
+        const hasAnswer = s.questions.some((q) => [0, 1, 2].some((slot) => !isAnswerEmpty(answers.get(answerKey(q.id, slot)))));
+        const complete = s.key === "acknowledgment"
+          ? signaturesDone
+          : s.questions.length > 0 && sectionMissingCount(s, answers, hasSecondParent, byId) === 0 && (hasRequired || hasAnswer);
         const active = s.key === activeKey;
         return (
           <button
