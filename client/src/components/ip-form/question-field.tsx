@@ -23,6 +23,7 @@ import { NumberInput } from "@/components/ui/number-input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { uploadFile } from "@/lib/image-utils";
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 export interface IpFormQuestionDef {
   id: string;
@@ -236,7 +237,7 @@ function PhotosInput({ value, onChange, disabled }: { value: string[]; onChange:
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {value.map((url, i) => (
             <div key={`${url}-${i}`} className="relative group rounded-[var(--radius)] overflow-hidden border border-border bg-secondary/30 aspect-square">
-              <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+              <img src={getPhotoSrc(url) || url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
               {!disabled && (
                 <button
                   type="button"
