@@ -269,9 +269,9 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
           widget: "dropdown",
           options: ["Yes", "No", "I have no preference"],
         },
-        { key: "del_doula", required: true, label: "How would you feel if the surrogate wanted to work with a doula?", widget: "textarea" },
-        { key: "del_breast_milk", required: true, label: "How do you feel about having the surrogate pump breast milk for you?", widget: "textarea" },
-        { key: "del_goodbye_private", required: true, label: "Will you give the surrogate time to say goodbye in private?", widget: "textarea" },
+        { key: "del_doula", required: true, label: "How would you feel if the surrogate wanted to work with a doula?", widget: "yes_no" },
+        { key: "del_breast_milk", required: true, label: "How do you feel about having the surrogate pump breast milk for you?", widget: "yes_no" },
+        { key: "del_goodbye_private", required: true, label: "Will you give the surrogate time to say goodbye in private?", widget: "yes_no" },
       ],
     },
     {
