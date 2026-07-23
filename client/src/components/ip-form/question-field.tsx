@@ -34,27 +34,33 @@ export interface IpFormQuestionDef {
   required: boolean;
 }
 
-const EMPTY_LOCATION = { address: "", city: "", state: "", zip: "", country: "" };
+const EMPTY_LOCATION = { address: "", city: "", state: "", zip: "", country: "", apt: "" };
 
 export function QuestionField({
   question,
   value,
   onChange,
   disabled,
+  hideLabel,
 }: {
   question: IpFormQuestionDef;
   value: any;
   onChange: (value: any) => void;
   disabled?: boolean;
+  // The mailing-address field renders its own label above the "same as
+  // residential" checkbox, so it hides QuestionField's built-in label.
+  hideLabel?: boolean;
 }) {
   const q = question;
   return (
     <div className="space-y-1.5" data-testid={`ipform-q-${q.key}`}>
-      <Label className="text-sm font-medium leading-snug">
-        {q.label}
-        {q.required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      {q.helpText && <p className="text-xs text-muted-foreground">{q.helpText}</p>}
+      {!hideLabel && (
+        <Label className="text-sm font-medium leading-snug">
+          {q.label}
+          {q.required && <span className="text-destructive ml-0.5">*</span>}
+        </Label>
+      )}
+      {q.helpText && !hideLabel && <p className="text-xs text-muted-foreground">{q.helpText}</p>}
       <WidgetInput question={q} value={value} onChange={onChange} disabled={disabled} />
     </div>
   );
@@ -137,7 +143,26 @@ function WidgetInput({ question: q, value, onChange, disabled }: { question: IpF
     }
     case "address": {
       const loc = value && typeof value === "object" && !Array.isArray(value) ? { ...EMPTY_LOCATION, ...value } : EMPTY_LOCATION;
-      return <LocationAutocomplete value={loc} onChange={onChange} placeholder="Start typing an address..." />;
+      // Apt/suite is kept OUT of the geocoder search - it's a separate line
+      // merged into the value. LocationAutocomplete returns only the street
+      // fields, so we re-attach the current apt on its onChange.
+      return (
+        <div className="space-y-2">
+          <LocationAutocomplete
+            value={{ address: loc.address, city: loc.city, state: loc.state, zip: loc.zip, country: loc.country }}
+            onChange={(geo) => onChange({ ...geo, apt: loc.apt || "" })}
+            placeholder="Start typing an address..."
+          />
+          <Input
+            value={loc.apt || ""}
+            onChange={(e) => onChange({ ...loc, apt: e.target.value })}
+            disabled={disabled}
+            placeholder="Apt, suite, unit, floor (optional)"
+            className="max-w-xs"
+            data-testid={`ipform-apt-${q.key}`}
+          />
+        </div>
+      );
     }
     case "phone": {
       const phone = value && typeof value === "object" && !Array.isArray(value) ? value : { e164: "", display: "" };

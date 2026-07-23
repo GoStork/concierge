@@ -124,7 +124,8 @@ function displayValue(widget: string, value: any): string {
     return v === "yes" ? "Yes" : v === "no" ? "No" : String(value);
   }
   if (widget === "address" && typeof value === "object" && !Array.isArray(value)) {
-    return [value.address, value.city, value.state, value.zip, value.country].filter((p) => p && String(p).trim()).join(", ");
+    // apt sits right after the street line: "45 W 60th St, Apt 30A, New York..."
+    return [value.address, value.apt, value.city, value.state, value.zip, value.country].filter((p) => p && String(p).trim()).join(", ");
   }
   if (widget === "phone" && typeof value === "object" && !Array.isArray(value)) {
     return value.display || value.e164 || "";
@@ -344,7 +345,14 @@ export function generateIpFormPdf(args: {
           if (variant === "surrogate" && q.excludeFromSurrogatePdf) continue;
           if (q.widget === "photos") continue; // rendered by the photos section grid
           if (!conditionMet(q, slot, section.perParent)) continue;
-          const raw = answerFor(q, slot);
+          let raw = answerFor(q, slot);
+          // Mailing address defaults to "same as residential" - an absent
+          // answer or an explicit sameAsResidential flag both resolve to the
+          // residential address for this slot.
+          if (q.key === "ip_mailing_address" && (raw == null || raw.sameAsResidential)) {
+            const residentialQ = section.questions.find((x) => x.key === "ip_residential_address");
+            raw = residentialQ ? answerFor(residentialQ, slot) : raw;
+          }
           questionRow(q.label, displayValue(q.widget, raw));
         }
       };

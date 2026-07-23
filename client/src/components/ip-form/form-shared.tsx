@@ -6,6 +6,8 @@
  */
 import { Check, Lock } from "lucide-react";
 import { QuestionField, IpFormQuestionDef } from "@/components/ip-form/question-field";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 export interface IpFormSectionDef {
   id: string;
@@ -144,6 +146,63 @@ export function parentSlotHeading(slot: number, memberNames?: Partial<Record<num
   return name ? `Intended Parent ${slot} - ${name}` : `Intended Parent ${slot}`;
 }
 
+function addressHasContent(v: any): boolean {
+  if (!v || typeof v !== "object") return false;
+  return ["address", "city", "state", "zip", "country", "apt"].some((k) => v[k] && String(v[k]).trim());
+}
+
+/**
+ * Mailing address with a "Same as residential address" checkbox (default on).
+ * When checked, the mailing answer holds only { sameAsResidential: true } and
+ * the residential address is resolved at render/PDF time (single source of
+ * truth, no copy drift). When unchecked, it's a normal address field.
+ */
+function MailingAddressField({
+  question,
+  value,
+  residentialValue,
+  onChange,
+  disabled,
+}: {
+  question: IpFormSectionDef["questions"][number];
+  value: any;
+  residentialValue: any;
+  onChange: (value: any) => void;
+  disabled?: boolean;
+}) {
+  const flag = value?.sameAsResidential;
+  // Explicit flag wins; with no flag, default to "same" unless a real (legacy)
+  // different address was already entered.
+  const sameAs = flag === true ? true : flag === false ? false : !addressHasContent(value);
+  const editValue = value && !value.sameAsResidential ? value : undefined;
+  return (
+    <div className="space-y-1.5" data-testid="ipform-mailing-address">
+      <Label className="text-sm font-medium leading-snug">
+        {question.label}
+        {question.required && <span className="text-destructive ml-0.5">*</span>}
+      </Label>
+      <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+        <Checkbox
+          checked={sameAs}
+          disabled={disabled}
+          onCheckedChange={(c) => onChange(c ? { sameAsResidential: true } : { address: "", city: "", state: "", zip: "", country: "", apt: "", sameAsResidential: false })}
+          data-testid="ipform-mailing-same-as-residential"
+        />
+        Same as residential address
+      </label>
+      {!sameAs && (
+        <QuestionField
+          question={question}
+          value={editValue}
+          onChange={(v) => onChange({ ...v, sameAsResidential: false })}
+          disabled={disabled}
+          hideLabel
+        />
+      )}
+    </div>
+  );
+}
+
 /**
  * One section's question list. `canEdit(question, slot)` decides field
  * editability (member vs guest vs submitted); non-editable fields render
@@ -171,12 +230,29 @@ export function SectionQuestions({
   const sharedQs = activeQuestions.filter((q) => !q.perParent);
   const slots = hasSecondParent ? [1, 2] : [1];
 
+  const residentialQ = section.questions.find((q) => q.key === "ip_residential_address");
+
   const renderList = (questions: typeof activeQuestions, slot: number) => (
     <div className="space-y-5">
       {questions.map((q) => {
         if (!isQuestionVisible(section, q, slot, answers, allQuestionsById)) return null;
         const editable = canEdit(q, slot);
         const indent = !!q.conditionalOnQuestionId;
+        // Mailing address gets a "same as residential" checkbox (default on)
+        // so parents don't retype the residential address.
+        if (q.key === "ip_mailing_address" && residentialQ) {
+          return (
+            <div key={`${q.id}:${slot}`}>
+              <MailingAddressField
+                question={q}
+                value={answers.get(answerKey(q.id, slot))}
+                residentialValue={answers.get(answerKey(residentialQ.id, slot))}
+                onChange={(v) => onAnswer(q.id, slot, v)}
+                disabled={!editable}
+              />
+            </div>
+          );
+        }
         return (
           <div key={`${q.id}:${slot}`} className={indent ? "pl-4 border-l-2 border-secondary" : undefined}>
             <QuestionField
