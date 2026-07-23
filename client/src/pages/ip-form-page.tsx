@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { SignaturePad } from "@/components/signature-pad";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import {
   AnswerMap,
   IpFormSectionDef,
@@ -457,7 +458,7 @@ function AcknowledgmentSection({
             <h3 className="text-base font-heading font-semibold">{parentSlotHeading(slot, memberNames)}</h3>
             {signature ? (
               <div className="space-y-1" data-testid={`ipform-signed-${slot}`}>
-                <img src={signature.signatureImageUrl} alt="Signature" className="h-14 object-contain" />
+                <img src={getPhotoSrc(signature.signatureImageUrl) || signature.signatureImageUrl} alt="Signature" className="h-14 object-contain" />
                 <p className="text-sm">
                   Signed by <span className="font-medium">{signature.fullLegalName}</span> on {new Date(signature.signedAt).toLocaleDateString()}
                 </p>

@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { SignaturePad } from "@/components/signature-pad";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import {
   AnswerMap,
   IpFormSectionDef,
@@ -205,7 +206,7 @@ export default function IpFormGuestPage() {
                   <h3 className="text-base font-heading font-semibold">{parentSlotHeading(mySlot)}</h3>
                   {mySignature ? (
                     <div className="space-y-1">
-                      <img src={mySignature.signatureImageUrl} alt="Signature" className="h-14 object-contain" />
+                      <img src={getPhotoSrc(mySignature.signatureImageUrl) || mySignature.signatureImageUrl} alt="Signature" className="h-14 object-contain" />
                       <p className="text-sm">
                         Signed by <span className="font-medium">{mySignature.fullLegalName}</span> on {new Date(mySignature.signedAt).toLocaleDateString()}
                       </p>
