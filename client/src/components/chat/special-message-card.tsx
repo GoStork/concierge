@@ -493,6 +493,46 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
     );
   }
 
+  // Intended Parent Form submitted - provider/admin card with download links
+  // for both PDF variants. The parent reads the plain `content` text instead.
+  if (msg.uiCardType === "ip_form_submitted" && viewerRole !== "parent") {
+    const responseId: string | null = data.ipFormResponseId || null;
+    const parentNames: string = data.parentNames || "The intended parents";
+    const surrogateAvailable = !!data.surrogateAvailable;
+    return (
+      <div className="mt-1" data-testid="ip-form-submitted-card">
+        <div className="rounded-[var(--radius)] border-2 bg-background overflow-hidden max-w-sm" style={{ borderColor: brandColor }}>
+          <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+            <div className="flex items-center gap-2 px-3 py-1.5">
+              <FileText className="w-4 h-4 text-primary-foreground" />
+              <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">Intended Parent Form Submitted</span>
+            </div>
+          </div>
+          <div className="px-4 py-3 space-y-0.5">
+            <p className="text-sm font-semibold">{parentNames}</p>
+            <p className="text-xs text-muted-foreground">Completed and signed - ready to download.</p>
+          </div>
+          {responseId && (
+            <div className="border-t px-4 py-3 space-y-2">
+              <a href={`/api/provider/ip-forms/${responseId}/pdf?variant=full`} className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border border-border bg-background hover:bg-muted transition-colors text-xs font-medium" data-testid="ip-form-card-download-full">
+                <Download className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} /> Download full PDF
+              </a>
+              {surrogateAvailable && (
+                <a href={`/api/provider/ip-forms/${responseId}/pdf?variant=surrogate`} className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border border-border bg-background hover:bg-muted transition-colors text-xs font-medium" data-testid="ip-form-card-download-surrogate">
+                  <Download className="w-3.5 h-3.5 shrink-0" style={{ color: brandColor }} /> Surrogate version (safe to share)
+                </a>
+              )}
+              <a href="/provider/parent-forms" className="flex items-center justify-between text-xs font-medium pt-0.5" style={{ color: brandColor }} data-testid="ip-form-card-open-page">
+                <span>Open Parent Forms</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Sent-but-not-yet-signed agreement. Provider + admin renderer (parent
   // gets a richer interactive variant in concierge-chat-page). Click
   // navigates to the agreement detail page.

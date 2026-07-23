@@ -265,7 +265,11 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
               .replace(/^(Shared a file:|I've shared a file with you:)[^\n]*/i, "")
               .trim()
           : baseContent;
-        const showBubble = !isAttachmentMsg || displayContent.length > 0;
+        // The IP-form-submitted card fully replaces the text bubble for the
+        // provider/admin (they get download buttons); the parent still reads
+        // the plain `content`.
+        const isProviderIpFormCard = msg.uiCardType === "ip_form_submitted" && viewerRole !== "parent";
+        const showBubble = isProviderIpFormCard ? false : (!isAttachmentMsg || displayContent.length > 0);
 
         return (
           <div key={msg.id} id={`msg-${msg.id}`} data-quote-id={(msg.uiCardData as any)?.quoteId || undefined}>

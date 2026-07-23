@@ -286,9 +286,13 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
           content: `Your Intended Parent Form is submitted and shared with ${provider.name}. This is what a potential surrogate reviews before your match call.`,
           senderType: "system",
           senderName: "GoStork",
+          uiCardType: "ip_form_submitted",
           uiCardData: {
-            providerContent: `${parentNames} submitted and signed their Intended Parent Form. Open the Parent Forms page to download the full PDF or the surrogate-safe version to share with candidates ahead of a match call.`,
+            // Provider/admin see the download card; parents read `content`.
+            providerContent: `${parentNames} submitted and signed their Intended Parent Form. Download the full PDF or the surrogate-safe version below.`,
             ipFormResponseId: responseId,
+            parentNames,
+            surrogateAvailable: true,
           },
         },
       }).catch(() => {});
