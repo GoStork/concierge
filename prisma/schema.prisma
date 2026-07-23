@@ -2427,3 +2427,156 @@ model JourneyEvent {
   @@index([bookingId])
   @@index([eventType, createdAt])
 }
+
+// ─── Intended Parent Form ────────────────────────────────────────────────────
+// Surrogacy agencies require intended parents to complete a long profile form
+// (personal info, embryo details, surrogate expectations, letter to the
+// surrogate, photos, per-parent signatures). The agency downloads a PDF
+// branded with THEIR logo and sends it to surrogate candidates ahead of a
+// match call - no submitted form, no match call.
+//
+// One GLOBAL template (GoStork-admin editable at /admin/ip-form-template);
+// sections+questions ARE the template. Seeded from server/ip-form-defaults.ts
+// with create-if-missing semantics (admin edits are never overwritten).
+// One submission per parent account; per-agency branding (logo + agency name
+// in the acknowledgment legal text) is applied at PDF render time.
+
+model IpFormSection {
+  id          String  @id @default(uuid())
+  key         String  @unique // stable: "profile" | "clinic" | "embryo" | "personal_info" | "expectations" | "delivery" | "letter" | "photos" | "private" | "acknowledgment"
+  title       String
+  description String? // e.g. private section: "This information will NOT be shared with the surrogate."
+  sortOrder   Int     @default(0)
+  // Whole section repeats once per parent (personal_info, acknowledgment).
+  perParent   Boolean @default(false)
+  // Section stripped from the surrogate-facing PDF variant (private section).
+  excludeFromSurrogatePdf Boolean @default(false)
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions IpFormQuestion[]
+}
+
+model IpFormQuestion {
+  id       String  @id @default(uuid())
+  sectionId String
+  key      String  @unique // stable, e.g. "ip_full_legal_name", "embryo_count"
+  label    String
+  helpText String?
+  widget   String // "text" | "textarea" | "yes_no" | "dropdown" | "date" | "address" | "phone" | "number" | "photos"
+  options  Json? // dropdown choices: string[]
+  required Boolean @default(false)
+  // Question repeats per parent inside a SHARED section (section-1 IP1/IP2
+  // profile blocks). Questions inside a perParent SECTION are per-parent
+  // implicitly and should leave this false.
+  perParent Boolean @default(false)
+  // Answer stripped from the surrogate-facing PDF variant (emails, phones,
+  // addresses, DOB, ID document fields).
+  excludeFromSurrogatePdf Boolean @default(false)
+  // Conditional follow-up: shown only when the parent question's answer
+  // equals conditionalTriggerValue (covers every "If yes, please explain").
+  conditionalOnQuestionId String?
+  conditionalTriggerValue String?
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  section IpFormSection  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  answers IpFormAnswer[]
+
+  @@index([sectionId, sortOrder])
+}
+
+// One per parent account (FK-by-convention like JourneyEvent).
+model IpFormResponse {
+  id              String    @id @default(uuid())
+  parentAccountId String    @unique
+  status          String    @default("DRAFT") // "DRAFT" | "SUBMITTED"
+  // Solo parents flip this off; slot-2 answers/signature stop being required.
+  hasSecondParent Boolean   @default(true)
+  parent2Mode     String? // "member" | "guest"
+  promptedAt      DateTime? // when Eva's card was posted - anchors the reminder ladder
+  submittedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  answers     IpFormAnswer[]
+  signatures  IpFormSignature[]
+  guestTokens IpFormGuestToken[]
+  reminders   IpFormReminder[]
+}
+
+model IpFormAnswer {
+  id              String   @id @default(uuid())
+  responseId      String
+  questionId      String
+  // 0 = shared answer; 1 | 2 for per-parent questions/sections. Not
+  // nullable: NULL inside the compound unique would let duplicate shared
+  // rows through (Postgres treats NULLs as distinct) and Prisma cannot
+  // target a null member in upsert's compound-unique where.
+  parentSlot      Int      @default(0)
+  // string | boolean-ish "yes"/"no" | {address,city,state,zip,country} |
+  // {e164,display} for phone | [url, ...] for photos.
+  value           Json
+  updatedByUserId String?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  response IpFormResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  question IpFormQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, questionId, parentSlot])
+  @@index([responseId])
+}
+
+model IpFormSignature {
+  id                String   @id @default(uuid())
+  responseId        String
+  parentSlot        Int // 1 | 2
+  fullLegalName     String
+  signatureImageUrl String // PNG uploaded via POST /api/uploads (canvas export or typed-name render)
+  method            String // "drawn" | "typed"
+  signedAt          DateTime @default(now())
+  signedByUserId    String? // null when signed via guest link
+  guestTokenId      String?
+
+  response IpFormResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, parentSlot])
+}
+
+// Tokenized guest access for parent 2 (no GoStork account). 256-bit token,
+// 30-day expiry, revoked on submit and on re-invite.
+model IpFormGuestToken {
+  id           String    @id @default(uuid())
+  responseId   String
+  token        String    @unique
+  email        String
+  name         String?
+  parentSlot   Int       @default(2)
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  lastAccessAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  response IpFormResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@index([responseId])
+}
+
+// Reminder dedupe ledger (pattern: InvoiceReminder). The 10-min sweep runs on
+// multiple machines; the unique constraint makes sends idempotent.
+model IpFormReminder {
+  id           String   @id @default(uuid())
+  responseId   String
+  channel      String // "email" | "sms" | "inapp"
+  reminderType String // "day3" | "day7" | "day14" | "day28" | "day42" | "day56"
+  sentAt       DateTime @default(now())
+
+  response IpFormResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, reminderType, channel])
+  @@index([responseId])
+}

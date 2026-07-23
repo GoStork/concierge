@@ -131,7 +131,17 @@ export function ScheduleCallSection({
       onClose();
     },
     onError: (err: any) => {
-      toast({ title: "Failed to send time options", description: err?.message || "Try again.", variant: "destructive" });
+      const msg = String(err?.message || "");
+      // Match-call gate: the Intended Parent Form must be submitted first.
+      if (msg.includes("IP_FORM_REQUIRED") || msg.includes("Intended Parent Form")) {
+        toast({
+          title: "Parent form not submitted yet",
+          description: "A match call can be scheduled once the family completes and signs their Intended Parent Form. They have been asked and receive reminders.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "Failed to send time options", description: msg || "Try again.", variant: "destructive" });
     },
   });
 

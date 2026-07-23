@@ -124,6 +124,11 @@ export function log(message: string, source = "nestjs") {
   app.use(reviewsRouter);
   const { conciergeMemoryRouter } = await import("./concierge-memory");
   app.use(conciergeMemoryRouter);
+  // Intended Parent Form (surrogacy agencies' parent profile form).
+  const { ipFormRouter } = await import("./ip-form-router");
+  app.use(ipFormRouter);
+  const { ensureIpFormTemplateSeeded } = await import("./ip-form-defaults");
+  void ensureIpFormTemplateSeeded();
 
   // Tiny client-side crash sink. The root ErrorBoundary POSTs here when a
   // React render crash happens so we have the message + component stack in

@@ -401,7 +401,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       where: { userId: { in: accountUserIds } },
       orderBy: { updatedAt: "desc" },
       include: {
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         provider: { select: { id: true, name: true, logoUrl: true } },
       },
     });
@@ -624,7 +624,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: [{ humanRequested: "desc" }, { updatedAt: "desc" }],
@@ -1158,7 +1158,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: { updatedAt: "desc" },
@@ -1393,6 +1393,8 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       // Review prompts are parent-private: a provider must never see that
       // (or when) the parent was asked to rate them.
       && m.uiCardType !== "review_prompt"
+      // The IP form nudge is likewise parent-private.
+      && m.uiCardType !== "ip_form_prompt"
     );
 
     let accountMembers: { id: string; name: string | null; firstName: string | null; lastName: string | null }[] = [];
@@ -1595,7 +1597,18 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
         })).sort((a, b) => (a.id === parentId ? -1 : b.id === parentId ? 1 : 0))
       : [];
 
-    res.json({ ...parent, accountMembers });
+    // Intended Parent Form status for the account - surrogacy agencies see
+    // download buttons (submitted) or a "match call blocked" notice (not).
+    const ipFormAccountId = targetUser?.parentAccountId || parentId;
+    const ipFormRow = await prisma.ipFormResponse.findUnique({
+      where: { parentAccountId: ipFormAccountId },
+      select: { id: true, status: true, submittedAt: true, promptedAt: true },
+    }).catch(() => null);
+    const ipForm = ipFormRow
+      ? { responseId: ipFormRow.id, status: ipFormRow.status, submittedAt: ipFormRow.submittedAt, promptedAt: ipFormRow.promptedAt }
+      : { responseId: null, status: "NOT_STARTED", submittedAt: null, promptedAt: null };
+
+    res.json({ ...parent, accountMembers, ipForm });
   } catch (e: any) {
     console.error("Provider parent detail error:", e);
     res.status(500).json({ message: e.message });
@@ -2193,6 +2206,23 @@ chatRouter.post("/api/chat-session/:id/propose-call-times", requireAuth, async (
     if (!session?.providerId) return res.status(404).json({ message: "Session has no provider" });
     if (!isAdminOrConcierge(user) && user.providerId !== session.providerId) {
       return res.status(403).json({ message: "Forbidden" });
+    }
+    // Match-call gate: the Intended Parent Form must be SUBMITTED before a
+    // match call can be proposed - the agency sends that form to the
+    // surrogate so she can decide whether to meet the family.
+    if (subtype === "MATCH_CALL") {
+      const sessOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+      const acctId = sessOwner?.parentAccountId || session.userId;
+      const ipForm = await prisma.ipFormResponse.findUnique({
+        where: { parentAccountId: acctId },
+        select: { status: true },
+      }).catch(() => null);
+      if (ipForm?.status !== "SUBMITTED") {
+        return res.status(409).json({
+          code: "IP_FORM_REQUIRED",
+          message: "The parents have not submitted their Intended Parent Form yet. A match call can be scheduled once the form is complete - the parents have been asked to fill it.",
+        });
+      }
     }
     // The call is WITH the surrogate/doctor's patient side - the coordinator
     // hosts it. Name the subject in all copy.
@@ -3479,7 +3509,27 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
         providerName: a.provider?.name || null,
       }));
 
-    res.json({ pendingProposals, awaitingMySignature, prepDocs, callsToReschedule });
+    // Intended Parent Form: pending while a prompted response is unfinished.
+    // The row disappears the moment the account submits.
+    const accountIdForIpForm = me?.parentAccountId || user.id;
+    const ipFormResponse = await prisma.ipFormResponse.findUnique({
+      where: { parentAccountId: accountIdForIpForm },
+      select: { id: true, status: true, promptedAt: true, hasSecondParent: true },
+    }).catch(() => null);
+    const ipFormSignatures = ipFormResponse
+      ? await prisma.ipFormSignature.findMany({ where: { responseId: ipFormResponse.id }, select: { parentSlot: true } })
+      : [];
+    const ipFormPending =
+      ipFormResponse && ipFormResponse.status === "DRAFT" && ipFormResponse.promptedAt
+        ? [{
+            responseId: ipFormResponse.id,
+            promptedAt: ipFormResponse.promptedAt,
+            signedSlots: ipFormSignatures.map(s => s.parentSlot),
+            hasSecondParent: ipFormResponse.hasSecondParent,
+          }]
+        : [];
+
+    res.json({ pendingProposals, awaitingMySignature, prepDocs, callsToReschedule, ipFormPending });
   } catch (e: any) {
     console.error("Parent dashboard queue error:", e);
     res.status(500).json({ message: e.message });

@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, AlertCircle, Users } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle, Users, ClipboardList, Download, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ParentProfileCard } from "@/components/profile-cards";
 import type { SessionUser } from "@/components/chat/chat-types";
@@ -14,11 +14,18 @@ type AccountMember = {
   photoUrl: string | null;
 };
 
+type IpFormStatus = {
+  responseId: string | null;
+  status: string; // NOT_STARTED | DRAFT | SUBMITTED
+  submittedAt: string | null;
+  promptedAt: string | null;
+};
+
 export default function ParentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: parent, isLoading, error } = useQuery<SessionUser & { accountMembers?: AccountMember[] }>({
+  const { data: parent, isLoading, error } = useQuery<SessionUser & { accountMembers?: AccountMember[]; ipForm?: IpFormStatus }>({
     queryKey: ["/api/provider/parents", id],
     queryFn: async () => {
       const res = await fetch(`/api/provider/parents/${id}`, { credentials: "include" });
@@ -87,6 +94,45 @@ export default function ParentDetailPage() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+              {/* Intended Parent Form: download (submitted) or blocked-notice.
+                  Backed by the same PDF endpoints as /provider/parent-forms. */}
+              {parent.ipForm && (
+                <div className="rounded-[var(--radius)] border p-4" data-testid="parent-detail-ipform">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ClipboardList className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium font-ui">Intended Parent Form</span>
+                  </div>
+                  {parent.ipForm.status === "SUBMITTED" && parent.ipForm.responseId ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        Submitted{parent.ipForm.submittedAt ? ` on ${new Date(parent.ipForm.submittedAt).toLocaleDateString()}` : ""} - download it with your agency branding.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(`/api/provider/ip-forms/${parent.ipForm!.responseId}/pdf?variant=full`, "_blank", "noopener,noreferrer")}
+                          data-testid="parent-detail-ipform-full"
+                        >
+                          <Download className="w-3.5 h-3.5 mr-1.5" /> Full PDF
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => window.open(`/api/provider/ip-forms/${parent.ipForm!.responseId}/pdf?variant=surrogate`, "_blank", "noopener,noreferrer")}
+                          data-testid="parent-detail-ipform-surrogate"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Surrogate Version
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Not submitted yet - a match call cannot be scheduled until the family completes and signs their form.
+                      {parent.ipForm.promptedAt ? " They have been asked and receive reminders." : ""}
+                    </p>
+                  )}
                 </div>
               )}
               <div className="rounded-[var(--radius)] bg-card border p-5" data-testid="parent-detail-card">

@@ -1735,5 +1735,24 @@ RULES:
 - Parentage work (pre-birth orders or post-birth steps) is prepared and filed at the right time
 - Your attorney keeps you informed at each legal milestone - reach out to them directly with any legal questions`,
     },
+    {
+      key: "ip_form_guidance",
+      label: "Intended Parent Form guidance",
+      description: "How Eva talks about the Intended Parent Form - the profile form surrogacy agencies share with potential surrogates before a match call. Activated per-request by the IP FORM PENDING context block.",
+      sortOrder: 96,
+      isActive: true,
+      content: `INTENDED PARENT FORM (applies when an "IP FORM PENDING" block appears in the user context):
+
+The family has been asked to complete their Intended Parent Form at /ip-form. This is the profile document their surrogacy agency shares with potential surrogates - it includes their story, photos, a personal letter, and their preferences. The surrogate reads it to decide whether she wants to meet them, so A MATCH CALL CANNOT BE SCHEDULED UNTIL IT IS SUBMITTED.
+
+HOW TO HANDLE IT:
+1. When the parent asks what the form is, why it's needed, or how long it takes: explain warmly. Key facts: takes about 20-30 minutes; saves automatically so they can stop and resume; both partners can fill their sections in parallel; both partners sign it; the agency attaches its own branding and shares it with surrogate candidates; the private information section (IDs, health/legal history) is NEVER shown to the surrogate.
+2. When the parent asks where to find it: point them to the "Intended Parent Form" task on their home page, or say they can open it directly at the form page. The button on my earlier message also takes them there.
+3. When the parent seems ready to move toward a match (asking about surrogates, match calls, next steps) and the form is still pending: remind them ONCE in that conversation that the form unlocks the match call. Do not repeat the reminder on every message - never nag.
+4. The letter to the surrogate is the emotional heart of the form. If a parent is stuck on it, offer to help: suggest they write about why they chose surrogacy, their journey so far, who they are as a family, and their gratitude. You may help them draft or polish the letter if they ask.
+5. Photo tips if asked: 3-6 warm, natural photos work best - couple/family shots, everyday life, pets welcome. Avoid heavy filters.
+6. If the parent says their partner needs to sign: explain the partner either gets their own GoStork login (added from the form page) or a private email signing link - their choice, both are on the form page.
+7. NOT A GATE for anything else: answer all other questions normally. The form only blocks match-call scheduling, nothing else.`,
+    },
   ];
 }

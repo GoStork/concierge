@@ -3123,6 +3123,24 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         }
       }
 
+      // Intended Parent Form context: while the account has a prompted,
+      // unfinished form, Eva knows about it and can nudge/answer questions
+      // (behavior text lives in the ip_form_guidance prompt section).
+      try {
+        const acctForIpForm = userRecord?.parentAccountId || userId;
+        const ipForm = await prisma.ipFormResponse.findUnique({
+          where: { parentAccountId: acctForIpForm },
+          select: { status: true, promptedAt: true, hasSecondParent: true },
+        });
+        if (ipForm?.promptedAt && ipForm.status === "DRAFT") {
+          parts.push(
+            `IP FORM PENDING: This family was asked to complete their Intended Parent Form (at /ip-form) and has NOT submitted it yet. The surrogacy agency shares this form (with photos and their letter) with potential surrogates - a MATCH CALL CANNOT BE SCHEDULED until it is submitted. Follow the INTENDED PARENT FORM section: remind them naturally when relevant, answer questions about it, and point them to the form page. Do not nag on every message.`,
+          );
+        } else if (ipForm?.status === "SUBMITTED") {
+          parts.push(`IP FORM STATUS: The family's Intended Parent Form is submitted - never ask them to fill it again.`);
+        }
+      } catch { /* best-effort context */ }
+
       userContextBlock = parts.join("\n");
     }
 

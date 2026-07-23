@@ -200,6 +200,14 @@ export async function runCallOutcomeSweep(prisma: PrismaService, notifications: 
             providerId: booking.providerUser.provider.id,
             stage: "consult_completed",
           }).catch(() => {});
+          // Intended Parent Form: a completed first call with a SURROGACY
+          // agency prompts the form (internally idempotent per account and
+          // gated to surrogacy providers inside maybePromptIpForm).
+          const { maybePromptIpForm } = await import("../../../ip-form-flow");
+          await maybePromptIpForm({
+            parentUserId: booking.parentUserId,
+            providerId: booking.providerUser.provider.id,
+          }).catch(() => {});
         }
       }
 

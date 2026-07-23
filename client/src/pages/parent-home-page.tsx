@@ -40,6 +40,7 @@ interface DashboardQueue {
   awaitingMySignature: Array<{ agreementId: string; documentType: string; sessionId: string; createdAt: string; providerName: string | null }>;
   prepDocs: Array<{ messageId: string; sessionId: string; createdAt: string; providerName: string | null; callLabel: string; scheduledAt: string | null; url: string; fileName: string }>;
   callsToReschedule?: Array<{ sessionId: string; missedAt: string | null; callLabel: string; providerName: string | null; subjectLabel: string | null }>;
+  ipFormPending?: Array<{ responseId: string; promptedAt: string; signedSlots: number[]; hasSecondParent: boolean }>;
 }
 
 function fmtWhen(iso: string) {
@@ -133,6 +134,7 @@ export default function ParentHomePage() {
     (queue?.awaitingMySignature.length || 0) +
     (queue?.pendingProposals.length || 0) +
     (queue?.prepDocs?.length || 0) +
+    (queue?.ipFormPending?.length || 0) +
     unackedCostSheets.length +
     callsToReschedule.length +
     (unreadMessages > 0 ? 1 : 0);
@@ -175,6 +177,22 @@ export default function ParentHomePage() {
                 detail={inv.dueAt ? `Due ${fmtWhen(inv.dueAt)}` : "Awaiting your payment"}
                 cta="Pay now"
                 onClick={() => window.open(`/pay/${inv.paymentToken}`, "_blank")}
+              />
+            ))}
+            {(queue?.ipFormPending || []).map(f => (
+              <QueueRow
+                key={`ipform-${f.responseId}`}
+                icon={<FileText className="w-4 h-4" />}
+                title="Finish your Intended Parent Form"
+                detail={
+                  f.signedSlots.length === 0
+                    ? "Your agency shares it with potential surrogates - a match call can't be scheduled without it"
+                    : f.hasSecondParent && f.signedSlots.length === 1
+                    ? "One signature in - the second parent still needs to sign"
+                    : "Almost done - review and submit"
+                }
+                cta="Continue"
+                onClick={() => navigate("/ip-form")}
               />
             ))}
             {(queue?.awaitingMySignature || []).map(a => (

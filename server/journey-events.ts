@@ -71,7 +71,10 @@ export type JourneyEventType =
   | "JOURNEY_RESTARTED"
   | "REVIEW_PROMPTED"
   | "REVIEW_SUBMITTED"
-  | "REVIEW_UPDATED";
+  | "REVIEW_UPDATED"
+  // Intended Parent Form (surrogacy agencies' parent profile form)
+  | "IP_FORM_PROMPTED"
+  | "IP_FORM_SUBMITTED";
 
 export type JourneyActor = "parent" | "provider" | "system" | "admin";
 

@@ -308,6 +308,15 @@ export default function ProviderHomePage() {
         )}
       </Card>
 
+      {/* Intended Parent Forms (surrogacy agencies): the signed profile
+          forms parents complete before a match call can be scheduled. */}
+      <Card className="p-5 space-y-3">
+        <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Intended Parent Forms" viewAllTo="/provider/parent-forms" />
+        <p className="text-sm text-muted-foreground py-1">
+          Download each family's signed profile form with your agency branding - including the surrogate-safe version you can share with candidates.
+        </p>
+      </Card>
+
       {/* Cost sheets */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Cost Sheets" viewAllTo="/provider/cost-sheets" />

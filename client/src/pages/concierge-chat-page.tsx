@@ -11,6 +11,7 @@ import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
 import { DonorReleaseWarningButtons } from "@/components/chat/special-message-card";
 import { ReviewPromptCard } from "@/components/reviews/reviews-ui";
+import { IpFormPromptCard } from "@/components/chat/ip-form-prompt-card";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -2473,6 +2474,11 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
   // Phase 8: Eva's review ask (parent-only - excluded from provider feeds server-side).
   if (msg.uiCardType === "review_prompt") {
     return <ReviewPromptCard messageId={msg.id || ""} data={data} />;
+  }
+
+  // Intended Parent Form nudge (parent-only - excluded from provider feeds server-side).
+  if (msg.uiCardType === "ip_form_prompt") {
+    return <IpFormPromptCard data={data} brandColor={brandColor} />;
   }
 
   if (msg.uiCardType === "cost_sheet") {

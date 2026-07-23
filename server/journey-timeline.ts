@@ -107,6 +107,12 @@ export async function buildJourneyTimelines(
     null,
   );
 
+  // Intended Parent Form (account-level, one per account). The surrogacy
+  // ladder gets a "Parent Form Submitted" rung once the form was prompted.
+  const ipFormResponse = await prisma.ipFormResponse
+    .findUnique({ where: { parentAccountId }, select: { promptedAt: true, submittedAt: true } })
+    .catch(() => null);
+
   // ---- Load the relationship evidence in one sweep ----
   const [sessions, bookings, invoices, agreements, events] = await Promise.all([
     prisma.aiChatSession.findMany({
@@ -340,10 +346,18 @@ export async function buildJourneyTimelines(
         { id: "agreement_sent", label: "Agreement Sent", at: agreementSentAt },
         { id: "agreement_signed", label: "Agreement Signed", at: signedAt },
       ];
+      // Intended Parent Form rung (surrogacy only): appears once the form was
+      // prompted or submitted for this account. Rendered right after the
+      // consultation - the agency cannot schedule a match call without it.
+      const ipFormRungs: Rung[] =
+        journeyType === "surrogacy" && ipFormResponse && (ipFormResponse.promptedAt || ipFormResponse.submittedAt)
+          ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse.submittedAt }]
+          : [];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
         { id: "exploring", label: "Exploring Profiles", at: exploringAt },
         ...consultRungs,
+        ...ipFormRungs,
         { id: "matched", label: "Matched", at: matchedAt },
         ...(isEscrowJourney ? escrowMoneyRungs : moneyRungs(false)),
         { id: "handed_off", label: "Handed Off", at: handoffAt },

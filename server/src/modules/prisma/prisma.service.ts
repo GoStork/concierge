@@ -287,6 +287,34 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.nightlySyncLock;
   }
 
+  get ipFormSection() {
+    return prisma.ipFormSection;
+  }
+
+  get ipFormQuestion() {
+    return prisma.ipFormQuestion;
+  }
+
+  get ipFormResponse() {
+    return prisma.ipFormResponse;
+  }
+
+  get ipFormAnswer() {
+    return prisma.ipFormAnswer;
+  }
+
+  get ipFormSignature() {
+    return prisma.ipFormSignature;
+  }
+
+  get ipFormGuestToken() {
+    return prisma.ipFormGuestToken;
+  }
+
+  get ipFormReminder() {
+    return prisma.ipFormReminder;
+  }
+
   get $transaction() {
     return prisma.$transaction.bind(prisma);
   }
