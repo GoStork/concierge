@@ -114,7 +114,7 @@ export async function buildJourneyTimelines(
       select: {
         id: true, providerId: true, subjectType: true, createdAt: true, updatedAt: true,
         handoffCompletedAt: true, status: true,
-        provider: { select: { id: true, name: true, logoUrl: true, services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } } } },
+        provider: { select: { id: true, name: true, logoUrl: true, depositMilestone: true, services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } } } },
       },
       orderBy: { updatedAt: "desc" },
     }),
@@ -128,7 +128,7 @@ export async function buildJourneyTimelines(
     }),
     prisma.invoice.findMany({
       where: { parentUserId: { in: memberIds }, ...(opts?.providerId ? { providerId: opts.providerId } : {}) },
-      select: { id: true, providerId: true, sessionId: true, status: true, createdAt: true, paidAt: true, triggerSource: true },
+      select: { id: true, providerId: true, sessionId: true, status: true, createdAt: true, paidAt: true, triggerSource: true, medicalClearanceStatus: true, authorizedAt: true, clearanceConfirmedAt: true },
     }),
     prisma.agreement.findMany({
       where: { parentUserId: { in: memberIds }, ...(opts?.providerId ? { providerId: opts.providerId } : {}) },
@@ -145,6 +145,7 @@ export async function buildJourneyTimelines(
   type Bucket = {
     providerId: string; providerName: string; providerLogo: string | null;
     serviceNames: string[]; subjectTypes: string[];
+    depositMilestone: string | null;
     sessions: typeof sessions; bookings: typeof bookings; invoices: typeof invoices;
     agreements: typeof agreements; events: typeof events;
   };
@@ -152,7 +153,7 @@ export async function buildJourneyTimelines(
   const ensure = (pid: string, name: string, logo: string | null, serviceNames: string[] = []): Bucket => {
     let b = buckets.get(pid);
     if (!b) {
-      b = { providerId: pid, providerName: name, providerLogo: logo, serviceNames, subjectTypes: [], sessions: [], bookings: [], invoices: [], agreements: [], events: [] };
+      b = { providerId: pid, providerName: name, providerLogo: logo, serviceNames, subjectTypes: [], depositMilestone: null, sessions: [], bookings: [], invoices: [], agreements: [], events: [] };
       buckets.set(pid, b);
     }
     return b;
@@ -163,6 +164,7 @@ export async function buildJourneyTimelines(
     if (!prov) continue;
     if ((prov.name || "").trim().toLowerCase() === "gostork") continue; // house = no journey
     const b = ensure(prov.id, prov.name, prov.logoUrl, prov.services.map((sv) => sv.providerType?.name || "").filter(Boolean));
+    b.depositMilestone = prov.depositMilestone || b.depositMilestone;
     b.sessions.push(sess);
     if (sess.subjectType) b.subjectTypes.push(sess.subjectType);
   }
@@ -193,10 +195,11 @@ export async function buildJourneyTimelines(
   if (missingSvc.length > 0) {
     const provs = await prisma.provider.findMany({
       where: { id: { in: missingSvc.map((b) => b.providerId) } },
-      select: { id: true, name: true, logoUrl: true, services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } } },
+      select: { id: true, name: true, logoUrl: true, depositMilestone: true, services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } } },
     });
     for (const pr of provs) {
       const b = buckets.get(pr.id)!;
+      b.depositMilestone = pr.depositMilestone || b.depositMilestone;
       b.providerName = pr.name;
       b.providerLogo = pr.logoUrl;
       b.serviceNames = pr.services.map((sv) => sv.providerType?.name || "").filter(Boolean);
@@ -258,6 +261,25 @@ export async function buildJourneyTimelines(
     const checkoutAt = bankInvoices.length > 0 ? bankInvoices[0].createdAt : null;
     const bankPaidAt = bankInvoices.find((i) => i.status === "PAID")?.paidAt || null;
 
+    // Hybrid escrow (AT_CLEARANCE) evidence. An escrow journey gets a
+    // "Deposit Secured" rung (card hold placed OR funds captured into the
+    // vault) and a "Medical Clearance" rung (screening passed = funds
+    // released) in place of the plain "Invoice Paid". The ladder shape
+    // shows for every journey with an AT_CLEARANCE provider - parents see
+    // the clearance phase coming before any invoice exists.
+    const escrowInvoices = scopedInvoices.filter((i: any) => i.medicalClearanceStatus != null);
+    const isEscrowJourney = journeyType === "surrogacy" && (b.depositMilestone === "AT_CLEARANCE" || escrowInvoices.length > 0);
+    const depositSecuredAt = escrowInvoices
+      .map((i: any) => i.authorizedAt || (["PAID", "REFUNDED", "PARTIALLY_REFUNDED"].includes(i.status) ? i.paidAt : null))
+      .filter(Boolean)
+      .sort((a: any, z: any) => new Date(a).getTime() - new Date(z).getTime())[0] || null;
+    const clearanceClearedAt = escrowInvoices
+      .filter((i: any) => i.medicalClearanceStatus === "CLEARED")
+      .map((i: any) => i.clearanceConfirmedAt)
+      .filter(Boolean)
+      .sort((a: any, z: any) => new Date(a).getTime() - new Date(z).getTime())[0] || null;
+    const clearanceFailed = !clearanceClearedAt && escrowInvoices.some((i: any) => i.medicalClearanceStatus === "FAILED");
+
     type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; tone?: "warning" };
     // Shared tail: invoice + agreement rungs read the same on every ladder.
     const consultRungs: Rung[] = [
@@ -307,12 +329,23 @@ export async function buildJourneyTimelines(
         { id: "handed_off", label: "Handed Off", at: handoffAt },
       ];
     } else {
+      // Escrow (AT_CLEARANCE) surrogacy journeys swap "Invoice Paid" for the
+      // two escrow phases: Deposit Secured (hold placed or funds vaulted)
+      // and Medical Clearance (screening passed - funds released to the
+      // agency at that moment). Non-escrow journeys keep the plain ladder.
+      const escrowMoneyRungs: Rung[] = [
+        { id: "invoice_sent", label: "Invoice Sent", at: invoiceSentAt },
+        { id: "deposit_secured", label: "Deposit Secured", at: depositSecuredAt },
+        { id: "medical_clearance", label: "Medical Clearance", at: clearanceClearedAt, ...(clearanceFailed ? { tone: "warning" as const } : {}) },
+        { id: "agreement_sent", label: "Agreement Sent", at: agreementSentAt },
+        { id: "agreement_signed", label: "Agreement Signed", at: signedAt },
+      ];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
         { id: "exploring", label: "Exploring Profiles", at: exploringAt },
         ...consultRungs,
         { id: "matched", label: "Matched", at: matchedAt },
-        ...moneyRungs(false),
+        ...(isEscrowJourney ? escrowMoneyRungs : moneyRungs(false)),
         { id: "handed_off", label: "Handed Off", at: handoffAt },
       ];
     }
@@ -350,11 +383,16 @@ export async function buildJourneyTimelines(
     // agreement / handoff evidence), or (b) a later call actually happened.
     // Without this, a stray missed extra call sticks to the sidebar forever
     // even on a journey that is already paid and out for signature.
-    const PROGRESS_RUNGS = new Set(["matched", "invoice_sent", "invoice_paid", "agreement_sent", "agreement_signed", "handed_off", "donor_selected", "checkout"]);
+    const PROGRESS_RUNGS = new Set(["matched", "invoice_sent", "invoice_paid", "deposit_secured", "medical_clearance", "agreement_sent", "agreement_signed", "handed_off", "donor_selected", "checkout"]);
     const progressedPastConsult = rungs.some((r) => r.at && PROGRESS_RUNGS.has(r.id));
     const completedAfterNoShow = lastNoShowAt != null && completed.some((bk) => bk.scheduledAt > lastNoShowAt);
     const callWarningStale = progressedPastConsult || completedAfterNoShow;
-    if (churn && (!reengaged || reengaged.createdAt < churn.createdAt)) {
+    if (clearanceFailed) {
+      // Escrow ended in a failed medical screening: funds went back to the
+      // parent (hold voided or vault refunded) and the GoStork Guarantee
+      // redirect is in the admins' hands. Outranks the call-level warnings.
+      attention = { kind: "clearance_failed", label: "Medical clearance failed - GoStork Guarantee active" };
+    } else if (churn && (!reengaged || reengaged.createdAt < churn.createdAt)) {
       attention = { kind: "dormant", label: "Journey paused by parent" };
     } else if (lastNoShow && liveBooking.length === 0 && !callWarningStale && (!reengaged || reengaged.createdAt < lastNoShow.createdAt)) {
       // actionable: the parent (or both sides) missed it and nothing new is

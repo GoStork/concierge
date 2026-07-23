@@ -357,7 +357,7 @@ export default function ProviderHomePage() {
               <p className="text-sm font-medium truncate">{inv.parentName || inv.parentUser?.name || "Parent"}</p>
               <p className="text-xs text-muted-foreground">{inv.serviceType} - {new Date(inv.createdAt).toLocaleDateString()}</p>
             </div>
-            <InvoiceStatusBadge status={inv.status} />
+            <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={(inv as any).medicalClearanceStatus} />
             <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.serviceAmount, inv.currency)}</p>
             <Button variant="outline" size="sm" onClick={() => navigate(`/provider/invoices?q=${inv.id}`)}>
               Open

@@ -434,7 +434,7 @@ export default function AdminHomePage() {
                   <p className="text-sm font-medium truncate">{inv.parentName} - {inv.providerName || "Provider"}</p>
                   <p className="text-xs text-muted-foreground">{(inv.serviceType || "").replace(/_/g, " ").toLowerCase()} - {new Date(inv.createdAt).toLocaleDateString()}</p>
                 </div>
-                <InvoiceStatusBadge status={inv.status} />
+                <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={(inv as any).medicalClearanceStatus} />
                 <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.amountCents)}</p>
                 <Button variant="outline" size="sm" onClick={() => navigate(`/admin/billing?q=${inv.id}`)}>
                   Open

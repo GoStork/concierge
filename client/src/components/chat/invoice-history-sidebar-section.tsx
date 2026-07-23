@@ -15,6 +15,7 @@ interface SessionInvoiceRow {
   serviceType: string | null;
   serviceAmount: number;
   status: string;
+  medicalClearanceStatus?: string | null;
   dueAt: string | null;
   createdAt: string;
   description: string | null;
@@ -66,7 +67,7 @@ export function InvoiceHistorySidebarSection({
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold">{formatCents(inv.serviceAmount)}</span>
-                <InvoiceStatusBadge status={inv.status} />
+                <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={inv.medicalClearanceStatus} />
               </div>
               <div className="flex items-center justify-between text-muted-foreground">
                 <span>

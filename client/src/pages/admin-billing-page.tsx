@@ -286,7 +286,7 @@ export default function AdminBillingPage() {
                     <td className="px-4 py-3 text-right font-medium">{formatCents(inv.serviceAmount, inv.currency)}</td>
                     <td className="px-4 py-3 text-right" style={{ color: "hsl(var(--brand-success))" }}>{formatCents(inv.referralFeeAmount, inv.currency)}</td>
                     <td className="px-4 py-3 text-right text-muted-foreground">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
-                    <td className="px-4 py-3"><InvoiceStatusBadge status={inv.status} /></td>
+                    <td className="px-4 py-3"><InvoiceStatusBadge status={inv.status} medicalClearanceStatus={(inv as any).medicalClearanceStatus} /></td>
                     <td className="px-4 py-3 text-xs font-medium whitespace-nowrap">
                       {(() => {
                         const ps = derivePayoutStatus(inv);

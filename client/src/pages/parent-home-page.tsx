@@ -321,7 +321,7 @@ export default function ParentHomePage() {
                 <p className="text-sm font-medium truncate">{inv.providerName}</p>
                 <p className="text-xs text-muted-foreground">{inv.serviceType} - {new Date(inv.createdAt).toLocaleDateString()}</p>
               </div>
-              <InvoiceStatusBadge status={inv.status} />
+              <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={(inv as any).medicalClearanceStatus} />
               <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.serviceAmount, inv.currency)}</p>
             </div>
           ))}

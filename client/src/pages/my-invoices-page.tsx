@@ -147,7 +147,7 @@ export default function MyInvoicesPage() {
                   <p className="text-sm text-muted-foreground">{inv.serviceType} - {new Date(inv.createdAt).toLocaleDateString()}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <InvoiceStatusBadge status={inv.status} />
+                  <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={inv.medicalClearanceStatus} />
                   <p className="font-heading font-bold">{formatCents(inv.serviceAmount, inv.currency)}</p>
                   {expandedId === inv.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                 </div>

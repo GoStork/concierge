@@ -18,6 +18,8 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { Loader2, CheckCircle2, Undo2, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
@@ -60,6 +62,7 @@ type TabKey = LineServiceType | "COMBINED";
 
 export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBillingTabProps) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const isProviderMode = mode === "provider";
 
   const feeListUrl = isProviderMode
@@ -258,25 +261,45 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                   // Five terminal states (Received / Failed at bank / Failed
                   // / Sent / Pending), color + tooltip baked in.
                   const status = derivePayoutStatus(inv);
-                  // Provider-side rows are clickable - opens the invoice
+                  // Rows are clickable in both modes - opens the invoice
                   // document in a new tab (PDF receipt for paid, HTML
-                  // payment-request for everything else). Admin rows stay
-                  // non-clickable since admin has other actions on these.
-                  const rowClickable = isProviderMode;
+                  // payment-request for everything else). The document
+                  // endpoint accepts an explicit providerId for admins.
+                  const documentUrl = isProviderMode
+                    ? `/api/provider/invoices/${inv.id}/document`
+                    : `/api/provider/invoices/${inv.id}/document?providerId=${providerId}`;
+                  // The parent cell opens the parent profile instead - it
+                  // stops propagation so the row's invoice click doesn't fire.
+                  const parentUserId = inv.parentUser?.id || inv.parentUserId;
+                  const parentLabel = inv.parentUser?.name || inv.parentUser?.email || "Parent";
                   return (
                     <tr
                       key={inv.id}
-                      className={`border-b last:border-0 hover:bg-muted/10 ${rowClickable ? "cursor-pointer" : ""}`}
-                      onClick={rowClickable ? () => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer") : undefined}
-                      title={rowClickable ? (inv.status === "PAID" ? "Open receipt PDF" : "Open invoice document") : undefined}
+                      className="border-b last:border-0 hover:bg-muted/10 cursor-pointer"
+                      onClick={() => window.open(documentUrl, "_blank", "noopener,noreferrer")}
+                      title={inv.status === "PAID" ? "Open receipt PDF" : "Open invoice document"}
                     >
-                      <td className="px-4 py-2.5">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
+                      <td className="px-4 py-2.5">
+                        {parentUserId ? (
+                          <button
+                            type="button"
+                            className="text-primary font-medium hover:underline text-left"
+                            title="Open parent profile"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/parents/${parentUserId}`);
+                            }}
+                          >
+                            {parentLabel}
+                          </button>
+                        ) : parentLabel}
+                      </td>
                       <td className="px-4 py-2.5 text-muted-foreground text-xs">{inv.serviceType?.replace(/_/g, " ").toLowerCase() || "-"}</td>
                       <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.serviceAmount, inv.currency)}</td>
                       <td className="px-4 py-2.5 text-right" style={{ color: "hsl(var(--brand-success))" }}>{formatCents(inv.referralFeeAmount, inv.currency)}</td>
                       <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
                       <td className="px-4 py-2.5">
-                        <InvoiceStatusBadge status={inv.status} />
+                        <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={inv.medicalClearanceStatus} />
                       </td>
                       <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
                         <span title={status.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
@@ -378,9 +401,9 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
       const dollars = parseFloat(amountDollars);
       if (!isFinite(dollars) || dollars <= 0) throw new Error("Enter a refund amount greater than 0");
       const amountCents = Math.round(dollars * 100);
-      if (amountCents > remainingCents) throw new Error(`Refund amount exceeds remaining refundable balance (${(remainingCents / 100).toFixed(2)})`);
+      if (amountCents > remainingCents) throw new Error(`Refund amount exceeds remaining refundable balance (${formatMoneyCents(remainingCents)})`);
       if (mode === "keep_platform_fee" && amountCents > providerShareRemaining) {
-        throw new Error(`Refund of ${(amountCents / 100).toFixed(2)} exceeds provider's remaining share (${(providerShareRemaining / 100).toFixed(2)}) under Keep GoStork fee mode.`);
+        throw new Error(`Refund of ${formatMoneyCents(amountCents)} exceeds provider's remaining share (${formatMoneyCents(providerShareRemaining)}) under Keep GoStork fee mode.`);
       }
       const res = await fetch(`/api/admin/invoices/${invoice.id}/refund`, {
         method: "POST",
@@ -417,7 +440,13 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
         <Undo2 className="w-3.5 h-3.5 mr-1.5" />
         Refund
       </Button>
-      {open && (
+      {/* Portal to <body>: this button lives inside a table cell, and a
+          `position: fixed` element inside any transformed/filtered ancestor
+          gets its containing block hijacked - the drawer then positions and
+          sizes against that ancestor instead of the viewport (shifted right,
+          clipped copy, overlapping cards). Body-level rendering matches how
+          the shared save/confirm bars mount at the app root. */}
+      {open && createPortal(
         <>
           <div
             className="fixed inset-0 z-40 bg-foreground/20 backdrop-blur-[1px]"
@@ -425,7 +454,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
           />
           <div
             className={cn(
-              "fixed bottom-0 left-0 right-0 z-50 px-4 py-4 bg-background/95 backdrop-blur border-t shadow-[0_-8px_24px_-8px_rgba(0,0,0,0.12)]",
+              "fixed bottom-0 left-0 right-0 z-50 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-background/95 backdrop-blur border-t shadow-[0_-8px_24px_-8px_rgba(0,0,0,0.12)]",
               "max-h-[85vh] overflow-y-auto",
             )}
             role="dialog"
@@ -460,7 +489,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
             </div>
           )}
           <div className="space-y-3 py-2">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Refund amount (USD)</Label>
                 <NumberInput
@@ -468,8 +497,8 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
                   onChange={setAmountDollars}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Max refundable: ${(remainingCents / 100).toFixed(2)}
-                  {alreadyRefunded > 0 && ` (${(alreadyRefunded / 100).toFixed(2)} already refunded)`}
+                  Max refundable: {formatMoneyCents(remainingCents)}
+                  {alreadyRefunded > 0 && ` (${formatMoneyCents(alreadyRefunded)} already refunded)`}
                 </p>
               </div>
               <div className="space-y-1.5">
@@ -522,11 +551,11 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
             {amountCentsPreview > 0 && (
               <div className="rounded-md border bg-secondary/40 p-3 text-xs space-y-1">
                 <p className="font-medium text-sm mb-1">Money split preview</p>
-                <div className="flex justify-between"><span className="text-muted-foreground">Refunded to parent</span><span>${(amountCentsPreview / 100).toFixed(2)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Reversed from provider</span><span>${(providerClawbackPreview / 100).toFixed(2)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">GoStork absorbed</span><span>${(gostorkAbsorbedPreview / 100).toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Refunded to parent</span><span>{formatMoneyCents(amountCentsPreview)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Reversed from provider</span><span>{formatMoneyCents(providerClawbackPreview)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">GoStork absorbed</span><span>{formatMoneyCents(gostorkAbsorbedPreview)}</span></div>
                 <div className="border-t pt-1 mt-1 text-muted-foreground">
-                  Original split: provider ${(providerPayoutCents / 100).toFixed(2)} + GoStork fee ${(referralFeeCents / 100).toFixed(2)} = ${(invoice.serviceAmount / 100).toFixed(2)}
+                  Original split: provider {formatMoneyCents(providerPayoutCents)} + GoStork fee {formatMoneyCents(referralFeeCents)} = {formatMoneyCents(invoice.serviceAmount)}
                 </div>
               </div>
             )}
@@ -563,7 +592,8 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
               </div>
             </div>
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </>
   );

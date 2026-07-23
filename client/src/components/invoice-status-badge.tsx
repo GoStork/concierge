@@ -12,11 +12,18 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 
 interface InvoiceStatusBadgeProps {
   status: string;
+  /** Escrow (AT_CLEARANCE) awareness: a PAID invoice whose clearance is
+   *  still PENDING is money in GoStork's vault, not money the provider
+   *  has - show "Held in Vault" instead of a plain "Paid". */
+  medicalClearanceStatus?: string | null;
   className?: string;
 }
 
-export function InvoiceStatusBadge({ status, className = "" }: InvoiceStatusBadgeProps) {
-  const config = STATUS_CONFIG[status] || { label: status, color: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.5)" };
+export function InvoiceStatusBadge({ status, medicalClearanceStatus, className = "" }: InvoiceStatusBadgeProps) {
+  const isVault = status === "PAID" && medicalClearanceStatus === "PENDING";
+  const config = isVault
+    ? { label: "Held in Vault", color: "hsl(var(--brand-warning))", bg: "hsl(var(--brand-warning) / 0.1)", icon: <Lock className="w-3 h-3" /> }
+    : STATUS_CONFIG[status] || { label: status, color: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.5)" };
 
   return (
     <span

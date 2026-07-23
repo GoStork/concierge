@@ -191,7 +191,7 @@ export default function ProviderBillingPage() {
                     <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.serviceAmount, inv.currency)}</td>
                     <td className="px-4 py-2.5 text-right text-muted-foreground whitespace-nowrap">{formatCents(inv.referralFeeAmount, inv.currency)}</td>
                     <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
-                    <td className="px-4 py-2.5 whitespace-nowrap"><InvoiceStatusBadge status={inv.status} /></td>
+                    <td className="px-4 py-2.5 whitespace-nowrap"><InvoiceStatusBadge status={inv.status} medicalClearanceStatus={(inv as any).medicalClearanceStatus} /></td>
                     <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap">
                       {(() => {
                         const ps = derivePayoutStatus(inv);
