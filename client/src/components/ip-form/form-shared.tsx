@@ -4,6 +4,7 @@
  * section layout, conditional visibility, completion math, and the stepper
  * live here; the pages only differ in data wiring and edit scope.
  */
+import { useLayoutEffect, useRef } from "react";
 import { Check, Lock } from "lucide-react";
 import { QuestionField, IpFormQuestionDef } from "@/components/ip-form/question-field";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -125,6 +126,16 @@ export function SectionStepper({
   signaturesDone: boolean;
 }) {
   const byId = allQuestionsIndex(sections);
+  const activeRef = useRef<HTMLButtonElement>(null);
+
+  // Keep the active step chip fully visible: center it within the stepper's
+  // horizontal scroll. block:"nearest" avoids nudging the page vertically.
+  // Re-runs when the chips first render too (sections.length) so a deep-link
+  // load scrolls; the rAF waits for layout to settle before measuring.
+  useLayoutEffect(() => {
+    activeRef.current?.scrollIntoView({ behavior: "auto", inline: "center", block: "nearest" });
+  }, [activeKey, sections.length]);
+
   return (
     <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1" data-testid="ipform-stepper">
       {sections.map((s, i) => {
@@ -133,6 +144,7 @@ export function SectionStepper({
         return (
           <button
             key={s.key}
+            ref={active ? activeRef : undefined}
             type="button"
             onClick={() => onSelect(s.key)}
             className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border font-ui transition-colors ${
