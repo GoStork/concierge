@@ -165,16 +165,20 @@ function ForkRow({ main, branch, isLast }: { main: StageOut; branch: StageOut; i
   );
 }
 
+// Branch-type stage ids: warning rungs that fork off the main line instead
+// of sitting on it. Must match the branch ids emitted by journey-timeline.ts.
+const BRANCH_STAGE_IDS = new Set(["no_show", "match_call_no_show", "not_matched"]);
+
 function JourneyBlock({ journey, showProviderName }: { journey: JourneyOut; showProviderName: boolean }) {
-  // Pull branch-type stages (no_show) off the main line; each attaches to
-  // the row that FOLLOWS it in the server order (the fork's sibling rung -
-  // e.g. no_show sits between consult_scheduled and consult_completed, so
-  // it renders beside consult_completed).
+  // Pull branch-type stages off the main line; each attaches to the row that
+  // FOLLOWS it in the server order (the fork's sibling rung - e.g. no_show
+  // sits between consult_scheduled and consult_completed, so it renders
+  // beside consult_completed; not_matched renders beside matched).
   const mainStages: StageOut[] = [];
   const branchBySibling = new Map<string, StageOut>();
   for (let i = 0; i < journey.stages.length; i++) {
     const st = journey.stages[i];
-    if (st.id === "no_show") {
+    if (BRANCH_STAGE_IDS.has(st.id)) {
       const sibling = journey.stages[i + 1];
       if (sibling) branchBySibling.set(sibling.id, st);
       continue;

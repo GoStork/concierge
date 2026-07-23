@@ -11,8 +11,8 @@
  * Ladders per journey type (uniform language across provider types):
  *   agency (surrogacy / egg_donation):
  *     registered -> exploring -> consult_scheduled -> consult_completed ->
- *     matched -> invoice_sent -> invoice_paid -> agreement_sent ->
- *     agreement_signed -> handed_off
+ *     match_call_scheduled -> matched -> invoice_sent -> invoice_paid ->
+ *     agreement_sent -> agreement_signed -> handed_off
  *   ivf:  same minus matched; agreement rungs optional
  *   bank: registered -> exploring -> donor_selected -> checkout ->
  *         invoice_paid -> (agreement_sent -> agreement_signed) -> handed_off
@@ -28,6 +28,13 @@
  * done (the booking happened) and a warning-toned "No Show" rung renders
  * where "Consultation Completed" would be. It disappears once a new call is
  * booked or completed.
+ *
+ * The agency ladders split bookings by meetingSubtype: MATCH_CALL bookings
+ * prove the "Match Call Scheduled" rung (never the consultation rungs), and
+ * two branch rungs can fork off it where "Matched" would be: "Not Matched"
+ * (a MATCH_DECLINED_* event with no confirmed match after it) and a
+ * match-call "No Show" (same rules as the consultation branch). Both clear
+ * once a new match call is booked or the match confirms.
  */
 import { prisma } from "./db";
 
@@ -228,17 +235,40 @@ export async function buildJourneyTimelines(
       : b.bookings;
     const nowMs = Date.now();
     const endOf = (bk: any) => new Date(bk.scheduledAt).getTime() + (bk.duration || 30) * 60 * 1000;
-    const liveBooking = scopedBookings.filter((bk) => ["PENDING", "CONFIRMED"].includes(bk.status) && endOf(bk) > nowMs);
-    const completed = scopedBookings.filter((bk) => bk.outcome === "COMPLETED" || bk.outcome === "UNVERIFIED");
-    const noShows = scopedBookings.filter((bk) => ["NO_SHOW_PARENT", "NO_SHOW_PROVIDER", "NO_SHOW_BOTH"].includes(bk.outcome || ""));
-    const everScheduledAt = scopedBookings.length > 0 ? scopedBookings.reduce<Date | null>((min, bk) => (!min || bk.createdAt < min ? bk.createdAt : min), null) : null;
+    const liveOf = (list: any[]) => list.filter((bk: any) => ["PENDING", "CONFIRMED"].includes(bk.status) && endOf(bk) > nowMs);
+    const completedOf = (list: any[]) => list.filter((bk: any) => bk.outcome === "COMPLETED" || bk.outcome === "UNVERIFIED");
+    const noShowsOf = (list: any[]) => list.filter((bk: any) => ["NO_SHOW_PARENT", "NO_SHOW_PROVIDER", "NO_SHOW_BOTH"].includes(bk.outcome || ""));
+    const earliestCreatedAt = (list: any[]) => (list.length > 0 ? list.reduce<Date | null>((min, bk) => (!min || bk.createdAt < min ? bk.createdAt : min), null) : null);
+    const latestMissedAt = (list: any[]) => (list.length > 0 ? list.reduce<Date | null>((max, bk) => (!max || bk.scheduledAt > max ? bk.scheduledAt : max), null) : null);
+    // Attention-chip evidence stays cross-subtype: "nothing newer is booked"
+    // must see a live match call after a missed consultation (and vice versa).
+    const liveBooking = liveOf(scopedBookings);
+    const completed = completedOf(scopedBookings);
+    const noShows = noShowsOf(scopedBookings);
+    const everScheduledAt = earliestCreatedAt(scopedBookings);
+    const lastNoShowAt = latestMissedAt(noShows);
+    // Consultation rung evidence: match calls have their own rung, so they
+    // never prove the consultation rungs.
+    const consultBookings = scopedBookings.filter((bk) => bk.meetingSubtype !== "MATCH_CALL");
+    const liveConsult = liveOf(consultBookings);
+    const completedConsult = completedOf(consultBookings);
+    const noShowConsults = noShowsOf(consultBookings);
     // A no-show still proves the call WAS scheduled - only pure cancellation
     // (nothing live, completed, or attended-by-anyone) regresses the rung.
-    const consultScheduledAt = liveBooking.length > 0 || completed.length > 0 || noShows.length > 0 ? everScheduledAt : null;
-    const consultCompletedAt = completed.length > 0 ? completed.reduce<Date | null>((min, bk) => (!min || bk.scheduledAt < min ? bk.scheduledAt : min), null) : null;
-    // No Show branch: latest elapsed call was missed and nothing newer is live.
-    const showNoShowRung = noShows.length > 0 && completed.length === 0 && liveBooking.length === 0;
-    const lastNoShowAt = noShows.length > 0 ? noShows.reduce<Date | null>((max, bk) => (!max || bk.scheduledAt > max ? bk.scheduledAt : max), null) : null;
+    const consultScheduledAt = liveConsult.length > 0 || completedConsult.length > 0 || noShowConsults.length > 0 ? earliestCreatedAt(consultBookings) : null;
+    const consultCompletedAt = completedConsult.length > 0 ? completedConsult.reduce<Date | null>((min, bk) => (!min || bk.scheduledAt < min ? bk.scheduledAt : min), null) : null;
+    // No Show branch: a consultation was missed and nothing newer happened.
+    // Suppression stays cross-subtype (any completed or live call, match
+    // calls included) so a finished journey never resurfaces the branch.
+    const showNoShowRung = noShowConsults.length > 0 && completed.length === 0 && liveBooking.length === 0;
+    const lastConsultNoShowAt = latestMissedAt(noShowConsults);
+    // Match Call rung evidence (agency ladders): same rules as consultation.
+    const matchCallBookings = scopedBookings.filter((bk) => bk.meetingSubtype === "MATCH_CALL");
+    const liveMatchCall = liveOf(matchCallBookings);
+    const completedMatchCall = completedOf(matchCallBookings);
+    const noShowMatchCalls = noShowsOf(matchCallBookings);
+    const matchCallScheduledAt = liveMatchCall.length > 0 || completedMatchCall.length > 0 || noShowMatchCalls.length > 0 ? earliestCreatedAt(matchCallBookings) : null;
+    const lastMatchNoShowAt = latestMissedAt(noShowMatchCalls);
 
     // Session scoping (see opts.sessionId doc): money/terminal evidence only.
     const sid = opts?.sessionId || null;
@@ -249,6 +279,15 @@ export async function buildJourneyTimelines(
     const matchEvent = b.events.find((e) => e.eventType === "MATCH_CONFIRMED" && (!sid || e.sessionId === sid));
     const depositInvoice = scopedInvoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT");
     const matchedAt = matchEvent?.createdAt || (journeyType === "surrogacy" || journeyType === "egg_donation" ? depositInvoice.find((i) => i.triggerSource === "AUTO_READINESS")?.createdAt || null : null);
+    // Not Matched branch: either side declined the match and nothing points
+    // forward anymore (no confirmed match after the decline, no new match
+    // call booked). A fresh match call round or a later confirm clears it.
+    const declineEvents = b.events.filter((e) => ["MATCH_DECLINED", "MATCH_DECLINED_BY_PARENT", "MATCH_DECLINED_BY_SURROGATE"].includes(e.eventType) && (!sid || e.sessionId === sid));
+    const lastDeclineAt = declineEvents.length > 0 ? declineEvents[declineEvents.length - 1].createdAt : null;
+    const showNotMatchedRung = !!lastDeclineAt && (!matchedAt || matchedAt < lastDeclineAt) && liveMatchCall.length === 0;
+    // Match-call No Show branch: mirrors the consultation branch; the
+    // decline branch outranks it (a decline is the more definitive signal).
+    const showMatchNoShowRung = !showNotMatchedRung && !matchedAt && noShowMatchCalls.length > 0 && completedMatchCall.length === 0 && liveMatchCall.length === 0;
     const nonBankInvoices = scopedInvoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT");
     const invoiceSentAt = nonBankInvoices.length > 0 ? nonBankInvoices.reduce<Date | null>((min, i) => (!min || i.createdAt < min ? i.createdAt : min), null) : null;
     const paidInvoice = scopedInvoices.filter((i) => i.status === "PAID" && i.paidAt);
@@ -294,7 +333,7 @@ export async function buildJourneyTimelines(
     // Shared tail: invoice + agreement rungs read the same on every ladder.
     const consultRungs: Rung[] = [
       { id: "consult_scheduled", label: "Consultation Scheduled", at: consultScheduledAt },
-      ...(showNoShowRung ? [{ id: "no_show", label: "No Show", at: lastNoShowAt, tone: "warning" as const }] : []),
+      ...(showNoShowRung ? [{ id: "no_show", label: "No Show", at: lastConsultNoShowAt, tone: "warning" as const }] : []),
       { id: "consult_completed", label: "Consultation Completed", at: consultCompletedAt },
     ];
     const moneyRungs = (optionalAgreement: boolean): Rung[] => [
@@ -359,11 +398,22 @@ export async function buildJourneyTimelines(
         journeyType === "surrogacy"
           ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse?.submittedAt || null, dropIfPassed: true }]
           : [];
+      // Match Call rung + its branches, right before "Matched". REQUIRED
+      // going forward; dropIfPassed hides it on legacy journeys that matched
+      // without a MATCH_CALL booking record. The branches fork off it and
+      // render beside "Matched" (the following rung), like no_show does
+      // beside "Consultation Completed".
+      const matchCallRungs: Rung[] = [
+        { id: "match_call_scheduled", label: "Match Call Scheduled", at: matchCallScheduledAt, dropIfPassed: true },
+        ...(showNotMatchedRung ? [{ id: "not_matched", label: "Not Matched", at: lastDeclineAt, tone: "warning" as const }] : []),
+        ...(showMatchNoShowRung ? [{ id: "match_call_no_show", label: "No Show", at: lastMatchNoShowAt, tone: "warning" as const }] : []),
+      ];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
         { id: "exploring", label: "Exploring Profiles", at: exploringAt },
         ...consultRungs,
         ...ipFormRungs,
+        ...matchCallRungs,
         { id: "matched", label: "Matched", at: matchedAt },
         ...(isEscrowJourney ? escrowMoneyRungs : moneyRungs(false)),
         { id: "handed_off", label: "Handed Off", at: handoffAt },
@@ -403,6 +453,10 @@ export async function buildJourneyTimelines(
     // agreement / handoff evidence), or (b) a later call actually happened.
     // Without this, a stray missed extra call sticks to the sidebar forever
     // even on a journey that is already paid and out for signature.
+    // (match_call_scheduled is deliberately NOT progress here: a no-show
+    // proves that rung too, and a missed match call must keep its warning.
+    // Live/completed match calls already expire chips via liveBooking /
+    // completedAfterNoShow, which stay cross-subtype.)
     const PROGRESS_RUNGS = new Set(["matched", "invoice_sent", "invoice_paid", "deposit_secured", "medical_clearance", "agreement_sent", "agreement_signed", "handed_off", "donor_selected", "checkout"]);
     const progressedPastConsult = rungs.some((r) => r.at && PROGRESS_RUNGS.has(r.id));
     const completedAfterNoShow = lastNoShowAt != null && completed.some((bk) => bk.scheduledAt > lastNoShowAt);

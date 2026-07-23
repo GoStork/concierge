@@ -100,7 +100,7 @@ export async function buildJourneyFunnel(filters: FunnelFilters): Promise<any> {
     // were dropped on some journeys still appear).
     const template = list.reduce((best, j) => (j.stages.length > best.stages.length ? j : best), list[0]);
     const stageIds = template.stages
-      .filter((s) => s.id !== "no_show")
+      .filter((s) => !["no_show", "match_call_no_show", "not_matched"].includes(s.id))
       .filter((s) => !(filters.providerScope && s.id === "registered"))
       .map((s) => ({ id: s.id, label: s.label }));
     let prevCount: number | null = null;
