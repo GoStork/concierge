@@ -26,7 +26,7 @@ import { NotificationService } from "../notifications/notification.service";
 import { BookingEventsService } from "../calendar/booking-events.service";
 import { CalendarController } from "../calendar/calendar.controller";
 import { BillingService } from "../billing/billing.service";
-import { hasProviderRole, hasAnyRole } from "../../../../shared/roles";
+import { hasProviderRole, hasAnyRole, isBillingManagerOnly } from "../../../../shared/roles";
 
 const GOSTORK_STAFF = ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"];
 
@@ -87,7 +87,9 @@ export class VideoController {
     });
     if (!session) throw new NotFoundException("Chat session not found");
 
-    const isProvider = hasProviderRole(user.roles || []) && !(user.roles || []).includes("BILLING_MANAGER");
+    // Billing-ONLY staff can't run calls; billing manager + any other
+    // provider role (admin, coordinator...) keeps full call access.
+    const isProvider = hasProviderRole(user.roles || []) && !isBillingManagerOnly(user.roles || []);
     const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
 
     let callerIsSessionParent = session.userId === user.id;
@@ -224,7 +226,9 @@ export class VideoController {
   async createRoom(@Req() req: any) {
     const user = req.user;
     const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
-    const isProvider = hasProviderRole(user.roles || []) && !(user.roles || []).includes("BILLING_MANAGER");
+    // Billing-ONLY staff can't run calls; billing manager + any other
+    // provider role (admin, coordinator...) keeps full call access.
+    const isProvider = hasProviderRole(user.roles || []) && !isBillingManagerOnly(user.roles || []);
 
     if (!user) {
       throw new ForbiddenException("Authentication required");
@@ -312,12 +316,14 @@ export class VideoController {
     }
     const isParent = await this.isParentAccountMember(user.id, booking.parentUserId);
     const isAdmin = hasAnyRole(user.roles || [], GOSTORK_STAFF);
-    const isBillingManager = (user.roles || []).includes("BILLING_MANAGER");
+    // Blocked only when BILLING_MANAGER is the user's SOLE provider role -
+    // any additional role (admin, coordinator...) restores call access.
+    const isBillingOnly = isBillingManagerOnly(user.roles || []);
 
     if (!isProvider && !isParent && !isAdmin) {
       throw new ForbiddenException("You are not a participant of this booking");
     }
-    if (isBillingManager && !isAdmin) {
+    if (isBillingOnly && !isAdmin && !isParent) {
       throw new ForbiddenException("Billing managers cannot join video calls");
     }
 

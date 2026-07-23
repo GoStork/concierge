@@ -140,6 +140,16 @@ export function isProviderWriteRestricted(roles: string[]): boolean {
 // just BILLING_MANAGER - SCHEDULER and DOCTOR are allowed to message.
 const CHAT_SEND_BLOCKED_IF_SOLE_ROLES = ["BILLING_MANAGER"] as const;
 
+// True iff BILLING_MANAGER is the user's ONLY provider role. Billing-only
+// staff cannot join or start video calls; any additional provider role
+// (admin, coordinator, doctor, lawyer, scheduler...) restores call access -
+// BILLING_MANAGER just adds billing capability on top. Mirrors the
+// canSendProviderMessage rule below.
+export function isBillingManagerOnly(roles: string[]): boolean {
+  if (!roles.includes("BILLING_MANAGER")) return false;
+  return !roles.some(r => isProviderRole(r) && r !== "BILLING_MANAGER");
+}
+
 // True iff the user can send messages in a provider chat session (whisper
 // answers, post-booking direct messages, attachments, etc). The rule:
 // 1. they must have access to the subjectType (canProviderAccessSession), AND
