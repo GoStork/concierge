@@ -118,30 +118,8 @@ function WidgetInput({ question: q, value, onChange, disabled }: { question: IpF
         </Select>
       );
     }
-    case "date": {
-      const dateVal = typeof value === "string" && value ? new Date(`${value}T12:00:00`) : undefined;
-      return (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button type="button" variant="outline" disabled={disabled} className="w-full max-w-sm justify-start font-normal" data-testid={`ipform-date-${q.key}`}>
-              <CalendarIcon className="w-4 h-4 mr-2 text-muted-foreground" />
-              {dateVal && !isNaN(dateVal.getTime()) ? format(dateVal, "MM/dd/yyyy") : <span className="text-muted-foreground">Pick a date</span>}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="single"
-              selected={dateVal && !isNaN(dateVal.getTime()) ? dateVal : undefined}
-              onSelect={(d) => onChange(d ? format(d, "yyyy-MM-dd") : "")}
-              captionLayout="dropdown-buttons"
-              fromYear={1930}
-              toYear={new Date().getFullYear() + 15}
-              defaultMonth={dateVal && !isNaN(dateVal.getTime()) ? dateVal : new Date(1990, 0)}
-            />
-          </PopoverContent>
-        </Popover>
-      );
-    }
+    case "date":
+      return <DateField question={q} value={value} onChange={onChange} disabled={disabled} />;
     case "address": {
       const loc = value && typeof value === "object" && !Array.isArray(value) ? { ...EMPTY_LOCATION, ...value } : EMPTY_LOCATION;
       // Apt/suite is kept OUT of the geocoder search - it's a separate line
@@ -199,6 +177,33 @@ function WidgetInput({ question: q, value, onChange, disabled }: { question: IpF
         />
       );
   }
+}
+
+function DateField({ question: q, value, onChange, disabled }: { question: IpFormQuestionDef; value: any; onChange: (v: any) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const dateVal = typeof value === "string" && value ? new Date(`${value}T12:00:00`) : undefined;
+  const valid = dateVal && !isNaN(dateVal.getTime());
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" disabled={disabled} className="w-full max-w-sm justify-start font-normal" data-testid={`ipform-date-${q.key}`}>
+          <CalendarIcon className="w-4 h-4 mr-2 text-muted-foreground" />
+          {valid ? format(dateVal!, "MM/dd/yyyy") : <span className="text-muted-foreground">Pick a date</span>}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={valid ? dateVal : undefined}
+          onSelect={(d) => { onChange(d ? format(d, "yyyy-MM-dd") : ""); if (d) setOpen(false); }}
+          captionLayout="dropdown-buttons"
+          fromYear={1930}
+          toYear={new Date().getFullYear() + 15}
+          defaultMonth={valid ? dateVal : new Date(1990, 0)}
+        />
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 const MAX_PHOTOS = 10;
