@@ -281,12 +281,20 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
       )}
 
       {isOpen && results.length > 0 && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-[var(--radius)] shadow-lg max-h-60 overflow-y-auto">
+        <div
+          className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-[var(--radius)] shadow-lg max-h-60 overflow-y-auto"
+          onMouseLeave={() => setHighlightIdx(-1)}
+        >
           {results.map((r, idx) => (
             <button
               key={idx}
               type="button"
-              className={`w-full text-left px-3 py-2 text-sm flex items-start gap-2 hover:bg-secondary ${highlightIdx === idx ? "bg-secondary" : ""}`}
+              // Mouse drives the same highlight index as the keyboard, so the
+              // highlight reliably follows the cursor (a plain :hover sticks
+              // when the list re-renders under a stationary mouse).
+              className={`w-full text-left px-3 py-2 text-sm flex items-start gap-2 ${highlightIdx === idx ? "bg-secondary" : ""}`}
+              onMouseEnter={() => setHighlightIdx(idx)}
+              onMouseMove={() => { if (highlightIdx !== idx) setHighlightIdx(idx); }}
               onMouseDown={e => { e.preventDefault(); selectResult(r); }}
               data-testid={`location-suggestion-${idx}`}
             >
