@@ -41,6 +41,7 @@ import {
   buildAnswerMap,
   parentSlotHeading,
   sectionMissingCount,
+  sectionMissingKeys,
 } from "@/components/ip-form/form-shared";
 
 interface IpFormBundle {
@@ -132,6 +133,36 @@ export default function IpFormPage() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [activeKey]);
+
+  // Required-field gating on Next: keys flagged by a failed advance, per
+  // section. Cleared when the section changes.
+  const [sectionErrorKeys, setSectionErrorKeys] = useState<Set<string>>(new Set());
+  useEffect(() => { setSectionErrorKeys(new Set()); }, [activeKey]);
+
+  // Try to advance: block if the current section has empty required fields,
+  // mark them, and scroll to the first one.
+  const tryAdvance = useCallback(() => {
+    const missing = activeSection ? sectionMissingKeys(activeSection, localAnswers, hasSecondParent, questionsById) : [];
+    if (missing.length > 0) {
+      setSectionErrorKeys(new Set(missing));
+      requestAnimationFrame(() => {
+        document.querySelector('[data-ipform-error]')?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      return;
+    }
+    setSectionErrorKeys(new Set());
+    goToSection(sections[activeIndex + 1].key);
+  }, [activeSection, localAnswers, hasSecondParent, questionsById, goToSection, sections, activeIndex]);
+
+  // Live count of still-empty flagged fields (drives the message by Next).
+  const outstandingErrors = useMemo(
+    () => [...sectionErrorKeys].filter((k) => {
+      const [qid, slot] = k.split(":");
+      const v = localAnswers.get(`${qid}:${slot}`);
+      return v == null || (typeof v === "string" ? v.trim() === "" : Array.isArray(v) ? v.length === 0 : typeof v === "object" ? Object.values(v).every((x) => x == null || String(x).trim() === "") : false);
+    }).length,
+    [sectionErrorKeys, localAnswers],
+  );
 
   const flushAnswers = useCallback(async () => {
     const items = [...dirtyRef.current.values()];
@@ -332,25 +363,33 @@ export default function IpFormPage() {
                  IP1's relationship status (see SectionQuestions). No control
                  for viewers or after submit. */
               secondParentControl={!submitted && !isViewer ? { hasSecondParent, onSet: setSecondParent } : undefined}
+              errorKeys={sectionErrorKeys}
             />
           )}
 
-          <div className="flex items-center justify-between pt-2 border-t border-border">
+          <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
             <Button type="button" variant="outline" disabled={activeIndex === 0} onClick={() => goToSection(sections[activeIndex - 1].key)} data-testid="ipform-back">
               <ArrowLeft className="w-4 h-4 mr-1.5" /> Back
             </Button>
-            {activeIndex < sections.length - 1 ? (
-              <Button type="button" onClick={() => goToSection(sections[activeIndex + 1].key)} data-testid="ipform-next">
-                Next <ArrowRight className="w-4 h-4 ml-1.5" />
-              </Button>
-            ) : (
-              !submitted && (
-                <Button type="button" onClick={submitForm} disabled={submitting || isViewer} data-testid="ipform-submit">
-                  {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                  Submit Form
+            <div className="flex items-center gap-3 min-w-0">
+              {outstandingErrors > 0 && activeIndex < sections.length - 1 && (
+                <span className="text-sm text-destructive text-right" data-testid="ipform-next-error">
+                  Please complete the {outstandingErrors} required field{outstandingErrors === 1 ? "" : "s"} marked above.
+                </span>
+              )}
+              {activeIndex < sections.length - 1 ? (
+                <Button type="button" onClick={tryAdvance} data-testid="ipform-next">
+                  Next <ArrowRight className="w-4 h-4 ml-1.5" />
                 </Button>
-              )
-            )}
+              ) : (
+                !submitted && (
+                  <Button type="button" onClick={submitForm} disabled={submitting || isViewer} data-testid="ipform-submit">
+                    {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                    Submit Form
+                  </Button>
+                )
+              )}
+            </div>
           </div>
         </Card>
       )}

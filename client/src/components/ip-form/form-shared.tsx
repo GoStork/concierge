@@ -85,6 +85,29 @@ export function isQuestionVisible(
   return normalized(answers.get(answerKey(question.conditionalOnQuestionId, parentSlot))) === normalized(question.conditionalTriggerValue);
 }
 
+/** Keys (`questionId:slot`) of required-and-visible questions still empty in a section. */
+export function sectionMissingKeys(
+  section: IpFormSectionDef,
+  answers: AnswerMap,
+  hasSecondParent: boolean,
+  allQuestionsById: Map<string, IpFormSectionDef["questions"][number]>,
+): string[] {
+  // "No fertility clinic yet" marks the clinic section complete.
+  if (section.key === "clinic") {
+    const noneQ = section.questions.find((q) => q.key === "clinic_none");
+    if (noneQ && normalized(answers.get(answerKey(noneQ.id, 0))) === "yes") return [];
+  }
+  const missing: string[] = [];
+  for (const q of section.questions) {
+    if (!q.isActive || !q.required) continue;
+    for (const slot of slotsFor(section, q, hasSecondParent)) {
+      if (!isQuestionVisible(section, q, slot, answers, allQuestionsById)) continue;
+      if (isAnswerEmpty(answers.get(answerKey(q.id, slot)))) missing.push(answerKey(q.id, slot));
+    }
+  }
+  return missing;
+}
+
 /** Required-and-visible questions still missing in one section (for ticks + submit gating). */
 export function sectionMissingCount(
   section: IpFormSectionDef,
@@ -92,20 +115,7 @@ export function sectionMissingCount(
   hasSecondParent: boolean,
   allQuestionsById: Map<string, IpFormSectionDef["questions"][number]>,
 ): number {
-  // "No fertility clinic yet" marks the clinic section complete.
-  if (section.key === "clinic") {
-    const noneQ = section.questions.find((q) => q.key === "clinic_none");
-    if (noneQ && normalized(answers.get(answerKey(noneQ.id, 0))) === "yes") return 0;
-  }
-  let missing = 0;
-  for (const q of section.questions) {
-    if (!q.isActive || !q.required) continue;
-    for (const slot of slotsFor(section, q, hasSecondParent)) {
-      if (!isQuestionVisible(section, q, slot, answers, allQuestionsById)) continue;
-      if (isAnswerEmpty(answers.get(answerKey(q.id, slot)))) missing++;
-    }
-  }
-  return missing;
+  return sectionMissingKeys(section, answers, hasSecondParent, allQuestionsById).length;
 }
 
 export function allQuestionsIndex(sections: IpFormSectionDef[]): Map<string, IpFormSectionDef["questions"][number]> {
@@ -288,6 +298,7 @@ export function SectionQuestions({
   allQuestionsById,
   memberNames,
   secondParentControl,
+  errorKeys,
 }: {
   section: IpFormSectionDef;
   answers: AnswerMap;
@@ -299,6 +310,8 @@ export function SectionQuestions({
   // When provided (parent page only), the two-vs-solo escape hatch renders as
   // a checkbox under IP1's relationship status. Guests never get it.
   secondParentControl?: { hasSecondParent: boolean; onSet: (v: boolean) => void };
+  // `questionId:slot` keys flagged by a failed "Next" - marked until filled.
+  errorKeys?: Set<string>;
 }) {
   const activeQuestions = section.questions.filter((q) => q.isActive);
   const perParentQs = activeQuestions.filter((q) => q.perParent);
@@ -322,58 +335,48 @@ export function SectionQuestions({
         if (!isQuestionVisible(section, q, slot, answers, allQuestionsById)) return null;
         const editable = canEdit(q, slot);
         const indent = !!q.conditionalOnQuestionId;
-        // Fertility clinic directory-backed fields.
+        const value = answers.get(answerKey(q.id, slot));
+        // A failed "Next" marks required-and-empty fields; the error clears
+        // live as the field is filled.
+        const showError = !!errorKeys?.has(answerKey(q.id, slot)) && isAnswerEmpty(value);
+        let field: React.ReactNode;
         if (q.key === "clinic_name") {
-          return (
-            <div key={`${q.id}:${slot}`}>
-              <ClinicNameField
-                question={q}
-                value={answers.get(answerKey(q.id, slot))}
-                onChange={(v) => onAnswer(q.id, slot, v)}
-                // Picking a clinic auto-fills its phone number.
-                onSelectClinic={(c) => { if (c.phone && clinicPhoneQ) onAnswer(clinicPhoneQ.id, slot, parseClinicPhone(c.phone)); }}
-                disabled={!editable}
-              />
-            </div>
-          );
-        }
-        if (q.key === "clinic_re_name") {
-          return (
-            <div key={`${q.id}:${slot}`}>
-              <DoctorNameField question={q} value={answers.get(answerKey(q.id, slot))} providerId={clinicProviderId} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />
-            </div>
-          );
-        }
-        if (q.key === "clinic_address") {
-          return (
-            <div key={`${q.id}:${slot}`}>
-              <ClinicAddressField question={q} value={answers.get(answerKey(q.id, slot))} providerId={clinicProviderId} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />
-            </div>
-          );
-        }
-        // Mailing address gets a "same as residential" checkbox (default on)
-        // so parents don't retype the residential address.
-        if (q.key === "ip_mailing_address" && residentialQ) {
-          return (
-            <div key={`${q.id}:${slot}`}>
-              <MailingAddressField
-                question={q}
-                value={answers.get(answerKey(q.id, slot))}
-                residentialValue={answers.get(answerKey(residentialQ.id, slot))}
-                onChange={(v) => onAnswer(q.id, slot, v)}
-                disabled={!editable}
-              />
-            </div>
-          );
-        }
-        return (
-          <div key={`${q.id}:${slot}`} className={indent ? "pl-4 border-l-2 border-secondary" : undefined}>
-            <QuestionField
+          field = (
+            <ClinicNameField
               question={q}
-              value={answers.get(answerKey(q.id, slot))}
+              value={value}
+              onChange={(v) => onAnswer(q.id, slot, v)}
+              // Picking a clinic auto-fills its phone number.
+              onSelectClinic={(c) => { if (c.phone && clinicPhoneQ) onAnswer(clinicPhoneQ.id, slot, parseClinicPhone(c.phone)); }}
+              disabled={!editable}
+            />
+          );
+        } else if (q.key === "clinic_re_name") {
+          field = <DoctorNameField question={q} value={value} providerId={clinicProviderId} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />;
+        } else if (q.key === "clinic_address") {
+          field = <ClinicAddressField question={q} value={value} providerId={clinicProviderId} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />;
+        } else if (q.key === "ip_mailing_address" && residentialQ) {
+          // Mailing address gets a "same as residential" checkbox (default on).
+          field = (
+            <MailingAddressField
+              question={q}
+              value={value}
+              residentialValue={answers.get(answerKey(residentialQ.id, slot))}
               onChange={(v) => onAnswer(q.id, slot, v)}
               disabled={!editable}
             />
+          );
+        } else {
+          field = <QuestionField question={q} value={value} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />;
+        }
+        return (
+          <div
+            key={`${q.id}:${slot}`}
+            data-ipform-error={showError || undefined}
+            className={`${indent ? "pl-4 border-l-2 border-secondary" : ""} ${showError ? "rounded-[var(--radius)] ring-1 ring-destructive/70 bg-destructive/5 p-3 -mx-1" : ""}`}
+          >
+            {field}
+            {showError && <p className="text-xs text-destructive mt-1.5">This field is required.</p>}
           </div>
         );
       })}
@@ -398,14 +401,20 @@ export function SectionQuestions({
       {clinicNoneQ.label}
     </label>
   ) : null;
+  const maritalError = !!maritalQ && !!errorKeys?.has(answerKey(maritalQ.id, 0)) && isAnswerEmpty(answers.get(answerKey(maritalQ.id, 0)));
   const maritalBlock = maritalQ ? (
-    <div className="space-y-1.5" data-testid="ipform-marital-block">
+    <div
+      className={`space-y-1.5 ${maritalError ? "rounded-[var(--radius)] ring-1 ring-destructive/70 bg-destructive/5 p-3 -mx-1" : ""}`}
+      data-ipform-error={maritalError || undefined}
+      data-testid="ipform-marital-block"
+    >
       <QuestionField
         question={maritalQ}
         value={answers.get(answerKey(maritalQ.id, 0))}
         onChange={(v) => onAnswer(maritalQ.id, 0, v)}
         disabled={!canEdit(maritalQ, 0)}
       />
+      {maritalError && <p className="text-xs text-destructive mt-1">This field is required.</p>}
       {secondParentControl && (
         <SecondParentToggle
           maritalStatus={answers.get(answerKey(maritalQ.id, 0))}
