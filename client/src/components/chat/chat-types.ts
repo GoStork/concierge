@@ -103,6 +103,14 @@ export interface SessionDetail {
   /** Rolling lifetime summary Eva carries into every turn (chat-memory system). */
   historySummary?: string | null;
   summarizedThrough?: number | null;
+  /** Intended Parent Form status for the right rail (identity-revealed sessions only). */
+  ipForm?: {
+    responseId: string;
+    status: string;
+    submittedAt?: string | null;
+    promptedAt?: string | null;
+    hasSecondParent?: boolean;
+  } | null;
 }
 
 export type ViewerRole = "provider" | "admin" | "parent";

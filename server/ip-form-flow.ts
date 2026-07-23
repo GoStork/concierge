@@ -119,6 +119,43 @@ export async function maybePromptIpForm(opts: { parentUserId: string; providerId
       });
     }
 
+    // Let the provider know the consultation is done and the form is now with
+    // the parent - they've been waiting for it (it gates the match call). Posts
+    // into the shared parent-provider session (provider-facing providerContent)
+    // and drops a provider in-app notification.
+    try {
+      const providerFirstName = (await prisma.user.findFirst({ where: { id: { in: memberIds } }, select: { name: true, firstName: true } }));
+      const parentFirst = (providerFirstName?.firstName || providerFirstName?.name || "").trim().split(/\s+/)[0] || "The parent";
+      const sharedSession = await prisma.aiChatSession.findFirst({
+        where: { userId: { in: memberIds }, providerId: provider.id },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      });
+      if (sharedSession) {
+        await prisma.aiChatMessage.create({
+          data: {
+            sessionId: sharedSession.id,
+            role: "assistant",
+            // Parent-facing content stays second-person; provider reads providerContent.
+            content: `Your next step is your Intended Parent Form - I've shared it in your GoStork concierge chat. Completing it is what lets ${provider.name} set up your match call.`,
+            senderType: "system",
+            senderName: "GoStork",
+            uiCardData: {
+              providerContent: `${parentFirst} completed their consultation, so I've sent them their Intended Parent Form to fill out and sign. It's required before you can schedule a match call - you'll get the signed PDF here (and by email) the moment they submit it.`,
+            },
+          },
+        });
+      }
+      const providerUsers = await prisma.user.findMany({ where: { providerId: provider.id, isDisabled: false }, select: { id: true } });
+      for (const pu of providerUsers) {
+        void prisma.inAppNotification.create({
+          data: { userId: pu.id, eventType: "IP_FORM_SENT_TO_PARENT", payload: { parentName: parentFirst, providerName: provider.name, sessionId: sharedSession?.id || null } },
+        }).catch(() => {});
+      }
+    } catch (e: any) {
+      console.error(`[ip-form] provider prompt notify failed: ${e?.message}`);
+    }
+
     void emitJourneyEvent({
       eventType: "IP_FORM_PROMPTED",
       parentAccountId: accountId,

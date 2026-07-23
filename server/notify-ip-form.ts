@@ -271,6 +271,28 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
         })
         .catch(() => {});
     }
+    // Drop a message into the shared parent-provider chat so the provider sees
+    // it in-thread (provider-facing providerContent; parent reads `content`).
+    const sharedSession = await prisma.aiChatSession.findFirst({
+      where: { userId: { in: memberIds }, providerId: provider.id },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+    if (sharedSession) {
+      void prisma.aiChatMessage.create({
+        data: {
+          sessionId: sharedSession.id,
+          role: "assistant",
+          content: `Your Intended Parent Form is submitted and shared with ${provider.name}. This is what a potential surrogate reviews before your match call.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardData: {
+            providerContent: `${parentNames} submitted and signed their Intended Parent Form. Open the Parent Forms page to download the full PDF or the surrogate-safe version to share with candidates ahead of a match call.`,
+            ipFormResponseId: responseId,
+          },
+        },
+      }).catch(() => {});
+    }
     if (isTestData) {
       console.log(`[IP FORM NOTIFY] Test-data submission - provider email to ${provider.name} suppressed`);
       continue;

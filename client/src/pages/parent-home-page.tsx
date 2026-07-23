@@ -41,6 +41,7 @@ interface DashboardQueue {
   prepDocs: Array<{ messageId: string; sessionId: string; createdAt: string; providerName: string | null; callLabel: string; scheduledAt: string | null; url: string; fileName: string }>;
   callsToReschedule?: Array<{ sessionId: string; missedAt: string | null; callLabel: string; providerName: string | null; subjectLabel: string | null }>;
   ipFormPending?: Array<{ responseId: string; promptedAt: string; signedSlots: number[]; hasSecondParent: boolean; lastSectionKey?: string | null }>;
+  ipForm?: { responseId: string; status: string; signedSlots: number[]; hasSecondParent: boolean; lastSectionKey?: string | null } | null;
 }
 
 function fmtWhen(iso: string) {
@@ -272,6 +273,33 @@ export default function ParentHomePage() {
         />
         <JourneyTimelineCard variant="home" testId="home-journeys" />
       </Card>
+
+      {/* Permanent Intended Parent Form handle - always here once the form has
+          been sent, so the parent can reopen/edit/view it any time (the
+          "needs attention" task above disappears once submitted). */}
+      {queue?.ipForm && (() => {
+        const f = queue.ipForm!;
+        const submitted = f.status === "SUBMITTED";
+        const readyToSubmit = !submitted && (f.hasSecondParent ? f.signedSlots.includes(2) : f.signedSlots.includes(1));
+        const href = f.lastSectionKey ? `/ip-form?section=${encodeURIComponent(f.lastSectionKey)}` : "/ip-form";
+        return (
+          <Card className="p-5 space-y-3" data-testid="home-ip-form-card">
+            <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Your Intended Parent Form" />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                {submitted
+                  ? "Submitted and shared with your surrogacy agency. You can review it any time."
+                  : readyToSubmit
+                  ? "Both signatures are in - review and submit when you're ready."
+                  : "Your agency shares this with potential surrogates before your match call."}
+              </p>
+              <Button variant={submitted ? "outline" : "default"} onClick={() => navigate(href)} data-testid="home-ip-form-open" className="shrink-0">
+                {submitted ? "View form" : readyToSubmit ? "Submit form" : "Open form"}
+              </Button>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* Upcoming meetings */}
       <Card className="p-5 space-y-3">

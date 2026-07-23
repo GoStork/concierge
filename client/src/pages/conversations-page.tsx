@@ -2896,6 +2896,39 @@ const sendMessageMutation = useMutation({
                       </div>
                     );
                   })()}
+                  {detail?.ipForm && (
+                    <div className="border-t pt-4 mt-4" data-testid="provider-ip-form-section">
+                      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Intended Parent Form</h4>
+                      {detail.ipForm.status === "SUBMITTED" ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--brand-success))] font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Submitted{detail.ipForm.submittedAt ? ` ${new Date(detail.ipForm.submittedAt).toLocaleDateString()}` : ""}
+                          </div>
+                          <a
+                            href={`/api/provider/ip-forms/${detail.ipForm.responseId}/pdf?variant=full`}
+                            className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border border-border bg-background hover:bg-secondary/40 text-xs font-medium"
+                            data-testid="ip-form-download-full"
+                          >
+                            <Download className="w-3.5 h-3.5 text-primary shrink-0" /> Download full PDF
+                          </a>
+                          <a
+                            href={`/api/provider/ip-forms/${detail.ipForm.responseId}/pdf?variant=surrogate`}
+                            className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border border-border bg-background hover:bg-secondary/40 text-xs font-medium"
+                            data-testid="ip-form-download-surrogate"
+                          >
+                            <Download className="w-3.5 h-3.5 text-primary shrink-0" /> Surrogate version (safe to share)
+                          </a>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          {detail.ipForm.promptedAt
+                            ? "Sent to the parent - not submitted yet. You'll be notified here when it's ready to download."
+                            : "Not started yet."}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <SubjectProfileCard
                     providerId={(user as any)?.providerId}
                     subjectProfileId={selectedSession?.subjectProfileId}

@@ -43,6 +43,7 @@ interface ProviderQueue {
   pendingWhispers: Array<{ id: string; questionText: string; createdAt: string }>;
   reviewsAwaitingReply?: Array<{ reviewId: string; rating: number; text: string | null; createdAt: string; memberName: string | null; reviewerLabel: string }>;
   agreementsAwaiting: Array<{ agreementId: string; documentType: string; createdAt: string; parentName: string; signedCount: number; signerCount: number }>;
+  ipFormsToReview?: Array<{ responseId: string; parentNames: string; submittedAt: string; hasSecondParent: boolean }>;
 }
 
 function fmtWhen(iso: string) {
@@ -203,6 +204,7 @@ export default function ProviderHomePage() {
     (queue?.openApprovals.length || 0) +
     (queue?.pendingWhispers.length || 0) +
     (queue?.reviewsAwaitingReply?.length || 0) +
+    (queue?.ipFormsToReview?.length || 0) +
     pendingBookings.length +
     (unreadMessages > 0 ? 1 : 0);
 
@@ -270,6 +272,16 @@ export default function ProviderHomePage() {
                 detail={w.questionText.length > 90 ? `${w.questionText.slice(0, 90)}...` : w.questionText}
                 cta="Answer"
                 onClick={() => navigate("/chat")}
+              />
+            ))}
+            {(queue?.ipFormsToReview || []).map(f => (
+              <QueueRow
+                key={`ipform-${f.responseId}`}
+                icon={<FileText className="w-4 h-4" />}
+                title={`${f.parentNames} submitted their Intended Parent Form`}
+                detail="Download the PDF or the surrogate-safe version to share with candidates"
+                cta="Review"
+                onClick={() => navigate("/provider/parent-forms")}
               />
             ))}
             {(queue?.reviewsAwaitingReply || []).map(r => (

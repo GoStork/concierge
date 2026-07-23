@@ -329,7 +329,10 @@ export async function buildJourneyTimelines(
     // the journey passed it without evidence. dropIfPassed: REQUIRED step
     // that only gets the drop behavior (for rungs introduced after old
     // journeys already progressed past them) - no "(if needed)" label.
-    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; dropIfPassed?: boolean; tone?: "warning" };
+    // doneWhenReached: a discrete milestone that reads as "done" (checkmark)
+    // the moment it has evidence, even while it is the furthest rung - it is a
+    // completed action, not a stage you sit in.
+    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; dropIfPassed?: boolean; doneWhenReached?: boolean; tone?: "warning" };
     // Shared tail: invoice + agreement rungs read the same on every ladder.
     const consultRungs: Rung[] = [
       { id: "consult_scheduled", label: "Consultation Scheduled", at: consultScheduledAt },
@@ -396,7 +399,7 @@ export async function buildJourneyTimelines(
       // hiding the rung on old journeys that progressed past it without one.
       const ipFormRungs: Rung[] =
         journeyType === "surrogacy"
-          ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse?.submittedAt || null, dropIfPassed: true }]
+          ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse?.submittedAt || null, dropIfPassed: true, doneWhenReached: true }]
           : [];
       // Match Call rung + its branches, right before "Matched". REQUIRED
       // going forward; dropIfPassed hides it on legacy journeys that matched
@@ -437,7 +440,7 @@ export async function buildJourneyTimelines(
       id: r.id,
       label: r.label,
       reachedAt: iso(r.at as any),
-      state: i < highestIdx ? "done" : i === highestIdx ? (i === rungs.length - 1 ? "done" : "current") : "upcoming",
+      state: i < highestIdx ? "done" : i === highestIdx ? (i === rungs.length - 1 || r.doneWhenReached ? "done" : "current") : "upcoming",
       ...(r.optional ? { optional: true } : {}),
       ...(r.tone ? { tone: r.tone } : {}),
     }));

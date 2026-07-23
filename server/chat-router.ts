@@ -1445,6 +1445,21 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     (responseSession as any).profileStatus = provDetailEntry ? provDetailEntry.status : null;
     await applyMatchedLabelForInCycle([responseSession as any]);
 
+    // Intended Parent Form status for the right rail (identity-revealed only -
+    // it's a surrogacy artifact the provider needs for the match call).
+    if (showIdentity) {
+      const ipAcct = session.user?.parentAccountId || session.userId;
+      const ipRow = await prisma.ipFormResponse.findUnique({
+        where: { parentAccountId: ipAcct },
+        select: { id: true, status: true, submittedAt: true, promptedAt: true, hasSecondParent: true },
+      }).catch(() => null);
+      (responseSession as any).ipForm = ipRow
+        ? { responseId: ipRow.id, status: ipRow.status, submittedAt: ipRow.submittedAt, promptedAt: ipRow.promptedAt, hasSecondParent: ipRow.hasSecondParent }
+        : null;
+    } else {
+      (responseSession as any).ipForm = null;
+    }
+
     res.json(responseSession);
   } catch (e: any) {
     console.error("Provider concierge session detail error:", e);
@@ -3523,7 +3538,7 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
     // an answer. Once anyone has signed, the acknowledgment (last) section is
     // the natural landing spot for review + submit.
     let ipFormLastSectionKey: string | null = null;
-    if (ipFormResponse && ipFormResponse.status === "DRAFT" && ipFormResponse.promptedAt) {
+    if (ipFormResponse && ipFormResponse.promptedAt) {
       const answered = await prisma.ipFormAnswer.findMany({ where: { responseId: ipFormResponse.id }, select: { questionId: true } });
       if (answered.length) {
         const furthest = await prisma.ipFormQuestion.findFirst({
@@ -3548,8 +3563,21 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
             lastSectionKey: ipFormLastSectionKey,
           }]
         : [];
+    // Permanent handle to the form (present once prompted, regardless of status)
+    // so the parent always has a place to open/edit/view it - not just the
+    // transient "needs attention" task.
+    const ipForm =
+      ipFormResponse && ipFormResponse.promptedAt
+        ? {
+            responseId: ipFormResponse.id,
+            status: ipFormResponse.status,
+            signedSlots: ipFormSignatures.map(s => s.parentSlot),
+            hasSecondParent: ipFormResponse.hasSecondParent,
+            lastSectionKey: ipFormLastSectionKey,
+          }
+        : null;
 
-    res.json({ pendingProposals, awaitingMySignature, prepDocs, callsToReschedule, ipFormPending });
+    res.json({ pendingProposals, awaitingMySignature, prepDocs, callsToReschedule, ipFormPending, ipForm });
   } catch (e: any) {
     console.error("Parent dashboard queue error:", e);
     res.status(500).json({ message: e.message });
@@ -3982,10 +4010,48 @@ chatRouter.get("/api/provider/dashboard-queue", requireAuth, async (req, res) =>
       }),
     ]);
 
+    // Intended Parent Forms submitted by connected parents, for the review +
+    // download nudge. Surrogacy agencies only (the PDF download is gated to
+    // surrogacy services), and only recent submissions so the task clears.
+    let ipFormsToReview: Array<{ responseId: string; parentNames: string; submittedAt: Date; hasSecondParent: boolean }> = [];
+    try {
+      const isSurrogacyProvider = await prisma.provider.findFirst({
+        where: { id: user.providerId, services: { some: { status: "APPROVED", providerType: { name: { contains: "surrogacy", mode: "insensitive" } } } } },
+        select: { id: true },
+      });
+      if (isSurrogacyProvider) {
+        const [connSessions, connBookings] = await Promise.all([
+          prisma.aiChatSession.findMany({ where: { providerId: user.providerId, userId: { not: undefined } }, select: { userId: true } }),
+          prisma.booking.findMany({ where: { providerUser: { providerId: user.providerId }, parentUserId: { not: null } }, select: { parentUserId: true } }),
+        ]);
+        const puIds = new Set<string>();
+        for (const s of connSessions) if (s.userId) puIds.add(s.userId);
+        for (const b of connBookings) if (b.parentUserId) puIds.add(b.parentUserId);
+        if (puIds.size) {
+          const parents = await prisma.user.findMany({ where: { id: { in: [...puIds] } }, select: { id: true, parentAccountId: true, name: true, firstName: true } });
+          const acctIds = new Set(parents.map(p => p.parentAccountId || p.id));
+          const nameByAcct = new Map<string, string>();
+          for (const p of parents) {
+            const acct = p.parentAccountId || p.id;
+            if (!nameByAcct.has(acct)) nameByAcct.set(acct, p.firstName || p.name || "A parent");
+          }
+          const submitted = await prisma.ipFormResponse.findMany({
+            where: { parentAccountId: { in: [...acctIds] }, status: "SUBMITTED", submittedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+            orderBy: { submittedAt: "desc" },
+            select: { id: true, parentAccountId: true, submittedAt: true, hasSecondParent: true },
+          });
+          ipFormsToReview = submitted.map(r => ({ responseId: r.id, parentNames: nameByAcct.get(r.parentAccountId) || "A parent", submittedAt: r.submittedAt as Date, hasSecondParent: r.hasSecondParent }));
+        }
+      }
+    } catch (e: any) {
+      console.error("Provider IP-forms queue error:", e?.message);
+    }
+
     res.json({
       openApprovals,
       pendingWhispers,
       reviewsAwaitingReply,
+      ipFormsToReview,
       agreementsAwaiting: agreementsAwaiting.map(a => {
         const ss = (a.signerStatus as Record<string, any>) || {};
         const signers = Object.values(ss);

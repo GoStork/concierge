@@ -394,6 +394,23 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate]);
 
+  const handleIpFormSentEvent = useCallback((data: any) => {
+    if (data.type !== "ip_form_sent_to_parent") return;
+    playNotificationChime();
+    const parent = data.parentName || "A parent";
+    const { id: toastId } = toast({
+      title: `${parent} completed their consultation`,
+      description: "Their Intended Parent Form has been sent - you'll get it here once submitted.",
+      variant: "success",
+      action: data.sessionId ? (
+        <Button size="sm" variant="default" className="gap-1 shrink-0" onClick={() => { dismiss(toastId); navigate(`/chat/${data.sessionId}`); }} data-testid="button-view-ip-form-chat-from-toast">
+          Open chat
+        </Button>
+      ) : undefined,
+      duration: 20000,
+    });
+  }, [toast, dismiss, navigate]);
+
   const handleChatSessionUpdatedEvent = useCallback((data: any) => {
     if (data.type !== "chat_session_updated") return;
     // A new chat message was posted server-side (e.g. post-call readiness prompt).
@@ -479,6 +496,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleParentReadyEvent(data);
         handleIpFormPartnerSignedEvent(data);
         handleIpFormSubmittedEvent(data);
+        handleIpFormSentEvent(data);
       } catch {}
     };
 
@@ -498,7 +516,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent, handleIpFormSubmittedEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent, handleIpFormSubmittedEvent, handleIpFormSentEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);
