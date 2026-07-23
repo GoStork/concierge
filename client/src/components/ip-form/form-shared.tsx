@@ -146,6 +146,48 @@ export function parentSlotHeading(slot: number, memberNames?: Partial<Record<num
   return name ? `Intended Parent ${slot} - ${name}` : `Intended Parent ${slot}`;
 }
 
+// Marital statuses that imply a second intended parent (mirror of the server's
+// maritalImpliesTwoParents). Only used to choose the escape-hatch label/mode.
+const TWO_PARENT_MARITAL = ["Partnered", "Married"];
+
+/**
+ * Escape hatch for the rare mismatch between relationship status and who is
+ * actually on the journey, rendered right under IP1's marital status:
+ *  - Married/Partnered: "I'm [married/partnered] but on my own" -> hides IP2.
+ *  - Single/Separated/Divorced/Widowed: "I have a second intended parent" -> shows IP2.
+ * Hidden until a status is picked.
+ */
+function SecondParentToggle({
+  maritalStatus,
+  hasSecondParent,
+  onSet,
+}: {
+  maritalStatus: any;
+  hasSecondParent: boolean;
+  onSet: (v: boolean) => void;
+}) {
+  const status = typeof maritalStatus === "string" ? maritalStatus.trim() : "";
+  if (!status) return null;
+  const impliesTwo = TWO_PARENT_MARITAL.includes(status);
+  const label = impliesTwo
+    ? `I'm ${status.toLowerCase()}, but I'm pursuing this journey on my own`
+    : "I have a second intended parent on this journey";
+  // impliesTwo: checkbox means "solo" (checked => hasSecondParent false).
+  // else: checkbox means "add a second parent" (checked => hasSecondParent true).
+  const checked = impliesTwo ? !hasSecondParent : hasSecondParent;
+  return (
+    <label className="mt-2 flex items-start gap-2 text-sm text-muted-foreground cursor-pointer" data-testid="ipform-second-parent-toggle">
+      <Checkbox
+        checked={checked}
+        onCheckedChange={(c) => onSet(impliesTwo ? !c : !!c)}
+        className="mt-0.5"
+        data-testid="ipform-second-parent-checkbox"
+      />
+      <span>{label}</span>
+    </label>
+  );
+}
+
 function addressHasContent(v: any): boolean {
   if (!v || typeof v !== "object") return false;
   return ["address", "city", "state", "zip", "country", "apt"].some((k) => v[k] && String(v[k]).trim());
@@ -216,6 +258,7 @@ export function SectionQuestions({
   canEdit,
   allQuestionsById,
   memberNames,
+  secondParentControl,
 }: {
   section: IpFormSectionDef;
   answers: AnswerMap;
@@ -224,6 +267,9 @@ export function SectionQuestions({
   canEdit: (question: IpFormSectionDef["questions"][number], slot: number) => boolean;
   allQuestionsById: Map<string, IpFormSectionDef["questions"][number]>;
   memberNames?: Partial<Record<number, string | null>>;
+  // When provided (parent page only), the two-vs-solo escape hatch renders as
+  // a checkbox under IP1's relationship status. Guests never get it.
+  secondParentControl?: { hasSecondParent: boolean; onSet: (v: boolean) => void };
 }) {
   const activeQuestions = section.questions.filter((q) => q.isActive);
   const perParentQs = activeQuestions.filter((q) => q.perParent);
@@ -261,6 +307,15 @@ export function SectionQuestions({
               onChange={(v) => onAnswer(q.id, slot, v)}
               disabled={!editable}
             />
+            {/* Two-vs-solo escape hatch: directly under IP1's relationship
+                status, only when it implies a partner (or to add one back). */}
+            {q.key === "ip_marital_status" && slot === 1 && secondParentControl && (
+              <SecondParentToggle
+                maritalStatus={answers.get(answerKey(q.id, 1))}
+                hasSecondParent={secondParentControl.hasSecondParent}
+                onSet={secondParentControl.onSet}
+              />
+            )}
           </div>
         );
       })}

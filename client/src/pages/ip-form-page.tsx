@@ -303,30 +303,6 @@ export default function IpFormPage() {
             )}
           </div>
 
-          {/* No upfront "are there two of you?" question - we infer it from
-              IP1's relationship status below. This subtle line reflects the
-              inference and lets a parent correct the rare mismatch (married
-              but solo, or single/divorced with a co-parent). */}
-          {activeSection.key === "profile" && !submitted && !isViewer && (
-            <div className="rounded-[var(--radius)] bg-secondary/40 px-3 py-2 text-sm text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-1" data-testid="ipform-second-parent-hint">
-              {hasSecondParent ? (
-                <>
-                  <span>This form is set up for you and a second intended parent.</span>
-                  <button type="button" className="font-medium text-primary hover:underline" onClick={() => setSecondParent(false)} data-testid="ipform-set-solo">
-                    It's just me
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span>This form is set up for just you.</span>
-                  <button type="button" className="font-medium text-primary hover:underline" onClick={() => setSecondParent(true)} data-testid="ipform-set-two">
-                    I have a second intended parent
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
           {activeSection.key === "acknowledgment" ? (
             <AcknowledgmentSection
               data={data}
@@ -346,6 +322,10 @@ export default function IpFormPage() {
               canEdit={canEdit}
               allQuestionsById={questionsById}
               memberNames={memberNames}
+              /* The two-vs-solo escape hatch renders as a checkbox right under
+                 IP1's relationship status (see SectionQuestions). No control
+                 for viewers or after submit. */
+              secondParentControl={!submitted && !isViewer ? { hasSecondParent, onSet: setSecondParent } : undefined}
             />
           )}
 
