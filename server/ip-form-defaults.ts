@@ -91,9 +91,9 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
         },
         // Emergency contact (shared)
         { key: "emergency_name", label: "Emergency Contact Name", widget: "text", required: true, excludeFromSurrogatePdf: true },
-        { key: "emergency_relationship", label: "Emergency Contact Relationship", widget: "text", excludeFromSurrogatePdf: true },
-        { key: "emergency_phone", label: "Emergency Contact Phone Number", widget: "phone", excludeFromSurrogatePdf: true },
-        { key: "emergency_email", label: "Emergency Contact Email", widget: "text", excludeFromSurrogatePdf: true },
+        { key: "emergency_relationship", label: "Emergency Contact Relationship", widget: "text", required: true, excludeFromSurrogatePdf: true },
+        { key: "emergency_phone", label: "Emergency Contact Phone Number", widget: "phone", required: true, excludeFromSurrogatePdf: true },
+        { key: "emergency_email", label: "Emergency Contact Email", widget: "text", required: true, excludeFromSurrogatePdf: true },
       ],
     },
     {
