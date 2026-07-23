@@ -65,6 +65,9 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
     {
       key: "profile",
       title: "Intended Parent Profile",
+      // Contact + identity block: agency-only. The surrogate-facing PDF starts
+      // with Personal Information instead.
+      excludeFromSurrogatePdf: true,
       questions: [
         // Per-parent block (rendered as "Intended Parent (1)" / "(2)")
         { key: "ip_full_legal_name", label: "Full Legal Name", widget: "text", required: true, perParent: true },
@@ -359,6 +362,9 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
       title: "Acknowledgment and Understanding",
       description: IP_FORM_ACKNOWLEDGMENT_TEXT,
       perParent: true,
+      // Signatures + legal certification are agency records, not part of the
+      // surrogate-facing packet.
+      excludeFromSurrogatePdf: true,
       // No questions - the client renders the signature widget for this
       // section (full legal name + drawn/typed signature + date), stored in
       // IpFormSignature. The PDF renders the legal text with the downloading

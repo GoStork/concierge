@@ -437,7 +437,16 @@ export function generateIpFormPdf(args: {
       let firstSection = true;
       const startSection = () => { if (!firstSection) doc.addPage(); firstSection = false; };
 
-      for (const section of args.sections) {
+      // The surrogate-facing PDF leads with the parents' Personal Information
+      // (the get-to-know-you section) instead of the agency-only Profile.
+      let orderedSections = args.sections;
+      if (variant === "surrogate") {
+        const personal = args.sections.filter((s) => s.key === "personal_info");
+        const rest = args.sections.filter((s) => s.key !== "personal_info");
+        orderedSections = [...personal, ...rest];
+      }
+
+      for (const section of orderedSections) {
         if (variant === "surrogate" && section.excludeFromSurrogatePdf) continue;
         const activeQuestions = section.questions.filter(
           (q) => (q.isActive || answerMap.has(`${q.id}:0`) || answerMap.has(`${q.id}:1`) || answerMap.has(`${q.id}:2`)) &&
@@ -545,7 +554,16 @@ export function generateIpFormPdf(args: {
             doc.moveDown(0.1);
           }
         }
-        renderQuestions(section, sharedQs, 0);
+        // Emergency contact fields get their own labelled group, matching the
+        // legacy form ("Emergency Contact Information" heading).
+        const emergencyQs = sharedQs.filter((q) => q.key.startsWith("emergency"));
+        const otherSharedQs = sharedQs.filter((q) => !q.key.startsWith("emergency"));
+        renderQuestions(section, otherSharedQs, 0);
+        if (emergencyQs.length) {
+          if (perParentQs.length || otherSharedQs.length) doc.moveDown(0.2);
+          subHeading("Emergency Contact Information");
+          renderQuestions(section, emergencyQs, 0);
+        }
       }
 
       (doc as any).flushPages?.();
