@@ -129,8 +129,9 @@ async function reconcileHasSecondParent(response: any): Promise<any> {
   if (response.hasSecondParentManual) return response;
   const maritalQ = await prisma.ipFormQuestion.findUnique({ where: { key: "ip_marital_status" }, select: { id: true } });
   if (!maritalQ) return response;
+  // Marital status is a SHARED answer (slot 0), describing the couple.
   const ans = await prisma.ipFormAnswer.findUnique({
-    where: { responseId_questionId_parentSlot: { responseId: response.id, questionId: maritalQ.id, parentSlot: 1 } },
+    where: { responseId_questionId_parentSlot: { responseId: response.id, questionId: maritalQ.id, parentSlot: 0 } },
     select: { value: true },
   });
   const derived = maritalImpliesTwoParents(ans?.value);

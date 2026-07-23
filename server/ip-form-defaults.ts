@@ -81,13 +81,16 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
           options: ["Email", "Phone", "Text"],
           perParent: true,
         },
+        // Marital status is SHARED (not per-parent): it describes the couple's
+        // relationship, so both parents would give the same answer. It also
+        // drives the two-vs-solo split, so the client renders it once at the
+        // top of the profile section, ahead of the per-parent blocks.
         {
           key: "ip_marital_status",
           label: "Marital Status",
           widget: "dropdown",
           options: ["Single", "Partnered", "Married", "Separated", "Divorced", "Widowed"],
           required: true,
-          perParent: true,
         },
         // Emergency contact (shared)
         { key: "emergency_name", label: "Emergency Contact Name", widget: "text", required: true, excludeFromSurrogatePdf: true },

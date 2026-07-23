@@ -307,20 +307,35 @@ export function SectionQuestions({
               onChange={(v) => onAnswer(q.id, slot, v)}
               disabled={!editable}
             />
-            {/* Two-vs-solo escape hatch: directly under IP1's relationship
-                status, only when it implies a partner (or to add one back). */}
-            {q.key === "ip_marital_status" && slot === 1 && secondParentControl && (
-              <SecondParentToggle
-                maritalStatus={answers.get(answerKey(q.id, 1))}
-                hasSecondParent={secondParentControl.hasSecondParent}
-                onSet={secondParentControl.onSet}
-              />
-            )}
           </div>
         );
       })}
     </div>
   );
+
+  // Marital status is a SHARED question describing the couple's relationship
+  // (one answer, not per-parent). It renders once at the TOP of the profile
+  // section - ahead of the per-parent blocks - because it drives the two-vs-
+  // solo split and carries the escape-hatch checkbox.
+  const maritalQ = sharedQs.find((q) => q.key === "ip_marital_status");
+  const otherSharedQs = sharedQs.filter((q) => q.key !== "ip_marital_status");
+  const maritalBlock = maritalQ ? (
+    <div className="space-y-1.5" data-testid="ipform-marital-block">
+      <QuestionField
+        question={maritalQ}
+        value={answers.get(answerKey(maritalQ.id, 0))}
+        onChange={(v) => onAnswer(maritalQ.id, 0, v)}
+        disabled={!canEdit(maritalQ, 0)}
+      />
+      {secondParentControl && (
+        <SecondParentToggle
+          maritalStatus={answers.get(answerKey(maritalQ.id, 0))}
+          hasSecondParent={secondParentControl.hasSecondParent}
+          onSet={secondParentControl.onSet}
+        />
+      )}
+    </div>
+  ) : null;
 
   if (section.perParent) {
     return (
@@ -345,6 +360,7 @@ export function SectionQuestions({
   return (
     <div className="space-y-6">
       {section.description && <p className="text-sm text-muted-foreground">{section.description}</p>}
+      {maritalBlock}
       {perParentQs.length > 0 &&
         slots.map((slot) => {
           const anyEditable = perParentQs.some((q) => canEdit(q, slot));
@@ -358,10 +374,10 @@ export function SectionQuestions({
             </div>
           );
         })}
-      {sharedQs.length > 0 && (
+      {otherSharedQs.length > 0 && (
         <div className="space-y-5">
           {perParentQs.length > 0 && <h3 className="text-base font-heading font-semibold">Shared Details</h3>}
-          {renderList(sharedQs, 0)}
+          {renderList(otherSharedQs, 0)}
         </div>
       )}
     </div>
