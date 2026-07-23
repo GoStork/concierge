@@ -117,7 +117,24 @@ export default function AuthPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center p-6 bg-background">
+      <div className="flex flex-col items-center justify-center p-6 bg-background">
+        <div className="lg:hidden flex items-center justify-center gap-3 mb-8">
+          {brandSettings?.logoWithNameUrl ? (
+            <img src={getPhotoSrc(brandSettings.logoWithNameUrl) || brandSettings.logoWithNameUrl} alt={companyName} className="h-16 object-contain" data-testid="img-login-logo-mobile" />
+          ) : brandSettings?.logoUrl ? (
+            <>
+              <img src={getPhotoSrc(brandSettings.logoUrl) || brandSettings.logoUrl} alt="" className="w-14 h-14 rounded-[var(--radius)] object-contain" data-testid="img-login-logo-mobile" />
+              <span className="font-display font-heading text-2xl tracking-wide text-primary">{companyName}</span>
+            </>
+          ) : (
+            <>
+              <div className="w-12 h-12 bg-primary/10 rounded-[var(--radius)] flex items-center justify-center">
+                <Baby className="w-7 h-7 text-primary" />
+              </div>
+              <span className="font-display font-heading text-2xl tracking-wide text-primary">{companyName}</span>
+            </>
+          )}
+        </div>
         <Card className="w-full max-w-md border-none shadow-2xl shadow-primary/5">
           <CardHeader className="space-y-2 text-center pb-6">
             <CardTitle className="font-display text-3xl font-heading text-primary" data-testid="text-auth-title">
