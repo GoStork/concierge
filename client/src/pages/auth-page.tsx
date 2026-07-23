@@ -11,6 +11,11 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { useEffect, useRef, useCallback } from "react";
 import { useCompanyName, useBrandSettings } from "@/hooks/use-brand-settings";
 
+// Generic browse pages are never worth returning to after login - the
+// role-based landing (/dashboard -> chat) wins. Deep links (agreements,
+// chat sessions, pay pages) are still honored via returnTo.
+const GENERIC_RETURN_PATHS = new Set(["/", "/login", "/auth", "/dashboard", "/home", "/marketplace", "/chat", "/provider/home"]);
+
 export default function AuthPage() {
   const { user, loginMutation } = useAuth();
   const navigate = useNavigate();
@@ -24,7 +29,9 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (user) {
-      navigate(returnTo || "/dashboard", { replace: true });
+      const returnPath = (returnTo || "").split("?")[0].replace(/\/+$/, "") || "/";
+      const isDeepLink = returnTo && !GENERIC_RETURN_PATHS.has(returnPath);
+      navigate(isDeepLink ? returnTo : "/dashboard", { replace: true });
     }
   }, [user, navigate, returnTo]);
 
