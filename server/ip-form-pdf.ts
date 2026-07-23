@@ -119,6 +119,10 @@ function fmtDate(d: Date): string {
 /** Human string for an answer value, by widget. */
 function displayValue(widget: string, value: any): string {
   if (value == null) return "";
+  // Clinic name is stored as { name, providerId } (directory autocomplete).
+  if (typeof value === "object" && !Array.isArray(value) && typeof value.name === "string" && !("address" in value) && !("e164" in value)) {
+    return value.name;
+  }
   if (widget === "yes_no") {
     const v = String(value).toLowerCase();
     return v === "yes" ? "Yes" : v === "no" ? "No" : String(value);

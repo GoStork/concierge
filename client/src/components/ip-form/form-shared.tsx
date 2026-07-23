@@ -8,6 +8,7 @@ import { Check, Lock } from "lucide-react";
 import { QuestionField, IpFormQuestionDef } from "@/components/ip-form/question-field";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { ClinicNameField, DoctorNameField, ClinicAddressField, clinicProviderIdOf } from "@/components/ip-form/clinic-fields";
 
 export interface IpFormSectionDef {
   id: string;
@@ -277,6 +278,10 @@ export function SectionQuestions({
   const slots = hasSecondParent ? [1, 2] : [1];
 
   const residentialQ = section.questions.find((q) => q.key === "ip_residential_address");
+  // Fertility clinic section: the selected clinic (from clinic_name) scopes the
+  // RE and address pickers.
+  const clinicNameQ = section.questions.find((q) => q.key === "clinic_name");
+  const clinicProviderId = clinicNameQ ? clinicProviderIdOf(answers.get(answerKey(clinicNameQ.id, 0))) : null;
 
   const renderList = (questions: typeof activeQuestions, slot: number) => (
     <div className="space-y-5">
@@ -284,6 +289,28 @@ export function SectionQuestions({
         if (!isQuestionVisible(section, q, slot, answers, allQuestionsById)) return null;
         const editable = canEdit(q, slot);
         const indent = !!q.conditionalOnQuestionId;
+        // Fertility clinic directory-backed fields.
+        if (q.key === "clinic_name") {
+          return (
+            <div key={`${q.id}:${slot}`}>
+              <ClinicNameField question={q} value={answers.get(answerKey(q.id, slot))} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />
+            </div>
+          );
+        }
+        if (q.key === "clinic_re_name") {
+          return (
+            <div key={`${q.id}:${slot}`}>
+              <DoctorNameField question={q} value={answers.get(answerKey(q.id, slot))} providerId={clinicProviderId} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />
+            </div>
+          );
+        }
+        if (q.key === "clinic_address") {
+          return (
+            <div key={`${q.id}:${slot}`}>
+              <ClinicAddressField question={q} value={answers.get(answerKey(q.id, slot))} providerId={clinicProviderId} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />
+            </div>
+          );
+        }
         // Mailing address gets a "same as residential" checkbox (default on)
         // so parents don't retype the residential address.
         if (q.key === "ip_mailing_address" && residentialQ) {

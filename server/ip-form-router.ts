@@ -300,6 +300,72 @@ ipFormRouter.get("/api/ip-form", requireAuth, async (req, res) => {
   }
 });
 
+// ─── Clinic / doctor / address autocomplete (Fertility Clinic section) ───────
+// Parents type their clinic; we suggest from our IVF-clinic directory (any
+// approval status). Selecting a clinic scopes the RE and address pickers.
+
+ipFormRouter.get("/api/ip-form/clinic-search", requireAuth, async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (q.length < 2) return res.json({ clinics: [] });
+    const clinics = await prisma.provider.findMany({
+      where: {
+        name: { contains: q, mode: "insensitive" },
+        services: { some: { providerType: { name: "IVF Clinic" } } },
+      },
+      select: { id: true, name: true },
+      take: 10,
+      orderBy: { name: "asc" },
+    });
+    res.json({ clinics });
+  } catch (e: any) {
+    console.error(`[ip-form] clinic-search failed: ${e?.message}`);
+    res.status(500).json({ message: "Search failed" });
+  }
+});
+
+ipFormRouter.get("/api/ip-form/doctor-search", requireAuth, async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    const providerId = req.query.providerId ? String(req.query.providerId) : undefined;
+    // Need something to scope by: either a query or a selected clinic.
+    if (q.length < 2 && !providerId) return res.json({ doctors: [] });
+    const doctors = await prisma.providerMember.findMany({
+      where: {
+        ...(q.length >= 2 ? { name: { contains: q, mode: "insensitive" } } : {}),
+        ...(providerId ? { providerId } : {}),
+      },
+      select: { name: true, title: true },
+      take: 12,
+      orderBy: { name: "asc" },
+    });
+    res.json({ doctors });
+  } catch (e: any) {
+    console.error(`[ip-form] doctor-search failed: ${e?.message}`);
+    res.status(500).json({ message: "Search failed" });
+  }
+});
+
+ipFormRouter.get("/api/ip-form/clinic-locations", requireAuth, async (req, res) => {
+  try {
+    const providerId = String(req.query.providerId || "");
+    if (!providerId) return res.json({ locations: [] });
+    const locations = await prisma.providerLocation.findMany({
+      where: { providerId },
+      select: { address: true, city: true, state: true, zip: true },
+      orderBy: { sortOrder: "asc" },
+      take: 10,
+    });
+    res.json({
+      // ProviderLocation has no country column; our clinic directory is US.
+      locations: locations.map((l) => ({ address: l.address || "", city: l.city || "", state: l.state || "", zip: l.zip || "", country: "United States", apt: "" })),
+    });
+  } catch (e: any) {
+    console.error(`[ip-form] clinic-locations failed: ${e?.message}`);
+    res.status(500).json({ message: "Lookup failed" });
+  }
+});
+
 ipFormRouter.patch("/api/ip-form", requireAuth, async (req, res) => {
   const user = (req as any).user;
   const mySlot = slotOf(user);
