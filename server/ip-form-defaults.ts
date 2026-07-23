@@ -186,7 +186,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
         { key: "personal_pronouns", label: "Pronouns", widget: "text", required: true },
         { key: "personal_age", label: "Age", widget: "number", required: true },
         { key: "personal_occupation", label: "Occupation", widget: "text", required: true },
-        { key: "personal_grew_up", label: "Where did you grow up?", widget: "text", required: true },
+        { key: "personal_grew_up", label: "Where were you born?", widget: "text", required: true },
         { key: "personal_free_time", label: "What do you enjoy doing in your free time?", widget: "textarea", required: true },
         {
           key: "personal_education",
