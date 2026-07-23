@@ -62,7 +62,6 @@ import AgreementsGuestSigningPage from "@/pages/agreements-guest-signing-page";
 import IpFormPage from "@/pages/ip-form-page";
 import IpFormGuestPage from "@/pages/ip-form-guest-page";
 import ProviderParentFormsPage from "@/pages/provider-parent-forms-page";
-import AdminIpFormTemplatePage from "@/pages/admin-ip-form-template-page";
 import W9SigningPage from "@/pages/w9-signing-page";
 import PaymentPage from "@/pages/payment-page";
 import AdminBillingPage from "@/pages/admin-billing-page";
@@ -184,7 +183,8 @@ function AppRoutes() {
         {/* Public guest signing for the second intended parent - no auth */}
         <Route path="/ip-form/guest/:token" element={<IpFormGuestPage />} />
         <Route path="/provider/parent-forms" element={<ProtectedRoute><ProviderParentFormsPage /></ProtectedRoute>} />
-        <Route path="/admin/ip-form-template" element={<ProtectedRoute><AdminIpFormTemplatePage /></ProtectedRoute>} />
+        {/* Template editor lives under account settings; keep the old URL working */}
+        <Route path="/admin/ip-form-template" element={<Navigate to="/account/ip-form-template" replace />} />
         <Route path="/w9/:id" element={<ProtectedRoute><W9SigningPage /></ProtectedRoute>} />
         {/* Public payment page - no auth required */}
         <Route path="/pay/:paymentToken" element={<PaymentPage />} />

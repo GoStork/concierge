@@ -384,14 +384,6 @@ export default function AdminHomePage() {
         </Card>
       )}
 
-      {/* Intended Parent Form template editor entry */}
-      <Card className="p-5 space-y-3">
-        <SectionHeader icon={<FileSignature className="w-5 h-5 text-primary" />} title="Intended Parent Form" viewAllTo="/admin/ip-form-template" viewAllLabel="Edit Template" />
-        <p className="text-sm text-muted-foreground py-1">
-          The master form surrogacy families fill before a match call. Edit sections, questions, answer types, and what the surrogate-safe PDF hides.
-        </p>
-      </Card>
-
       {/* Agreements out for signature - platform wide */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<FileSignature className="w-5 h-5 text-primary" />} title="Out for signature" viewAllTo="/admin/agreements?status=sent" />

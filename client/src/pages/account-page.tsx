@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
-import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, Stethoscope, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet, FileSignature } from "lucide-react";
+import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, Stethoscope, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet, FileSignature, ClipboardList } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +30,7 @@ import { ProviderLegalIdentityTab } from "@/components/provider-legal-identity-t
 import { CalendarSettings as CalendarSettingsComponent } from "@/components/calendar/calendar-settings";
 import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import AdminConciergePage from "@/pages/admin-concierge-page";
+import AdminIpFormTemplatePage from "@/pages/admin-ip-form-template-page";
 import ProviderKnowledgeTab from "@/components/provider-knowledge-tab";
 import ConciergeSettingsTab from "@/components/concierge-settings-tab";
 import DocumentsTab from "@/components/documents-tab";
@@ -83,6 +84,7 @@ const allTabs = [
   { to: '/account/branding', label: 'Branding', icon: Palette, roles: 'branding' as const },
   { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
+  { to: '/account/ip-form-template', label: 'Parent Form', icon: ClipboardList, roles: 'admin' as const },
   { to: '/account/scrapers', label: 'Scrapers', icon: RefreshCw, roles: 'admin' as const },
   { to: '/account/test-runner', label: 'Test Runner', icon: FlaskConical, roles: 'admin' as const },
 ];
@@ -1867,6 +1869,9 @@ export default function AccountPage() {
         <Route path="concierge" element={
           isAdmin ? <AdminConciergePage /> : <ConciergeSettingsTab />
         } />
+        {isAdmin && (
+          <Route path="ip-form-template" element={<AdminIpFormTemplatePage />} />
+        )}
         {isAdmin && (
           <Route path="scrapers/*" element={<ScrapersSummaryPage />} />
         )}
