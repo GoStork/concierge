@@ -80,10 +80,16 @@ export default function IpFormGuestPage() {
         },
         { replace: true },
       );
-      window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [setSearchParams],
   );
+
+  // Jump to the top on every section change (after the new section renders;
+  // instant, since a smooth scroll from the click handler is cancelled by
+  // Safari when the content swaps).
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [activeKey]);
 
   const flushAnswers = useCallback(async () => {
     const items = [...dirtyRef.current.values()];

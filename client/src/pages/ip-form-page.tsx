@@ -122,10 +122,16 @@ export default function IpFormPage() {
         },
         { replace: true },
       );
-      window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [setSearchParams],
   );
+
+  // Jump to the top on every section change. Done in an effect (after the new
+  // section renders) with an instant scroll - a smooth scroll fired from the
+  // click handler gets cancelled by Safari when the section content swaps.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [activeKey]);
 
   const flushAnswers = useCallback(async () => {
     const items = [...dirtyRef.current.values()];
