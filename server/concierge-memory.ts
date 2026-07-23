@@ -22,6 +22,7 @@ import { Router, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
+import { isAdminOrConcierge } from "./chat-router";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -358,6 +359,72 @@ conciergeMemoryRouter.delete("/api/my/concierge-memory/:id", async (req, res) =>
   const accountId = requireParent(req, res);
   if (!accountId) return;
   const m = await prisma.conciergeMemory.findFirst({ where: { id: req.params.id, parentAccountId: accountId } });
+  if (!m) return res.status(404).json({ message: "Memory not found" });
+  await prisma.conciergeMemory.delete({ where: { id: m.id } });
+  res.json({ ok: true });
+});
+
+// ── Admin endpoints (concierge monitor) ─────────────────────────────────────
+// Same CRUD as the parent's, scoped by an explicit parentAccountId so a
+// GoStork admin/concierge can audit and correct Eva's memory for any family
+// while monitoring a session. Parents keep full visibility - edits made here
+// show up on the parent's /account/concierge tab exactly like their own.
+
+function requireAdmin(req: Request, res: Response): boolean {
+  const user = (req as any).user;
+  if (!(req as any).isAuthenticated?.() || !user) {
+    res.status(401).json({ message: "Unauthorized" });
+    return false;
+  }
+  if (!isAdminOrConcierge(user)) {
+    res.status(403).json({ message: "Forbidden" });
+    return false;
+  }
+  return true;
+}
+
+conciergeMemoryRouter.get("/api/admin/concierge-memory", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const parentAccountId = String(req.query.parentAccountId || "");
+  if (!parentAccountId) return res.status(400).json({ message: "parentAccountId required" });
+  const items = await prisma.conciergeMemory.findMany({
+    where: { parentAccountId, active: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  res.json(items);
+});
+
+conciergeMemoryRouter.post("/api/admin/concierge-memory", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const parentAccountId = String(req.body?.parentAccountId || "");
+  const text = String(req.body?.text || "").trim();
+  if (!parentAccountId) return res.status(400).json({ message: "parentAccountId required" });
+  if (!text) return res.status(400).json({ message: "text required" });
+  const kind = KINDS.has(req.body?.kind) ? req.body.kind : "FACT";
+  const created = await prisma.conciergeMemory.create({
+    data: { parentAccountId, kind, text: text.slice(0, 500), source: "MANUAL" },
+  });
+  res.json(created);
+});
+
+conciergeMemoryRouter.patch("/api/admin/concierge-memory/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const m = await prisma.conciergeMemory.findUnique({ where: { id: req.params.id } });
+  if (!m) return res.status(404).json({ message: "Memory not found" });
+  const text = req.body?.text !== undefined ? String(req.body.text).trim() : undefined;
+  const updated = await prisma.conciergeMemory.update({
+    where: { id: m.id },
+    data: {
+      ...(text ? { text: text.slice(0, 500) } : {}),
+      ...(req.body?.kind !== undefined && KINDS.has(req.body.kind) ? { kind: req.body.kind } : {}),
+    },
+  });
+  res.json(updated);
+});
+
+conciergeMemoryRouter.delete("/api/admin/concierge-memory/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const m = await prisma.conciergeMemory.findUnique({ where: { id: req.params.id } });
   if (!m) return res.status(404).json({ message: "Memory not found" });
   await prisma.conciergeMemory.delete({ where: { id: m.id } });
   res.json({ ok: true });

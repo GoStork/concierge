@@ -28,6 +28,7 @@ export interface SessionUser {
   partnerFirstName?: string | null;
   partnerAge?: number | string | null;
   dateOfBirth?: string | null;
+  parentAccountId?: string | null;
   parentAccount?: {
     intendedParentProfile?: {
       journeyStage: string | null;
@@ -99,6 +100,9 @@ export interface SessionDetail {
   title?: string | null;
   messages: SessionMessage[];
   agreements?: SessionAgreement[];
+  /** Rolling lifetime summary Eva carries into every turn (chat-memory system). */
+  historySummary?: string | null;
+  summarizedThrough?: number | null;
 }
 
 export type ViewerRole = "provider" | "admin" | "parent";

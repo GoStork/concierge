@@ -165,7 +165,7 @@ async function applyMatchedLabelForInCycle(
 function isAdminUser(user: any): boolean {
   return getUserRoles(user).includes("GOSTORK_ADMIN");
 }
-function isAdminOrConcierge(user: any): boolean {
+export function isAdminOrConcierge(user: any): boolean {
   const roles = getUserRoles(user);
   return roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE");
 }
@@ -766,7 +766,7 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true,
+            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true, parentAccountId: true,
             parentAccount: {
               select: {
                 intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },
@@ -1364,7 +1364,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true,
+            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true, parentAccountId: true,
             parentAccount: {
               select: {
                 intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },

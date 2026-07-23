@@ -1,8 +1,14 @@
 /**
- * "AI Memory" account tab (parents): view/edit/delete the durable facts the
- * concierge remembers about the family across ALL chats (ConciergeMemory).
+ * "AI Memory" list (ConciergeMemory): view/edit/delete the durable facts the
+ * concierge remembers about a family across ALL chats.
  * Ported UX intent from AI-Health: full visibility kills stale memories -
  * anything wrong or outdated can be corrected or removed right here.
+ *
+ * Two variants, one component (never fork):
+ * - Parent (default): full Card on /account/concierge, /api/my endpoints.
+ * - Admin (`admin` prop): compact list for the concierge-monitor sidebar
+ *   (narrow column, no Card shell), /api/admin endpoints scoped by
+ *   parentAccountId. Edits are shared state - the parent sees them too.
  */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -20,11 +26,17 @@ const KIND_LABELS: Record<string, string> = {
   DECISION: "Decision",
 };
 
-export function ConciergeMemoryTab() {
+export function ConciergeMemoryTab({ admin }: { admin?: { parentAccountId: string } } = {}) {
+  const listUrl = admin
+    ? `/api/admin/concierge-memory?parentAccountId=${encodeURIComponent(admin.parentAccountId)}`
+    : "/api/my/concierge-memory";
+  const itemBase = admin ? "/api/admin/concierge-memory" : "/api/my/concierge-memory";
+  const queryKey = admin ? ["/api/admin/concierge-memory", admin.parentAccountId] : ["/api/my/concierge-memory"];
+
   const q = useQuery<any[]>({
-    queryKey: ["/api/my/concierge-memory"],
+    queryKey,
     queryFn: async () => {
-      const res = await fetch("/api/my/concierge-memory", { credentials: "include" });
+      const res = await fetch(listUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load memory");
       return res.json();
     },
@@ -35,13 +47,13 @@ export function ConciergeMemoryTab() {
   const [newText, setNewText] = useState("");
   const [pending, setPending] = useState(false);
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/my/concierge-memory"] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey });
 
   const save = async (id: string) => {
     if (!editText.trim()) return;
     setPending(true);
     try {
-      await apiRequest("PATCH", `/api/my/concierge-memory/${id}`, { text: editText.trim() });
+      await apiRequest("PATCH", `${itemBase}/${id}`, { text: editText.trim() });
       setEditingId(null);
       refresh();
     } finally {
@@ -51,7 +63,7 @@ export function ConciergeMemoryTab() {
   const remove = async (id: string) => {
     setPending(true);
     try {
-      await apiRequest("DELETE", `/api/my/concierge-memory/${id}`);
+      await apiRequest("DELETE", `${itemBase}/${id}`);
       refresh();
     } finally {
       setPending(false);
@@ -61,7 +73,10 @@ export function ConciergeMemoryTab() {
     if (!newText.trim()) return;
     setPending(true);
     try {
-      await apiRequest("POST", "/api/my/concierge-memory", { text: newText.trim() });
+      await apiRequest("POST", itemBase, {
+        text: newText.trim(),
+        ...(admin ? { parentAccountId: admin.parentAccountId } : {}),
+      });
       setNewText("");
       setAdding(false);
       refresh();
@@ -71,6 +86,88 @@ export function ConciergeMemoryTab() {
   };
 
   const items = q.data || [];
+
+  const sourceLabel = (m: any) =>
+    admin
+      ? m.source === "MANUAL" ? "Added manually" : m.source === "USER_SAID" ? "Parent asked to remember" : "Extracted from chat"
+      : m.source === "MANUAL" ? "Added by you" : m.source === "USER_SAID" ? "You asked to remember this" : "Noticed in conversation";
+
+  const list = q.isLoading ? (
+    <div className={admin ? "py-4 flex justify-center" : "py-10 flex justify-center"}><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+  ) : items.length === 0 ? (
+    <p className={admin ? "text-xs text-muted-foreground py-2" : "text-sm text-muted-foreground py-6"}>
+      {admin
+        ? "No memory notes for this family yet - Eva extracts them as the conversation grows."
+        : 'Nothing remembered yet. As you chat, your concierge will note the things worth carrying forward - or you can ask in any chat: "remember that we prefer morning calls."'}
+    </p>
+  ) : (
+    <div className="divide-y">
+      {items.map((m) => (
+        <div key={m.id} className={`flex items-start gap-2 ${admin ? "py-2" : "py-3 gap-3"}`} data-testid={`memory-${m.id}`}>
+          <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-secondary text-foreground shrink-0 mt-0.5">
+            {KIND_LABELS[m.kind] || "Fact"}
+          </span>
+          {editingId === m.id ? (
+            <div className="flex-1 flex gap-2 items-center min-w-0">
+              <Input value={editText} onChange={(e) => setEditText(e.target.value)} maxLength={500} autoFocus onKeyDown={(e) => { if (e.key === "Enter") save(m.id); }} data-testid={`input-edit-${m.id}`} />
+              <Button size="sm" disabled={pending || !editText.trim()} onClick={() => save(m.id)}>
+                {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><X className="w-4 h-4" /></Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 min-w-0">
+                <p className={admin ? "text-xs text-foreground" : "text-sm text-foreground"}>{m.text}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {sourceLabel(m)}
+                  {" · "}{new Date(m.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                </p>
+              </div>
+              <button type="button" className="text-muted-foreground hover:text-foreground p-1" onClick={() => { setEditingId(m.id); setEditText(m.text); }} aria-label="Edit" data-testid={`btn-edit-${m.id}`}>
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button type="button" className="text-muted-foreground hover:text-destructive p-1" onClick={() => remove(m.id)} aria-label="Delete" data-testid={`btn-delete-${m.id}`}>
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  const addRow = adding ? (
+    <div className="flex gap-2 items-center">
+      <Input
+        value={newText}
+        onChange={(e) => setNewText(e.target.value)}
+        placeholder={admin ? 'e.g. "Mentioned on our call: wants to start in the fall"' : 'e.g. "We prefer video calls in the evening"'}
+        maxLength={500}
+        autoFocus
+        onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+        data-testid="input-new-memory"
+      />
+      <Button size="sm" disabled={pending || !newText.trim()} onClick={add} data-testid="btn-save-new-memory">
+        {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setNewText(""); }}><X className="w-4 h-4" /></Button>
+    </div>
+  ) : null;
+
+  if (admin) {
+    return (
+      <div className="space-y-2" data-testid="concierge-memory-admin">
+        {!adding && (
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAdding(true)} data-testid="btn-add-memory">
+            <Plus className="w-3.5 h-3.5 mr-1" /> Add a note
+          </Button>
+        )}
+        {addRow}
+        {list}
+      </div>
+    );
+  }
 
   return (
     <Card className="p-6 space-y-4" data-testid="concierge-memory-tab">
@@ -90,68 +187,8 @@ export function ConciergeMemoryTab() {
           </Button>
         )}
       </div>
-
-      {adding && (
-        <div className="flex gap-2 items-center">
-          <Input
-            value={newText}
-            onChange={(e) => setNewText(e.target.value)}
-            placeholder='e.g. "We prefer video calls in the evening"'
-            maxLength={500}
-            autoFocus
-            onKeyDown={(e) => { if (e.key === "Enter") add(); }}
-            data-testid="input-new-memory"
-          />
-          <Button size="sm" disabled={pending || !newText.trim()} onClick={add} data-testid="btn-save-new-memory">
-            {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setNewText(""); }}><X className="w-4 h-4" /></Button>
-        </div>
-      )}
-
-      {q.isLoading ? (
-        <div className="py-10 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-6">
-          Nothing remembered yet. As you chat, your concierge will note the things worth carrying forward - or you
-          can ask in any chat: "remember that we prefer morning calls."
-        </p>
-      ) : (
-        <div className="divide-y">
-          {items.map((m) => (
-            <div key={m.id} className="py-3 flex items-start gap-3" data-testid={`memory-${m.id}`}>
-              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-secondary text-foreground shrink-0 mt-0.5">
-                {KIND_LABELS[m.kind] || "Fact"}
-              </span>
-              {editingId === m.id ? (
-                <div className="flex-1 flex gap-2 items-center">
-                  <Input value={editText} onChange={(e) => setEditText(e.target.value)} maxLength={500} autoFocus onKeyDown={(e) => { if (e.key === "Enter") save(m.id); }} data-testid={`input-edit-${m.id}`} />
-                  <Button size="sm" disabled={pending || !editText.trim()} onClick={() => save(m.id)}>
-                    {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}><X className="w-4 h-4" /></Button>
-                </div>
-              ) : (
-                <>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-foreground">{m.text}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {m.source === "MANUAL" ? "Added by you" : m.source === "USER_SAID" ? "You asked to remember this" : "Noticed in conversation"}
-                      {" · "}{new Date(m.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                    </p>
-                  </div>
-                  <button type="button" className="text-muted-foreground hover:text-foreground p-1" onClick={() => { setEditingId(m.id); setEditText(m.text); }} aria-label="Edit" data-testid={`btn-edit-${m.id}`}>
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  <button type="button" className="text-muted-foreground hover:text-destructive p-1" onClick={() => remove(m.id)} aria-label="Delete" data-testid={`btn-delete-${m.id}`}>
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {addRow}
+      {list}
     </Card>
   );
 }

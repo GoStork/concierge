@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageStatus } from "@/components/ui/message-status";
 import {
-  ArrowLeft, ChevronRight, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video, Sparkles,
+  ArrowLeft, ChevronRight, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video, Sparkles, Brain, ChevronDown,
 } from "lucide-react";
 import {
   timeAgo,
@@ -30,6 +30,7 @@ import {
   type FilterTab,
 } from "@/components/chat";
 import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
+import { ConciergeMemoryTab } from "@/components/concierge-memory-tab";
 import { useToast } from "@/hooks/use-toast";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
@@ -1034,6 +1035,15 @@ export default function AdminConciergeMonitor() {
               }
               extraSections={
                 <>
+                  {/* What Eva knows: the session's rolling summary (exactly what is
+                      injected into Eva's prompt) + the account's durable memory,
+                      editable in place so a bad extraction can be fixed mid-monitor.
+                      This is the takeover briefing - the human starts from the same
+                      picture Eva had. */}
+                  <EvaKnowledgePanel
+                    historySummary={detail.historySummary}
+                    parentAccountId={detail.user.parentAccountId || detail.user.id}
+                  />
                   {activeBookings.length > 0 && (
                     <div className="border-t pt-4 mt-4" data-testid="panel-concierge-call-section">
                       <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>GoStork Concierge Call</h4>
@@ -1138,5 +1148,51 @@ export default function AdminConciergeMonitor() {
         </Button>
       }
     />
+  );
+}
+
+/**
+ * "What Eva knows" - the takeover briefing. Shows the session's rolling
+ * summary (the exact context injected into Eva's prompt each turn) and the
+ * family's durable concierge memory, editable in place via the shared
+ * ConciergeMemoryTab admin variant. Collapsed by default so the sidebar
+ * stays scannable; no modal per design rules.
+ */
+function EvaKnowledgePanel({ historySummary, parentAccountId }: { historySummary?: string | null; parentAccountId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-b pb-4 mb-4" data-testid="eva-knowledge-panel">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between gap-2 text-left"
+        onClick={() => setOpen((v) => !v)}
+        data-testid="btn-toggle-eva-knowledge"
+      >
+        <h4 className="font-semibold text-sm flex items-center gap-1.5" style={{ fontFamily: "var(--font-display)" }}>
+          <Brain className="w-4 h-4 text-primary" /> What Eva knows
+        </h4>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="mt-3 space-y-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Session summary</p>
+            {historySummary ? (
+              <p className="text-xs text-foreground whitespace-pre-wrap bg-secondary/50 rounded-md p-2.5" data-testid="text-history-summary">
+                {historySummary}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No rolling summary yet - it starts once the conversation is long enough to fold (about 28 turns).
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Family memory</p>
+            <ConciergeMemoryTab admin={{ parentAccountId }} />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
