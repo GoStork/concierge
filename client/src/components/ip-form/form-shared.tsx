@@ -112,7 +112,7 @@ export function SectionStepper({
 }) {
   const byId = allQuestionsIndex(sections);
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1" data-testid="ipform-stepper">
+    <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1" data-testid="ipform-stepper">
       {sections.map((s, i) => {
         const complete = s.key === "acknowledgment" ? signaturesDone : s.questions.length > 0 && sectionMissingCount(s, answers, hasSecondParent, byId) === 0;
         const active = s.key === activeKey;
