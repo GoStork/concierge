@@ -105,6 +105,8 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
     {
       key: "clinic",
       title: "Fertility Clinic Information",
+      // Clinical/logistics detail - agency-only, not part of the surrogate packet.
+      excludeFromSurrogatePdf: true,
       questions: [
         // Escape hatch rendered as a checkbox at the top; when "yes" it hides
         // the clinic fields and waives their required-ness.
@@ -120,6 +122,8 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
     {
       key: "embryo",
       title: "Embryo Information",
+      // Clinical detail - agency-only, not part of the surrogate packet.
+      excludeFromSurrogatePdf: true,
       questions: [
         { key: "embryo_gc_reason", label: "What is the reason for using a gestational carrier?", widget: "textarea", required: true },
         { key: "embryo_count", label: "How many embryos do you have?", widget: "number", required: true },
