@@ -68,7 +68,8 @@ async function maybeRequestPhotocopy(
     const have = new Set(
       answers.filter((a) => a.value && (typeof a.value === "string" ? a.value : (a.value as any).url)).map((a) => a.parentSlot),
     );
-    if (slots.every((s) => have.has(s))) return; // all scans already uploaded
+    const missing = slots.filter((s) => !have.has(s));
+    if (!missing.length) return; // all scans already uploaded
     // Dedupe per provider via the reminder ledger (unique constraint).
     try {
       await prisma.ipFormReminder.create({ data: { responseId: response.id, channel: "photocopy", reminderType: `photocopy_${provider.id}` } });
@@ -83,7 +84,7 @@ async function maybeRequestPhotocopy(
           role: "assistant",
           content:
             `${provider.name} needs a photo or scan of each intended parent's ID document (passport or government ID) before moving forward. ` +
-            `You can add it to your Intended Parent Form under "Private Information" - it only takes a moment, and it stays private to ${provider.name}. ` +
+            `You can add it to your Intended Parent Form under "Private Information" - either parent can upload both, and it stays private to ${provider.name}. ` +
             `Your form is otherwise all set; this is the only thing outstanding.`,
           senderType: "system",
           senderName: "GoStork",
@@ -94,6 +95,35 @@ async function maybeRequestPhotocopy(
     void sendIpFormPhotocopyRequest({ responseId: response.id, providerName: provider.name || "Your provider" }).catch((e: any) =>
       console.error(`[ip-form] photocopy request notify failed: ${e?.message}`),
     );
+
+    // If parent 2 has no account (guest) and their scan is missing, re-issue a
+    // fresh signing link so they can upload their own ID even after submission
+    // (their link is revoked at submit). Account-member parents can already
+    // upload the other's ID, so this is only for the guest case.
+    if (missing.includes(2)) {
+      const resp = await prisma.ipFormResponse.findUnique({ where: { id: response.id }, select: { parent2Mode: true } });
+      if (resp?.parent2Mode === "guest") {
+        const lastToken = await prisma.ipFormGuestToken.findFirst({
+          where: { responseId: response.id },
+          orderBy: { createdAt: "desc" },
+          select: { email: true, name: true },
+        });
+        if (lastToken?.email) {
+          await prisma.ipFormGuestToken.updateMany({ where: { responseId: response.id, revokedAt: null }, data: { revokedAt: new Date() } });
+          const crypto = await import("crypto");
+          const token = crypto.randomBytes(32).toString("hex");
+          await prisma.ipFormGuestToken.create({
+            data: { responseId: response.id, token, email: lastToken.email, name: lastToken.name, parentSlot: 2, expiresAt: new Date(Date.now() + 30 * DAY_MS) },
+          });
+          const { getBaseUrl } = await import("./src/lib/get-base-url");
+          const link = `${getBaseUrl()}/ip-form/guest/${token}`;
+          const { sendIpFormGuestPhotocopyRequest } = await import("./notify-ip-form");
+          void sendIpFormGuestPhotocopyRequest({ email: lastToken.email, name: lastToken.name, providerName: provider.name || "Your provider", link }).catch((e: any) =>
+            console.error(`[ip-form] guest photocopy request failed: ${e?.message}`),
+          );
+        }
+      }
+    }
     console.log(`[ip-form] Requested ID photocopy for response ${response.id} (provider ${provider.name})`);
   } catch (e: any) {
     console.error(`[ip-form] maybeRequestPhotocopy failed: ${e?.message}`);

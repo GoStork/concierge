@@ -8680,6 +8680,41 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           console.error("[CONSULTATION] Error validating providerId against latest match card:", e);
         }
       }
+
+      // INTERNATIONAL PROGRAM - SECOND-LEG REDIRECT (deterministic): an
+      // international surrogacy agency is paired with a partner IVF/egg-donor
+      // clinic (Provider.partnerProviderIds). The parent books the two calls
+      // sequentially - the agency first, then the clinic. The model reliably
+      // re-emits the AGENCY id for BOTH bookings, so we detect the second leg
+      // server-side: if this session has ALREADY shown a booking card for this
+      // exact agency and a partner clinic is still unbooked, this booking is the
+      // clinic leg - redirect to the first unbooked partner clinic. Once both
+      // legs are booked (no unbooked partner), the agency id stays as-is.
+      if (currentSessionId && consultProviderId) {
+        try {
+          const acctIds = userRecord?.parentAccountId
+            ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+            : [userId];
+          const partners = await getProgramPartnerClinics(consultProviderId, acctIds);
+          const unbooked = partners.filter((p) => !p.booked);
+          if (unbooked.length > 0) {
+            const priorAgencyCard = await prisma.aiChatMessage.findFirst({
+              where: {
+                sessionId: currentSessionId,
+                uiCardData: { path: ["consultationCard", "providerId"], equals: consultProviderId },
+              },
+              select: { id: true },
+            });
+            if (priorAgencyCard) {
+              console.log(`[CONSULTATION] International program second leg: agency "${consultProviderId}" already has a booking card in this session -> redirecting to partner IVF clinic "${unbooked[0].id}" (${unbooked[0].name}).`);
+              consultProviderId = unbooked[0].id;
+            }
+          }
+        } catch (e) {
+          console.error("[CONSULTATION] Partner-clinic second-leg redirect failed:", e);
+        }
+      }
+
       // Phase 7B deterministic guard: a handed-off journey never gets a new
       // consultation card for that provider, no matter what the model emitted.
       try {

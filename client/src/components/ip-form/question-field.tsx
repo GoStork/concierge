@@ -43,6 +43,7 @@ export function QuestionField({
   onChange,
   disabled,
   hideLabel,
+  fileUpload,
 }: {
   question: IpFormQuestionDef;
   value: any;
@@ -51,6 +52,8 @@ export function QuestionField({
   // The mailing-address field renders its own label above the "same as
   // residential" checkbox, so it hides QuestionField's built-in label.
   hideLabel?: boolean;
+  // Override for the file widget's upload (guests use a token-scoped endpoint).
+  fileUpload?: (file: File) => Promise<{ url: string; name: string; contentType: string }>;
 }) {
   const q = question;
   return (
@@ -62,12 +65,12 @@ export function QuestionField({
         </Label>
       )}
       {q.helpText && !hideLabel && <p className="text-xs text-muted-foreground">{q.helpText}</p>}
-      <WidgetInput question={q} value={value} onChange={onChange} disabled={disabled} />
+      <WidgetInput question={q} value={value} onChange={onChange} disabled={disabled} fileUpload={fileUpload} />
     </div>
   );
 }
 
-function WidgetInput({ question: q, value, onChange, disabled }: { question: IpFormQuestionDef; value: any; onChange: (v: any) => void; disabled?: boolean }) {
+function WidgetInput({ question: q, value, onChange, disabled, fileUpload }: { question: IpFormQuestionDef; value: any; onChange: (v: any) => void; disabled?: boolean; fileUpload?: (file: File) => Promise<{ url: string; name: string; contentType: string }> }) {
   switch (q.widget) {
     case "textarea":
       return (
@@ -168,7 +171,7 @@ function WidgetInput({ question: q, value, onChange, disabled }: { question: IpF
     case "photos":
       return <PhotosInput value={Array.isArray(value) ? value : []} onChange={onChange} disabled={disabled} />;
     case "file":
-      return <FileInput value={value && typeof value === "object" ? value : null} onChange={onChange} disabled={disabled} />;
+      return <FileInput value={value && typeof value === "object" ? value : null} onChange={onChange} disabled={disabled} upload={fileUpload} />;
     default:
       return (
         <Input
@@ -211,8 +214,10 @@ function DateField({ question: q, value, onChange, disabled }: { question: IpFor
 interface FileValue { url: string; name: string; contentType: string }
 
 /** Single-file upload (image or PDF) - used for the ID document photocopy.
- *  Stores { url, name, contentType }; the file goes to the private GCS bucket. */
-function FileInput({ value, onChange, disabled }: { value: FileValue | null; onChange: (v: FileValue | null) => void; disabled?: boolean }) {
+ *  Stores { url, name, contentType }; the file goes to the private GCS bucket.
+ *  `upload` overrides the default authed /api/uploads path (guests use a
+ *  token-scoped data-URL endpoint since they have no session). */
+function FileInput({ value, onChange, disabled, upload }: { value: FileValue | null; onChange: (v: FileValue | null) => void; disabled?: boolean; upload?: (file: File) => Promise<FileValue> }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,8 +229,12 @@ function FileInput({ value, onChange, disabled }: { value: FileValue | null; onC
     setError(null);
     setUploading(true);
     try {
-      const url = await uploadFile(file, file.name);
-      onChange({ url, name: file.name, contentType: file.type || "" });
+      if (upload) {
+        onChange(await upload(file));
+      } else {
+        const url = await uploadFile(file, file.name);
+        onChange({ url, name: file.name, contentType: file.type || "" });
+      }
     } catch (e: any) {
       setError(e?.message || "Upload failed - please try again");
     } finally {

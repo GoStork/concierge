@@ -686,17 +686,21 @@ ipFormRouter.patch("/api/ip-form/guest/:token/answers", guestThrottle, async (re
     if (!items.length) return res.status(400).json({ message: "answers array required" });
     if (items.length > 100) return res.status(400).json({ message: "Too many answers in one batch" });
 
+    // A submitted form only accepts supplemental docs (the ID photocopy file).
+    const submitted = tokenRow.response.status === "SUBMITTED";
     const sections = await loadIpFormTemplate();
     const questionMeta = new Map<string, { section: any; question: any }>();
     for (const s of sections) for (const q of s.questions) questionMeta.set(q.id, { section: s, question: q });
 
     let saved = 0;
+    let fileUploadedPostSubmit = false;
     for (const item of items) {
       const meta = questionMeta.get(item?.questionId);
       if (!meta) continue;
       const { section, question } = meta;
       // Guests may only write their own slot's per-parent questions.
       if (!(section.perParent || question.perParent)) continue;
+      if (submitted && question.widget !== "file") continue; // only the supplemental ID doc post-submit
       const slot = tokenRow.parentSlot;
       await prisma.ipFormAnswer.upsert({
         where: { responseId_questionId_parentSlot: { responseId: tokenRow.responseId, questionId: question.id, parentSlot: slot } },
@@ -704,6 +708,11 @@ ipFormRouter.patch("/api/ip-form/guest/:token/answers", guestThrottle, async (re
         update: { value: item.value ?? null },
       });
       saved++;
+      if (submitted && question.widget === "file" && item.value) fileUploadedPostSubmit = true;
+    }
+    if (fileUploadedPostSubmit) {
+      const { notifyProvidersPhotocopyUploaded } = await import("./notify-ip-form");
+      void notifyProvidersPhotocopyUploaded(tokenRow.responseId).catch((e: any) => console.error(`[ip-form] guest photocopy-uploaded notify failed: ${e?.message}`));
     }
     res.json({ saved });
   } catch (e: any) {
@@ -736,6 +745,48 @@ async function storeSignatureDataUrl(dataUrl: string): Promise<string | null> {
     return `/uploads/${name}`;
   }
 }
+
+/** Store a guest-uploaded image/PDF (as a data URL) to the private bucket. */
+async function storeDataUrlFile(dataUrl: string): Promise<{ url: string; contentType: string } | null> {
+  const match = /^data:([\w/+.-]+);base64,(.+)$/.exec(dataUrl || "");
+  if (!match) return null;
+  const contentType = match[1].toLowerCase();
+  const ok = contentType.startsWith("image/") || contentType === "application/pdf";
+  if (!ok) return null;
+  const buffer = Buffer.from(match[2], "base64");
+  if (!buffer.length || buffer.length > 12 * 1024 * 1024) return null; // 12MB cap
+  const ext = contentType === "application/pdf" ? ".pdf" : `.${contentType.split("/")[1] || "bin"}`.replace(".jpeg", ".jpg");
+  const name = `ip-form-file-${crypto.randomBytes(10).toString("hex")}${ext}`;
+  try {
+    const { StorageService } = await import("./src/modules/storage/storage.service");
+    const storage = new StorageService();
+    const url = await storage.uploadBufferPublic(buffer, `uploads/${name}`, contentType);
+    return { url, contentType };
+  } catch {
+    const fs = await import("fs");
+    const path = await import("path");
+    const dir = path.resolve(process.cwd(), "public", "uploads");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name), buffer);
+    return { url: `/uploads/${name}`, contentType };
+  }
+}
+
+/** Guest file upload (ID photocopy) - guests have no /api/uploads auth. */
+ipFormRouter.post("/api/ip-form/guest/:token/upload-file", guestThrottle, async (req, res) => {
+  try {
+    const tokenRow = await validGuestToken(String(req.params.token));
+    if (!tokenRow) return res.status(404).json({ message: "This link is no longer valid" });
+    const { dataUrl, name } = req.body || {};
+    if (!dataUrl || typeof dataUrl !== "string") return res.status(400).json({ message: "dataUrl required" });
+    const stored = await storeDataUrlFile(dataUrl);
+    if (!stored) return res.status(400).json({ message: "Only images or PDF up to 12MB are accepted" });
+    res.json({ url: stored.url, name: (name && String(name)) || "ID document", contentType: stored.contentType });
+  } catch (e: any) {
+    console.error(`[ip-form] guest upload failed: ${e?.message}`);
+    res.status(500).json({ message: "Upload failed" });
+  }
+});
 
 ipFormRouter.post("/api/ip-form/guest/:token/sign", guestThrottle, async (req, res) => {
   try {

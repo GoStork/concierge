@@ -125,13 +125,35 @@ export default function IpFormGuestPage() {
     [flushAnswers],
   );
 
-  // Guests edit ONLY their own slot's per-parent questions.
+  const submitted = data?.response?.status === "SUBMITTED";
+
+  // Guests edit ONLY their own slot's per-parent questions. Once submitted, only
+  // the supplemental ID photocopy (file widget) stays editable.
   const canEdit = useCallback(
     (question: IpFormSectionDef["questions"][number], slot: number) => {
       if (!activeSection) return false;
-      return (activeSection.perParent || question.perParent) && slot === mySlot;
+      if (!((activeSection.perParent || question.perParent) && slot === mySlot)) return false;
+      if (submitted) return question.widget === "file";
+      return true;
     },
-    [activeSection, mySlot],
+    [activeSection, mySlot, submitted],
+  );
+
+  // Guests have no /api/uploads session - the file widget uploads via a
+  // token-scoped data-URL endpoint instead.
+  const guestFileUpload = useCallback(
+    async (file: File): Promise<{ url: string; name: string; contentType: string }> => {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Could not read file"));
+        reader.readAsDataURL(file);
+      });
+      const res = await apiRequest("POST", `/api/ip-form/guest/${token}/upload-file`, { dataUrl, name: file.name });
+      const body = await res.json();
+      return { url: body.url, name: body.name || file.name, contentType: body.contentType || file.type || "" };
+    },
+    [token],
   );
 
   if (isLoading) {
@@ -224,6 +246,7 @@ export default function IpFormGuestPage() {
                 hasSecondParent={hasSecondParent}
                 canEdit={canEdit}
                 allQuestionsById={questionsById}
+                fileUpload={guestFileUpload}
               />
             )}
 

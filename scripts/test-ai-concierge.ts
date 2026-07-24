@@ -91,6 +91,11 @@ interface Msg {
     notContains?: string[];
     hasQR?: boolean;
     hasMatchCard?: boolean;
+    /** A consultation booking calendar card was rendered this turn. */
+    hasConsultation?: boolean;
+    /** A consultation card rendered this turn FOR A PROVIDER not booked earlier
+     *  in this test (e.g. the partner IVF clinic after the surrogacy agency). */
+    consultationIsNew?: boolean;
   };
 }
 
@@ -107,6 +112,11 @@ interface TestCase {
   interestedServices: string[];
   messages: Msg[];
   db: DBAssert[];
+  /** Require at least this many DISTINCT-provider consultation booking cards
+   *  across the whole run (e.g. 2 for an international program = surrogacy
+   *  agency + partner IVF clinic). Timing-agnostic: it does not matter which
+   *  turn books which leg, only that both distinct providers get booked. */
+  minDistinctConsultations?: number;
 }
 
 interface TurnResult {
@@ -114,6 +124,8 @@ interface TurnResult {
   quickReplies: string[];
   hasMatchCard: boolean;
   sessionId: string | null;
+  /** providerId of the consultation booking card rendered this turn, if any. */
+  consultationProviderId: string | null;
 }
 
 interface TestResult {
@@ -1066,6 +1078,36 @@ const TEST_CASES: TestCase[] = [
     ],
   },
 
+  {
+    id: "TD-13", persona: "two-dads",
+    name: "TD-13: Colombia program - SEQUENTIAL agency + partner IVF clinic booking",
+    desc: "An international CountryProgram bundles the surrogacy agency with its partner IVF/egg-donor clinic (e.g. Bioética + Inser). When the parent picks the program the AI must offer BOTH consultation calls ONE AFTER THE OTHER - the agency first (with a quick reply to also set up the clinic call), then the partner clinic when the parent agrees. Regression guard for the 'only booked the agency, forgot the connected IVF clinic' bug.",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messages: msgs(
+      P0, I_TWO_DADS, CLINIC_HAVE, EMB_NO,
+      EGG_DONOR, SPERM_DONOR, SPERM_HAVE, SURR_NEED,
+      ...agencyMatch("Colombia"),
+      // Drive to the program card, then book BOTH legs. The international agency
+      // search is slow (its CountryProgram card can lag a turn), so we give the
+      // flow several turns: reach the program, book the surrogacy agency (leg 1),
+      // then ask to also set up the IVF clinic call (leg 2). We do NOT assert
+      // which turn books which leg (timing varies); the case-level
+      // minDistinctConsultations check below verifies BOTH distinct providers
+      // (agency + partner IVF clinic) get booked across the run.
+      { send: "Yes, find me the right international agency" },
+      { send: "Show me the Colombia program" },
+      { send: "This program looks great" },
+      { send: "I'd like to schedule a consultation for the Colombia program" },
+      { send: "Yes, please also set up the IVF clinic call" },
+      { send: "Yes, book the IVF clinic consultation too" },
+    ),
+    db: [],
+    // Regression guard: before the fix only the surrogacy agency was ever
+    // booked (1 distinct provider); the connected IVF clinic (Inser) was
+    // forgotten. Both legs must now be bookable = 2 distinct providers.
+    minDistinctConsultations: 2,
+  },
+
   // ══════════════════════════════════════════════════════════
   // TWO MOMS (13 cases: TM-01 → TM-13)
   // Rules: sperm=always donor (NEVER ask), ask egg source, ask carrier (me/partner/surrogate)
@@ -1847,7 +1889,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
         // the TCP connection closes and text() returns a truncated body (no "done").
         const text = await res.text();
         clearTimeout(abortTimer);
-        let content = "", newSid: string | null = null, qr: string[] = [], hasCard = false, gotDone = false;
+        let content = "", newSid: string | null = null, qr: string[] = [], hasCard = false, gotDone = false, consultPid: string | null = null;
         for (const line of text.split("\n")) {
           if (!line.startsWith("data: ")) continue;
           try {
@@ -1858,6 +1900,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
               newSid = d.sessionId || newSid;
               qr = d.quickReplies || [];
               hasCard = !!(d.matchCards?.length);
+              consultPid = d.consultationCard?.providerId || null;
               if (d.message !== undefined && d.message !== null) content = d.message.content || "";
             } else if (d.type === "retry_needed") {
               // Server signalled a retry - treat same as incomplete
@@ -1872,7 +1915,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
           throw new Error("Incomplete SSE response: server restarted mid-stream (3 attempts exhausted)");
         }
         if (/\[\[MATCH_CARD:/i.test(content)) hasCard = true;
-        return { content, quickReplies: qr, hasMatchCard: hasCard, sessionId: newSid };
+        return { content, quickReplies: qr, hasMatchCard: hasCard, sessionId: newSid, consultationProviderId: consultPid };
       }
 
       const d = await res.json();
@@ -1882,6 +1925,7 @@ async function sendMessage(cookie: string, message: string, sessionId: string | 
         quickReplies: d.quickReplies || [],
         hasMatchCard: !!(d.matchCards?.length),
         sessionId: d.sessionId || null,
+        consultationProviderId: d.consultationCard?.providerId || null,
       };
     } catch (err: any) {
       clearTimeout(abortTimer);
@@ -1967,6 +2011,10 @@ async function runTest(tc: TestCase, baseUrl: string = BASE_URL): Promise<TestRe
     userId = uid;
     let sessionId: string | null = null;
     let aiMsgIdx = 0;
+    // providerIds of consultation cards already rendered in this test - lets
+    // an assert require a NEW (different-provider) booking card, e.g. the
+    // partner IVF clinic that follows the surrogacy agency in a program.
+    const seenConsultPids = new Set<string>();
 
     for (let msgIdx = 0; msgIdx < tc.messages.length; msgIdx++) {
       const step = tc.messages[msgIdx];
@@ -2027,11 +2075,36 @@ async function runTest(tc: TestCase, baseUrl: string = BASE_URL): Promise<TestRe
         } else if (a.hasMatchCard === true && turn.hasMatchCard) {
           notes.push("PASS: match card rendered");
         }
+        if (a.hasConsultation === true && !turn.consultationProviderId) {
+          errors.push(`[${tc.id}] msg "${step.send.slice(0, 30)}": expected a consultation booking card, got none`);
+          notes.push("FAIL: no consultation card");
+        } else if (a.hasConsultation === true && turn.consultationProviderId) {
+          notes.push(`PASS: consultation card (provider ${turn.consultationProviderId.slice(0, 8)})`);
+        }
+        if (a.consultationIsNew === true) {
+          if (!turn.consultationProviderId) {
+            errors.push(`[${tc.id}] msg "${step.send.slice(0, 30)}": expected a NEW consultation booking card, got none`);
+            notes.push("FAIL: no consultation card");
+          } else if (seenConsultPids.has(turn.consultationProviderId)) {
+            errors.push(`[${tc.id}] msg "${step.send.slice(0, 30)}": consultation card was for an already-booked provider (${turn.consultationProviderId.slice(0, 8)}) - expected a DIFFERENT provider (e.g. the partner IVF clinic)`);
+            notes.push(`FAIL: consultation card repeats provider ${turn.consultationProviderId.slice(0, 8)}`);
+          } else {
+            notes.push(`PASS: NEW consultation card (provider ${turn.consultationProviderId.slice(0, 8)})`);
+          }
+        }
       }
+      if (turn.consultationProviderId) seenConsultPids.add(turn.consultationProviderId);
 
       transcript.push({ role: "ai", content: turn.content, notes: notes.length ? notes : undefined });
       aiMsgIdx++;
       await sleep(DELAY_BETWEEN_MSGS_MS);
+    }
+
+    // Case-level: distinct consultation providers booked across the whole run.
+    if (tc.minDistinctConsultations != null) {
+      if (seenConsultPids.size < tc.minDistinctConsultations) {
+        errors.push(`[${tc.id}] expected >= ${tc.minDistinctConsultations} distinct consultation booking cards, got ${seenConsultPids.size} (providers: ${[...seenConsultPids].map(p => p.slice(0, 8)).join(", ") || "none"})`);
+      }
     }
 
     // DB assertions

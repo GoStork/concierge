@@ -324,6 +324,28 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
   console.log(`[IP FORM NOTIFY] Submission ${responseId} announced to ${formProviders.length} form-collecting provider(s)`);
 }
 
+/** Photocopy request to a guest parent-2 (no account) with a fresh signing link. */
+export async function sendIpFormGuestPhotocopyRequest(params: { email: string; name: string | null; providerName: string; link: string }): Promise<void> {
+  try {
+    if (isTestEmail(params.email)) {
+      console.log(`[IP FORM NOTIFY] Test-data guest photocopy request (${params.email}) - suppressed`);
+      return;
+    }
+    const brand = await fetchEmailBrandData(prisma);
+    const html = buildBrandedEmail(brand, {
+      title: "Your ID document is needed",
+      greeting: `Hi ${esc(getFirstName(params.name) === "there" ? "" : getFirstName(params.name)) || "there"},`,
+      body:
+        `<strong>${esc(params.providerName)}</strong> needs a photo or scan of your ID document (passport or government ID) to move forward. ` +
+        `Use the secure link below to upload it - it only takes a moment and stays private to ${esc(params.providerName)}. No account needed.`,
+      buttons: [{ label: "Upload my ID document", url: params.link }],
+    });
+    await sendEmail([params.email], `Action needed: upload your ID document for ${params.providerName}`, html, brand.companyName);
+  } catch (e: any) {
+    console.error(`[IP FORM NOTIFY] guest photocopy request failed: ${e?.message}`);
+  }
+}
+
 /**
  * A supplemental ID photocopy was uploaded after submission - notify the
  * connected providers that require it (in-app + shared chat message).

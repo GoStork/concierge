@@ -307,6 +307,7 @@ export function SectionQuestions({
   memberNames,
   secondParentControl,
   errorKeys,
+  fileUpload,
 }: {
   section: IpFormSectionDef;
   answers: AnswerMap;
@@ -320,6 +321,8 @@ export function SectionQuestions({
   secondParentControl?: { hasSecondParent: boolean; onSet: (v: boolean) => void };
   // `questionId:slot` keys flagged by a failed "Next" - marked until filled.
   errorKeys?: Set<string>;
+  // Upload override for the file widget (guests use a token-scoped endpoint).
+  fileUpload?: (file: File) => Promise<{ url: string; name: string; contentType: string }>;
 }) {
   const activeQuestions = section.questions.filter((q) => q.isActive);
   const perParentQs = activeQuestions.filter((q) => q.perParent);
@@ -375,7 +378,7 @@ export function SectionQuestions({
             />
           );
         } else {
-          field = <QuestionField question={q} value={value} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} />;
+          field = <QuestionField question={q} value={value} onChange={(v) => onAnswer(q.id, slot, v)} disabled={!editable} fileUpload={fileUpload} />;
         }
         return (
           <div
