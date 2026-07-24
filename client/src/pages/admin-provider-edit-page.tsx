@@ -831,10 +831,10 @@ export default function AdminProviderEditPage() {
                 <Label>About</Label>
                 <Textarea value={editAbout} onChange={e => setEditAbout(e.target.value)} placeholder="Brief description of the provider..." rows={3} data-testid="input-edit-about" />
               </div>
-              <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
-                <Checkbox className="mt-0.5" checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} data-testid="checkbox-edit-video" />
-                <span className="font-ui">Offers video visits</span>
-              </label>
+              {/* Provider-level "Offers video visits" hidden: video rooms are
+                  universal (Daily per-booking), so the flag is vestigial. The
+                  per-doctor toggle (below, in the Team section) drives the
+                  marketplace badge. The value is still saved as-is. */}
               {(showEggDonors || showSpermDonors || showSurrogates) && (
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
                   <Checkbox className="mt-0.5" checked={biometricMatchingAuthorized} onCheckedChange={(v) => setBiometricMatchingAuthorized(!!v)} data-testid="checkbox-edit-biometric" />
