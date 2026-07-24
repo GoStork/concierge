@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { useQuery, useMutation } from "@tanstack/react-query";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { CopyButton } from "@/components/ui/copy-button";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import MembersTable from "@/components/members-table";
@@ -849,6 +850,7 @@ function AccountTab() {
                 <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Mail className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground" data-testid="text-account-email">{user.email}</span>
+                  <CopyButton value={user.email} testId="btn-copy-account-email" />
                 </div>
                 <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>
@@ -1054,6 +1056,7 @@ function AccountTab() {
                 <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Mail className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground" data-testid="text-account-email">{user.email}</span>
+                  <CopyButton value={user.email} testId="btn-copy-account-email" />
                 </div>
                 <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>

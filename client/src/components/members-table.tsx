@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -9,28 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { Plus, Trash2, Pencil, Loader2, Phone, MapPin, Video, Calendar, Copy, Check, Ban, UserCheck } from "lucide-react";
-
-function CopyButton({ value, testId }: { value: string; testId: string }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [value]);
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-      data-testid={testId}
-      title="Copy to clipboard"
-    >
-      {copied ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
-    </button>
-  );
-}
+import { Plus, Trash2, Pencil, Loader2, Phone, MapPin, Video, Calendar, Ban, UserCheck } from "lucide-react";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";

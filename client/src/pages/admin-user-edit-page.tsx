@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import ImageUploader from "@/components/image-uploader";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { CopyButton } from "@/components/ui/copy-button";
 
 const PROVIDER_ROLES = [
   { value: "PROVIDER_ADMIN", label: "Provider Admin" },
@@ -419,6 +420,7 @@ export default function AdminUserEditPage() {
                 <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Mail className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground" data-testid="text-account-email">{userData.email}</span>
+                  <CopyButton value={userData.email} testId="btn-copy-account-email" />
                 </div>
                 <p className="text-xs text-muted-foreground">Email cannot be changed</p>
               </div>

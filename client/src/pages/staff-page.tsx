@@ -10,7 +10,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, Copy, Check, CheckCircle2, Ban, UserCheck, Users } from "lucide-react";
+import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, CheckCircle2, Ban, UserCheck, Users } from "lucide-react";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
@@ -60,27 +61,6 @@ function HouseholdBadge({ memberNames, selfName, testId }: { memberNames: string
       <Users className="w-3 h-3 shrink-0" />
       <span className="truncate max-w-[120px]">{label}</span>
     </span>
-  );
-}
-
-function CopyButton({ value, testId }: { value: string; testId: string }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [value]);
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-      data-testid={testId}
-      title="Copy to clipboard"
-    >
-      {copied ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
-    </button>
   );
 }
 
