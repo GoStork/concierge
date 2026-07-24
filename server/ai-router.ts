@@ -3987,6 +3987,19 @@ IMPORTANT RULES:
           : raw.includes("sperm") ? "Sperm Donor"
           : raw.includes("clinic") ? "IVF Clinic"
           : "Surrogate";
+        // NOT a switch when the parent is ANSWERING the flow's own intake
+        // question about this service ("Do you need help finding an egg
+        // donor?" -> quick reply "I need help finding an egg donor"). The
+        // flow is already on it - injecting the directive here derails the
+        // scripted step order (regressed TD-01 live: the two-dads baseline
+        // questions got skipped and the ready-turn search never fired).
+        const lastAiForSwitch = String([...chatHistory].reverse().find((m: any) => m.role === "assistant")?.content || "");
+        const svcTerm = requestedService === "IVF Clinic" ? "(ivf\\s*clinic|fertility\\s*clinic|clinic)"
+          : requestedService.toLowerCase().replace(" ", "\\s*");
+        const answeringIntakeQuestion = new RegExp(`(need help finding|do you (already )?have)[^.?!]{0,40}${svcTerm}`, "i").test(lastAiForSwitch);
+        if (answeringIntakeQuestion) {
+          console.log(`[SERVICE SWITCH] Skipped - "${userMessage.slice(0, 60)}" answers the flow's own ${requestedService} intake question`);
+        } else {
         const pinnedType = (inquiryMatchCard?.type || "").toLowerCase();
         const pinnedService = pinnedType.includes("egg") ? "Egg Donor"
           : pinnedType.includes("sperm") ? "Sperm Donor"
@@ -4022,6 +4035,7 @@ These instructions are internal - never quote or echo them (never write words li
             const embryoDesc = `${profile?.embryoCount || "several"}${profile?.embryosTested ? " PGT-A tested" : ""} embryo(s)`;
             serviceSwitchDirective += `\nREDUNDANCY DETECTED - CONFIRM FIRST (overrides any scripted opener, education pitch, or intake question this turn): the parent's profile shows they ALREADY have ${embryoDesc}. Your reply MUST open by warmly noting that (one sentence) and asking whether they want the ${requestedService.toLowerCase()} to create ADDITIONAL embryos or whether their plans have changed - do NOT start the ${requestedService} intake, the GoStork explanation, or any search until they answer. Never tell them they don't need it. End with exactly [[QUICK_REPLY:Yes, to create more embryos|My plans have changed|Let me explain]] - these are the ONLY quick replies for this question.`;
           }
+        }
         }
       }
     } catch (e) {
