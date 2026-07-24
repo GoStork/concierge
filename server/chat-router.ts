@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { emitJourneyEvent } from "./journey-events";
 import multer from "multer";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
 import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession, refreshTemplateRoles, syncAgreementStatus } from "./pandadoc-service";
 import { StorageService } from "./src/modules/storage/storage.service";
@@ -1158,7 +1159,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
         ...subjectTypeFilter,
       },
       include: {
-        user: { select: { id: true, name: true, email: true, photoUrl: true } },
+        user: { select: { id: true, name: true, email: true, photoUrl: true, parentAccountId: true } },
         messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
@@ -1238,6 +1239,9 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       return {
         id: s.id,
         userId: s.userId,
+        // Account id (not identity): lets the client fold a family's duplicate
+        // threads about the same profile across account members.
+        parentAccountId: (s.user as any).parentAccountId || null,
         userName: isJoined || isConsultationBooked ? s.user.name : "Prospective Parent",
         userEmail: isJoined || isConsultationBooked ? s.user.email : null,
         userAvatar: isJoined || isConsultationBooked ? (s.user as any).photoUrl : null,
@@ -1356,6 +1360,58 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
   }
 });
 
+// Only marketplace profile threads (donor/surrogate subjects) are distinct
+// conversation subjects on the provider side. Clinic/doctor/legal/country-
+// program subjects are "the provider" itself - those threads consolidate into
+// one conversation per parent (mirrors isProfileThread in conversations-page).
+const isMarketplaceProfileSession = (s: { subjectProfileId?: string | null; subjectType?: string | null }) =>
+  !!s.subjectProfileId && /surrog|donor/i.test(s.subjectType || "");
+const isEvaTitledSession = (title: string | null | undefined) => /ai concierge/i.test(title || "");
+
+// Which sibling sessions consolidate into the given session in the provider
+// view (single source of truth for the detail merge, pending-whisper rollup,
+// and cross-session whisper answers; mirrors the fold in conversations-page):
+// - provider-level session: all other provider-level sessions of the account
+// - profile session: Eva Q&A twins about the SAME profile, plus - when this is
+//   the account's PRIMARY direct profile thread - orphan Eva Q&A threads whose
+//   profile has no direct thread of its own.
+async function findMergeableSiblingSessions(
+  session: { id: string; userId: string; subjectProfileId?: string | null; subjectType?: string | null; title?: string | null },
+  providerId: string,
+  parentAccountId: string | null | undefined,
+  includeMessages: boolean,
+): Promise<any[]> {
+  const accountIds = parentAccountId
+    ? (await prisma.user.findMany({ where: { parentAccountId }, select: { id: true } })).map(u => u.id)
+    : [session.userId];
+  const all: any[] = await prisma.aiChatSession.findMany({
+    where: {
+      providerId,
+      userId: { in: accountIds },
+      status: { in: ["ACTIVE", "HUMAN_JOINED", "CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
+      sessionType: { not: "PROVIDER_CONCIERGE" },
+    },
+    ...(includeMessages ? { include: { messages: { orderBy: { createdAt: "asc" } } } } : {}),
+  });
+  const sessionIsProfile = isMarketplaceProfileSession(session);
+  const rank = (s: any) =>
+    s.status === "PROVIDER_CONNECTED" ? 4 : s.status === "CONSULTATION_BOOKED" ? 3 : s.providerJoinedAt ? 2 : 1;
+  const directs = all.filter(s => isMarketplaceProfileSession(s) && !isEvaTitledSession(s.title));
+  const directProfileIds = new Set(directs.map(s => s.subjectProfileId));
+  const primaryDirect = [...directs].sort((a, b) =>
+    rank(b) - rank(a) || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  )[0];
+  return all.filter(sib => {
+    if (sib.id === session.id) return false;
+    if (!sessionIsProfile) return !isMarketplaceProfileSession(sib);
+    if (sib.subjectProfileId === session.subjectProfileId) return true;
+    return primaryDirect?.id === session.id
+      && isEvaTitledSession(sib.title)
+      && isMarketplaceProfileSession(sib)
+      && !directProfileIds.has(sib.subjectProfileId);
+  });
+}
+
 chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
@@ -1398,6 +1454,44 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       && m.uiCardType !== "ip_form_prompt"
     );
 
+    // Provider-level thread consolidation: a booked/connected provider-level
+    // session (no profile subject) absorbs the provider-visible whisper history
+    // from sibling provider-level sessions of the same parent account, so the
+    // provider reads one continuous conversation instead of a split
+    // "Consultation" + "AI Concierge Q&A" pair. Only the whisper-safe subset
+    // crosses over (system + provider messages) - the parent's private Eva
+    // content stays filtered exactly as in the anonymous phase.
+    let siblingSessionIds: string[] = [];
+    let mergedMessages = showIdentity ? session.messages : providerMessages;
+    if (showIdentity) {
+      const siblings = await findMergeableSiblingSessions(
+        session as any, user.providerId, (session.user as any)?.parentAccountId, true,
+      );
+      siblingSessionIds = siblings.map(sib => sib.id);
+      const crossoverHidden = new Set([
+        "review_prompt", "ip_form_prompt", "provider_only", "provider_readiness_prompt",
+        // Draft-approval cards stay in their home session - their approve
+        // endpoints are addressed by (sessionId, messageId) and must not
+        // render under another session id.
+        "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval",
+      ]);
+      const siblingVisible = siblings.flatMap(sib => {
+        // Identity-revealed siblings (booked/connected) already show their full
+        // transcript to this provider when opened directly, so the merge keeps
+        // parity. Anonymous siblings (whisper phase) stay on the strict
+        // whisper-safe subset - the parent's private Eva content never crosses.
+        const sibRevealed = sib.status === "CONSULTATION_BOOKED" || sib.status === "PROVIDER_CONNECTED";
+        return sib.messages.filter(m =>
+          (sibRevealed || m.senderType === "system" || m.senderType === "provider")
+          && !crossoverHidden.has(m.uiCardType || "")
+        );
+      });
+      if (siblingVisible.length > 0) {
+        mergedMessages = [...mergedMessages, ...siblingVisible]
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      }
+    }
+
     let accountMembers: { id: string; name: string | null; firstName: string | null; lastName: string | null }[] = [];
     if (showIdentity && session.user) {
       const ownerAccount = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
@@ -1429,14 +1523,16 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       // Once the consultation is booked, the parent's identity is already
       // revealed - show all messages (parent + provider + system). Before that
       // (whisper Q&A phase), only show system + provider messages to keep the
-      // parent anonymous.
-      messages: showIdentity ? session.messages : providerMessages,
+      // parent anonymous. Provider-level booked threads also carry the merged
+      // whisper history from sibling sessions (consolidation above).
+      messages: mergedMessages,
       accountMembers: showIdentity ? accountMembers.map(m => ({ id: m.id, displayName: formatInitials(m) })) : [],
     };
 
     // Auto-mark non-provider messages as delivered when provider views them
+    // (including merged sibling threads, so folded rows don't stay "unread")
     prisma.aiChatMessage.updateMany({
-      where: { sessionId: session.id, senderType: { not: "provider" }, deliveredAt: null },
+      where: { sessionId: { in: [session.id, ...siblingSessionIds] }, senderType: { not: "provider" }, deliveredAt: null },
       data: { deliveredAt: new Date() },
     }).catch(() => {});
 
@@ -1478,7 +1574,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id/pending-whispers", requireA
   try {
     const session = await prisma.aiChatSession.findUnique({
       where: { id: req.params.id },
-      select: { id: true, providerId: true, subjectType: true },
+      select: { id: true, providerId: true, subjectType: true, subjectProfileId: true, userId: true, user: { select: { parentAccountId: true } } },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
@@ -1486,8 +1582,20 @@ chatRouter.get("/api/provider/concierge-sessions/:id/pending-whispers", requireA
       return res.status(403).json({ message: "Forbidden" });
     }
 
+    // Provider-level threads are consolidated in the provider UI: pending
+    // whispers from sibling provider-level sessions of the same parent account
+    // surface on the booked thread too, so none go unanswered once the sidebar
+    // folds the rows together.
+    const whisperSessionIds = [session.id];
+    {
+      const siblings = await findMergeableSiblingSessions(
+        session as any, user.providerId, session.user?.parentAccountId, false,
+      );
+      whisperSessionIds.push(...siblings.map(s => s.id));
+    }
+
     const pending = await prisma.silentQuery.findMany({
-      where: { sessionId: session.id, providerId: user.providerId, status: "PENDING" },
+      where: { sessionId: { in: whisperSessionIds }, providerId: user.providerId, status: "PENDING" },
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
@@ -1509,6 +1617,181 @@ chatRouter.get("/api/provider/concierge-sessions/:id/pending-whispers", requireA
     res.json(result);
   } catch (e: any) {
     console.error("Provider pending whispers error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Provider assistant - the pinned "AI Concierge" chat in the PROVIDER's
+// conversation list. One shared PROVIDER_CONCIERGE session per provider (all
+// staff see the same thread, messages identified by senderName - mirrors the
+// shared parent-account session model). The system prompt lives in the
+// ConciergePromptSection row "provider_assistant_prompt" (DB is the single
+// source of truth; ai-prompt-defaults.ts only seeds it).
+// ---------------------------------------------------------------------------
+
+const providerAssistantAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+async function findOrCreateProviderAssistantSession(user: any) {
+  const existing = await prisma.aiChatSession.findFirst({
+    where: { providerId: user.providerId, sessionType: "PROVIDER_CONCIERGE" },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (existing) return existing;
+  return prisma.aiChatSession.create({
+    data: {
+      userId: user.id,
+      providerId: user.providerId,
+      sessionType: "PROVIDER_CONCIERGE",
+      status: "ACTIVE",
+      title: "AI Concierge",
+    },
+  });
+}
+
+// Live pipeline snapshot injected into every assistant request. Never cached -
+// the assistant must answer "what needs my attention?" from current truth.
+async function buildProviderAssistantContext(user: any): Promise<string> {
+  const [provider, sessions, staffUsers] = await Promise.all([
+    prisma.provider.findUnique({ where: { id: user.providerId }, select: { name: true } }),
+    prisma.aiChatSession.findMany({
+      where: {
+        providerId: user.providerId,
+        status: { in: ["ACTIVE", "HUMAN_JOINED", "CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
+        sessionType: { not: "PROVIDER_CONCIERGE" },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 30,
+      select: {
+        id: true, status: true, title: true, subjectType: true, subjectProfileId: true,
+        updatedAt: true,
+        user: { select: { name: true } },
+      },
+    }),
+    prisma.user.findMany({ where: { providerId: user.providerId }, select: { id: true } }),
+  ]);
+
+  const pendingBySession = await prisma.silentQuery.groupBy({
+    by: ["sessionId"],
+    where: { providerId: user.providerId, status: "PENDING" },
+    _count: { id: true },
+    _min: { createdAt: true },
+  });
+  const pendingMap = new Map(pendingBySession.map(p => [p.sessionId, p]));
+
+  const upcomingBookings = await prisma.booking.findMany({
+    where: {
+      providerUserId: { in: staffUsers.map(u => u.id) },
+      scheduledAt: { gte: new Date() },
+      status: { in: ["PENDING", "CONFIRMED"] },
+    },
+    orderBy: { scheduledAt: "asc" },
+    take: 10,
+    select: { scheduledAt: true, status: true, meetingSubtype: true, subject: true, attendeeName: true },
+  });
+
+  const sessionLines = sessions.map(s => {
+    const revealed = s.status === "CONSULTATION_BOOKED" || s.status === "PROVIDER_CONNECTED";
+    const who = revealed ? (s.user?.name || "Parent") : "Prospective parent (anonymous)";
+    const subject = s.subjectProfileId ? (s.title || s.subjectType || "profile thread") : "consultation thread";
+    const pending = pendingMap.get(s.id);
+    const pendingNote = pending
+      ? ` | ${pending._count.id} pending question(s), oldest ${Math.max(0, Math.floor((Date.now() - (pending._min.createdAt?.getTime() || Date.now())) / 60000))}m`
+      : "";
+    return `- ${who} | ${subject} | status ${s.status}${pendingNote}`;
+  });
+
+  const totalPending = pendingBySession.reduce((sum, p) => sum + p._count.id, 0);
+  const bookingLines = upcomingBookings.map(b =>
+    `- ${b.scheduledAt.toISOString()} | ${b.meetingSubtype || b.subject || "consultation"} | ${b.status}${b.attendeeName ? ` | ${b.attendeeName}` : ""}`
+  );
+
+  return [
+    `PROVIDER CONTEXT (live snapshot - the only source of pipeline truth):`,
+    `Provider: ${provider?.name || "Unknown"}`,
+    `Total pending parent questions awaiting an answer: ${totalPending}`,
+    `Conversations (${sessions.length} recent):`,
+    sessionLines.length ? sessionLines.join("\n") : "- none",
+    `Upcoming booked calls:`,
+    bookingLines.length ? bookingLines.join("\n") : "- none",
+  ].join("\n");
+}
+
+chatRouter.get("/api/provider/concierge-assistant", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const session = await findOrCreateProviderAssistantSession(user);
+    const messages = await prisma.aiChatMessage.findMany({
+      where: { sessionId: session.id },
+      orderBy: { createdAt: "asc" },
+      take: 200,
+    });
+    res.json({ id: session.id, title: session.title, messages });
+  } catch (e: any) {
+    console.error("Provider assistant fetch error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.post("/api/provider/concierge-assistant/message", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const { content } = req.body;
+  if (!content || typeof content !== "string" || !content.trim()) {
+    return res.status(400).json({ message: "Content is required" });
+  }
+  try {
+    const session = await findOrCreateProviderAssistantSession(user);
+
+    const nameParts = (user.firstName && user.lastName)
+      ? [user.firstName, user.lastName]
+      : (user.name || "").trim().split(/\s+/);
+    const senderDisplayName = nameParts.length >= 2 ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.` : (nameParts[0] || "Staff");
+
+    const userMessage = await prisma.aiChatMessage.create({
+      data: { sessionId: session.id, role: "user", content: content.trim(), senderType: "provider", senderName: senderDisplayName },
+    });
+
+    const [promptSection, context, history] = await Promise.all([
+      prisma.conciergePromptSection.findUnique({ where: { key: "provider_assistant_prompt" } }),
+      buildProviderAssistantContext(user),
+      prisma.aiChatMessage.findMany({
+        where: { sessionId: session.id, id: { not: userMessage.id } },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      }),
+    ]);
+    if (!promptSection?.content || promptSection.isActive === false) {
+      return res.status(503).json({ message: "Provider assistant prompt is not configured or inactive" });
+    }
+
+    const historyText = history.reverse().map(m =>
+      `${m.role === "user" ? `PROVIDER (${m.senderName || "staff"})` : "EVA"}: ${m.content}`
+    ).join("\n");
+
+    const model = providerAssistantAI.getGenerativeModel({
+      model: "gemini-3.5-flash",
+      systemInstruction: `${promptSection.content}\n\n${context}`,
+    });
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: `${historyText ? `CONVERSATION SO FAR:\n${historyText}\n\n` : ""}PROVIDER (${senderDisplayName}): ${content.trim()}` }] }],
+      generationConfig: { temperature: 0.4, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } } as any,
+    });
+    const aiText = result.response.text()?.trim();
+    if (!aiText) {
+      // Loud failure - never fabricate an assistant reply
+      return res.status(502).json({ message: "Assistant returned an empty response - try again" });
+    }
+
+    const aiMessage = await prisma.aiChatMessage.create({
+      data: { sessionId: session.id, role: "assistant", content: aiText, senderType: "ai", senderName: "Eva" },
+    });
+    await prisma.aiChatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
+
+    res.json({ userMessage, aiMessage });
+  } catch (e: any) {
+    console.error("Provider assistant message error:", e);
     res.status(500).json({ message: e.message });
   }
 });
@@ -1672,12 +1955,29 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     let pendingWhispers: { id: string; questionText: string; sessionId: string; providerId: string; status: string }[] = [];
     if (silentQueryId && typeof silentQueryId === "string") {
       const targeted = await prisma.silentQuery.findUnique({ where: { id: silentQueryId } });
-      if (
+      let targetedOk = !!(
         targeted &&
         targeted.sessionId === session.id &&
         targeted.providerId === user.providerId &&
         targeted.status === "PENDING"
-      ) {
+      );
+      // Consolidated provider-level threads surface sibling-session whispers in
+      // the booked thread's panel - accept an answer posted from the booked
+      // session when the whisper lives in a sibling provider-level session of
+      // the same parent account (the relay still flows through the whisper's
+      // own session, so the parent experience is unchanged).
+      if (!targetedOk && targeted && targeted.providerId === user.providerId && targeted.status === "PENDING") {
+        // Consolidated threads surface sibling-session whispers - accept an
+        // answer posted from the surviving thread when the whisper lives in a
+        // sibling that folds into it (the relay still flows through the
+        // whisper's own session, so the parent experience is unchanged).
+        const owner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
+        const mergeable = await findMergeableSiblingSessions(
+          session as any, user.providerId, owner?.parentAccountId, false,
+        );
+        targetedOk = mergeable.some(s => s.id === targeted.sessionId);
+      }
+      if (targetedOk) {
         pendingWhispers = [targeted as any];
       } else {
         return res.status(400).json({ message: "Pending whisper not found for this session" });

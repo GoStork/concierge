@@ -5058,6 +5058,32 @@ The parent's message was: "${userMessage}"`,
       }
     }
 
+    // BANK PURCHASE INTENT (deterministic): "Buy vials now" / "purchase his
+    // vials" must flow into the bank checkout card - observed live: the model
+    // instead re-ran the search and re-presented the SAME donor card. Mirror
+    // of the scheduling-intent enforcement. postBankCheckoutCard safely
+    // degrades to an agency-guidance message when the donor is not at a bank,
+    // so forcing the tag is always safe.
+    // "order" alone is NOT purchase intent ("in order to find a donor") - it
+    // only counts in explicit buying phrases.
+    const bankBuyIntent = /\b(buy|purchase)\b.{0,30}\b(vials?|donors?|eggs?|lot)\b|\bvials?\b.{0,20}\b(buy|purchase)\b|\b(ready to|place (my|an|the)) order\b|complete\s+(my|the|this)?\s*checkout|^buy( vials)?( now)?[.!]?$/i.test(userMessage.trim());
+    let bankBuyDonorId: string | null = null;
+    if (bankBuyIntent && currentSessionId) {
+      try {
+        const mcBuy = await findLatestMatchCard(currentSessionId);
+        if (mcBuy?.providerId && /donor/i.test(mcBuy?.type || "")) {
+          bankBuyDonorId = mcBuy.providerId;
+          console.log(`[BANK BUY INTENT] Purchase intent on donor ${bankBuyDonorId} - injecting checkout override`);
+          messages.push({
+            role: "user",
+            content: `SYSTEM OVERRIDE: The parent wants to PURCHASE this bank donor's vials right now (their message: "${userMessage.slice(0, 120)}"). Do NOT search again, do NOT present another [[MATCH_CARD]], do NOT re-describe the donor, do NOT ask more questions. Reply with ONE short confirmation sentence like "Wonderful choice - here's everything you need to complete your order:" and include [[BANK_CHECKOUT:${mcBuy.providerId}]]. Nothing else.`,
+          });
+        }
+      } catch (e) {
+        console.error("[BANK BUY INTENT] Error:", e);
+      }
+    }
+
     // Phase 0 is now delivered as a pre-written template - no AI generation needed.
     // The isPhase0Init path is intentionally left as a no-op; the client no longer calls it.
 
@@ -9375,6 +9401,22 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         console.warn(`[ai-router] COMPARE_CARD present - dropping ${doctorCards.length} stray DOCTOR_CARD(s) this turn`);
         doctorCards = [];
       }
+    }
+
+    // Deterministic backstop for purchase intent: this turn MUST end in the
+    // checkout card (or the consultation path for agency donors). If the model
+    // ignored the override (observed live: re-presented the same match card
+    // instead), force the checkout - postBankCheckoutCard validates bank-ness
+    // and posts the agency-guidance message when direct checkout doesn't apply.
+    if (bankBuyDonorId && !bankCheckoutDonorId && !consultationCard) {
+      console.log(`[BANK BUY INTENT] Model reply lacked BANK_CHECKOUT - forcing checkout card for donor ${bankBuyDonorId}`);
+      bankCheckoutDonorId = bankBuyDonorId;
+      matchCards = [];
+      quickReplies = [];
+      multiSelect = false;
+      finalContent = "Wonderful choice - here's everything you need to complete your order:";
+      sse.sendReset();
+      sse.sendToken(finalContent);
     }
 
     const uiExtras: Record<string, any> = {};

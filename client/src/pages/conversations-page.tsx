@@ -103,6 +103,7 @@ interface ChatSession {
 interface ProviderSession {
   id: string;
   userId: string;
+  parentAccountId?: string | null;
   userName: string;
   userEmail: string;
   userAvatar: string | null;
@@ -784,6 +785,37 @@ export default function ConversationsPage() {
     refetchInterval: 10000,
     staleTime: 0,
     refetchOnMount: "always",
+  });
+
+  // Pinned provider assistant (Eva for providers) - separate from the parent
+  // session list; selected via assistantOpen, not selectedSessionId, because
+  // its transcript comes from its own endpoint (the parent-session detail
+  // endpoint would mask Eva's replies during the anonymous phase).
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const providerAssistantQuery = useQuery<{ id: string; title: string | null; messages: any[] }>({
+    queryKey: ["/api/provider/concierge-assistant"],
+    queryFn: async () => {
+      const res = await fetch("/api/provider/concierge-assistant", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: isProvider && !!user,
+    refetchInterval: assistantOpen ? 10000 : false,
+  });
+  const assistantSendMutation = useMutation({
+    mutationFn: async (content: string) => {
+      const res = await fetch("/api/provider/concierge-assistant/message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.message || "Failed to send");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-assistant"] });
+    },
   });
 
   // Eva/concierge sessions live at /chat/concierge?session=<id> - a shape with
@@ -2281,6 +2313,35 @@ const sendMessageMutation = useMutation({
       parentGroups[key].push(s);
     });
 
+    // Only marketplace profile threads (donor/surrogate) are distinct subjects;
+    // clinic/doctor/legal/country-program subjects are "the provider" itself.
+    const isProfileThread = (s: ProviderSession) =>
+      !!s.subjectProfileId && isMarketplaceProfileSubject(s.subjectType, s.profileStatus);
+    const isEvaThread = (s: ProviderSession) => /ai concierge/i.test(s.title || "");
+    const rankSession = (s: ProviderSession) =>
+      s.status === "PROVIDER_CONNECTED" ? 4 : s.status === "CONSULTATION_BOOKED" ? 3 : s.providerJoinedAt ? 2 : 1;
+    const pickPrimary = (list: ProviderSession[]) =>
+      [...list].sort((a, b) =>
+        rankSession(b) - rankSession(a)
+        || Number(isEvaThread(a)) - Number(isEvaThread(b))
+        || new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+      )[0];
+    // Fold absorbed threads' attention counters onto the surviving row - the
+    // server merges their transcripts and pending whispers into it.
+    const absorbInto = (primary: ProviderSession, absorbed: ProviderSession[]): ProviderSession => {
+      const merged: ProviderSession = { ...primary };
+      for (const a of absorbed) {
+        merged.pendingQuestions = (merged.pendingQuestions || 0) + (a.pendingQuestions || 0);
+        merged.unreadCount = (merged.unreadCount || 0) + (a.unreadCount || 0);
+        merged.pendingMaxAgeMinutes = Math.max(merged.pendingMaxAgeMinutes || 0, a.pendingMaxAgeMinutes || 0);
+        merged.pendingNudgeCount = Math.max(merged.pendingNudgeCount || 0, a.pendingNudgeCount || 0);
+        if (new Date(a.lastMessageAt).getTime() > new Date(merged.lastMessageAt).getTime()) {
+          merged.lastMessageAt = a.lastMessageAt;
+        }
+      }
+      return merged;
+    };
+
     // Once a parent has a PROVIDER_CONNECTED session, hide the anonymous whisper session (no subjectProfileId)
     // so the provider only sees the actual donor/surrogate sessions in the folder
     for (const userId of Object.keys(parentGroups)) {
@@ -2289,6 +2350,62 @@ const sendMessageMutation = useMutation({
       if (hasJoined) {
         const withProfile = group.filter(s => s.subjectProfileId);
         if (withProfile.length > 0) parentGroups[userId] = withProfile;
+      }
+      // Provider-level consolidation: only marketplace PROFILE threads
+      // (donor/surrogate) earn their own row. Everything else - clinic subject,
+      // doctor call, legal, country program, plain whisper - is "the provider"
+      // from the parent's perspective and collapses into ONE row per parent.
+      // The server merges the absorbed threads' provider-visible history and
+      // pending whispers into the primary thread.
+      const nonProfile = parentGroups[userId].filter(s => !isProfileThread(s));
+      if (nonProfile.length > 1) {
+        const primary = pickPrimary(nonProfile);
+        const absorbed = nonProfile.filter(s => s.id !== primary.id);
+        const merged = absorbInto(primary, absorbed);
+        parentGroups[userId] = parentGroups[userId]
+          .filter(s => !absorbed.some(a => a.id === s.id))
+          .map(s => (s.id === primary.id ? merged : s));
+      }
+    }
+
+    // Fold Eva Q&A relay threads about a specific profile into the family's
+    // DIRECT thread for that same profile - across account members, because
+    // couples share one journey (the Q&A can live on the partner's login).
+    // The server merges the transcripts and pending whispers accordingly.
+    {
+      const better = (a: ProviderSession, b: ProviderSession) =>
+        rankSession(a) - rankSession(b)
+        || new Date(a.lastMessageAt).getTime() - new Date(b.lastMessageAt).getTime();
+      const directByProfile = new Map<string, ProviderSession>();
+      const primaryDirectByAccount = new Map<string, ProviderSession>();
+      for (const groupSessions of Object.values(parentGroups)) {
+        for (const s of groupSessions) {
+          if (isProfileThread(s) && !isEvaThread(s)) {
+            const acctKey = s.parentAccountId || s.userId;
+            const profileKey = `${acctKey}:${s.subjectProfileId}`;
+            const curProfile = directByProfile.get(profileKey);
+            if (!curProfile || better(s, curProfile) > 0) directByProfile.set(profileKey, s);
+            const curPrimary = primaryDirectByAccount.get(acctKey);
+            if (!curPrimary || better(s, curPrimary) > 0) primaryDirectByAccount.set(acctKey, s);
+          }
+        }
+      }
+      for (const userId of Object.keys(parentGroups)) {
+        for (const s of [...parentGroups[userId]]) {
+          if (!isProfileThread(s) || !isEvaThread(s)) continue;
+          const acctKey = s.parentAccountId || s.userId;
+          // Same-profile direct thread wins; an orphan Q&A (its profile has no
+          // direct thread) rolls up into the family's primary profile thread.
+          const direct = directByProfile.get(`${acctKey}:${s.subjectProfileId}`)
+            || primaryDirectByAccount.get(acctKey);
+          if (!direct || direct.id === s.id) continue;
+          parentGroups[userId] = parentGroups[userId].filter(x => x.id !== s.id);
+          if (parentGroups[userId].length === 0) delete parentGroups[userId];
+          const ownerKey = direct.userId;
+          if (parentGroups[ownerKey]) {
+            parentGroups[ownerKey] = parentGroups[ownerKey].map(x => (x.id === direct.id ? absorbInto(x, [s]) : x));
+          }
+        }
       }
     }
 
@@ -2300,32 +2417,114 @@ const sendMessageMutation = useMutation({
     });
 
     const hasSessions = filteredSessions.length > 0;
-    const sidebarContent = hasSessions ? (
+    // Label a thread by what it IS, never by the provider's own name (which is
+    // identical on every row and reads inverted). Profile threads keep their
+    // label ("Surrogate #25714"); provider-name titles (calendar fallback and
+    // country-program subjects) become "Consultation"; whisper threads become
+    // "AI Concierge Q&A".
+    const sessionThreadLabel = (s: ProviderSession): string => {
+      if (/ai concierge/i.test(s.title || "")) return "AI Concierge Q&A";
+      if (s.title && s.title !== s.providerName) return s.title;
+      return "Consultation";
+    };
+    const assistantLastMsg = (() => {
+      const msgs = providerAssistantQuery.data?.messages || [];
+      return msgs.length ? msgs[msgs.length - 1] : null;
+    })();
+    const sidebarContent = (
       <>
-        {sortedGroupEntries.map(([parentUserId, groupSessions]) => {
-          const first = groupSessions[0];
-          return (
-            <div key={parentUserId} data-testid={`parent-group-${parentUserId}`}>
-              {/* Section header - parent name (secondary-color pill, consistent with parent-side agency pills) */}
-              <div className="mx-4 mt-3 mb-2 px-3 py-1.5 rounded-[var(--radius)] flex items-center gap-2 bg-secondary/40">
-                <div className="w-4 h-4 rounded-full flex-shrink-0 overflow-hidden bg-background flex items-center justify-center">
-                  {first.userAvatar ? (
-                    <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-4 h-4 object-cover" />
-                  ) : (
-                    <User className="w-3 h-3 text-muted-foreground" />
-                  )}
-                </div>
-                <span className="text-xs font-medium truncate min-w-0 text-foreground/80">
-                  {first.userName || "Prospective Parent"}
-                </span>
-                {onlineStatuses[first.userId] && (
-                  <span className="text-[10px] font-medium text-[hsl(var(--brand-success))] flex-shrink-0">Online</span>
+        {/* Pinned provider assistant - Eva as the provider's own copilot.
+            Mirrors the parent-side pinned concierge design exactly. */}
+        <div data-testid="section-provider-concierge">
+          <div
+            className="mx-4 mt-3 mb-2 px-3 py-2 rounded-[var(--radius)] flex items-center gap-2"
+            style={{ backgroundColor: `${brandColor}08` }}
+          >
+            <Sparkles className="w-4 h-4" style={{ color: brandColor }} />
+            <span className="text-xs font-semibold" style={{ color: brandColor }}>Your AI Concierge</span>
+          </div>
+          <button
+            className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20"
+            style={assistantOpen ? { backgroundColor: `${brandColor}15` } : undefined}
+            onClick={() => { setAssistantOpen(true); setSelectedSessionId(null); }}
+            data-testid="provider-assistant-row"
+            aria-current={assistantOpen ? "page" : undefined}
+          >
+            <div
+              className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center"
+              style={{ backgroundColor: brandColor }}
+            >
+              <Sparkles className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>AI Concierge</span>
+                {assistantLastMsg && (
+                  <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(assistantLastMsg.createdAt)}</span>
                 )}
               </div>
-              {/* Donor/surrogate rows - flat, full-width chat rows */}
+              <p className="text-sm text-muted-foreground truncate mt-0.5">
+                {assistantLastMsg ? truncateMessage(assistantLastMsg.content) : "Ask about your pipeline, pending questions, or how GoStork works"}
+              </p>
+            </div>
+          </button>
+        </div>
+        {hasSessions && (
+          <div className="mt-3" data-testid="section-provider-matches">
+            <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+              <Heart className="w-4 h-4 fill-current" style={{ color: brandColor }} />
+              <h2 className="font-display text-base font-bold text-foreground">Your Matches</h2>
+              <svg
+                width="20"
+                height="30"
+                viewBox="0 0 20 30"
+                fill="none"
+                aria-hidden
+                style={{ color: brandColor, opacity: 0.6 }}
+              >
+                <path d="M3 14 Q 14 17, 14 26" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" fill="none" />
+                <path d="M10 23 L 14 27 L 18 23" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
+            </div>
+            {sortedGroupEntries.map(([parentUserId, groupSessions]) => {
+          const first = groupSessions[0];
+          // A parent with a single provider-level thread renders as a flat inbox row
+          // (bold parent name) - a group header wrapping one row is pure redundancy.
+          // Post-consolidation this is the normal case for clinics, agencies
+          // without listings, legal, and country programs.
+          const soloProviderLevel = groupSessions.length === 1 && !isProfileThread(first);
+          return (
+            <div key={parentUserId} data-testid={`parent-group-${parentUserId}`}>
+              {!soloProviderLevel && (
+                /* Section header - prominent parent identity (avatar, bold name, state pill) */
+                <div className="mx-3 mt-3 mb-1 px-3 py-2 rounded-[var(--radius)] flex items-center gap-2.5 bg-secondary/40">
+                  <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden bg-background flex items-center justify-center">
+                    {first.userAvatar ? (
+                      <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-8 h-8 object-cover" />
+                    ) : (
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    )}
+                  </div>
+                  <span className="text-sm font-semibold font-ui truncate min-w-0 text-foreground">
+                    {first.userName || "Prospective Parent"}
+                  </span>
+                  {onlineStatuses[first.userId] && (
+                    <span className="text-[10px] font-medium text-[hsl(var(--brand-success))] flex-shrink-0">Online</span>
+                  )}
+                </div>
+              )}
+              {/* Thread rows - profile threads keep their label; provider-level threads
+                  are typed (Consultation / AI Concierge Q&A); solo provider-level rows
+                  lead with the parent's name */}
               {groupSessions.map(s => {
                 const sUnread = s.unreadCount || 0;
-                const photoSrc = getPhotoSrc(s.profilePhotoUrl);
+                const rowTitle = soloProviderLevel
+                  ? (s.userName || "Prospective Parent")
+                  : sessionThreadLabel(s);
+                const isAiThread = !s.subjectProfileId && /ai concierge/i.test(s.title || "");
+                const photoSrc = soloProviderLevel
+                  ? getPhotoSrc(s.userAvatar)
+                  : getPhotoSrc(s.profilePhotoUrl);
                 const pendingAgeMin = s.pendingQuestions > 0 ? (s.pendingMaxAgeMinutes || 0) : 0;
                 const slaTone = pendingAgeMin >= 24 * 60
                   ? "bg-accent/20 text-accent-foreground border-accent/40"
@@ -2345,7 +2544,7 @@ const sendMessageMutation = useMutation({
                     key={s.id}
                     className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left border-b border-border/10 relative ${isSelected ? "bg-secondary" : "hover:bg-muted/50"}`}
                     style={isSelected ? { borderLeft: `4px solid ${brandColor}`, paddingLeft: "calc(1rem - 4px)" } : undefined}
-                    onClick={() => setSelectedSessionId(s.id, s)}
+                    onClick={() => { setAssistantOpen(false); setSelectedSessionId(s.id, s); }}
                     data-testid={`provider-session-${s.id}`}
                     aria-current={isSelected ? "page" : undefined}
                   >
@@ -2354,16 +2553,25 @@ const sendMessageMutation = useMutation({
                         {photoSrc ? (
                           <img
                             src={photoSrc}
-                            alt={s.title || ""}
+                            alt={rowTitle}
                             className="w-12 h-12 rounded-full object-cover"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
+                        ) : !s.subjectProfileId && !soloProviderLevel ? (
+                          /* Typed provider-level thread in a group: icon avatar, not an initial */
+                          <div className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary/60">
+                            {isAiThread ? (
+                              <Sparkles className="w-5 h-5" style={{ color: brandColor }} />
+                            ) : (
+                              <CalendarDays className="w-5 h-5 text-muted-foreground" />
+                            )}
+                          </div>
                         ) : (
                           <div
                             className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold"
                             style={{ backgroundColor: brandColor }}
                           >
-                            {(s.title || "C").charAt(0)}
+                            {(rowTitle || "C").charAt(0)}
                           </div>
                         )}
                       </div>
@@ -2383,7 +2591,10 @@ const sendMessageMutation = useMutation({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="font-medium text-sm font-ui truncate">{s.title || "Conversation"}</span>
+                          <span className="font-medium text-sm font-ui truncate">{rowTitle}</span>
+                          {soloProviderLevel && onlineStatuses[s.userId] && (
+                            <span className="text-[10px] font-medium text-[hsl(var(--brand-success))] flex-shrink-0">Online</span>
+                          )}
                           {/* Profile-status pill only on direct profile threads - an Eva Q&A
                               row referencing the same surrogate would wear a confusing
                               second "Matched" badge (user feedback, 7B UAT). */}
@@ -2421,9 +2632,11 @@ const sendMessageMutation = useMutation({
               })}
             </div>
           );
-        })}
+            })}
+          </div>
+        )}
       </>
-    ) : null;
+    );
 
     const providerDetailContent = (sessionDetailQuery.isLoading || sessionBookingsQuery.isLoading) ? (
       <div className="flex-1 flex items-center justify-center">
@@ -2478,7 +2691,9 @@ const sendMessageMutation = useMutation({
                         <User className="w-2 h-2 text-muted-foreground" />
                       </div>
                     )}
-                    <span className="text-[11px] text-muted-foreground truncate" data-testid="provider-subject-label">{detail.title || "Conversation"}</span>
+                    <span className="text-[11px] text-muted-foreground truncate" data-testid="provider-subject-label">
+                      {selectedSession ? sessionThreadLabel(selectedSession) : (detail.title || "Conversation")}
+                    </span>
                     {selectedSession?.subjectProfileId && <DonorStatusPill status={selectedSession.profileStatus} />}
                   </div>
                 </div>
@@ -2971,18 +3186,77 @@ const sendMessageMutation = useMutation({
       </div>
     ) : null;
 
+    const assistantMessages = providerAssistantQuery.data?.messages || [];
+    const assistantDetailContent = (
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="flex items-center gap-3 px-4 py-3 border-b bg-background shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 md:hidden"
+            onClick={() => setAssistantOpen(false)}
+            data-testid="btn-back-from-assistant"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <div className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: brandColor }}>
+            <Sparkles className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <span className="font-semibold text-sm font-ui truncate block">AI Concierge</span>
+            <p className="text-[11px] text-muted-foreground truncate">Your GoStork assistant - pipeline, platform help, drafting</p>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          {providerAssistantQuery.isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : assistantMessages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center px-6">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: brandColor }}>
+                <Sparkles className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <p className="text-sm font-medium">Ask Eva anything</p>
+              <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+                "What needs my attention today?", "How do anonymous parent questions work?", or "Help me word an answer about our success rates."
+              </p>
+            </div>
+          ) : (
+            <ChatMessageList
+              messages={assistantMessages as any}
+              brandColor={brandColor}
+              chatPalette={chatPalette}
+              viewerRole="provider"
+              isOwnMessage={(m: any) => m.senderType === "provider"}
+              nameLabel={(m: any) => m.senderName || (m.senderType === "ai" ? "Eva" : null)}
+              aiName="Eva"
+              msgTestIdPrefix="provider-assistant-msg"
+            />
+          )}
+        </div>
+        <ChatInputBar
+          onSend={(text) => { if (text.trim()) assistantSendMutation.mutate(text.trim()); }}
+          isLoading={assistantSendMutation.isPending}
+          brandColor={brandColor}
+          placeholder="Ask Eva anything..."
+          testIdPrefix="provider-assistant"
+        />
+      </div>
+    );
+
     return (
       <>
         <ConversationsShell
-          hasSelection={!!selectedSessionId}
-          onBack={() => setSelectedSessionId(null)}
+          hasSelection={!!selectedSessionId || assistantOpen}
+          onBack={() => { setAssistantOpen(false); setSelectedSessionId(null); }}
           isLoading={providerSessionsQuery.isLoading}
           sidebarItems={sidebarContent}
           emptyMessage={searchQuery ? "No conversations match your search" : "No conversations yet"}
           emptyAction={!searchQuery ? (
             <p className="text-xs text-muted-foreground mt-1">When parents request a consultation, their conversations will appear here</p>
           ) : undefined}
-          detailContent={providerDetailContent}
+          detailContent={assistantOpen ? assistantDetailContent : providerDetailContent}
           brandColor={brandColor}
           activeFilter={activeFilter}
           onFilterChange={setActiveFilter}
