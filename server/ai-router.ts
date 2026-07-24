@@ -2862,6 +2862,10 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     // below and read by the FAVORITE interceptor - never offer to schedule a call
     // that is already booked).
     let hasUpcomingProviderConsult = false;
+    // Which provider that upcoming consult is with - the scheduling-intent
+    // enforcement uses it to avoid forcing a calendar for an agency the parent
+    // already has a call booked with (a DIFFERENT provider is still fine).
+    let upcomingConsultProviderId: string | null = null;
     if (userRecord) {
       const parts: string[] = [];
 
@@ -3135,6 +3139,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           })
         : null;
       hasUpcomingProviderConsult = !!upcomingProviderConsult;
+      upcomingConsultProviderId = (upcomingProviderConsult?.providerUser?.provider as any)?.id || null;
       if (upcomingProviderConsult) {
         // These two directives must hold for the WHOLE post-booking phase -
         // not just while prep items are missing (prep completes quickly and
@@ -3204,7 +3209,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           })();
         }
         if (prepMissing.length > 0) {
-          parts.push(`CALL PREP MODE - ACTIVE: The parent's consultation call is ALREADY BOOKED and confirmed - do NOT offer the calendar again, do NOT emit [[CONSULTATION_BOOKING]]${partnerClinicPending ? " (EXCEPTION: you MAY and SHOULD still book the partner IVF clinic named in the PARTNER IVF CLINIC PENDING directive above - offer that clinic call before starting prep)" : ""}, do NOT ask about scheduling or time preferences. Follow the POST-BOOKING CALL PREP section. Items still missing for the provider: ${prepMissing.map((m, i) => `(${i + 1}) ${m}`).join("; ")}. When the parent agrees to prep (e.g. "Let's do it") or sends any message while prep is pending, ask the FIRST missing item immediately - one question per message, IN THE ORDER LISTED, framed as preparing for their call. THIS OVERRIDES THE FAVORITE FLOW: if the parent just favorited a profile, confirm the favorite in ONE sentence (note the agency can discuss her on the upcoming call - do NOT offer to schedule another call, do NOT ask if they have questions or want more profiles), then ask the next missing prep item in the SAME reply. NEVER refuse the save - the system already saved it when the heart was tapped; if the profile has a hard incompatibility (e.g. not open to single parents), keep the confirmation, add ONE short heads-up sentence about it, and STILL ask the next prep item. Everything else about the parent is already saved - do not re-ask it.`);
+          parts.push(`CALL PREP MODE - ACTIVE: The parent's consultation call is ALREADY BOOKED and confirmed - do NOT offer the calendar again, do NOT emit [[CONSULTATION_BOOKING]]${partnerClinicPending ? " (EXCEPTION: you MAY and SHOULD still book the partner IVF clinic named in the PARTNER IVF CLINIC PENDING directive above - offer that clinic call before starting prep)" : ""}, do NOT ask about scheduling or time preferences. Follow the POST-BOOKING CALL PREP section. Items still missing for the provider: ${prepMissing.map((m, i) => `(${i + 1}) ${m}`).join("; ")}. When the parent agrees to prep (e.g. "Let's do it") or sends any message while prep is pending, ask the FIRST missing item - one question per message, IN THE ORDER LISTED, framed as preparing for their call. If their message contains a question or a request of its own, answer/handle THAT first in the same reply, then ask the next missing prep item - NEVER ignore what the parent actually said. THIS OVERRIDES THE FAVORITE FLOW: if the parent just favorited a profile, confirm the favorite in ONE sentence (note the agency can discuss her on the upcoming call - do NOT offer to schedule another call, do NOT ask if they have questions or want more profiles), then ask the next missing prep item in the SAME reply. NEVER refuse the save - the system already saved it when the heart was tapped; if the profile has a hard incompatibility (e.g. not open to single parents), keep the confirmation, add ONE short heads-up sentence about it, and STILL ask the next prep item. Everything else about the parent is already saved - do not re-ask it.`);
         }
       }
 
@@ -3962,6 +3967,46 @@ IMPORTANT RULES:
       console.error("[DONOR INQUIRY MODE] Detection error:", e);
     }
 
+    // SERVICE-SWITCH REQUEST (deterministic): the parent free-typed a first-person
+    // ask for a DIFFERENT service than the profile pinned on screen ("I am
+    // interested in an egg donor" while an inquiry pin holds a Surrogate).
+    // Inquiry mode REPLACES the master flow prompt entirely, so while pinned the
+    // model has NO instructions for other services and historically IGNORED such
+    // requests (observed live: egg-donor ask answered with the Colombia surrogacy
+    // narrative). Release the pin for this turn and inject a top-priority
+    // directive so the requested cycle starts immediately - which also makes the
+    // FIRST streamed tokens on-topic instead of a wrong draft that gets replaced.
+    let serviceSwitchDirective = "";
+    try {
+      const svcSwitchMatch = userMessage.match(
+        /(?:\b(?:i|we)\b[^.?!\n]{0,30}\b(?:interested in|need|want|would like|looking for)\b|^(?:find me|show me|help me find|let'?s find|i'?d like)\b)[^.?!\n]{0,30}\b(egg\s*donors?|sperm\s*donors?|surrogates?|surrogacy|(?:ivf|fertility)\s*clinics?)\b/i
+      );
+      if (svcSwitchMatch) {
+        const raw = svcSwitchMatch[1].toLowerCase();
+        const requestedService = raw.includes("egg") ? "Egg Donor"
+          : raw.includes("sperm") ? "Sperm Donor"
+          : raw.includes("clinic") ? "IVF Clinic"
+          : "Surrogate";
+        const pinnedType = (inquiryMatchCard?.type || "").toLowerCase();
+        const pinnedService = pinnedType.includes("egg") ? "Egg Donor"
+          : pinnedType.includes("sperm") ? "Sperm Donor"
+          : pinnedType.includes("clinic") || pinnedType.includes("doctor") ? "IVF Clinic"
+          : pinnedType.includes("surrog") ? "Surrogate" : "";
+        if (requestedService !== pinnedService) {
+          if (isDonorInquiryMode) {
+            console.log(`[SERVICE SWITCH] Parent asked for ${requestedService} while inquiry-pinned to ${pinnedService || "an unknown type"} - releasing the pin for this turn`);
+            isDonorInquiryMode = false;
+            inquiryMatchCard = null;
+          } else {
+            console.log(`[SERVICE SWITCH] Parent asked for ${requestedService} mid-conversation - injecting top-priority directive`);
+          }
+          serviceSwitchDirective = `PARENT SERVICE REQUEST - TOP PRIORITY: The parent's CURRENT message asks about ${requestedService}: "${userMessage.slice(0, 140)}". NEVER ignore this request and NEVER steer the reply back to a previously shown profile, provider, or country program. Respond to THIS request now: acknowledge it warmly in one sentence, then continue with the correct NEXT STEP of the ${requestedService} flow - the first unanswered required question, respecting the normal question order (Phase 1 identity questions still come first if they are missing, then the ${requestedService} checklist items; one question per message) - BEFORE any search or match card. If their message also contains a question, answer it briefly first in the same reply. Mention other services only if the parent did.`;
+        }
+      }
+    } catch (e) {
+      console.error("[SERVICE SWITCH] Detection error:", e);
+    }
+
     // Resolve the presented entity's display name so the inquiry prompt can pin the
     // model to THE clinic/agency on screen. Without this, "call search_clinics" reads
     // as a generic preference-ranked search and the model streams a DIFFERENT clinic
@@ -3981,6 +4026,8 @@ The parent came from the marketplace and is inquiring about a SPECIFIC ${inquiry
 This is NOT a general intake conversation. Do NOT run the intake questionnaire (Steps 1-8). Do NOT ask about frozen embryos, egg source, sperm source, or carrier.
 
 YOUR SOLE FOCUS: Answer the parent's questions about this specific ${inquiryMatchCard?.type || "profile"}${inquiryEntityName ? ` ("${inquiryEntityName}")` : ""}. Every question the parent asks ("the clinic", "they", "them") refers to THIS entity - never any other provider from earlier in the conversation.
+
+SCOPE GUARD (OVERRIDES EVERYTHING IN THIS MODE): This mode only covers messages ABOUT the profile on screen. If the parent's message is about something else - a different service (an egg donor, sperm donor, surrogate, or clinic that is NOT this profile), a scheduling request, a general fertility question, or ANY request unrelated to this profile - do NOT redirect them back to this profile and NEVER ignore their message. Handle their actual request: answer it, start the proper intake cycle for the service they asked about, or ask whatever you need to know first. The parent's current message ALWAYS wins over this mode's restrictions.
 
 RULES:
 1. The parent is asking about a ${inquiryMatchCard?.type || "profile"} - use the correct terminology (e.g., "egg donor" not "surrogate").
@@ -4117,14 +4164,16 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
         "PHASE 1 FOLLOW-UP REQUIRED - TOP PRIORITY: We know this is a man-and-woman couple but we do NOT yet know which partner is filling out this form. " +
         "Before asking ANYTHING from Phase 2 (no clinic question, no embryo question, no egg/sperm/carrier question), " +
         "you MUST ask: 'And just so I can ask the right questions - are you the woman or the man in this journey?' " +
-        "[[QUICK_REPLY:I'm the woman|I'm the man]]. This is your ONLY job right now. Do not deviate."
+        "[[QUICK_REPLY:I'm the woman|I'm the man]]. This is your ONLY job right now. Do not deviate. " +
+        "(Sole exception: if the parent's current message asks a question or makes a request of its own, address it briefly FIRST in the same reply, then ask this.)"
       );
     } else if (!phase1GenderKnown && !phase1RelationshipKnown && phase1Needed) {
       skipDirectives.unshift(
         "PHASE 1 NOT YET DONE - TOP PRIORITY: Gender and relationship status have NOT been collected yet. " +
         "Before asking ANYTHING from Phase 2 (no clinic question, no embryo question, no egg/sperm/carrier question), " +
         "you MUST ask Phase 1 Question 1 now. Ask: 'Are you on this journey solo, or with a partner?' " +
-        "[[QUICK_REPLY:Solo|With a partner|As a couple]]. This is your ONLY job right now. Do not deviate."
+        "[[QUICK_REPLY:Solo|With a partner|As a couple]]. This is your ONLY job right now. Do not deviate. " +
+        "(Sole exception: if the parent's current message asks a question or makes a request of its own, address it briefly FIRST in the same reply, then ask this.)"
       );
     }
 
@@ -4498,7 +4547,7 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
       skipDirectives.push(`DO NOT ask D0a (solo or with partner) - already known from Phase 1: ${status}.`);
     }
 
-    const skipRulesPreamble = skipDirectives.length > 0 ? `
+    let skipRulesPreamble = skipDirectives.length > 0 ? `
 MANDATORY - QUESTIONS YOU MUST NOT ASK (the parent already answered these):
 ${skipDirectives.map(d => "- " + d).join("\n")}
 NEVER tell the parent you are skipping questions. Just move naturally to the next unanswered question as if the skipped ones never existed.
@@ -4506,6 +4555,9 @@ NEVER tell the parent you are skipping questions. Just move naturally to the nex
 MANDATORY RULE - NEVER ASK QUESTIONS ALREADY ANSWERED:
 Before asking ANY question, check if the parent already provided the answer. If yes, skip it silently and move to the next unanswered step. NEVER announce you are skipping.
 `;
+    // The service-switch directive leads the dynamic block - it outranks every
+    // other steering rule for this turn (both tiers read skipRulesPreamble).
+    if (serviceSwitchDirective) skipRulesPreamble = `\n${serviceSwitchDirective}\n${skipRulesPreamble}`;
 
     // Collect all previously-presented match card provider IDs to prevent re-suggesting.
     // Also bucket the card TYPES: the ready-turn force-search guard must be per-service -
@@ -4888,7 +4940,17 @@ CRITICAL: If search_egg_donors returns results, present them with [[MATCH_CARD]]
 
     // openAiTools already fetched in parallel above (cached)
 
-    const schedulingIntent = /what.?s next|what happens next|what now|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|yes.*schedule|schedule.*consultation|yes.*free consultation|book.*consultation|^schedule[.!]?$/i.test(userMessage.trim());
+    // Generic booking phrasing ("schedule a call", "book a consultation", "set
+    // up a meeting") counts as scheduling intent UNLESS it targets the GoStork
+    // team/concierge (scheduleConciergeRegex owns those, handled above) or a
+    // lawyer (the deterministic lawyer flow owns those). The narrow list below
+    // was built around quick-reply texts ("Yes, schedule a call") and missed
+    // free-typed asks like "schedule a call" - observed live: the parent asked
+    // and got a profile description instead of the calendar.
+    const genericBookingAsk =
+      /(schedule|book|set\s*up|arrange).{0,30}(video\s*)?(call|consult(ation)?|meeting|appointment)/i.test(userMessage) &&
+      !/(concierge|gostork|your team|the team|a human|lawyer|attorney)/i.test(userMessage);
+    const schedulingIntent = genericBookingAsk || /what.?s next|what happens next|what now|next step|move forward|let.?s (go|proceed|do it|move)|ready to (book|schedule|proceed)|i.?m ready|let.?s book|sign me up|yes.*schedule|schedule.*consultation|yes.*free consultation|book.*consultation|^schedule[.!]?$/i.test(userMessage.trim());
     let affirmativeIsScheduling = false;
     if (shortAffirmative && currentSessionId) {
       const lastAssistantMsg = [...messages].reverse().find(m => m.role === "assistant");
@@ -4925,7 +4987,12 @@ Your response should:
     if (shouldTriggerScheduling && !affirmativeIsLearnMore && currentSessionId) {
       try {
         const mc = await findLatestMatchCard(currentSessionId);
-        if (mc?.ownerProviderId) {
+        // Skip when the parent ALREADY has an upcoming call with this exact
+        // provider - the CALL ALREADY BOOKED / CALL PREP directives own that
+        // case (reference the existing call, never a second calendar).
+        if (mc?.ownerProviderId && hasUpcomingProviderConsult && upcomingConsultProviderId === mc.ownerProviderId) {
+          console.log(`[SCHEDULING-INTENT] Skipped - upcoming consult already booked with ${mc.ownerProviderId}`);
+        } else if (mc?.ownerProviderId) {
           messages.push({
             role: "user",
             content: `SYSTEM OVERRIDE: The parent is signaling they want to take the next step. They are ready to schedule a consultation with the agency. Do NOT answer any more profile questions. Do NOT provide a match call prep guide - that comes later when the actual surrogate match call is arranged. Instead:
@@ -6524,6 +6591,8 @@ ${phase0Section}`;
         const laneNoun = favoritedMcType.includes("donor") ? "donor" : favoritedMcType.includes("surrogate") ? "surrogate" : "match";
         finalContent =
           `I've saved ${pron} to your favorites! Since your journey in this lane is already officially underway and handed off, help me understand what's prompting the new search - just so I can point you in the right direction. [[QUICK_REPLY:My match fell through|I want a second ${laneNoun} in parallel|I'm not happy with the agency|Just exploring]]`;
+        sse.sendReset();
+        sse.sendToken(finalContent);
       }
     }
 
@@ -6569,6 +6638,8 @@ ${phase0Section}`;
         if (retryProposes) {
           console.log(`[FAVORITE INTERCEPT] Retry followed the FAVORITE flow - using retry response`);
           finalContent = retryContent;
+          sse.sendReset();
+          sse.sendToken(finalContent);
         } else {
           messages.pop();
           // Replace (not append): the original reply violated the flow - often an
@@ -6578,6 +6649,8 @@ ${phase0Section}`;
           const savedRef = pronounByLabel[likedName.toLowerCase()] || likedName || "them";
           finalContent =
             `Great choice - I've saved ${savedRef} as a favorite! The next step would be to schedule a free consultation call ${agencyPhrase} so you can speak with them directly - it's completely free and there's no commitment. Would you like to book that now, or do you have questions about ${subjectRef} first? [[QUICK_REPLY:Schedule a consultation|I have some questions|Show me more profiles]]`;
+          sse.sendReset();
+          sse.sendToken(finalContent);
         }
       } catch (e) {
         console.error("[FAVORITE INTERCEPT] Error:", e);
