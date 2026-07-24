@@ -269,7 +269,12 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
         // provider/admin (they get download buttons); the parent still reads
         // the plain `content`.
         const isProviderIpFormCard = msg.uiCardType === "ip_form_submitted" && viewerRole !== "parent";
-        const showBubble = isProviderIpFormCard ? false : (!isAttachmentMsg || displayContent.length > 0);
+        // Cost-sheet draft cards carry only placeholder content ("Auto-drafted
+        // cost sheet ready for review.") - the explanatory provider-only intro
+        // message posted right before the cards is the real narration, so the
+        // per-card bubble would be noise.
+        const isCostSheetDraftCard = msg.uiCardType === "cost_sheet_draft_approval";
+        const showBubble = (isProviderIpFormCard || isCostSheetDraftCard) ? false : (!isAttachmentMsg || displayContent.length > 0);
 
         return (
           <div key={msg.id} id={`msg-${msg.id}`} data-quote-id={(msg.uiCardData as any)?.quoteId || undefined}>

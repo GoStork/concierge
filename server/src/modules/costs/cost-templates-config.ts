@@ -81,6 +81,26 @@ export const NON_IVF_LEAVES = [
 ] as const;
 export type NonIvfLeaf = typeof NON_IVF_LEAVES[number];
 
+// Journey-aware sheet matching. A sheet/program that carries any IVF-clinic
+// subtype must match the parent via one of those clinic subtypes - never via
+// a supplementary non-IVF leaf. Clinic bundles are often tagged with agency
+// leaves too ("IVF Surrogacy - Single Cycle" carries
+// [ivf_cycle_own_eggs_surrogate_carry, surrogacy]); a parent whose journey
+// excludes the cycle (e.g. already has frozen embryos) must not receive it
+// just because their carrier is a surrogate. Pure agency/bank sheets (only
+// non-IVF leaves) match on any overlap, as before.
+export function sheetMatchesParentJourney(
+  sheetSubTypes: string[] | null | undefined,
+  parentSubtypes: string[],
+): boolean {
+  const leaves = sheetSubTypes || [];
+  const clinicLeaves = leaves.filter(
+    (l) => !(NON_IVF_LEAVES as readonly string[]).includes(l),
+  );
+  const matchable = clinicLeaves.length > 0 ? clinicLeaves : leaves;
+  return matchable.some((l) => parentSubtypes.includes(l));
+}
+
 // Map each non-IVF leaf back to its legacy service tag (used for backwards
 // compatibility when writing serviceTypes[] alongside subTypes[]).
 export const SERVICE_TAG_OF_NON_IVF_LEAF: Record<NonIvfLeaf, string> = {

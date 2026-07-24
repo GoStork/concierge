@@ -293,21 +293,24 @@ export function matchSubtypes(rawInput: MatcherInput): MatchResult {
   // leaf (false positive in matching is recoverable; false negative means
   // a relevant agency program is silently skipped).
 
-  // Surrogacy: anyone whose carrier is (or could be) "surrogate".
+  // Surrogacy: anyone whose carrier is (or could be) "surrogate". Applies
+  // regardless of hasEmbryos - embryos still need a carrier.
   if (eqOrUnknown(input.carrier, "surrogate")) {
     subtypes.push("surrogacy");
   }
 
-  // Egg donor: anyone whose eggSource is (or could be) "donor".
-  // We don't yet distinguish fresh vs frozen at the profile level, so we
-  // include BOTH leaves - the provider's program chooses which fits.
-  if (eqOrUnknown(input.eggSource, "donor")) {
+  // Egg donor: anyone whose eggSource is (or could be) "donor" AND who
+  // still needs to create embryos. A parent with hasEmbryos=true is past
+  // the gamete stage - eggSource then describes how their embryos were
+  // made, not a current need - so donor-egg programs are irrelevant.
+  if (couldNeedToCreate && eqOrUnknown(input.eggSource, "donor")) {
     subtypes.push("egg_donor_fresh");
     subtypes.push("egg_donor_frozen");
   }
 
-  // Sperm donor: anyone whose spermSource is (or could be) "donor".
-  if (eqOrUnknown(input.spermSource, "donor")) {
+  // Sperm donor: anyone whose spermSource is (or could be) "donor". Same
+  // embryo gate as egg donor - existing embryos mean no new gametes needed.
+  if (couldNeedToCreate && eqOrUnknown(input.spermSource, "donor")) {
     subtypes.push("sperm_donor");
   }
 

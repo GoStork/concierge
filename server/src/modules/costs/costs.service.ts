@@ -9,6 +9,7 @@ import {
   isValidSubType,
   isValidTab,
   resolveTemplate,
+  sheetMatchesParentJourney,
   SubType,
   SUBTYPE_LABEL,
   Tab,
@@ -1310,6 +1311,22 @@ export class CostsService {
       orderBy: { createdAt: "asc" },
     });
 
+    // Journey-aware tightening for IVF-tagged programs. The DB hasSome above
+    // matches when ANY leaf overlaps, which lets a clinic cycle bundle ride
+    // in on a supplementary agency leaf (e.g. "IVF Surrogacy - Single Cycle"
+    // tagged [ivf_cycle_own_eggs_surrogate_carry, surrogacy] reaching a
+    // parent with frozen embryos just because their carrier is a surrogate).
+    // Require the overlap on the program's clinic leaves when it has any.
+    // Scope views (standing on a specific donor / surrogate profile) skip
+    // this by design - the inquiry wins over the parent's own profile.
+    const journeyPrograms = (strictScopeType || requireScopeType || subtypes.length === 0)
+      ? programs
+      : programs.filter((p: any) => {
+          if (!(p.serviceTypes || []).includes("ivf_clinic")) return true;
+          if (!p.subTypes || p.subTypes.length === 0) return true;
+          return sheetMatchesParentJourney(p.subTypes, subtypes);
+        });
+
     // Vial-type narrowing for sperm-donor profile views. The donor's
     // vialTypes field tells us which procedures THIS donor's vials are
     // sold for (e.g. ["ICI"] - ICI only, not IUI/IVF). Filter the bank's
@@ -1320,13 +1337,13 @@ export class CostsService {
     // than nothing. Same when there's no specific donor in scope (provider
     // profile view).
     const filteredPrograms = (() => {
-      if (!spermDonorVialTypes || spermDonorVialTypes.length === 0) return programs;
+      if (!spermDonorVialTypes || spermDonorVialTypes.length === 0) return journeyPrograms;
       const tokens = spermDonorVialTypes
         .map((v) => (v || "").trim().toUpperCase())
         .filter(Boolean);
-      if (tokens.length === 0) return programs;
+      if (tokens.length === 0) return journeyPrograms;
       const re = new RegExp(`\\b(${tokens.join("|")})\\b`, "i");
-      return programs.filter((p) => re.test(p.name));
+      return journeyPrograms.filter((p) => re.test(p.name));
     })();
 
     const COUNTED_ONLY_KEYS = new Set([

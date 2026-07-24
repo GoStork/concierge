@@ -94,6 +94,18 @@ function expectedSubtypes(family: FamilyType, s: Scenario): Set<SubType> {
     if (s.carrier === "surrogate") out.add("shipping_eggs_sperm_to_surrogate");
   }
 
+  // ---- Agency leaves (surrogacy / egg donor / sperm donor) ----
+  // Surrogacy applies whenever the carrier is a surrogate - embryos still
+  // need a carrier. Gamete leaves (egg/sperm donor) only apply while the
+  // parent still needs to CREATE embryos; hasEmbryos=true means the donor
+  // stage is behind them (eggSource then records history, not a need).
+  if (s.carrier === "surrogate") out.add("surrogacy");
+  if (!s.hasEmbryos && s.eggSource === "donor") {
+    out.add("egg_donor_fresh");
+    out.add("egg_donor_frozen");
+  }
+  if (!s.hasEmbryos && s.spermSource === "donor") out.add("sperm_donor");
+
   // ---- Egg Freezing ----
   // Eligible when the parent has ovaries. Gated by interested-services
   // when that field is populated; surfaces by default for early profiles.

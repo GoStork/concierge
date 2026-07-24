@@ -11,6 +11,7 @@ import {
   SUBTYPE_LABEL,
   SubType,
   isValidSubType,
+  sheetMatchesParentJourney,
 } from "../costs/cost-templates-config";
 
 // Phase 2 cost-sheet auto-draft. Fires synchronously-fire-and-forget on
@@ -282,6 +283,11 @@ export class CostSheetAutoDraftService {
         }
       }
 
+      // Whether the leaves came from an actual donor/surrogate subject.
+      // A "clinic" subjectType carries no service context - those sessions
+      // use the parent-profile fallback below.
+      const fromSubject = targetLeaves !== null;
+
       // Fallback: derive from the parent's profile when the session has no
       // donor/surrogate subject (clinic consults, generic provider chats).
       if (!targetLeaves) {
@@ -325,6 +331,27 @@ export class CostSheetAutoDraftService {
       });
       if (sheets.length === 0) return this.skip("no_matching_approved_sheets");
 
+      // Profile-driven matching must respect the parent's journey: a clinic
+      // sheet carrying an IVF subtype only qualifies via that IVF subtype,
+      // never via a supplementary agency leaf. Without this, a parent with
+      // frozen embryos (matcher correctly excludes every creation cycle)
+      // still received "IVF Surrogacy - Single Cycle" because the sheet is
+      // also tagged "surrogacy" and their carrier is a surrogate. Subject-
+      // driven drafts skip this - a consultation about an egg donor should
+      // get the clinic's egg-donation cycle sheets regardless of profile.
+      if (!fromSubject) {
+        const journeyMatched = sheets.filter(s =>
+          sheetMatchesParentJourney((s as any).subTypes as string[], targetLeaves!),
+        );
+        if (journeyMatched.length < sheets.length) {
+          this.logger.log(
+            `Auto-draft journey filter: ${journeyMatched.length}/${sheets.length} sheets match the parent's journey (leaves: ${targetLeaves!.join(",")})`,
+          );
+        }
+        sheets = journeyMatched;
+        if (sheets.length === 0) return this.skip("no_sheets_match_parent_journey");
+      }
+
       // Sperm banks price per vial type + tier (ICI/IUI/IVF x Premium/
       // Platinum), one sheet each. Only draft the tiers the donor is
       // actually available in (same vial-matching convention as
@@ -358,7 +385,14 @@ export class CostSheetAutoDraftService {
       });
       const chat = extractFromChatMessages(recentMsgs.reverse());
 
-      const draftedIds: string[] = [];
+      // Resolve the full set of draftable sheets FIRST so the intro message
+      // below can state an accurate count before any card is posted.
+      const toDraft: Array<{
+        sheet: (typeof sheets)[number];
+        cardSubType: SubType | null;
+        lineItems: LineItemDraft[];
+        totalCostCents: number;
+      }> = [];
       for (const sheet of sheets) {
         if (pendingSheetIds.has(sheet.id)) continue; // unresolved card already up
 
@@ -378,7 +412,42 @@ export class CostSheetAutoDraftService {
           this.logger.log(`Auto-draft skipping sheet ${sheet.id}: zero total`);
           continue;
         }
+        toDraft.push({ sheet, cardSubType, lineItems, totalCostCents });
+      }
+      if (toDraft.length === 0) return this.skip("all_matching_sheets_already_pending_or_zero");
 
+      // Never drop approval cards on the provider without a word of context.
+      // A provider-only intro (hidden from the parent by the chat-router
+      // uiCardType filter) explains what was prepared, why, and what to do.
+      const n = toDraft.length;
+      const subjectNoun = subject.includes("egg")
+        ? "this egg donor"
+        : subject.includes("surrog")
+        ? "this surrogate"
+        : subject.includes("sperm")
+        ? "this sperm donor"
+        : null;
+      const matchPhrase = subjectNoun ? `that match ${subjectNoun}` : "that match this parent's journey";
+      const introContent = supersedePending
+        ? n === 1
+          ? `Here's a fresh draft quote from your approved cost sheets ${matchPhrase}. Review it below - Approve & Send delivers it to the parent in this chat, Edit lets you adjust the amounts first, and Reject discards it. Nothing reaches the parent until you approve.`
+          : `Here's a fresh set of ${n} draft quotes from your approved cost sheets ${matchPhrase}. Flip through the cards below and approve the one(s) that apply - Approve & Send delivers that quote to the parent in this chat. You can Edit amounts before sending, and Reject the rest. Nothing reaches the parent until you approve.`
+        : n === 1
+        ? `A consultation was just booked in this chat, so I prepared a draft quote from your approved cost sheet ${matchPhrase}. Next step: review it below - Approve & Send delivers it to the parent, Edit lets you adjust the amounts first, and Reject discards it. Nothing reaches the parent until you approve.`
+        : `A consultation was just booked in this chat, so I prepared ${n} draft quotes from your approved cost sheets ${matchPhrase}. Next step: flip through the cards below and approve the right one(s) - Approve & Send delivers that quote to the parent. You can Edit amounts before sending, and Reject the ones that don't apply. Nothing reaches the parent until you approve.`;
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: introContent,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardType: "provider_only",
+        },
+      });
+
+      const draftedIds: string[] = [];
+      for (const { sheet, cardSubType, lineItems, totalCostCents } of toDraft) {
         const card = await this.prisma.aiChatMessage.create({
           data: {
             sessionId: session.id,
@@ -407,7 +476,7 @@ export class CostSheetAutoDraftService {
               totalCostCents,
               notes: null,
               matchedSubtypes: targetLeaves,
-              matchSource: subject ? `session_subject:${session.subjectType}` : "parent_profile",
+              matchSource: fromSubject ? `session_subject:${session.subjectType}` : "parent_profile",
               siblingSheetCount: sheets.length,
               chatExtractions: chat,
               autoDraftedAt: new Date().toISOString(),
@@ -422,7 +491,6 @@ export class CostSheetAutoDraftService {
         );
       }
 
-      if (draftedIds.length === 0) return this.skip("all_matching_sheets_already_pending_or_zero");
       return { status: "drafted", messageId: draftedIds[0] };
     } catch (err: any) {
       this.logger.warn(`Auto-draft error for ${logTag}: ${err.message}`);
