@@ -6,6 +6,7 @@ import { prisma as prismaClient } from "../../../db";
 import { generateReceiptPdf } from "./receipt-pdf";
 import { formatMoneyCents } from "../../lib/format-money";
 import { getBaseUrl } from "../../lib/get-base-url";
+import { formatWhen, resolveProviderTimezone } from "../../lib/booking-when";
 import {
   effectiveAgreementMode,
   agreementServiceTypeForSession,
@@ -712,7 +713,7 @@ export class BillingService {
       data: {
         sessionId,
         role: "assistant",
-        content: `${parentName} confirmed they're ready to move forward. I drafted their invoice - review and approve to send it.`,
+        content: `${parentName} confirmed they're ready to move forward, so I drafted their first-payment invoice from the approved quote. Next step: review the amounts below - Approve sends the invoice to ${parentName} for payment, Edit opens it so you can adjust the line items first, and Reject discards the draft. Nothing is sent to ${parentName} until you approve.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardType: "invoice_draft_approval",
@@ -910,7 +911,7 @@ export class BillingService {
       data: {
         sessionId,
         role: "assistant",
-        content: `${parentName} completed their payment. I drafted the ${docTitle} - review and approve to send it for signature.`,
+        content: `${parentName} completed their payment, so I drafted their ${docTitle} from your configured template. Next step: review it below - Approve sends the document to ${parentName} for signature, and Reject discards the draft (you can always send one manually from the + menu). Nothing is sent to ${parentName} until you approve.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardType: "agreement_draft_approval",
@@ -1312,8 +1313,10 @@ export class BillingService {
     // match-call copy off providerType alone misses it.
     if (isMatchCall) {
       const who = subjectLabel || "your surrogate match";
+      // Parent-facing prompt - show the deadline in the parent's (booker's) zone.
+      const rpBooking = await this.prisma.booking.findUnique({ where: { id: bookingId }, select: { bookerTimezone: true } }).catch(() => null);
       const deadline = (holdUntil || dueAt)
-        ? new Date((holdUntil || dueAt)!).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+        ? formatWhen((holdUntil || dueAt)!, rpBooking?.bookerTimezone)
         : "the next 24 hours";
       content = `That was a big moment - you just finished your match call with ${who}! Take a breath, talk it over together, and know that we're here for any questions. Everything about her - the prep guide, cost sheets, and updates - lives in your chat with ${providerName}; this space is just between us.
 
@@ -2736,7 +2739,12 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
     }).catch(() => null);
     const parentLabel = parentUser?.firstName || parentUser?.name || "you";
     const who = ((providerCard.uiCardData as any) || {}).subjectLabel || "your surrogate";
-    const deadline = dueAt.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    // Dual-audience deadline: parent copy in the parent's zone, provider copy in theirs.
+    const finBooking = await this.prisma.booking.findUnique({ where: { id: bookingId }, select: { bookerTimezone: true, providerUserId: true } }).catch(() => null);
+    const matchProviderTz = await resolveProviderTimezone(this.prisma, finBooking?.providerUserId, finBooking?.bookerTimezone);
+    const matchParentTz = finBooking?.bookerTimezone || matchProviderTz;
+    const deadlineParent = formatWhen(dueAt, matchParentTz);
+    const deadlineProvider = formatWhen(dueAt, matchProviderTz);
     // Dual-audience message: `content` is the parent-facing copy, and
     // `uiCardData.providerContent` is the provider-phrased variant the
     // provider chat renders instead (the agency SENDS the invoice, they
@@ -2754,7 +2762,7 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
 
 You said yes, ${who} said yes, and we couldn't be happier for you. This is one of those moments this whole journey is about - take a second to soak it in.
 
-One last step to make it official: your deposit invoice is coming right up below. Complete it by ${deadline} and the match is yours.`,
+One last step to make it official: your deposit invoice is coming right up below. Complete it by ${deadlineParent} and the match is yours.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardData: {
@@ -2762,7 +2770,7 @@ One last step to make it official: your deposit invoice is coming right up below
           bookingId,
           providerContent: `It's a match, ${providerName}! 🎉
 
-${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on the new match. The deposit invoice has been sent to ${parentLabel} automatically; once they complete the payment by ${deadline}, the match is locked in. We'll let you know the moment it's paid.`,
+${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on the new match. The deposit invoice has been sent to ${parentLabel} automatically; once they complete the payment by ${deadlineProvider}, the match is locked in. We'll let you know the moment it's paid.`,
         },
       },
     }).catch(() => {});

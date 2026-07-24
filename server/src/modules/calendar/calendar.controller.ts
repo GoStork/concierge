@@ -27,6 +27,7 @@ import { randomBytes, randomUUID, createHmac } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { createDailyRoom, isExternalMeetingUrl } from "../../lib/daily-room";
 import { getBaseUrl } from "../../lib/get-base-url";
+import { formatWhen, resolveProviderTimezone } from "../../lib/booking-when";
 import { emitBookingLifecycleEvent } from "../../../journey-events";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { NotificationService } from "../notifications/notification.service";
@@ -1354,7 +1355,12 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     if (existing) return;
 
     const providerName = resolvedProviderName || "the agency";
-    const when = new Date(booking.scheduledAt).toLocaleString("en-US", { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    // Dual-audience: parent copy in the parent's zone, provider note in the provider's zone.
+    const prepProviderTz = await resolveProviderTimezone(this.prisma, booking.providerUserId, booking.bookerTimezone);
+    const prepParentTz = booking.bookerTimezone || prepProviderTz;
+    const whenParent = formatWhen(booking.scheduledAt, prepParentTz, { weekday: "long" });
+    const when = whenParent; // parent-facing default
+    const whenProvider = formatWhen(booking.scheduledAt, prepProviderTz, { weekday: "long" });
     const parentUser = booking.parentUserId
       ? await this.prisma.user.findUnique({ where: { id: booking.parentUserId }, select: { firstName: true, name: true } }).catch(() => null)
       : null;
@@ -1419,10 +1425,10 @@ A little preparation goes a long way with these calls, so I'm attaching a prep g
 
 I'll check in with you right after the call. You've got this!`;
     const providerNote = isConsultation
-      ? `The consultation is confirmed for ${when}. We've prepped ${parentLabel} for it: they received our first-consultation questions guide (attached below).`
+      ? `The consultation is confirmed for ${whenProvider}. We've prepped ${parentLabel} for it: they received our first-consultation questions guide (attached below).`
       : isMatch
-      ? `The match call is confirmed for ${when}. We've prepped ${parentLabel} for it: they know about the exclusive 24-hour hold that starts when the call ends, and they received the Match Call prep-questions guide (attached below).`
-      : `The doctor call is confirmed for ${when}. We've prepped ${parentLabel} for it: they received the Doctor Call prep-questions guide (attached below) and were encouraged to bring their records and top concerns.`;
+      ? `The match call is confirmed for ${whenProvider}. We've prepped ${parentLabel} for it: they know about the exclusive 24-hour hold that starts when the call ends, and they received the Match Call prep-questions guide (attached below).`
+      : `The doctor call is confirmed for ${whenProvider}. We've prepped ${parentLabel} for it: they received the Doctor Call prep-questions guide (attached below) and were encouraged to bring their records and top concerns.`;
     await this.prisma.aiChatMessage.create({
       data: {
         sessionId: parentSession.id,

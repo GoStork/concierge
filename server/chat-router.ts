@@ -6,6 +6,7 @@ import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession
 import { StorageService } from "./src/modules/storage/storage.service";
 import { isUserOnline, getOnlineUserIds } from "./online-tracker";
 import { getBaseUrl as getAppBaseUrlShared } from "./src/lib/get-base-url";
+import { formatWhen, resolveProviderTimezone } from "./src/lib/booking-when";
 import { buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
 import { canProviderAccessSession, canSendProviderMessage, COORDINATOR_SUBJECT_TYPES, ALL_SESSION_PROVIDER_ROLES } from "../shared/roles";
 
@@ -2363,16 +2364,20 @@ chatRouter.post("/api/chat-session/:id/proposed-times/:messageId/accept", requir
         where: { id: msg.id },
         data: { uiCardData: { ...data, chosenSlot: slot, bookingId: newBooking.id } },
       });
-      const changedLabel = newWhen.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      // Parent reads `content` in their zone; the provider reads `providerContent` in theirs.
+      const rsProviderTz = await resolveProviderTimezone(prisma, newBooking.providerUserId, newBooking.bookerTimezone);
+      const rsParentTz = newBooking.bookerTimezone || rsProviderTz;
+      const changedLabelParent = formatWhen(newWhen, rsParentTz);
+      const changedLabelProvider = formatWhen(newWhen, rsProviderTz);
       await prisma.aiChatMessage.create({
         data: {
           sessionId: session.id,
           role: "assistant",
-          content: `Done! Your ${data.meetingSubtype === "MATCH_CALL" ? "Match Call" : data.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "meeting"} with ${data.subjectLabel || data.hostName} has moved to ${changedLabel}. Updated invites are on their way to everyone.`,
+          content: `Done! Your ${data.meetingSubtype === "MATCH_CALL" ? "Match Call" : data.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "meeting"} with ${data.subjectLabel || data.hostName} has moved to ${changedLabelParent}. Updated invites are on their way to everyone.`,
           senderType: "system",
           senderName: "GoStork",
           uiCardData: {
-            providerContent: `${(req.user as any)?.name || "The parent"} moved the ${data.meetingSubtype === "MATCH_CALL" ? "Match Call" : data.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "meeting"} with ${data.subjectLabel || data.hostName} to ${changedLabel}. Updated invites are on their way to everyone.`,
+            providerContent: `${(req.user as any)?.name || "The parent"} moved the ${data.meetingSubtype === "MATCH_CALL" ? "Match Call" : data.meetingSubtype === "DOCTOR_CONSULTATION" ? "Doctor Call" : "meeting"} with ${data.subjectLabel || data.hostName} to ${changedLabelProvider}. Updated invites are on their way to everyone.`,
           },
         },
       }).catch(() => {});
@@ -2385,7 +2390,7 @@ chatRouter.post("/api/chat-session/:id/proposed-times/:messageId/accept", requir
 
     const hostConfig = await prisma.scheduleConfig.findUnique({
       where: { userId: data.hostUserId },
-      select: { meetingDuration: true, meetingLink: true },
+      select: { meetingDuration: true, meetingLink: true, timezone: true },
     });
     const duration = data.durationMin || hostConfig?.meetingDuration || 30;
     // Conflict check - the slot may have been taken since it was proposed.
@@ -2455,16 +2460,20 @@ chatRouter.post("/api/chat-session/:id/proposed-times/:messageId/accept", requir
       where: { id: msg.id },
       data: { uiCardData: { ...data, status: "booked", chosenSlot: slot, bookingId: booking.id } },
     });
-    const whenLabel = when.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    // Parent reads `content` in their zone; the provider reads `providerContent` in theirs.
+    const bkProviderTz = hostConfig?.timezone || (booking as any).bookerTimezone || "America/Los_Angeles";
+    const bkParentTz = (booking as any).bookerTimezone || bkProviderTz;
+    const whenLabelParent = formatWhen(when, bkParentTz);
+    const whenLabelProvider = formatWhen(when, bkProviderTz);
     await prisma.aiChatMessage.create({
       data: {
         sessionId: session.id,
         role: "assistant",
-        content: `You're all set! Your ${callLabel} with ${data.subjectLabel || data.hostName}${data.subjectLabel ? `, hosted by ${data.hostName},` : ""} is booked for ${whenLabel}. Calendar invites are on their way to everyone.`,
+        content: `You're all set! Your ${callLabel} with ${data.subjectLabel || data.hostName}${data.subjectLabel ? `, hosted by ${data.hostName},` : ""} is booked for ${whenLabelParent}. Calendar invites are on their way to everyone.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardData: {
-          providerContent: `${parentUser?.name || "The parent"} picked ${whenLabel} for the ${callLabel} with ${data.subjectLabel || data.hostName}${data.subjectLabel ? ` (hosted by ${data.hostName})` : ""}. Calendar invites are on their way to everyone.`,
+          providerContent: `${parentUser?.name || "The parent"} picked ${whenLabelProvider} for the ${callLabel} with ${data.subjectLabel || data.hostName}${data.subjectLabel ? ` (hosted by ${data.hostName})` : ""}. Calendar invites are on their way to everyone.`,
         },
       },
     }).catch(() => {});
@@ -2504,7 +2513,7 @@ chatRouter.post("/api/chat-session/:id/schedule-call", requireAuth, async (req, 
     }
     const hostConfig = await prisma.scheduleConfig.findUnique({
       where: { userId: hostUserId },
-      select: { meetingDuration: true, meetingLink: true },
+      select: { meetingDuration: true, meetingLink: true, timezone: true },
     });
     const duration = hostConfig?.meetingDuration || 30;
 
@@ -2581,17 +2590,21 @@ chatRouter.post("/api/chat-session/:id/schedule-call", requireAuth, async (req, 
       await prisma.booking.update({ where: { id: booking.id }, data: { notes: notes.trim() } }).catch(() => {});
     }
 
-    // Announce in the chat so both sides see it immediately.
-    const whenLabel = when.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    // Announce in the chat so both sides see it immediately. Parent reads
+    // `content` in their zone; the provider reads `providerContent` in theirs.
+    const schProviderTz = hostConfig?.timezone || (booking as any).bookerTimezone || "America/Los_Angeles";
+    const schParentTz = (booking as any).bookerTimezone || schProviderTz;
+    const whenLabelParent = formatWhen(when, schParentTz);
+    const whenLabelProvider = formatWhen(when, schProviderTz);
     await prisma.aiChatMessage.create({
       data: {
         sessionId: session.id,
         role: "assistant",
-        content: `Great news - your ${callLabel}, hosted by ${hostName}, is scheduled for ${whenLabel}. Calendar invites are on their way to everyone.`,
+        content: `Great news - your ${callLabel}, hosted by ${hostName}, is scheduled for ${whenLabelParent}. Calendar invites are on their way to everyone.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardData: {
-          providerContent: `${user.name || "The team"} scheduled a ${callLabel} with ${hostName} for ${whenLabel}. Calendar invites are on their way to everyone.`,
+          providerContent: `${user.name || "The team"} scheduled a ${callLabel} with ${hostName} for ${whenLabelProvider}. Calendar invites are on their way to everyone.`,
         },
       },
     }).catch(() => {});

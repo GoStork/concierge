@@ -23,6 +23,8 @@
  * (loud failure; no auto-resume of a half-built signature request).
  */
 
+import { formatWhen } from "../../lib/booking-when";
+
 const HOUR_MS = 60 * 60 * 1000;
 /** Invoice with no dueAt counts as overdue this long after creation. */
 const HOLD_OVERDUE_FALLBACK_MS = 24 * HOUR_MS;
@@ -35,8 +37,11 @@ const KEEP_REASK_MS = 72 * HOUR_MS;
 /** A DRAFT agreement with a PandaDoc doc older than this is stranded. */
 const STRANDED_DRAFT_MS = 15 * 60 * 1000;
 
-export function fmtHoldDeadline(d: Date): string {
-  return d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+// Format a hold-release deadline in a specific timezone (with abbreviation) so
+// the persisted chat/notification string is correct for its reader. Pass the
+// parent's zone for parent-facing copy and the provider's for provider copy.
+export function fmtHoldDeadline(d: Date, tz?: string | null): string {
+  return formatWhen(d, tz);
 }
 
 async function notifyUsers(prisma: any, userIds: string[], eventType: string, payload: Record<string, unknown>) {

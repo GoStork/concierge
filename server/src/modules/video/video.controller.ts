@@ -21,6 +21,7 @@ import { Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { PrismaService } from "../prisma/prisma.service";
 import { getBaseUrl } from "../../lib/get-base-url";
+import { formatWhen, resolveProviderTimezone } from "../../lib/booking-when";
 import { VideoService } from "./video.service";
 import { NotificationService } from "../notifications/notification.service";
 import { BookingEventsService } from "../calendar/booking-events.service";
@@ -1120,18 +1121,22 @@ export class VideoController {
       }).catch(() => null);
       const parentLabel = parentUser?.firstName || parentUser?.name || "the parent";
       const who = subjectLabel || "the surrogate";
-      const holdLabel = holdUntil.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      // Parent reads `content` in their zone; the provider reads `providerContent` in theirs.
+      const holdProviderTz = await resolveProviderTimezone(this.prisma, booking?.providerUserId, booking?.bookerTimezone);
+      const holdParentTz = booking?.bookerTimezone || holdProviderTz;
+      const holdLabelParent = formatWhen(holdUntil, holdParentTz, { weekday: undefined });
+      const holdLabelProvider = formatWhen(holdUntil, holdProviderTz, { weekday: undefined });
       // Neutral recap in the 3-way chat, visible to BOTH sides - the shared
       // thread tells the story; each side's decision prompt stays private.
       await this.prisma.aiChatMessage.create({
         data: {
           sessionId: providerSession.id,
           role: "assistant",
-          content: `The match call is complete! ${who} is now on an exclusive 24-hour hold just for you - until ${holdLabel}, she won't be suggested to any other family.`,
+          content: `The match call is complete! ${who} is now on an exclusive 24-hour hold just for you - until ${holdLabelParent}, she won't be suggested to any other family.`,
           senderType: "system",
           senderName: "GoStork",
           uiCardData: {
-            providerContent: `The match call is complete. ${who} is on a 24-hour hold for ${parentLabel} while both sides decide - until ${holdLabel}, she won't be suggested to other parents.`,
+            providerContent: `The match call is complete. ${who} is on a 24-hour hold for ${parentLabel} while both sides decide - until ${holdLabelProvider}, she won't be suggested to other parents.`,
           },
         },
       }).catch(() => {});

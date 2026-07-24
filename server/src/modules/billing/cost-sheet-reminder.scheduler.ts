@@ -104,12 +104,20 @@ export async function runCostSheetReminderCheck(prisma: PrismaService, notificat
           continue;
         }
 
+        // Provider-facing email: show the meeting time in the provider's own
+        // timezone with its abbreviation (e.g. "PST"), not the server's zone.
+        const provSchedule = booking.providerUser?.id
+          ? await prisma.scheduleConfig.findUnique({ where: { userId: booking.providerUser.id }, select: { timezone: true } })
+          : null;
+        const providerTimezone = provSchedule?.timezone || booking.bookerTimezone || "America/Los_Angeles";
         const meetingTimeFormatted = booking.scheduledAt.toLocaleString("en-US", {
           weekday: "short",
           month: "short",
           day: "numeric",
           hour: "numeric",
           minute: "2-digit",
+          timeZone: providerTimezone,
+          timeZoneName: "short",
         });
         const parentName = booking.parentUser?.name || booking.parentUser?.firstName || "the parent";
         const providerName = booking.providerUser?.provider?.name || "your client";

@@ -108,6 +108,24 @@ export class BillingController {
     @Inject(SponsorshipService) private readonly sponsorshipService: SponsorshipService,
   ) {}
 
+  /**
+   * Best-effort parent/provider timezones for a hold-decision session, so the
+   * baked deadline strings read correctly for each side. Provider zone comes
+   * from any provider member's ScheduleConfig; parent zone from their most
+   * recent booking's bookerTimezone. Both fall back sensibly.
+   */
+  private async resolveHoldTimezones(session: { userId: string; providerId: string | null }): Promise<{ parentTz: string; providerTz: string }> {
+    const [provUser, parentBooking] = await Promise.all([
+      session.providerId
+        ? this.db.user.findFirst({ where: { providerId: session.providerId, scheduleConfig: { isNot: null } }, select: { scheduleConfig: { select: { timezone: true } } } }).catch(() => null)
+        : Promise.resolve(null),
+      this.db.booking.findFirst({ where: { parentUserId: session.userId }, orderBy: { createdAt: "desc" }, select: { bookerTimezone: true } }).catch(() => null),
+    ]);
+    const providerTz = (provUser as any)?.scheduleConfig?.timezone || "America/Los_Angeles";
+    const parentTz = parentBooking?.bookerTimezone || providerTz;
+    return { parentTz, providerTz };
+  }
+
   // ─── Bank skip-to-checkout (Phase 6) ───────────────────────────────────────
 
   /**
@@ -1133,6 +1151,7 @@ export class BillingController {
 
     // release: warn the parent with a final window before the hold ends.
     const releaseAt = new Date(Date.now() + RELEASE_COUNTDOWN_MS);
+    const { parentTz, providerTz } = await this.resolveHoldTimezones(session);
     await this.db.aiChatMessage.update({
       where: { id: messageId },
       data: { uiCardData: { ...data, resolvedAt: new Date().toISOString(), resolvedAs: "release_requested", resolvedByUserId: user.id } },
@@ -1141,12 +1160,12 @@ export class BillingController {
       data: {
         sessionId: msg.sessionId,
         role: "assistant",
-        content: `A heads-up about ${donorLabel}: your deposit is still unpaid, so her hold is set to end ${fmtHoldDeadline(releaseAt)}. Complete the payment before then and she's officially yours - or let me know if you'd rather release her now.`,
+        content: `A heads-up about ${donorLabel}: your deposit is still unpaid, so her hold is set to end ${fmtHoldDeadline(releaseAt, parentTz)}. Complete the payment before then and she's officially yours - or let me know if you'd rather release her now.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardType: "donor_release_warning",
         uiCardData: {
-          providerContent: `I've let ${parentName} know ${donorLabel} will be released ${fmtHoldDeadline(releaseAt)} unless the deposit is completed - I'll keep you posted on their answer.`,
+          providerContent: `I've let ${parentName} know ${donorLabel} will be released ${fmtHoldDeadline(releaseAt, providerTz)} unless the deposit is completed - I'll keep you posted on their answer.`,
           donorId: data.donorId,
           donorLabel,
           subjectType: data.subjectType || "egg_donor",
@@ -1169,7 +1188,7 @@ export class BillingController {
         data: {
           userId: uid,
           eventType: "DONOR_HOLD_RELEASE_WARNING",
-          payload: { sessionId: session.id, donorLabel, releaseAt: releaseAt.toISOString(), message: `${donorLabel} will be released ${fmtHoldDeadline(releaseAt)} unless your deposit is completed.` },
+          payload: { sessionId: session.id, donorLabel, releaseAt: releaseAt.toISOString(), message: `${donorLabel} will be released ${fmtHoldDeadline(releaseAt, parentTz)} unless your deposit is completed.` },
         },
       }).catch(() => {});
     }
@@ -1229,6 +1248,7 @@ export class BillingController {
     // pay_soon: one-time extension; expiry sweep still enforces the new deadline.
     if (data.answered === "pay_soon") return { ok: true, alreadyAnswered: true, releaseAt: data.releaseAt };
     const newReleaseAt = new Date(Date.now() + PAY_SOON_EXTENSION_MS);
+    const { parentTz, providerTz } = await this.resolveHoldTimezones(session);
     await this.db.aiChatMessage.update({
       where: { id: messageId },
       data: { uiCardData: { ...data, answered: "pay_soon", answeredAt: new Date().toISOString(), answeredByUserId: user.id, releaseAt: newReleaseAt.toISOString() } },
@@ -1237,11 +1257,11 @@ export class BillingController {
       data: {
         sessionId: msg.sessionId,
         role: "assistant",
-        content: `No problem - I've extended your hold on ${donorLabel} until ${fmtHoldDeadline(newReleaseAt)}. Complete the deposit before then and she's officially yours.`,
+        content: `No problem - I've extended your hold on ${donorLabel} until ${fmtHoldDeadline(newReleaseAt, parentTz)}. Complete the deposit before then and she's officially yours.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardData: {
-          providerContent: `${parentName} says they'll complete the deposit soon - I've extended ${donorLabel}'s hold until ${fmtHoldDeadline(newReleaseAt)}.`,
+          providerContent: `${parentName} says they'll complete the deposit soon - I've extended ${donorLabel}'s hold until ${fmtHoldDeadline(newReleaseAt, providerTz)}.`,
         },
       },
     }).catch(() => {});
@@ -1252,7 +1272,7 @@ export class BillingController {
           data: {
             userId: pu.id,
             eventType: "DONOR_HOLD_EXTENDED",
-            payload: { sessionId: session.id, donorLabel, releaseAt: newReleaseAt.toISOString(), message: `${parentName} says they'll pay soon - ${donorLabel}'s hold extended until ${fmtHoldDeadline(newReleaseAt)}.` },
+            payload: { sessionId: session.id, donorLabel, releaseAt: newReleaseAt.toISOString(), message: `${parentName} says they'll pay soon - ${donorLabel}'s hold extended until ${fmtHoldDeadline(newReleaseAt, providerTz)}.` },
           },
         }).catch(() => {});
       }

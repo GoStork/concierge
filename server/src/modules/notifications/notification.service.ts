@@ -74,11 +74,16 @@ function formatDate(d: Date, tz?: string | null): string {
   return d.toLocaleDateString("en-US", opts);
 }
 
+// Always include the timezone abbreviation (e.g. "PST", "EST") so the reader
+// knows which zone the time is in. The abbreviation is derived from the passed
+// tz, so a parent formatted in their zone sees their zone and a provider
+// formatted in theirs sees theirs.
 function formatTime(d: Date, tz?: string | null): string {
-  const opts: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit", hour12: true };
+  const opts: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short" };
   if (tz) opts.timeZone = tz;
   return d.toLocaleTimeString("en-US", opts);
 }
+
 
 function getFirstName(fullName?: string | null): string {
   if (!fullName) return "";
@@ -121,6 +126,29 @@ export class NotificationService implements OnModuleInit {
     this.cachedBrandData = await fetchEmailBrandData(this.prisma);
     this.brandDataCacheTime = now;
     return this.cachedBrandData;
+  }
+
+  /**
+   * The provider's own timezone for a booking. Providers must read meeting
+   * times in their own timezone, not the parent's - `booking.bookerTimezone`
+   * captures the booker (parent), so provider-facing emails/SMS format times in
+   * the provider's ScheduleConfig.timezone instead. Uses an already-loaded
+   * scheduleConfig when present, otherwise fetches it; falls back to the
+   * booker's zone and finally a US default.
+   */
+  private async resolveProviderTz(booking: any, providerUser?: any): Promise<string> {
+    const loaded = providerUser?.scheduleConfig?.timezone;
+    if (loaded) return loaded;
+    try {
+      const cfg = await this.prisma.scheduleConfig.findUnique({
+        where: { userId: booking.providerUserId },
+        select: { timezone: true },
+      });
+      if (cfg?.timezone) return cfg.timezone;
+    } catch {
+      /* fall through to booker/default */
+    }
+    return booking?.bookerTimezone || "America/Los_Angeles";
   }
 
   onModuleInit() {
@@ -230,13 +258,16 @@ export class NotificationService implements OnModuleInit {
 
     if (providerEmail && booking.confirmToken) {
       const manageLink = `${base}/booking/${booking.confirmToken}/manage`;
+      const provTz = await this.resolveProviderTz(booking, providerUser);
+      const provDateStr = formatDate(scheduledAt, provTz);
+      const provTimeStr = formatTime(scheduledAt, provTz);
       const providerHtml = buildBrandedEmail(brandData, {
         title: "New Meeting Request",
         greeting: `Hi ${esc(getFirstName(providerUser?.name))},`,
         body: `<strong>${esc(attendeeName)}</strong> has requested a meeting with you.`,
         detailRows: [
-          { label: "Date", value: dateStr },
-          { label: "Time", value: timeStr },
+          { label: "Date", value: provDateStr },
+          { label: "Time", value: provTimeStr },
           { label: "Duration", value: `${booking.duration} minutes` },
           { label: "Location", value: location },
           { label: "Client", value: esc(attendeeName) },
@@ -258,7 +289,7 @@ export class NotificationService implements OnModuleInit {
       const providerPhone = providerUser?.mobileNumber;
       if (providerPhone) {
         await this.dispatchSmsTemplate({ userId: booking.providerUserId, bookingId: booking.id, channel: "booking_request", recipient: providerPhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_REQUEST_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": dateStr, "4": timeStr, "5": manageLink },
+          contentSid: TWILIO_TEMPLATES.BOOKING_REQUEST_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": provDateStr, "4": provTimeStr, "5": manageLink },
         });
       }
     }
@@ -281,8 +312,10 @@ export class NotificationService implements OnModuleInit {
     const base = getBaseUrl();
     const brandData = await this.getBrandData();
     const location = booking.meetingType === "phone" ? "Phone Call" : "Video Call";
-    const dateStr = formatDate(scheduledAt, booking.bookerTimezone);
-    const timeStr = formatTime(scheduledAt, booking.bookerTimezone);
+    // Provider-only reminder - format in the provider's own timezone.
+    const provTz = await this.resolveProviderTz(booking, providerUser);
+    const dateStr = formatDate(scheduledAt, provTz);
+    const timeStr = formatTime(scheduledAt, provTz);
     const manageLink = `${base}/booking/${booking.confirmToken}/manage`;
 
     const title = opts.urgent ? "Meeting Request Needs a Response Soon" : "Meeting Request Still Awaiting Your Confirmation";
@@ -537,13 +570,16 @@ export class NotificationService implements OnModuleInit {
     });
 
     if (providerEmail) {
+      const provTz = await this.resolveProviderTz(booking, providerUser);
+      const provDateStr = formatDate(scheduledAt, provTz);
+      const provTimeStr = formatTime(scheduledAt, provTz);
       const providerHtml = buildBrandedEmail(brandData, {
         title: "Meeting Request Expired",
         greeting: `Hi ${esc(getFirstName(providerUser?.name))},`,
         body: `The meeting request from <strong>${esc(attendeeName)}</strong> expired because it wasn't confirmed before the requested time.`,
         detailRows: [
-          { label: "Requested Date", value: dateStr },
-          { label: "Requested Time", value: timeStr },
+          { label: "Requested Date", value: provDateStr },
+          { label: "Requested Time", value: provTimeStr },
           { label: "Client", value: esc(attendeeName) },
           ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
         ],
@@ -555,7 +591,7 @@ export class NotificationService implements OnModuleInit {
       const providerPhone = providerUser?.mobileNumber;
       if (providerPhone) {
         await this.dispatchSmsTemplate({ userId: booking.providerUserId, bookingId: booking.id, channel: "booking_expired", recipient: providerPhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": dateStr, "4": timeStr },
+          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": provDateStr, "4": provTimeStr },
         });
       }
     }
@@ -667,6 +703,9 @@ export class NotificationService implements OnModuleInit {
     });
 
     if (providerEmail) {
+      const provTz = await this.resolveProviderTz(booking, providerUser);
+      const provDateStr = formatDate(scheduledAt, provTz);
+      const provTimeStr = formatTime(scheduledAt, provTz);
       const providerHtml = buildBrandedEmail(brandData, {
         title: `${cc.isCall ? cc.noun : "Meeting"} Confirmed`,
         greeting: `Hi ${esc(getFirstName(providerUser?.name))},`,
@@ -674,8 +713,8 @@ export class NotificationService implements OnModuleInit {
           ? `You're hosting a confirmed <strong>${cc.noun}</strong>${cc.subjectLabel ? ` for <strong>${esc(cc.subjectLabel)}</strong>` : ""} with <strong>${esc(attendeeName)}</strong>.`
           : `Your meeting with <strong>${esc(attendeeName)}</strong> has been confirmed.`,
         detailRows: [
-          { label: "Date", value: dateStr },
-          { label: "Time", value: timeStr },
+          { label: "Date", value: provDateStr },
+          { label: "Time", value: provTimeStr },
           { label: "Duration", value: `${booking.duration} minutes` },
           { label: "Location", value: location },
           { label: "Client", value: esc(attendeeName) },
@@ -693,7 +732,7 @@ export class NotificationService implements OnModuleInit {
       const providerPhone = providerUser?.mobileNumber;
       if (providerPhone) {
         await this.dispatchSmsTemplate({ userId: booking.providerUserId, bookingId: booking.id, channel: "booking_confirmation", recipient: providerPhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_CONFIRMED_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": dateStr, "4": timeStr, "5": joinLink },
+          contentSid: TWILIO_TEMPLATES.BOOKING_CONFIRMED_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": provDateStr, "4": provTimeStr, "5": joinLink },
         });
       }
     }
@@ -786,13 +825,16 @@ export class NotificationService implements OnModuleInit {
     });
 
     if (providerEmail) {
+      const provTz = await this.resolveProviderTz(booking, providerUser);
+      const provDateStr = formatDate(scheduledAt, provTz);
+      const provTimeStr = formatTime(scheduledAt, provTz);
       const providerHtml = buildBrandedEmail(brandData, {
         title: `${cc.isCall ? cc.noun : "Meeting"} Cancelled`,
         greeting: `Hi ${esc(getFirstName(providerUser?.name))},`,
         body: `The ${cc.isCall ? cc.noun : "meeting"} with <strong>${esc(attendeeName)}</strong> has been cancelled.`,
         detailRows: [
-          { label: "Date", value: dateStr },
-          { label: "Time", value: timeStr },
+          { label: "Date", value: provDateStr },
+          { label: "Time", value: provTimeStr },
           { label: "Client", value: esc(attendeeName) },
           ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
         ],
@@ -803,7 +845,7 @@ export class NotificationService implements OnModuleInit {
       const providerPhone = providerUser?.mobileNumber;
       if (providerPhone) {
         await this.dispatchSmsTemplate({ userId: booking.providerUserId, bookingId: booking.id, channel: "booking_cancellation", recipient: providerPhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": dateStr, "4": timeStr },
+          contentSid: TWILIO_TEMPLATES.BOOKING_CANCELLED_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": provDateStr, "4": provTimeStr },
         });
       }
     }
@@ -910,14 +952,19 @@ export class NotificationService implements OnModuleInit {
     });
 
     if (providerEmail) {
+      const provTz = await this.resolveProviderTz(newBooking, providerUser);
+      const provOldDateStr = formatDate(oldDate, provTz);
+      const provOldTimeStr = formatTime(oldDate, provTz);
+      const provNewDateStr = formatDate(newDate, provTz);
+      const provNewTimeStr = formatTime(newDate, provTz);
       const providerHtml = buildBrandedEmail(brandData, {
         title: "Meeting Rescheduled",
         greeting: `Hi ${esc(getFirstName(providerUser?.name))},`,
         body: `The meeting with <strong>${esc(attendeeName)}</strong> has been rescheduled.`,
         detailRows: [
-          { label: "Previous", value: `${oldDateStr} at ${oldTimeStr}` },
-          { label: "New Date", value: newDateStr },
-          { label: "New Time", value: newTimeStr },
+          { label: "Previous", value: `${provOldDateStr} at ${provOldTimeStr}` },
+          { label: "New Date", value: provNewDateStr },
+          { label: "New Time", value: provNewTimeStr },
           { label: "Duration", value: `${newBooking.duration} minutes` },
           { label: "Client", value: esc(attendeeName) },
           ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
@@ -934,7 +981,7 @@ export class NotificationService implements OnModuleInit {
       const providerPhone = providerUser?.mobileNumber;
       if (providerPhone) {
         await this.dispatchSmsTemplate({ userId: newBooking.providerUserId, bookingId: newBooking.id, channel: "booking_rescheduled", recipient: providerPhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_RESCHEDULED_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": newDateStr, "4": newTimeStr, "5": joinLink },
+          contentSid: TWILIO_TEMPLATES.BOOKING_RESCHEDULED_PROVIDER, contentVars: { "1": getFirstName(providerUser?.name), "2": attendeeName, "3": provNewDateStr, "4": provNewTimeStr, "5": joinLink },
         });
       }
     }
@@ -1637,8 +1684,10 @@ export class NotificationService implements OnModuleInit {
         if (reminder.type === "EMAIL") {
           const brandData = await this.getBrandData();
           const reminderVideoRoomLink = `${base}/room/${booking.id}`;
-          const dateStr = formatDate(scheduledAt, booking.bookerTimezone);
-          const timeStr = formatTime(scheduledAt, booking.bookerTimezone);
+          // Provider reads the reminder in their own timezone; the parent in theirs (bookerTimezone).
+          const reminderTz = isProvider ? await this.resolveProviderTz(booking, booking.providerUser) : booking.bookerTimezone;
+          const dateStr = formatDate(scheduledAt, reminderTz);
+          const timeStr = formatTime(scheduledAt, reminderTz);
           const detailsLink = `${base}/booking/${booking.publicToken}`;
           const joinLink = isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl : reminderVideoRoomLink;
           const location = booking.meetingType === "phone" ? "Phone Call" : "Video Call";

@@ -185,9 +185,18 @@ export function buildBrandedEmail(
     error: shadeHex(brand.errorColor, 0.4),
   };
 
+  // Date/Time values must never wrap onto a second line. The label column is
+  // sized to its content (white-space:nowrap, no fixed width) so the value
+  // column keeps the maximum room even on a narrow phone; date/time values get
+  // an explicit nowrap so "Friday, July 24, 2026" and "11:30 AM PST" stay on
+  // one line, while long values (names, notes) still break normally.
   const detailsHtml = opts.detailRows?.length
     ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:${tintHex(brand.backgroundColor, 0.02)};border-radius:${brand.containerRadius};overflow:hidden;">
-${opts.detailRows.map(r => `<tr><td width="160" style="padding:10px 16px;color:${brand.mutedForegroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};white-space:nowrap;vertical-align:top;">${r.label}</td><td style="padding:10px 16px;color:${brand.foregroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;word-break:break-word;">${r.value}</td></tr>`).join("\n")}
+${opts.detailRows.map(r => {
+  const isDateTime = /\b(date|time)\b/i.test(r.label);
+  const valueWrap = isDateTime ? "white-space:nowrap;" : "word-break:break-word;";
+  return `<tr><td style="padding:10px 14px;color:${brand.mutedForegroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};white-space:nowrap;vertical-align:top;">${r.label}</td><td style="padding:10px 14px;color:${brand.foregroundColor};font-size:15px;font-family:${brand.bodyFontStack};border-bottom:1px solid ${brand.borderColor};font-weight:500;${valueWrap}">${r.value}</td></tr>`;
+}).join("\n")}
 </table>` : "";
 
   const alertHtml = opts.alertBox
