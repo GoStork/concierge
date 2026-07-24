@@ -43,6 +43,7 @@ const WIDGETS = [
   { value: "phone", label: "Phone" },
   { value: "number", label: "Number" },
   { value: "photos", label: "Photo upload" },
+  { value: "file", label: "File upload (image / PDF)" },
 ];
 
 interface AdminQuestion {
@@ -69,6 +70,7 @@ interface AdminSection {
   description: string | null;
   perParent: boolean;
   excludeFromSurrogatePdf: boolean;
+  appliesTo: string[];
   sortOrder: number;
   isActive: boolean;
   questions: AdminQuestion[];
@@ -223,6 +225,7 @@ function SectionEditor({
             <span className="text-xs text-muted-foreground ml-2">
               {section.questions.filter((q) => q.isActive).length} questions
               {section.perParent ? " - per parent" : ""}
+              {(section.appliesTo || []).length ? ` - ${(section.appliesTo || []).map((t) => (t === "ivf" ? "IVF" : t)).join(" + ")} only` : " - all programs"}
               {section.excludeFromSurrogatePdf ? " - hidden from surrogate PDF" : ""}
               {section.isActive ? "" : " - INACTIVE"}
             </span>
@@ -268,6 +271,25 @@ function SectionEditor({
                   {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />} Save
                 </Button>
               )}
+            </div>
+            <div className="flex flex-wrap items-center gap-4 text-sm rounded-[var(--radius)] bg-secondary/40 p-2.5">
+              <span className="text-xs text-muted-foreground">Applies to</span>
+              {(["surrogacy", "ivf"] as const).map((prog) => (
+                <label key={prog} className="flex items-center gap-2 capitalize" data-testid={`ipform-applies-${prog}`}>
+                  <Switch
+                    checked={(section.appliesTo || []).includes(prog)}
+                    onCheckedChange={(v) => {
+                      const cur = new Set(section.appliesTo || []);
+                      if (v) cur.add(prog); else cur.delete(prog);
+                      save({ appliesTo: [...cur] });
+                    }}
+                  />
+                  {prog === "ivf" ? "IVF" : prog}
+                </label>
+              ))}
+              <span className="text-[11px] text-muted-foreground">
+                {(section.appliesTo || []).length ? "Only parents with these providers see this section." : "Off = all programs (every parent sees it - a core section)."}
+              </span>
             </div>
           </div>
 

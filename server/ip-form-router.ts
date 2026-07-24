@@ -985,13 +985,18 @@ ipFormRouter.post("/api/admin/ip-form-sections", requireAuth, requireGostorkAdmi
 
 ipFormRouter.put("/api/admin/ip-form-sections/:id", requireAuth, requireGostorkAdmin, async (req, res) => {
   try {
-    const { title, description, perParent, excludeFromSurrogatePdf, isActive } = req.body || {};
+    const { title, description, perParent, excludeFromSurrogatePdf, isActive, appliesTo } = req.body || {};
     const data: any = {};
     if (typeof title === "string" && title.trim()) data.title = title.trim();
     if (description !== undefined) data.description = description?.trim() || null;
     if (typeof perParent === "boolean") data.perParent = perParent;
     if (typeof excludeFromSurrogatePdf === "boolean") data.excludeFromSurrogatePdf = excludeFromSurrogatePdf;
     if (typeof isActive === "boolean") data.isActive = isActive;
+    // Program applicability: keep only known program types; [] = core (all).
+    if (Array.isArray(appliesTo)) {
+      const KNOWN = ["surrogacy", "ivf"];
+      data.appliesTo = [...new Set(appliesTo.filter((t: any) => typeof t === "string" && KNOWN.includes(t)))];
+    }
     const section = await prisma.ipFormSection.update({ where: { id: String(req.params.id) }, data });
     res.json({ section });
   } catch (e: any) {
@@ -1003,7 +1008,7 @@ ipFormRouter.post("/api/admin/ip-form-questions", requireAuth, requireGostorkAdm
   try {
     const { sectionId, label, helpText, widget, options, required, perParent, excludeFromSurrogatePdf, conditionalOnQuestionId, conditionalTriggerValue } = req.body || {};
     if (!sectionId || !label?.trim() || !widget) return res.status(400).json({ message: "sectionId, label and widget required" });
-    const VALID_WIDGETS = ["text", "textarea", "yes_no", "dropdown", "date", "address", "phone", "number", "photos"];
+    const VALID_WIDGETS = ["text", "textarea", "yes_no", "dropdown", "date", "address", "phone", "number", "photos", "file"];
     if (!VALID_WIDGETS.includes(widget)) return res.status(400).json({ message: "Invalid widget" });
     const key = `custom_${crypto.randomBytes(4).toString("hex")}`;
     const max = await prisma.ipFormQuestion.aggregate({ where: { sectionId }, _max: { sortOrder: true } });
@@ -1036,7 +1041,7 @@ ipFormRouter.put("/api/admin/ip-form-questions/:id", requireAuth, requireGostork
     if (typeof label === "string" && label.trim()) data.label = label.trim();
     if (helpText !== undefined) data.helpText = helpText?.trim() || null;
     if (typeof widget === "string") {
-      const VALID_WIDGETS = ["text", "textarea", "yes_no", "dropdown", "date", "address", "phone", "number", "photos"];
+      const VALID_WIDGETS = ["text", "textarea", "yes_no", "dropdown", "date", "address", "phone", "number", "photos", "file"];
       if (!VALID_WIDGETS.includes(widget)) return res.status(400).json({ message: "Invalid widget" });
       data.widget = widget;
     }
