@@ -3992,7 +3992,18 @@ IMPORTANT RULES:
           : pinnedType.includes("sperm") ? "Sperm Donor"
           : pinnedType.includes("clinic") || pinnedType.includes("doctor") ? "IVF Clinic"
           : pinnedType.includes("surrog") ? "Surrogate" : "";
-        if (requestedService !== pinnedService) {
+        if (requestedService === pinnedService && isDonorInquiryMode) {
+          // SAME service as the pinned profile ("I need a surrogate" while
+          // viewing a surrogate). Observed live: skipping this case left the
+          // model free to continue whatever cycle it was in before (it kept
+          // asking sperm-donor questions). Keep the pin - the profile on
+          // screen IS what they asked for - but force engagement with the
+          // request: offer to move forward with this profile or see matches.
+          const pinnedName = inquiryMatchCard?.name && inquiryMatchCard.name !== inquiryMatchCard.type
+            ? inquiryMatchCard.name : `the ${requestedService} profile on their screen`;
+          console.log(`[SERVICE SWITCH] Parent asked for ${requestedService} while already viewing a ${pinnedService} - forcing engagement with the pinned profile`);
+          serviceSwitchDirective = `PARENT SERVICE REQUEST - TOP PRIORITY: The parent's CURRENT message says they want a ${requestedService}: "${userMessage.slice(0, 140)}". They are ALREADY viewing ${pinnedName}. Do NOT ignore this message and do NOT continue any other service's intake thread (no egg donor, sperm donor, clinic, or other-topic questions this turn). Respond to THIS request: warmly confirm you can help with their ${requestedService} search, note the profile they are viewing, and ask whether they'd like to move forward with this one (a free consultation call) or see more ${requestedService} matches. End with exactly [[QUICK_REPLY:Schedule a consultation|Show me more matches|I have questions first]].`;
+        } else if (requestedService !== pinnedService) {
           if (isDonorInquiryMode) {
             console.log(`[SERVICE SWITCH] Parent asked for ${requestedService} while inquiry-pinned to ${pinnedService || "an unknown type"} - releasing the pin for this turn`);
             isDonorInquiryMode = false;
@@ -4000,7 +4011,7 @@ IMPORTANT RULES:
           } else {
             console.log(`[SERVICE SWITCH] Parent asked for ${requestedService} mid-conversation - injecting top-priority directive`);
           }
-          serviceSwitchDirective = `PARENT SERVICE REQUEST - TOP PRIORITY: The parent's CURRENT message asks about ${requestedService}: "${userMessage.slice(0, 140)}". NEVER ignore this request and NEVER steer the reply back to a previously shown profile, provider, or country program. Respond to THIS request now: acknowledge it warmly in one sentence, then continue with the correct NEXT STEP of the ${requestedService} flow - the first unanswered required question, respecting the normal question order (Phase 1 identity questions still come first if they are missing, then the ${requestedService} checklist items; one question per message) - BEFORE any search or match card. If their message also contains a question, answer it briefly first in the same reply. Mention other services only if the parent did.`;
+          serviceSwitchDirective = `PARENT SERVICE REQUEST - TOP PRIORITY: The parent's CURRENT message asks about ${requestedService}: "${userMessage.slice(0, 140)}". NEVER ignore this request, NEVER steer the reply back to a previously shown profile, provider, or country program, and do NOT continue any other service's intake thread (no questions about other services this turn). Respond to THIS request now: acknowledge it warmly in one sentence, then continue with the correct NEXT STEP of the ${requestedService} flow - the first unanswered required question, respecting the normal question order (Phase 1 identity questions still come first if they are missing, then the ${requestedService} checklist items; one question per message) - BEFORE any search or match card. If their message also contains a question, answer it briefly first in the same reply. Mention other services only if the parent did.`;
         }
       }
     } catch (e) {
