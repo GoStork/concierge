@@ -170,22 +170,24 @@ export class TestRunnerService {
 
     this.emit({ type: "state", state: this.state });
 
-    // Spawn the CLI script
-    const scriptPath = path.resolve(process.cwd(), "scripts", "test-ai-concierge.ts");
+    // Which script(s) serve this run: the scripted decision-tree suite
+    // (test-ai-concierge.ts), the free-text suite (test-freetext-requests.ts:
+    // FT-* cases / "free-text" persona - off-script behavior the scripted
+    // cases cannot reach), or both for a full unfiltered run. Both scripts
+    // speak the same stdout protocol, so one line-parser serves both.
+    const isFtCase = (id: string) => /^FT-/i.test(id);
+    const wantsFt = !filter || filter === "free-text" || isFtCase(filter);
+    const wantsMain = !filter || (filter !== "free-text" && !isFtCase(filter));
+
+    const launch = (procKey: string, scriptFile: string, extraArgs: string[]) => {
+    const scriptPath = path.resolve(process.cwd(), "scripts", scriptFile);
     // No --sequential: run tests in parallel so all N tests run at once
     // Sequential would mean each test waits for the previous: N × 5min = hours
     // Parallel: all tests run simultaneously, suite finishes in ~5-10min total
-    const args = ["tsx", scriptPath];
-    if (filter) {
-      if (TEST_CASES.find(tc => tc.id === filter)) {
-        args.push(`--id=${filter}`);
-      } else {
-        args.push(`--persona=${filter}`);
-      }
-    }
+    const args = ["tsx", scriptPath, ...extraArgs];
 
     this.logger.log(`Spawning test runner: npx ${args.join(" ")}`);
-    this.childProcesses.set(runId, null as any); // placeholder
+    this.childProcesses.set(procKey, null as any); // placeholder
 
     // detached: true gives the child its own process group so it survives
     // a NestJS restart. proc.unref() lets the parent exit without waiting for it.
@@ -199,7 +201,7 @@ export class TestRunnerService {
     });
     proc.unref();
 
-    this.childProcesses.set(runId, proc);
+    this.childProcesses.set(procKey, proc);
     let buffer = "";
     let currentTestId: string | null = null;
 
@@ -299,7 +301,7 @@ export class TestRunnerService {
 
     proc.on("close", (code) => {
       if (buffer.trim()) processLine(buffer.trim());
-      this.childProcesses.delete(runId);
+      this.childProcesses.delete(procKey);
       // Only mark done if no other processes running
       if (this.childProcesses.size === 0) {
         this.state.status = "done";
@@ -317,10 +319,23 @@ export class TestRunnerService {
 
     proc.on("error", (err) => {
       this.logger.error(`Test runner error: ${err.message}`);
-      this.childProcesses.delete(runId);
+      this.childProcesses.delete(procKey);
       if (this.childProcesses.size === 0) this.state.status = "done";
       this.emit({ type: "error", message: err.message });
     });
+    };
+
+    if (wantsMain) {
+      const mainArgs: string[] = [];
+      if (filter) {
+        if (TEST_CASES.find(tc => tc.id === filter)) mainArgs.push(`--id=${filter}`);
+        else mainArgs.push(`--persona=${filter}`);
+      }
+      launch(runId, "test-ai-concierge.ts", mainArgs);
+    }
+    if (wantsFt) {
+      launch(`${runId}:ft`, "test-freetext-requests.ts", filter && isFtCase(filter) ? [`--id=${filter}`] : []);
+    }
 
     return { started: true, message: `Started run ${runId} with ${matchingTests.length} tests` };
   }

@@ -527,6 +527,38 @@ export const TEST_CASES: TestCaseDef[] = [
     interestedServices: ["Surrogate", "Egg Donor"],
     messageCount: 22,
   },
+
+  // ── FREE-TEXT REQUEST HANDLING (FT-01 to FT-04) ──────────────────────────
+  // Runs scripts/test-freetext-requests.ts (off-script behavior the scripted
+  // decision-tree cases above cannot reach). See docs/freetext-request-test-plan.md.
+  {
+    id: "FT-01", persona: "free-text",
+    name: "FT-01: Deep-link surrogate pin - schedule a call / service switches / same-service ask",
+    desc: "Marketplace pin 4-turn replay: calendar renders, egg/sperm/surrogate free-text asks engaged, streams on-topic, coherent QRs",
+    interestedServices: ["Surrogate"],
+    messageCount: 4,
+  },
+  {
+    id: "FT-02", persona: "free-text",
+    name: "FT-02: Confirm-never-overrule - embryos on file, donor requested",
+    desc: "45 PGT-A embryos saved + egg/sperm donor ask -> confirm question with its own QRs, no refusal, no directive leak",
+    interestedServices: ["Surrogate"],
+    messageCount: 2,
+  },
+  {
+    id: "FT-03", persona: "free-text",
+    name: "FT-03: Sperm C2 - donor-type answer saved, never re-asked",
+    desc: "'Open' answer patched to spermDonorType via C2 SAVE FALLBACK; question never repeats",
+    interestedServices: ["Sperm Donor"],
+    messageCount: 4,
+  },
+  {
+    id: "FT-04", persona: "free-text",
+    name: "FT-04: Buy vials - purchase intent ends in checkout",
+    desc: "'Buy vials now' -> short confirmation + bank_checkout card (or agency guidance), never a re-presented match card",
+    interestedServices: ["Sperm Donor"],
+    messageCount: 5,
+  },
 ];
 
 export function getTestCaseInfo(): TestCaseInfo[] {

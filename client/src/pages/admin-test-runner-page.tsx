@@ -126,15 +126,20 @@ const ALL_TESTS_FALLBACK: TestCaseInfo[] = [
   { id: "MW-17", persona: "man-woman", name: "Has embryos · Step 1c → New embryos · Surrogate · USA", messageCount: 14, desc: "", interestedServices: [] },
   { id: "MW-18", persona: "man-woman", name: "Has embryos · Step 3b → Use existing · She carries", messageCount: 9, desc: "", interestedServices: [] },
   { id: "MW-19", persona: "man-woman", name: "No embryos · Donor eggs · His sperm · Surrogate · Mexico (Man)", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "FT-01", persona: "free-text", name: "Deep-link pin · schedule a call / service switches / same-service ask", messageCount: 4, desc: "", interestedServices: [] },
+  { id: "FT-02", persona: "free-text", name: "Confirm-never-overrule · embryos on file, donor requested", messageCount: 2, desc: "", interestedServices: [] },
+  { id: "FT-03", persona: "free-text", name: "Sperm C2 · donor-type answer saved, never re-asked", messageCount: 4, desc: "", interestedServices: [] },
+  { id: "FT-04", persona: "free-text", name: "Buy vials · purchase intent ends in checkout", messageCount: 5, desc: "", interestedServices: [] },
 ];
 
 const PERSONAS = [
-  { id: "all", label: "All (72)" },
+  { id: "all", label: "All (78)" },
   { id: "solo-man", label: "Solo Man (14)" },
   { id: "solo-woman", label: "Solo Woman (14)" },
   { id: "two-dads", label: "Two Dads (12)" },
   { id: "two-moms", label: "Two Moms (13)" },
   { id: "man-woman", label: "Man & Woman (19)" },
+  { id: "free-text", label: "Free-Text (4)" },
 ];
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -351,7 +356,7 @@ export default function AdminTestRunnerPage() {
           <FlaskConical style={{ color: "hsl(var(--primary))", width: "24px", height: "24px" }} />
           <div>
             <h1 style={{ fontSize: "20px", fontWeight: "700", fontFamily: "var(--font-heading)", margin: 0 }}>AI Concierge Test Runner</h1>
-            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>72 tests · 5 personas · runs scripts/test-ai-concierge.ts</p>
+            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>78 tests · 5 personas + free-text · runs scripts/test-ai-concierge.ts + test-freetext-requests.ts</p>
           </div>
         </div>
 
@@ -379,7 +384,7 @@ export default function AdminTestRunnerPage() {
               <Button onClick={() => startRun(persona !== "all" ? persona : undefined)}
                 style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)", fontSize: "13px" }}>
                 <Play style={{ width: "13px", height: "13px", marginRight: "5px" }} />
-                {persona !== "all" ? `Run ${PERSONAS.find(p => p.id === persona)?.label ?? persona}` : "Run All (72)"}
+                {persona !== "all" ? `Run ${PERSONAS.find(p => p.id === persona)?.label ?? persona}` : "Run All (78)"}
               </Button>
               <Button variant="outline" size="sm" onClick={clearResults}
                 disabled={state.status === "idle" && Object.keys(state.tests).length === 0}

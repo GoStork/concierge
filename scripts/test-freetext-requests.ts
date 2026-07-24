@@ -6,23 +6,22 @@
  * flow did not anticipate must NEVER be ignored, steamrolled, overruled, or
  * answered with mismatched quick replies.
  *
- * Scenarios (all against a live server - default http://localhost:5001):
- *  A. Marketplace deep-link (surrogate pin) 4-turn replay:
- *     "schedule a call" -> booking calendar renders
- *     "I am interested in an egg donor" -> egg-donor intake, no detour
- *     "I need a sperm donor" -> stream opens on-topic
- *     "I need a surrogate" (same service as pin) -> engagement, no old-thread bleed
- *  B. Confirm-never-overrule: profile has PGT-A embryos, parent asks for an
- *     egg/sperm donor -> confirm question with ITS OWN quick replies, no refusal
- *  C. C2 no-repeat: donor-type answer is saved deterministically and never re-asked
- *  D. Buy vials: purchase intent ends in a bank_checkout card, never a
- *     re-presented match card
+ * Cases (all against a live server - default http://localhost:5001):
+ *  FT-01 Marketplace deep-link (surrogate pin) 4-turn replay
+ *  FT-02 Confirm-never-overrule (embryos on file, donor requested)
+ *  FT-03 Sperm C2 - donor-type answer saved, never re-asked
+ *  FT-04 Buy vials - purchase intent ends in checkout
  *
  * Usage:
  *   TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts
+ *   TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts --id=FT-01,FT-04
+ *
+ * Output follows the admin test-runner protocol (test-runner.service.ts):
+ *   "  ▶ Starting: FT-01" / "  ✅ FT-01 PASS (12.3s)" / "  ❌ FT-01 FAIL (12.3s)"
+ *   failed checks as "     [FT-01] <check> :: <detail>"
  *
  * Creates throwaway *@gostork-test.com users and deletes them (and all their
- * sessions/messages) at the end of each scenario.
+ * sessions/messages) at the end of each case.
  */
 
 import * as fs from "fs";
@@ -41,16 +40,17 @@ const SURROGATE_ID = "8874fb3a-9df8-48e8-9eba-c270d211dfd6"; // Surrogate #09410
 const OWNER_ID = "d0af900d-41bf-43cb-9051-d52c8cda3f24"; // Family Creations
 const TEST_PASSWORD = "Test1234!x";
 
-let pass = 0;
-let fail = 0;
-const failures: string[] = [];
+const filterId = process.argv.slice(2).find((a) => a.startsWith("--id="))?.split("=")[1];
+
+// ─── Per-case check tracking ─────────────────────────────────────────────────
+let caseId = "";
+let caseFails: string[] = [];
+let totalPass = 0;
+let totalFail = 0;
 function check(label: string, ok: boolean, detail?: string) {
-  console.log(`  ${ok ? "✅ PASS" : "❌ FAIL"} - ${label}${detail ? ` :: ${detail}` : ""}`);
-  if (ok) pass++;
-  else {
-    fail++;
-    failures.push(label);
-  }
+  // Plain log lines (no "[FT-xx]" prefix - the runner treats bracketed lines as errors)
+  console.log(`      ${ok ? "✓" : "✗"} ${label}${detail ? ` :: ${detail.replace(/\n/g, " | ")}` : ""}`);
+  if (!ok) caseFails.push(`${label}${detail ? ` :: ${detail.replace(/\n/g, " | ").slice(0, 160)}` : ""}`);
 }
 
 async function jfetch(url: string, opts: RequestInit): Promise<Response> {
@@ -167,33 +167,32 @@ async function send(auth: Record<string, string>, sessionId: string, message: st
   return turn;
 }
 
-// ── Scenario A: deep-link pin - the live 4-turn failure replay ───────────────
-async function scenarioDeepLink(db: Client) {
-  console.log("\n▶ A. Deep-link surrogate pin - 4-turn free-text replay");
+// ─── FT-01: deep-link pin - the live 4-turn failure replay ───────────────────
+async function ft01(db: Client) {
   const u = await createUser(db, "ft-deeplink", ["Surrogate"]);
   try {
     const sid = await initSession(u.auth, true);
 
     const s1 = await send(u.auth, sid, "schedule a call");
-    check("A1 booking calendar rendered on 'schedule a call'", !!s1.consultPid, `consultPid=${s1.consultPid}`);
+    check("booking calendar rendered on 'schedule a call'", !!s1.consultPid, `consultPid=${s1.consultPid}`);
 
     const s2 = await send(u.auth, sid, "I am interested in an egg donor");
-    check("A2 egg-donor request engaged", /egg\s*donor/i.test(s2.content));
-    check("A2 no detour to prior context", !/colombia|bio[eé]tica|surrogacy in/i.test(s2.content), s2.content.slice(0, 100));
-    check("A2 asks a question", /\?/.test(s2.content));
+    check("egg-donor request engaged", /egg\s*donor/i.test(s2.content));
+    check("no detour to prior context", !/colombia|bio[eé]tica|surrogacy in/i.test(s2.content), s2.content.slice(0, 100));
+    check("asks a question", /\?/.test(s2.content));
 
     const s3 = await send(u.auth, sid, "I need a sperm donor");
     const st = s3.streamed.toLowerCase();
     const spermIdx = st.indexOf("sperm");
     const eggIdx = st.indexOf("egg donor");
-    check("A3 final content about sperm donor", /sperm/i.test(s3.content));
-    check("A3 stream opens on sperm topic", spermIdx >= 0 && (eggIdx === -1 || spermIdx < eggIdx), st.slice(0, 100));
+    check("final content about sperm donor", /sperm/i.test(s3.content));
+    check("stream opens on sperm topic", spermIdx >= 0 && (eggIdx === -1 || spermIdx < eggIdx), st.slice(0, 100));
 
     const s4 = await send(u.auth, sid, "I need a surrogate");
-    check("A4 no old-thread bleed (sperm) on surrogate ask", !/sperm/i.test(s4.content), s4.content.slice(0, 120));
-    check("A4 surrogate request engaged", /surrogate/i.test(s4.content));
+    check("no old-thread bleed (sperm) on surrogate ask", !/sperm/i.test(s4.content), s4.content.slice(0, 120));
+    check("surrogate request engaged", /surrogate/i.test(s4.content));
     check(
-      "A4 QRs coherent (never another service's options)",
+      "QRs coherent (never another service's options)",
       s4.qr.length > 0 && !s4.qr.some((q) => /sperm|egg|donor/i.test(q)),
       JSON.stringify(s4.qr),
     );
@@ -202,9 +201,8 @@ async function scenarioDeepLink(db: Client) {
   }
 }
 
-// ── Scenario B: confirm-never-overrule (profile already has embryos) ─────────
-async function scenarioConfirmNotOverrule(db: Client) {
-  console.log("\n▶ B. Confirm-never-overrule - embryos on file, donor requested");
+// ─── FT-02: confirm-never-overrule (profile already has embryos) ─────────────
+async function ft02(db: Client) {
   const u = await createUser(db, "ft-overrule", ["Surrogate"]);
   try {
     await db.query(
@@ -214,19 +212,19 @@ async function scenarioConfirmNotOverrule(db: Client) {
     const sid = await initSession(u.auth, true);
 
     const r1 = await send(u.auth, sid, "I need an egg donor");
-    check("B1 no refusal ('don't need')", !/(don'?t|do not|no longer|won'?t)\s+(actually\s+)?need/i.test(r1.content), r1.content.slice(0, 120));
-    check("B1 references existing embryos", /embryo/i.test(r1.content));
-    check("B1 asks a confirming question", /\?/.test(r1.content));
-    check("B1 no directive-label leak", !/acknowledge:|noted:/i.test(r1.content));
+    check("no refusal ('don't need')", !/(don'?t|do not|no longer|won'?t)\s+(actually\s+)?need/i.test(r1.content), r1.content.slice(0, 120));
+    check("references existing embryos", /embryo/i.test(r1.content));
+    check("asks a confirming question", /\?/.test(r1.content));
+    check("no directive-label leak", !/acknowledge:|noted:/i.test(r1.content));
     check(
-      "B1 QRs answer THE question (not egg/sperm-source options)",
+      "QRs answer THE question (not egg/sperm-source options)",
       r1.qr.length > 0 && !r1.qr.some((q) => /^my (own|partner)/i.test(q)) && r1.qr.some((q) => /more embryos|plans have changed/i.test(q)),
       JSON.stringify(r1.qr),
     );
 
     const r2 = await send(u.auth, sid, "I need to find a sperm donor");
     check(
-      "B2 sperm variant: QRs answer THE question",
+      "sperm variant: QRs answer THE question",
       r2.qr.length > 0 && !r2.qr.some((q) => /^my (own|partner)|donor sperm/i.test(q)) && r2.qr.some((q) => /more embryos|plans have changed/i.test(q)),
       JSON.stringify(r2.qr),
     );
@@ -235,9 +233,8 @@ async function scenarioConfirmNotOverrule(db: Client) {
   }
 }
 
-// ── Scenario C: C2 answer saved + never re-asked ─────────────────────────────
-async function scenarioC2NoRepeat(db: Client) {
-  console.log("\n▶ C. Sperm C2 - donor-type answer saved, never re-asked");
+// ─── FT-03: C2 answer saved + never re-asked ─────────────────────────────────
+async function ft03(db: Client) {
   const u = await createUser(db, "ft-c2repeat", ["Sperm Donor"]);
   try {
     const sid = await initSession(u.auth, false);
@@ -245,24 +242,23 @@ async function scenarioC2NoRepeat(db: Client) {
     const t2 = await send(u.auth, sid, "Tall, athletic, and college educated");
     let asked = /open.{0,80}anonymous|anonymous.{0,80}exclusive/i.test(t2.content) ? t2 : null;
     if (!asked) asked = await send(u.auth, sid, "nothing else matters to me");
-    check("C1 donor-type question asked once", /open.{0,80}anonymous|anonymous.{0,80}exclusive/i.test(asked.content), asked.content.slice(0, 100));
+    check("donor-type question asked once", /open.{0,80}anonymous|anonymous.{0,80}exclusive/i.test(asked.content), asked.content.slice(0, 100));
 
     const t3 = await send(u.auth, sid, "Open");
     check(
-      "C2 no re-ask after answering",
+      "no re-ask after answering",
       !/would you prefer.{0,40}open|open donor.{0,60}anonymous|anonymous.{0,40}exclusive/i.test(t3.content),
       t3.content.slice(0, 120),
     );
     const prof = await db.query(`SELECT "spermDonorType" FROM "IntendedParentProfile" WHERE "parentAccountId" = $1`, [u.acctId]);
-    check("C3 spermDonorType saved as Open", prof.rows[0]?.spermDonorType === "Open", JSON.stringify(prof.rows[0]));
+    check("spermDonorType saved as Open", prof.rows[0]?.spermDonorType === "Open", JSON.stringify(prof.rows[0]));
   } finally {
     await deleteUser(db, u);
   }
 }
 
-// ── Scenario D: buy vials -> checkout card, never a re-presented match ───────
-async function scenarioBuyVials(db: Client) {
-  console.log("\n▶ D. Buy vials - purchase intent ends in checkout");
+// ─── FT-04: buy vials -> checkout card, never a re-presented match ───────────
+async function ft04(db: Client) {
   const u = await createUser(db, "ft-buyvials", ["Sperm Donor"]);
   try {
     const sid = await initSession(u.auth, false);
@@ -270,11 +266,11 @@ async function scenarioBuyVials(db: Client) {
     await send(u.auth, sid, "Tall, athletic, and college educated");
     await send(u.auth, sid, "Open");
     const t4 = await send(u.auth, sid, "ready");
-    check("D1 match presented before purchase", t4.hasCard || /donor #/i.test(t4.content));
+    check("match presented before purchase", t4.hasCard || /donor #/i.test(t4.content));
 
     const t5 = await send(u.auth, sid, "Buy vials now");
-    check("D2 no re-presented match card on buy", !t5.hasCard, `hasCard=${t5.hasCard}`);
-    check("D3 short confirmation, not a donor re-description", !/matched \d+ preferences|here'?s a match/i.test(t5.content), t5.content.slice(0, 100));
+    check("no re-presented match card on buy", !t5.hasCard, `hasCard=${t5.hasCard}`);
+    check("short confirmation, not a donor re-description", !/matched \d+ preferences|here'?s a match/i.test(t5.content), t5.content.slice(0, 100));
 
     await new Promise((r) => setTimeout(r, 2500)); // checkout card posts async after the reply
     const cards = await db.query(
@@ -283,25 +279,56 @@ async function scenarioBuyVials(db: Client) {
     );
     const gotCheckout = cards.rows.some((r: any) => r.uiCardType === "bank_checkout");
     const gotAgencyGuidance = cards.rows.some((r: any) => /direct checkout isn'?t available|guide you through their process/i.test(r.content || ""));
-    check("D4 checkout card or agency-guidance posted", gotCheckout || gotAgencyGuidance, JSON.stringify(cards.rows));
+    check("checkout card or agency-guidance posted", gotCheckout || gotAgencyGuidance, JSON.stringify(cards.rows));
   } finally {
     await deleteUser(db, u);
   }
 }
 
+// ─── Runner (admin test-runner stdout protocol) ──────────────────────────────
+const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
+  { id: "FT-01", name: "Deep-link surrogate pin - 4-turn free-text replay", run: ft01 },
+  { id: "FT-02", name: "Confirm-never-overrule - embryos on file, donor requested", run: ft02 },
+  { id: "FT-03", name: "Sperm C2 - donor-type answer saved, never re-asked", run: ft03 },
+  { id: "FT-04", name: "Buy vials - purchase intent ends in checkout", run: ft04 },
+];
+
 (async () => {
+  const wanted = filterId ? filterId.split(",").map((s) => s.trim().toUpperCase()) : null;
+  const toRun = wanted ? CASES.filter((c) => wanted.includes(c.id)) : CASES;
   console.log(`🧪 Free-Text Request Handling E2E - base: ${BASE}`);
+  console.log(`   Running: ${toRun.length} of ${CASES.length} cases${wanted ? ` (filter: ${wanted.join(",")})` : ""}\n`);
+
   const db = new Client({ connectionString: dbUrl });
   await db.connect();
+  const suiteStart = Date.now();
   try {
-    await scenarioDeepLink(db);
-    await scenarioConfirmNotOverrule(db);
-    await scenarioC2NoRepeat(db);
-    await scenarioBuyVials(db);
+    for (const c of toRun) {
+      caseId = c.id;
+      caseFails = [];
+      console.log(`  ▶ Starting: ${c.id}`);
+      console.log(`    ${c.name}`);
+      const t0 = Date.now();
+      try {
+        await c.run(db);
+      } catch (e: any) {
+        caseFails.push(`scenario crashed: ${(e?.message || String(e)).slice(0, 200)}`);
+      }
+      const secs = ((Date.now() - t0) / 1000).toFixed(1);
+      if (caseFails.length === 0) {
+        totalPass++;
+        console.log(`  ✅ ${c.id} PASS (${secs}s)`);
+      } else {
+        totalFail++;
+        for (const f of caseFails) console.log(`     [${c.id}] ${f}`);
+        console.log(`  ❌ ${c.id} FAIL (${secs}s)`);
+      }
+    }
   } finally {
     await db.end();
   }
-  console.log(`\n${"─".repeat(50)}\nResults: ${pass} passed, ${fail} failed`);
-  if (failures.length) console.log("Failed: " + failures.join(" | "));
-  process.exit(fail ? 1 : 0);
+  const totalSecs = Math.round((Date.now() - suiteStart) / 1000);
+  console.log(`\n${"─".repeat(50)}`);
+  console.log(`Results: ${totalPass} passed, ${totalFail} failed (${totalSecs}s total)`);
+  process.exit(totalFail ? 1 : 0);
 })();
