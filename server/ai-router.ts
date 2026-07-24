@@ -4020,7 +4020,7 @@ These instructions are internal - never quote or echo them (never write words li
           // confirm-first question deterministically leads the reply.
           if ((requestedService === "Egg Donor" || requestedService === "Sperm Donor") && profile?.hasEmbryos === true) {
             const embryoDesc = `${profile?.embryoCount || "several"}${profile?.embryosTested ? " PGT-A tested" : ""} embryo(s)`;
-            serviceSwitchDirective += `\nREDUNDANCY DETECTED - CONFIRM FIRST (overrides any scripted opener, education pitch, or intake question this turn): the parent's profile shows they ALREADY have ${embryoDesc}. Your reply MUST open by warmly noting that (one sentence) and asking whether they want the ${requestedService.toLowerCase()} to create ADDITIONAL embryos or whether their plans have changed - do NOT start the ${requestedService} intake, the GoStork explanation, or any search until they answer. Never tell them they don't need it.`;
+            serviceSwitchDirective += `\nREDUNDANCY DETECTED - CONFIRM FIRST (overrides any scripted opener, education pitch, or intake question this turn): the parent's profile shows they ALREADY have ${embryoDesc}. Your reply MUST open by warmly noting that (one sentence) and asking whether they want the ${requestedService.toLowerCase()} to create ADDITIONAL embryos or whether their plans have changed - do NOT start the ${requestedService} intake, the GoStork explanation, or any search until they answer. Never tell them they don't need it. End with exactly [[QUICK_REPLY:Yes, to create more embryos|My plans have changed|Let me explain]] - these are the ONLY quick replies for this question.`;
           }
         }
       }
@@ -5997,6 +5997,12 @@ ${phase0Section}`;
           // Fire for ANY parent type who just answered the sperm question AND needs a surrogate.
           // MUST contain "sperm" explicitly - "using my own eggs" must NOT trigger this.
           // Male/gay male: their own sperm or donor | Female: partner's sperm or donor
+          // ONLY when the AI actually just ASKED the sperm-source question - a message
+          // merely containing "sperm" is not an answer. Observed live: "I need to
+          // find a sperm donor" (a service REQUEST) was hijacked into the D1
+          // surrogate education and the request ignored, Gemini never called.
+          !serviceSwitchDirective &&
+          /for sperm|whose sperm|will you be using.*sperm|sperm.*your own|your plan for sperm|sperm.*donor sperm/i.test(lastAiContent) &&
           /\bsperm\b/i.test(userMessage) &&
           !chatHistory.some((m: any) => m.role === "user" && /my partner.*carr|a gestational surrogate|i.*will carry|i'll carry|carrying.*myself/i.test(m.content || "")) &&
           !chatHistory.some((m: any) => m.role === "assistant" && /who is (?:planning to )?carry|who.*carry.*pregnancy/i.test(m.content || ""))) {
@@ -7854,11 +7860,20 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     }
 
     // Fallback: if AI forgot to include [[QUICK_REPLY:...]], inject known options for
-    // recognised Phase 1/2 questions based on content pattern matching
+    // recognised Phase 1/2 questions based on content pattern matching.
+    // Patterns match the CLOSING QUESTION only (the last non-empty line - the
+    // question-placement rule puts it there), never the whole message: a reply
+    // that merely MENTIONS a topic earlier must not get that topic's canned
+    // options. Observed live: "Are you looking for a sperm donor to create
+    // additional embryos, or has something changed with your plans?" matched
+    // the old whole-message `sperm.*donor` pattern and got the sperm-SOURCE
+    // options (My own | My partner's | Donor sperm) - answers to a different
+    // question entirely.
     if (quickReplies.length === 0 && finalContent.trim().endsWith("?")) {
-      const lc = finalContent.toLowerCase();
+      const qLines = finalContent.trim().split(/\n+/);
+      const qText = qLines[qLines.length - 1] || finalContent;
       // Sperm source question - context-aware options (never "My own" for female parents)
-      if (/for sperm|sperm.*donor|using your own.*sperm|sperm.*your own|your plan for sperm|will you be using.*sperm/i.test(finalContent)) {
+      if (/for sperm|using your own.*sperm|sperm.*your own|your plan for sperm|will you be using.*sperm|whose sperm/i.test(qText)) {
         if (isFemaleGender) {
           // Female parent: her partner's sperm OR donor sperm. Never "My own" - women don't produce sperm.
           quickReplies = ["My partner's sperm", "Donor sperm", "Not sure yet"];
@@ -7871,7 +7886,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         }
         console.log(`[QUICK_REPLY FALLBACK] Injected sperm source options (female=${isFemaleGender})`);
       // Egg source question - context-aware options based on gender
-      } else if (/plan for eggs|what.*eggs.*partner|thinking.*eggs|eggs.*donor|eggs.*plan|your plan for eggs/i.test(finalContent)) {
+      } else if (/plan for eggs|what.*eggs.*partner|thinking.*eggs|eggs.*donor|eggs.*plan|your plan for eggs/i.test(qText)) {
         if (isFemaleGender) {
           // Female speaker: can use own eggs. In straight couple her partner is male (no eggs),
           // so no "My partner's eggs". In lesbian couple partner CAN provide eggs but we show
@@ -7886,38 +7901,38 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           quickReplies = ["My partner's eggs", "Donor eggs", "I'm not sure yet"];
         }
         console.log(`[QUICK_REPLY FALLBACK] Injected egg source options (female=${isFemaleGender})`);
-      } else if (/are you hoping (?:for twins|to have twins)|hoping for twins.*singleton/i.test(finalContent)) {
+      } else if (/are you hoping (?:for twins|to have twins)|hoping for twins.*singleton/i.test(qText)) {
         quickReplies = ["Hoping for twins", "Singleton only", "No preference"];
         console.log("[QUICK_REPLY FALLBACK] Injected twins options");
-      } else if (/first ivf journey.*done ivf before|is this your first ivf|have you done ivf before/i.test(finalContent)) {
+      } else if (/first ivf journey.*done ivf before|is this your first ivf|have you done ivf before/i.test(qText)) {
         quickReplies = ["First time", "I've done IVF before"];
         console.log("[QUICK_REPLY FALLBACK] Injected first IVF options");
-      } else if (/most important.*choosing a clinic|matters most.*clinic|important.*when choosing/i.test(finalContent)) {
+      } else if (/most important.*choosing a clinic|matters most.*clinic|important.*when choosing/i.test(qText)) {
         quickReplies = ["Success rates", "Location", "Cost", "Volume of cycles", "Physician gender"];
         multiSelect = true;
         console.log("[QUICK_REPLY FALLBACK] Injected clinic priority MULTI_SELECT options (A5)");
-      } else if (/what.*preferences.*termination|preferences.*termination.*medically|termination if medically/i.test(finalContent)) {
+      } else if (/what.*preferences.*termination|preferences.*termination.*medically|termination if medically/i.test(qText)) {
         quickReplies = ["Pro-choice surrogate", "Pro-life surrogate", "No preference"];
         console.log("[QUICK_REPLY FALLBACK] Injected termination preference options");
-      } else if (/lgbtq/i.test(finalContent)) {
+      } else if (/lgbtq/i.test(qText)) {
         quickReplies = ["Yes", "No"];
         console.log("[QUICK_REPLY FALLBACK] Injected Yes|No for LGBTQ+ question");
-      } else if (/going on this journey|who.{0,20}journey|journey.{0,20}who/i.test(finalContent)) {
+      } else if (/going on this journey|who.{0,20}journey|journey.{0,20}who/i.test(qText)) {
         quickReplies = ["Solo woman", "Solo man", "Two moms", "Two dads", "A woman and a man"];
         console.log("[QUICK_REPLY FALLBACK] Injected identity options for journey question");
-      } else if (/already have.{0,20}frozen embryos|frozen embryos.{0,20}already/i.test(finalContent)) {
+      } else if (/already have.{0,20}frozen embryos|frozen embryos.{0,20}already/i.test(qText)) {
         quickReplies = ["Yes, I do", "No, not yet", "Working to create them"];
         console.log("[QUICK_REPLY FALLBACK] Injected embryo options");
-      } else if (/pgt.{0,5}a tested|been tested/i.test(finalContent)) {
+      } else if (/pgt.{0,5}a tested|been tested/i.test(qText)) {
         quickReplies = ["Yes", "No", "I'm not sure"];
         console.log("[QUICK_REPLY FALLBACK] Injected PGT-A tested options");
-      } else if (/already have.{0,20}(fertility clinic|ivf clinic|clinic)|help finding.{0,20}(clinic|one)/i.test(finalContent)) {
+      } else if (/already have.{0,20}(fertility clinic|ivf clinic|clinic)|help finding.{0,20}(clinic|one)/i.test(qText)) {
         quickReplies = ["I need help finding one", "I already have one"];
         console.log("[QUICK_REPLY FALLBACK] Injected clinic options");
-      } else if (/does that make sense|make sense so far/i.test(finalContent)) {
+      } else if (/does that make sense|make sense so far/i.test(qText)) {
         quickReplies = ["Yes, makes sense!", "I have a question"];
         console.log("[QUICK_REPLY FALLBACK] Injected sense-check options");
-      } else if (/questions about gostork|questions.{0,30}help you/i.test(finalContent)) {
+      } else if (/questions about gostork|questions.{0,30}help you/i.test(qText)) {
         quickReplies = ["I understand, let's get started", "I have a few questions"];
         console.log("[QUICK_REPLY FALLBACK] Injected GoStork intro options");
       }
