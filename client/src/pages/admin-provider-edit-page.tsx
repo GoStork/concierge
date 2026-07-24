@@ -831,9 +831,9 @@ export default function AdminProviderEditPage() {
                 <Label>About</Label>
                 <Textarea value={editAbout} onChange={e => setEditAbout(e.target.value)} placeholder="Brief description of the provider..." rows={3} data-testid="input-edit-about" />
               </div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <Checkbox checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} data-testid="checkbox-edit-video" />
-                Offers video visits
+              <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
+                <Checkbox className="mt-0.5" checked={clinicOffersVideo} onCheckedChange={(v) => setClinicOffersVideo(!!v)} data-testid="checkbox-edit-video" />
+                <span className="font-ui">Offers video visits</span>
               </label>
               {(showEggDonors || showSpermDonors || showSurrogates) && (
                 <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
