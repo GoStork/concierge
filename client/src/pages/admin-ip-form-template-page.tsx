@@ -274,22 +274,28 @@ function SectionEditor({
             </div>
             <div className="flex flex-wrap items-center gap-4 text-sm rounded-[var(--radius)] bg-secondary/40 p-2.5">
               <span className="text-xs text-muted-foreground">Applies to</span>
-              {(["surrogacy", "ivf"] as const).map((prog) => (
-                <label key={prog} className="flex items-center gap-2 capitalize" data-testid={`ipform-applies-${prog}`}>
-                  <Switch
-                    checked={(section.appliesTo || []).includes(prog)}
-                    onCheckedChange={(v) => {
-                      const cur = new Set(section.appliesTo || []);
-                      if (v) cur.add(prog); else cur.delete(prog);
-                      save({ appliesTo: [...cur] });
-                    }}
-                  />
-                  {prog === "ivf" ? "IVF" : prog}
-                </label>
-              ))}
-              <span className="text-[11px] text-muted-foreground">
-                {(section.appliesTo || []).length ? "Only parents with these providers see this section." : "Off = all programs (every parent sees it - a core section)."}
-              </span>
+              {(["surrogacy", "ivf"] as const).map((prog) => {
+                const tags = section.appliesTo || [];
+                // Core (empty appliesTo) renders as every program ON.
+                const on = tags.length === 0 || tags.includes(prog);
+                return (
+                  <label key={prog} className="flex items-center gap-2 capitalize" data-testid={`ipform-applies-${prog}`}>
+                    <Switch
+                      checked={on}
+                      onCheckedChange={(v) => {
+                        const KNOWN = ["surrogacy", "ivf"];
+                        const cur = new Set(tags.length ? tags : KNOWN);
+                        if (v) cur.add(prog); else cur.delete(prog);
+                        // All programs on (or none) collapses back to core ([]).
+                        const next = cur.size === 0 || KNOWN.every((k) => cur.has(k)) ? [] : [...cur];
+                        save({ appliesTo: next });
+                      }}
+                    />
+                    {prog === "ivf" ? "IVF" : prog}
+                  </label>
+                );
+              })}
+              <span className="text-[11px] text-muted-foreground">Both on = all programs (core). One on = only that program's parents.</span>
             </div>
           </div>
 
