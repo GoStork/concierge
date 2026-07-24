@@ -70,6 +70,10 @@ function setupSSE(res: Response) {
   const flush = () => { if (typeof (res as any).flush === "function") (res as any).flush(); };
   return {
     sendToken: (delta: string) => { res.write(`data: ${JSON.stringify({ type: "token", delta })}\n\n`); flush(); },
+    // Clears the client's streaming draft. Used by interceptors that REPLACE
+    // already-streamed content, so a rejected draft disappears the moment the
+    // replacement is ready instead of sitting on screen until the final "done".
+    sendReset: () => { res.write(`data: ${JSON.stringify({ type: "reset" })}\n\n`); flush(); },
     sendDone: (payload: object) => { res.write(`data: ${JSON.stringify({ type: "done", ...payload })}\n\n`); flush(); res.end(); },
     sendError: (msg: string) => { res.write(`data: ${JSON.stringify({ type: "error", message: msg })}\n\n`); flush(); res.end(); },
     sendRetry: () => { res.write(`data: ${JSON.stringify({ type: "retry_needed" })}\n\n`); flush(); res.end(); },
@@ -1900,8 +1904,11 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
         "attachment",
       ];
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
-      // Provider assessment prompts are only shown to providers, not parents
-      if (!isProvider && m.uiCardType === "provider_assessment") return false;
+      // Provider assessment prompts are only shown to providers, never here -
+      // /my-session is parent-only (queried by parentAccountId), so the filter
+      // is unconditional. (A copied `isProvider` reference here used to throw
+      // ReferenceError and 500 the whole endpoint.)
+      if (m.uiCardType === "provider_assessment") return false;
       return true;
     });
     res.json({
@@ -3955,12 +3962,25 @@ IMPORTANT RULES:
       console.error("[DONOR INQUIRY MODE] Detection error:", e);
     }
 
+    // Resolve the presented entity's display name so the inquiry prompt can pin the
+    // model to THE clinic/agency on screen. Without this, "call search_clinics" reads
+    // as a generic preference-ranked search and the model streams a DIFFERENT clinic
+    // (observed live: parent asked about PFCLA, model searched and presented InSer).
+    let inquiryEntityName: string | null =
+      inquiryMatchCard?.name && inquiryMatchCard.name !== inquiryMatchCard.type ? inquiryMatchCard.name : null;
+    if (isDonorInquiryMode && !inquiryEntityName && /clinic|agency|bank|doctor/i.test(inquiryMatchCard?.type || "")) {
+      try {
+        const p = await prisma.provider.findUnique({ where: { id: inquiryMatchCard.providerId }, select: { name: true } });
+        inquiryEntityName = p?.name || null;
+      } catch { /* prompt falls back to generic wording */ }
+    }
+
     const donorInquiryPrompt = isDonorInquiryMode ? `
 DONOR/SURROGATE INQUIRY MODE - CRITICAL CONTEXT:
-The parent came from the marketplace and is inquiring about a SPECIFIC ${inquiryMatchCard?.type || "profile"} that was already presented to them with a match card.
+The parent came from the marketplace and is inquiring about a SPECIFIC ${inquiryMatchCard?.type || "profile"}${inquiryEntityName ? ` - "${inquiryEntityName}"` : ""} that was already presented to them with a match card.
 This is NOT a general intake conversation. Do NOT run the intake questionnaire (Steps 1-8). Do NOT ask about frozen embryos, egg source, sperm source, or carrier.
 
-YOUR SOLE FOCUS: Answer the parent's questions about this specific ${inquiryMatchCard?.type || "profile"}.
+YOUR SOLE FOCUS: Answer the parent's questions about this specific ${inquiryMatchCard?.type || "profile"}${inquiryEntityName ? ` ("${inquiryEntityName}")` : ""}. Every question the parent asks ("the clinic", "they", "them") refers to THIS entity - never any other provider from earlier in the conversation.
 
 RULES:
 1. The parent is asking about a ${inquiryMatchCard?.type || "profile"} - use the correct terminology (e.g., "egg donor" not "surrogate").
@@ -3968,14 +3988,15 @@ RULES:
    - For surrogates: call get_surrogate_profile with surrogateId
    - For egg donors: call get_egg_donor_profile with donorId
    - For sperm donors: call search_sperm_donors
-   - For clinics: call search_clinics
-3. Answer directly from the profile data. Be warm, confident, and specific.
-4. If the answer is NOT in the profile data, use [[WHISPER:${inquiryMatchCard?.ownerProviderId || ""}]] to ask the agency.
-5. After answering, ask if they have more questions or want to take the next step:
+   - For clinics: call search_clinics with name: ${inquiryEntityName ? `"${inquiryEntityName}"` : "the presented clinic's exact name"} - NEVER a generic preference-based search (that returns a DIFFERENT clinic)
+3. NEVER present a new or different [[MATCH_CARD]] in this mode - the parent is asking about the profile already on their screen. Do NOT search for alternatives unless the parent explicitly asks to see other options.
+4. Answer directly from the profile data. Be warm, confident, and specific.
+5. If the answer is NOT in the profile data, use [[WHISPER:${inquiryMatchCard?.ownerProviderId || ""}]] to ask the agency.
+6. After answering, ask if they have more questions or want to take the next step:
    "Anything else you'd like to know about her, or would you like to schedule a free consultation?" [[QUICK_REPLY:More questions|Schedule consultation|Show me more options]]
-6. If they want to schedule, use [[CONSULTATION_BOOKING:${inquiryMatchCard?.ownerProviderId || ""}]]
-7. If they want to see more options, THEN you can start the intake flow to understand their preferences.
-8. NEVER say "surrogate" when the profile is an "Egg Donor" and vice versa. Always use the correct type.
+7. If they want to schedule, use [[CONSULTATION_BOOKING:${inquiryMatchCard?.ownerProviderId || ""}]]
+8. If they want to see more options, THEN you can start the intake flow to understand their preferences.
+9. NEVER say "surrogate" when the profile is an "Egg Donor" and vice versa. Always use the correct type.
 
 INTERACTIVE UI COMPONENTS (still available):
 - [[QUICK_REPLY:option1|option2|option3]] for single-choice buttons
@@ -6441,6 +6462,11 @@ ${phase0Section}`;
               if (retryContent && !/\[\[MATCH_CARD:/i.test(retryContent)) {
                 console.log(`[QUESTION INTERCEPT SUCCESS] AI answered from profile data instead of showing new match`);
                 finalContent = retryContent;
+                // The rejected draft (wrong match presentation) already streamed live -
+                // clear it and stream the replacement so the parent never keeps
+                // reading a paragraph about the wrong profile until "done".
+                sse.sendReset();
+                sse.sendToken(finalContent);
               } else {
                 console.log(`[QUESTION INTERCEPT] Retry still showed match card - using original response`);
                 messages.pop();
@@ -7560,6 +7586,10 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               if (retryContent && !retryContent.includes("[[WHISPER:") && !whisperPhrasePattern.test(retryContent)) {
                 console.log(`[WHISPER INTERCEPT SUCCESS] AI answered from profile data - whisper avoided`);
                 finalContent = retryContent;
+                // The deferral draft already streamed live - clear it and stream
+                // the real answer (same reconciliation as QUESTION INTERCEPT).
+                sse.sendReset();
+                sse.sendToken(finalContent);
                 whisperMatch = null;
               } else {
                 console.log(`[WHISPER INTERCEPT] AI still wants to whisper even with profile data - allowing whisper`);

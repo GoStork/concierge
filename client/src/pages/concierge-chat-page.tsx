@@ -3035,6 +3035,12 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 if (!typingStreamingIdRef.current) startTypingAnimation(`${streamingUploadId}-ai`);
                 typingRawRef.current += delta;
               }
+            } else if (ev.type === "reset") {
+              // Interceptor replaced the streamed draft - clear the buffer/bubble
+              typingRawRef.current = "";
+              typingDisplayedRef.current = 0;
+              earlyQuickReplyRef.current = null;
+              setMessages(prev => prev.map(m => m.id === `${streamingUploadId}-ai` ? { ...m, content: "", quickReplies: undefined, multiSelect: undefined } : m));
             } else if (ev.type === "done") {
               aiData = ev;
             }
@@ -4005,6 +4011,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 }
               }
             }
+          } else if (event.type === "reset") {
+            // Server discarded the streamed draft (an interceptor replaced the
+            // content) - clear the streaming bubble immediately so the rejected
+            // draft doesn't linger on screen until the final "done" replace.
+            typingRawRef.current = "";
+            typingDisplayedRef.current = 0;
+            earlyQuickReplyRef.current = null;
+            setMessages(prev => prev.map(m => m.id === streamingId ? { ...m, content: "", quickReplies: undefined, multiSelect: undefined } : m));
           } else if (event.type === "done") {
             const data = event;
 
