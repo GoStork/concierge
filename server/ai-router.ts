@@ -3061,10 +3061,10 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       {
         const has = (...vals: any[]) => vals.some((v) => v != null && v !== "");
         if (!has(profile?.donorEyeColor, profile?.donorHairColor, profile?.donorEthnicity, profile?.donorHeight, profile?.donorEducation, profile?.eggDonorAgeRange, profile?.eggDonorEggType, profile?.donorPreferences)) {
-          parts.push(`MATCH CHECKLIST - EGG DONOR (CRITICAL): If the parent asks to find, match, or recommend an egg donor, you have NO saved egg-donor preferences yet. You MUST ask the egg-donor preference questions (STEP 5-DONOR / B1: what matters most - e.g. ethnicity, education, physical traits, age range, and fresh vs frozen eggs) and SAVE the answers BEFORE calling search_egg_donors or showing an egg-donor MATCH_CARD. Skip an item only if it is already saved above or you already asked it earlier in this conversation. Never carry it over or assume it from a prior journey.`);
+          parts.push(`MATCH CHECKLIST - EGG DONOR (CRITICAL): If the parent asks to find, match, or recommend an egg donor, you have NO saved egg-donor preferences yet. You MUST ask the egg-donor preference questions (STEP 5-DONOR / B1: what matters most - e.g. ethnicity, education, physical traits, age range, and fresh vs frozen eggs) and SAVE the answers BEFORE calling search_egg_donors or showing an egg-donor MATCH_CARD. ONE QUESTION PER MESSAGE - never bundle multiple checklist questions into a single message, and NEVER re-ask a question the parent already answered in this conversation (their chat answer counts even if the profile has not caught up yet - emit the [[SAVE]] for it instead). Skip an item only if it is already saved above or already answered earlier in this conversation. Never carry it over or assume it from a prior journey.`);
         }
         if (!has(profile?.spermDonorType, profile?.spermDonorVialType, profile?.spermDonorPreferences, profile?.spermDonorEthnicity)) {
-          parts.push(`MATCH CHECKLIST - SPERM DONOR (CRITICAL): If the parent asks to find, match, or recommend a sperm donor, you have NO saved sperm-donor preferences yet. You MUST ask the sperm-donor questions (STEP 5-DONOR / C1-C2: donor type - open / anonymous / exclusive - and what matters most) and SAVE the answers BEFORE calling search_sperm_donors or showing a sperm-donor MATCH_CARD. Skip an item only if it is already saved above or you already asked it earlier in this conversation.`);
+          parts.push(`MATCH CHECKLIST - SPERM DONOR (CRITICAL): If the parent asks to find, match, or recommend a sperm donor, you have NO saved sperm-donor preferences yet. You MUST ask the sperm-donor questions and SAVE the answers BEFORE calling search_sperm_donors or showing a sperm-donor MATCH_CARD. ONE QUESTION PER MESSAGE - ask C1 (what matters most: appearance, background, education, personality) first, then C2 (donor type - Open / Anonymous / Exclusive) in a SEPARATE later message. NEVER combine C1 and C2 in one message, and NEVER re-ask a question the parent already answered in this conversation - their chat answer counts even if the profile has not caught up yet (emit the [[SAVE]] for it instead). Skip an item only if it is already saved above or already answered earlier in this conversation.`);
         }
         const surrMissing: string[] = [];
         if (profile?.surrogateTwins == null) surrMissing.push("whether they want a surrogate willing to carry twins (D1)");
@@ -4514,6 +4514,34 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
           console.log(`[D3 SAVE FALLBACK] Patched surrogateTwins=${value} for account ${userRecord.parentAccountId} (Eva missed the SAVE tag)`);
         } catch (e: any) {
           console.log(`[D3 SAVE FALLBACK] Failed to patch: ${e.message}`);
+        }
+      }
+    }
+
+    // C2 SAVE FALLBACK - same failure mode in the sperm-donor cycle: the parent
+    // answers the Open/Anonymous/Exclusive donor-type question but Gemini skips
+    // the [[SAVE]], so spermDonorType stays null and the checklist directive
+    // re-asks the question forever (observed live: "Open" answered, the same
+    // question re-asked the very next turn). Guarded on the AI having just
+    // asked the sperm donor-type question so a bare "Open" elsewhere never
+    // misfires.
+    if (!profile?.spermDonorType && userRecord?.parentAccountId) {
+      const lastUserMsgC = ((messages || []).filter((m: any) => m.role === "user").at(-1)?.content || "").toString().trim();
+      const lastAiMsgC = ((messages || []).filter((m: any) => m.role === "assistant").at(-1)?.content || "").toString();
+      const cm = /^(open|anonymous|exclusive|no preference)(\s+donor)?[.!]?$/i.exec(lastUserMsgC);
+      if (cm && /sperm/i.test(lastAiMsgC) && /\bopen\b.{0,80}\banonymous\b|donor type/i.test(lastAiMsgC)) {
+        const raw = cm[1].toLowerCase();
+        const value = raw === "no preference" ? "No preference" : raw.charAt(0).toUpperCase() + raw.slice(1);
+        try {
+          await prisma.intendedParentProfile.upsert({
+            where: { parentAccountId: userRecord.parentAccountId },
+            update: { spermDonorType: value },
+            create: { parentAccountId: userRecord.parentAccountId, spermDonorType: value },
+          });
+          (profile as any).spermDonorType = value;
+          console.log(`[C2 SAVE FALLBACK] Patched spermDonorType=${value} for account ${userRecord.parentAccountId} (Eva missed the SAVE tag)`);
+        } catch (e: any) {
+          console.log(`[C2 SAVE FALLBACK] Failed to patch: ${e.message}`);
         }
       }
     }
