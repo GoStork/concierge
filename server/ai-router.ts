@@ -425,6 +425,44 @@ function injectMissingQuickReplies(content: string): string {
 // -------------------------------------------------------------------------
 // Tier 2: Gemini 3.5 Flash - matching, tool calls, complex rules
 // -------------------------------------------------------------------------
+/**
+ * Parse the FIRST JSON array out of an MCP tool-result body.
+ *
+ * The bodies are `Found N surrogates:\n<array>\n\nIMPORTANT: ...`, so a naive
+ * indexOf("[") / lastIndexOf("]") slice can swallow trailing prose (any "]" in
+ * the note moves the end marker) and the parse throws. Results also carry raw
+ * control characters inside string fields. Bracket-match the first array and
+ * strip control chars instead.
+ */
+function parseFirstJsonArray(body: string): any[] | null {
+  if (!body) return null;
+  const clean = body.replace(/[\u0000-\u001f]/g, " ");
+  const start = clean.indexOf("[");
+  if (start === -1) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < clean.length; i++) {
+    const ch = clean[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "[") depth++;
+    else if (ch === "]") {
+      depth--;
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(clean.substring(start, i + 1));
+          return Array.isArray(parsed) ? parsed : null;
+        } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
 async function callTier2Claude(
   systemPrompt: string,
   messages: any[],
@@ -1165,6 +1203,37 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
         console.warn(`[TIER2] After ${toolRoundCount} tool round(s), Gemini returned no text - finishReason=${finishReason} parts=${partsCount} [${partKinds.join(",")}]${usageMetadata ? ` tokens(in=${usageMetadata.promptTokenCount},out=${usageMetadata.candidatesTokenCount})` : ""}`);
       }
       console.log(`[TIER2] DONE (after ${toolRoundCount} tool round(s)) in ${Date.now() - tStream2}ms (${fullText.length} chars). Total TIER2 ${Date.now() - t0}ms`);
+      // OWED-CARD GUARANTEE: when the SERVER ran the search (preSearch), a card
+      // is owed by construction - we only pre-search on a ready turn. If the
+      // model wrote prose without a [[MATCH_CARD]], append one for the top
+      // result rather than letting the turn go out card-less. The outer parser
+      // accepts the bare-id form, so this hands off to the normal hydration
+      // (name, photo, owner) instead of hand-building a card here.
+      if (preSearch && fullText && !/\[\[MATCH_CARD/i.test(fullText)) {
+        const pre = searchToolResults.find((r) => r.toolName === preSearch.name);
+        const preBody = pre?.resultText || "";
+        const arr = parseFirstJsonArray(preBody);
+        const rows = arr ? arr.length : -1; // -1 = no parseable array
+        // Pre-search bodies are capped at MAX_TOOL_RESULT (8000 chars), so a
+        // large result set arrives with its JSON array cut mid-object and the
+        // bracket matcher never closes it. We only need the TOP result's id, and
+        // that survives truncation - take it directly rather than losing the
+        // card over the tail we never needed.
+        const topId = arr && arr.length > 0
+          ? String(arr[0]?.id || "")
+          : (preBody.match(/"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i)?.[1] || "");
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(topId)) {
+          console.warn(`[TIER2] Pre-searched turn produced no MATCH_CARD - appending top result ${topId}`);
+          fullText = `${fullText.trimEnd()}\n\n[[MATCH_CARD:${topId}]]`;
+        } else {
+          console.warn(
+            `[TIER2] Pre-searched turn produced no MATCH_CARD - ` +
+            (rows === 0 ? "search returned ZERO results (nothing to show)"
+              : rows === -1 ? `no parseable array and no id salvageable :: ${preBody.slice(0, 160).replace(/\n/g, " ")}`
+              : `top result had no id (rows=${rows})`),
+          );
+        }
+      }
       return { content: fullText, toolCallsExecuted: true, searchToolResults };
     }
   }
@@ -6204,6 +6273,56 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         preSearchForReady = { name: "search_clinics", args };
       }
 
+      // READY-TURN PRE-SEARCH for the surrogate / egg / sperm lanes.
+      // The clinic lane above has run server-side since Jul 17; every other
+      // lane still depended on the model choosing to call the search tool on
+      // the ready turn, with `forceToolUseForSearch` as nothing more than a
+      // strong hint. Measured over 147 ready turns, 17 skipped the search
+      // entirely - 13 of them with force=true, and 13 of the 17 in the
+      // surrogate lane. A turn that never searches has no tool results, so
+      // the MATCH_CARD fallback has nothing to rebuild from and the parent
+      // reads "here's someone I found for you" with no card underneath.
+      // Running the search here removes the model's discretion: it only has
+      // to write the presentation.
+      if (!preSearchForReady && forceToolUseForSearch && pendingReadyService) {
+        const args: Record<string, unknown> = { limit: 10 };
+        if (presentedProviderIds.size > 0) args.excludeIds = Array.from(presentedProviderIds);
+        // Only HARD preferences the parent actually stated are passed. An
+        // unstated filter is omitted rather than guessed - a broader pool is
+        // recoverable, a wrong filter silently hides valid matches.
+        const yes = (v: any) => /^(yes|true|open|ok|agree|pro-choice|comfortable)/i.test(String(v || ""));
+        const no = (v: any) => /^(no|false|not|against|pro-life)/i.test(String(v || ""));
+        let toolName = "";
+        if (pendingReadyService === "surrogate") {
+          toolName = "search_surrogates";
+          if (yes(profile?.surrogateTwins)) args.agreesToTwins = true;
+          else if (no(profile?.surrogateTwins)) args.agreesToTwins = false;
+          if (yes(profile?.surrogateTermination)) args.agreesToAbortion = true;
+          else if (no(profile?.surrogateTermination)) args.agreesToAbortion = false;
+          if (yes(profile?.surrogateExperience)) args.isExperienced = true;
+          if (profile?.sameSexCouple === true) args.openToSameSexCouple = true;
+          if (typeof profile?.surrogateMaxCSections === "number") args.maxCsections = profile.surrogateMaxCSections;
+          if (typeof profile?.surrogateMaxMiscarriages === "number") args.maxMiscarriages = profile.surrogateMaxMiscarriages;
+          if (userRecord?.country) args.parentCountry = userRecord.country;
+        } else if (pendingReadyService === "egg") {
+          toolName = "search_egg_donors";
+          if (profile?.donorEthnicity) args.ethnicity = profile.donorEthnicity;
+          if (profile?.donorEyeColor) args.eyeColor = profile.donorEyeColor;
+          if (profile?.donorHairColor) args.hairColor = profile.donorHairColor;
+          if (profile?.donorEducation) args.education = profile.donorEducation;
+        } else if (pendingReadyService === "sperm") {
+          toolName = "search_sperm_donors";
+          if (profile?.donorEthnicity) args.ethnicity = profile.donorEthnicity;
+          if (profile?.donorEyeColor) args.eyeColor = profile.donorEyeColor;
+          if (profile?.donorHairColor) args.hairColor = profile.donorHairColor;
+          if (profile?.donorEducation) args.education = profile.donorEducation;
+        }
+        if (toolName) {
+          preSearchForReady = { name: toolName, args };
+          console.log(`[READY_TURN] pre-search armed: ${toolName} ${JSON.stringify(args)}`);
+        }
+      }
+
       console.log(`[LATENCY] pre-work before Tier2: ${Date.now() - tReq}ms (session load, profile, RAG, prompt assembly)`);
       const tier2Result = await callTier2Claude(
         systemPromptForTiers,
@@ -6218,6 +6337,18 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         isFreshLookalikeUpload,
         preSearchForReady,
       );
+      // DIAGNOSTIC: the decisive split for "expected match card, got none" -
+      // did the ready turn SEARCH at all? A turn that searched can be repaired
+      // from tool results; a turn that never searched has nothing to repair.
+      if (userSaidReady && curationAlreadySent) {
+        console.warn(
+          `[READY_TURN] force=${forceToolUseForSearch} preSearch=${preSearchForReady?.name || "none"} ` +
+          `service=${pendingReadyService || "none"} searches=${tier2Result.searchToolResults.length} ` +
+          `toolsExecuted=${tier2Result.toolCallsExecuted} replyChars=${(tier2Result.content || "").length} ` +
+          `presented=${presentedProviderIds.size} session=${currentSessionId}`,
+        );
+      }
+
       // If Claude executed a search tool but returned empty text, retry once with an explicit
       // instruction to present the results. This happens when Claude calls the tool successfully
       // but fails to generate the match card presentation in the same response.
@@ -8760,6 +8891,43 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     while ((mcMatch = matchCardRegex.exec(finalContent)) !== null) {
       aiAttemptedTags++;
       try {
+        // BARE-ID FORM: [[MATCH_CARD:<uuid>]]. Every other structured tag in
+        // this system takes a bare id ([[WHISPER:PROVIDER_ID]],
+        // [[CONSULTATION_BOOKING:PROVIDER_ID]]), and CLAUDE.md documents
+        // [[MATCH_CARD:DONOR_ID]] that way too, so the model reaches for it -
+        // but the parser only ever accepted JSON, and JSON.parse("<uuid>")
+        // throws, so the card was silently discarded and the parent read a
+        // recommendation with nothing under it. Resolve the type from the id.
+        const bareId = mcMatch[1].trim().replace(/^["']|["']$/g, "");
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bareId)) {
+          const lookups: Array<[string, any]> = [
+            ["Surrogate", prisma.surrogate],
+            ["Egg Donor", prisma.eggDonor],
+            ["Sperm Donor", prisma.spermDonor],
+          ];
+          let resolvedType = "";
+          let ownerId = "";
+          for (const [typeName, model] of lookups) {
+            const row = await model.findUnique({ where: { id: bareId }, select: { id: true, providerId: true } }).catch(() => null);
+            if (row) { resolvedType = typeName; ownerId = row.providerId || ""; break; }
+          }
+          if (!resolvedType) {
+            const prov = await prisma.provider.findUnique({ where: { id: bareId }, select: { id: true } }).catch(() => null);
+            if (prov) resolvedType = "Clinic";
+          }
+          if (!resolvedType) {
+            console.warn(`[ai-router] MATCH_CARD bare id ${bareId} matches no profile or provider - leaving to fallback`);
+            continue;
+          }
+          if (surrogateCardGateActive && resolvedType === "Surrogate") {
+            console.log(`[SEARCH GATE] Suppressed premature surrogate MATCH_CARD (${bareId}) - D-cycle incomplete`);
+            continue;
+          }
+          console.log(`[ai-router] MATCH_CARD bare-id form accepted (${resolvedType} ${bareId})`);
+          // name/photo are hydrated by resolve_match_card below.
+          matchCards.push({ name: "", type: resolvedType, location: "", photo: "", reasons: [], providerId: bareId, ...(ownerId ? { ownerProviderId: ownerId } : {}) });
+          continue;
+        }
         const parsed = JSON.parse(mcMatch[1]);
         if (!parsed) continue;
         // Accept `id` / `entityId` as fallbacks when AI used the wrong field
@@ -8845,7 +9013,30 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           console.warn("[ai-router] MATCH_CARD missing required fields (type/providerId), skipping:", parsed);
         }
       } catch (e) {
-        console.error("Failed to parse MATCH_CARD:", e);
+        // A card the model DID emit must not vanish because its JSON was
+        // slightly malformed. Recover the fields we actually need (type +
+        // providerId) by hand before giving up - the alternative is a parent
+        // reading "here's a great match for you" with no card under it.
+        const raw = mcMatch[1];
+        const grab = (key: string) => {
+          const m = raw.match(new RegExp(`["']?${key}["']?\\s*:\\s*["']([^"']+)["']`, "i"));
+          return m ? m[1] : "";
+        };
+        const salvaged: any = {
+          name: grab("name") || grab("displayName"),
+          type: grab("type") || grab("entityType"),
+          location: grab("location"),
+          photo: "",
+          reasons: (raw.match(/"reasons"\s*:\s*\[([^\]]*)\]/i)?.[1] || "")
+            .split(",").map((x) => x.trim().replace(/^["']|["']$/g, "")).filter(Boolean).slice(0, 4),
+          providerId: grab("providerId") || grab("entityId") || grab("id"),
+        };
+        const salvagedUsable = !!salvaged.type && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(salvaged.providerId)
+          && !(surrogateCardGateActive && /surrogate/i.test(salvaged.type));
+        console.error(
+          `Failed to parse MATCH_CARD (${(e as any)?.message || e}) - salvage=${salvagedUsable ? "OK" : "FAILED"} :: ${raw.slice(0, 220).replace(/\n/g, " ")}`,
+        );
+        if (salvagedUsable) matchCards.push(salvaged);
       }
     }
     finalContent = finalContent.replace(/\[\[MATCH_CARD:[\s\S]*?\]\]/g, "").trim();
@@ -9139,6 +9330,26 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           console.error("[LOOK-ALIKE] top-match override failed:", e);
         }
       }
+    }
+
+    // DIAGNOSTIC: a turn that ran a search but produced no card is the
+    // "expected match card, got none" failure. Log WHY, so the cause is
+    // visible instead of inferred - did the search return rows, did the model
+    // attempt a tag, did the repair decline to fire?
+    if (matchCards.length === 0 && doctorCardTags.length === 0 && lastSearchToolResults.length > 0) {
+      let topRows = -1;
+      try {
+        const body = lastSearchToolResults[0]?.resultText || "";
+        const st = body.indexOf("["), en = body.lastIndexOf("]");
+        if (st !== -1 && en > st) {
+          const arr = JSON.parse(body.replace(/[\u0000-\u001f]/g, " ").substring(st, en + 1));
+          topRows = Array.isArray(arr) ? arr.length : -1;
+        }
+      } catch { topRows = -2; /* unparseable */ }
+      console.warn(
+        `[NO_MATCH_CARD] session=${currentSessionId} tools=${lastSearchToolResults.map((r) => r.toolName).join(",")} ` +
+        `topResultRows=${topRows} attemptedTags=${aiAttemptedTags} replyChars=${finalContent.length}`,
+      );
     }
 
     if (matchCards.length > 1) {
