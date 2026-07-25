@@ -2268,12 +2268,16 @@ async function main() {
   const start = Date.now();
   let results: TestResult[];
 
-  const reportResult = (r: TestResult) => {
+  // AWAITED, not fire-and-forget: this is a TERMINAL event for the tile. A
+  // dropped test_progress just costs a spinner update, but a dropped
+  // test_pass/test_fail leaves the dashboard tile stuck on "running" forever
+  // (observed live: MW-19 passed in the CLI while its tile sat at "running"
+  // with 0ms, which then blocked the whole run from flipping to "done").
+  const reportResult = async (r: TestResult) => {
     const icon = r.passed ? "✅" : "❌";
     console.log(`  ${icon} ${r.tc.id} ${r.passed ? "PASS" : "FAIL"} (${(r.durationMs / 1000).toFixed(1)}s)`);
     if (!r.passed) r.errors.forEach(e => console.log(`     ${e}`));
-    // Report to dashboard (fire-and-forget)
-    reportToDashboard({
+    await reportToDashboard({
       type: r.passed ? "test_pass" : "test_fail",
       id: r.tc.id,
       persona: r.tc.persona,
@@ -2291,7 +2295,7 @@ async function main() {
       console.log(`  ▶ Starting: ${tc.id}${SERVER_POOL.length > 0 ? ` -> ${baseUrl}` : ""}`);
       reportToDashboard({ type: "test_start", id: tc.id });
       const r = await runTestWithFlakeRetry(tc, baseUrl);
-      reportResult(r);
+      await reportResult(r);
       results.push(r);
     }
   } else {
@@ -2315,8 +2319,8 @@ async function main() {
           reportToDashboard({ type: "test_start", id: tc.id });
           // runTestWithFlakeRetry wraps runTest with: per-test budget timeout +
           // auto-retry-once for known flake patterns (see flake retry policy above).
-          runTestWithFlakeRetry(tc, baseUrl).then(r => {
-            reportResult(r);
+          runTestWithFlakeRetry(tc, baseUrl).then(async r => {
+            await reportResult(r);
             results.push(r);
             running--;
             next();
@@ -2331,7 +2335,9 @@ async function main() {
   const failed = results.filter(r => !r.passed).length;
   console.log(`\n${"─".repeat(60)}`);
   console.log(`Results: ${passed} passed, ${failed} failed (${((Date.now() - start) / 1000).toFixed(0)}s total)\n`);
-  reportToDashboard({ type: "run_done", passCount: passed, failCount: failed, durationMs: Date.now() - start, exitCode: failed > 0 ? 1 : 0 });
+  // Awaited - process.exit() below would otherwise abort this request in
+  // flight and leave the dashboard stuck at "running".
+  await reportToDashboard({ type: "run_done", passCount: passed, failCount: failed, durationMs: Date.now() - start, exitCode: failed > 0 ? 1 : 0 });
 
   if (!fs.existsSync(REPORT_DIR)) fs.mkdirSync(REPORT_DIR, { recursive: true });
   const reportFile = path.join(REPORT_DIR, `report-${new Date().toISOString().replace(/[:.]/g, "-")}.html`);
