@@ -588,6 +588,28 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 3,
   },
 
+  {
+    id: "FT-09", persona: "free-text",
+    name: "FT-09: Crisis/grief suppresses intake and sales framing",
+    desc: "Pregnancy loss / surrogate hospitalized -> empathy + human escalation, NEVER an intake question or 'keep making progress' quick replies",
+    interestedServices: ["Surrogate"],
+    messageCount: 2,
+  },
+  {
+    id: "FT-10", persona: "free-text",
+    name: "FT-10: Paperwork on file answered from real data",
+    desc: "Real cost sheet / pending invoice / unsigned agreement are quoted exactly - never 'no record' and never 'you owe nothing'",
+    interestedServices: ["Surrogate"],
+    messageCount: 3,
+  },
+  {
+    id: "FT-11", persona: "free-text",
+    name: "FT-11: Tool-backed questions never return an empty reply",
+    desc: "Guards the Gemini streaming/thought-signature bug that made every tool lookup in a post-booking session return silence",
+    interestedServices: ["Surrogate"],
+    messageCount: 1,
+  },
+
   // ── PROVIDER-SIDE (PR-01..) ───────────────────────────────────────────────
   // Runs scripts/test-provider-flows.ts - the provider experience and the
   // parent/provider chat boundary, which the parent suites cannot reach.

@@ -2,7 +2,7 @@
 
 **Scope:** the AI concierge must handle ANY parent request typed as free text - from the marketplace, mid-intake, mid-call-prep, out of nowhere - and never ignore it, steamroll it, overrule it, or answer it with mismatched quick replies. This plan covers the five failure classes found and fixed on Jul 24 2026 and the deterministic mechanisms that now guard them.
 
-**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-08)
+**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-11)
 
 ```bash
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts
@@ -71,6 +71,15 @@ Related routing hazards fixed at the same time - all caused by the same root: **
 - Only the NEWEST non-provider session is rendered in the parent's "Your AI Concierge" row - anything posted to an older ACTIVE session is invisible in the UI even though the API returns it.
 - The parent read path drops system cards not in its allow-list (`clearance_tracker`, `ip_form_submitted`, `video_invite`, `partner_info_request`, `donor_hold_decision`), while unread counts do NOT exclude them - hidden cards can inflate the parent's unread badge.
 - A provider opening the merged view stamps `deliveredAt` on messages in the parent's private Eva session.
+
+### 10. Late-journey sweep (post-booking / money / commitments)
+A second probe sweep seeded REAL artifacts (booking, cost sheet, invoice, agreement, handoff) and fired money/commitment/emotional messages. Findings and fixes:
+
+- **Tool-backed questions returned a COMPLETELY EMPTY reply.** Every question needing a lookup in a post-booking session ("when is my call again?", "what did they quote me?", "is my contract signed?") produced silence. Root chain: Gemini's streaming SDK does not commit the model's functionCall turn to history -> 400 on the tool response; hand-rebuilding the call fails because Gemini 3.x requires a `thought_signature` that cannot be forged; the streamed response carries no signature either. Fix: replay the turn on the non-streaming path (`ai-router.ts`, `[TIER2 HISTORY REPAIR]`). Guarded by **FT-11**.
+- **Crisis/grief handled as a sales opportunity.** "We just found out the pregnancy failed" got one empathetic paragraph then a call-prep intake question ("solo, or with a partner?"); a hospitalized surrogate got "Keep making progress" quick replies. New deterministic CRISIS GUARD outranks every directive incl. call-prep: empathy + `[[HUMAN_NEEDED]]` only, intake/matching/cost language forbidden, supportive quick replies only. Guarded by **FT-09**.
+- **Eva was blind to the family's own paperwork.** Cost sheets, invoices and agreements live in the parent-provider thread, so Eva answered "I don't have a record of that quote" and - worse - "you don't owe us anything!" while a $42,500 invoice sat pending. New PAPERWORK ON FILE context block injects the account's real quotes/invoices/agreements (read-only) into BOTH tiers - the Tier 1 compact prompt needed it separately or that tier still refused. Guarded by **FT-10**.
+
+Still open from this sweep (documented, not yet fixed): a resend-agreement request replies "here is the agreement for you to review:" and attaches nothing (the preview short-circuits when the Eva session has no providerId); "I need to pause everything" offers to cancel the call for the parent, which Eva cannot do; post-handoff messages do not consistently redirect to the provider's own chat or ask the why-question first.
 
 ## Engineering rules distilled from these bugs
 
