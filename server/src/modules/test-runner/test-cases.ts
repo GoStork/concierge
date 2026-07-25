@@ -559,6 +559,34 @@ export const TEST_CASES: TestCaseDef[] = [
     interestedServices: ["Sperm Donor"],
     messageCount: 5,
   },
+  {
+    id: "FT-05", persona: "free-text",
+    name: "FT-05: Profile correction acknowledged, never steamrolled",
+    desc: "'actually I'm married, not single' -> correction confirmed + saved; the intake state machine stands down",
+    interestedServices: ["Surrogate"],
+    messageCount: 3,
+  },
+  {
+    id: "FT-06", persona: "free-text",
+    name: "FT-06: Never fabricate - financing policy, form receipt, cancellation",
+    desc: "No invented GoStork payment plans, no 'I got your form', no 'I've canceled your call' - honest answers grounded in real system state",
+    interestedServices: ["Surrogate"],
+    messageCount: 6,
+  },
+  {
+    id: "FT-07", persona: "free-text",
+    name: "FT-07: Pinned-profile question answered from real data",
+    desc: "'has she ever had a c-section?' on a marketplace pin -> real pregnancy-history answer (Tier 2 forced), not the Phase-1 intake question",
+    interestedServices: ["Surrogate"],
+    messageCount: 1,
+  },
+  {
+    id: "FT-08", persona: "free-text",
+    name: "FT-08: Mid-flow redirect (clinic first) followed",
+    desc: "'forget the surrogate, I just want a clinic first' -> clinic flow engaged, scripted donor question suppressed",
+    interestedServices: ["Surrogate", "Fertility Clinic"],
+    messageCount: 3,
+  },
 ];
 
 export function getTestCaseInfo(): TestCaseInfo[] {

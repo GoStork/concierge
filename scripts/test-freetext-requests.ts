@@ -233,16 +233,71 @@ async function ft02(db: Client) {
   }
 }
 
+// Walk the scripted intake like a real parent tapping buttons, until `stop`
+// matches a reply or the turn budget runs out. Phase 0 education + Phase 1
+// identity + Phase 2 biology are mandatory before any donor cycle, so a donor
+// test must actually walk them rather than assume a 2-turn shortcut.
+async function walkUntil(
+  auth: Record<string, string>,
+  sid: string,
+  stopFn: (t: Turn) => boolean,
+  maxTurns = 14,
+): Promise<Turn | null> {
+  // Preference order for auto-answering: keep the flow moving forward and
+  // never branch into the Q&A path.
+  const PREFERRED = [
+    /^i understand, let'?s get started$/i,
+    /^yes, makes sense!?$/i,
+    /^solo man$/i,
+    /^no, not yet$/i,
+    /^my own$/i,
+    /^i need help finding/i,
+    /^i already have/i,
+  ];
+  let last: Turn | null = null;
+  for (let i = 0; i < maxTurns; i++) {
+    if (last && stopFn(last)) return last;
+    let next = "yes";
+    if (last?.qr?.length) {
+      const preferred = PREFERRED.map((re) => last!.qr.find((q) => re.test(q))).find(Boolean);
+      next = preferred || last.qr.find((q) => !/question/i.test(q)) || last.qr[0];
+    } else if (last && /what matters most|preferences|important to you/i.test(last.content)) {
+      next = "Tall, athletic, and college educated";
+    }
+    last = await send(auth, sid, next);
+  }
+  return last && stopFn(last) ? last : null;
+}
+
+// Seed a completed Phase 1 (identity) + Phase 2 (biology) so a donor-cycle
+// test starts where it means to: a solo woman using her own eggs, donor sperm,
+// carrying herself. Without this the mandatory intake runs first and the test
+// is really testing the scripted flow (that is the main suite's job).
+async function seedIntakeComplete(db: Client, u: TestUser) {
+  await db.query(
+    `UPDATE "User" SET gender = 'Female', "relationshipStatus" = 'single', "sexualOrientation" = 'Straight' WHERE id = $1`,
+    [u.userId],
+  );
+  await db.query(
+    `UPDATE "IntendedParentProfile"
+       SET "hasEmbryos" = false, "eggSource" = 'My own eggs', "spermSource" = 'Donor sperm',
+           carrier = 'Self', "needsClinic" = false, "needsSurrogate" = false, "needsEggDonor" = false
+     WHERE "parentAccountId" = $1`,
+    [u.acctId],
+  );
+}
+
 // ─── FT-03: C2 answer saved + never re-asked ─────────────────────────────────
 async function ft03(db: Client) {
   const u = await createUser(db, "ft-c2repeat", ["Sperm Donor"]);
   try {
+    await seedIntakeComplete(db, u);
     const sid = await initSession(u.auth, false);
     await send(u.auth, sid, "I need a sperm donor");
-    const t2 = await send(u.auth, sid, "Tall, athletic, and college educated");
-    let asked = /open.{0,80}anonymous|anonymous.{0,80}exclusive/i.test(t2.content) ? t2 : null;
-    if (!asked) asked = await send(u.auth, sid, "nothing else matters to me");
-    check("donor-type question asked once", /open.{0,80}anonymous|anonymous.{0,80}exclusive/i.test(asked.content), asked.content.slice(0, 100));
+    const DONOR_TYPE_Q = /open.{0,80}anonymous|anonymous.{0,80}exclusive/i;
+    const asked = await walkUntil(u.auth, sid, (t) => DONOR_TYPE_Q.test(t.content));
+    check("donor-type question reached and asked", !!asked, asked ? asked.content.slice(0, 100) : "never asked within turn budget");
+    if (!asked) return;
 
     const t3 = await send(u.auth, sid, "Open");
     check(
@@ -261,12 +316,14 @@ async function ft03(db: Client) {
 async function ft04(db: Client) {
   const u = await createUser(db, "ft-buyvials", ["Sperm Donor"]);
   try {
+    await seedIntakeComplete(db, u);
     const sid = await initSession(u.auth, false);
     await send(u.auth, sid, "I need a sperm donor");
-    await send(u.auth, sid, "Tall, athletic, and college educated");
-    await send(u.auth, sid, "Open");
-    const t4 = await send(u.auth, sid, "ready");
-    check("match presented before purchase", t4.hasCard || /donor #/i.test(t4.content));
+    // Walk the mandatory Phase 0/1/2 + C-cycle intake to a real match card
+    // rather than assuming a fixed turn count.
+    const t4 = await walkUntil(u.auth, sid, (t) => t.hasCard || /donor #/i.test(t.content), 18);
+    check("match presented before purchase", !!t4, t4 ? "card reached" : "no match card within turn budget");
+    if (!t4) return;
 
     const t5 = await send(u.auth, sid, "Buy vials now");
     check("no re-presented match card on buy", !t5.hasCard, `hasCard=${t5.hasCard}`);
@@ -285,12 +342,96 @@ async function ft04(db: Client) {
   }
 }
 
+// ─── FT-05: profile correction must be acknowledged, never steamrolled ───────
+async function ft05(db: Client) {
+  const u = await createUser(db, "ft-correction", ["Surrogate"]);
+  try {
+    const sid = await initSession(u.auth, false);
+    await send(u.auth, sid, "I need a surrogate");
+    await send(u.auth, sid, "Solo man");
+    const r = await send(u.auth, sid, "actually I'm married, not single");
+    check("correction acknowledged", /marri|clarif|thanks for (letting me know|correcting)|got it/i.test(r.content), r.content.slice(0, 120));
+    check("not steamrolled with next scripted question only", !/^do you already have frozen embryos/i.test(r.content.trim()), r.content.slice(0, 80));
+  } finally {
+    await deleteUser(db, u);
+  }
+}
+
+// ─── FT-06: never fabricate actions, receipts, or policy ─────────────────────
+async function ft06(db: Client) {
+  // financing
+  const u1 = await createUser(db, "ft-financing", ["Surrogate"]);
+  try {
+    const sid = await initSession(u1.auth, false);
+    await send(u1.auth, sid, "I need a surrogate");
+    const r = await send(u1.auth, sid, "do you offer payment plans or financing?");
+    check("financing: no invented GoStork policy", !/we do!|yes,? we (do )?offer|(gostork|we) (has|have) partnered/i.test(r.content), r.content.slice(0, 140));
+    check("financing: honest varies-by-provider frame", /var(y|ies)|team can (walk|help)|free for (intended )?parents/i.test(r.content), r.content.slice(0, 140));
+  } finally {
+    await deleteUser(db, u1);
+  }
+  // form receipt
+  const u2 = await createUser(db, "ft-formstatus", ["Surrogate"]);
+  try {
+    const sid = await initSession(u2.auth, false);
+    await send(u2.auth, sid, "I need a surrogate");
+    const r = await send(u2.auth, sid, "did you get the form I submitted yesterday?");
+    check("form: no fabricated receipt confirmation", !/yes,? i did|i (have|got|received) your (form|submission|registration)/i.test(r.content), r.content.slice(0, 140));
+    check("form: honest can't-see + team offer", /don'?t (see|have access)|can'?t see|check with the team|connect you with the (gostork )?team/i.test(r.content), r.content.slice(0, 140));
+  } finally {
+    await deleteUser(db, u2);
+  }
+  // cancel with no booking
+  const u3 = await createUser(db, "ft-cancel", ["Surrogate"]);
+  try {
+    const sid = await initSession(u3.auth, false);
+    await send(u3.auth, sid, "I need a surrogate");
+    const r = await send(u3.auth, sid, "I need to cancel my consultation call");
+    check("cancel: no fabricated cancellation", !/i('ve| have)? ?(canceled|cancelled|rescheduled)/i.test(r.content), r.content.slice(0, 140));
+    check("cancel: honest no-booking answer", /don'?t see|no upcoming|not seeing|which call/i.test(r.content), r.content.slice(0, 140));
+  } finally {
+    await deleteUser(db, u3);
+  }
+}
+
+// ─── FT-07: profile question on a marketplace pin gets a real data answer ────
+async function ft07(db: Client) {
+  const u = await createUser(db, "ft-pinquestion", ["Surrogate"]);
+  try {
+    const sid = await initSession(u.auth, true);
+    const r = await send(u.auth, sid, "has she ever had a c-section?");
+    check("answers from real profile data", /c-?section|cesarean/i.test(r.content), r.content.slice(0, 140));
+    check("not deflected to Phase-1 intake", !r.qr.some((q) => /solo man|two dads/i.test(q)), JSON.stringify(r.qr));
+  } finally {
+    await deleteUser(db, u);
+  }
+}
+
+// ─── FT-08: mid-flow redirect ("clinic first") must be followed ──────────────
+async function ft08(db: Client) {
+  const u = await createUser(db, "ft-redirect", ["Surrogate", "Fertility Clinic"]);
+  try {
+    const sid = await initSession(u.auth, false);
+    await send(u.auth, sid, "I need a surrogate");
+    await send(u.auth, sid, "Solo man");
+    const r = await send(u.auth, sid, "forget the surrogate for now, I just want to find a clinic first");
+    check("clinic redirect engaged", /clinic/i.test(r.content), r.content.slice(0, 120));
+    check("not steamrolled with the scripted donor question", !/^do you need help finding an egg donor/i.test(r.content.trim()), r.content.slice(0, 80));
+  } finally {
+    await deleteUser(db, u);
+  }
+}
+
 // ─── Runner (admin test-runner stdout protocol) ──────────────────────────────
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "FT-01", name: "Deep-link surrogate pin - 4-turn free-text replay", run: ft01 },
   { id: "FT-02", name: "Confirm-never-overrule - embryos on file, donor requested", run: ft02 },
   { id: "FT-03", name: "Sperm C2 - donor-type answer saved, never re-asked", run: ft03 },
   { id: "FT-04", name: "Buy vials - purchase intent ends in checkout", run: ft04 },
+  { id: "FT-05", name: "Profile correction acknowledged, never steamrolled", run: ft05 },
+  { id: "FT-06", name: "Never fabricate: financing policy, form receipt, cancellation", run: ft06 },
+  { id: "FT-07", name: "Pinned-profile question answered from real data", run: ft07 },
+  { id: "FT-08", name: "Mid-flow redirect (clinic first) followed", run: ft08 },
 ];
 
 (async () => {

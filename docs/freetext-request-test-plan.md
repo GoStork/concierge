@@ -2,7 +2,7 @@
 
 **Scope:** the AI concierge must handle ANY parent request typed as free text - from the marketplace, mid-intake, mid-call-prep, out of nowhere - and never ignore it, steamroll it, overrule it, or answer it with mismatched quick replies. This plan covers the five failure classes found and fixed on Jul 24 2026 and the deterministic mechanisms that now guard them.
 
-**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-04)
+**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-08)
 
 ```bash
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts
@@ -40,6 +40,20 @@ Two sub-classes:
 "Buy vials now" re-ran the search and re-presented the same donor card instead of starting checkout.
 - **Mechanism:** buy-intent regex (excludes bare "order" as in "in order to") + latest donor card injects a checkout override; a hard backstop forces the `[[BANK_CHECKOUT]]` side effect and clears re-presented match cards if the model still skips it. `postBankCheckoutCard` degrades safely to agency guidance for non-bank donors.
 - **Test:** Scenario D - confirmation text, no match card, `bank_checkout` card (or agency guidance) posted to the session.
+
+### 6. Fabricated actions / receipts / policy (fix: CANCEL TRUTH + NEVER FAKE rules, Jul 24 probe sweep)
+An exploratory 24-probe sweep found the model claiming "I've canceled your consultation call" (no booking existed), "Yes, I got your form" (nothing submitted), and inventing GoStork financing policy.
+- **Mechanisms:** deterministic CANCEL/RESCHEDULE TRUTH injection (queries the parent's real upcoming bookings; no booking -> honest answer mandated, booking -> `[[MEETING_CARD]]` with its own cancel controls); NEVER FAKE AN ACTION OR A SYSTEM FACT rules in `general_behavior` (Tier 2) AND the Tier 1 compact prompt (Tier 1 fabricated even after the Tier-2 rule landed).
+- **Tests:** FT-06 (financing, form receipt, cancellation - all three).
+
+### 7. State machine steamrolling off-script intents (fix: INTAKE BYPASS stand-down)
+The deterministic intake state machine advanced the script over "actually I'm married, not single" and "forget the surrogate, I just want a clinic first" - injected directives never reached any model because no model ran.
+- **Mechanism:** the intake bypass stands down whenever a service-switch, profile-correction, or cancel-truth directive fired this turn; new PROFILE CORRECTION detector (correction marker + identity/biology keyword) rides skipRulesPreamble like the others.
+- **Tests:** FT-05 (correction), FT-08 (redirect).
+
+### 8. Marketplace pins answered without tools (fix: inquiry mode forces Tier 2)
+"Has she ever had a c-section?" on a fresh deep-link pin fell to Tier 1 (no MCP tools) and got the Phase-1 intake question. Inquiry-pinned turns now always run Tier 2.
+- **Test:** FT-07.
 
 ## Engineering rules distilled from these bugs
 
