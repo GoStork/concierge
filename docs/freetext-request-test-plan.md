@@ -2,14 +2,14 @@
 
 **Scope:** the AI concierge must handle ANY parent request typed as free text - from the marketplace, mid-intake, mid-call-prep, out of nowhere - and never ignore it, steamroll it, overrule it, or answer it with mismatched quick replies. This plan covers the five failure classes found and fixed on Jul 24 2026 and the deterministic mechanisms that now guard them.
 
-**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-11)
+**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-16)
 
 ```bash
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts --id=FT-01,FT-04
 ```
 
-**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (11)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
+**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (16)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
 
 Run it against a live server after any change to `server/ai-router.ts` routing, directives, bypasses, or quick-reply handling. It creates throwaway `*@gostork-test.com` users and cleans them up. The main 74-case suite (`scripts/test-ai-concierge.ts`) stays the regression net for the scripted decision-tree flows; this suite covers the OFF-script behavior the main suite does not reach (deep-link pins, profile-conflict confirms, purchase clicks).
 
@@ -79,7 +79,18 @@ A second probe sweep seeded REAL artifacts (booking, cost sheet, invoice, agreem
 - **Crisis/grief handled as a sales opportunity.** "We just found out the pregnancy failed" got one empathetic paragraph then a call-prep intake question ("solo, or with a partner?"); a hospitalized surrogate got "Keep making progress" quick replies. New deterministic CRISIS GUARD outranks every directive incl. call-prep: empathy + `[[HUMAN_NEEDED]]` only, intake/matching/cost language forbidden, supportive quick replies only. Guarded by **FT-09**.
 - **Eva was blind to the family's own paperwork.** Cost sheets, invoices and agreements live in the parent-provider thread, so Eva answered "I don't have a record of that quote" and - worse - "you don't owe us anything!" while a $42,500 invoice sat pending. New PAPERWORK ON FILE context block injects the account's real quotes/invoices/agreements (read-only) into BOTH tiers - the Tier 1 compact prompt needed it separately or that tier still refused. Guarded by **FT-10**.
 
-Still open from this sweep (documented, not yet fixed): a resend-agreement request replies "here is the agreement for you to review:" and attaches nothing (the preview short-circuits when the Eva session has no providerId); "I need to pause everything" offers to cancel the call for the parent, which Eva cannot do; post-handoff messages do not consistently redirect to the provider's own chat or ask the why-question first.
+All three follow-ups from this sweep are now CLOSED:
+- **Dangling agreement promise** - `postAgreementPreview` short-circuited when the Eva session had no `providerId`, so Eva's "here is the agreement for you to review:" was followed by nothing. It now looks the agreement up across the whole ACCOUNT, posts it into whichever chat the parent is reading, and falls back to an honest "no agreement on file yet" note. A deterministic request detector also fires the preview on Tier 1, where the `[[AGREEMENT_PREVIEW]]` rule does not exist. Guarded by **FT-12**.
+- **Promising a cancellation** - "I need to pause everything" now trips the cancel-truth directive (widened to pause/hold/stop wording), which forbids "I'll cancel that for you" and the "Yes, please cancel" quick reply, renders the real meeting card instead, and offers the team for an actual pause. Guarded by **FT-13**.
+- **Post-handoff routing** - handed-off status now leads the dynamic prompt block: scheduling asks route to the provider's own chat, and a new-lane request asks the why-question first. The service-switch detector also learned "thinking about / considering / exploring", without which "I'm also thinking about an egg donor now" was not recognised as a request at all. Guarded by **FT-14**.
+
+### 11. Knowledge base and answered-question reuse (Jul 24, coverage audit)
+Neither had ANY test coverage; auditing them surfaced two real gaps.
+
+- **Provider knowledge bases were unreachable on a normal chat turn.** `searchKnowledgeBase` was called with `req.body.providerId`, which is empty on ordinary chats, and the MCP tool returns only global tiers 2/3 when no provider is given - so a provider's own uploaded documents (tier 1) never answered anything. It now falls back to the SESSION's `providerId`. This stays tenant-safe by construction: the MCP query filters tier 1 to `"providerId" = $2` and only global tiers 2/3 are unscoped. Guarded by **FT-15**, which asserts a global fact answers, a provider's tier-1 fact answers in that provider's chat, and the same fact does NOT appear in another provider's chat (with a non-empty reply, so the check cannot pass vacuously).
+- **Answered whispers were reused only within ONE chat.** The lookup was scoped to `{ parentUserId, sessionId: currentSessionId }`, so a family that already got an answer re-asked the provider from scratch in any other thread, and account partners never saw each other's answers. Widened to the whole parent ACCOUNT. Guarded by **FT-16**.
+
+**Open product decision - cross-FAMILY answer reuse.** Eva still does not reuse an answer given to a DIFFERENT family about the same donor/surrogate, even though the provider already answered that exact question. Answered whispers are also never ingested into `KnowledgeChunk`. This is worth building (it removes a wait for every repeat question), but it needs a privacy call first: the answer text is provider-authored *about the profile* and is safe to reuse, while the stored `questionText` can carry the asking family's context ("we're two dads, would she be comfortable..."). A safe design: key on (providerId, subjectProfileId), reuse the ANSWER only, never the original question, and have Eva restate it in her own words rather than quoting.
 
 ## Engineering rules distilled from these bugs
 

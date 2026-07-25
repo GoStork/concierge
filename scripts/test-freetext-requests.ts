@@ -563,6 +563,178 @@ async function ft11(db: Client) {
   }
 }
 
+
+// ─── FT-12: agreement resend must deliver a document, never a dangling promise ─
+async function ft12(db: Client) {
+  const u = await createUser(db, "ft-agreesend", ["Surrogate"]);
+  let prov: any = null;
+  try {
+    prov = await createProviderFor(db, u, "ftagree");
+    await db.query(
+      `INSERT INTO "Agreement" (id,"providerId","parentUserId","sessionId",status,"createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'SENT',now(),now())`,
+      [prov.providerId, u.userId, prov.providerSessionId],
+    );
+    const sid = await initSession(u.auth, false);
+    await send(u.auth, sid, "send me the agreement again, I can't find it");
+    await new Promise((r) => setTimeout(r, 2500)); // preview posts async
+    const rows = await db.query(
+      `SELECT "uiCardType", content FROM "AiChatMessage" WHERE "sessionId"=$1 ORDER BY "createdAt" DESC LIMIT 4`, [sid]);
+    const gotCard = rows.rows.some((r: any) => r.uiCardType === "agreement" || r.uiCardType === "attachment");
+    const gotHonestNote = rows.rows.some((r: any) => /don'?t see an agreement on file/i.test(r.content || ""));
+    check("agreement request delivers a card or an honest note - never a dangling promise",
+      gotCard || gotHonestNote, JSON.stringify(rows.rows.map((r: any) => r.uiCardType)));
+  } finally {
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, u);
+  }
+}
+
+// ─── FT-13: pause/cancel asks never promise an action Eva cannot perform ─────
+async function ft13(db: Client) {
+  const u = await createUser(db, "ft-pause", ["Surrogate"]);
+  let prov: any = null;
+  try {
+    prov = await createProviderFor(db, u, "ftpause");
+    await db.query(
+      `INSERT INTO "Booking" (id,"publicToken","providerUserId","parentUserId","scheduledAt",duration,status,subject,"sessionId","createdAt","updatedAt")
+       VALUES (gen_random_uuid(), gen_random_uuid()::text, $1,$2, now() + interval '3 days', 30,'CONFIRMED','Consultation Call',$3, now(), now())`,
+      [prov.providerUserId, u.userId, prov.providerSessionId],
+    );
+    const sid = await initSession(u.auth, false);
+    const r = await send(u.auth, sid, "I need to pause everything for a few months");
+    check("pause: never offers to cancel the call itself",
+      !/i (can|will|'ll) (also )?(reach out|contact|cancel|reschedule)[^.?!]{0,40}(cancel|reschedul|for you)/i.test(r.content),
+      r.content.slice(0, 160));
+    check("pause: no 'yes, cancel it for me' quick reply",
+      !r.qr.some((q) => /please cancel|yes,? cancel/i.test(q)), JSON.stringify(r.qr));
+    check("pause: states it cannot do it, or hands to the team/card",
+      /cannot|can'?t|notified|team|card below|manage/i.test(r.content), r.content.slice(0, 160));
+  } finally {
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, u);
+  }
+}
+
+// ─── FT-14: post-handoff routing + why-question ──────────────────────────────
+async function ft14(db: Client) {
+  const u = await createUser(db, "ft-handoff", ["Surrogate"]);
+  let prov: any = null;
+  try {
+    prov = await createProviderFor(db, u, "fthandoff");
+    await db.query(`UPDATE "AiChatSession" SET "handoffCompletedAt" = now() WHERE id = $1`, [prov.providerSessionId]);
+    const sid = await initSession(u.auth, false);
+
+    const r1 = await send(u.auth, sid, "I need to schedule my next appointment with them");
+    check("handoff: redirects to the provider's own chat",
+      /chat with them|message them|directly (with|in)|reach(ing)? out to them|their (team|chat)/i.test(r1.content), r1.content.slice(0, 160));
+    check("handoff: does not try to book it itself", !r1.consultPid, `consultPid=${r1.consultPid}`);
+
+    const r2 = await send(u.auth, sid, "I'm also thinking about an egg donor now");
+    check("handoff new lane: asks the why-question first",
+      /what.{0,30}prompt|what'?s (bringing|driving)|what changed|why the new/i.test(r2.content), r2.content.slice(0, 160));
+    check("handoff new lane: offers the why quick replies",
+      r2.qr.some((q) => /fell through|in parallel|not happy|just exploring/i.test(q)), JSON.stringify(r2.qr));
+    check("handoff new lane: no donor intake question yet",
+      !/what matters most|appearance|ethnic background/i.test(r2.content), r2.content.slice(0, 120));
+  } finally {
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, u);
+  }
+}
+
+
+// ─── FT-15: knowledge base (RAG) - used when relevant, never leaked ──────────
+// Embeds with the SAME model/dimensions the MCP search uses
+// (gemini-embedding-001 @ 768) so the seeded chunk is actually retrievable.
+async function embedForKb(text: string): Promise<string> {
+  const key = (fs.readFileSync(path.resolve(process.cwd(), ".env"), "utf8").match(/^GEMINI_API_KEY="?([^"\n]+)"?/m) || [])[1];
+  if (!key) throw new Error("GEMINI_API_KEY not found in .env");
+  const { GoogleGenerativeAI } = await import("@google/generative-ai");
+  const model = new GoogleGenerativeAI(key).getGenerativeModel({ model: "gemini-embedding-001" });
+  const r: any = await model.embedContent({ content: { parts: [{ text }], role: "user" }, outputDimensionality: 768 } as any);
+  return `[${r.embedding.values.join(",")}]`;
+}
+
+async function ft15(db: Client) {
+  const u = await createUser(db, "ft-kb", ["Surrogate"]);
+  let provA: any = null;
+  let provB: any = null;
+  const GLOBAL_FACT = "GoStork escrow funds are released to the surrogate in four milestone payments called the Zephyr schedule.";
+  const PROV_A_FACT = "Our agency requires intended parents to complete a Bluebird orientation webinar before matching begins.";
+  // Eva chats (ACTIVE + tier2Active) - NOT the CONSULTATION_BOOKED provider
+  // thread, where parent messages go straight to the provider and the AI stays
+  // silent by design. `providerId` on an Eva session is what a whisper stamps
+  // in production, and it is what scopes the tier-1 knowledge lookup.
+  const mkEva = async (providerId: string | null) => {
+    const r = await db.query(
+      `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","tier2Active","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,'ACTIVE','PARENT','AI Concierge Chat',$3,true,now(),now()) RETURNING id`,
+      [u.userId, providerId, MATCHMAKER_ID],
+    );
+    return r.rows[0].id as string;
+  };
+  try {
+    provA = await createProviderFor(db, u, "ftkba");
+    provB = await createProviderFor(db, u, "ftkbb");
+    await db.query(
+      `INSERT INTO "KnowledgeChunk" (id, content, metadata, embedding, "sourceTier", "providerId", "sourceType", "createdAt")
+       VALUES (gen_random_uuid(), $1, '{}'::jsonb, $2::vector, 2, NULL, 'document', now())`,
+      [GLOBAL_FACT, await embedForKb(GLOBAL_FACT)],
+    );
+    await db.query(
+      `INSERT INTO "KnowledgeChunk" (id, content, metadata, embedding, "sourceTier", "providerId", "sourceType", "createdAt")
+       VALUES (gen_random_uuid(), $1, '{}'::jsonb, $2::vector, 1, $3, 'document', now())`,
+      [PROV_A_FACT, await embedForKb(PROV_A_FACT), provA.providerId],
+    );
+
+    // (a) Global (tier 2) knowledge answers in a plain Eva chat.
+    const g = await send(u.auth, await mkEva(null), "how does the escrow release schedule work for the surrogate?");
+    check("global KB fact used in the answer", /zephyr|four milestone|4 milestone/i.test(g.content), g.content.slice(0, 160));
+
+    // (b) Provider A's own tier-1 doc answers in an Eva chat scoped to A.
+    const a = await send(u.auth, await mkEva(provA.providerId), "is there anything I need to complete before matching starts?");
+    check("provider tier-1 doc used when the chat is scoped to that provider",
+      /bluebird|orientation webinar/i.test(a.content), a.content.slice(0, 160));
+
+    // (c) The same question scoped to provider B must NOT surface A's doc.
+    const b = await send(u.auth, await mkEva(provB.providerId), "is there anything I need to complete before matching starts?");
+    check("provider tier-1 doc does NOT leak into another provider's chat",
+      b.content.trim().length > 0 && !/bluebird/i.test(b.content), b.content.slice(0, 160));
+  } finally {
+    await db.query(`DELETE FROM "KnowledgeChunk" WHERE content IN ($1,$2)`, [GLOBAL_FACT, PROV_A_FACT]).catch(() => {});
+    if (provA) await cleanupProvider(db, provA.providerId, provA.providerUserId);
+    if (provB) await cleanupProvider(db, provB.providerId, provB.providerUserId);
+    await deleteUser(db, u);
+  }
+}
+
+// ─── FT-16: an answered whisper is reused across the family's threads ────────
+async function ft16(db: Client) {
+  const u = await createUser(db, "ft-whisperreuse", ["Surrogate"]);
+  let prov: any = null;
+  try {
+    prov = await createProviderFor(db, u, "ftwr");
+    // Answered in the PROVIDER thread...
+    await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'Which university did the donor attend?','ANSWERED','She studied marine biology at Kestrel University.',now(),now())`,
+      [prov.providerSessionId, u.userId, prov.providerId],
+    );
+    // ...and re-asked in the EVA thread.
+    const sid = await initSession(u.auth, false);
+    await db.query(`UPDATE "AiChatSession" SET "tier2Active" = true WHERE id = $1`, [sid]);
+    const r = await send(u.auth, sid, "which university did the donor go to?");
+    check("previously answered question reused instead of re-asking the provider",
+      /kestrel|marine biology/i.test(r.content), r.content.slice(0, 180));
+    check("does not start a fresh whisper for an already-answered question",
+      !/i'?ll (check|ask) (with )?(her|the) agency/i.test(r.content), r.content.slice(0, 140));
+  } finally {
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, u);
+  }
+}
+
 // ─── Runner (admin test-runner stdout protocol) ──────────────────────────────
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "FT-01", name: "Deep-link surrogate pin - 4-turn free-text replay", run: ft01 },
@@ -576,6 +748,11 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "FT-09", name: "Crisis/grief suppresses intake and sales framing", run: ft09 },
   { id: "FT-10", name: "Paperwork on file answered from real data", run: ft10 },
   { id: "FT-11", name: "Tool-backed questions never return an empty reply", run: ft11 },
+  { id: "FT-12", name: "Agreement resend delivers a document, never a dangling promise", run: ft12 },
+  { id: "FT-13", name: "Pause/cancel asks never promise an action Eva cannot perform", run: ft13 },
+  { id: "FT-14", name: "Post-handoff routing and why-question", run: ft14 },
+  { id: "FT-15", name: "Knowledge base used when relevant, never leaked cross-provider", run: ft15 },
+  { id: "FT-16", name: "Answered whisper reused across the family's threads", run: ft16 },
 ];
 
 (async () => {

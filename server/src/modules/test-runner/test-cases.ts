@@ -528,6 +528,21 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 22,
   },
 
+  {
+    id: "MW-02C", persona: "man-woman",
+    name: "MW-02C: Same as MW-02 but A5 = multi-priority (Success rates, Cost)",
+    desc: "Multi-priority A5 answer - exercises the A5 SAVE FALLBACK persistence and priority-aware clinic re-ranking",
+    interestedServices: [],
+    messageCount: 14,
+  },
+  {
+    id: "TD-13", persona: "two-dads",
+    name: "TD-13: Colombia program - SEQUENTIAL agency + partner IVF clinic booking",
+    desc: "International CountryProgram must offer BOTH consultation calls one after the other - agency first, then the partner IVF clinic",
+    interestedServices: ["Surrogate", "Egg Donor"],
+    messageCount: 14,
+  },
+
   // ── FREE-TEXT REQUEST HANDLING (FT-01 to FT-04) ──────────────────────────
   // Runs scripts/test-freetext-requests.ts (off-script behavior the scripted
   // decision-tree cases above cannot reach). See docs/freetext-request-test-plan.md.
@@ -606,6 +621,43 @@ export const TEST_CASES: TestCaseDef[] = [
     id: "FT-11", persona: "free-text",
     name: "FT-11: Tool-backed questions never return an empty reply",
     desc: "Guards the Gemini streaming/thought-signature bug that made every tool lookup in a post-booking session return silence",
+    interestedServices: ["Surrogate"],
+    messageCount: 1,
+  },
+
+  {
+    id: "FT-12", persona: "free-text",
+    name: "FT-12: Agreement resend delivers a document, never a dangling promise",
+    desc: "'send me the agreement again' -> real agreement card, template preview, or an honest 'none on file' note - never a promise followed by nothing",
+    interestedServices: ["Surrogate"],
+    messageCount: 1,
+  },
+  {
+    id: "FT-13", persona: "free-text",
+    name: "FT-13: Pause/cancel asks never promise an action Eva cannot perform",
+    desc: "'I need to pause everything' -> meeting card with real controls + team handoff; never 'I'll cancel that for you' or a 'Yes, please cancel' quick reply",
+    interestedServices: ["Surrogate"],
+    messageCount: 1,
+  },
+  {
+    id: "FT-14", persona: "free-text",
+    name: "FT-14: Post-handoff routing and why-question",
+    desc: "Scheduling asks route to the provider's own chat; a new lane ('thinking about an egg donor') asks the why-question first",
+    interestedServices: ["Surrogate"],
+    messageCount: 2,
+  },
+
+  {
+    id: "FT-15", persona: "free-text",
+    name: "FT-15: Knowledge base used when relevant, never leaked cross-provider",
+    desc: "Global (tier 2) doc answers in a plain chat; a provider's own tier-1 doc answers only in a chat scoped to that provider and never surfaces in another provider's chat",
+    interestedServices: ["Surrogate"],
+    messageCount: 3,
+  },
+  {
+    id: "FT-16", persona: "free-text",
+    name: "FT-16: Answered whisper reused across the family's threads",
+    desc: "A question the provider already answered is reused from any of the account's threads instead of whispering the provider again",
     interestedServices: ["Surrogate"],
     messageCount: 1,
   },

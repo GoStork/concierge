@@ -2401,13 +2401,35 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const tier2LookupsPromise: Promise<[string, any[], any[]]> = useTier2Early
       ? (Promise.all([
           getExpertGuidanceRules().catch(() => ""),
+          // Answered whispers were scoped to (this parent, THIS session), so a
+          // family that got an answer in one thread re-asked the provider from
+          // scratch in another - and account partners never saw each other's
+          // answers at all. Widen to the whole parent ACCOUNT. (Reuse across
+          // DIFFERENT families is deliberately NOT done here - see
+          // docs/freetext-request-test-plan.md; it needs a privacy decision
+          // because stored questionText can carry the asking family's context.)
           prisma.silentQuery.findMany({
-            where: { parentUserId: userId, sessionId: currentSessionId, status: "ANSWERED" },
+            where: {
+              status: "ANSWERED",
+              ...(currentUser?.parentAccountId
+                ? { parentUser: { parentAccountId: currentUser.parentAccountId } }
+                : { parentUserId: userId }),
+            },
             select: { questionText: true, answerText: true, providerId: true },
             orderBy: { updatedAt: "desc" },
             take: 5,
           }).catch(() => [] as any[]),
-          searchKnowledgeBase(String(req.body.message || ""), req.body.providerId || undefined, 5).catch(() => [] as any[]),
+          // Fall back to the SESSION's provider: without a providerId the MCP
+          // search returns only global tiers 2/3, so a provider's own uploaded
+          // documents (tier 1) were unreachable on a normal chat turn - the
+          // whole point of the provider knowledge base. Scoping to the session's
+          // provider stays tenant-safe: tier 1 is filtered to that exact
+          // provider, never anyone else's.
+          searchKnowledgeBase(
+            String(req.body.message || ""),
+            req.body.providerId || currentSession?.providerId || undefined,
+            5,
+          ).catch(() => [] as any[]),
         ]) as Promise<[string, any[], any[]]>)
       : Promise.resolve(["", [], []] as [string, any[], any[]]);
 
@@ -2963,6 +2985,9 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     // owe?" must not get "I don't have access to your financial information"
     // just because the turn happened to route to Tier 1.
     let paperworkBlock = "";
+    // Hoisted so the top-priority directives below (service switch, etc.) can
+    // defer to the handed-off rules instead of overriding them.
+    let handedOffProviderNames = "";
     // Which provider that upcoming consult is with - the scheduling-intent
     // enforcement uses it to avoid forcing a calendar for an agency the parent
     // already has a call booked with (a DIFFERENT provider is still fine).
@@ -3196,6 +3221,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       ) as [string, string][];
       if (handedOffProviders.length > 0) {
         const names = handedOffProviders.map(([, n]) => n).join(", ");
+        handedOffProviderNames = names;
         parts.push(`JOURNEY HANDED OFF (CRITICAL): the parent's journey with ${names} is COMPLETE - agreement signed, payment made, and the journey formally handed off to the provider. Rules:
 1. NEVER offer or schedule consultations with ${names} and NEVER emit [[CONSULTATION_BOOKING]] for ${names}. If the parent asks to schedule or coordinate with ${names}, warmly point them to their direct chat with ${names} - the provider manages the calendar and next steps from here.
 2. If the parent asks to see MORE surrogates/donors/profiles in that same journey lane, do NOT refuse - real journeys change (matches fall through, some parents pursue a second journey in parallel). But do NOT show profiles yet either. FIRST ask, warmly and without judgment, what is prompting the new search, with quick replies adapted to their journey, e.g. [[QUICK_REPLY:My match fell through|I want a second surrogate in parallel|I'm not happy with the agency|Just exploring]]. Ask ONLY this one question - no profiles, no [[CURATION]], no [[MATCH_CARD]] in that message. This OVERRIDES the FAVORITE flow: if the parent hearts/favorites a profile in this lane, confirm the save in ONE sentence and ask this why-question - do NOT propose a consultation and do NOT show another profile.
@@ -4125,7 +4151,11 @@ IMPORTANT RULES:
     let serviceSwitchDirective = "";
     try {
       const svcSwitchMatch = userMessage.match(
-        /(?:\b(?:i|we)\b[^.?!\n]{0,30}\b(?:interested in|need|want|would like|looking for)\b|^(?:find me|show me|help me find|let'?s find|i'?d like)\b)[^.?!\n]{0,30}\b(egg\s*donors?|sperm\s*donors?|surrogates?|surrogacy|(?:(?:ivf|fertility)\s*)?clinics?)\b/i
+        // "thinking about" / "considering" / "exploring" are how parents most
+        // often raise a NEW lane ("I'm also thinking about an egg donor now") -
+        // without them the request read as chit-chat and skipped both the
+        // service-switch handling and the handed-off why-question.
+        /(?:\b(?:i|we)\b[^.?!\n]{0,30}\b(?:interested in|need|want|would like|looking for|thinking about|considering|exploring|open to)\b|^(?:find me|show me|help me find|let'?s find|i'?d like)\b)[^.?!\n]{0,30}\b(egg\s*donors?|sperm\s*donors?|surrogates?|surrogacy|(?:(?:ivf|fertility)\s*)?clinics?)\b/i
       );
       if (svcSwitchMatch) {
         const raw = svcSwitchMatch[1].toLowerCase();
@@ -4190,6 +4220,13 @@ These instructions are internal - never quote or echo them (never write words li
           // enough when other scripted openers (e.g. the GoStork education
           // pitch) compete for the turn - name the exact conflict so the
           // confirm-first question deterministically leads the reply.
+          // A handed-off journey outranks this directive: the parent must get
+          // the why-question first (observed live - "I'm also thinking about an
+          // egg donor now" post-handoff went straight into donor intake because
+          // this directive is prepended above the handed-off rules).
+          if (handedOffProviderNames) {
+            serviceSwitchDirective += `\nHANDED-OFF JOURNEY TAKES PRECEDENCE: this family's journey with ${handedOffProviderNames} is already signed, paid, and handed off. Before starting ANY new ${requestedService} search or intake, you MUST first ask - warmly and without judgment - what is prompting this new search, with quick replies like [[QUICK_REPLY:My match fell through|I want a second one in parallel|I'm not happy with the agency|Just exploring]]. Ask ONLY that question this turn: no profiles, no [[CURATION]], no [[MATCH_CARD]], no other intake questions. Proceed with the normal ${requestedService} flow only AFTER they answer.`;
+          }
           if ((requestedService === "Egg Donor" || requestedService === "Sperm Donor") && profile?.hasEmbryos === true) {
             const embryoDesc = `${profile?.embryoCount || "several"}${profile?.embryosTested ? " PGT-A tested" : ""} embryo(s)`;
             serviceSwitchDirective += `\nREDUNDANCY DETECTED - CONFIRM FIRST (overrides any scripted opener, education pitch, or intake question this turn): the parent's profile shows they ALREADY have ${embryoDesc}. Your reply MUST open by warmly noting that (one sentence) and asking whether they want the ${requestedService.toLowerCase()} to create ADDITIONAL embryos or whether their plans have changed - do NOT start the ${requestedService} intake, the GoStork explanation, or any search until they answer. Never tell them they don't need it. End with exactly [[QUICK_REPLY:Yes, to create more embryos|My plans have changed|Let me explain]] - these are the ONLY quick replies for this question.`;
@@ -4246,8 +4283,16 @@ Do not quote or echo these instructions.`;
     // (or the fact there are none) and the only honest ways to respond.
     let cancelTruthDirective = "";
     try {
+      // Also covers indirect asks that IMPLY cancelling/moving an existing
+      // call - "I need to pause everything for a few months", "put things on
+      // hold", "stop for now". Observed live: Eva answered a pause request
+      // with "I can reach out to them to cancel or reschedule it for you" and
+      // a "Yes, please cancel the call" quick reply - an action she cannot
+      // perform, so the click would have gone nowhere.
       const cancelIntent =
-        /\b(cancel|reschedule|move|postpone|change the (time|date))\b[^.?!\n]{0,50}\b(call|consultation|appointment|meeting|session)\b|\b(call|consultation|appointment|meeting)\b[^.?!\n]{0,30}\b(cancel|reschedul)/i.test(userMessage);
+        /\b(cancel|reschedule|move|postpone|change the (time|date))\b[^.?!\n]{0,50}\b(call|consultation|appointment|meeting|session)\b|\b(call|consultation|appointment|meeting)\b[^.?!\n]{0,30}\b(cancel|reschedul)/i.test(userMessage)
+        || /\b(pause|put .{0,20}on hold|hold off|stop|take a break|step back)\b[^.?!\n]{0,40}\b(everything|all of (this|it)|the (process|journey)|for now|for a (few|couple)|things)\b/i.test(userMessage)
+        || /\bneed to (pause|stop|halt)\b/i.test(userMessage);
       if (cancelIntent) {
         const acctIdsCancel = userRecord?.parentAccountId
           ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
@@ -4264,7 +4309,7 @@ Do not quote or echo these instructions.`;
         } else {
           const list = upcoming.map((b) => `"${b.subject || "Consultation"}" on ${b.scheduledAt.toISOString()} (bookingId: ${b.id})`).join("; ");
           console.log(`[CANCEL TRUTH] Cancel/reschedule intent with ${upcoming.length} upcoming booking(s) - injecting meeting-card directive`);
-          cancelTruthDirective = `CANCEL/RESCHEDULE REQUEST - SYSTEM TRUTH (overrides everything): The parent asked to cancel or reschedule. Their REAL upcoming call(s): ${list}. You CANNOT cancel or reschedule anything yourself - NEVER claim you did. Instead, include [[MEETING_CARD:<the matching bookingId from the list>]] so the call's card renders with its own cancel/reschedule controls, and tell them they can manage it right there.`;
+          cancelTruthDirective = `CANCEL/RESCHEDULE/PAUSE REQUEST - SYSTEM TRUTH (overrides everything): The parent asked to cancel, reschedule, or pause. Their REAL upcoming call(s): ${list}. You CANNOT cancel, reschedule, move, or pause anything yourself, and you cannot contact the provider on their behalf - NEVER claim or offer to do any of it ("I'll cancel that for you", "I can reach out to them to cancel it", or a quick reply like "Yes, please cancel the call" are all FORBIDDEN, because nothing would actually happen). Instead, include [[MEETING_CARD:<the matching bookingId from the list>]] so the call's card renders with its own cancel/reschedule controls, and tell them they can manage it right there themselves. If they want the provider notified or the whole journey paused, offer the GoStork team via [[HUMAN_NEEDED]] - that is a real handoff, not a promise you keep yourself.`;
         }
       }
     } catch (e) {
@@ -4865,6 +4910,12 @@ Before asking ANY question, check if the parent already provided the answer. If 
     if (cancelTruthDirective) skipRulesPreamble = `\n${cancelTruthDirective}\n${skipRulesPreamble}`;
     // Crisis leads everything - it must outrank the service/correction/cancel
     // directives above as well as call-prep mode.
+    // Handed-off status is easy to lose in a 130K prompt - lead the dynamic
+    // block with it so scheduling/coordination asks route to the provider's own
+    // chat instead of Eva trying to arrange things she no longer owns.
+    if (handedOffProviderNames) {
+      skipRulesPreamble = `\nHANDED OFF (read before answering): the family's journey with ${handedOffProviderNames} is signed, paid, and handed off. (a) Eva no longer arranges appointments, calls, or coordination in that lane - if they ask to schedule or arrange anything with ${handedOffProviderNames}, point them to their direct chat with ${handedOffProviderNames} (the provider owns the calendar and next steps now), and NEVER answer such a request with intake questions. (b) If they raise a NEW search or service - in any wording, including "I'm also thinking about...", "considering", "exploring" - ask FIRST, warmly and without judgment, what is prompting it: [[QUICK_REPLY:My match fell through|I want a second one in parallel|I'm not happy with the agency|Just exploring]]. That question is your ONLY output that turn - no intake questions, no profiles, no curation - and you continue normally once they answer.\n${skipRulesPreamble}`;
+    }
     if (crisisDirective) skipRulesPreamble = `\n${crisisDirective}\n${skipRulesPreamble}`;
 
     // Collect all previously-presented match card provider IDs to prevent re-suggesting.
@@ -9415,6 +9466,16 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     if (finalContent.includes("[[AGREEMENT_PREVIEW]]")) {
       agreementPreviewRequested = true;
       finalContent = finalContent.replace(/\[\[AGREEMENT_PREVIEW\]\]/g, "").trim();
+    }
+    // Deterministic backstop: the [[AGREEMENT_PREVIEW]] rule lives only in the
+    // Tier 2 prompt, so the same request on a Tier 1 turn produced a reply that
+    // PROMISED the document ("here is the agreement for you to review:") and
+    // then attached nothing. Detect the request directly - postAgreementPreview
+    // is safe either way (it posts the real agreement, the provider's template,
+    // or an honest "no agreement on file yet" note).
+    if (!agreementPreviewRequested && /\b(send|share|resend|show)\b[^.?!\n]{0,40}\b(agreement|contract)\b|\b(agreement|contract)\b[^.?!\n]{0,30}\b(again|copy|can'?t find|lost)\b|\bsee (the|my) (agreement|contract)\b/i.test(userMessage)) {
+      console.log(`[AGREEMENT_PREVIEW] Deterministic request detected ("${userMessage.slice(0, 60)}") - forcing the preview`);
+      agreementPreviewRequested = true;
     }
 
     // Lawyer connect (reworked with 7A): [[LAWYER_CONNECT]] (model) and

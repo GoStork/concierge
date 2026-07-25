@@ -315,10 +315,58 @@ export async function maybeCompleteHandoff(sessionId: string): Promise<boolean> 
 export async function postAgreementPreview(sessionId: string): Promise<void> {
   const session = await prisma.aiChatSession.findUnique({
     where: { id: sessionId },
-    select: { id: true, providerId: true, provider: { select: { id: true, name: true } }, user: { select: { firstName: true, name: true } } },
+    select: {
+      id: true, userId: true, providerId: true,
+      provider: { select: { id: true, name: true } },
+      user: { select: { firstName: true, name: true, parentAccountId: true } },
+    },
   });
-  if (!session?.providerId || !session.provider) {
-    console.log(`[AGREEMENT_PREVIEW] Session ${sessionId} has no provider - skipping`);
+  if (!session) return;
+
+  // The parent asks Eva for their agreement in the EVA thread, but agreements
+  // live in the parent-provider thread. Returning early here meant Eva's reply
+  // ("Of course - here is the agreement for you to review:") was followed by
+  // absolutely nothing - a dangling promise. Look the agreement up across the
+  // whole ACCOUNT and post it into whichever chat the parent is reading, and
+  // if there genuinely is none, say so instead of going silent.
+  if (!session.providerId || !session.provider) {
+    const acctIds = session.user?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: session.user.parentAccountId }, select: { id: true } })).map((u) => u.id)
+      : [session.userId];
+    const anyAgreement = await prisma.agreement.findFirst({
+      where: { parentUserId: { in: acctIds }, status: { notIn: ["REJECTED", "EXPIRED", "ERROR"] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, status: true, pandaDocViewUrl: true, documentType: true, provider: { select: { name: true } } },
+    });
+    const { resolveSessionSenderName: senderNameFn } = await import("./chat-router");
+    const fallbackSender = await senderNameFn(sessionId);
+    if (anyAgreement) {
+      console.log(`[AGREEMENT_PREVIEW] Session ${sessionId} has no provider - surfacing the account's agreement ${anyAgreement.id} here instead`);
+      await prisma.aiChatMessage.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content: `Here's your ${anyAgreement.documentType.toLowerCase()} with ${anyAgreement.provider?.name || "your provider"} - you can review${anyAgreement.status === "SIGNED" ? " and download" : " and sign"} it below.`,
+          senderType: "system",
+          senderName: fallbackSender,
+          uiCardType: "agreement",
+          uiCardData: {
+            agreementCard: { agreementId: anyAgreement.id, status: anyAgreement.status, viewUrl: anyAgreement.pandaDocViewUrl || null },
+          },
+        },
+      });
+      return;
+    }
+    console.log(`[AGREEMENT_PREVIEW] Session ${sessionId} has no provider and the account has no agreement - posting an honest note`);
+    await prisma.aiChatMessage.create({
+      data: {
+        sessionId,
+        role: "assistant",
+        content: `I don't see an agreement on file for you yet. Agreements are prepared by your provider once you've moved forward with them - I'll make sure it shows up here as soon as it exists.`,
+        senderType: "system",
+        senderName: fallbackSender,
+      },
+    });
     return;
   }
   const providerName = session.provider.name || "the provider";

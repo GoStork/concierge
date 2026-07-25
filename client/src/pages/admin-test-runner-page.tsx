@@ -126,6 +126,8 @@ const ALL_TESTS_FALLBACK: TestCaseInfo[] = [
   { id: "MW-17", persona: "man-woman", name: "Has embryos · Step 1c → New embryos · Surrogate · USA", messageCount: 14, desc: "", interestedServices: [] },
   { id: "MW-18", persona: "man-woman", name: "Has embryos · Step 3b → Use existing · She carries", messageCount: 9, desc: "", interestedServices: [] },
   { id: "MW-19", persona: "man-woman", name: "No embryos · Donor eggs · His sperm · Surrogate · Mexico (Man)", messageCount: 13, desc: "", interestedServices: [] },
+  { id: "MW-02C", persona: "man-woman", name: "Same as MW-02 but A5 = multi-priority (Success rates, Cost)", messageCount: 14, desc: "", interestedServices: [] },
+  { id: "TD-13", persona: "two-dads", name: "Colombia program - sequential agency + partner IVF clinic booking", messageCount: 14, desc: "", interestedServices: [] },
   { id: "FT-01", persona: "free-text", name: "Deep-link pin · schedule a call / service switches / same-service ask", messageCount: 4, desc: "", interestedServices: [] },
   { id: "FT-02", persona: "free-text", name: "Confirm-never-overrule · embryos on file, donor requested", messageCount: 2, desc: "", interestedServices: [] },
   { id: "FT-03", persona: "free-text", name: "Sperm C2 · donor-type answer saved, never re-asked", messageCount: 4, desc: "", interestedServices: [] },
@@ -137,20 +139,25 @@ const ALL_TESTS_FALLBACK: TestCaseInfo[] = [
   { id: "FT-09", persona: "free-text", name: "Crisis/grief suppresses intake and sales framing", messageCount: 2, desc: "", interestedServices: [] },
   { id: "FT-10", persona: "free-text", name: "Paperwork on file answered from real data", messageCount: 3, desc: "", interestedServices: [] },
   { id: "FT-11", persona: "free-text", name: "Tool-backed questions never return an empty reply", messageCount: 1, desc: "", interestedServices: [] },
+  { id: "FT-12", persona: "free-text", name: "Agreement resend delivers a document, never a dangling promise", messageCount: 1, desc: "", interestedServices: [] },
+  { id: "FT-13", persona: "free-text", name: "Pause/cancel asks never promise an action Eva cannot perform", messageCount: 1, desc: "", interestedServices: [] },
+  { id: "FT-14", persona: "free-text", name: "Post-handoff routing and why-question", messageCount: 2, desc: "", interestedServices: [] },
+  { id: "FT-15", persona: "free-text", name: "Knowledge base used when relevant, never leaked cross-provider", messageCount: 3, desc: "", interestedServices: [] },
+  { id: "FT-16", persona: "free-text", name: "Answered whisper reused across the family's threads", messageCount: 1, desc: "", interestedServices: [] },
   { id: "PR-01", persona: "provider", name: "Whisper answer relays into the parent's own chat", messageCount: 1, desc: "", interestedServices: [] },
   { id: "PR-02", persona: "provider", name: "Parent identity masked before booking, revealed after", messageCount: 0, desc: "", interestedServices: [] },
   { id: "PR-03", persona: "provider", name: "Provider-only content never reaches the parent transcript", messageCount: 0, desc: "", interestedServices: [] },
 ];
 
-const PERSONAS = [
-  { id: "all", label: "All (88)" },
-  { id: "solo-man", label: "Solo Man (14)" },
-  { id: "solo-woman", label: "Solo Woman (14)" },
-  { id: "two-dads", label: "Two Dads (12)" },
-  { id: "two-moms", label: "Two Moms (13)" },
-  { id: "man-woman", label: "Man & Woman (19)" },
-  { id: "free-text", label: "Free-Text (11)" },
-  { id: "provider", label: "Provider (3)" },
+const PERSONA_DEFS = [
+  { id: "all", label: "All" },
+  { id: "solo-man", label: "Solo Man" },
+  { id: "solo-woman", label: "Solo Woman" },
+  { id: "two-dads", label: "Two Dads" },
+  { id: "two-moms", label: "Two Moms" },
+  { id: "man-woman", label: "Man & Woman" },
+  { id: "free-text", label: "Free-Text" },
+  { id: "provider", label: "Provider" },
 ];
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -348,7 +355,12 @@ export default function AdminTestRunnerPage() {
   const failed = visibleTestStates.filter(t => t.status === "fail").length;
   const running = visibleTestStates.filter(t => t.status === "running").length;
   const pending = visibleTestStates.filter(t => t.status === "pending").length;
-  const total = visibleTests.length; // always use static count
+  // Union of registry entries and live tiles: the scripts are the source of
+  // truth for what runs, and the registry can lag them (it did - MW-02C and
+  // TD-13 ran but were not registered, so Pass exceeded Total and the progress
+  // bar read "88/83 complete").
+  const visibleIds = new Set([...visibleTests.map(t => t.id), ...visibleTestStates.map(t => t.id)]);
+  const total = visibleIds.size;
   const done = passed + failed;
   const progress = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
 
@@ -367,7 +379,7 @@ export default function AdminTestRunnerPage() {
           <FlaskConical style={{ color: "hsl(var(--primary))", width: "24px", height: "24px" }} />
           <div>
             <h1 style={{ fontSize: "20px", fontWeight: "700", fontFamily: "var(--font-heading)", margin: 0 }}>AI Concierge Test Runner</h1>
-            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>88 tests · 5 personas + free-text + provider · runs test-ai-concierge.ts + test-freetext-requests.ts + test-provider-flows.ts</p>
+            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>{`${testCases.length} tests · 5 personas + free-text + provider · runs test-ai-concierge.ts + test-freetext-requests.ts + test-provider-flows.ts`}</p>
           </div>
         </div>
 
@@ -395,7 +407,9 @@ export default function AdminTestRunnerPage() {
               <Button onClick={() => startRun(persona !== "all" ? persona : undefined)}
                 style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)", fontSize: "13px" }}>
                 <Play style={{ width: "13px", height: "13px", marginRight: "5px" }} />
-                {persona !== "all" ? `Run ${PERSONAS.find(p => p.id === persona)?.label ?? persona}` : "Run All (88)"}
+                {persona !== "all"
+                  ? `Run ${PERSONA_DEFS.find(p => p.id === persona)?.label ?? persona} (${testCases.filter(t => t.persona === persona).length})`
+                  : `Run All (${testCases.length})`}
               </Button>
               <Button variant="outline" size="sm" onClick={clearResults}
                 disabled={state.status === "idle" && Object.keys(state.tests).length === 0}
@@ -495,7 +509,7 @@ export default function AdminTestRunnerPage() {
 
       {/* Persona tabs */}
       <div style={{ display: "flex", gap: "4px", marginBottom: "16px", borderBottom: "1px solid hsl(var(--border))", overflowX: "auto" }}>
-        {PERSONAS.map(p => (
+        {PERSONA_DEFS.map(p => ({ ...p, count: p.id === "all" ? testCases.length : testCases.filter(t => t.persona === p.id).length })).map(p => (
           <button key={p.id} onClick={() => setParams({ persona: p.id }, { replace: true })}
             style={{
               padding: "8px 14px", fontSize: "12px", fontWeight: "500", border: "none", cursor: "pointer",
@@ -503,7 +517,7 @@ export default function AdminTestRunnerPage() {
               color: persona === p.id ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))",
               background: "transparent", whiteSpace: "nowrap",
             }}>
-            {p.label}
+            {p.label} ({p.count})
           </button>
         ))}
       </div>
