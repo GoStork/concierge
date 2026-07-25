@@ -1751,8 +1751,39 @@ async function sendWhisperSms(phone: string, questionText: string, chatLink: str
 //      specific to THAT family and would be wrong for anyone else.
 //   3. Scoped to one exact (provider, profile) pair - never across providers,
 //      never across profiles.
+// QUESTION side: the asking family describing themselves. First person here is
+// the PARENT talking, so "we/our/my" disqualifies the pair.
 const FAMILY_CONTEXT_MARKERS =
   /\b(we|we'?re|we'?ve|us|our|ours|my|mine|i'?m|i am|i'?ve|husband|wife|partner|spouse|two dads|two moms|two mums|gay|lesbian|same.?sex|single (mom|mother|dad|father|parent)|solo (mom|mother|dad|father|parent)|our family|my family)\b/i;
+
+// ANSWER side: must be NARROWER. In an answer, "we/our" is the PROVIDER talking
+// about their own agency ("We screen all our surrogates for gestational
+// diabetes") - which is exactly the knowledge worth reusing. Applying the
+// question-side markers here silently discarded most legitimate agency answers.
+// Only drop an answer that describes the ASKING FAMILY specifically.
+const ASKER_IDENTITY_IN_ANSWER =
+  /\b(two dads|two moms|two mums|same.?sex|gay couple|lesbian couple|single (mom|mother|dad|father|parent)|solo (mom|mother|dad|father|parent)|your (family|husband|wife|partner|situation|country))\b/i;
+
+// Does this text talk about THE PERSON on the profile (vs the agency)?
+// "She is cleared to travel until 34 weeks" is true of ONE surrogate and would
+// be dangerous applied to another, so anything profile-referential stays
+// locked to its own profile.
+const PROFILE_REFERENTIAL = /\b(she|she'?s|her|hers|he|he'?s|him|his)\b/i;
+
+// Does this read like agency process/policy rather than one person's facts?
+const AGENCY_LEVEL_MARKERS =
+  /\b(we|we'?re|our|us|the agency|agency'?s|policy|policies|process|program|procedure|requirement|typically|generally|usually|standard|all (of )?(our|their) (surrogates|donors|clients|parents)|every (surrogate|donor))\b/i;
+
+/**
+ * An agency-level pair is safe to reuse across DIFFERENT profiles of the same
+ * provider: it describes how the agency works, not who this donor/surrogate is.
+ * Deliberately conservative - a single "she/her/his" anywhere in either the
+ * question or the answer keeps the pair locked to its own profile.
+ */
+function isAgencyLevelPair(question: string, answer: string): boolean {
+  if (PROFILE_REFERENTIAL.test(question) || PROFILE_REFERENTIAL.test(answer)) return false;
+  return AGENCY_LEVEL_MARKERS.test(answer);
+}
 
 function sanitizeReusableQuestion(raw: string): string | null {
   const text = (raw || "").trim();
@@ -1788,7 +1819,12 @@ async function priorAnswersForProfile(
   try {
     const rows = await prisma.silentQuery.findMany({
       where: {
-        status: "ANSWERED",
+        // MUST include RELAYED: chat-router flips ANSWERED -> RELAYED the
+        // instant Eva passes the answer to the asking parent, so in production
+        // essentially every reusable answer is RELAYED and an ANSWERED-only
+        // filter matches nothing. (Verified against live data: 5 RELAYED with
+        // answers, 0 ANSWERED.)
+        status: { in: ["ANSWERED", "RELAYED"] },
         answerText: { not: null },
         providerId: ownerProviderId,
         session: { subjectProfileId: profileId },
@@ -1804,8 +1840,10 @@ async function priorAnswersForProfile(
       const q = sanitizeReusableQuestion(r.questionText);
       const a = (r.answerText || "").trim();
       if (!q || !a) continue;
-      // An answer that echoes the asker's own situation is not reusable either.
-      if (FAMILY_CONTEXT_MARKERS.test(a)) continue;
+      // An answer that describes the ASKING FAMILY is not reusable. Note this
+      // uses the narrow answer-side markers - provider "we/our" is the agency
+      // talking about itself and is exactly what we want to keep.
+      if (ASKER_IDENTITY_IN_ANSWER.test(a)) continue;
       const key = q.toLowerCase().replace(/[^a-z0-9 ]/g, "").slice(0, 60);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1815,6 +1853,52 @@ async function priorAnswersForProfile(
     return out;
   } catch (e: any) {
     console.error("[PRIOR ANSWERS] lookup failed:", e?.message);
+    return [];
+  }
+}
+
+/**
+ * AGENCY-LEVEL answers from this provider, given on ANY profile.
+ * "How long does your matching process take?" answered while a parent viewed
+ * Donor A is equally true for Donor B, so it should not stay locked to
+ * whichever profile happened to be on screen. Facts about a specific person
+ * never qualify (see isAgencyLevelPair).
+ */
+async function agencyLevelAnswersForProvider(
+  ownerProviderId: string,
+  excludeParentUserIds: string[],
+  excludeQuestions: Set<string>,
+  max = 6,
+): Promise<{ question: string; answer: string }[]> {
+  try {
+    const rows = await prisma.silentQuery.findMany({
+      where: {
+        status: { in: ["ANSWERED", "RELAYED"] },
+        answerText: { not: null },
+        providerId: ownerProviderId,
+        parentUserId: { notIn: excludeParentUserIds },
+      },
+      select: { questionText: true, answerText: true },
+      orderBy: { updatedAt: "desc" },
+      take: max * 6,
+    });
+    const out: { question: string; answer: string }[] = [];
+    const seen = new Set<string>(excludeQuestions);
+    for (const r of rows) {
+      const q = sanitizeReusableQuestion(r.questionText);
+      const a = (r.answerText || "").trim();
+      if (!q || !a) continue;
+      if (ASKER_IDENTITY_IN_ANSWER.test(a)) continue;
+      if (!isAgencyLevelPair(q, a)) continue; // person-specific stays locked
+      const key = q.toLowerCase().replace(/[^a-z0-9 ]/g, "").slice(0, 60);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ question: q, answer: a });
+      if (out.length >= max) break;
+    }
+    return out;
+  } catch (e: any) {
+    console.error("[AGENCY ANSWERS] lookup failed:", e?.message);
     return [];
   }
 }
@@ -2493,16 +2577,22 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           // DIFFERENT families is deliberately NOT done here - see
           // docs/freetext-request-test-plan.md; it needs a privacy decision
           // because stored questionText can carry the asking family's context.)
+          // RELAYED included for the same reason as the cross-family lookup:
+          // the status flips to RELAYED the moment Eva delivers the answer, so
+          // an ANSWERED-only filter goes empty almost immediately and the
+          // family's own answered questions vanish from context. The two are
+          // framed differently below - ANSWERED is news, RELAYED is history.
           prisma.silentQuery.findMany({
             where: {
-              status: "ANSWERED",
+              status: { in: ["ANSWERED", "RELAYED"] },
+              answerText: { not: null },
               ...(currentUser?.parentAccountId
                 ? { parentUser: { parentAccountId: currentUser.parentAccountId } }
                 : { parentUserId: userId }),
             },
-            select: { questionText: true, answerText: true, providerId: true },
+            select: { questionText: true, answerText: true, providerId: true, status: true },
             orderBy: { updatedAt: "desc" },
-            take: 5,
+            take: 8,
           }).catch(() => [] as any[]),
           // Fall back to the SESSION's provider: without a providerId the MCP
           // search returns only global tiers 2/3, so a provider's own uploaded
@@ -4192,15 +4282,26 @@ IMPORTANT RULES:
           ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
           : [userId];
         const priorAnswers = await priorAnswersForProfile(profileIdForReuse, ownerProviderIdForReuse, myAccountUserIds);
-        if (priorAnswers.length > 0) {
-          console.log(`[PRIOR ANSWERS] ${priorAnswers.length} reusable provider answer(s) for profile ${profileIdForReuse}`);
-          priorProfileAnswersContext = `
-ALREADY CONFIRMED BY THIS AGENCY ABOUT THIS PROFILE (authoritative - the agency has already answered these questions about this exact donor/surrogate):
-${priorAnswers.map((p) => `- Q: ${p.question}\n  A: ${p.answer}`).join("\n")}
+        // Agency-level answers travel across profiles; person-specific ones do not.
+        const agencyAnswers = await agencyLevelAnswersForProvider(
+          ownerProviderIdForReuse,
+          myAccountUserIds,
+          new Set(priorAnswers.map((p) => p.question.toLowerCase().replace(/[^a-z0-9 ]/g, "").slice(0, 60))),
+        );
+        if (priorAnswers.length > 0 || agencyAnswers.length > 0) {
+          console.log(`[PRIOR ANSWERS] ${priorAnswers.length} profile-specific + ${agencyAnswers.length} agency-level reusable answer(s) for profile ${profileIdForReuse}`);
+          const profileBlock = priorAnswers.length > 0
+            ? `\nALREADY CONFIRMED BY THIS AGENCY ABOUT THIS PROFILE (authoritative - about this exact donor/surrogate):\n${priorAnswers.map((p) => `- Q: ${p.question}\n  A: ${p.answer}`).join("\n")}`
+            : "";
+          const agencyBlock = agencyAnswers.length > 0
+            ? `\nALREADY CONFIRMED BY THIS AGENCY ABOUT HOW THEY WORK (authoritative - agency process/policy, true regardless of which donor or surrogate is being discussed):\n${agencyAnswers.map((p) => `- Q: ${p.question}\n  A: ${p.answer}`).join("\n")}`
+            : "";
+          priorProfileAnswersContext = `${profileBlock}${agencyBlock}
 HOW TO USE THESE:
 - If the parent asks something answered above, ANSWER IT DIRECTLY AND IMMEDIATELY from this list. Do NOT emit [[WHISPER:...]] for it and do NOT tell the parent you will check with the agency - it is already confirmed.
 - Restate the answer in your own warm words. Do NOT quote it verbatim as if it just arrived, and never use the "I heard back from the agency!" framing - that is only for answers that came in for THIS family just now.
-- These came from the agency about the PROFILE. NEVER say, hint, or imply that another family, client, or parent asked anything - other families must stay completely invisible. Never mention "another intended parent", "a previous client", or similar.
+- These all came from the agency itself. NEVER say, hint, or imply that another family, client, or parent asked anything - other families must stay completely invisible. Never mention "another intended parent", "a previous client", or similar.
+- The "ABOUT THIS PROFILE" facts apply ONLY to the donor/surrogate currently being discussed - never attribute them to a different person. The "HOW THEY WORK" facts are agency process and apply to any of their profiles.
 - If the parent asks something NOT covered above and not in the profile data, whisper as usual.`;
         }
       }
@@ -4219,10 +4320,22 @@ HOW TO USE THESE:
           providerNameMap.set(pid, pData.name || "the agency");
         } catch { providerNameMap.set(pid, "the agency"); }
       }));
-      const whisperParts = answeredWhispers.map(
-        (w: any) => `- Question about ${providerNameMap.get(w.providerId) || "the agency"}: "${w.questionText}" → Answer: "${w.answerText}"`,
-      );
-      answeredWhispersContext = `\nPROVIDER WHISPER ANSWERS (recently answered by providers - present these naturally when relevant):\n${whisperParts.join("\n")}\nWhen presenting a whisper answer, lead with: "I have an update! I heard back from the agency and they confirmed: [Answer]."\nAfter sharing the answer, ask if the parent has any more questions: "Does that answer your question? Do you have anything else you'd like to know, or are you ready to schedule a free consultation call?"\nIf the parent wants to schedule a consultation, use [[CONSULTATION_BOOKING:PROVIDER_ID]] to present the booking card.\n`;
+      // NEWS vs HISTORY: an ANSWERED whisper has not been delivered to this
+      // family yet, so it is genuine news ("I heard back!"). A RELAYED one was
+      // already delivered - re-announcing it as new is confusing and makes Eva
+      // look like she is repeating herself, but it must still be available so
+      // she can answer a re-asked question instead of whispering again.
+      const fresh = answeredWhispers.filter((w: any) => w.status !== "RELAYED");
+      const already = answeredWhispers.filter((w: any) => w.status === "RELAYED");
+      const line = (w: any) =>
+        `- Question about ${providerNameMap.get(w.providerId) || "the agency"}: "${w.questionText}" → Answer: "${w.answerText}"`;
+      const freshBlock = fresh.length > 0
+        ? `\nNEW PROVIDER WHISPER ANSWERS (just came in for THIS family - not yet shared with them):\n${fresh.map(line).join("\n")}\nWhen presenting one of these, lead with: "I have an update! I heard back from the agency and they confirmed: [Answer]."\nAfter sharing the answer, ask if the parent has any more questions: "Does that answer your question? Do you have anything else you'd like to know, or are you ready to schedule a free consultation call?"\nIf the parent wants to schedule a consultation, use [[CONSULTATION_BOOKING:PROVIDER_ID]] to present the booking card.\n`
+        : "";
+      const alreadyBlock = already.length > 0
+        ? `\nALREADY ANSWERED FOR THIS FAMILY (the agency answered these and the parent has ALREADY been told - treat as known facts):\n${already.map(line).join("\n")}\nIf they ask any of these again, just answer directly from the facts above. Do NOT emit [[WHISPER:...]] for them, do NOT say you will check with the agency, and do NOT use the "I heard back from the agency!" framing - that is only for answers arriving now.\n`
+        : "";
+      answeredWhispersContext = `${freshBlock}${alreadyBlock}`;
     }
 
     let ragContext = "";
@@ -4279,6 +4392,10 @@ HOW TO USE THESE:
     // ONLY job right now" - must stand down, or the two fight and the reply
     // carries Phase 1's quick replies under the confirm question.
     let redundancyConfirmActive = false;
+    // Same problem, different directive: on a handed-off journey a new-lane
+    // request must get the why-question, which also needs its own quick
+    // replies. Phase 1 has to stand down for that turn too.
+    let handoffWhyQuestionActive = false;
     try {
       const svcSwitchMatch = userMessage.match(
         // "thinking about" / "considering" / "exploring" are how parents most
@@ -4355,6 +4472,7 @@ These instructions are internal - never quote or echo them (never write words li
           // egg donor now" post-handoff went straight into donor intake because
           // this directive is prepended above the handed-off rules).
           if (handedOffProviderNames) {
+            handoffWhyQuestionActive = true;
             serviceSwitchDirective += `\nHANDED-OFF JOURNEY TAKES PRECEDENCE: this family's journey with ${handedOffProviderNames} is already signed, paid, and handed off. Before starting ANY new ${requestedService} search or intake, you MUST first ask - warmly and without judgment - what is prompting this new search, with quick replies like [[QUICK_REPLY:My match fell through|I want a second one in parallel|I'm not happy with the agency|Just exploring]]. Ask ONLY that question this turn: no profiles, no [[CURATION]], no [[MATCH_CARD]], no other intake questions. Proceed with the normal ${requestedService} flow only AFTER they answer.`;
           }
           if ((requestedService === "Egg Donor" || requestedService === "Sperm Donor") && profile?.hasEmbryos === true) {
@@ -4604,11 +4722,12 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // same turn made the two compete, and the reply intermittently carried
     // Phase 1's quick replies ("Solo | With a partner") under the confirm
     // question. Identity is asked on the very next turn instead.
-    if (redundancyConfirmActive) {
-      console.log(`[PHASE1] Suppressed this turn - redundancy-confirm owns the reply`);
+    const phase1StandsDown = redundancyConfirmActive || handoffWhyQuestionActive;
+    if (phase1StandsDown) {
+      console.log(`[PHASE1] Suppressed this turn - ${redundancyConfirmActive ? "redundancy-confirm" : "handoff why-question"} owns the reply`);
     }
-    if (redundancyConfirmActive) {
-      // no Phase 1 directive this turn
+    if (phase1StandsDown) {
+      // no Phase 1 directive this turn - it is asked on the next one
     } else if (speakerGenderNeeded && phase1Needed) {
       // We know it's a straight couple but not who is speaking - ask the follow-up before Phase 2
       skipDirectives.unshift(
@@ -6432,7 +6551,14 @@ ${phase0Section}`;
       // Phase 0 is truly done. Once Phase 1 has been asked, Gemini handles all follow-up
       // turns (fertility questions, clarifications, weird answers) - the post-generation
       // QR replacer ensures correct options if Gemini re-asks the identity question.
-      const shouldServePhase1 = phase0Done && phase0ReadyForPhase1 && parentNeedsPhase1 && !phase1AnsweredInHistory && !phase1AlreadyAsked;
+      // phase1StandsDown also gates the hardcoded BYPASS, not just the prompt
+      // directive: this branch answers without calling any model, so a
+      // redundancy-confirm or handed-off why-question turn would still be
+      // overwritten by "Which best describes you?" no matter what the prompt
+      // said. (That is what made FT-14 look flaky - the identity quick replies
+      // in the failing runs were this bypass's, not the model's.)
+      const shouldServePhase1 = phase0Done && phase0ReadyForPhase1 && parentNeedsPhase1
+        && !phase1AnsweredInHistory && !phase1AlreadyAsked && !phase1StandsDown;
 
       // Use allUserMessages (includes current message) not chatHistory so the bypass
       // doesn't loop: when user says "I am a man", chatHistory doesn't include it yet.
@@ -6480,6 +6606,20 @@ ${phase0Section}`;
         const humanMsg = `Of course! I've just notified the GoStork concierge team - someone will join our chat shortly to assist you directly. What would you like to do in the meantime? [[HUMAN_NEEDED]] [[QUICK_REPLY:Keep making progress|I'll wait for the team|Schedule a video call]]`;
         sse.sendToken(humanMsg.replace(/\[\[HUMAN_NEEDED\]\]/g, "").replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim());
         finalContent = humanMsg;
+      } else if (handoffWhyQuestionActive) {
+        // Handed-off journey + a new-lane request: the why-question is fixed
+        // text with fixed options, so serve it deterministically. Left to the
+        // prompt, Tier 1 intermittently reproduced its own Phase 1 template
+        // ("Which best describes you?" with the five identity options) because
+        // that section is far more prominent than any injected directive.
+        const laneNoun = /egg\s*donor/i.test(userMessage) ? "egg donor"
+          : /sperm\s*donor/i.test(userMessage) ? "sperm donor"
+          : /clinic/i.test(userMessage) ? "clinic" : "surrogate";
+        const whyMsg = `Of course - I can help you look at ${laneNoun === "clinic" ? "clinics" : `${laneNoun}s`}.\n\nSince your journey with ${handedOffProviderNames} is already underway, help me understand what's prompting this new search so I point you in the right direction. [[QUICK_REPLY:My match fell through|I want a second one in parallel|I'm not happy with the agency|Just exploring]]`;
+        sse.sendToken(whyMsg.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim());
+        finalContent = whyMsg;
+        serverBypassServed = true;
+        console.log(`[HANDOFF WHY] Served the why-question deterministically (${laneNoun} request on a handed-off journey)`);
       } else if (shouldServePhase1) {
         // Check if Phase 0 Part 2 (Eran Amir vetting paragraph) was ever delivered.
         // When the user goes through the Q&A path ("I have a few questions" → asks questions

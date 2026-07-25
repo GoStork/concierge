@@ -2,14 +2,14 @@
 
 **Scope:** the AI concierge must handle ANY parent request typed as free text - from the marketplace, mid-intake, mid-call-prep, out of nowhere - and never ignore it, steamroll it, overrule it, or answer it with mismatched quick replies. This plan covers the five failure classes found and fixed on Jul 24 2026 and the deterministic mechanisms that now guard them.
 
-**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-17)
+**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-18)
 
 ```bash
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts --id=FT-01,FT-04
 ```
 
-**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (17)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
+**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (18)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
 
 Run it against a live server after any change to `server/ai-router.ts` routing, directives, bypasses, or quick-reply handling. It creates throwaway `*@gostork-test.com` users and cleans them up. The main 74-case suite (`scripts/test-ai-concierge.ts`) stays the regression net for the scripted decision-tree flows; this suite covers the OFF-script behavior the main suite does not reach (deep-link pins, profile-conflict confirms, purchase clicks).
 
@@ -103,7 +103,11 @@ Repeat questions about a specific donor/surrogate ("did she have any pregnancy c
 
 Guarded by **FT-17**, which seeds a reusable answer AND a family-specific pair, then asserts family B gets the reusable fact with no new whisper while "two dads"/"Tel Aviv" never appear. Note the first version of this test passed for the wrong reason (the profile happened to contain the answer); it now asserts on a fact that can only come from the reused answer.
 
-Still not done: answered whispers are never ingested into `KnowledgeChunk`, so reuse is scoped to the same profile rather than being semantically searchable across a provider's whole book.
+**Agency-level answers now cross profiles (FT-18).** A pair is classified agency-level only when NEITHER the question NOR the answer refers to a person (`she/her/he/his`) AND the answer reads as process/policy (`we/our/the agency/policy/typically/every surrogate...`). Those travel to any profile of the same provider - "our matching process takes 6-8 weeks" is equally true whichever donor is on screen. Anything person-referential stays locked to its own profile forever, because "she is cleared to travel until 34 weeks" applied to a different surrogate is a fabrication, not a shortcut. The two sets are injected as separately labelled blocks so Eva cannot attribute one to the other.
+
+Fixed at the same time: the answer-side filter was reusing the QUESTION-side markers, which include `we/our`. In an answer those words are the PROVIDER describing their own agency ("We screen every surrogate..."), so the filter was silently discarding most of the genuinely reusable agency knowledge. Answers are now screened only for text describing the ASKING FAMILY (`two dads`, `your family`, ...).
+
+Still not done: answered whispers are never ingested into `KnowledgeChunk`, so reuse is keyword/context-injection based rather than embedding-searchable, and only the most RECENT answers survive the per-turn cap (a profile with many answered questions can age older answers out even when they are the better match).
 
 ## Engineering rules distilled from these bugs
 

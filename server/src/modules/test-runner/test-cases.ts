@@ -670,6 +670,14 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 1,
   },
 
+  {
+    id: "FT-18", persona: "free-text",
+    name: "FT-18: Agency-level answers cross profiles; person facts never do",
+    desc: "An agency process answer given on one donor reaches a family viewing a different donor of the same agency, while that first donor's medical facts stay locked to their own profile",
+    interestedServices: ["Surrogate"],
+    messageCount: 2,
+  },
+
   // ── PROVIDER-SIDE (PR-01..) ───────────────────────────────────────────────
   // Runs scripts/test-provider-flows.ts - the provider experience and the
   // parent/provider chat boundary, which the parent suites cannot reach.

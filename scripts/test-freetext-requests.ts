@@ -718,7 +718,7 @@ async function ft16(db: Client) {
     // Answered in the PROVIDER thread...
     await db.query(
       `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
-       VALUES (gen_random_uuid(),$1,$2,$3,'Which university did the donor attend?','ANSWERED','She studied marine biology at Kestrel University.',now(),now())`,
+       VALUES (gen_random_uuid(),$1,$2,$3,'Which university did the donor attend?','RELAYED','She studied marine biology at Kestrel University.',now(),now())`,
       [prov.providerSessionId, u.userId, prov.providerId],
     );
     // ...and re-asked in the EVA thread.
@@ -729,6 +729,8 @@ async function ft16(db: Client) {
       /kestrel|marine biology/i.test(r.content), r.content.slice(0, 180));
     check("does not start a fresh whisper for an already-answered question",
       !/i'?ll (check|ask) (with )?(her|the) agency/i.test(r.content), r.content.slice(0, 140));
+    check("does not re-announce an already-delivered answer as breaking news",
+      !/heard back from the agency/i.test(r.content), r.content.slice(0, 140));
   } finally {
     if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
     await deleteUser(db, u);
@@ -758,13 +760,13 @@ async function ft17(db: Client) {
     );
     await db.query(
       `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
-       VALUES (gen_random_uuid(),$1,$2,$3,'Are there any travel restrictions for her during the third trimester?','ANSWERED',$4,now(),now())`,
+       VALUES (gen_random_uuid(),$1,$2,$3,'Are there any travel restrictions for her during the third trimester?','RELAYED',$4,now(),now())`,
       [aSess.rows[0].id, famA.userId, prov.providerId, ANSWER],
     );
     // A family-specific pair that must NEVER be reused for anyone else.
     await db.query(
       `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
-       VALUES (gen_random_uuid(),$1,$2,$3,'We are two dads from Tel Aviv - would she be comfortable with our family?','ANSWERED','Yes, she is happy to work with two dads.',now(),now())`,
+       VALUES (gen_random_uuid(),$1,$2,$3,'We are two dads from Tel Aviv - would she be comfortable with our family?','RELAYED','Yes, she is happy to work with two dads.',now(),now())`,
       [aSess.rows[0].id, famA.userId, prov.providerId],
     );
 
@@ -793,6 +795,58 @@ async function ft17(db: Client) {
   }
 }
 
+
+// ─── FT-18: agency-level answers cross profiles; person facts never do ───────
+// The agency answered a PROCESS question while family A viewed Donor A, and a
+// PERSON question about Donor A. Family B, now viewing Donor B from the SAME
+// agency, must get the process answer and must NOT get Donor A's medical fact.
+async function ft18(db: Client) {
+  const famA = await createUser(db, "ft-agency-a", ["Surrogate"]);
+  const famB = await createUser(db, "ft-agency-b", ["Surrogate"]);
+  let prov: any = null;
+  const PROFILE_A = SURROGATE_ID;
+  const PROFILE_B = "11111111-2222-3333-4444-555555555555"; // a different profile
+  const AGENCY_ANSWER = "Our matching process typically takes 6 to 8 weeks from the day you sign.";
+  const PERSON_ANSWER = "She is cleared to travel until 34 weeks, per her OB Dr. Marlow.";
+  try {
+    prov = await createProviderFor(db, famA, "ftagencylvl");
+    const mkSess = async (userId: string, profileId: string) => {
+      const r = await db.query(
+        `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","subjectProfileId","subjectType","tier2Active","createdAt","updatedAt")
+         VALUES (gen_random_uuid(),$1,$2,'ACTIVE','PARENT','AI Concierge Chat',$3,$4,'surrogate',true,now(),now()) RETURNING id`,
+        [userId, prov.providerId, MATCHMAKER_ID, profileId],
+      );
+      return r.rows[0].id as string;
+    };
+    const aSess = await mkSess(famA.userId, PROFILE_A);
+    // Agency-level (process) answer - should generalize to any profile.
+    await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'How long does the matching process usually take?','RELAYED',$4,now(),now())`,
+      [aSess, famA.userId, prov.providerId, AGENCY_ANSWER]);
+    // Person-specific answer about Donor A - must stay locked to Donor A.
+    await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'Are there any travel restrictions in the third trimester?','RELAYED',$4,now(),now())`,
+      [aSess, famA.userId, prov.providerId, PERSON_ANSWER]);
+
+    // Family B, DIFFERENT profile, same agency.
+    const bSess = await mkSess(famB.userId, PROFILE_B);
+    const proc = await send(famB.auth, bSess, "how long does your matching process usually take?");
+    check("agency process answer crosses to a different profile", /6 to 8 weeks|6-8 weeks/i.test(proc.content), proc.content.slice(0, 170));
+    check("no new whisper for the agency question", !/i'?ll (check|ask)|check with the agency/i.test(proc.content), proc.content.slice(0, 140));
+
+    const person = await send(famB.auth, bSess, "are there any travel restrictions for her in the third trimester?");
+    check("another surrogate's medical fact does NOT leak across profiles",
+      !/34 weeks|marlow/i.test(person.content), person.content.slice(0, 200));
+  } finally {
+    await db.query(`DELETE FROM "SilentQuery" WHERE "parentUserId" IN ($1,$2)`, [famA.userId, famB.userId]).catch(() => {});
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, famA);
+    await deleteUser(db, famB);
+  }
+}
+
 // ─── Runner (admin test-runner stdout protocol) ──────────────────────────────
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "FT-01", name: "Deep-link surrogate pin - 4-turn free-text replay", run: ft01 },
@@ -812,6 +866,7 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "FT-15", name: "Knowledge base used when relevant, never leaked cross-provider", run: ft15 },
   { id: "FT-16", name: "Answered whisper reused across the family's threads", run: ft16 },
   { id: "FT-17", name: "Provider answer reused across families, asking family invisible", run: ft17 },
+  { id: "FT-18", name: "Agency-level answers cross profiles; person facts never do", run: ft18 },
 ];
 
 (async () => {
