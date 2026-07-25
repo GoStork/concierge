@@ -219,11 +219,24 @@ export async function maybePromptIpForm(opts: { parentUserId: string; providerId
     try {
       const providerFirstName = (await prisma.user.findFirst({ where: { id: { in: memberIds } }, select: { name: true, firstName: true } }));
       const parentFirst = (providerFirstName?.firstName || providerFirstName?.name || "").trim().split(/\s+/)[0] || "The parent";
-      const sharedSession = await prisma.aiChatSession.findFirst({
-        where: { userId: { in: memberIds }, providerId: provider.id },
-        orderBy: { updatedAt: "desc" },
-        select: { id: true },
-      });
+      // Prefer a REAL shared parent-provider thread - a whisper stamps
+      // providerId onto the private Eva session, so the loose lookup can pick
+      // the wrong chat (see notify-ip-form.ts for the full rationale).
+      const sharedSession =
+        (await prisma.aiChatSession.findFirst({
+          where: {
+            userId: { in: memberIds },
+            providerId: provider.id,
+            OR: [{ status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } }, { providerJoinedAt: { not: null } }],
+          },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true },
+        })) ??
+        (await prisma.aiChatSession.findFirst({
+          where: { userId: { in: memberIds }, providerId: provider.id },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true },
+        }));
       if (sharedSession) {
         await prisma.aiChatMessage.create({
           data: {

@@ -1308,10 +1308,27 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       console.log(`[prep-bundle] Skipping prep guide for GoStork concierge call (booking ${booking.id})`);
       return;
     }
+    // Scope to the whole parent ACCOUNT, not just the booking's own user:
+    // createConsultationChatSession reuses the shared thread across account
+    // members, so a partner's booking looking up by userId alone missed it and
+    // stranded the entire prep bundle in the private Eva chat - permanently,
+    // since the matchCallPrepForBookingId dedupe blocks a re-post.
+    const prepMemberIds = await (async () => {
+      const me = await this.prisma.user.findUnique({
+        where: { id: booking.parentUserId },
+        select: { parentAccountId: true },
+      });
+      if (!me?.parentAccountId) return [booking.parentUserId];
+      const members = await this.prisma.user.findMany({
+        where: { parentAccountId: me.parentAccountId },
+        select: { id: true },
+      });
+      return members.map((m) => m.id);
+    })();
     const threeWaySession = providerId
       ? await this.prisma.aiChatSession.findFirst({
           where: {
-            userId: booking.parentUserId,
+            userId: { in: prepMemberIds },
             providerId,
             status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
             // Match calls live in the surrogate-subject session; doctor
@@ -1324,7 +1341,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       : null;
     const parentSession = threeWaySession
       ?? await this.prisma.aiChatSession.findFirst({
-        where: { userId: booking.parentUserId, status: "ACTIVE", sessionType: "PARENT" },
+        where: { userId: { in: prepMemberIds }, status: "ACTIVE", sessionType: "PARENT" },
         orderBy: { updatedAt: "desc" },
         select: { id: true, subjectType: true },
       });

@@ -2046,10 +2046,27 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
         },
       });
 
+      // PARENT-FACING RELAY GOES TO THE WHISPER'S OWN SESSION, not the session
+      // the provider happens to have open. The merged provider view lets a
+      // provider answer a whisper that lives in a SIBLING session (see the
+      // targeted-whisper acceptance above); writing the relay to `session.id`
+      // then drops Eva's "I heard back from the agency!" answer into a
+      // different chat than the one the parent asked in - and the AI router
+      // only re-surfaces ANSWERED whispers scoped to the current session, so
+      // the answer would never reach the parent at all.
+      const whisperSessionId = (whisper as any).sessionId || session.id;
+      const relayInSiblingSession = whisperSessionId !== session.id;
+      if (relayInSiblingSession) {
+        console.log(`[whisper-answer] Whisper ${whisper.id} belongs to sibling session ${whisperSessionId} (provider has ${session.id} open) - relaying into the parent's original chat`);
+      }
+      const whisperSession = relayInSiblingSession
+        ? await prisma.aiChatSession.findUnique({ where: { id: whisperSessionId } })
+        : session;
+
       // Look up the matchmaker name for the AI concierge's relay message -
       // never fall back to a hardcoded persona name; if no matchmaker is
       // selected we'll surface a generic "AI Concierge" label.
-      const matchmakerName = await resolveSessionSenderName(session as any);
+      const matchmakerName = await resolveSessionSenderName((whisperSession || session) as any);
 
       // Proactively relay the answer to the parent - inject an AI message directly so the parent
       // gets the answer immediately without needing to send another message
@@ -2058,7 +2075,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
         : `I heard back from the agency! The answer to your question is: "${content.trim()}"\n\nDoes that help? Do you have any other questions, or would you like to schedule a free consultation call?`;
       await prisma.aiChatMessage.create({
         data: {
-          sessionId: session.id,
+          sessionId: whisperSessionId,
           role: "assistant",
           content: relayContent,
           senderType: "assistant",
@@ -2085,15 +2102,23 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
           q.includes("cost sheet") || q.includes("quote") ||
           q.includes("the price") || q.includes("the total") || q.includes("the invoice");
         if (isCostSheetQuestion) {
+          // Search both the provider's open session and the whisper's own
+          // session - the quote may live in either once the two are merged.
           const activeQuote = await prisma.providerQuote.findFirst({
-            where: { sessionId: session.id, supersededAt: null, parentAcknowledgedAt: null },
+            where: {
+              sessionId: { in: Array.from(new Set([session.id, whisperSessionId])) },
+              supersededAt: null,
+              parentAcknowledgedAt: null,
+            },
             orderBy: { createdAt: "desc" },
             include: { provider: { select: { name: true } } },
           });
           if (activeQuote) {
             await prisma.aiChatMessage.create({
               data: {
-                sessionId: session.id,
+                // Follows the relay - the recap card must land in the same
+                // chat the parent is reading the answer in.
+                sessionId: whisperSessionId,
                 role: "assistant",
                 content: `Here's the cost sheet again so you can acknowledge it or ask another question. Total: $${(activeQuote.totalCostCents / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`,
                 senderType: "system",
@@ -2131,7 +2156,9 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
             userId: notifyId,
             eventType: "WHISPER_ANSWERED",
             payload: {
-              sessionId: session.id,
+              // Deep-link the parent to the chat the answer was actually
+              // posted in, not the provider's open thread.
+              sessionId: whisperSessionId,
               message: `${matchmakerName} has an update for you from the agency.`,
             },
           },

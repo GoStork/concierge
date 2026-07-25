@@ -55,6 +55,23 @@ The deterministic intake state machine advanced the script over "actually I'm ma
 "Has she ever had a c-section?" on a fresh deep-link pin fell to Tier 1 (no MCP tools) and got the Phase-1 intake question. Inquiry-pinned turns now always run Tier 2.
 - **Test:** FT-07.
 
+### 9. Chat-consolidation routing bugs (Jul 24, found by mapping every card-creation site)
+The provider-side session merge (`50bacb2`) let a provider answer a whisper that lives in a SIBLING session, but the relay was written to `session.id` (the thread the PROVIDER has open) instead of the whisper's own session - so Eva's "I heard back from the agency!" answer landed in a different chat than the parent asked in, and the AI router only re-surfaces ANSWERED whispers scoped to the current session, so it never reached them. Fixed in `server/chat-router.ts` (relay + cost-sheet recap + parent notification all follow `whisper.sessionId`), which finally makes the code match its own comment.
+
+Related routing hazards fixed at the same time - all caused by the same root: **a whisper stamps `providerId` onto the parent's PRIVATE Eva session**, so "find the session with this providerId" can silently pick the wrong chat:
+- `ip_form_submitted` (`notify-ip-form.ts`, `ip-form-flow.ts`) - now prefers a real booked/connected thread. It is not in the parent's card allow-list, so landing in Eva made it invisible to everyone.
+- Cost-sheet auto-draft (`cost-sheet-auto-draft.service.ts`) - accepted `status:"ACTIVE"` ordered by `updatedAt`, so a recently-touched Eva session beat the new 3-way thread. Now prefers the shared thread.
+- Prep bundle (`calendar.controller.ts` `fireMatchCallPrep`) - looked up by `booking.parentUserId` only while the session is reused across the whole account, so a partner's booking stranded the prep narrative + PDF in Eva permanently (the dedupe key blocks a re-post). Now account-scoped.
+
+**Provider-side suite:** `scripts/test-provider-flows.ts` (PR-01..PR-03) - whisper relay routing, parent-identity masking before/after booking, and provider-only content never reaching the parent transcript. Same CLI + admin Test Runner integration ("Provider" tab).
+
+### Known routing hazards NOT yet fixed (documented for the next pass)
+- `postAgreementPreview` / `postBankCheckoutCard` follow the parent's current tab (`replySessionId`); with a whisper-stamped Eva session the agreement card can render in Eva against whatever provider the last whisper targeted.
+- `review_prompt` / `ip_form_prompt` require `matchmakerId != null`; sessions created by the `/chat` fallback can have a null matchmaker, in which case the prompt is silently dropped entirely.
+- Only the NEWEST non-provider session is rendered in the parent's "Your AI Concierge" row - anything posted to an older ACTIVE session is invisible in the UI even though the API returns it.
+- The parent read path drops system cards not in its allow-list (`clearance_tracker`, `ip_form_submitted`, `video_invite`, `partner_info_request`, `donor_hold_decision`), while unread counts do NOT exclude them - hidden cards can inflate the parent's unread badge.
+- A provider opening the merged view stamps `deliveredAt` on messages in the parent's private Eva session.
+
 ## Engineering rules distilled from these bugs
 
 1. Every action button and free-typed intent must reach its flow **deterministically** - prompt rules alone do not survive contact with the model.

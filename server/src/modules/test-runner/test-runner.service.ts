@@ -176,8 +176,10 @@ export class TestRunnerService {
     // cases cannot reach), or both for a full unfiltered run. Both scripts
     // speak the same stdout protocol, so one line-parser serves both.
     const isFtCase = (id: string) => /^FT-/i.test(id);
+    const isPrCase = (id: string) => /^PR-/i.test(id);
     const wantsFt = !filter || filter === "free-text" || isFtCase(filter);
-    const wantsMain = !filter || (filter !== "free-text" && !isFtCase(filter));
+    const wantsPr = !filter || filter === "provider" || isPrCase(filter);
+    const wantsMain = !filter || (filter !== "free-text" && filter !== "provider" && !isFtCase(filter) && !isPrCase(filter));
 
     const launch = (procKey: string, scriptFile: string, extraArgs: string[]) => {
     const scriptPath = path.resolve(process.cwd(), "scripts", scriptFile);
@@ -335,6 +337,9 @@ export class TestRunnerService {
     }
     if (wantsFt) {
       launch(`${runId}:ft`, "test-freetext-requests.ts", filter && isFtCase(filter) ? [`--id=${filter}`] : []);
+    }
+    if (wantsPr) {
+      launch(`${runId}:pr`, "test-provider-flows.ts", filter && isPrCase(filter) ? [`--id=${filter}`] : []);
     }
 
     return { started: true, message: `Started run ${runId} with ${matchingTests.length} tests` };

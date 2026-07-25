@@ -587,6 +587,31 @@ export const TEST_CASES: TestCaseDef[] = [
     interestedServices: ["Surrogate", "Fertility Clinic"],
     messageCount: 3,
   },
+
+  // ── PROVIDER-SIDE (PR-01..) ───────────────────────────────────────────────
+  // Runs scripts/test-provider-flows.ts - the provider experience and the
+  // parent/provider chat boundary, which the parent suites cannot reach.
+  {
+    id: "PR-01", persona: "provider",
+    name: "PR-01: Whisper answer relays into the parent's own chat",
+    desc: "Provider answers a whisper from a CONSOLIDATED sibling thread -> Eva's relay + the parent notification land in the chat the parent actually asked in",
+    interestedServices: ["Surrogate"],
+    messageCount: 1,
+  },
+  {
+    id: "PR-02", persona: "provider",
+    name: "PR-02: Parent identity masked before booking, revealed after",
+    desc: "Provider inbox shows 'Prospective Parent' with no email pre-booking; real name + email once the consultation is booked",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "PR-03", persona: "provider",
+    name: "PR-03: Provider-only content never reaches the parent transcript",
+    desc: "provider_only messages and draft-approval cards are filtered out of the parent's message feed",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
 ];
 
 export function getTestCaseInfo(): TestCaseInfo[] {

@@ -104,15 +104,35 @@ export class CostSheetAutoDraftService {
       });
       if (!gate1?.isActive) return this.skip("prompt_section_inactive");
 
-      const session = await this.prisma.aiChatSession.findFirst({
-        where: {
-          userId: booking.parentUserId,
-          providerId,
-          status: { in: ["ACTIVE", "CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] },
-        },
-        orderBy: { updatedAt: "desc" },
-        select: { id: true, subjectType: true, subjectProfileId: true },
-      });
+      // The draft card belongs in the SHARED parent-provider thread. A whisper
+      // stamps `providerId` onto the parent's private Eva session, so an
+      // ACTIVE-inclusive lookup ordered by updatedAt can hand the draft to Eva
+      // instead (the race documented in calendar.controller's
+      // fireCostSheetAutoDraft chaining - sequencing alone does not fix it,
+      // because a recently-touched Eva session still wins the sort). Try the
+      // real shared thread first and only fall back to the loose lookup.
+      const session =
+        (await this.prisma.aiChatSession.findFirst({
+          where: {
+            userId: booking.parentUserId,
+            providerId,
+            OR: [
+              { status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } },
+              { providerJoinedAt: { not: null } },
+            ],
+          },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true, subjectType: true, subjectProfileId: true },
+        })) ??
+        (await this.prisma.aiChatSession.findFirst({
+          where: {
+            userId: booking.parentUserId,
+            providerId,
+            status: { in: ["ACTIVE", "CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] },
+          },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true, subjectType: true, subjectProfileId: true },
+        }));
       if (!session) return this.skip("no_chat_session");
 
       const existingQuote = await this.prisma.providerQuote.findFirst({

@@ -134,16 +134,20 @@ const ALL_TESTS_FALLBACK: TestCaseInfo[] = [
   { id: "FT-06", persona: "free-text", name: "Never fabricate · financing / form receipt / cancellation", messageCount: 6, desc: "", interestedServices: [] },
   { id: "FT-07", persona: "free-text", name: "Pinned-profile question answered from real data", messageCount: 1, desc: "", interestedServices: [] },
   { id: "FT-08", persona: "free-text", name: "Mid-flow redirect (clinic first) followed", messageCount: 3, desc: "", interestedServices: [] },
+  { id: "PR-01", persona: "provider", name: "Whisper answer relays into the parent's own chat", messageCount: 1, desc: "", interestedServices: [] },
+  { id: "PR-02", persona: "provider", name: "Parent identity masked before booking, revealed after", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "PR-03", persona: "provider", name: "Provider-only content never reaches the parent transcript", messageCount: 0, desc: "", interestedServices: [] },
 ];
 
 const PERSONAS = [
-  { id: "all", label: "All (82)" },
+  { id: "all", label: "All (85)" },
   { id: "solo-man", label: "Solo Man (14)" },
   { id: "solo-woman", label: "Solo Woman (14)" },
   { id: "two-dads", label: "Two Dads (12)" },
   { id: "two-moms", label: "Two Moms (13)" },
   { id: "man-woman", label: "Man & Woman (19)" },
   { id: "free-text", label: "Free-Text (8)" },
+  { id: "provider", label: "Provider (3)" },
 ];
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -360,7 +364,7 @@ export default function AdminTestRunnerPage() {
           <FlaskConical style={{ color: "hsl(var(--primary))", width: "24px", height: "24px" }} />
           <div>
             <h1 style={{ fontSize: "20px", fontWeight: "700", fontFamily: "var(--font-heading)", margin: 0 }}>AI Concierge Test Runner</h1>
-            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>82 tests · 5 personas + free-text · runs scripts/test-ai-concierge.ts + test-freetext-requests.ts</p>
+            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>85 tests · 5 personas + free-text + provider · runs test-ai-concierge.ts + test-freetext-requests.ts + test-provider-flows.ts</p>
           </div>
         </div>
 
@@ -388,7 +392,7 @@ export default function AdminTestRunnerPage() {
               <Button onClick={() => startRun(persona !== "all" ? persona : undefined)}
                 style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)", fontSize: "13px" }}>
                 <Play style={{ width: "13px", height: "13px", marginRight: "5px" }} />
-                {persona !== "all" ? `Run ${PERSONAS.find(p => p.id === persona)?.label ?? persona}` : "Run All (82)"}
+                {persona !== "all" ? `Run ${PERSONAS.find(p => p.id === persona)?.label ?? persona}` : "Run All (85)"}
               </Button>
               <Button variant="outline" size="sm" onClick={clearResults}
                 disabled={state.status === "idle" && Object.keys(state.tests).length === 0}

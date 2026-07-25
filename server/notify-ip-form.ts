@@ -279,11 +279,27 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
     }
     // Drop a message into the shared parent-provider chat so the provider sees
     // it in-thread (provider-facing providerContent; parent reads `content`).
-    const sharedSession = await prisma.aiChatSession.findFirst({
-      where: { userId: { in: memberIds }, providerId: provider.id },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true },
-    });
+    // Prefer a REAL shared parent-provider thread. A whisper stamps
+    // `providerId` onto the parent's private Eva session (ai-router.ts), so an
+    // unfiltered providerId lookup can pick Eva - and `ip_form_submitted` is
+    // not in the parent's card allow-list, so landing there makes the message
+    // invisible to everyone. Fall back to the loose lookup only if no shared
+    // thread exists yet.
+    const sharedSession =
+      (await prisma.aiChatSession.findFirst({
+        where: {
+          userId: { in: memberIds },
+          providerId: provider.id,
+          OR: [{ status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } }, { providerJoinedAt: { not: null } }],
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      })) ??
+      (await prisma.aiChatSession.findFirst({
+        where: { userId: { in: memberIds }, providerId: provider.id },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      }));
     if (sharedSession) {
       void prisma.aiChatMessage.create({
         data: {
