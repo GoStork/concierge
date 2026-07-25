@@ -2,14 +2,14 @@
 
 **Scope:** the AI concierge must handle ANY parent request typed as free text - from the marketplace, mid-intake, mid-call-prep, out of nowhere - and never ignore it, steamroll it, overrule it, or answer it with mismatched quick replies. This plan covers the five failure classes found and fixed on Jul 24 2026 and the deterministic mechanisms that now guard them.
 
-**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-16)
+**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-17)
 
 ```bash
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts --id=FT-01,FT-04
 ```
 
-**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (16)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
+**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (17)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
 
 Run it against a live server after any change to `server/ai-router.ts` routing, directives, bypasses, or quick-reply handling. It creates throwaway `*@gostork-test.com` users and cleans them up. The main 74-case suite (`scripts/test-ai-concierge.ts`) stays the regression net for the scripted decision-tree flows; this suite covers the OFF-script behavior the main suite does not reach (deep-link pins, profile-conflict confirms, purchase clicks).
 
@@ -90,7 +90,20 @@ Neither had ANY test coverage; auditing them surfaced two real gaps.
 - **Provider knowledge bases were unreachable on a normal chat turn.** `searchKnowledgeBase` was called with `req.body.providerId`, which is empty on ordinary chats, and the MCP tool returns only global tiers 2/3 when no provider is given - so a provider's own uploaded documents (tier 1) never answered anything. It now falls back to the SESSION's `providerId`. This stays tenant-safe by construction: the MCP query filters tier 1 to `"providerId" = $2` and only global tiers 2/3 are unscoped. Guarded by **FT-15**, which asserts a global fact answers, a provider's tier-1 fact answers in that provider's chat, and the same fact does NOT appear in another provider's chat (with a non-empty reply, so the check cannot pass vacuously).
 - **Answered whispers were reused only within ONE chat.** The lookup was scoped to `{ parentUserId, sessionId: currentSessionId }`, so a family that already got an answer re-asked the provider from scratch in any other thread, and account partners never saw each other's answers. Widened to the whole parent ACCOUNT. Guarded by **FT-16**.
 
-**Open product decision - cross-FAMILY answer reuse.** Eva still does not reuse an answer given to a DIFFERENT family about the same donor/surrogate, even though the provider already answered that exact question. Answered whispers are also never ingested into `KnowledgeChunk`. This is worth building (it removes a wait for every repeat question), but it needs a privacy call first: the answer text is provider-authored *about the profile* and is safe to reuse, while the stored `questionText` can carry the asking family's context ("we're two dads, would she be comfortable..."). A safe design: key on (providerId, subjectProfileId), reuse the ANSWER only, never the original question, and have Eva restate it in her own words rather than quoting.
+### 12. Cross-FAMILY reuse of provider answers (Jul 25 - BUILT)
+Repeat questions about a specific donor/surrogate ("did she have any pregnancy complications?", "gestational diabetes?") are extremely common, and the provider has usually answered them already for another family. Eva now reuses that answer instantly instead of opening a new whisper and making the family wait days.
+
+**Mechanism** (`priorAnswersForProfile` + `sanitizeReusableQuestion` in `ai-router.ts`): answered whispers are looked up on the exact `(providerId, subjectProfileId)` pair, excluding the current family's own account, and injected as an `ALREADY CONFIRMED BY THIS AGENCY ABOUT THIS PROFILE` block. The prompt forbids whispering for anything in that block, forbids the "I heard back from the agency!" framing (the answer is not new), and forbids mentioning or implying another family.
+
+**Privacy contract (deliberately strict):**
+1. Only the ANSWER is reused; the asking family is never loaded or surfaced.
+2. A pair is DROPPED ENTIRELY if its question carries the asking family's context ("we're two dads, would she be comfortable...") - such answers are family-specific anyway and would be wrong for anyone else. Same drop if the ANSWER contains family-context markers.
+3. A question that only stands up because of stripped context is dropped too - "We're doing this in Colombia. Is she open to that?" sanitizes to a dangling "Is she open to that?", which is meaningless and misleading for a different family.
+4. Scoped to one exact (provider, profile) pair - never across providers or profiles.
+
+Guarded by **FT-17**, which seeds a reusable answer AND a family-specific pair, then asserts family B gets the reusable fact with no new whisper while "two dads"/"Tel Aviv" never appear. Note the first version of this test passed for the wrong reason (the profile happened to contain the answer); it now asserts on a fact that can only come from the reused answer.
+
+Still not done: answered whispers are never ingested into `KnowledgeChunk`, so reuse is scoped to the same profile rather than being semantically searchable across a provider's whole book.
 
 ## Engineering rules distilled from these bugs
 

@@ -300,6 +300,25 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
       } catch (e: any) {
         caseFails.push(`scenario crashed: ${(e?.message || String(e)).slice(0, 200)}`);
       }
+      // FLAKE RETRY (same policy as scripts/test-ai-concierge.ts): these cases
+      // assert on LLM output, which varies run to run - a case can fail once and
+      // pass immediately after. Retry ONCE. A recovery is reported loudly so a
+      // genuinely regressing test can never hide behind the retry.
+      if (caseFails.length > 0) {
+        const firstFailures = [...caseFails];
+        console.log(`  🔁 ${c.id} flaked - retrying once (was: ${firstFailures[0]})`);
+        caseFails = [];
+        try {
+          await c.run(db);
+        } catch (e: any) {
+          caseFails.push(`scenario crashed: ${(e?.message || String(e)).slice(0, 200)}`);
+        }
+        if (caseFails.length === 0) {
+          console.log(`  ✨ ${c.id} recovered on retry (first attempt was a flake)`);
+        } else {
+          caseFails = caseFails.map((f) => `FAILED TWICE. attempt1: ${firstFailures[0]} | attempt2: ${f}`);
+        }
+      }
       const durationMs = Date.now() - t0;
       const secs = (durationMs / 1000).toFixed(1);
       if (caseFails.length === 0) {

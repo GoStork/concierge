@@ -1734,6 +1734,91 @@ async function sendWhisperSms(phone: string, questionText: string, chatLink: str
   }
 }
 
+// ─── Cross-family reuse of provider answers about a specific profile ────────
+//
+// When a provider answers a whisper about a donor/surrogate ("did she have any
+// pregnancy complications?"), that answer is provider-authored knowledge about
+// the PROFILE - not about the family who asked. Reusing it means the next
+// family gets an instant answer instead of waiting days for the provider to
+// re-answer the same question.
+//
+// PRIVACY CONTRACT (deliberately strict - the asking family must stay invisible):
+//   1. Only the ANSWER is ever reused; the asking family's identity is never
+//      loaded or surfaced.
+//   2. A pair is DROPPED ENTIRELY when its question carries the asking family's
+//      own context ("we're two dads, would she be comfortable...") - both
+//      because the question text would leak, and because such an answer is
+//      specific to THAT family and would be wrong for anyone else.
+//   3. Scoped to one exact (provider, profile) pair - never across providers,
+//      never across profiles.
+const FAMILY_CONTEXT_MARKERS =
+  /\b(we|we'?re|we'?ve|us|our|ours|my|mine|i'?m|i am|i'?ve|husband|wife|partner|spouse|two dads|two moms|two mums|gay|lesbian|same.?sex|single (mom|mother|dad|father|parent)|solo (mom|mother|dad|father|parent)|our family|my family)\b/i;
+
+function sanitizeReusableQuestion(raw: string): string | null {
+  const text = (raw || "").trim();
+  if (!text) return null;
+  // Prefer the actual interrogative sentence - parents often prefix context
+  // ("We're a same-sex couple. Did she have gestational diabetes?").
+  const sentences = text.split(/(?<=[.?!])\s+/).map((x) => x.trim()).filter(Boolean);
+  const question = sentences.reverse().find((x) => x.includes("?")) || text;
+  // Conservative: if the question itself still carries family context, do not
+  // reuse it at all. These are exactly the questions whose ANSWERS are
+  // family-specific anyway, so dropping them is correct on both counts.
+  if (FAMILY_CONTEXT_MARKERS.test(question)) return null;
+  if (question.length < 8 || question.length > 240) return null;
+  // If we dropped a leading context sentence, the surviving question must still
+  // stand on its own. "We're doing this in Colombia. Is she open to that?"
+  // sanitizes to "Is she open to that?" - meaningless (and misleading) for a
+  // different family, because "that" referred to the stripped context.
+  const strippedContext = question !== text;
+  if (strippedContext && /\b(that|this|these|those|it|them|there)\b\s*\??$/i.test(question)) return null;
+  return question;
+}
+
+/**
+ * Provider answers about THIS profile, previously given to OTHER families.
+ * Returns sanitized {question, answer} pairs safe to hand to the model.
+ */
+async function priorAnswersForProfile(
+  profileId: string,
+  ownerProviderId: string,
+  excludeParentUserIds: string[],
+  max = 8,
+): Promise<{ question: string; answer: string }[]> {
+  try {
+    const rows = await prisma.silentQuery.findMany({
+      where: {
+        status: "ANSWERED",
+        answerText: { not: null },
+        providerId: ownerProviderId,
+        session: { subjectProfileId: profileId },
+        parentUserId: { notIn: excludeParentUserIds },
+      },
+      select: { questionText: true, answerText: true },
+      orderBy: { updatedAt: "desc" },
+      take: max * 3, // over-fetch: sanitization drops family-specific pairs
+    });
+    const out: { question: string; answer: string }[] = [];
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const q = sanitizeReusableQuestion(r.questionText);
+      const a = (r.answerText || "").trim();
+      if (!q || !a) continue;
+      // An answer that echoes the asker's own situation is not reusable either.
+      if (FAMILY_CONTEXT_MARKERS.test(a)) continue;
+      const key = q.toLowerCase().replace(/[^a-z0-9 ]/g, "").slice(0, 60);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ question: q, answer: a });
+      if (out.length >= max) break;
+    }
+    return out;
+  } catch (e: any) {
+    console.error("[PRIOR ANSWERS] lookup failed:", e?.message);
+    return [];
+  }
+}
+
 async function searchKnowledgeBase(
   query: string,
   providerId?: string,
@@ -2388,7 +2473,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
-      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true, historySummary: true },
+      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true, historySummary: true, subjectProfileId: true, subjectType: true },
     });
 
     // Kick off the Tier2-only expensive lookups (expert guidance rules,
@@ -4084,6 +4169,45 @@ IMPORTANT RULES:
     void ragProviderId; // retained for the debug/readability of req.body.providerId above
     const [guidanceRules, answeredWhispers, knowledgeResults] = await tier2LookupsPromise;
 
+    // PRIOR PROVIDER ANSWERS ABOUT THIS PROFILE (cross-family reuse).
+    // Repeat questions about a specific donor/surrogate ("did she have any
+    // pregnancy complications?", "gestational diabetes?") are extremely common,
+    // and the provider has usually answered them already for someone else.
+    // Reuse the answer so this family gets it instantly instead of waiting days.
+    let priorProfileAnswersContext = "";
+    try {
+      // Resolve the profile from the SESSION (set on marketplace deep-links and
+      // 3-way threads) or, failing that, from the latest match card on screen.
+      // NOTE: inquiryMatchCard is declared further down - do not reference it
+      // here (TDZ); findLatestMatchCard gives the same answer independently.
+      let profileIdForReuse = (currentSession as any)?.subjectProfileId || null;
+      let ownerProviderIdForReuse = (currentSession as any)?.providerId || null;
+      if ((!profileIdForReuse || !ownerProviderIdForReuse) && currentSessionId) {
+        const mcForReuse = await findLatestMatchCard(currentSessionId).catch(() => null);
+        profileIdForReuse = profileIdForReuse || mcForReuse?.providerId || null;
+        ownerProviderIdForReuse = ownerProviderIdForReuse || mcForReuse?.ownerProviderId || null;
+      }
+      if (profileIdForReuse && ownerProviderIdForReuse) {
+        const myAccountUserIds = userRecord?.parentAccountId
+          ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+          : [userId];
+        const priorAnswers = await priorAnswersForProfile(profileIdForReuse, ownerProviderIdForReuse, myAccountUserIds);
+        if (priorAnswers.length > 0) {
+          console.log(`[PRIOR ANSWERS] ${priorAnswers.length} reusable provider answer(s) for profile ${profileIdForReuse}`);
+          priorProfileAnswersContext = `
+ALREADY CONFIRMED BY THIS AGENCY ABOUT THIS PROFILE (authoritative - the agency has already answered these questions about this exact donor/surrogate):
+${priorAnswers.map((p) => `- Q: ${p.question}\n  A: ${p.answer}`).join("\n")}
+HOW TO USE THESE:
+- If the parent asks something answered above, ANSWER IT DIRECTLY AND IMMEDIATELY from this list. Do NOT emit [[WHISPER:...]] for it and do NOT tell the parent you will check with the agency - it is already confirmed.
+- Restate the answer in your own warm words. Do NOT quote it verbatim as if it just arrived, and never use the "I heard back from the agency!" framing - that is only for answers that came in for THIS family just now.
+- These came from the agency about the PROFILE. NEVER say, hint, or imply that another family, client, or parent asked anything - other families must stay completely invisible. Never mention "another intended parent", "a previous client", or similar.
+- If the parent asks something NOT covered above and not in the profile data, whisper as usual.`;
+        }
+      }
+    } catch (e: any) {
+      console.error("[PRIOR ANSWERS] context build failed:", e?.message);
+    }
+
     let answeredWhispersContext = "";
     if (answeredWhispers.length > 0) {
       const uniqueProviderIds = [...new Set(answeredWhispers.map((w: any) => w.providerId))];
@@ -4107,7 +4231,7 @@ IMPORTANT RULES:
       const contextParts = relevantResults.map(
         (r: any) => `[Tier ${r.sourceTier} - ${r.sourceType}]: ${r.content}`,
       );
-      ragContext = `\nKNOWLEDGE BASE CONTEXT (use this information to answer accurately):\n${contextParts.join("\n\n")}\n\nIMPORTANT: If the knowledge base has relevant information, use it confidently. If you're asked about a specific provider detail that isn't in the knowledge base or your tools, say: "I don't have that specific detail right now - let me flag this so the provider can get back to you directly." Do NOT make up information.\nNOTE: For cost, pricing, and compensation questions, ALWAYS prefer real-time data from MCP search tools over the knowledge base, as uploaded documents may contain outdated pricing.\n`;
+      ragContext = `\nKNOWLEDGE BASE CONTEXT (use this information to answer accurately):\n${contextParts.join("\n\n")}\n\nANSWER THE QUESTION FIRST: if the parent's current message asks something the context above answers, ANSWER IT DIRECTLY as the FIRST thing in your reply. Never replace that answer with an intake or call-prep question - a parent who asked a real question and got "are you solo or with a partner?" instead reads it as being ignored. Ask your next flow question only AFTER the answer, and only if it still fits.\n\nIMPORTANT: If the knowledge base has relevant information, use it confidently. If you're asked about a specific provider detail that isn't in the knowledge base or your tools, say: "I don't have that specific detail right now - let me flag this so the provider can get back to you directly." Do NOT make up information.\nNOTE: For cost, pricing, and compensation questions, ALWAYS prefer real-time data from MCP search tools over the knowledge base, as uploaded documents may contain outdated pricing.\n`;
     }
 
     let isDonorInquiryMode = false;
@@ -4149,6 +4273,12 @@ IMPORTANT RULES:
     // directive so the requested cycle starts immediately - which also makes the
     // FIRST streamed tokens on-topic instead of a wrong draft that gets replaced.
     let serviceSwitchDirective = "";
+    // Set when the parent's request contradicts their saved profile (e.g. asks
+    // for a donor while holding tested embryos). That confirm question owns the
+    // turn, so the Phase 1 identity directives - which declare themselves "your
+    // ONLY job right now" - must stand down, or the two fight and the reply
+    // carries Phase 1's quick replies under the confirm question.
+    let redundancyConfirmActive = false;
     try {
       const svcSwitchMatch = userMessage.match(
         // "thinking about" / "considering" / "exploring" are how parents most
@@ -4229,7 +4359,8 @@ These instructions are internal - never quote or echo them (never write words li
           }
           if ((requestedService === "Egg Donor" || requestedService === "Sperm Donor") && profile?.hasEmbryos === true) {
             const embryoDesc = `${profile?.embryoCount || "several"}${profile?.embryosTested ? " PGT-A tested" : ""} embryo(s)`;
-            serviceSwitchDirective += `\nREDUNDANCY DETECTED - CONFIRM FIRST (overrides any scripted opener, education pitch, or intake question this turn): the parent's profile shows they ALREADY have ${embryoDesc}. Your reply MUST open by warmly noting that (one sentence) and asking whether they want the ${requestedService.toLowerCase()} to create ADDITIONAL embryos or whether their plans have changed - do NOT start the ${requestedService} intake, the GoStork explanation, or any search until they answer. Never tell them they don't need it. End with exactly [[QUICK_REPLY:Yes, to create more embryos|My plans have changed|Let me explain]] - these are the ONLY quick replies for this question.`;
+            redundancyConfirmActive = true;
+            serviceSwitchDirective += `\nREDUNDANCY DETECTED - CONFIRM FIRST (this OUTRANKS the "Phase 1 identity questions come first" instruction above, and overrides any scripted opener, education pitch, or intake question this turn - identity can wait one turn, the parent's contradictory request cannot): the parent's profile shows they ALREADY have ${embryoDesc}. Your reply MUST open by warmly noting that (one sentence) and asking whether they want the ${requestedService.toLowerCase()} to create ADDITIONAL embryos or whether their plans have changed - do NOT start the ${requestedService} intake, the GoStork explanation, or any search until they answer. Never tell them they don't need it. End with exactly [[QUICK_REPLY:Yes, to create more embryos|My plans have changed|Let me explain]] - these are the ONLY quick replies for this question.`;
           }
         }
         }
@@ -4467,7 +4598,18 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     const straightCoupleKnown = profile?.sameSexCouple === false || chatMentionsStraightCouple;
     const speakerGenderNeeded = straightCoupleKnown && !phase1GenderKnown;
 
-    if (speakerGenderNeeded && phase1Needed) {
+    // A redundancy-confirm turn owns the reply outright: the parent asked for
+    // something their profile contradicts, and that question needs its own
+    // quick replies. Adding a Phase 1 "this is your ONLY job" directive on the
+    // same turn made the two compete, and the reply intermittently carried
+    // Phase 1's quick replies ("Solo | With a partner") under the confirm
+    // question. Identity is asked on the very next turn instead.
+    if (redundancyConfirmActive) {
+      console.log(`[PHASE1] Suppressed this turn - redundancy-confirm owns the reply`);
+    }
+    if (redundancyConfirmActive) {
+      // no Phase 1 directive this turn
+    } else if (speakerGenderNeeded && phase1Needed) {
       // We know it's a straight couple but not who is speaking - ask the follow-up before Phase 2
       skipDirectives.unshift(
         "PHASE 1 FOLLOW-UP REQUIRED - TOP PRIORITY: We know this is a man-and-woman couple but we do NOT yet know which partner is filling out this form. " +
@@ -4960,7 +5102,7 @@ ${toolUsageSection}`;
 
 USER CONTEXT (already collected - do NOT ask again):
 ${userContextBlock}
-${ragContext}${answeredWhispersContext}${alreadyPresentedContext}`;
+${ragContext}${priorProfileAnswersContext}${answeredWhispersContext}${alreadyPresentedContext}`;
 
     const systemPrompt = `${staticSystemPart}\n___CACHE_BREAKPOINT___\n${dynamicSystemPart}`;
 

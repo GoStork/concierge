@@ -662,6 +662,14 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 1,
   },
 
+  {
+    id: "FT-17", persona: "free-text",
+    name: "FT-17: Provider answer reused across families, asking family invisible",
+    desc: "Family B instantly gets the answer the agency already gave family A about the SAME profile - no new whisper - while the asking family's identity and context never appear",
+    interestedServices: ["Surrogate"],
+    messageCount: 1,
+  },
+
   // ── PROVIDER-SIDE (PR-01..) ───────────────────────────────────────────────
   // Runs scripts/test-provider-flows.ts - the provider experience and the
   // parent/provider chat boundary, which the parent suites cannot reach.

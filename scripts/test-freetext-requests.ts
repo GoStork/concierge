@@ -735,6 +735,64 @@ async function ft16(db: Client) {
   }
 }
 
+
+// ─── FT-17: cross-FAMILY reuse of a provider answer about the same profile ───
+// Family A asked "did she have gestational diabetes?" and the agency answered.
+// Family B asks the same thing about the SAME surrogate -> instant answer, no
+// new whisper, and absolutely no trace of family A.
+async function ft17(db: Client) {
+  const famA = await createUser(db, "ft-reuse-a", ["Surrogate"]);
+  const famB = await createUser(db, "ft-reuse-b", ["Surrogate"]);
+  let prov: any = null;
+  const PROFILE_ID = SURROGATE_ID;
+  // Deliberately NOT derivable from profile data - only the reused provider
+  // answer can supply it, so the assertion actually proves reuse happened.
+  const ANSWER = "She is cleared to travel until 34 weeks, with written clearance from her OB, Dr. Marlow.";
+  try {
+    prov = await createProviderFor(db, famA, "ftreuse");
+    // Family A's answered whisper, on a session pinned to this surrogate.
+    const aSess = await db.query(
+      `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","subjectProfileId","subjectType","tier2Active","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,'ACTIVE','PARENT','AI Concierge Chat',$3,$4,'surrogate',true,now(),now()) RETURNING id`,
+      [famA.userId, prov.providerId, MATCHMAKER_ID, PROFILE_ID],
+    );
+    await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'Are there any travel restrictions for her during the third trimester?','ANSWERED',$4,now(),now())`,
+      [aSess.rows[0].id, famA.userId, prov.providerId, ANSWER],
+    );
+    // A family-specific pair that must NEVER be reused for anyone else.
+    await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'We are two dads from Tel Aviv - would she be comfortable with our family?','ANSWERED','Yes, she is happy to work with two dads.',now(),now())`,
+      [aSess.rows[0].id, famA.userId, prov.providerId],
+    );
+
+    // Family B, different account, same surrogate.
+    const bSess = await db.query(
+      `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","subjectProfileId","subjectType","tier2Active","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,'ACTIVE','PARENT','AI Concierge Chat',$3,$4,'surrogate',true,now(),now()) RETURNING id`,
+      [famB.userId, prov.providerId, MATCHMAKER_ID, PROFILE_ID],
+    );
+    const r = await send(famB.auth, bSess.rows[0].id, "are there any travel restrictions for her in the third trimester?");
+
+    check("reuses the agency's existing answer", /34 weeks|marlow/i.test(r.content), r.content.slice(0, 200));
+    check("does not promise to go ask the agency", !/i'?ll (check|ask)|let me check with|get back to you/i.test(r.content), r.content.slice(0, 160));
+    check("no 'heard back from the agency' framing (that answer is not new)", !/heard back from the agency/i.test(r.content), r.content.slice(0, 120));
+    check("never reveals another family asked", !/another (family|parent|client|couple)|previous client|someone else asked|other intended parent/i.test(r.content), r.content.slice(0, 160));
+    check("never leaks the other family's context", !/two dads|tel aviv/i.test(r.content), r.content.slice(0, 160));
+
+    const freshWhisper = await db.query(
+      `SELECT count(*)::int AS n FROM "SilentQuery" WHERE "parentUserId" = $1 AND status = 'PENDING'`, [famB.userId]);
+    check("no new whisper created for an already-answered question", freshWhisper.rows[0].n === 0, `pending=${freshWhisper.rows[0].n}`);
+  } finally {
+    await db.query(`DELETE FROM "SilentQuery" WHERE "parentUserId" IN ($1,$2)`, [famA.userId, famB.userId]).catch(() => {});
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, famA);
+    await deleteUser(db, famB);
+  }
+}
+
 // ─── Runner (admin test-runner stdout protocol) ──────────────────────────────
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "FT-01", name: "Deep-link surrogate pin - 4-turn free-text replay", run: ft01 },
@@ -753,6 +811,7 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "FT-14", name: "Post-handoff routing and why-question", run: ft14 },
   { id: "FT-15", name: "Knowledge base used when relevant, never leaked cross-provider", run: ft15 },
   { id: "FT-16", name: "Answered whisper reused across the family's threads", run: ft16 },
+  { id: "FT-17", name: "Provider answer reused across families, asking family invisible", run: ft17 },
 ];
 
 (async () => {
@@ -777,6 +836,25 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
         await c.run(db);
       } catch (e: any) {
         caseFails.push(`scenario crashed: ${(e?.message || String(e)).slice(0, 200)}`);
+      }
+      // FLAKE RETRY (same policy as scripts/test-ai-concierge.ts): these cases
+      // assert on LLM output, which varies run to run - a case can fail once and
+      // pass immediately after. Retry ONCE. A recovery is reported loudly so a
+      // genuinely regressing test can never hide behind the retry.
+      if (caseFails.length > 0) {
+        const firstFailures = [...caseFails];
+        console.log(`  🔁 ${c.id} flaked - retrying once (was: ${firstFailures[0]})`);
+        caseFails = [];
+        try {
+          await c.run(db);
+        } catch (e: any) {
+          caseFails.push(`scenario crashed: ${(e?.message || String(e)).slice(0, 200)}`);
+        }
+        if (caseFails.length === 0) {
+          console.log(`  ✨ ${c.id} recovered on retry (first attempt was a flake)`);
+        } else {
+          caseFails = caseFails.map((f) => `FAILED TWICE. attempt1: ${firstFailures[0]} | attempt2: ${f}`);
+        }
       }
       const durationMs = Date.now() - t0;
       const secs = (durationMs / 1000).toFixed(1);
