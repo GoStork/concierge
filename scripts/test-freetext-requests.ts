@@ -53,6 +53,23 @@ function check(label: string, ok: boolean, detail?: string) {
   if (!ok) caseFails.push(`${label}${detail ? ` :: ${detail.replace(/\n/g, " | ").slice(0, 160)}` : ""}`);
 }
 
+// Dashboard progress reporting (same protocol as test-ai-concierge.ts).
+// stdout parsing alone is not enough: the admin runner spawns this script
+// detached, so if the NestJS parent restarts mid-run its stdout pipe dies and
+// the UI freezes at the last parsed line. These HTTP events keep the dashboard
+// correct across restarts, and make CLI runs visible in the UI too.
+async function reportToDashboard(event: Record<string, unknown>): Promise<void> {
+  try {
+    await fetch(`${BASE}/api/admin/test-runner/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(event),
+    });
+  } catch {
+    /* best-effort - never fail a test run over dashboard reporting */
+  }
+}
+
 async function jfetch(url: string, opts: RequestInit): Promise<Response> {
   const res = await fetch(url, opts);
   if (!res.ok) throw new Error(`${url} -> ${res.status}: ${await res.text()}`);
@@ -443,26 +460,31 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   const db = new Client({ connectionString: dbUrl });
   await db.connect();
   const suiteStart = Date.now();
+  await reportToDashboard({ type: "run_start", testIds: toRun.map((c) => c.id), filter: wanted ? wanted.join(",") : "free-text" });
   try {
     for (const c of toRun) {
       caseId = c.id;
       caseFails = [];
       console.log(`  ▶ Starting: ${c.id}`);
       console.log(`    ${c.name}`);
+      await reportToDashboard({ type: "test_start", id: c.id });
       const t0 = Date.now();
       try {
         await c.run(db);
       } catch (e: any) {
         caseFails.push(`scenario crashed: ${(e?.message || String(e)).slice(0, 200)}`);
       }
-      const secs = ((Date.now() - t0) / 1000).toFixed(1);
+      const durationMs = Date.now() - t0;
+      const secs = (durationMs / 1000).toFixed(1);
       if (caseFails.length === 0) {
         totalPass++;
         console.log(`  ✅ ${c.id} PASS (${secs}s)`);
+        await reportToDashboard({ type: "test_pass", id: c.id, durationMs });
       } else {
         totalFail++;
         for (const f of caseFails) console.log(`     [${c.id}] ${f}`);
         console.log(`  ❌ ${c.id} FAIL (${secs}s)`);
+        await reportToDashboard({ type: "test_fail", id: c.id, durationMs, errors: caseFails });
       }
     }
   } finally {
@@ -471,5 +493,6 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   const totalSecs = Math.round((Date.now() - suiteStart) / 1000);
   console.log(`\n${"─".repeat(50)}`);
   console.log(`Results: ${totalPass} passed, ${totalFail} failed (${totalSecs}s total)`);
+  await reportToDashboard({ type: "run_done", passCount: totalPass, failCount: totalFail, durationMs: Date.now() - suiteStart });
   process.exit(totalFail ? 1 : 0);
 })();
