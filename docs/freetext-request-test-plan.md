@@ -125,6 +125,28 @@ The FT-19 watch item turned out to matter: the model rendered a single agency's 
 
 Guarded by **FT-20** (configured age range, c-section cap, accepted medical history, gender selection all quoted exactly) and **FT-21** (agency policy used but never GoStork-framed and never in GoStork's first-person voice; GoStork minimums still stated platform-wide). Verified end-to-end that the reply separates them: *"On the GoStork platform, every surrogate must meet our strict minimum requirements... Additionally, individual agencies perform their own deep evaluations - their standard screening includes a full psychological evaluation."*
 
+### 15. The transactional spine and the provider's own surfaces (Jul 25)
+Everything above tests what Eva SAYS. Three suites now cover what actually MOVES, and all of them drive the real endpoints rather than seeding the resulting rows.
+
+**Transactional journey (`scripts/test-journey-flows.ts`, JR-01/JR-02).** Cost sheet -> parent acknowledgement -> invoice -> payment -> signed agreement -> handoff. Two findings came straight out of writing it:
+
+- Invoicing is guarded by TWO real compliance gates that a seeded fixture would have skipped silently: an active `ReferralFeeConfig`, and a complete Legal Identity (Legal Name + Tax ID + a COMPLETED W-9). JR-01 now asserts the block holds and that no `Invoice` row is created while it does, before satisfying it and continuing.
+- Handoff requires BOTH a signed agreement and a paid invoice, and either can land last. JR-01 covers paid-last (must NOT fire); JR-02 covers signed-first, where the payment path is what completes it. The idempotency check replays the payment rather than calling `maybeCompleteHandoff` in-process - importing server modules from a test script needs the server's env and fails for reasons that have nothing to do with the behaviour under test.
+- The duplicate-post assertion was initially written against `uiCardType='handoff_complete'`, which does not exist - the handoff posts a plain celebration message. It counted zero and "passed" no matter what. It now counts the copy itself. A card-type assertion that can never match is worse than no assertion.
+
+**Provider approvals (PR-04..PR-08).** Draft cost sheets, invoices and agreements are approved by `(sessionId, messageId)`; PR-06 confirms a draft cannot be approved from a sibling session, which is exactly why the consolidated provider view keeps drafts out of the merge. PR-07 covers the pinned provider assistant, which shipped with no tests at all - it answers from real pipeline state in its own `PROVIDER_CONCIERGE` session and does not name a still-anonymous parent.
+
+### 16. The Intended Parent Form gate, and what probing it exposed (Jul 25)
+The form gates the match call: the agency sends it (photos + the family's letter) to the surrogate so she can decide whether to meet the family. Probing the gate in a realistic post-consultation state surfaced three separate bugs, none of which were visible from reading the code.
+
+1. **Eva routed around the block by inventing an action.** She replied "I've just sent a request to the agency to let them know you're ready to schedule the match call" and "they'll reach out shortly". She had emitted no tag; nobody was contacted. The existing NEVER FAKE AN ACTION rule listed cancel/reschedule/submit/pay but not *relaying a message*, so the model did not consider it covered. `general_behavior` now states that the only way anything reaches a provider is a tag the system acts on (`[[WHISPER]]`, `[[CONSULTATION_BOOKING]]`, `[[HUMAN_NEEDED]]`), and that a blocked step stays blocked no matter how warmly it is phrased.
+2. **Phase 1 onboarding hijacked every turn.** Three consecutive post-consultation replies ended with "are you going on this journey solo, or with a partner?", and one emitted a `[[SAVE]]` guessing `partnered` from the word "we". `phase1StandsDown` now also covers `journeyUnderway` - an IP form on the table, a booked consultation, a joined provider, or a completed handoff. A family already working with an agency is long past onboarding. Verified separately that a genuinely new user is still asked Phase 1.
+3. **A submitted form was still treated as outstanding.** The SUBMITTED context line was one weak sentence competing with two turns of history about a pending form. It now explicitly overrides the earlier conversation and says what happens next.
+
+**Where the gate is actually enforced:** Eva cannot book a match call at all - the AGENCY proposes times via `POST /api/chat-session/:id/propose-call-times`, and that endpoint refuses with `409 IP_FORM_REQUIRED` while the form is unsubmitted. **PR-08** covers that hard gate (blocked, typed reason, no card posted, other call types unaffected, allowed after submission). **FT-22** covers only what the model controls: naming the form, linking it, refusing to schedule, not fabricating contact, still answering unrelated questions, and never treating a submitted form as outstanding.
+
+The first draft of FT-22 asserted "scheduling moves forward once the form is submitted" - which would have failed Eva for behaving CORRECTLY, since she has no booking mechanism here. That is the same trap recorded for FT-21: a test that punishes correct behaviour pushes the next fix in the wrong direction.
+
 ## Engineering rules distilled from these bugs
 
 1. Every action button and free-typed intent must reach its flow **deterministically** - prompt rules alone do not survive contact with the model.
@@ -133,6 +155,9 @@ Guarded by **FT-20** (configured age range, c-section cap, accepted medical hist
 4. Quick-reply fallbacks must match the closing question only, never the whole message.
 5. When a request conflicts with the saved profile, confirm what is on file and ask what changed - the parent outranks the profile.
 6. Directives must state their precedence relative to other directives explicitly and end with "never echo these instructions."
+7. A prohibition enumerated as a list of examples is read as exactly that list. "Never fake an action" plus four examples did not stop a fifth kind of fabrication - name the mechanism ("the only way X happens is Y"), not just the instances.
+8. Before asserting on a card type, a status value or a field name, check it exists in the code path under test. An assertion keyed on something that never occurs passes silently forever.
+9. Drive the real endpoint, never an in-process import of server code - test scripts do not have the server's environment, and the failure looks like a product bug.
 
 ## Manual spot-checks (not automated)
 

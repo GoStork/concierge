@@ -149,9 +149,17 @@ const ALL_TESTS_FALLBACK: TestCaseInfo[] = [
   { id: "FT-19", persona: "free-text", name: "Answers become durable knowledge; relevance beats recency", messageCount: 3, desc: "", interestedServices: [] },
   { id: "FT-20", persona: "free-text", name: "Provider's configured requirements are answerable", messageCount: 3, desc: "", interestedServices: [] },
   { id: "FT-21", persona: "free-text", name: "Agency policy attributed to the agency, not GoStork", messageCount: 2, desc: "", interestedServices: [] },
+  { id: "FT-22", persona: "free-text", name: "Intended Parent Form gates the match call, and only the match call", messageCount: 3, desc: "", interestedServices: [] },
   { id: "PR-01", persona: "provider", name: "Whisper answer relays into the parent's own chat", messageCount: 1, desc: "", interestedServices: [] },
   { id: "PR-02", persona: "provider", name: "Parent identity masked before booking, revealed after", messageCount: 0, desc: "", interestedServices: [] },
   { id: "PR-03", persona: "provider", name: "Provider-only content never reaches the parent transcript", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "PR-04", persona: "provider", name: "Cost-sheet draft approval sends a parent-visible cost sheet", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "PR-05", persona: "provider", name: "Invoice draft approval issues a real invoice", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "PR-06", persona: "provider", name: "A draft cannot be approved from another session", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "PR-07", persona: "provider", name: "Pinned provider assistant answers without leaking parent identity", messageCount: 1, desc: "", interestedServices: [] },
+  { id: "PR-08", persona: "provider", name: "Match-call times are gated server-side on the Intended Parent Form", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "JR-01", persona: "journey", name: "Cost sheet -> acknowledge -> legal-identity gate -> invoice -> payment", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "JR-02", persona: "journey", name: "Signed agreement + payment completes the handoff, once and only once", messageCount: 0, desc: "", interestedServices: [] },
 ];
 
 const PERSONA_DEFS = [
@@ -163,6 +171,7 @@ const PERSONA_DEFS = [
   { id: "man-woman", label: "Man & Woman" },
   { id: "free-text", label: "Free-Text" },
   { id: "provider", label: "Provider" },
+  { id: "journey", label: "Journey" },
 ];
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -384,7 +393,7 @@ export default function AdminTestRunnerPage() {
           <FlaskConical style={{ color: "hsl(var(--primary))", width: "24px", height: "24px" }} />
           <div>
             <h1 style={{ fontSize: "20px", fontWeight: "700", fontFamily: "var(--font-heading)", margin: 0 }}>AI Concierge Test Runner</h1>
-            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>{`${testCases.length} tests · 5 personas + free-text + provider · runs test-ai-concierge.ts + test-freetext-requests.ts + test-provider-flows.ts`}</p>
+            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>{`${testCases.length} tests · 5 personas + free-text + provider + journey · runs test-ai-concierge.ts + test-freetext-requests.ts + test-provider-flows.ts + test-journey-flows.ts`}</p>
           </div>
         </div>
 

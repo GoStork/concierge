@@ -177,9 +177,12 @@ export class TestRunnerService {
     // speak the same stdout protocol, so one line-parser serves both.
     const isFtCase = (id: string) => /^FT-/i.test(id);
     const isPrCase = (id: string) => /^PR-/i.test(id);
+    const isJrCase = (id: string) => /^JR-/i.test(id);
     const wantsFt = !filter || filter === "free-text" || isFtCase(filter);
     const wantsPr = !filter || filter === "provider" || isPrCase(filter);
-    const wantsMain = !filter || (filter !== "free-text" && filter !== "provider" && !isFtCase(filter) && !isPrCase(filter));
+    const wantsJr = !filter || filter === "journey" || isJrCase(filter);
+    const wantsMain = !filter || (filter !== "free-text" && filter !== "provider" && filter !== "journey"
+      && !isFtCase(filter) && !isPrCase(filter) && !isJrCase(filter));
 
     const launch = (procKey: string, scriptFile: string, extraArgs: string[]) => {
     const scriptPath = path.resolve(process.cwd(), "scripts", scriptFile);
@@ -340,6 +343,9 @@ export class TestRunnerService {
     }
     if (wantsPr) {
       launch(`${runId}:pr`, "test-provider-flows.ts", filter && isPrCase(filter) ? [`--id=${filter}`] : []);
+    }
+    if (wantsJr) {
+      launch(`${runId}:jr`, "test-journey-flows.ts", filter && isJrCase(filter) ? [`--id=${filter}`] : []);
     }
 
     return { started: true, message: `Started run ${runId} with ${matchingTests.length} tests` };

@@ -150,11 +150,15 @@ async function createFixture(db: Client, tag: string): Promise<Fixture> {
 async function destroyFixture(db: Client, f: Fixture) {
   await db.query(`DELETE FROM "SilentQuery" WHERE "providerId" = $1`, [f.providerId]);
   await db.query(`DELETE FROM "AiChatMessage" WHERE "sessionId" IN (SELECT id FROM "AiChatSession" WHERE "userId" = $1)`, [f.parentUserId]);
+  // Invoice/ProviderQuote hold an FK to AiChatSession, so they must go first.
+  await db.query(`DELETE FROM "Invoice" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
+  await db.query(`DELETE FROM "ProviderQuote" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
   await db.query(`DELETE FROM "AiChatSession" WHERE "userId" = $1`, [f.parentUserId]);
   await db.query(`DELETE FROM "InAppNotification" WHERE "userId" IN ($1, $2)`, [f.parentUserId, f.providerUserId]);
   await db.query(`DELETE FROM "IntendedParentProfile" WHERE "parentAccountId" = $1`, [f.parentAcctId]);
   await db.query(`DELETE FROM "User" WHERE id IN ($1, $2)`, [f.parentUserId, f.providerUserId]);
   await db.query(`DELETE FROM "ParentAccount" WHERE id = $1`, [f.parentAcctId]).catch(() => {});
+  await db.query(`DELETE FROM "ReferralFeeConfig" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
   await db.query(`DELETE FROM "Provider" WHERE id = $1`, [f.providerId]).catch(() => {});
 }
 
@@ -271,10 +275,226 @@ async function pr03(db: Client) {
   }
 }
 
+
+// ─── Draft-approval helpers ──────────────────────────────────────────────────
+// The three draft cards (cost sheet / invoice / agreement) are approved by
+// (sessionId, messageId) - which is precisely why the merged provider view
+// deliberately does NOT surface them across sibling sessions.
+async function seedDraftCard(db: Client, sessionId: string, uiCardType: string, uiCardData: any, content: string): Promise<string> {
+  const r = await db.query(
+    `INSERT INTO "AiChatMessage" (id,"sessionId",role,content,"senderType","senderName","uiCardType","uiCardData","createdAt")
+     VALUES (gen_random_uuid(),$1,'assistant',$2,'system','System',$3,$4::jsonb,now()) RETURNING id`,
+    [sessionId, content, uiCardType, JSON.stringify(uiCardData)],
+  );
+  return r.rows[0].id;
+}
+
+async function addReferralFee(db: Client, providerId: string) {
+  await db.query(
+    `INSERT INTO "ReferralFeeConfig" (id,"providerId","serviceType","feeType","flatAmount","defaultServiceAmount","parentPaysBasis","isActive","createdAt","updatedAt")
+     VALUES (gen_random_uuid(),$1,'SURROGACY','FLAT',100000,500000,'DEFAULT_FIRST_PAYMENT',true,now(),now())
+     ON CONFLICT ("providerId","serviceType") DO NOTHING`, [providerId]);
+  // Legal Name + Tax ID + a COMPLETED W-9: the compliance gate the billing
+  // service enforces before any invoice can be issued.
+  await db.query(
+    `INSERT INTO "ProviderLegalIdentity" (id,"providerId","legalName","taxId","taxIdType","taxClassification","businessType","createdAt","updatedAt")
+     VALUES (gen_random_uuid(),$1,'ZZ Test Agency LLC','12-3456789','ein','LLC','company',now(),now())
+     ON CONFLICT ("providerId") DO NOTHING`, [providerId]);
+  await db.query(
+    `INSERT INTO "ProviderW9" (id,"providerId",status,"completedAt","createdAt","updatedAt")
+     VALUES (gen_random_uuid(),$1,'COMPLETED',now(),now(),now())
+     ON CONFLICT ("providerId") DO NOTHING`, [providerId]);
+}
+
+// ─── PR-04: cost-sheet draft approval turns into a real parent-visible quote ──
+async function pr04(db: Client) {
+  const f = await createFixture(db, "pr04");
+  try {
+    const sessionId = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation", providerJoined: true });
+    const msgId = await seedDraftCard(db, sessionId, "cost_sheet_draft_approval",
+      { totalCostCents: 3900000, notes: "Drafted from the uploaded cost sheet", lineItems: [] },
+      "Draft cost sheet ready for your approval");
+
+    // Parent must NOT see the draft before approval.
+    const before = await (await jfetch(`${BASE}/api/ai-concierge/session/${sessionId}/messages`, { headers: f.parentAuth })).json();
+    const beforeMsgs: any[] = Array.isArray(before) ? before : (before as any).messages || [];
+    check("draft card is hidden from the parent before approval",
+      !beforeMsgs.some((m: any) => m.uiCardType === "cost_sheet_draft_approval"), JSON.stringify(beforeMsgs.map((m: any) => m.uiCardType)));
+
+    await jfetch(`${BASE}/api/sessions/${sessionId}/cost-sheet-draft/${msgId}/approve`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...f.providerAuth },
+      body: JSON.stringify({ totalCostCents: 3900000, notes: "Approved" }),
+    });
+
+    const quote = await db.query(`SELECT id,"totalCostCents" FROM "ProviderQuote" WHERE "sessionId"=$1`, [sessionId]);
+    check("approval creates the real quote", quote.rowCount === 1 && quote.rows[0].totalCostCents === 3900000, `rows=${quote.rowCount}`);
+
+    const after = await (await jfetch(`${BASE}/api/ai-concierge/session/${sessionId}/messages`, { headers: f.parentAuth })).json();
+    const afterMsgs: any[] = Array.isArray(after) ? after : (after as any).messages || [];
+    check("parent now SEES the sent cost sheet", afterMsgs.some((m: any) => m.uiCardType === "cost_sheet"),
+      JSON.stringify(afterMsgs.map((m: any) => m.uiCardType)));
+  } finally {
+    await destroyFixture(db, f);
+  }
+}
+
+// ─── PR-05: invoice draft approval issues a real invoice ─────────────────────
+async function pr05(db: Client) {
+  const f = await createFixture(db, "pr05");
+  try {
+    await addReferralFee(db, f.providerId);
+    const sessionId = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation", providerJoined: true });
+    const msgId = await seedDraftCard(db, sessionId, "invoice_draft_approval",
+      { serviceAmount: 500000, description: "Agency retainer", lineItems: [{ serviceType: "SURROGACY", amountCents: 500000 }] },
+      "Draft invoice ready for your approval");
+
+    await jfetch(`${BASE}/api/sessions/${sessionId}/invoice-draft/${msgId}/approve`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...f.providerAuth },
+      body: JSON.stringify({ description: "Agency retainer" }),
+    });
+    const inv = await db.query(`SELECT id,status,"paymentToken" FROM "Invoice" WHERE "sessionId"=$1`, [sessionId]);
+    check("approval issues a real invoice", inv.rowCount === 1, `rows=${inv.rowCount}`);
+    check("issued invoice has a payment token", !!inv.rows[0]?.paymentToken);
+
+    const after = await (await jfetch(`${BASE}/api/ai-concierge/session/${sessionId}/messages`, { headers: f.parentAuth })).json();
+    const afterMsgs: any[] = Array.isArray(after) ? after : (after as any).messages || [];
+    check("parent SEES the invoice, not the draft",
+      afterMsgs.some((m: any) => m.uiCardType === "invoice") && !afterMsgs.some((m: any) => m.uiCardType === "invoice_draft_approval"),
+      JSON.stringify(afterMsgs.map((m: any) => m.uiCardType)));
+  } finally {
+    await destroyFixture(db, f);
+  }
+}
+
+// ─── PR-06: a draft card cannot be approved from another session ─────────────
+// Draft approvals are addressed by (sessionId, messageId); the consolidated
+// provider view deliberately keeps them out of the merge for this reason.
+async function pr06(db: Client) {
+  const f = await createFixture(db, "pr06");
+  try {
+    await addReferralFee(db, f.providerId);
+    const sessionA = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation A", providerJoined: true });
+    const sessionB = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation B", providerJoined: true });
+    const msgId = await seedDraftCard(db, sessionA, "cost_sheet_draft_approval",
+      { totalCostCents: 1234500, notes: "Draft", lineItems: [] }, "Draft cost sheet");
+
+    let rejected = false;
+    try {
+      await jfetch(`${BASE}/api/sessions/${sessionB}/cost-sheet-draft/${msgId}/approve`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...f.providerAuth },
+        body: JSON.stringify({ totalCostCents: 1234500 }),
+      });
+    } catch { rejected = true; }
+    check("approving a draft from the WRONG session is rejected", rejected);
+
+    const leaked = await db.query(`SELECT id FROM "ProviderQuote" WHERE "sessionId"=$1`, [sessionB]);
+    check("no quote is created in the wrong session", leaked.rowCount === 0, `rows=${leaked.rowCount}`);
+  } finally {
+    await destroyFixture(db, f);
+  }
+}
+
+// ─── PR-07: the pinned provider assistant (shipped with zero tests) ──────────
+async function pr07(db: Client) {
+  const f = await createFixture(db, "pr07");
+  try {
+    // Give the provider a real parent thread so the assistant has pipeline context.
+    const sessionId = await mkSession(db, f, { status: "ACTIVE", title: "AI Concierge Chat" });
+    await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'Does she have any travel restrictions?','PENDING',now(),now())`,
+      [sessionId, f.parentUserId, f.providerId]);
+
+    const created: any = await (await jfetch(`${BASE}/api/provider/concierge-assistant`, { headers: f.providerAuth })).json();
+    check("provider assistant session is created/returned", !!created?.sessionId || !!created?.id, JSON.stringify(Object.keys(created || {})).slice(0, 120));
+
+    const res = await jfetch(`${BASE}/api/provider/concierge-assistant/message`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...f.providerAuth },
+      body: JSON.stringify({ content: "what needs my attention right now?" }),
+    });
+    const text = await res.text();
+    let reply = "";
+    for (const line of text.split("\n")) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const d = JSON.parse(line.slice(6));
+        if (d.type === "token") reply += d.delta;
+        else if (d.type === "done") reply = (d.message && d.message.content) || reply;
+      } catch { /* non-JSON frame */ }
+    }
+    if (!reply) {
+      // Non-streaming shape: { userMessage, aiMessage } or { message }.
+      try {
+        const j = JSON.parse(text);
+        reply = j?.aiMessage?.content || j?.message?.content || j?.assistantMessage?.content || "";
+      } catch { /* leave empty - an unparseable body is a real failure */ }
+    }
+    check("assistant answers the provider in parseable assistant content", reply.trim().length > 0,
+      reply ? `${reply.length} chars` : `UNPARSED: ${text.slice(0, 160)}`);
+    check("assistant does not leak an anonymous parent's identity",
+      !new RegExp(`Test Parent pr07`, "i").test(reply), reply.slice(0, 160));
+
+    const sess = await db.query(
+      `SELECT "sessionType" FROM "AiChatSession" WHERE "providerId"=$1 AND "sessionType"='PROVIDER_CONCIERGE'`, [f.providerId]);
+    check("assistant uses a PROVIDER_CONCIERGE session (never a parent thread)", sess.rowCount === 1, `rows=${sess.rowCount}`);
+  } finally {
+    await db.query(`DELETE FROM "AiChatMessage" WHERE "sessionId" IN (SELECT id FROM "AiChatSession" WHERE "providerId"=$1)`, [f.providerId]).catch(() => {});
+    await db.query(`DELETE FROM "AiChatSession" WHERE "providerId"=$1`, [f.providerId]).catch(() => {});
+    await destroyFixture(db, f);
+  }
+}
+
+
+// ─── PR-08: the server-side match-call gate (the real enforcement) ───────────
+// Eva's IP-form reminder is a prompt directive and can be talked around; THIS
+// is the gate that actually holds. The agency proposes match-call times, and
+// the endpoint refuses while the Intended Parent Form is unsubmitted.
+async function pr08(db: Client) {
+  const f = await createFixture(db, "pr08");
+  try {
+    const sessionId = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation", providerJoined: true });
+    await db.query(
+      `INSERT INTO "IpFormResponse" (id,"parentAccountId",status,"hasSecondParent","promptedAt","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,'DRAFT',false,now(),now(),now())
+       ON CONFLICT ("parentAccountId") DO UPDATE SET status='DRAFT', "submittedAt"=NULL`, [f.parentAcctId]);
+
+    const future = (days: number) => new Date(Date.now() + days * 86400000).toISOString();
+    const propose = (subtype: string) => fetch(`${BASE}/api/chat-session/${sessionId}/propose-call-times`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...f.providerAuth },
+      body: JSON.stringify({ hostUserId: f.providerUserId, meetingSubtype: subtype, slots: [future(3), future(4)] }),
+    });
+
+    const blocked = await propose("MATCH_CALL");
+    const blockedBody: any = await blocked.json().catch(() => ({}));
+    check("match-call times are REFUSED while the IP form is unsubmitted", blocked.status === 409, `status=${blocked.status}`);
+    check("the refusal is a typed reason the UI can act on", blockedBody?.code === "IP_FORM_REQUIRED", JSON.stringify(blockedBody).slice(0, 140));
+    check("no proposed-times card is posted to the chat",
+      (await db.query(`SELECT id FROM "AiChatMessage" WHERE "sessionId"=$1 AND "uiCardType"='proposed_times'`, [sessionId])).rowCount === 0);
+
+    // The gate is specific to the MATCH call - a doctor call is unaffected.
+    const otherCall = await propose("DOCTOR_CONSULTATION");
+    check("the gate does NOT block other call types", otherCall.status < 400, `status=${otherCall.status}`);
+
+    await db.query(`UPDATE "IpFormResponse" SET status='SUBMITTED', "submittedAt"=now() WHERE "parentAccountId"=$1`, [f.parentAcctId]);
+    const allowed = await propose("MATCH_CALL");
+    check("match-call times are accepted once the form is submitted", allowed.status < 400, `status=${allowed.status}`);
+    check("the proposed-times card reaches the chat",
+      (await db.query(`SELECT id FROM "AiChatMessage" WHERE "sessionId"=$1 AND "uiCardType"='proposed_times'`, [sessionId])).rowCount > 0);
+  } finally {
+    await db.query(`DELETE FROM "IpFormResponse" WHERE "parentAccountId"=$1`, [f.parentAcctId]).catch(() => {});
+    await destroyFixture(db, f);
+  }
+}
+
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "PR-01", name: "Whisper answer relays into the parent's own chat (consolidated threads)", run: pr01 },
   { id: "PR-02", name: "Parent identity masked before booking, revealed after", run: pr02 },
   { id: "PR-03", name: "Provider-only content never reaches the parent transcript", run: pr03 },
+  { id: "PR-04", name: "Cost-sheet draft approval sends a parent-visible cost sheet", run: pr04 },
+  { id: "PR-05", name: "Invoice draft approval issues a real invoice", run: pr05 },
+  { id: "PR-06", name: "A draft cannot be approved from another session", run: pr06 },
+  { id: "PR-07", name: "Pinned provider assistant answers without leaking parent identity", run: pr07 },
+  { id: "PR-08", name: "Match-call times are gated server-side on the Intended Parent Form", run: pr08 },
 ];
 
 (async () => {

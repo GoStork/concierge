@@ -2534,7 +2534,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
-      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true, historySummary: true, subjectProfileId: true, subjectType: true },
+      select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true, historySummary: true, subjectProfileId: true, subjectType: true, handoffCompletedAt: true },
     });
 
     // Kick off the Tier2-only expensive lookups (expert guidance rules,
@@ -3129,6 +3129,10 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     }
 
     let userContextBlock = "";
+    // Hoisted so the Phase 1 stand-down (below) can see them: a family with an
+    // Intended Parent Form on the table is past onboarding.
+    let ipFormPending = false;
+    let ipFormSubmitted = false;
     // Whether a real upcoming provider consultation exists (drives CALL PREP MODE
     // below and read by the FAVORITE interceptor - never offer to schedule a call
     // that is already booked).
@@ -3572,11 +3576,13 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           select: { status: true, promptedAt: true, hasSecondParent: true },
         });
         if (ipForm?.promptedAt && ipForm.status === "DRAFT") {
+          ipFormPending = true;
           parts.push(
             `IP FORM PENDING: This family was asked to complete their Intended Parent Form (at /ip-form) and has NOT submitted it yet. The surrogacy agency shares this form (with photos and their letter) with potential surrogates - a MATCH CALL CANNOT BE SCHEDULED until it is submitted. Follow the INTENDED PARENT FORM section: remind them naturally when relevant, answer questions about it, and point them to the form page. Do not nag on every message.`,
           );
         } else if (ipForm?.status === "SUBMITTED") {
-          parts.push(`IP FORM STATUS: The family's Intended Parent Form is submitted - never ask them to fill it again.`);
+          ipFormSubmitted = true;
+          parts.push(`IP FORM STATUS: The family's Intended Parent Form IS SUBMITTED and complete. This overrides anything earlier in this conversation that treated it as pending - those messages are out of date. Never ask them to fill it, complete it, or finish it again, and never say you are "waiting" on it. The match call is now unblocked: the agency proposes the times (you cannot book it yourself), so tell them their coordinator will send times to this chat and offer to help them prepare.`);
         }
       } catch { /* best-effort context */ }
 
@@ -4798,9 +4804,26 @@ ${biologicalMasterLogic.split("QUESTIONS ABOUT A PRESENTED MATCH")[1] ? "QUESTIO
     // same turn made the two compete, and the reply intermittently carried
     // Phase 1's quick replies ("Solo | With a partner") under the confirm
     // question. Identity is asked on the very next turn instead.
-    const phase1StandsDown = redundancyConfirmActive || handoffWhyQuestionActive;
+    // A family already working with an agency - consultation booked, provider
+    // in the thread, or an Intended Parent Form on the table - is long past
+    // onboarding. Asking "are you going solo or with a partner?" at that point
+    // reads as if nobody has been paying attention, and worse, it hijacks the
+    // reply to whatever they actually asked (the probe on Jul 25 had Phase 1
+    // tacked onto three consecutive post-consultation answers, including a
+    // [[SAVE]] that guessed "partnered" from the word "we"). Identity gaps at
+    // this stage belong to the provider's intake, not to Eva's opening script.
+    const journeyUnderway = ipFormPending || ipFormSubmitted
+      || currentSession?.status === "CONSULTATION_BOOKED"
+      || currentSession?.status === "PROVIDER_CONNECTED"
+      || !!(currentSession as any)?.providerJoinedAt
+      || !!(currentSession as any)?.handoffCompletedAt;
+
+    const phase1StandsDown = redundancyConfirmActive || handoffWhyQuestionActive || journeyUnderway;
     if (phase1StandsDown) {
-      console.log(`[PHASE1] Suppressed this turn - ${redundancyConfirmActive ? "redundancy-confirm" : "handoff why-question"} owns the reply`);
+      const why = redundancyConfirmActive ? "redundancy-confirm"
+        : handoffWhyQuestionActive ? "handoff why-question"
+        : "journey already underway (agency engaged / IP form on the table)";
+      console.log(`[PHASE1] Suppressed this turn - ${why} owns the reply`);
     }
     if (phase1StandsDown) {
       // no Phase 1 directive this turn - it is asked on the next one

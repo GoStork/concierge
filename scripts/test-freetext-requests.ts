@@ -1012,6 +1012,20 @@ async function ft20(db: Client) {
     check("does not invent an agency-specific policy for it",
       !/this agency (accepts|does not accept|allows|does not allow) .{0,40}placenta previa/i.test(r4.content)
       || deferred || citesPlatform, r4.content.slice(0, 260));
+
+    // If she SAYS she contacted the agency, a whisper must actually exist.
+    // Eva has no way to message anyone except by emitting a tag the system
+    // acts on, and a claim with no SilentQuery behind it is the exact
+    // fabrication caught in the Jul 25 IP-form probe.
+    const claimsContact = /(i'?ve|i have) (just )?(sent|pinged|messaged|reached out|asked|notified)|sent .{0,20}message .{0,20}(to )?(the )?agency/i.test(r4.content);
+    if (claimsContact) {
+      const whispers = await db.query(
+        `SELECT id FROM "SilentQuery" WHERE "parentUserId"=$1 AND "providerId"=$2`, [u.userId, prov.providerId]);
+      check("a claim of contacting the agency is backed by a real whisper",
+        (whispers.rowCount ?? 0) > 0, `claimed contact, ${whispers.rowCount} SilentQuery rows`);
+    } else {
+      check("no unbacked claim of contacting the agency", true, "did not claim contact");
+    }
   } finally {
     if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
     await deleteUser(db, u);
@@ -1077,6 +1091,80 @@ async function ft21(db: Client) {
 }
 
 // ─── Runner (admin test-runner stdout protocol) ──────────────────────────────
+
+// ─── FT-22: the Intended Parent Form gate on match-call scheduling ───────────
+// The agency shares this form (photos + the family's letter) with potential
+// surrogates, so a MATCH call cannot be scheduled until it is submitted. The
+// gate is a context directive, not a hardcoded block, so it has to be probed
+// in conversation. It must also stay narrow: it gates the match call, NOT
+// every other thing the parent might want to do.
+async function ft22(db: Client) {
+  const fam = await createUser(db, "ft-ipform", ["Surrogate"]);
+  let prov: any = null;
+  try {
+    prov = await createProviderFor(db, fam, "ftipform");
+    const r = await db.query(
+      `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","subjectType","tier2Active","providerJoinedAt","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,'ACTIVE','PARENT','AI Concierge Chat',$3,'surrogate',true,NULL,now(),now()) RETURNING id`,
+      [fam.userId, prov.providerId, MATCHMAKER_ID]);
+    const sessionId = r.rows[0].id as string;
+
+    // The form has been prompted but not submitted - the gated state.
+    await db.query(
+      `INSERT INTO "IpFormResponse" (id,"parentAccountId",status,"hasSecondParent","promptedAt","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,'DRAFT',false,now(),now(),now())
+       ON CONFLICT ("parentAccountId") DO UPDATE SET status='DRAFT', "promptedAt"=now(), "submittedAt"=NULL`,
+      [fam.acctId]);
+
+    const gated = await send(fam.auth, sessionId, "we loved the consultation - can we set up the match call with her now?");
+    check("pending IP form is named when the parent asks for the match call",
+      /intended parent form/i.test(gated.content), gated.content.slice(0, 220));
+    check("the parent is told WHERE to complete it",
+      /\/ip-form|form page|your dashboard/i.test(gated.content), gated.content.slice(0, 220));
+    check("Eva explains WHY it is needed (the agency shares it with the surrogate)",
+      /share|send|surrogate (can|will)|before the call/i.test(gated.content), gated.content.slice(0, 220));
+    check("no match call is scheduled while the form is unsubmitted",
+      !/\[\[MATCH_CALL|\[\[CONSULTATION_BOOKING/i.test(gated.content), gated.content.slice(0, 200));
+    // The probe that built this case caught Eva routing around the block with
+    // "I've just sent a request to the agency" - a pure fabrication. She has
+    // no way to message anyone except via a tag the system acts on.
+    check("Eva does not fabricate having contacted the agency",
+      !/(i'?ve|i have) (just )?(sent|pinged|let|notified|messaged|reached out|passed)/i.test(gated.content)
+      && !/they'?ll reach out shortly/i.test(gated.content), gated.content.slice(0, 220));
+    // Phase 1 onboarding must not hijack a post-consultation turn.
+    check("no Phase 1 onboarding question is bolted onto the answer",
+      !/(going on this journey|are you doing this) (solo|on your own)|same-sex couple or straight/i.test(gated.content),
+      gated.content.slice(-160));
+
+    // The gate must not become a wall: unrelated questions still get answers.
+    const unrelated = await send(fam.auth, sessionId, "what usually happens on a match call, and how long does it run?");
+    check("an unrelated question is still answered while the form is pending",
+      /minutes|hour|casual|conversation|meet/i.test(unrelated.content), unrelated.content.slice(0, 200));
+    check("the form reminder does not replace the answer", unrelated.content.trim().length > 120,
+      `${unrelated.content.length} chars`);
+
+    // Submitted - the gate lifts. Eva still cannot book it (the AGENCY proposes
+    // times through /propose-call-times, guarded server-side; see PR-08), so
+    // the correct behaviour is to stop asking for the form and hand off - NOT
+    // to claim she scheduled anything.
+    await db.query(
+      `UPDATE "IpFormResponse" SET status='SUBMITTED', "submittedAt"=now() WHERE "parentAccountId"=$1`, [fam.acctId]);
+    const after = await send(fam.auth, sessionId, "ok we submitted everything - can we get the match call on the calendar?");
+    check("a submitted form is never treated as outstanding",
+      !/(complete|completing|finish|submit|fill)(ing)? (your|the|that) (intended parent )?(profile )?form|once your form is (complete|done|in)|waiting (on|for) (your|the) form/i.test(after.content),
+      after.content.slice(0, 240));
+    check("Eva does not claim to have booked or requested the call herself",
+      !/(i'?ve|i have) (just )?(booked|scheduled|set up|sent|pinged|notified|requested)/i.test(after.content),
+      after.content.slice(0, 240));
+    check("the parent is told how the match call actually gets scheduled",
+      /agency|coordinator|they (will|'ll)|times|availab/i.test(after.content), after.content.slice(0, 240));
+  } finally {
+    await db.query(`DELETE FROM "IpFormResponse" WHERE "parentAccountId"=$1`, [fam.acctId]).catch(() => {});
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, fam);
+  }
+}
+
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "FT-01", name: "Deep-link surrogate pin - 4-turn free-text replay", run: ft01 },
   { id: "FT-02", name: "Confirm-never-overrule - embryos on file, donor requested", run: ft02 },
@@ -1099,6 +1187,7 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "FT-19", name: "Answers become durable knowledge; relevance beats recency", run: ft19 },
   { id: "FT-20", name: "Provider's configured requirements are answerable", run: ft20 },
   { id: "FT-21", name: "Agency policy attributed to the agency, not GoStork", run: ft21 },
+  { id: "FT-22", name: "Intended Parent Form gates the match call, and only the match call", run: ft22 },
 ];
 
 (async () => {

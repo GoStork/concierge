@@ -701,6 +701,14 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 2,
   },
 
+  {
+    id: "FT-22", persona: "free-text",
+    name: "FT-22: Intended Parent Form gates the match call, and only the match call",
+    desc: "With the form pending Eva names it, links it, refuses to schedule and never fabricates having contacted the agency; unrelated questions are still answered; once submitted it is never treated as outstanding",
+    interestedServices: ["Surrogate"],
+    messageCount: 3,
+  },
+
   // ── PROVIDER-SIDE (PR-01..) ───────────────────────────────────────────────
   // Runs scripts/test-provider-flows.ts - the provider experience and the
   // parent/provider chat boundary, which the parent suites cannot reach.
@@ -722,6 +730,60 @@ export const TEST_CASES: TestCaseDef[] = [
     id: "PR-03", persona: "provider",
     name: "PR-03: Provider-only content never reaches the parent transcript",
     desc: "provider_only messages and draft-approval cards are filtered out of the parent's message feed",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "PR-04", persona: "provider",
+    name: "PR-04: Cost-sheet draft approval sends a parent-visible cost sheet",
+    desc: "The draft card is invisible to the parent until the provider approves it; approval creates the real quote and the parent's chat shows the sent cost sheet",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "PR-05", persona: "provider",
+    name: "PR-05: Invoice draft approval issues a real invoice",
+    desc: "Approving the invoice draft issues an invoice with a payment token and swaps the draft card for the parent-facing invoice card",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "PR-06", persona: "provider",
+    name: "PR-06: A draft cannot be approved from another session",
+    desc: "Draft approvals are addressed by (sessionId, messageId) - approving a draft against a sibling session is rejected and creates nothing",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "PR-07", persona: "provider",
+    name: "PR-07: Pinned provider assistant answers without leaking parent identity",
+    desc: "The PROVIDER_CONCIERGE assistant answers 'what needs my attention' from pipeline state, in its own session, without naming an anonymous parent",
+    interestedServices: ["Surrogate"],
+    messageCount: 1,
+  },
+  {
+    id: "PR-08", persona: "provider",
+    name: "PR-08: Match-call times are gated server-side on the Intended Parent Form",
+    desc: "Proposing MATCH_CALL times is refused with IP_FORM_REQUIRED while the form is unsubmitted, other call types are unaffected, and it succeeds once submitted",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+
+  // ── TRANSACTIONAL JOURNEY (JR-01..) ───────────────────────────────────────
+  // Runs scripts/test-journey-flows.ts - what MOVES rather than what Eva says:
+  // cost sheet -> acknowledgement -> invoice -> payment -> agreement -> handoff,
+  // driven through the same endpoints a real provider and parent hit.
+  {
+    id: "JR-01", persona: "journey",
+    name: "JR-01: Cost sheet -> acknowledge -> legal-identity gate -> invoice -> payment",
+    desc: "Each artifact lands in a chat the parent can actually see; invoicing is blocked until Legal Name, Tax ID and a signed W-9 exist; payment alone does NOT complete the handoff",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "JR-02", persona: "journey",
+    name: "JR-02: Signed agreement + payment completes the handoff, once and only once",
+    desc: "A signed agreement alone does not fire the handoff; payment completes it, the parent is told directly with provider-facing copy attached, and a replayed payment does not re-stamp or re-post it",
     interestedServices: ["Surrogate"],
     messageCount: 0,
   },
