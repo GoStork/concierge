@@ -769,6 +769,28 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 0,
   },
 
+  {
+    id: "PR-09", persona: "provider",
+    name: "PR-09: Agreement draft: parent-invisible, rejectable, not re-actionable",
+    desc: "The draft card never reaches the parent, cannot be actioned from a sibling session, records its rejection, creates no Agreement, and cannot then be approved (PandaDoc round trip not exercised - JR-02 covers the signed state)",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "PR-10", persona: "provider",
+    name: "PR-10: Unread badge counts only what the parent can actually see",
+    desc: "A provider-side/internal card (clearance_tracker) does not inflate the parent's unread count, a visible card does, and the badge equals the number of cards actually rendered",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "PR-11", persona: "provider",
+    name: "PR-11: Merged provider view never marks the parent's private chat delivered",
+    desc: "Opening the merged provider thread stamps deliveredAt only on messages the provider was actually shown - never on the parent's private Eva messages in a whisper-stamped sibling session",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+
   // ── TRANSACTIONAL JOURNEY (JR-01..) ───────────────────────────────────────
   // Runs scripts/test-journey-flows.ts - what MOVES rather than what Eva says:
   // cost sheet -> acknowledgement -> invoice -> payment -> agreement -> handoff,

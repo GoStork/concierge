@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { PARENT_HIDDEN_MESSAGE_FILTER } from "./parent-visibility";
 import { emitJourneyEvent } from "./journey-events";
 import multer from "multer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -421,6 +422,11 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
             sessionId: { in: sessionIds },
             readAt: null,
             role: "assistant",
+            // Must match what the parent's read path actually renders. Without
+            // this, a provider-side/internal card (clearance_tracker,
+            // ip_form_submitted, video_invite, ...) bumps the badge to a
+            // message the parent can never open, so the count never clears.
+            ...PARENT_HIDDEN_MESSAGE_FILTER,
           },
           _count: true,
         })
@@ -1531,10 +1537,20 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
 
     // Auto-mark non-provider messages as delivered when provider views them
     // (including merged sibling threads, so folded rows don't stay "unread")
-    prisma.aiChatMessage.updateMany({
-      where: { sessionId: { in: [session.id, ...siblingSessionIds] }, senderType: { not: "provider" }, deliveredAt: null },
-      data: { deliveredAt: new Date() },
-    }).catch(() => {});
+    // Stamp ONLY the messages actually included in this response. Keying on
+    // the sibling SESSION ids instead swept in every message in the parent's
+    // private Eva chat - which the merge deliberately does not show the
+    // provider - marking as "delivered to the provider" things the provider
+    // never saw.
+    const deliveredIds = (mergedMessages as any[])
+      .filter((m) => m && m.senderType !== "provider" && !m.deliveredAt && m.id)
+      .map((m) => m.id as string);
+    if (deliveredIds.length > 0) {
+      prisma.aiChatMessage.updateMany({
+        where: { id: { in: deliveredIds }, deliveredAt: null },
+        data: { deliveredAt: new Date() },
+      }).catch(() => {});
+    }
 
     const provDetailAvail = await computeProfileAvailability([session as any]);
     const provDetailEntry = (session as any).subjectProfileId ? provDetailAvail.get((session as any).subjectProfileId) : null;

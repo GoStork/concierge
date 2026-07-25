@@ -147,6 +147,19 @@ The form gates the match call: the agency sends it (photos + the family's letter
 
 The first draft of FT-22 asserted "scheduling moves forward once the form is submitted" - which would have failed Eva for behaving CORRECTLY, since she has no booking mechanism here. That is the same trap recorded for FT-21: a test that punishes correct behaviour pushes the next fix in the wrong direction.
 
+### 17. Closing the Jul 24 routing hazards (Jul 25)
+The four "still open" items from the routing audit, plus the untested agreement draft. All five were the same shape: a silent failure that no test could see.
+
+- **`review_prompt` / `ip_form_prompt` dropped when `matchmakerId` was null.** Both files carried their own copy of `findEvaSession` requiring `matchmakerId: { not: null }`; a parent session without one returned null and the caller quietly returned. A THIRD copy in the win-back sweep preferred `providerId: null`, which misses an Eva session a whisper has stamped with a providerId - the exact documented trap. All three now share `resolveParentEvaSessionId` in `server/parent-visibility.ts`, which keys on what actually distinguishes a private thread (`status` + `providerJoinedAt`), prefers the canonical matchmaker session, and falls back rather than dropping the post.
+- **Phantom unread badges.** The parent read path hides any system card not in its allow-list, but the unread count counted every unread assistant message. A `clearance_tracker` or `ip_form_submitted` card produced a badge for a message the parent could never open, so the count never cleared. The allow-list moved into `parent-visibility.ts` (it had been duplicated inline twice in ai-router) and the count now applies the same rule via `PARENT_HIDDEN_MESSAGE_FILTER`. Guarded by **PR-10**, which asserts the badge equals the number of cards actually rendered.
+- **Older Eva threads were invisible.** `conversations-page.tsx` collapsed the parent's concierge list to `[sortedEva[0]]`, so every ACTIVE Eva session but the newest disappeared - along with any unread messages in them, which the badge still counted. Now renders all of them; verified in the browser with a two-session fixture (both rows visible, header badge 2).
+- **Merged provider view stamped the parent's private chat.** The delivery stamp keyed on the sibling SESSION ids, sweeping in every message in the parent's private Eva session - which the merge deliberately never shows the provider. It now stamps only the message ids actually included in the response. Guarded by **PR-11**.
+- **Agreement draft approval had no test at all** (cost sheet and invoice did). **PR-09** covers the parts that are ours: parent invisibility, cross-session addressing, the reject path, and the already-resolved guard. The PandaDoc round trip is deliberately not exercised - JR-02 covers the signed state it produces.
+
+**Look-alike donor consent was NOT open** - it is fully built (`Provider.biometricMatchingAuthorized`, opt-out, enforced in the search `where`, excluded from the faceprint backfill, faceprints removed when toggled off) plus a parent-side BIPA gate (`faceMatchConsentAt` + `CONSENT_REQUIRED`). The note claiming otherwise was stale.
+
+**A false pass caught in the act.** PR-11 passed on its first run - and also passed against the deliberately reverted code. The delivery stamp is fire-and-forget, so asserting immediately after the HTTP response raced it. With a 2s wait the test fails on the old code and passes on the new. Any assertion about a fire-and-forget side effect needs to wait for it, or it proves nothing.
+
 ## Engineering rules distilled from these bugs
 
 1. Every action button and free-typed intent must reach its flow **deterministically** - prompt rules alone do not survive contact with the model.
@@ -158,6 +171,8 @@ The first draft of FT-22 asserted "scheduling moves forward once the form is sub
 7. A prohibition enumerated as a list of examples is read as exactly that list. "Never fake an action" plus four examples did not stop a fifth kind of fabrication - name the mechanism ("the only way X happens is Y"), not just the instances.
 8. Before asserting on a card type, a status value or a field name, check it exists in the code path under test. An assertion keyed on something that never occurs passes silently forever.
 9. Drive the real endpoint, never an in-process import of server code - test scripts do not have the server's environment, and the failure looks like a product bug.
+10. When a rule exists in two places (a read filter and its count, a card allow-list and its consumers), they WILL drift. Extract the single source of truth instead of keeping them in sync by hand.
+11. Prove a new test fails against the unfixed code before trusting it. Two of these passed on first run for the wrong reason - once because the assertion raced a fire-and-forget write.
 
 ## Manual spot-checks (not automated)
 

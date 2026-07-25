@@ -486,6 +486,116 @@ async function pr08(db: Client) {
   }
 }
 
+
+// ─── PR-09: agreement draft approval card ────────────────────────────────────
+// The approve path drives PandaDoc (external), so this covers the parts that
+// are ours: parent invisibility, the reject path, the already-resolved guard,
+// and cross-session addressing. The PandaDoc round trip itself is not
+// exercised here - JR-02 covers the signed-agreement state it produces.
+async function pr09(db: Client) {
+  const f = await createFixture(db, "pr09");
+  try {
+    const sessionId = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation", providerJoined: true });
+    const otherSession = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation B", providerJoined: true });
+    const msgId = await seedDraftCard(db, sessionId, "agreement_draft_approval",
+      { documentType: "Agreement", parentName: "Test Parent" }, "Draft agreement ready for your approval");
+
+    const seen = await (await jfetch(`${BASE}/api/ai-concierge/session/${sessionId}/messages`, { headers: f.parentAuth })).json();
+    const seenMsgs: any[] = Array.isArray(seen) ? seen : (seen as any).messages || [];
+    check("agreement draft is invisible to the parent",
+      !seenMsgs.some((m: any) => m.uiCardType === "agreement_draft_approval"),
+      JSON.stringify(seenMsgs.map((m: any) => m.uiCardType)));
+
+    // Addressed by (sessionId, messageId) - the sibling session must not work.
+    const wrong = await fetch(`${BASE}/api/sessions/${otherSession}/agreement-draft/${msgId}/reject`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...f.providerAuth },
+    });
+    check("a draft cannot be actioned from a sibling session", wrong.status === 404, `status=${wrong.status}`);
+
+    const rejected = await fetch(`${BASE}/api/sessions/${sessionId}/agreement-draft/${msgId}/reject`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...f.providerAuth },
+    });
+    check("provider can reject the draft", rejected.status < 400, `status=${rejected.status}`);
+    const row = await db.query(`SELECT "uiCardData"->>'resolvedAs' AS r FROM "AiChatMessage" WHERE id=$1`, [msgId]);
+    check("rejection is recorded on the card", row.rows[0]?.r === "rejected", String(row.rows[0]?.r));
+    check("rejecting creates no Agreement",
+      (await db.query(`SELECT id FROM "Agreement" WHERE "sessionId"=$1`, [sessionId])).rowCount === 0);
+
+    // A resolved draft must not be actionable twice - the provider can open a
+    // stale card in another tab and click again.
+    const again = await fetch(`${BASE}/api/sessions/${sessionId}/agreement-draft/${msgId}/approve`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...f.providerAuth }, body: "{}",
+    });
+    check("an already-rejected draft cannot then be approved", again.status === 409, `status=${again.status}`);
+  } finally {
+    await destroyFixture(db, f);
+  }
+}
+
+// ─── PR-10: unread counts must agree with what the parent can actually see ───
+// A card the read path hides but the counter counts is a badge the parent can
+// never clear - they open the chat, see nothing new, and the number stays.
+async function pr10(db: Client) {
+  const f = await createFixture(db, "pr10");
+  try {
+    const sessionId = await mkSession(db, f, { status: "ACTIVE", title: "AI Concierge Chat" });
+    // clearance_tracker is provider-side/internal: never rendered to a parent.
+    await seedDraftCard(db, sessionId, "clearance_tracker", { stage: "pending" }, "Medical clearance in progress");
+
+    const listUnread = async (): Promise<number> => {
+      const res = await jfetch(`${BASE}/api/my/chat-sessions`, { headers: f.parentAuth });
+      const rows: any[] = await res.json();
+      const row = rows.find((r: any) => r.id === sessionId);
+      return row ? (row.unreadCount || 0) : -1;
+    };
+    const hiddenOnly = await listUnread();
+    check("a hidden system card does not raise the parent's unread badge", hiddenOnly === 0, `unread=${hiddenOnly}`);
+
+    // A card the parent CAN see must still count.
+    await seedDraftCard(db, sessionId, "cost_sheet", { totalCostCents: 100000 }, "Your cost sheet");
+    const withVisible = await listUnread();
+    check("a visible card still counts toward unread", withVisible === 1, `unread=${withVisible}`);
+
+    const shown = await (await jfetch(`${BASE}/api/ai-concierge/session/${sessionId}/messages`, { headers: f.parentAuth })).json();
+    const shownMsgs: any[] = Array.isArray(shown) ? shown : (shown as any).messages || [];
+    const visibleCount = shownMsgs.filter((m: any) => m.uiCardType).length;
+    check("the badge matches the number of cards actually rendered", withVisible === visibleCount,
+      `badge=${withVisible} rendered=${visibleCount} :: ${JSON.stringify(shownMsgs.map((m: any) => m.uiCardType))}`);
+  } finally {
+    await destroyFixture(db, f);
+  }
+}
+
+// ─── PR-11: viewing a merged thread does not touch the parent's private chat ─
+// A whisper stamps providerId onto the parent's PRIVATE Eva session, so the
+// provider's merged view can reach sibling sessions it must never mark as
+// delivered - "delivered" would then mean nothing.
+async function pr11(db: Client) {
+  const f = await createFixture(db, "pr11");
+  try {
+    const evaSession = await mkSession(db, f, { status: "ACTIVE", title: "AI Concierge Chat" });
+    const booked = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation", providerJoined: true });
+    // Eva's private message to the parent, in the whisper-stamped Eva session.
+    const evaMsg = await db.query(
+      `INSERT INTO "AiChatMessage" (id,"sessionId",role,content,"senderType","senderName","createdAt")
+       VALUES (gen_random_uuid(),$1,'assistant','Just between us - here is what I would ask them.','ai','Eva',now()) RETURNING id`,
+      [evaSession]);
+    const evaMsgId = evaMsg.rows[0].id;
+
+    // Provider opens their thread (this is what triggers the delivery stamp).
+    await jfetch(`${BASE}/api/provider/concierge-sessions/${booked}`, { headers: f.providerAuth });
+    // The delivery stamp is fire-and-forget, so asserting immediately races it
+    // and the test passes for the wrong reason.
+    await new Promise((r) => setTimeout(r, 2000));
+
+    const after = await db.query(`SELECT "deliveredAt" FROM "AiChatMessage" WHERE id=$1`, [evaMsgId]);
+    check("provider opening their thread does NOT mark the parent's private Eva message delivered",
+      !after.rows[0].deliveredAt, String(after.rows[0].deliveredAt));
+  } finally {
+    await destroyFixture(db, f);
+  }
+}
+
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "PR-01", name: "Whisper answer relays into the parent's own chat (consolidated threads)", run: pr01 },
   { id: "PR-02", name: "Parent identity masked before booking, revealed after", run: pr02 },
@@ -495,6 +605,9 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "PR-06", name: "A draft cannot be approved from another session", run: pr06 },
   { id: "PR-07", name: "Pinned provider assistant answers without leaking parent identity", run: pr07 },
   { id: "PR-08", name: "Match-call times are gated server-side on the Intended Parent Form", run: pr08 },
+  { id: "PR-09", name: "Agreement draft: parent-invisible, rejectable, not re-actionable", run: pr09 },
+  { id: "PR-10", name: "Unread badge counts only what the parent can actually see", run: pr10 },
+  { id: "PR-11", name: "Merged provider view never marks the parent's private chat delivered", run: pr11 },
 ];
 
 (async () => {

@@ -10,6 +10,7 @@
  * by the cards themselves. One reminder, only for the post-handoff ask.
  */
 import { prisma } from "./db";
+import { resolveParentEvaSessionId } from "./parent-visibility";
 import { emitJourneyEvent } from "./journey-events";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -32,15 +33,6 @@ async function accountIdsFor(parentUserId: string): Promise<{ accountId: string;
   return { accountId, memberIds: members.map((m) => m.id) };
 }
 
-/** The parent's primary concierge chat - where review prompts live. */
-async function findEvaSession(memberIds: string[]): Promise<string | null> {
-  const s = await prisma.aiChatSession.findFirst({
-    where: { userId: { in: memberIds }, status: "ACTIVE", sessionType: "PARENT", matchmakerId: { not: null } },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true },
-  });
-  return s?.id || null;
-}
 
 function promptCopy(stage: ReviewStage, providerName: string, hasExisting: boolean): string {
   if (stage === "consult_completed") {
@@ -77,7 +69,7 @@ export async function maybePostReviewPrompt(opts: {
       select: { id: true, rating: true },
     });
 
-    const sessionId = await findEvaSession(memberIds);
+    const sessionId = await resolveParentEvaSessionId(memberIds);
     if (!sessionId) return;
 
     // Check + insert under a Postgres advisory lock: the scheduler runs on

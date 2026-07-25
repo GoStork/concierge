@@ -1,4 +1,5 @@
 import { PrismaService } from "../prisma/prisma.service";
+import { resolveParentEvaSessionId } from "../../../parent-visibility";
 import { NotificationService } from "../notifications/notification.service";
 import { emitJourneyEvent, bookingEventType } from "../../../journey-events";
 
@@ -54,24 +55,17 @@ function providerDisplayName(booking: SweepBooking): string {
   return booking.providerUser?.provider?.name || booking.providerUser?.name || "the provider";
 }
 
-/** The parent's own concierge (Eva) chat - same fallback chain as the lawyer intro. */
+/**
+ * The parent's own concierge (Eva) chat. Delegates to the shared resolver -
+ * this used to prefer `providerId: null`, which misses an Eva session that a
+ * whisper stamped with a providerId (see parent-visibility.ts).
+ */
 async function findEvaSessionForParent(prisma: PrismaService, parentUserId: string): Promise<string | null> {
   const me = await prisma.user.findUnique({ where: { id: parentUserId }, select: { parentAccountId: true } });
   const accountIds = me?.parentAccountId
     ? (await prisma.user.findMany({ where: { parentAccountId: me.parentAccountId }, select: { id: true } })).map((u) => u.id)
     : [parentUserId];
-  const session =
-    (await prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountIds }, providerId: null },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true },
-    })) ??
-    (await prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountIds }, matchmakerId: { not: null }, status: "ACTIVE" },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true },
-    }));
-  return session?.id ?? null;
+  return resolveParentEvaSessionId(accountIds, prisma);
 }
 
 /**

@@ -1793,7 +1793,10 @@ const sendMessageMutation = useMutation({
     const sortedEva = [...allEvaConversations].sort((a, b) =>
       new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
     );
-    const evaConversations = sortedEva.length > 0 ? [sortedEva[0]] : [];
+    // Show EVERY private Eva conversation, not just the most recent one.
+    // Collapsing to sortedEva[0] hid older ACTIVE sessions completely - along
+    // with any unread messages in them, which the badge still counted.
+    const evaConversations = sortedEva;
     const providerConversations = allSessions
       .filter(s => isProviderThread(s))
       .sort((a, b) => new Date(b.lastMessageAt || b.updatedAt).getTime() - new Date(a.lastMessageAt || a.updatedAt).getTime());

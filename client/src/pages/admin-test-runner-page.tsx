@@ -158,6 +158,9 @@ const ALL_TESTS_FALLBACK: TestCaseInfo[] = [
   { id: "PR-06", persona: "provider", name: "A draft cannot be approved from another session", messageCount: 0, desc: "", interestedServices: [] },
   { id: "PR-07", persona: "provider", name: "Pinned provider assistant answers without leaking parent identity", messageCount: 1, desc: "", interestedServices: [] },
   { id: "PR-08", persona: "provider", name: "Match-call times are gated server-side on the Intended Parent Form", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "PR-09", persona: "provider", name: "Agreement draft: parent-invisible, rejectable, not re-actionable", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "PR-10", persona: "provider", name: "Unread badge counts only what the parent can actually see", messageCount: 0, desc: "", interestedServices: [] },
+  { id: "PR-11", persona: "provider", name: "Merged provider view never marks the parent's private chat delivered", messageCount: 0, desc: "", interestedServices: [] },
   { id: "JR-01", persona: "journey", name: "Cost sheet -> acknowledge -> legal-identity gate -> invoice -> payment", messageCount: 0, desc: "", interestedServices: [] },
   { id: "JR-02", persona: "journey", name: "Signed agreement + payment completes the handoff, once and only once", messageCount: 0, desc: "", interestedServices: [] },
 ];

@@ -14,6 +14,7 @@
  * days. Dedupe is the IpFormReminder unique constraint - safe cross-process.
  */
 import { prisma } from "./db";
+import { resolveParentEvaSessionId } from "./parent-visibility";
 import { emitJourneyEvent } from "./journey-events";
 import { sendIpFormParentNudge } from "./notify-ip-form";
 
@@ -40,15 +41,6 @@ async function accountIdsFor(parentUserId: string): Promise<{ accountId: string;
   return { accountId, memberIds: members.map((m) => m.id) };
 }
 
-/** The parent's primary concierge chat - where the prompt card lives. */
-async function findEvaSession(memberIds: string[]): Promise<string | null> {
-  const s = await prisma.aiChatSession.findFirst({
-    where: { userId: { in: memberIds }, status: "ACTIVE", sessionType: "PARENT", matchmakerId: { not: null } },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true },
-  });
-  return s?.id || null;
-}
 
 /**
  * A provider that requires the ID photocopy has connected, but the form was
@@ -76,7 +68,7 @@ async function maybeRequestPhotocopy(
     } catch {
       return; // already requested for this provider
     }
-    const sessionId = await findEvaSession(memberIds);
+    const sessionId = await resolveParentEvaSessionId(memberIds);
     if (sessionId) {
       await prisma.aiChatMessage.create({
         data: {
@@ -164,7 +156,7 @@ export async function maybePromptIpForm(opts: { parentUserId: string; providerId
       return;
     }
 
-    const sessionId = await findEvaSession(memberIds);
+    const sessionId = await resolveParentEvaSessionId(memberIds);
 
     // Claim under an advisory lock - two machines' sweeps fire in the same
     // second (same failure mode the review prompts hit).

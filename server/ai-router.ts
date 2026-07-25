@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { PARENT_VISIBLE_SYSTEM_CARDS } from "./parent-visibility";
 import Anthropic from "@anthropic-ai/sdk";
 import { getBaseUrl } from "./src/lib/get-base-url";
 import { buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
@@ -2071,26 +2072,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
       // is actively in, so they belong in the parent's view - leaving them
       // out makes the chat go silent after the parent signed, even though
       // the conversations-list preview keeps showing the latest update.
-      const allowedSystemCardTypes = [
-        "proposed_times",
-        "agreement",
-        "agreement_signed",
-        "signer_signed",
-        "readiness_prompt",
-        "invoice",
-        "cost_sheet",
-        // Egg-donor hold countdown: the parent decides "release her" vs
-        // "I will pay soon" (the provider-side donor_hold_decision card
-        // stays hidden - it's not in this list).
-        "donor_release_warning",
-        // Phase 8: Eva's review ask (parent-only by definition).
-        "review_prompt",
-        // Intended Parent Form nudge (parent-only by definition).
-        "ip_form_prompt",
-        // System-sent file attachments (e.g. the Match Call prep guide Eva
-        // sends when a match call is scheduled).
-        "attachment",
-      ];
+      const allowedSystemCardTypes = PARENT_VISIBLE_SYSTEM_CARDS;
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
       // Provider assessment prompts are only shown to providers, not parents
       if (!isProvider && m.uiCardType === "provider_assessment") return false;
@@ -2204,17 +2186,7 @@ aiRouter.get("/my-session", async (req: Request, res: Response) => {
       // is actively in, so they belong in the parent's view - leaving them
       // out makes the chat go silent after the parent signed, even though
       // the conversations-list preview keeps showing the latest update.
-      const allowedSystemCardTypes = [
-        "agreement",
-        "agreement_signed",
-        "signer_signed",
-        "readiness_prompt",
-        "invoice",
-        "cost_sheet",
-        // System-sent file attachments (e.g. the Match Call prep guide Eva
-        // sends when a match call is scheduled).
-        "attachment",
-      ];
+      const allowedSystemCardTypes = PARENT_VISIBLE_SYSTEM_CARDS;
       if (m.senderType === "system" && !allowedSystemCardTypes.includes(m.uiCardType) && m.uiCardType != null) return false;
       // Provider assessment prompts are only shown to providers, never here -
       // /my-session is parent-only (queried by parentAccountId), so the filter
