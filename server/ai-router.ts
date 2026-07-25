@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
+import { ASKER_IDENTITY_IN_ANSWER, isAgencyLevelPair, sanitizeReusableQuestion } from "./whisper-knowledge";
 import { memoryBlock, captureExplicitMemory, maybeUpdateSessionSummary, accountIdForUser } from "./concierge-memory";
 import path from "path";
 import fs from "fs";
@@ -1751,70 +1752,34 @@ async function sendWhisperSms(phone: string, questionText: string, chatLink: str
 //      specific to THAT family and would be wrong for anyone else.
 //   3. Scoped to one exact (provider, profile) pair - never across providers,
 //      never across profiles.
-// QUESTION side: the asking family describing themselves. First person here is
-// the PARENT talking, so "we/our/my" disqualifies the pair.
-const FAMILY_CONTEXT_MARKERS =
-  /\b(we|we'?re|we'?ve|us|our|ours|my|mine|i'?m|i am|i'?ve|husband|wife|partner|spouse|two dads|two moms|two mums|gay|lesbian|same.?sex|single (mom|mother|dad|father|parent)|solo (mom|mother|dad|father|parent)|our family|my family)\b/i;
-
-// ANSWER side: must be NARROWER. In an answer, "we/our" is the PROVIDER talking
-// about their own agency ("We screen all our surrogates for gestational
-// diabetes") - which is exactly the knowledge worth reusing. Applying the
-// question-side markers here silently discarded most legitimate agency answers.
-// Only drop an answer that describes the ASKING FAMILY specifically.
-const ASKER_IDENTITY_IN_ANSWER =
-  /\b(two dads|two moms|two mums|same.?sex|gay couple|lesbian couple|single (mom|mother|dad|father|parent)|solo (mom|mother|dad|father|parent)|your (family|husband|wife|partner|situation|country))\b/i;
-
-// Does this text talk about THE PERSON on the profile (vs the agency)?
-// "She is cleared to travel until 34 weeks" is true of ONE surrogate and would
-// be dangerous applied to another, so anything profile-referential stays
-// locked to its own profile.
-const PROFILE_REFERENTIAL = /\b(she|she'?s|her|hers|he|he'?s|him|his)\b/i;
-
-// Does this read like agency process/policy rather than one person's facts?
-const AGENCY_LEVEL_MARKERS =
-  /\b(we|we'?re|our|us|the agency|agency'?s|policy|policies|process|program|procedure|requirement|typically|generally|usually|standard|all (of )?(our|their) (surrogates|donors|clients|parents)|every (surrogate|donor))\b/i;
-
-/**
- * An agency-level pair is safe to reuse across DIFFERENT profiles of the same
- * provider: it describes how the agency works, not who this donor/surrogate is.
- * Deliberately conservative - a single "she/her/his" anywhere in either the
- * question or the answer keeps the pair locked to its own profile.
- */
-function isAgencyLevelPair(question: string, answer: string): boolean {
-  if (PROFILE_REFERENTIAL.test(question) || PROFILE_REFERENTIAL.test(answer)) return false;
-  return AGENCY_LEVEL_MARKERS.test(answer);
-}
-
-function sanitizeReusableQuestion(raw: string): string | null {
-  const text = (raw || "").trim();
-  if (!text) return null;
-  // Prefer the actual interrogative sentence - parents often prefix context
-  // ("We're a same-sex couple. Did she have gestational diabetes?").
-  const sentences = text.split(/(?<=[.?!])\s+/).map((x) => x.trim()).filter(Boolean);
-  const question = sentences.reverse().find((x) => x.includes("?")) || text;
-  // Conservative: if the question itself still carries family context, do not
-  // reuse it at all. These are exactly the questions whose ANSWERS are
-  // family-specific anyway, so dropping them is correct on both counts.
-  if (FAMILY_CONTEXT_MARKERS.test(question)) return null;
-  if (question.length < 8 || question.length > 240) return null;
-  // If we dropped a leading context sentence, the surviving question must still
-  // stand on its own. "We're doing this in Colombia. Is she open to that?"
-  // sanitizes to "Is she open to that?" - meaningless (and misleading) for a
-  // different family, because "that" referred to the stripped context.
-  const strippedContext = question !== text;
-  if (strippedContext && /\b(that|this|these|those|it|them|there)\b\s*\??$/i.test(question)) return null;
-  return question;
-}
+// Classification, sanitization and ingestion live in ./whisper-knowledge so the
+// read path (here) and the write path (chat-router, on relay) share one source
+// of truth for what may be reused and what must stay locked to its profile.
 
 /**
  * Provider answers about THIS profile, previously given to OTHER families.
  * Returns sanitized {question, answer} pairs safe to hand to the model.
  */
+/** Overlap of meaningful words between the parent's message and a stored question. */
+const STOPWORDS = new Set("the a an is are was were do does did have has had of for to in on with about her his she he they it any and or if can could would will what when where which who how".split(" "));
+function relevanceScore(userMessage: string, question: string): number {
+  const toks = (t: string) => new Set(
+    t.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !STOPWORDS.has(w)),
+  );
+  const a = toks(userMessage);
+  const b = toks(question);
+  if (a.size === 0 || b.size === 0) return 0;
+  let hits = 0;
+  for (const w of b) if (a.has(w)) hits++;
+  return hits / b.size;
+}
+
 async function priorAnswersForProfile(
   profileId: string,
   ownerProviderId: string,
   excludeParentUserIds: string[],
   max = 8,
+  userMessage = "",
 ): Promise<{ question: string; answer: string }[]> {
   try {
     const rows = await prisma.silentQuery.findMany({
@@ -1832,7 +1797,11 @@ async function priorAnswersForProfile(
       },
       select: { questionText: true, answerText: true },
       orderBy: { updatedAt: "desc" },
-      take: max * 3, // over-fetch: sanitization drops family-specific pairs
+      // Wide over-fetch: sanitization drops family-specific pairs, and the
+      // survivors are ranked by RELEVANCE below rather than recency. A popular
+      // profile can accumulate dozens of answers, and the best match is often
+      // an old one - a pure "most recent N" window silently hid those.
+      take: 60,
     });
     const out: { question: string; answer: string }[] = [];
     const seen = new Set<string>();
@@ -1848,9 +1817,17 @@ async function priorAnswersForProfile(
       if (seen.has(key)) continue;
       seen.add(key);
       out.push({ question: q, answer: a });
-      if (out.length >= max) break;
     }
-    return out;
+    // Rank by overlap with what the parent actually just asked; keep recency as
+    // the tie-break (rows arrived newest-first, so a stable sort preserves it).
+    if (userMessage) {
+      return out
+        .map((p, i) => ({ p, i, score: relevanceScore(userMessage, p.question) }))
+        .sort((x, y) => y.score - x.score || x.i - y.i)
+        .slice(0, max)
+        .map((r) => r.p);
+    }
+    return out.slice(0, max);
   } catch (e: any) {
     console.error("[PRIOR ANSWERS] lookup failed:", e?.message);
     return [];
@@ -4281,7 +4258,7 @@ IMPORTANT RULES:
         const myAccountUserIds = userRecord?.parentAccountId
           ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
           : [userId];
-        const priorAnswers = await priorAnswersForProfile(profileIdForReuse, ownerProviderIdForReuse, myAccountUserIds);
+        const priorAnswers = await priorAnswersForProfile(profileIdForReuse, ownerProviderIdForReuse, myAccountUserIds, 8, userMessage);
         // Agency-level answers travel across profiles; person-specific ones do not.
         const agencyAnswers = await agencyLevelAnswersForProvider(
           ownerProviderIdForReuse,

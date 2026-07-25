@@ -444,7 +444,7 @@ async function ft08(db: Client) {
 // Post-booking reality: the money/commitment artifacts live in the parent's
 // thread WITH the provider, while the parent asks Eva about them in the Eva
 // thread. These helpers build both.
-async function createProviderFor(db: Client, u: TestUser, tag: string): Promise<{ providerId: string; providerUserId: string; providerName: string; providerSessionId: string }> {
+async function createProviderFor(db: Client, u: TestUser, tag: string): Promise<{ providerId: string; providerUserId: string; providerName: string; providerSessionId: string; providerAuth: Record<string, string> }> {
   const stamp = Date.now();
   const providerName = `ZZ Test Agency ${tag} ${stamp}`;
   const prov = await db.query(
@@ -465,7 +465,18 @@ async function createProviderFor(db: Client, u: TestUser, tag: string): Promise<
      VALUES (gen_random_uuid(),$1,$2,'CONSULTATION_BOOKED','PARENT',$3,$4,now(),true,now(),now()) RETURNING id`,
     [u.userId, providerId, `${providerName} Consultation`, MATCHMAKER_ID],
   );
-  return { providerId, providerUserId, providerName, providerSessionId: ps.rows[0].id };
+  // Log the provider staff user in - some cases drive the real provider API
+  // (answering a whisper) rather than seeding rows directly.
+  const provLogin = await jfetch(`${BASE}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: provEmail, password: TEST_PASSWORD }),
+  });
+  const provBody: any = await provLogin.json();
+  const providerAuth: Record<string, string> = provBody?.token
+    ? { Authorization: `Bearer ${provBody.token}` }
+    : { Cookie: provLogin.headers.get("set-cookie") || "" };
+  return { providerId, providerUserId, providerName, providerSessionId: ps.rows[0].id, providerAuth };
 }
 
 async function cleanupProvider(db: Client, providerId: string, providerUserId: string) {
@@ -847,6 +858,94 @@ async function ft18(db: Client) {
   }
 }
 
+
+// ─── FT-19: answers become durable knowledge (no recency cap) ────────────────
+// (a) An agency-level answer relayed by the provider is embedded into the
+//     knowledge base and later answers a semantically similar question.
+// (b) A profile answer buried under many NEWER answers is still surfaced when
+//     it is the relevant one - the old "8 most recent" window hid it.
+async function ft19(db: Client) {
+  const famA = await createUser(db, "ft-kbingest-a", ["Surrogate"]);
+  const famB = await createUser(db, "ft-kbingest-b", ["Surrogate"]);
+  let prov: any = null;
+  const PROFILE = SURROGATE_ID;
+  const OLD_FACT = "Her third delivery was a planned cesarean at 39 weeks by Dr. Halloway.";
+  try {
+    prov = await createProviderFor(db, famA, "ftkbing");
+    const mkSess = async (userId: string) => {
+      const r = await db.query(
+        `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","subjectProfileId","subjectType","tier2Active","createdAt","updatedAt")
+         VALUES (gen_random_uuid(),$1,$2,'ACTIVE','PARENT','AI Concierge Chat',$3,$4,'surrogate',true,now(),now()) RETURNING id`,
+        [userId, prov.providerId, MATCHMAKER_ID, PROFILE]);
+      return r.rows[0].id as string;
+    };
+    const aSess = await mkSess(famA.userId);
+
+    // (b) One OLD relevant answer, then 15 NEWER irrelevant ones on top of it.
+    await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'What type of delivery was her third birth?','RELAYED',$4, now() - interval '90 days', now() - interval '90 days')`,
+      [aSess, famA.userId, prov.providerId, OLD_FACT]);
+    for (let i = 0; i < 15; i++) {
+      await db.query(
+        `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
+         VALUES (gen_random_uuid(),$1,$2,$3,$4,'RELAYED',$5, now() - interval '1 day', now() - interval '1 day')`,
+        [aSess, famA.userId, prov.providerId, `Filler question number ${i} about scheduling?`, `Filler answer number ${i}.`]);
+    }
+
+    const bSess = await mkSess(famB.userId);
+    const r = await send(famB.auth, bSess, "what kind of delivery did she have for her third birth?");
+    check("an older but RELEVANT answer is surfaced past newer noise",
+      /cesarean|halloway/i.test(r.content), r.content.slice(0, 190));
+
+    // (a) Ingestion via the REAL path: the provider answers a whisper through
+    // the API exactly as in production, which triggers server-side ingestion.
+    const AGENCY_A = "Our standard screening includes a full psychological evaluation before any surrogate is listed.";
+    const wq = await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'What screening is done before a surrogate is listed?','PENDING',now(),now()) RETURNING id`,
+      [aSess, famA.userId, prov.providerId]);
+    await jfetch(`${BASE}/api/provider/concierge-sessions/${aSess}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...prov.providerAuth },
+      body: JSON.stringify({ content: AGENCY_A, silentQueryId: wq.rows[0].id }),
+    });
+    await new Promise((r) => setTimeout(r, 4000)); // ingestion is fire-and-forget
+
+    const chunk = await db.query(
+      `SELECT content FROM "KnowledgeChunk" WHERE "providerId" = $1 AND "sourceType" = 'whisper_answer'`, [prov.providerId]);
+    check("agency-level answer ingested into the knowledge base",
+      chunk.rowCount === 1 && /psychological evaluation/i.test(chunk.rows[0].content), `rows=${chunk.rowCount}`);
+
+    // A person-specific answer must never become shared knowledge.
+    const wq2 = await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'Did she ever have gestational diabetes?','PENDING',now(),now()) RETURNING id`,
+      [aSess, famA.userId, prov.providerId]);
+    await jfetch(`${BASE}/api/provider/concierge-sessions/${aSess}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...prov.providerAuth },
+      body: JSON.stringify({ content: "She has never had gestational diabetes.", silentQueryId: wq2.rows[0].id }),
+    });
+    await new Promise((r) => setTimeout(r, 4000));
+    const chunks2 = await db.query(
+      `SELECT content FROM "KnowledgeChunk" WHERE "providerId" = $1 AND "sourceType" = 'whisper_answer'`, [prov.providerId]);
+    check("person-specific answer is NOT ingested",
+      chunks2.rowCount === 1 && !/gestational diabetes/i.test(JSON.stringify(chunks2.rows)), `rows=${chunks2.rowCount}`);
+
+    const kbSess = await mkSess(famB.userId);
+    const kb = await send(famB.auth, kbSess, "what psychological screening do you require before listing someone?");
+    check("ingested agency knowledge answers a later question",
+      /psychological evaluation|standard screening/i.test(kb.content), kb.content.slice(0, 190));
+  } finally {
+    await db.query(`DELETE FROM "KnowledgeChunk" WHERE "providerId" = $1`, [prov?.providerId || ""]).catch(() => {});
+    await db.query(`DELETE FROM "SilentQuery" WHERE "parentUserId" IN ($1,$2)`, [famA.userId, famB.userId]).catch(() => {});
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, famA);
+    await deleteUser(db, famB);
+  }
+}
+
 // ─── Runner (admin test-runner stdout protocol) ──────────────────────────────
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "FT-01", name: "Deep-link surrogate pin - 4-turn free-text replay", run: ft01 },
@@ -867,6 +966,7 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "FT-16", name: "Answered whisper reused across the family's threads", run: ft16 },
   { id: "FT-17", name: "Provider answer reused across families, asking family invisible", run: ft17 },
   { id: "FT-18", name: "Agency-level answers cross profiles; person facts never do", run: ft18 },
+  { id: "FT-19", name: "Answers become durable knowledge; relevance beats recency", run: ft19 },
 ];
 
 (async () => {

@@ -678,6 +678,14 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 2,
   },
 
+  {
+    id: "FT-19", persona: "free-text",
+    name: "FT-19: Answers become durable knowledge; relevance beats recency",
+    desc: "An agency answer relayed through the real provider API is embedded into the knowledge base and answers a later differently-worded question; a person-specific answer is never ingested; a 90-day-old relevant answer is surfaced past 15 newer ones",
+    interestedServices: ["Surrogate"],
+    messageCount: 3,
+  },
+
   // ── PROVIDER-SIDE (PR-01..) ───────────────────────────────────────────────
   // Runs scripts/test-provider-flows.ts - the provider experience and the
   // parent/provider chat boundary, which the parent suites cannot reach.

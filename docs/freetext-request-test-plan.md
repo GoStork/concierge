@@ -2,14 +2,14 @@
 
 **Scope:** the AI concierge must handle ANY parent request typed as free text - from the marketplace, mid-intake, mid-call-prep, out of nowhere - and never ignore it, steamroll it, overrule it, or answer it with mismatched quick replies. This plan covers the five failure classes found and fixed on Jul 24 2026 and the deterministic mechanisms that now guard them.
 
-**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-18)
+**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-19)
 
 ```bash
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts --id=FT-01,FT-04
 ```
 
-**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (18)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
+**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (19)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
 
 Run it against a live server after any change to `server/ai-router.ts` routing, directives, bypasses, or quick-reply handling. It creates throwaway `*@gostork-test.com` users and cleans them up. The main 74-case suite (`scripts/test-ai-concierge.ts`) stays the regression net for the scripted decision-tree flows; this suite covers the OFF-script behavior the main suite does not reach (deep-link pins, profile-conflict confirms, purchase clicks).
 
@@ -107,7 +107,17 @@ Guarded by **FT-17**, which seeds a reusable answer AND a family-specific pair, 
 
 Fixed at the same time: the answer-side filter was reusing the QUESTION-side markers, which include `we/our`. In an answer those words are the PROVIDER describing their own agency ("We screen every surrogate..."), so the filter was silently discarding most of the genuinely reusable agency knowledge. Answers are now screened only for text describing the ASKING FAMILY (`two dads`, `your family`, ...).
 
-Still not done: answered whispers are never ingested into `KnowledgeChunk`, so reuse is keyword/context-injection based rather than embedding-searchable, and only the most RECENT answers survive the per-turn cap (a profile with many answered questions can age older answers out even when they are the better match).
+### 13. Answered whispers become durable knowledge (Jul 25 - BUILT)
+Two limits are now gone:
+
+- **Ingestion.** When a provider answers a whisper, `chat-router` fire-and-forgets `ingestAgencyAnswerToKnowledgeBase` (`server/whisper-knowledge.ts`), which embeds AGENCY-LEVEL pairs into `KnowledgeChunk` as tier 1 for that provider - semantically searchable, no recency cap, and reachable from any profile. It uses `gemini-embedding-001` @ 768 dims, matching what the MCP search embeds queries with; a mismatch there would index rows that can never be retrieved. Idempotent per `silentQueryId` via `metadata->>'silentQueryId'`. Person-specific answers are rejected inside and are never written to shared knowledge.
+- **Recency cap.** `priorAnswersForProfile` used to take the 8 most RECENT answers, so on a busy profile the best match could be invisible. It now over-fetches 60 and ranks by word overlap with what the parent actually asked, with recency only as a tie-break.
+
+`scripts/backfill-whisper-knowledge.ts` ingests pre-existing answers (dry run by default, `--apply` to write). Against live data it correctly classified all 5 existing answers as person-specific or unsafe and ingested none - "which school did **he** study?", "where does **her** mom live?" - which is the conservative behaviour we want.
+
+Guarded by **FT-19**, which drives the REAL provider-answer API (not a seeded row), asserts the `KnowledgeChunk` row exists for the agency answer and does NOT exist for the person-specific one, and proves a 90-day-old answer buried under 15 newer ones is still surfaced when relevant.
+
+**Watch item (not a failure):** in FT-19 the model answered the retrieved agency policy as *"Every gestational surrogate on GoStork undergoes..."* - broader than the agency's own *"our standard screening includes..."*. The retrieval was correct; the model generalised one provider's policy into a platform-wide claim. Worth tightening the prompt if this shows up in real chats.
 
 ## Engineering rules distilled from these bugs
 

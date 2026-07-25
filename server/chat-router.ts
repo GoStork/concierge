@@ -2090,6 +2090,20 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
         data: { status: "RELAYED" },
       });
 
+      // Durable knowledge: if this answer is about HOW THE AGENCY WORKS (not
+      // about one donor/surrogate), embed it into the provider's knowledge base
+      // so it is semantically searchable forever - no recency cap, and reachable
+      // from any profile. Person-specific answers are rejected inside and stay
+      // bound to their own profile. Fire-and-forget: never delay the relay.
+      void import("./whisper-knowledge").then(({ ingestAgencyAnswerToKnowledgeBase }) =>
+        ingestAgencyAnswerToKnowledgeBase({
+          silentQueryId: whisper.id,
+          providerId: (whisper as any).providerId,
+          questionText: whisper.questionText,
+          answerText: content.trim(),
+        }),
+      ).catch(() => { /* best-effort */ });
+
       // If the original parent question was about the cost sheet AND the
       // current active quote is still unacknowledged, re-render the
       // cost-sheet card after the relay. This puts the Acknowledge / "I have
