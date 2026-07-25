@@ -963,7 +963,7 @@ async function ft20(db: Client) {
          "ivfSurrogateMaxCSections"=2,
          "ivfSurrogateMaxYearsFromLastPregnancy"=7,
          "ivfSurrogateGdDiet"=true, "ivfSurrogatePreeclampsia"=false,
-         "ivfTwinsAllowed"=true, "ivfGenderSelectionAllowed"=false
+         "ivfTwinsAllowed"=true, "surrogacyTwinsAllowed"=true, "ivfGenderSelectionAllowed"=false
        WHERE id=$1`, [prov.providerId]);
     const sid = await db.query(
       `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","tier2Active","createdAt","updatedAt")
@@ -971,15 +971,47 @@ async function ft20(db: Client) {
       [u.userId, prov.providerId, MATCHMAKER_ID]);
     const sess = sid.rows[0].id;
 
+    // --- Surrogate Matching Requirements (all seeded values, not a sample) ---
     const r1 = await send(u.auth, sess, "what are this agency's requirements for a surrogate?");
-    check("quotes the configured age range", /24\b[^.]{0,20}41|between 24 and 41/i.test(r1.content), r1.content.slice(0, 190));
-    check("quotes the configured c-section limit", /(maximum|max|no more than|up to)\s*(of\s*)?2\b|2 c-?sections/i.test(r1.content), r1.content.slice(0, 260));
+    check("surrogate reqs: age range", /24\b[^.]{0,20}41|between 24 and 41/i.test(r1.content), r1.content.slice(0, 300));
+    check("surrogate reqs: BMI range", /19\b[^.]{0,20}32|between 19 and 32/i.test(r1.content), r1.content.slice(0, 300));
+    check("surrogate reqs: c-section cap", /(maximum|max|no more than|up to)\s*(of\s*)?2\b|2 c-?sections/i.test(r1.content), r1.content.slice(0, 300));
+    check("surrogate reqs: years since last delivery", /\b7\b\s*years|within (the )?(past |last )?7/i.test(r1.content), r1.content.slice(0, 400));
 
+    // --- Accepted Surrogate Medical History (positive AND negative) ---
     const r2 = await send(u.auth, sess, "do they accept a surrogate who had gestational diabetes controlled by diet?");
-    check("answers the accepted medical history correctly", /accept|yes/i.test(r2.content) && !/do not accept|don'?t accept|not accepted/i.test(r2.content), r2.content.slice(0, 190));
+    check("medical history: GD-by-diet accepted", /accept|yes/i.test(r2.content) && !/do not accept|don'?t accept|not accepted/i.test(r2.content), r2.content.slice(0, 220));
 
+    const r2b = await send(u.auth, sess, "would they accept a surrogate who had preeclampsia in her most recent pregnancy?");
+    check("medical history: preeclampsia correctly NOT accepted",
+      /(do(es)? not|don'?t|cannot|can'?t|not) (accept|allow|consider)|unfortunately|is not accepted/i.test(r2b.content), r2b.content.slice(0, 220));
+
+    // --- Parents Matching Requirements (both a yes and a no) ---
     const r3 = await send(u.auth, sess, "do they allow gender selection?");
-    check("reports gender selection as NOT allowed", /not (allowed|accepted|offer)|do(es)? not|don'?t/i.test(r3.content), r3.content.slice(0, 190));
+    check("parent reqs: gender selection NOT allowed", /not (allowed|accepted|offer)|do(es)? not|don'?t/i.test(r3.content), r3.content.slice(0, 220));
+
+    const r3b = await send(u.auth, sess, "do they allow twins?");
+    // NOTE: the earlier version of this check FALSE-PASSED on "does not allow
+    // twins" - the positive pattern matched the substring "allow twins" and the
+    // negation pattern only covered "do not allow", not "does not allow".
+    const twinsDenied = /\b(do|does|did|would|will|can)(es)?\s*n[o']?t\s*(allow|accept|permit|support)|not (allowed|accepted|permitted)|\bno,\s/i.test(r3b.content);
+    check("parent reqs: twins allowed",
+      !twinsDenied && /\byes\b|do(es)? allow|are allowed|accepts?|permit/i.test(r3b.content), r3b.content.slice(0, 220));
+
+    // --- Never invent an unconfigured threshold ---
+    // placenta previa is left NULL, so it is absent from context entirely.
+    const r4 = await send(u.auth, sess, "do they accept a surrogate who had placenta previa?");
+    // Two legitimate answers here: defer/ask, OR cite GoStork's platform
+    // minimum (placenta previa IS configured as not accepted on the house
+    // provider, so that is grounded). What must NEVER happen is stating an
+    // AGENCY-specific threshold that was never configured.
+    const deferred = /(don'?t|do not|does ?n[o']?t) (have|see|list|specify)|not (listed|specified|on file)|check with|confirm with|ask (them|the agency)|reached out|sent .{0,20}message/i.test(r4.content);
+    const citesPlatform = /gostork (platform|minimum|standard)|platform (minimum|standard)|asrm/i.test(r4.content);
+    check("unconfigured requirement is not invented (defers or cites the platform rule)",
+      deferred || citesPlatform, r4.content.slice(0, 260));
+    check("does not invent an agency-specific policy for it",
+      !/this agency (accepts|does not accept|allows|does not allow) .{0,40}placenta previa/i.test(r4.content)
+      || deferred || citesPlatform, r4.content.slice(0, 260));
   } finally {
     if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
     await deleteUser(db, u);
@@ -1012,12 +1044,24 @@ async function ft21(db: Client) {
       const r = await send(u.auth, sess, "what screening is done before a surrogate is listed?");
       check("uses the agency's answer", /psychological evaluation/i.test(r.content), r.content.slice(0, 190));
       check("attributes the policy to the agency, not to GoStork's own voice",
-        /(their|the agency|this agency|ZZ Test Agency)/i.test(r.content) && !/^\s*(our|we)\b/i.test(r.content.trim()),
+        /(their|the agency|this agency|her agency|his agency|ZZ Test Agency)/i.test(r.content) && !/^\s*(our|we)\b/i.test(r.content.trim()),
         r.content.slice(0, 200));
-      check("does NOT present the agency policy as a GoStork-wide rule",
-        !/(every|all|any) (gestational )?(surrogate|surrogates)[^.]{0,40}(on|at|through) gostork/i.test(r.content)
-        && !/gostork (requires|screens|conducts)/i.test(r.content),
-        r.content.slice(0, 220));
+      // The rule is about WHICH FACT gets generalized, not about phrasing.
+      // "On GoStork, every surrogate must be 21-45" is a LEGITIMATE platform
+      // minimum. "For any surrogate on GoStork, her agency's screening includes
+      // a psychological evaluation" takes ONE agency's practice and claims it
+      // for the whole platform. So: isolate the sentences carrying the AGENCY
+      // fact and require that none of them are framed platform-wide.
+      const agencySentences = r.content
+        .split(/(?<=[.!?])\s+/)
+        .filter((sent) => /psychological evaluation/i.test(sent));
+      const generalized = agencySentences.filter((sent) =>
+        /(every|all|any|each)[^.]{0,80}(gostork|platform)/i.test(sent)
+        || /(gostork|platform)[^.]{0,60}(every|all|any|each)\s+(agency|agencies|surrogate)/i.test(sent)
+        || /gostork (requires|screens|conducts|performs)/i.test(sent));
+      check("the AGENCY's screening fact is never framed as platform-wide",
+        agencySentences.length > 0 && generalized.length === 0,
+        generalized[0] || agencySentences[0] || "(no sentence mentioned the agency fact)");
     } finally {
       await db.query(`DELETE FROM "SilentQuery" WHERE "parentUserId" = $1`, [other.userId]).catch(() => {});
       await deleteUser(db, other);

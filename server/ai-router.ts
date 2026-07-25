@@ -4271,7 +4271,7 @@ IMPORTANT RULES:
 
         const parents: string[] = [];
         const pm = (label: string, v: any) => { const s = yesNo(v); if (s) parents.push(`${label}: ${s}`); };
-        pm("twins", p.ivfTwinsAllowed);
+        pm("twins (IVF program)", p.ivfTwinsAllowed);
         pm("gender selection", p.ivfGenderSelectionAllowed);
         pm("embryo transfer from another clinic", p.ivfTransferFromOtherClinics);
         if (p.ivfMaxAgeIp1 != null) parents.push(`max age intended parent 1: ${p.ivfMaxAgeIp1}`);
@@ -4323,7 +4323,11 @@ IMPORTANT RULES:
         }
       }
       if (blocks.length) {
-        requirementsContext = `\n${blocks.join("\n")}\nUse these EXACT configured values when the parent asks what a provider requires or accepts. If the parent asks about something not listed, say you don't have that specific requirement on file and offer to ask the provider - never invent a threshold.\n`;
+        requirementsContext = `\n${blocks.join("\n")}
+HOW TO USE THESE:
+- ANSWER THE REQUIREMENTS QUESTION FIRST. If the parent asks what a provider requires or accepts, give the answer as the FIRST thing in your reply, using these EXACT configured values. Never replace it with an intake or call-prep question ("are you solo or with a partner?") - a parent who asked a direct question and got a question back reads it as being ignored. Ask your next flow question only AFTER the answer.
+- NEVER INVENT A REQUIREMENT. If a specific condition or threshold is NOT in the lists above, you do not know it: do NOT answer "yes they accept it" or "no they don't". Say you don't have that specific item on file for them, and offer to confirm with the provider ([[WHISPER:<providerId>]] when you are discussing a specific provider). Guessing an acceptance criterion is a fabrication with real consequences for a family.
+- A requirement listed under GOSTORK PLATFORM MINIMUMS may be cited as the platform rule even when the agency has not set their own - just be explicit about which one you are quoting.\n`;
       }
     } catch (e: any) {
       console.error("[REQUIREMENTS CONTEXT] failed:", e?.message);
@@ -4372,7 +4376,8 @@ HOW TO USE THESE:
 - Restate the answer in your own warm words. Do NOT quote it verbatim as if it just arrived, and never use the "I heard back from the agency!" framing - that is only for answers that came in for THIS family just now.
 - These all came from the agency itself. NEVER say, hint, or imply that another family, client, or parent asked anything - other families must stay completely invisible. Never mention "another intended parent", "a previous client", or similar.
 - The "ABOUT THIS PROFILE" facts apply ONLY to the donor/surrogate currently being discussed - never attribute them to a different person. The "HOW THEY WORK" facts are agency process and apply to any of their profiles.
-- ATTRIBUTION: these are THAT AGENCY'S policies. The stored answers are written in the AGENCY'S own voice, so they say "we"/"our" meaning the agency. You are GoStork's concierge - if you repeat "our screening..." verbatim, the parent will think it is GoStork's policy. ALWAYS convert to the agency: "their standard screening...", "at <agency name>...", "this agency requires...". NEVER restate one as a GoStork-wide fact ("every surrogate on GoStork...") - other agencies work differently, and only GoStork's own platform minimums are platform-wide.
+- ATTRIBUTION: these are THAT AGENCY'S policies and describe ONE agency only. The stored answers are written in the AGENCY'S own voice, so they say "we"/"our" meaning the agency. You are GoStork's concierge - repeating "our screening..." verbatim makes the parent think it is GoStork's policy. ALWAYS convert to the agency: "their standard screening...", "at <agency name>...", "this agency requires...", or "the agency representing her..." if you do not have the name.
+  FORBIDDEN - every one of these turns one agency's practice into a false platform-wide claim: "every surrogate on GoStork...", "for any surrogate you see on GoStork...", "all agencies on GoStork...", "agencies on GoStork typically...", "GoStork requires/screens...". Do NOT attach ANY quantifier (every / all / any / each) or the GoStork name to an agency's own policy. Other agencies genuinely work differently. Only the GOSTORK PLATFORM MINIMUMS block may be described as applying platform-wide.
 - If the parent asks something NOT covered above and not in the profile data, whisper as usual.`;
         }
       }
