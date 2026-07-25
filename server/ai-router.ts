@@ -523,9 +523,93 @@ async function callTier2Claude(
     systemInstruction: { parts: [{ text: fullSystem }] },
   });
 
-  const chat = model.startChat({ history: chatHistory });
+  let chat = model.startChat({ history: chatHistory });
+
+  // The SDK's streaming path does not always commit the model's functionCall
+  // turn to the ChatSession history. Sending the functionResponse then fails
+  // the whole turn with a hard 400 ("function response turn comes immediately
+  // after a function call turn") and the parent gets a completely EMPTY reply
+  // - observed live on every tool-backed question in a post-booking session
+  // ("when is my call again?", "what did they quote me?", "is my contract
+  // signed?"). Repair deterministically: rebuild the chat with an EXPLICIT
+  // history containing the user turn and the model's functionCall parts, so
+  // the functionResponse always has its call to attach to.
+  // IMPORTANT: reuse the model's ORIGINAL content parts verbatim. Gemini 3.x
+  // requires a `thought_signature` on functionCall parts; hand-rebuilding them
+  // from {name, args} drops it and trades the first 400 for a second one
+  // ("Function call is missing a thought_signature in functionCall parts").
+  const rebuildChatForToolResponse = (modelContent: any) => {
+    if (!modelContent?.parts?.length) return false;
+    chat = model.startChat({
+      history: [
+        ...chatHistory,
+        { role: "user" as const, parts: [{ text: userMessage }] },
+        { role: "model" as const, parts: modelContent.parts },
+      ],
+    });
+    return true;
+  };
+
+  // Runs a tool-response round, repairing the SDK's dropped functionCall turn
+  // on the 400 described above. `callsForRepair` are the calls this response
+  // answers, so the rebuilt history can carry them.
+  // Minimal tool executor for the non-streaming replay path (read-only
+  // lookups, so re-running them is safe).
+  const execCallsForReplay = async (calls: any[]): Promise<any[]> => {
+    const out: any[] = [];
+    for (const fc of calls) {
+      if (!mcpClientRef) continue;
+      const overLimitMsg = overSearchLimit(fc as any);
+      if (overLimitMsg) {
+        out.push({ functionResponse: { name: fc.name, response: { output: overLimitMsg } } });
+        continue;
+      }
+      try {
+        injectAuthUser(fc as any);
+        const toolResult = await mcpClientRef.callTool({ name: fc.name, arguments: fc.args as Record<string, unknown> }, undefined, { timeout: 180_000 });
+        let resultText = (toolResult.content as any)?.[0]?.text || JSON.stringify(toolResult);
+        resultText = await maybeReorderCountryPrograms(fc.name, resultText);
+        resultText = await maybeRerankClinicsByPriorities(fc.name, resultText, fc.args);
+        const MAX_TOOL_RESULT = 8000;
+        if (searchToolNames.includes(fc.name) && resultText.length > MAX_TOOL_RESULT) {
+          resultText = resultText.slice(0, MAX_TOOL_RESULT) + "\n\n[Results truncated - present the first surrogate above as a [[MATCH_CARD]] only]";
+        }
+        out.push({ functionResponse: { name: fc.name, response: { output: resultText } } });
+        if (searchToolNames.includes(fc.name)) searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
+      } catch (e: any) {
+        out.push({ functionResponse: { name: fc.name, response: { output: `Error: ${e.message}` } } });
+      }
+    }
+    return out;
+  };
+
+  const streamToolResponseTurn = async (message: any, _modelContentForRepair: any) => {
+    try {
+      return await streamTurn(message);
+    } catch (e: any) {
+      const isHistoryOrderError = /function response turn comes immediately after a function call turn/i.test(e?.message || "");
+      if (!isHistoryOrderError) throw e;
+      // The streaming SDK path does not commit the model's functionCall turn
+      // (and its Gemini-3.x thought_signature) to history, so the tool response
+      // has nothing valid to attach to and the whole turn 400s - the parent got
+      // a completely EMPTY reply on every tool-backed question. Rebuilding the
+      // call parts by hand fails too (signatures cannot be forged). The
+      // reliable repair is to REPLAY the turn on the non-streaming path, which
+      // keeps history intact.
+      console.warn(`[TIER2 HISTORY REPAIR] Streaming dropped the functionCall turn - replaying this turn non-streaming`);
+      forceNonStream = true;
+      chat = model.startChat({ history: chatHistory });
+      const first = await streamTurn(userMessage);
+      if (first.functionCalls.length === 0) return first;
+      const responses = await execCallsForReplay(first.functionCalls);
+      return await streamTurn(responses);
+    }
+  };
 
   let toolCallsExecuted = false;
+  // The model turn the pending currentMessage answers, captured verbatim
+  // (functionCall parts + thought signatures) for the history repair.
+  let lastModelContent: any = null;
   const searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
   const t0 = Date.now();
   const searchToolNames = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics", "find_lookalike_matches"];
@@ -829,7 +913,18 @@ async function callTier2Claude(
   // text-then-functionCall mix is reconciled by the client's final "done"
   // replace (the client already rebuilds the message from the processed
   // content at done). freshPhotoUpload keeps its full suppression.
+  // Set by the history-order repair below: forces the non-streaming SDK path,
+  // which maintains tool-call history (and its thought signatures) correctly.
+  let forceNonStream = false;
   const streamTurn = async (message: any): Promise<{ text: string; functionCalls: any[]; response: any }> => {
+    if (forceNonStream) {
+      const r = await chat.sendMessage(message);
+      const resp = r.response;
+      const fcs = resp.functionCalls() || [];
+      const txt = fcs.length === 0 ? (resp.text() || "") : (() => { try { return resp.text() || ""; } catch { return ""; } })();
+      if (!freshPhotoUpload && fcs.length === 0 && txt) sse.sendToken(txt);
+      return { text: txt, functionCalls: fcs, response: resp };
+    }
     // Tier2 true streaming is ON by default (TIER2_STREAM=0 is the kill switch).
     // History: under the OLD conditions (173KB prompt + model-driven search
     // chains) streaming dropped [[MATCH_CARD]] tags 8/8 on MW-03/MW-19 and
@@ -966,6 +1061,7 @@ async function callTier2Claude(
           }
         }
         currentMessage = functionResponses;
+        lastModelContent = (firstResponse as any)?.candidates?.[0]?.content ?? null;
       } else if (forceToolUse && !forcedSearchRetryDone) {
         // Search was mandatory this turn but the model wrote text instead. Correct it once.
         // Any partially streamed text is reconciled by the client's final "done" replace
@@ -1005,7 +1101,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
       // more tools, execute those if so, otherwise extract text. A MAX_TOOL_ROUNDS cap
       // (declared above the while) prevents infinite tool chains.
       const tStream2 = Date.now();
-      const { text: roundText, functionCalls: moreFunctionCalls, response: roundResponse } = await streamTurn(currentMessage);
+      const { text: roundText, functionCalls: moreFunctionCalls, response: roundResponse } = await streamToolResponseTurn(currentMessage, lastModelContent);
 
       if (moreFunctionCalls.length > 0) {
         if (toolRoundCount >= MAX_TOOL_ROUNDS) {
@@ -1046,6 +1142,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
           }
         }
         currentMessage = moreResponses;
+        lastModelContent = (roundResponse as any)?.candidates?.[0]?.content ?? null;
         continue; // loop back for another round
       }
 
