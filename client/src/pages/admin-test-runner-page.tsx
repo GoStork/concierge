@@ -147,6 +147,8 @@ const ALL_TESTS_FALLBACK: TestCaseInfo[] = [
   { id: "FT-17", persona: "free-text", name: "Provider answer reused across families, asking family invisible", messageCount: 1, desc: "", interestedServices: [] },
   { id: "FT-18", persona: "free-text", name: "Agency-level answers cross profiles; person facts never do", messageCount: 2, desc: "", interestedServices: [] },
   { id: "FT-19", persona: "free-text", name: "Answers become durable knowledge; relevance beats recency", messageCount: 3, desc: "", interestedServices: [] },
+  { id: "FT-20", persona: "free-text", name: "Provider's configured requirements are answerable", messageCount: 3, desc: "", interestedServices: [] },
+  { id: "FT-21", persona: "free-text", name: "Agency policy attributed to the agency, not GoStork", messageCount: 2, desc: "", interestedServices: [] },
   { id: "PR-01", persona: "provider", name: "Whisper answer relays into the parent's own chat", messageCount: 1, desc: "", interestedServices: [] },
   { id: "PR-02", persona: "provider", name: "Parent identity masked before booking, revealed after", messageCount: 0, desc: "", interestedServices: [] },
   { id: "PR-03", persona: "provider", name: "Provider-only content never reaches the parent transcript", messageCount: 0, desc: "", interestedServices: [] },

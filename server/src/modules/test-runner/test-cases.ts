@@ -686,6 +686,21 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 3,
   },
 
+  {
+    id: "FT-20", persona: "free-text",
+    name: "FT-20: Provider's configured requirements are answerable",
+    desc: "Parents/Surrogate Matching Requirements and Accepted Surrogate Medical History set in provider settings are quoted back exactly - age range, c-section cap, accepted conditions, gender selection",
+    interestedServices: ["Surrogate"],
+    messageCount: 3,
+  },
+  {
+    id: "FT-21", persona: "free-text",
+    name: "FT-21: Agency policy attributed to the agency, not GoStork",
+    desc: "An agency's own screening policy is never restated as a GoStork-wide rule or in GoStork's voice, while GoStork's ASRM platform minimums ARE stated platform-wide",
+    interestedServices: ["Surrogate"],
+    messageCount: 2,
+  },
+
   // ── PROVIDER-SIDE (PR-01..) ───────────────────────────────────────────────
   // Runs scripts/test-provider-flows.ts - the provider experience and the
   // parent/provider chat boundary, which the parent suites cannot reach.

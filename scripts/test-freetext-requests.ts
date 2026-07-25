@@ -946,6 +946,92 @@ async function ft19(db: Client) {
   }
 }
 
+
+// ─── FT-20: Eva answers a provider's configured requirements ─────────────────
+// Parents Matching Requirements / Surrogate Matching Requirements / Accepted
+// Surrogate Medical History are set by the provider in their settings. They
+// were previously only used inside search filtering and were unreadable by Eva.
+async function ft20(db: Client) {
+  const u = await createUser(db, "ft-reqs", ["Surrogate"]);
+  let prov: any = null;
+  try {
+    prov = await createProviderFor(db, u, "ftreqs");
+    await db.query(
+      `UPDATE "Provider" SET
+         "ivfSurrogateMinAge"=24, "ivfSurrogateMaxAge"=41,
+         "ivfSurrogateMinBmi"=19, "ivfSurrogateMaxBmi"=32,
+         "ivfSurrogateMaxCSections"=2,
+         "ivfSurrogateMaxYearsFromLastPregnancy"=7,
+         "ivfSurrogateGdDiet"=true, "ivfSurrogatePreeclampsia"=false,
+         "ivfTwinsAllowed"=true, "ivfGenderSelectionAllowed"=false
+       WHERE id=$1`, [prov.providerId]);
+    const sid = await db.query(
+      `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","tier2Active","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,'ACTIVE','PARENT','AI Concierge Chat',$3,true,now(),now()) RETURNING id`,
+      [u.userId, prov.providerId, MATCHMAKER_ID]);
+    const sess = sid.rows[0].id;
+
+    const r1 = await send(u.auth, sess, "what are this agency's requirements for a surrogate?");
+    check("quotes the configured age range", /24\b[^.]{0,20}41|between 24 and 41/i.test(r1.content), r1.content.slice(0, 190));
+    check("quotes the configured c-section limit", /(maximum|max|no more than|up to)\s*(of\s*)?2\b|2 c-?sections/i.test(r1.content), r1.content.slice(0, 260));
+
+    const r2 = await send(u.auth, sess, "do they accept a surrogate who had gestational diabetes controlled by diet?");
+    check("answers the accepted medical history correctly", /accept|yes/i.test(r2.content) && !/do not accept|don'?t accept|not accepted/i.test(r2.content), r2.content.slice(0, 190));
+
+    const r3 = await send(u.auth, sess, "do they allow gender selection?");
+    check("reports gender selection as NOT allowed", /not (allowed|accepted|offer)|do(es)? not|don'?t/i.test(r3.content), r3.content.slice(0, 190));
+  } finally {
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, u);
+  }
+}
+
+// ─── FT-21: attribution - agency policy is theirs, not GoStork's ─────────────
+async function ft21(db: Client) {
+  const u = await createUser(db, "ft-attrib", ["Surrogate"]);
+  let prov: any = null;
+  try {
+    prov = await createProviderFor(db, u, "ftattrib");
+    const sess = (await db.query(
+      `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","subjectProfileId","subjectType","tier2Active","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,'ACTIVE','PARENT','AI Concierge Chat',$3,$4,'surrogate',true,now(),now()) RETURNING id`,
+      [u.userId, prov.providerId, MATCHMAKER_ID, SURROGATE_ID])).rows[0].id;
+    // An agency-level answer from ANOTHER family - reusable, but it is THIS
+    // agency's policy and must not become a GoStork-wide claim.
+    const other = await createUser(db, "ft-attrib-other", ["Surrogate"]);
+    const otherSess = (await db.query(
+      `INSERT INTO "AiChatSession" (id,"userId","providerId",status,"sessionType",title,"matchmakerId","subjectProfileId","subjectType","tier2Active","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,'ACTIVE','PARENT','AI Concierge Chat',$3,$4,'surrogate',true,now(),now()) RETURNING id`,
+      [other.userId, prov.providerId, MATCHMAKER_ID, SURROGATE_ID])).rows[0].id;
+    await db.query(
+      `INSERT INTO "SilentQuery" (id,"sessionId","parentUserId","providerId","questionText",status,"answerText","createdAt","updatedAt")
+       VALUES (gen_random_uuid(),$1,$2,$3,'What screening is done before a surrogate is listed?','RELAYED','Our standard screening includes a full psychological evaluation before listing.',now(),now())`,
+      [otherSess, other.userId, prov.providerId]);
+
+    try {
+      const r = await send(u.auth, sess, "what screening is done before a surrogate is listed?");
+      check("uses the agency's answer", /psychological evaluation/i.test(r.content), r.content.slice(0, 190));
+      check("attributes the policy to the agency, not to GoStork's own voice",
+        /(their|the agency|this agency|ZZ Test Agency)/i.test(r.content) && !/^\s*(our|we)\b/i.test(r.content.trim()),
+        r.content.slice(0, 200));
+      check("does NOT present the agency policy as a GoStork-wide rule",
+        !/(every|all|any) (gestational )?(surrogate|surrogates)[^.]{0,40}(on|at|through) gostork/i.test(r.content)
+        && !/gostork (requires|screens|conducts)/i.test(r.content),
+        r.content.slice(0, 220));
+    } finally {
+      await db.query(`DELETE FROM "SilentQuery" WHERE "parentUserId" = $1`, [other.userId]).catch(() => {});
+      await deleteUser(db, other);
+    }
+
+    // GoStork's OWN platform minimums MAY be stated as GoStork-wide.
+    const g = await send(u.auth, sess, "what are GoStork's own minimum requirements for any surrogate on the platform?");
+    check("states GoStork platform minimums from real config", /21|45|BMI|c-?section|10 years/i.test(g.content), g.content.slice(0, 200));
+  } finally {
+    if (prov) await cleanupProvider(db, prov.providerId, prov.providerUserId);
+    await deleteUser(db, u);
+  }
+}
+
 // ─── Runner (admin test-runner stdout protocol) ──────────────────────────────
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "FT-01", name: "Deep-link surrogate pin - 4-turn free-text replay", run: ft01 },
@@ -967,6 +1053,8 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "FT-17", name: "Provider answer reused across families, asking family invisible", run: ft17 },
   { id: "FT-18", name: "Agency-level answers cross profiles; person facts never do", run: ft18 },
   { id: "FT-19", name: "Answers become durable knowledge; relevance beats recency", run: ft19 },
+  { id: "FT-20", name: "Provider's configured requirements are answerable", run: ft20 },
+  { id: "FT-21", name: "Agency policy attributed to the agency, not GoStork", run: ft21 },
 ];
 
 (async () => {

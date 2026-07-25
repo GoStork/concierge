@@ -4236,6 +4236,99 @@ IMPORTANT RULES:
     void ragProviderId; // retained for the debug/readability of req.body.providerId above
     const [guidanceRules, answeredWhispers, knowledgeResults] = await tier2LookupsPromise;
 
+    // PROVIDER REQUIREMENTS the provider configured in their own settings
+    // (Parents Matching Requirements / Surrogate Matching Requirements /
+    // Accepted Surrogate Medical History). These were only ever used inside
+    // search_surrogates filtering and were never readable by Eva, so a parent
+    // asking "what are their surrogate requirements?" could not be answered.
+    // GoStork's own ASRM platform minimums are loaded separately and labelled
+    // separately - conflating the two is exactly the attribution error we are
+    // guarding against.
+    let requirementsContext = "";
+    try {
+      const reqProviderId = (currentSession as any)?.providerId || null;
+      const yesNo = (v: any) => (v === true ? "accepted" : v === false ? "not accepted" : null);
+      const describe = (p: any): string[] => {
+        const surrogate: string[] = [];
+        if (p.ivfSurrogateMinAge != null || p.ivfSurrogateMaxAge != null) surrogate.push(`age ${p.ivfSurrogateMinAge ?? "?"}-${p.ivfSurrogateMaxAge ?? "?"}`);
+        if (p.ivfSurrogateMinBmi != null || p.ivfSurrogateMaxBmi != null) surrogate.push(`BMI ${p.ivfSurrogateMinBmi ?? "?"}-${p.ivfSurrogateMaxBmi ?? "?"}`);
+        if (p.ivfSurrogateMinDeliveries != null || p.ivfSurrogateMaxDeliveries != null) surrogate.push(`${p.ivfSurrogateMinDeliveries ?? "?"}-${p.ivfSurrogateMaxDeliveries ?? "?"} prior deliveries`);
+        if (p.ivfSurrogateMaxCSections != null) surrogate.push(`max ${p.ivfSurrogateMaxCSections} c-sections`);
+        if (p.ivfSurrogateMaxMiscarriages != null) surrogate.push(`max ${p.ivfSurrogateMaxMiscarriages} miscarriages`);
+        if (p.ivfSurrogateMaxAbortions != null) surrogate.push(`max ${p.ivfSurrogateMaxAbortions} abortions`);
+        if (p.ivfSurrogateMaxYearsFromLastPregnancy != null) surrogate.push(`last delivery within ${p.ivfSurrogateMaxYearsFromLastPregnancy} years`);
+        if (p.ivfSurrogateMonthsPostVaginal != null) surrogate.push(`${p.ivfSurrogateMonthsPostVaginal} months since a vaginal delivery`);
+        if (p.ivfSurrogateCovidVaccination === true) surrogate.push("COVID vaccination required");
+
+        const medical: string[] = [];
+        const med = (label: string, v: any) => { const s = yesNo(v); if (s) medical.push(`${label}: ${s}`); };
+        med("gestational diabetes controlled by diet", p.ivfSurrogateGdDiet);
+        med("gestational diabetes controlled with medication", p.ivfSurrogateGdMedication);
+        med("high blood pressure", p.ivfSurrogateHighBloodPressure);
+        med("placenta previa", p.ivfSurrogatePlacentaPrevia);
+        med("preeclampsia in most recent pregnancy", p.ivfSurrogatePreeclampsia);
+        if (p.ivfSurrogateMentalHealthHistory) medical.push(`mental health history: ${p.ivfSurrogateMentalHealthHistory}`);
+
+        const parents: string[] = [];
+        const pm = (label: string, v: any) => { const s = yesNo(v); if (s) parents.push(`${label}: ${s}`); };
+        pm("twins", p.ivfTwinsAllowed);
+        pm("gender selection", p.ivfGenderSelectionAllowed);
+        pm("embryo transfer from another clinic", p.ivfTransferFromOtherClinics);
+        if (p.ivfMaxAgeIp1 != null) parents.push(`max age intended parent 1: ${p.ivfMaxAgeIp1}`);
+        if (p.ivfMaxAgeIp2 != null) parents.push(`max age intended parent 2: ${p.ivfMaxAgeIp2}`);
+        if (p.ivfBiologicalConnection) parents.push(`biological connection: ${p.ivfBiologicalConnection}`);
+        if (p.ivfAcceptingPatients === false) parents.push("not currently accepting new patients");
+        if (p.surrogacyTwinsAllowed != null) { const s = yesNo(p.surrogacyTwinsAllowed); if (s) parents.push(`twins (surrogacy program): ${s}`); }
+
+        const out: string[] = [];
+        if (parents.length) out.push(`  Parents matching requirements: ${parents.join("; ")}`);
+        if (surrogate.length) out.push(`  Surrogate matching requirements: ${surrogate.join("; ")}`);
+        if (medical.length) out.push(`  Accepted surrogate medical history: ${medical.join("; ")}`);
+        return out;
+      };
+
+      const REQ_SELECT = {
+        id: true, name: true,
+        ivfSurrogateMinAge: true, ivfSurrogateMaxAge: true, ivfSurrogateMinBmi: true, ivfSurrogateMaxBmi: true,
+        ivfSurrogateMinDeliveries: true, ivfSurrogateMaxDeliveries: true, ivfSurrogateMaxCSections: true,
+        ivfSurrogateMaxMiscarriages: true, ivfSurrogateMaxAbortions: true, ivfSurrogateMaxYearsFromLastPregnancy: true,
+        ivfSurrogateMonthsPostVaginal: true, ivfSurrogateCovidVaccination: true,
+        ivfSurrogateGdDiet: true, ivfSurrogateGdMedication: true, ivfSurrogateHighBloodPressure: true,
+        ivfSurrogatePlacentaPrevia: true, ivfSurrogatePreeclampsia: true, ivfSurrogateMentalHealthHistory: true,
+        ivfTwinsAllowed: true, ivfGenderSelectionAllowed: true, ivfTransferFromOtherClinics: true,
+        ivfMaxAgeIp1: true, ivfMaxAgeIp2: true, ivfBiologicalConnection: true, ivfAcceptingPatients: true,
+        surrogacyTwinsAllowed: true,
+      } as const;
+
+      const blocks: string[] = [];
+      if (reqProviderId) {
+        const p: any = await prisma.provider.findUnique({ where: { id: reqProviderId }, select: REQ_SELECT as any });
+        if (p && !/^gostork$/i.test(p.name || "")) {
+          const lines = describe(p);
+          if (lines.length) {
+            blocks.push(`THIS PROVIDER'S OWN REQUIREMENTS - "${p.name}" (they set these in their settings; they are ${p.name}'s rules, NOT GoStork's):\n${lines.join("\n")}`);
+          }
+        }
+      }
+      // GoStork's platform-wide ASRM minimums - the ONLY rules that may be
+      // described as applying "on GoStork".
+      const houseProvider: any = await prisma.provider.findFirst({
+        where: { name: { equals: "GoStork", mode: "insensitive" } },
+        select: REQ_SELECT as any,
+      });
+      if (houseProvider) {
+        const lines = describe(houseProvider).filter((l) => !l.includes("Parents matching"));
+        if (lines.length) {
+          blocks.push(`GOSTORK PLATFORM MINIMUMS (ASRM-based - these apply to EVERY surrogate listed on GoStork regardless of agency, and are the only rules you may describe as "on GoStork"):\n${lines.join("\n")}`);
+        }
+      }
+      if (blocks.length) {
+        requirementsContext = `\n${blocks.join("\n")}\nUse these EXACT configured values when the parent asks what a provider requires or accepts. If the parent asks about something not listed, say you don't have that specific requirement on file and offer to ask the provider - never invent a threshold.\n`;
+      }
+    } catch (e: any) {
+      console.error("[REQUIREMENTS CONTEXT] failed:", e?.message);
+    }
+
     // PRIOR PROVIDER ANSWERS ABOUT THIS PROFILE (cross-family reuse).
     // Repeat questions about a specific donor/surrogate ("did she have any
     // pregnancy complications?", "gestational diabetes?") are extremely common,
@@ -4279,6 +4372,7 @@ HOW TO USE THESE:
 - Restate the answer in your own warm words. Do NOT quote it verbatim as if it just arrived, and never use the "I heard back from the agency!" framing - that is only for answers that came in for THIS family just now.
 - These all came from the agency itself. NEVER say, hint, or imply that another family, client, or parent asked anything - other families must stay completely invisible. Never mention "another intended parent", "a previous client", or similar.
 - The "ABOUT THIS PROFILE" facts apply ONLY to the donor/surrogate currently being discussed - never attribute them to a different person. The "HOW THEY WORK" facts are agency process and apply to any of their profiles.
+- ATTRIBUTION: these are THAT AGENCY'S policies. The stored answers are written in the AGENCY'S own voice, so they say "we"/"our" meaning the agency. You are GoStork's concierge - if you repeat "our screening..." verbatim, the parent will think it is GoStork's policy. ALWAYS convert to the agency: "their standard screening...", "at <agency name>...", "this agency requires...". NEVER restate one as a GoStork-wide fact ("every surrogate on GoStork...") - other agencies work differently, and only GoStork's own platform minimums are platform-wide.
 - If the parent asks something NOT covered above and not in the profile data, whisper as usual.`;
         }
       }
@@ -5198,7 +5292,7 @@ ${toolUsageSection}`;
 
 USER CONTEXT (already collected - do NOT ask again):
 ${userContextBlock}
-${ragContext}${priorProfileAnswersContext}${answeredWhispersContext}${alreadyPresentedContext}`;
+${ragContext}${requirementsContext}${priorProfileAnswersContext}${answeredWhispersContext}${alreadyPresentedContext}`;
 
     const systemPrompt = `${staticSystemPart}\n___CACHE_BREAKPOINT___\n${dynamicSystemPart}`;
 

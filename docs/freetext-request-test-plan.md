@@ -2,14 +2,14 @@
 
 **Scope:** the AI concierge must handle ANY parent request typed as free text - from the marketplace, mid-intake, mid-call-prep, out of nowhere - and never ignore it, steamroll it, overrule it, or answer it with mismatched quick replies. This plan covers the five failure classes found and fixed on Jul 24 2026 and the deterministic mechanisms that now guard them.
 
-**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-19)
+**Automated suite:** `scripts/test-freetext-requests.ts` (cases FT-01..FT-21)
 
 ```bash
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts
 TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-freetext-requests.ts --id=FT-01,FT-04
 ```
 
-**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (19)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
+**Admin UI:** the suite is wired into the AI Concierge Test Runner (`/admin/test-runner`) as the **Free-Text (21)** tab - FT cases run from there like any persona, and "Run All" runs both scripts (decision-tree suite + this one) in parallel.
 
 Run it against a live server after any change to `server/ai-router.ts` routing, directives, bypasses, or quick-reply handling. It creates throwaway `*@gostork-test.com` users and cleans them up. The main 74-case suite (`scripts/test-ai-concierge.ts`) stays the regression net for the scripted decision-tree flows; this suite covers the OFF-script behavior the main suite does not reach (deep-link pins, profile-conflict confirms, purchase clicks).
 
@@ -117,7 +117,13 @@ Two limits are now gone:
 
 Guarded by **FT-19**, which drives the REAL provider-answer API (not a seeded row), asserts the `KnowledgeChunk` row exists for the agency answer and does NOT exist for the person-specific one, and proves a 90-day-old answer buried under 15 newer ones is still surfaced when relevant.
 
-**Watch item (not a failure):** in FT-19 the model answered the retrieved agency policy as *"Every gestational surrogate on GoStork undergoes..."* - broader than the agency's own *"our standard screening includes..."*. The retrieval was correct; the model generalised one provider's policy into a platform-wide claim. Worth tightening the prompt if this shows up in real chats.
+### 14. Whose rule is it? Attribution + provider requirements (Jul 25)
+The FT-19 watch item turned out to matter: the model rendered a single agency's screening policy as *"Every gestational surrogate on GoStork undergoes..."*. One agency's practice must never be presented as platform-wide - other agencies work differently.
+
+- **Attribution rule** (`general_behavior`, code + DB): a provider's policy is attributed to THAT provider by name ("at <agency>", "their process"); only GoStork's own ASRM platform minimums may be described as GoStork-wide. A subtler variant was caught while testing: stored answers are written in the AGENCY'S voice ("our screening..."), so repeating them verbatim makes Eva - GoStork's concierge - sound like GoStork owns the policy. She must convert to the agency's name or "their".
+- **Provider requirements were unreadable.** Parents Matching Requirements, Surrogate Matching Requirements and Accepted Surrogate Medical History are configured in provider settings but were only consumed inside `search_surrogates` filtering; `resolve_provider` returns only name/logo/email. A parent asking "what are their surrogate requirements?" could not be answered. The in-scope provider's configured values are now injected into context, alongside a SEPARATELY LABELLED block of GoStork's own ASRM minimums read from the GoStork house provider row (age 21-45, BMI 18-35, >=1 delivery, <=5 deliveries, <=3 c-sections, last delivery within 10 years).
+
+Guarded by **FT-20** (configured age range, c-section cap, accepted medical history, gender selection all quoted exactly) and **FT-21** (agency policy used but never GoStork-framed and never in GoStork's first-person voice; GoStork minimums still stated platform-wide). Verified end-to-end that the reply separates them: *"On the GoStork platform, every surrogate must meet our strict minimum requirements... Additionally, individual agencies perform their own deep evaluations - their standard screening includes a full psychological evaluation."*
 
 ## Engineering rules distilled from these bugs
 
