@@ -61,7 +61,9 @@ export function QueueRow({ icon, title, detail, cta, onClick, action, onDismiss 
 
 export function SectionHeader({ icon, title, viewAllTo, viewAllLabel = "View all" }: { icon: React.ReactNode; title: string; viewAllTo?: string; viewAllLabel?: string }) {
   return (
-    <div className="flex items-center justify-between">
+    // min-h-8 matches the height a "View all" button gives the row, so a
+    // section with the link and one without still line up side by side.
+    <div className="flex items-center justify-between min-h-8">
       <div className="flex items-center gap-2">
         {icon}
         <h2 className="text-lg font-heading">{title}</h2>

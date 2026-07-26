@@ -187,11 +187,18 @@ function JourneyBlock({ journey, showProviderName }: { journey: JourneyOut; show
   }
   return (
     <div data-testid={`journey-${journey.journeyType}-${journey.providerId}`}>
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide">
+      {/* Same stacking on every width: provider name first, service tag under
+          it. The name truncates once cards sit side by side (hover shows it in
+          full) and wraps on mobile, where one card owns the whole row. */}
+      <div className="mb-2 min-w-0">
+        {showProviderName && (
+          <p className="text-xs font-medium font-ui sm:truncate" title={journey.providerName}>
+            {journey.providerName}
+          </p>
+        )}
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide ${showProviderName ? "mt-1" : ""}`}>
           {journey.typeLabel}
         </span>
-        {showProviderName && <span className="text-xs font-medium font-ui truncate">{journey.providerName}</span>}
       </div>
       {journey.attention && (
         <div className="flex items-center gap-1.5 px-2.5 py-1 mb-2 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium w-fit" data-testid="journey-attention-chip">
@@ -279,10 +286,25 @@ export function JourneyTimelineCard({
   }
 
   if (variant === "home") {
+    // Every journey the parent is running sits side by side on one row (up to
+    // 5 across on a wide screen), instead of stacking two-up and pushing the
+    // rest of the dashboard down. Classes are spelled out because Tailwind
+    // can't see interpolated column counts.
+    const colClass =
+      journeys.length >= 5
+        ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+        : journeys.length === 4
+        ? "sm:grid-cols-2 lg:grid-cols-4"
+        : journeys.length === 3
+        ? "sm:grid-cols-2 lg:grid-cols-3"
+        : "sm:grid-cols-2";
     return (
-      <div className="grid gap-4 md:grid-cols-2" data-testid={testId}>
+      <div className={`grid gap-4 ${colClass}`} data-testid={testId}>
+        {/* min-w-0 on each cell: grid items default to min-width:auto, so
+            without it a non-wrapping provider name widens its column past the
+            viewport (that's what broke the mobile layout). */}
         {journeys.map((j) => (
-          <div key={`${j.journeyType}-${j.providerId}`} className="rounded-[var(--radius)] border bg-secondary/40 p-4">
+          <div key={`${j.journeyType}-${j.providerId}`} className="min-w-0 rounded-[var(--radius)] border bg-secondary/40 p-4">
             <JourneyBlock journey={j} showProviderName />
           </div>
         ))}

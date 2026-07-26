@@ -141,12 +141,16 @@ export default function ParentHomePage() {
     (unreadMessages > 0 ? 1 : 0);
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6 pb-24 md:pb-6">
+    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6 pb-24 md:pb-6">
       <div>
         <h1 className="text-2xl font-heading">Welcome back, {firstName}</h1>
         <p className="text-sm text-muted-foreground mt-1">Here's where your journey stands.</p>
       </div>
 
+      {/* Top row: the action queue and the upcoming meetings sit side by side
+          on desktop (both are short, glanceable lists) and stack on mobile.
+          items-start so the shorter card doesn't stretch to match the taller. */}
+      <div className="grid gap-6 lg:grid-cols-2 items-start">
       {/* Action queue - always first so pending items are never below the fold */}
       <Card className="p-5 space-y-3">
         <SectionHeader
@@ -262,6 +266,35 @@ export default function ParentHomePage() {
         )}
       </Card>
 
+      {/* Upcoming meetings */}
+      <Card className="p-5 space-y-3">
+        <SectionHeader icon={<Video className="w-5 h-5 text-primary" />} title="Upcoming meetings" viewAllTo="/calendar" />
+        {upcomingMeetings.length === 0 ? (
+          // Same empty-state anatomy as the action queue (icon + success green
+          // + py-3), so the two top cards are identical in height when both
+          // are empty.
+          <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-success))" }}>
+            <CheckCircle2 className="w-4 h-4" />
+            No upcoming meetings scheduled.
+          </div>
+        ) : (
+          <div className="divide-y">
+            {upcomingMeetings.slice(0, 3).map((b: any) => (
+              <div key={b.id} className="flex items-center gap-3 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{b.subject || `Meeting with ${b.providerUser?.name || "your provider"}`}</p>
+                  <p className="text-xs text-muted-foreground">{fmtWhen(b.scheduledAt)}</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setSelectedMeeting(b)}>
+                  Details
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+      </div>
+
       {/* Phase 7A: journey timelines - one card per active journey, every
           type the parent is running in parallel (surrogacy, egg donation,
           IVF, banks, legal). Derived server-side; parents see their own
@@ -300,28 +333,6 @@ export default function ParentHomePage() {
           </Card>
         );
       })()}
-
-      {/* Upcoming meetings */}
-      <Card className="p-5 space-y-3">
-        <SectionHeader icon={<Video className="w-5 h-5 text-primary" />} title="Upcoming meetings" viewAllTo="/calendar" />
-        {upcomingMeetings.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No upcoming meetings scheduled.</p>
-        ) : (
-          <div className="divide-y">
-            {upcomingMeetings.slice(0, 3).map((b: any) => (
-              <div key={b.id} className="flex items-center gap-3 py-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{b.subject || `Meeting with ${b.providerUser?.name || "your provider"}`}</p>
-                  <p className="text-xs text-muted-foreground">{fmtWhen(b.scheduledAt)}</p>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setSelectedMeeting(b)}>
-                  Details
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
 
       {/* Cost sheets */}
       {!isViewer && (
