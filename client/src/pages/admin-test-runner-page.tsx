@@ -291,7 +291,7 @@ export default function AdminTestRunnerPage() {
           <FlaskConical style={{ color: "hsl(var(--primary))", width: "24px", height: "24px" }} />
           <div>
             <h1 style={{ fontSize: "20px", fontWeight: "700", fontFamily: "var(--font-heading)", margin: 0 }}>AI Concierge Test Runner</h1>
-            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>{`${testCases.length || "…"} tests · 5 personas + free-text + provider + journey · runs test-ai-concierge.ts + test-freetext-requests.ts + test-provider-flows.ts + test-journey-flows.ts + test-unit-guards.ts`}</p>
+            <p style={{ fontSize: "12px", color: "hsl(var(--muted-foreground))", margin: "2px 0 0" }}>{`${testCases.length || "…"} tests · 5 personas + free-text + provider + journey + unit · runs test-ai-concierge.ts + test-freetext-requests.ts + test-provider-flows.ts + test-journey-flows.ts + test-unit-guards.ts`}</p>
           </div>
         </div>
 
