@@ -6178,13 +6178,44 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // USA or Colombia"), which /surrogate/ misses - that gap made pendingReadyService
       // null and silently disabled the ready-turn force. Message sniffing first, then
       // fall back to the profile's outstanding needs that have no cards yet.
+      // WHICH service is this "ready" about? The old fixed priority chain
+      // (surrogate -> egg -> sperm -> clinic) returned the FIRST service the
+      // last AI message happened to mention, so in a multi-cycle journey the
+      // egg-donor and sperm-donor curations - which naturally still say
+      // "surrogate"/"surrogacy" while recapping - resolved to "surrogate".
+      // Measured on TM-09: three cycles resolved to surrogate, surrogate, egg,
+      // each a full cycle behind. That silently disabled the force (the
+      // mis-detected service was already satisfied) and, once the pre-search
+      // started acting on this value, actively ran the WRONG search.
+      //
+      // A service the parent has already been shown cannot be what "ready"
+      // means, so only unsatisfied services are candidates; among those, the
+      // one mentioned LAST wins - a curation ends on the thing it is asking
+      // about ("...ready to meet your egg donor matches?").
+      const readyServicePatterns: Array<{ svc: string; re: RegExp }> = [
+        { svc: "surrogate", re: /surroga|carrier|agency/g },
+        { svc: "egg", re: /egg donor/g },
+        { svc: "sperm", re: /sperm donor/g },
+        { svc: "clinic", re: /clinic|ivf/g },
+      ];
+      const lastMentionIndex = (re: RegExp): number => {
+        let idx = -1;
+        for (const m of lastAiL.matchAll(re)) idx = Math.max(idx, m.index ?? -1);
+        return idx;
+      };
+      const mentionedUnsatisfied = readyServicePatterns
+        .map((p) => ({ svc: p.svc, at: lastMentionIndex(p.re) }))
+        .filter((p) => p.at >= 0 && !typeSatisfied(p.svc))
+        .sort((a, b) => b.at - a.at);
       const pendingReadyService =
-        /surroga|carrier|agency/.test(lastAiL) ? "surrogate" :
-        /egg donor/.test(lastAiL) ? "egg" :
-        /sperm donor/.test(lastAiL) ? "sperm" :
-        /clinic|ivf/.test(lastAiL) ? "clinic" :
-        (profile?.needsSurrogate && !surrogateSatisfied) ? "surrogate" :
-        (profile?.needsEggDonor && !presentedCardTypes.has("egg")) ? "egg" : null;
+        mentionedUnsatisfied[0]?.svc ??
+        ((profile?.needsSurrogate && !surrogateSatisfied) ? "surrogate" :
+         (profile?.needsEggDonor && !presentedCardTypes.has("egg")) ? "egg" :
+         // There is no needsSpermDonor column, so the sperm lane falls back to
+         // the parent's stated interest. Without this the LAST cycle of a
+         // three-service journey resolved to "none" and the ready turn was
+         // never forced (seen on SW-08/TM-09, the only 3-cycle scenarios).
+         (services.some((x: string) => /sperm/i.test(x)) && !presentedCardTypes.has("sperm")) ? "sperm" : null);
       const forceToolUseForSearch = userSaidReady && curationAlreadySent && needsTools &&
         (presentedProviderIds.size === 0 ||
           (pendingReadyService != null && !typeSatisfied(pendingReadyService)));
@@ -6222,7 +6253,8 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       // Donor/surrogate searches stay model-driven - mapping free-text
       // preferences to filters is the model's judgment call.
       let preSearchForReady: { name: string; args: Record<string, unknown> } | null = null;
-      if (forceToolUseForSearch && /perfect clinic matches|clinic matches now|find your clinic matches/i.test(String(lastAiMsg?.content || ""))) {
+      /** Clinic search args personalised to this parent (shared by both arming paths). */
+      const buildClinicSearchArgs = (): Record<string, unknown> => {
         const genderL = (userRecord?.gender || "").toLowerCase();
         const isFemaleP = /\b(female|woman|girl)\b/.test(genderL) || genderL === "f";
         const isMaleP = !isFemaleP && (/\b(male|man|boy)\b/.test(genderL) || genderL === "m");
@@ -6242,7 +6274,10 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         if (userRecord?.state) args.state = userRecord.state;
         if (userRecord?.city) args.city = userRecord.city;
         if (presentedProviderIds.size > 0) args.excludeIds = Array.from(presentedProviderIds);
-        preSearchForReady = { name: "search_clinics", args };
+        return args;
+      };
+      if (forceToolUseForSearch && /perfect clinic matches|clinic matches now|find your clinic matches/i.test(String(lastAiMsg?.content || ""))) {
+        preSearchForReady = { name: "search_clinics", args: buildClinicSearchArgs() };
       }
 
       // READY-TURN PRE-SEARCH for the surrogate / egg / sperm lanes.
@@ -6265,7 +6300,13 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         const yes = (v: any) => /^(yes|true|open|ok|agree|pro-choice|comfortable)/i.test(String(v || ""));
         const no = (v: any) => /^(no|false|not|against|pro-life)/i.test(String(v || ""));
         let toolName = "";
-        if (pendingReadyService === "surrogate") {
+        if (pendingReadyService === "clinic") {
+          // The block above only arms on a specific curation phrase ("your
+          // perfect clinic matches"); when the wording differs, a forced
+          // clinic ready turn was left with no search at all.
+          toolName = "search_clinics";
+          Object.assign(args, buildClinicSearchArgs());
+        } else if (pendingReadyService === "surrogate") {
           toolName = "search_surrogates";
           if (yes(profile?.surrogateTwins)) args.agreesToTwins = true;
           else if (no(profile?.surrogateTwins)) args.agreesToTwins = false;

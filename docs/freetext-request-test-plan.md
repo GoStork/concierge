@@ -160,6 +160,20 @@ The four "still open" items from the routing audit, plus the untested agreement 
 
 **A false pass caught in the act.** PR-11 passed on its first run - and also passed against the deliberately reverted code. The delivery stamp is fire-and-forget, so asserting immediately after the HTTP response raced it. With a 2s wait the test fails on the old code and passes on the new. Any assertion about a fire-and-forget side effect needs to wait for it, or it proves nothing.
 
+### 18. The last two chronics: SW-08 and TM-09 (Jul 25)
+Both are the only THREE-cycle scenarios in the suite (surrogate/agency, then egg donor, then sperm donor), which is why they were the last to fall. The cause was `pendingReadyService` - the code that decides WHICH service a "ready" refers to.
+
+It matched the last AI message against a fixed priority chain (`surroga` -> `egg donor` -> `sperm donor` -> `clinic`) and returned the FIRST hit. In a multi-cycle journey the egg-donor and sperm-donor curations naturally still say "surrogate"/"surrogacy" while recapping, so they resolved to `surrogate`. Instrumented on TM-09, the three cycles resolved to **surrogate, surrogate, egg** - each a full cycle behind. That silently disabled the ready-turn force (the mis-detected service was already satisfied), and once the pre-search started acting on this value it actively ran the WRONG search.
+
+The fix inverts the logic: a service the parent has ALREADY been shown cannot be what "ready" means, so only unsatisfied services are candidates, and among those the one mentioned LAST wins - a curation ends on the thing it is asking about. Two holes surfaced while verifying and were closed at the same time:
+
+- The clinic lane only armed a pre-search on one specific phrase ("your perfect clinic matches"); any other wording left a forced clinic ready turn with no search at all. The arg builder is now shared by both paths.
+- The sperm lane had no profile fallback because **there is no `needsSpermDonor` column** - only `needsSurrogate`, `needsEggDonor`, `needsClinic`. The final cycle of a three-service journey resolved to `none`. It now falls back to the parent's stated `interestedServices`. (The first version of this fix referenced `profile.needsSpermDonor`, which would have been permanently undefined - a dead branch that reads like coverage. Check the column exists.)
+
+After: every cycle resolves distinctly (surrogate -> clinic -> egg -> sperm), 120 of 133 ready turns arm a pre-search, and the full suite reached **74/74** under single-server load.
+
+**Environmental gotcha worth knowing:** a run that shows "server restarted mid-stream" is usually not a bug. The `com.gostork.autosync` launchd job pulls and restarts within ~60s of any push, so pushing while a suite is running kills it mid-flight (it also logs `FATAL: port 5001 already in use` from the duplicate start). Three failures in one run were traced to exactly this and all passed in isolation. Do not push mid-run.
+
 ## Engineering rules distilled from these bugs
 
 1. Every action button and free-typed intent must reach its flow **deterministically** - prompt rules alone do not survive contact with the model.
@@ -173,6 +187,8 @@ The four "still open" items from the routing audit, plus the untested agreement 
 9. Drive the real endpoint, never an in-process import of server code - test scripts do not have the server's environment, and the failure looks like a product bug.
 10. When a rule exists in two places (a read filter and its count, a card allow-list and its consumers), they WILL drift. Extract the single source of truth instead of keeping them in sync by hand.
 11. Prove a new test fails against the unfixed code before trusting it. Two of these passed on first run for the wrong reason - once because the assertion raced a fire-and-forget write.
+12. A "first match wins" chain over free text is a latent ordering bug the moment the text can mention more than one subject. Prefer eliminating candidates by STATE (already satisfied -> cannot be the answer) over guessing by priority.
+13. Before writing a fallback on a profile column, confirm the column exists. `profile?.needsSpermDonor` compiles, is always undefined, and looks like coverage forever.
 
 ## Manual spot-checks (not automated)
 
