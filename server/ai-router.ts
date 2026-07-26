@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { isUsableCardId, parseMatchCardTag, topResultId, UUID_RE } from "./match-card-parse";
 import { PARENT_VISIBLE_SYSTEM_CARDS } from "./parent-visibility";
 import Anthropic from "@anthropic-ai/sdk";
 import { getBaseUrl } from "./src/lib/get-base-url";
@@ -426,44 +427,6 @@ function injectMissingQuickReplies(content: string): string {
 // -------------------------------------------------------------------------
 // Tier 2: Gemini 3.5 Flash - matching, tool calls, complex rules
 // -------------------------------------------------------------------------
-/**
- * Parse the FIRST JSON array out of an MCP tool-result body.
- *
- * The bodies are `Found N surrogates:\n<array>\n\nIMPORTANT: ...`, so a naive
- * indexOf("[") / lastIndexOf("]") slice can swallow trailing prose (any "]" in
- * the note moves the end marker) and the parse throws. Results also carry raw
- * control characters inside string fields. Bracket-match the first array and
- * strip control chars instead.
- */
-function parseFirstJsonArray(body: string): any[] | null {
-  if (!body) return null;
-  const clean = body.replace(/[\u0000-\u001f]/g, " ");
-  const start = clean.indexOf("[");
-  if (start === -1) return null;
-  let depth = 0, inStr = false, esc = false;
-  for (let i = start; i < clean.length; i++) {
-    const ch = clean[i];
-    if (inStr) {
-      if (esc) esc = false;
-      else if (ch === "\\") esc = true;
-      else if (ch === '"') inStr = false;
-      continue;
-    }
-    if (ch === '"') inStr = true;
-    else if (ch === "[") depth++;
-    else if (ch === "]") {
-      depth--;
-      if (depth === 0) {
-        try {
-          const parsed = JSON.parse(clean.substring(start, i + 1));
-          return Array.isArray(parsed) ? parsed : null;
-        } catch { return null; }
-      }
-    }
-  }
-  return null;
-}
-
 async function callTier2Claude(
   systemPrompt: string,
   messages: any[],
@@ -1213,17 +1176,8 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
       if (preSearch && fullText && !/\[\[MATCH_CARD/i.test(fullText)) {
         const pre = searchToolResults.find((r) => r.toolName === preSearch.name);
         const preBody = pre?.resultText || "";
-        const arr = parseFirstJsonArray(preBody);
-        const rows = arr ? arr.length : -1; // -1 = no parseable array
-        // Pre-search bodies are capped at MAX_TOOL_RESULT (8000 chars), so a
-        // large result set arrives with its JSON array cut mid-object and the
-        // bracket matcher never closes it. We only need the TOP result's id, and
-        // that survives truncation - take it directly rather than losing the
-        // card over the tail we never needed.
-        const topId = arr && arr.length > 0
-          ? String(arr[0]?.id || "")
-          : (preBody.match(/"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i)?.[1] || "");
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(topId)) {
+        const { id: topId, rows } = topResultId(preBody);
+        if (topId) {
           console.warn(`[TIER2] Pre-searched turn produced no MATCH_CARD - appending top result ${topId}`);
           fullText = `${fullText.trimEnd()}\n\n[[MATCH_CARD:${topId}]]`;
         } else {
@@ -8904,15 +8858,16 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     while ((mcMatch = matchCardRegex.exec(finalContent)) !== null) {
       aiAttemptedTags++;
       try {
-        // BARE-ID FORM: [[MATCH_CARD:<uuid>]]. Every other structured tag in
-        // this system takes a bare id ([[WHISPER:PROVIDER_ID]],
-        // [[CONSULTATION_BOOKING:PROVIDER_ID]]), and CLAUDE.md documents
-        // [[MATCH_CARD:DONOR_ID]] that way too, so the model reaches for it -
-        // but the parser only ever accepted JSON, and JSON.parse("<uuid>")
-        // throws, so the card was silently discarded and the parent read a
-        // recommendation with nothing under it. Resolve the type from the id.
-        const bareId = mcMatch[1].trim().replace(/^["']|["']$/g, "");
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bareId)) {
+        // Classify the tag payload once (see server/match-card-parse.ts):
+        // bare id, well-formed JSON, or malformed-but-salvageable. Each of
+        // these used to be a silent drop.
+        const tag = parseMatchCardTag(mcMatch[1]);
+        if (tag.kind === "unusable") {
+          console.warn(`[ai-router] MATCH_CARD payload unusable - leaving to fallback :: ${mcMatch[1].slice(0, 160).replace(/\n/g, " ")}`);
+          continue;
+        }
+        if (tag.kind === "bare") {
+          const bareId = tag.id;
           const lookups: Array<[string, any]> = [
             ["Surrogate", prisma.surrogate],
             ["Egg Donor", prisma.eggDonor],
@@ -8937,8 +8892,16 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             continue;
           }
           console.log(`[ai-router] MATCH_CARD bare-id form accepted (${resolvedType} ${bareId})`);
-          // name/photo are hydrated by resolve_match_card below.
           matchCards.push({ name: "", type: resolvedType, location: "", photo: "", reasons: [], providerId: bareId, ...(ownerId ? { ownerProviderId: ownerId } : {}) });
+          continue;
+        }
+        if (tag.kind === "salvage") {
+          if (surrogateCardGateActive && /surrogate/i.test(String(tag.card.type || ""))) {
+            console.log(`[SEARCH GATE] Suppressed premature surrogate MATCH_CARD (salvaged) - D-cycle incomplete`);
+            continue;
+          }
+          console.warn(`[ai-router] MATCH_CARD JSON malformed - salvaged required fields (${tag.card.type} ${tag.card.providerId})`);
+          matchCards.push(tag.card);
           continue;
         }
         const parsed = JSON.parse(mcMatch[1]);
@@ -9016,9 +8979,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // - Looks like a name (only letters, short - e.g. "Sarah", "John")
         // - Too short to be a UUID (UUIDs are 36 chars with hyphens)
         const pid = String(parsed.providerId || "");
-        const providerIdIsNumeric = pid && /^\d+$/.test(pid);
-        const providerIdLooksLikeName = pid && /^[a-zA-Z\s]+$/.test(pid) && pid.length < 30;
-        if (providerIdIsNumeric || providerIdLooksLikeName) {
+        if (pid && !isUsableCardId(pid)) {
           console.warn(`[ai-router] MATCH_CARD has invalid providerId (${pid}) - name or display number, using fallback`);
         } else if (parsed.type && parsed.providerId) {
           matchCards.push(parsed);
@@ -9026,30 +8987,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           console.warn("[ai-router] MATCH_CARD missing required fields (type/providerId), skipping:", parsed);
         }
       } catch (e) {
-        // A card the model DID emit must not vanish because its JSON was
-        // slightly malformed. Recover the fields we actually need (type +
-        // providerId) by hand before giving up - the alternative is a parent
-        // reading "here's a great match for you" with no card under it.
-        const raw = mcMatch[1];
-        const grab = (key: string) => {
-          const m = raw.match(new RegExp(`["']?${key}["']?\\s*:\\s*["']([^"']+)["']`, "i"));
-          return m ? m[1] : "";
-        };
-        const salvaged: any = {
-          name: grab("name") || grab("displayName"),
-          type: grab("type") || grab("entityType"),
-          location: grab("location"),
-          photo: "",
-          reasons: (raw.match(/"reasons"\s*:\s*\[([^\]]*)\]/i)?.[1] || "")
-            .split(",").map((x) => x.trim().replace(/^["']|["']$/g, "")).filter(Boolean).slice(0, 4),
-          providerId: grab("providerId") || grab("entityId") || grab("id"),
-        };
-        const salvagedUsable = !!salvaged.type && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(salvaged.providerId)
-          && !(surrogateCardGateActive && /surrogate/i.test(salvaged.type));
-        console.error(
-          `Failed to parse MATCH_CARD (${(e as any)?.message || e}) - salvage=${salvagedUsable ? "OK" : "FAILED"} :: ${raw.slice(0, 220).replace(/\n/g, " ")}`,
-        );
-        if (salvagedUsable) matchCards.push(salvaged);
+        // parseMatchCardTag never throws, so reaching here means one of the
+        // DB lookups above failed - not a parse problem.
+        console.error(`MATCH_CARD handling failed: ${(e as any)?.message || e}`);
       }
     }
     finalContent = finalContent.replace(/\[\[MATCH_CARD:[\s\S]*?\]\]/g, "").trim();

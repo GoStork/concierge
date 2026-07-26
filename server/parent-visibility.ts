@@ -11,8 +11,6 @@
  *
  * See docs/freetext-request-test-plan.md and the Jul 24 routing audit.
  */
-import { prisma as defaultPrisma } from "./db";
-
 /**
  * System cards a PARENT may see in their message feed.
  *
@@ -79,16 +77,19 @@ export const PARENT_HIDDEN_MESSAGE_FILTER = {
  */
 export async function resolveParentEvaSessionId(
   memberIds: string[],
-  client: any = defaultPrisma,
+  client?: any,
 ): Promise<string | null> {
   if (!memberIds || memberIds.length === 0) return null;
+  // Imported lazily so the card allow-list and this function stay usable
+  // without a database connection (scripts/test-unit-guards.ts injects a stub).
+  const db = client ?? (await import("./db")).prisma;
   const privateThread = {
     userId: { in: memberIds },
     sessionType: "PARENT",
     status: "ACTIVE",
     providerJoinedAt: null,
   };
-  const withMatchmaker = await client.aiChatSession.findFirst({
+  const withMatchmaker = await db.aiChatSession.findFirst({
     where: { ...privateThread, matchmakerId: { not: null } },
     orderBy: { updatedAt: "desc" },
     select: { id: true },
@@ -96,7 +97,7 @@ export async function resolveParentEvaSessionId(
   if (withMatchmaker?.id) return withMatchmaker.id;
   // Fallback: a private parent session that never got a matchmakerId. Posting
   // here is strictly better than dropping the message on the floor.
-  const anyPrivate = await client.aiChatSession.findFirst({
+  const anyPrivate = await db.aiChatSession.findFirst({
     where: privateThread,
     orderBy: { updatedAt: "desc" },
     select: { id: true },

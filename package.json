@@ -11,7 +11,16 @@
     "db:push": "drizzle-kit push",
     "decision-tree": "node scripts/generate-decision-tree.mjs",
     "decision-tree:watch": "node scripts/watch-decision-tree.mjs",
-    "tech-stack": "node scripts/generate-tech-stack.mjs"
+    "tech-stack": "node scripts/generate-tech-stack.mjs",
+    "test:concierge": "tsx scripts/test-ai-concierge.ts",
+    "test:freetext": "tsx scripts/test-freetext-requests.ts",
+    "test:provider": "tsx scripts/test-provider-flows.ts",
+    "test:journey": "tsx scripts/test-journey-flows.ts",
+    "test:units": "tsx scripts/test-unit-guards.ts",
+    "test:reviews": "tsx --env-file=.env scripts/test-reviews-e2e.ts",
+    "test:memory": "tsx --env-file=.env scripts/test-chat-memory.ts",
+    "test:drafts": "tsx --env-file=.env scripts/test-auto-draft-matrix.ts",
+    "test:servers": "bash scripts/start-test-servers.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",

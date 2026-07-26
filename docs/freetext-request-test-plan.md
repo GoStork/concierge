@@ -174,6 +174,28 @@ After: every cycle resolves distinctly (surrogate -> clinic -> egg -> sperm), 12
 
 **Environmental gotcha worth knowing:** a run that shows "server restarted mid-stream" is usually not a bug. The `com.gostork.autosync` launchd job pulls and restarts within ~60s of any push, so pushing while a suite is running kills it mid-flight (it also logs `FATAL: port 5001 already in use` from the duplicate start). Three failures in one run were traced to exactly this and all passed in isolation. Do not push mid-run.
 
+### 19. Unit guards for the recovery paths, and the orphan suites (Jul 25)
+Two gaps remained after the chronics were fixed, both self-inflicted.
+
+**The recovery paths had no direct tests.** The bare-id card parser, the malformed-JSON salvage, the truncation salvage and the owed-card guarantee only fire when the model has ALREADY misbehaved, so the end-to-end suites exercised them incidentally at best. That is precisely the code whose regression reappears months later as "flake". The pure logic now lives in `server/match-card-parse.ts` (no DB or SDK imports) and is covered directly by `scripts/test-unit-guards.ts` (**UT-01..UT-08**): bare-id acceptance, well-formed JSON, malformed-JSON salvage, unusable-id rejection, tool bodies with trailing prose and control characters, truncated bodies, the zero-results-vs-unparseable distinction, and the Eva-session resolver.
+
+Extracting it also removed two inline copies of the providerId validation from `ai-router` (`isUsableCardId` is now shared) and one local copy of `parseFirstJsonArray`.
+
+**UT-08 guards the dropped-prompt bug directly.** It injects a stub client and asserts both that a session with a NULL `matchmakerId` is still found, and that NEITHER query can ever select a thread the provider has joined - the privacy property that makes the whole resolver safe. `resolveParentEvaSessionId` now imports the database lazily so the module is testable without one.
+
+**Four test scripts existed that nobody ran.** All were healthy once invoked correctly:
+
+| script | result | note |
+|---|---|---|
+| `test-reviews-e2e.ts` | 31/31 | silently needed `--env-file=.env`; failed with "DATABASE_URL must be set" |
+| `test-chat-memory.ts` | 9/9 | |
+| `test-auto-draft-matrix.ts` | all pass | diagnostic matrix |
+| `test-invoice-draft-once.ts` | n/a | single-shot helper, not a suite |
+
+**A trap introduced while adding those npm scripts, worth knowing about.** The first version used `tsx --env-file=.env` for every suite. `.env` contains `TEST_SERVER_POOL=http://localhost:5001,5002,5003` (for `scripts/start-test-servers.sh` sharding), so the four E2E suites suddenly addressed two servers that were not running: 50 of 74 tests failed, half instantly and half after an 86s timeout. It looks exactly like a catastrophic product regression and is purely an invocation bug. The E2E suites read `.env` themselves and must NOT inherit it; only the three that import server modules take `--env-file`. Use `npm run test:servers` to bring the pool up deliberately.
+
+They are NOT wired into the admin runner (their stdout protocol differs and they are slower), but they now have npm scripts - `npm run test:reviews`, `test:memory`, `test:drafts`, plus `test:concierge / test:freetext / test:provider / test:journey / test:units` - so they are discoverable and cannot rot from "nobody remembers the invocation" again. A suite nobody runs is worse than no suite: it reads as coverage.
+
 ## Engineering rules distilled from these bugs
 
 1. Every action button and free-typed intent must reach its flow **deterministically** - prompt rules alone do not survive contact with the model.
@@ -189,6 +211,9 @@ After: every cycle resolves distinctly (surrogate -> clinic -> egg -> sperm), 12
 11. Prove a new test fails against the unfixed code before trusting it. Two of these passed on first run for the wrong reason - once because the assertion raced a fire-and-forget write.
 12. A "first match wins" chain over free text is a latent ordering bug the moment the text can mention more than one subject. Prefer eliminating candidates by STATE (already satisfied -> cannot be the answer) over guessing by priority.
 13. Before writing a fallback on a profile column, confirm the column exists. `profile?.needsSpermDonor` compiles, is always undefined, and looks like coverage forever.
+14. Recovery code needs its OWN tests. It runs only after something else failed, so the end-to-end suites pass whether or not it works - keep it pure, in its own module, and test it directly.
+15. A test script with no npm script and no runner entry will stop being run, then stop working, and still read as coverage. Give every suite a named invocation.
+16. Changing HOW a suite is invoked is a change to the suite. Injecting `.env` wholesale handed the tests a 3-server shard pool that was not running and produced 50 failures that looked like a total regression. When a whole suite collapses at once, suspect the harness before the product.
 
 ## Manual spot-checks (not automated)
 

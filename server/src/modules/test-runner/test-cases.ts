@@ -791,6 +791,59 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 0,
   },
 
+  // ── UNIT GUARDS (UT-01..) ─────────────────────────────────────────────────
+  // Runs scripts/test-unit-guards.ts - pure logic, no server, no DB. Covers
+  // the RECOVERY paths that only fire when something else already went wrong,
+  // and which are therefore invisible to the end-to-end suites.
+  {
+    id: "UT-01", persona: "unit",
+    name: "UT-01: Bare-id [[MATCH_CARD:<uuid>]] form is accepted",
+    desc: "The shorthand every other tag uses (and CLAUDE.md documents) is recognised, quoted or padded - it used to throw in JSON.parse and the card was discarded",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-02", persona: "unit",
+    name: "UT-02: Well-formed card JSON parses unchanged",
+    desc: "The normal path still classifies as json with fields intact",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-03", persona: "unit",
+    name: "UT-03: Malformed card JSON is salvaged, not dropped",
+    desc: "A trailing comma or an unescaped inner quote still yields type + providerId instead of losing the card",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-04", persona: "unit",
+    name: "UT-04: Unusable card ids are refused, not rendered broken",
+    desc: "A display number or a name as providerId is rejected (it would render 'Profile unavailable'), while non-uuid slug ids still pass",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-05", persona: "unit",
+    name: "UT-05: Tool bodies parse despite trailing prose and control chars",
+    desc: "The first JSON array is bracket-matched, so a ']' in the trailing IMPORTANT note and raw control characters inside strings do not break it",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-06", persona: "unit",
+    name: "UT-06: A truncated tool result still yields the top id",
+    desc: "Pre-search bodies are capped at 8000 chars so the array never closes; the top id survives truncation and is taken directly",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-07", persona: "unit",
+    name: "UT-07: Zero results are distinguishable from a parse failure",
+    desc: "rows=0 (correctly no card) vs rows=-1 (unparseable) - conflating them sends the next diagnosis the wrong way",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-08", persona: "unit",
+    name: "UT-08: The parent's private Eva session resolves, never a joined thread",
+    desc: "A session with a NULL matchmakerId is still found (the silently-dropped review_prompt/ip_form_prompt bug) and neither query can ever select a thread the provider has joined",
+    interestedServices: [], messageCount: 0,
+  },
+
   // ── TRANSACTIONAL JOURNEY (JR-01..) ───────────────────────────────────────
   // Runs scripts/test-journey-flows.ts - what MOVES rather than what Eva says:
   // cost sheet -> acknowledgement -> invoice -> payment -> agreement -> handoff,

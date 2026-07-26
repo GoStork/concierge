@@ -178,11 +178,14 @@ export class TestRunnerService {
     const isFtCase = (id: string) => /^FT-/i.test(id);
     const isPrCase = (id: string) => /^PR-/i.test(id);
     const isJrCase = (id: string) => /^JR-/i.test(id);
+    const isUtCase = (id: string) => /^UT-/i.test(id);
     const wantsFt = !filter || filter === "free-text" || isFtCase(filter);
     const wantsPr = !filter || filter === "provider" || isPrCase(filter);
     const wantsJr = !filter || filter === "journey" || isJrCase(filter);
+    const wantsUt = !filter || filter === "unit" || isUtCase(filter);
     const wantsMain = !filter || (filter !== "free-text" && filter !== "provider" && filter !== "journey"
-      && !isFtCase(filter) && !isPrCase(filter) && !isJrCase(filter));
+      && filter !== "unit"
+      && !isFtCase(filter) && !isPrCase(filter) && !isJrCase(filter) && !isUtCase(filter));
 
     const launch = (procKey: string, scriptFile: string, extraArgs: string[]) => {
     const scriptPath = path.resolve(process.cwd(), "scripts", scriptFile);
@@ -346,6 +349,9 @@ export class TestRunnerService {
     }
     if (wantsJr) {
       launch(`${runId}:jr`, "test-journey-flows.ts", filter && isJrCase(filter) ? [`--id=${filter}`] : []);
+    }
+    if (wantsUt) {
+      launch(`${runId}:ut`, "test-unit-guards.ts", filter && isUtCase(filter) ? [`--id=${filter}`] : []);
     }
 
     return { started: true, message: `Started run ${runId} with ${matchingTests.length} tests` };
