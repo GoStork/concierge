@@ -169,7 +169,7 @@ export default function IpFormGuestPage() {
       <div className="min-h-screen flex items-center justify-center bg-background px-4">
         <Card className="p-8 max-w-md text-center space-y-2">
           <h1 className="text-xl font-heading font-bold">This link is no longer valid</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             It may have expired, been replaced by a newer link, or the form was already submitted. Ask your partner to send a fresh link
             from their GoStork account.
           </p>
@@ -191,7 +191,7 @@ export default function IpFormGuestPage() {
           </div>
           <div>
             <h1 className="text-2xl font-heading font-bold">Intended Parent Form</h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="t-helper">
               {data.guestName ? `Hi ${data.guestName}! ` : ""}Your partner filled out this form. Please review it and add your signature
               below. Use the tabs above to browse any section - your partner completes the rest.
             </p>
@@ -264,7 +264,7 @@ export default function IpFormGuestPage() {
         )}
 
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40">
-          <div className="rounded-full bg-background border border-border shadow-md px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-1.5">
+          <div className="t-helper rounded-full bg-background border border-border shadow-md px-4 py-1.5 flex items-center gap-1.5">
             {saveState === "saving" && (<><Loader2 className="w-3 h-3 animate-spin" /> Saving...</>)}
             {saveState === "saved" && (<><Check className="w-3 h-3 text-primary" /> Saved</>)}
             {saveState === "error" && <span className="text-destructive">Save failed - check your connection</span>}
@@ -282,7 +282,7 @@ function GuestSignBlock({ token, defaultName, onSigned }: { token: string; defau
   return (
     <div className="space-y-3">
       <div className="space-y-1.5 max-w-md">
-        <Label className="text-sm font-medium">Your full legal name</Label>
+        <Label >Your full legal name</Label>
         <Input value={fullLegalName} onChange={(e) => setFullLegalName(e.target.value)} data-testid="ipform-guest-legal-name" />
       </div>
       <SignaturePad

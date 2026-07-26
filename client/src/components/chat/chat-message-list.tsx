@@ -210,7 +210,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                   if (!prevDate || msgDate !== prevDate) {
                     return (
                       <div className="flex items-center justify-center my-3">
-                        <span className="px-3 py-1 text-[11px] font-medium text-muted-foreground bg-muted/60 rounded-full shadow-sm">
+                        <span className="t-helper px-3 py-1 font-medium bg-muted/60 rounded-full shadow-sm">
                           {chatDateLabel(msg.createdAt)}
                         </span>
                       </div>
@@ -233,7 +233,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                   </div>
                   <div className="flex flex-col flex-1 min-w-0 items-start">
                     {label && (
-                      <span className="text-[11px] font-medium text-muted-foreground mb-0.5">{label}</span>
+                      <span className="t-helper font-medium mb-0.5">{label}</span>
                     )}
                     <CostSheetDraftStack msgs={run} sessionId={sessionId} />
                     {msg.createdAt && (
@@ -286,7 +286,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
               if (!prevDate || msgDate !== prevDate) {
                 return (
                   <div className="flex items-center justify-center my-3">
-                    <span className="px-3 py-1 text-[11px] font-medium text-muted-foreground bg-muted/60 rounded-full shadow-sm">
+                    <span className="t-helper px-3 py-1 font-medium bg-muted/60 rounded-full shadow-sm">
                       {chatDateLabel(msg.createdAt)}
                     </span>
                   </div>
@@ -317,7 +317,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
               <div className={`flex flex-col flex-1 min-w-0 ${own ? "items-end" : "items-start"}`}>
                 {/* Sender name label */}
                 {label && !own && (
-                  <span className="text-[11px] font-medium text-muted-foreground mb-0.5" data-testid={`name-label-${msgTestIdPrefix}-${i}`}>
+                  <span className="t-helper font-medium mb-0.5" data-testid={`name-label-${msgTestIdPrefix}-${i}`}>
                     {label}
                   </span>
                 )}

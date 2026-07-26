@@ -297,7 +297,7 @@ export default function IpFormPage() {
         </div>
         <div>
           <h1 className="text-2xl font-heading font-bold">Intended Parent Form</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             Your surrogacy agency shares this form (with your photos and letter) with potential surrogates so they can get to know your
             family before a match call. It saves automatically - finish it in as many sittings as you need.
           </p>
@@ -309,14 +309,14 @@ export default function IpFormPage() {
           <CheckCircle2 className="w-6 h-6 text-primary shrink-0" />
           <div>
             <p className="font-semibold">Submitted{data.response.submittedAt ? ` on ${new Date(data.response.submittedAt).toLocaleDateString()}` : ""}. You're all set!</p>
-            <p className="text-sm text-muted-foreground">Your agency can now share your profile with potential surrogates. The form is locked - contact your agency if something needs to change.</p>
+            <p className="t-helper">Your agency can now share your profile with potential surrogates. The form is locked - contact your agency if something needs to change.</p>
           </div>
         </Card>
       )}
 
       {isViewer && !submitted && (
         <Card className="p-4 mb-4 bg-secondary/60">
-          <p className="text-sm text-muted-foreground">You have view-only access on this account - the intended parents fill and sign this form.</p>
+          <p className="t-helper">You have view-only access on this account - the intended parents fill and sign this form.</p>
         </Card>
       )}
 
@@ -402,7 +402,7 @@ export default function IpFormPage() {
 
       {!submitted && (
         <div className="fixed bottom-16 md:bottom-4 left-1/2 -translate-x-1/2 z-40">
-          <div className="rounded-full bg-background border border-border shadow-md px-4 py-1.5 text-xs text-muted-foreground flex items-center gap-1.5" data-testid="ipform-save-state">
+          <div className="t-helper rounded-full bg-background border border-border shadow-md px-4 py-1.5 flex items-center gap-1.5" data-testid="ipform-save-state">
             {saveState === "saving" && (<><Loader2 className="w-3 h-3 animate-spin" /> Saving...</>)}
             {saveState === "saved" && (<><Check className="w-3 h-3 text-primary" /> Saved</>)}
             {saveState === "error" && <span className="text-destructive">Save failed - check your connection</span>}
@@ -466,10 +466,10 @@ function AcknowledgmentSection({
                 <p className="text-sm">
                   Signed by <span className="font-medium">{signature.fullLegalName}</span> on {new Date(signature.signedAt).toLocaleDateString()}
                 </p>
-                {mine && !submitted && <p className="text-xs text-muted-foreground">Sign again below to replace your signature.</p>}
+                {mine && !submitted && <p className="t-helper">Sign again below to replace your signature.</p>}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">Not signed yet.</p>
+              <p className="t-helper">Not signed yet.</p>
             )}
             {mine && !submitted && <SignBlock defaultName={nameFor(slot)} onSign={(name, url, method) => sign(slot, name, url, method)} />}
             {!mine && slot === 2 && !signature && !submitted && mySlot === 1 && <InviteParent2Panel data={data} />}
@@ -486,7 +486,7 @@ function SignBlock({ defaultName, onSign }: { defaultName: string; onSign: (name
   return (
     <div className="space-y-3 pt-1">
       <div className="space-y-1.5 max-w-md">
-        <Label className="text-sm font-medium">Your full legal name</Label>
+        <Label >Your full legal name</Label>
         <Input value={fullLegalName} onChange={(e) => setFullLegalName(e.target.value)} data-testid="ipform-legal-name" />
       </div>
       <SignaturePad
@@ -547,11 +547,11 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
 
   return (
     <div className="space-y-3 pt-1" data-testid="ipform-invite-panel">
-      <p className="text-sm text-muted-foreground">
+      <p className="t-helper">
         Your partner needs to complete their sections and sign. How would they like to do it?
       </p>
       {data.guestInvite && !guestLink && (
-        <p className="text-xs text-muted-foreground">
+        <p className="t-helper">
           A signing link was already sent to {data.guestInvite.email} (expires {new Date(data.guestInvite.expiresAt).toLocaleDateString()}). Sending a new one replaces it.
         </p>
       )}
@@ -563,7 +563,7 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
           data-testid="ipform-invite-member"
         >
           <p className="font-medium text-sm flex items-center gap-1.5"><UserPlus className="w-4 h-4 text-primary" /> Create an account for them</p>
-          <p className="text-xs text-muted-foreground mt-1">They get their own GoStork login, see the form as a task, and can use everything on the account.</p>
+          <p className="t-helper mt-1">They get their own GoStork login, see the form as a task, and can use everything on the account.</p>
         </button>
         <button
           type="button"
@@ -572,7 +572,7 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
           data-testid="ipform-invite-guest"
         >
           <p className="font-medium text-sm flex items-center gap-1.5"><Link2 className="w-4 h-4 text-primary" /> Send a signing link</p>
-          <p className="text-xs text-muted-foreground mt-1">No account needed - they open a private email link, fill their sections, and sign. Expires in 30 days.</p>
+          <p className="t-helper mt-1">No account needed - they open a private email link, fill their sections, and sign. Expires in 30 days.</p>
         </button>
       </div>
 
@@ -580,22 +580,22 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
         <div className="space-y-3 rounded-[var(--radius)] bg-secondary/40 p-3">
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Their name</Label>
+              <Label className="t-form-label-sm">Their name</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Partner's name" data-testid="ipform-invite-name" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Their email</Label>
+              <Label className="t-form-label-sm">Their email</Label>
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="partner@email.com" data-testid="ipform-invite-email" />
             </div>
           </div>
           {mode === "guest" && (
             <div className="space-y-1">
-              <Label className="text-xs">Their mobile number <span className="text-muted-foreground font-normal">(optional - we'll text them the link too)</span></Label>
+              <Label className="t-form-label-sm">Their mobile number <span className="text-muted-foreground font-normal">(optional - we'll text them the link too)</span></Label>
               <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 555 123 4567" data-testid="ipform-invite-phone" />
             </div>
           )}
           {mode === "member" && hasMember2 && (
-            <p className="text-xs text-muted-foreground">Your partner already has an account on this journey - this just reminds them about the form.</p>
+            <p className="t-helper">Your partner already has an account on this journey - this just reminds them about the form.</p>
           )}
           <Button
             type="button"
@@ -608,7 +608,7 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
           </Button>
           {guestLink && (
             <div className="space-y-1">
-              <Label className="text-xs">Signing link for your partner</Label>
+              <Label className="t-form-label-sm">Signing link for your partner</Label>
               <div className="flex items-center gap-2">
                 <Input readOnly value={guestLink} className="text-xs" data-testid="ipform-guest-link" />
                 <Button
@@ -623,7 +623,7 @@ function InviteParent2Panel({ data }: { data: IpFormBundle }) {
                   <Copy className="w-3.5 h-3.5" />
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">We emailed this link to them. You can also copy it and share it directly.</p>
+              <p className="t-helper">We emailed this link to them. You can also copy it and share it directly.</p>
             </div>
           )}
         </div>

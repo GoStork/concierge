@@ -491,7 +491,7 @@ export default function AdminProviderAddPage() {
           <Loader2 className="w-10 h-10 animate-spin text-primary" />
           <div className="text-center">
             <p className="font-ui text-lg">Analyzing website...</p>
-            <p className="text-sm text-muted-foreground mt-1">Our AI is extracting provider information from the website. This may take a few seconds.</p>
+            <p className="t-helper mt-1">Our AI is extracting provider information from the website. This may take a few seconds.</p>
           </div>
         </div>
       </div>
@@ -527,19 +527,19 @@ export default function AdminProviderAddPage() {
             if (!current && scraped) return null;
             return (
               <div key={field} className="border rounded-[var(--radius)] p-3 space-y-2" data-testid={`merge-field-${field}`}>
-                <Label className="font-ui text-sm">{labels[field] || field}</Label>
+                <Label className="font-ui">{labels[field] || field}</Label>
                 <div className="space-y-1.5">
                   <label className={`flex items-start gap-2 p-2 rounded-[var(--radius)] cursor-pointer text-sm ${choice === "keep" ? "bg-accent/10 border border-accent/30 dark:bg-accent/15 dark:border-accent/30" : "bg-secondary/30 hover:bg-secondary/50"}`}>
                     <input type="radio" name={`merge-${field}`} checked={choice === "keep"} onChange={() => setMergeSelections(prev => ({ ...prev, [field]: "keep" }))} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-xs font-ui text-muted-foreground">Keep current:</span>
+                      <span className="t-helper font-ui">Keep current:</span>
                       <p className={field === "about" ? "whitespace-pre-wrap break-words" : "truncate"}>{current}</p>
                     </div>
                   </label>
                   <label className={`flex items-start gap-2 p-2 rounded-[var(--radius)] cursor-pointer text-sm ${choice === "scraped" ? "bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] dark:bg-[hsl(var(--brand-success)/0.15)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-secondary/30 hover:bg-secondary/50"}`}>
                     <input type="radio" name={`merge-${field}`} checked={choice === "scraped"} onChange={() => setMergeSelections(prev => ({ ...prev, [field]: "scraped" }))} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-xs font-ui text-muted-foreground">Use scraped:</span>
+                      <span className="t-helper font-ui">Use scraped:</span>
                       <p className={field === "about" ? "whitespace-pre-wrap break-words" : "truncate"}>{scraped}</p>
                     </div>
                   </label>
@@ -550,8 +550,8 @@ export default function AdminProviderAddPage() {
 
           {scrapedData.locations && scrapedData.locations.length > 0 && (
             <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="merge-field-locations">
-              <Label className="font-ui text-sm">Locations ({scrapedData.locations.length} found by scraper)</Label>
-              <p className="text-xs text-muted-foreground">Scraped locations will be added to any existing locations.</p>
+              <Label className="font-ui">Locations ({scrapedData.locations.length} found by scraper)</Label>
+              <p className="t-helper">Scraped locations will be added to any existing locations.</p>
               <div className="space-y-1">
                 {scrapedData.locations.map((loc, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-sm p-1.5 bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] rounded">
@@ -565,7 +565,7 @@ export default function AdminProviderAddPage() {
 
           {scrapedData.suggestedServices && scrapedData.suggestedServices.length > 0 && (
             <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="merge-field-services">
-              <Label className="font-ui text-sm">Suggested Services</Label>
+              <Label className="font-ui">Suggested Services</Label>
               <div className="flex flex-wrap gap-2">
                 {scrapedData.suggestedServices.map((svc, idx) => (
                   <Badge key={idx} variant="outline"><Check className="w-3 h-3 text-[hsl(var(--brand-success))] mr-1" />{svc}</Badge>
@@ -576,8 +576,8 @@ export default function AdminProviderAddPage() {
 
           {scrapedData.teamMembers && scrapedData.teamMembers.length > 0 && (
             <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="merge-field-team">
-              <Label className="font-ui text-sm">Team Members ({scrapedData.teamMembers.length} found by scraper)</Label>
-              <p className="text-xs text-muted-foreground">Scraped team members will be added to any existing ones.</p>
+              <Label className="font-ui">Team Members ({scrapedData.teamMembers.length} found by scraper)</Label>
+              <p className="t-helper">Scraped team members will be added to any existing ones.</p>
               <div className="space-y-1">
                 {scrapedData.teamMembers.map((m, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-sm p-1.5 bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] rounded">
@@ -816,7 +816,7 @@ export default function AdminProviderAddPage() {
 
             {isIvfClinic && (
               <div className="space-y-4">
-                <p className="text-sm font-ui text-muted-foreground border-b border-border pb-2">IVF Clinic Requirements</p>
+                <p className="t-helper font-ui border-b border-border pb-2">IVF Clinic Requirements</p>
                 <div className="flex items-center gap-3">
                   <Checkbox id="ivf-twins" checked={ivfTwinsAllowed} onCheckedChange={(v) => setIvfTwinsAllowed(!!v)} data-testid="checkbox-ivf-twins" />
                   <label htmlFor="ivf-twins" className="text-sm cursor-pointer">Twins allowed</label>
@@ -1017,7 +1017,7 @@ export default function AdminProviderAddPage() {
               </div>
             </div>
             <div className="space-y-3">
-              <p className="text-sm font-ui text-muted-foreground">Accepted Surrogate Medical History</p>
+              <p className="t-helper font-ui">Accepted Surrogate Medical History</p>
               {[
                 { label: "Covid Vaccination Required", value: ivfSurrogateCovidVaccination, set: setIvfSurrogateCovidVaccination },
                 { label: "Gestational Diabetes (controlled by diet)", value: ivfSurrogateGdDiet, set: setIvfSurrogateGdDiet },
@@ -1029,7 +1029,7 @@ export default function AdminProviderAddPage() {
                 <div key={label} className="flex items-center justify-between max-w-sm">
                   <span className="text-sm">{label}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground w-6">{value ? "Yes" : "No"}</span>
+                    <span className="t-helper w-6">{value ? "Yes" : "No"}</span>
                     <Switch checked={value} onCheckedChange={set} />
                   </div>
                 </div>
@@ -1049,7 +1049,7 @@ export default function AdminProviderAddPage() {
 
         {isIvfClinic && ivfRatesData?.found && ivfRatesData.rates.length > 0 && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               Matched CDC data from: <span className="font-ui text-foreground">{ivfRatesData.matchedProvider?.name}</span>
             </p>
             <IvfSuccessRatesSection rates={ivfRatesData.rates} />
@@ -1076,7 +1076,7 @@ export default function AdminProviderAddPage() {
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label className="text-xs">Name</Label>
+                          <Label className="t-form-label-sm">Name</Label>
                           <Input
                             value={member.name}
                             onChange={e => {
@@ -1089,7 +1089,7 @@ export default function AdminProviderAddPage() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">Title</Label>
+                          <Label className="t-form-label-sm">Title</Label>
                           <Input
                             value={member.title || ""}
                             onChange={e => {
@@ -1103,7 +1103,7 @@ export default function AdminProviderAddPage() {
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Bio</Label>
+                        <Label className="t-form-label-sm">Bio</Label>
                         <Textarea
                           value={member.bio || ""}
                           onChange={e => {
@@ -1117,7 +1117,7 @@ export default function AdminProviderAddPage() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Photo</Label>
+                        <Label className="t-form-label-sm">Photo</Label>
                         <ImageUploader
                           value={member.photoUrl}
                           onChange={(url) => {
@@ -1133,7 +1133,7 @@ export default function AdminProviderAddPage() {
                       </div>
                       {previewLocations.length > 0 && (
                         <div className="space-y-1">
-                          <Label className="text-xs">Assigned Locations</Label>
+                          <Label className="t-form-label-sm">Assigned Locations</Label>
                           <div className="border rounded-[var(--radius)] p-2 space-y-1.5">
                             {previewLocations.map((loc, locIdx) => {
                               const locKey = `${loc.city}|${loc.state}|${loc.address || ""}`;
@@ -1161,7 +1161,7 @@ export default function AdminProviderAddPage() {
                               );
                             })}
                           </div>
-                          <p className="text-xs text-muted-foreground">Leave all unchecked = all locations</p>
+                          <p className="t-helper">Leave all unchecked = all locations</p>
                         </div>
                       )}
                       <div className="flex justify-end">
@@ -1172,7 +1172,7 @@ export default function AdminProviderAddPage() {
                     </div>
                   ) : (
                     <div className="flex items-start gap-3">
-                      <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center text-muted-foreground shrink-0 text-sm font-ui relative overflow-hidden">
+                      <div className="t-helper w-12 h-12 rounded-full bg-secondary flex items-center justify-center shrink-0 font-ui relative overflow-hidden">
                         {member.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
                         {member.photoUrl && (
                           <img
@@ -1186,8 +1186,8 @@ export default function AdminProviderAddPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-ui text-sm">{member.name}</div>
-                        {member.title && <div className="text-xs text-muted-foreground">{member.title}</div>}
-                        {member.bio && <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{member.bio}</div>}
+                        {member.title && <div className="t-helper">{member.title}</div>}
+                        {member.bio && <div className="t-helper mt-1 line-clamp-2">{member.bio}</div>}
                         {member.locationHints && member.locationHints.length > 0 && (
                           <div className="text-xs text-accent-foreground mt-1 flex items-center gap-1">
                             <MapPin className="w-3 h-3" />
@@ -1201,7 +1201,7 @@ export default function AdminProviderAddPage() {
                           </div>
                         )}
                         {(!member.locationHints || member.locationHints.length === 0) && (
-                          <div className="text-xs text-muted-foreground/60 mt-1 flex items-center gap-1">
+                          <div className="t-helper mt-1 flex items-center gap-1">
                             <MapPin className="w-3 h-3" />
                             All locations
                           </div>
@@ -1239,11 +1239,11 @@ export default function AdminProviderAddPage() {
       <div className="border rounded-[var(--radius)] p-4 space-y-3 bg-muted/30">
         <div className="flex items-center gap-2">
           <User className="w-4 h-4 text-muted-foreground" />
-          <Label className="text-sm font-heading">Create Provider's Admin User</Label>
+          <Label className="font-heading">Create Provider's Admin User</Label>
         </div>
         {previewTeamMembers.length > 0 && (
           <div className="space-y-1">
-            <Label className="text-xs">Select from team members</Label>
+            <Label className="t-form-label-sm">Select from team members</Label>
             <Select value="" onValueChange={(val) => {
               const member = previewTeamMembers[parseInt(val)];
               if (member) {
@@ -1264,17 +1264,17 @@ export default function AdminProviderAddPage() {
         )}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label className="text-xs">Full Name</Label>
+            <Label className="t-form-label-sm">Full Name</Label>
             <Input value={previewAdminName} onChange={e => setPreviewAdminName(e.target.value)} placeholder="Admin name" data-testid="input-preview-admin-name" />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Email</Label>
+            <Label className="t-form-label-sm">Email</Label>
             <Input value={previewAdminEmail} onChange={e => setPreviewAdminEmail(e.target.value)} type="email" placeholder="admin@provider.com" data-testid="input-preview-admin-email" />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label className="text-xs">Temp Password</Label>
+            <Label className="t-form-label-sm">Temp Password</Label>
             <div className="flex gap-1">
               <Input value={previewTempPassword} onChange={e => setPreviewTempPassword(e.target.value)} placeholder="Leave blank to skip" className="flex-1" data-testid="input-preview-temp-password" />
               <Button type="button" variant="outline" size="sm" className="shrink-0 px-2" onClick={() => { const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%"; let pw = ""; for (let i = 0; i < 12; i++) pw += chars[Math.floor(Math.random() * chars.length)]; setPreviewTempPassword(pw); setPreviewConfirmPassword(pw); }} data-testid="button-generate-password">
@@ -1284,7 +1284,7 @@ export default function AdminProviderAddPage() {
           </div>
           {previewTempPassword && (
             <div className="space-y-1">
-              <Label className="text-xs">Confirm Password</Label>
+              <Label className="t-form-label-sm">Confirm Password</Label>
               <Input value={previewConfirmPassword} onChange={e => setPreviewConfirmPassword(e.target.value)} placeholder="Re-enter password" data-testid="input-preview-confirm-password" />
               {previewConfirmPassword && previewTempPassword !== previewConfirmPassword && (
                 <p className="text-xs text-destructive">Passwords do not match</p>
@@ -1292,7 +1292,7 @@ export default function AdminProviderAddPage() {
             </div>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">Fill in email and password to auto-create a PROVIDER_ADMIN account. They will complete their profile on first login.</p>
+        <p className="t-helper">Fill in email and password to auto-create a PROVIDER_ADMIN account. They will complete their profile on first login.</p>
       </div>
 
       <SaveBar

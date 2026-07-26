@@ -137,7 +137,7 @@ export default function AppointmentsPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <h3 className="font-ui text-sm">{booking.subject || booking.attendeeName || otherParty?.name || "Appointment"}</h3>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="t-helper">
                         with {otherParty?.name || booking.attendeeName || booking.attendeeEmails?.[0] || "Unknown"}
                       </p>
                     </div>
@@ -152,7 +152,7 @@ export default function AppointmentsPage() {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                  <div className="t-helper flex items-center gap-4 mt-2">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" />
                       {format(start, "MMM d, yyyy")}

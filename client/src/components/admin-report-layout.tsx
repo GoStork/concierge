@@ -45,7 +45,7 @@ export function AdminReportLayout({ breadcrumbs, title, subtitle, actions, child
         <div>
           <h1 className="text-2xl font-heading" data-testid="report-title">{title}</h1>
           {subtitle && (
-            <p className="text-sm text-muted-foreground mt-1" data-testid="report-subtitle">{subtitle}</p>
+            <p className="t-helper mt-1" data-testid="report-subtitle">{subtitle}</p>
           )}
         </div>
         {actions && <div className="shrink-0" data-testid="report-actions">{actions}</div>}

@@ -123,7 +123,7 @@ function CopyableField({ label, value, highlight }: { label: string; value: stri
   return (
     <div className="flex items-center justify-between gap-3 py-2">
       <div className="min-w-0 flex-1">
-        <div className="text-xs text-muted-foreground uppercase tracking-wide">{label}</div>
+        <div className="t-micro-label">{label}</div>
         <div
           className={`text-sm font-mono break-all ${highlight ? "font-semibold" : ""}`}
           style={highlight ? { color: "hsl(var(--primary))" } : {}}
@@ -215,7 +215,7 @@ function WireTransferPanel({
           <Landmark className="w-5 h-5" style={{ color: "hsl(var(--primary))" }} />
           <div>
             <p className="font-medium text-sm">Pay by Bank Wire Transfer</p>
-            <p className="text-xs text-muted-foreground">For international parents or large invoices. 1-3 business days.</p>
+            <p className="t-helper">For international parents or large invoices. 1-3 business days.</p>
           </div>
         </div>
         <span className="text-xs font-medium" style={{ color: "hsl(var(--primary))" }}>
@@ -226,7 +226,7 @@ function WireTransferPanel({
       {expanded && (
         <div className="px-5 py-4 space-y-3 border-t" style={{ borderColor: "hsl(var(--primary) / 0.15)" }}>
           {fetchInstructions.isPending && !instructions && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+            <div className="t-helper flex items-center gap-2 py-4">
               <Loader2 className="w-4 h-4 animate-spin" /> Generating your wire instructions...
             </div>
           )}
@@ -241,7 +241,7 @@ function WireTransferPanel({
             <>
               <div className="rounded-lg px-3 py-3" style={{ background: "hsl(var(--brand-warning) / 0.1)", border: "1px solid hsl(var(--brand-warning) / 0.3)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "hsl(var(--brand-warning))" }}>Critical - include this reference</p>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="t-helper mt-1">
                   Your wire will not be matched to this invoice unless you put the reference code below in the memo / reference field of your wire.
                 </p>
               </div>
@@ -265,7 +265,7 @@ function WireTransferPanel({
                 </div>
               ))}
 
-              <div className="rounded-lg px-3 py-2 text-xs text-muted-foreground" style={{ background: "hsl(var(--secondary) / 0.4)" }}>
+              <div className="t-helper rounded-lg px-3 py-2" style={{ background: "hsl(var(--secondary) / 0.4)" }}>
                 We've emailed a copy of these details to you. Wires from outside the United States may incur a fee from your bank (typically $15-$45) that is not part of the invoice total. Funds usually arrive within 1-3 business days.
               </div>
 
@@ -352,7 +352,7 @@ function StripePaymentForm({ invoice, isMock, onSuccess }: {
       <p className="text-sm font-medium">Pay by Card</p>
 
       {isMock ? (
-        <div className="rounded-lg border p-4 text-sm text-muted-foreground bg-muted/30">
+        <div className="t-helper rounded-lg border p-4 bg-muted/30">
           <p className="font-medium mb-1">Development Mode</p>
           <p>Stripe is not configured. Click the button below to simulate a successful payment.</p>
         </div>
@@ -381,7 +381,7 @@ function StripePaymentForm({ invoice, isMock, onSuccess }: {
         )}
       </Button>
 
-      <p className="text-center text-xs text-muted-foreground">
+      <p className="t-helper text-center">
         Payments are processed securely by Stripe. GoStork never stores your card details.
       </p>
     </form>
@@ -429,7 +429,7 @@ function PaymentSuccessLanding({ providerName, justPaid }: { providerName: strin
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
       <CheckCircle2 className="w-14 h-14" style={{ color: "hsl(var(--brand-success))" }} />
       <h1 className="text-xl font-heading font-semibold">Payment Successful!</h1>
-      <p className="text-sm text-muted-foreground max-w-sm">
+      <p className="t-helper max-w-sm">
         Your payment for {providerName} has been received. You will receive a confirmation email shortly.
         {safeReturn && justPaid ? " Taking you back to your chat..." : ""}
       </p>
@@ -515,7 +515,7 @@ export default function PaymentPage() {
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
         <AlertCircle className="w-12 h-12" style={{ color: "hsl(var(--brand-error))" }} />
         <h1 className="text-lg font-heading font-semibold">Invoice not found</h1>
-        <p className="text-sm text-muted-foreground max-w-sm">
+        <p className="t-helper max-w-sm">
           This payment link may have expired or is invalid. Please contact GoStork support.
         </p>
       </div>
@@ -536,7 +536,7 @@ export default function PaymentPage() {
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
         <Clock className="w-14 h-14" style={{ color: "hsl(var(--primary))" }} />
         <h1 className="text-xl font-heading font-semibold">Payment Processing</h1>
-        <p className="text-sm text-muted-foreground max-w-md">
+        <p className="t-helper max-w-md">
           {isAch
             ? <>Your ACH bank transfer to <strong>{invoice.providerName}</strong> has been submitted and is clearing with your bank. Funds typically settle within <strong>3-5 business days</strong>. No further action is needed - we'll email you a receipt as soon as the payment clears.</>
             : <>Your payment to <strong>{invoice.providerName}</strong> has been submitted and is processing. We'll email you a receipt as soon as it clears. No further action is needed.</>
@@ -555,7 +555,7 @@ export default function PaymentPage() {
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
         <AlertCircle className="w-12 h-12 text-muted-foreground" />
         <h1 className="text-lg font-heading font-semibold">Payment Link Expired</h1>
-        <p className="text-sm text-muted-foreground max-w-sm">
+        <p className="t-helper max-w-sm">
           The 24-hour hold period has passed. Please contact GoStork to explore next steps.
         </p>
         <Button variant="outline" onClick={() => navigate("/")}>Back to GoStork</Button>
@@ -590,9 +590,9 @@ export default function PaymentPage() {
         {/* Invoice summary */}
         <div className="rounded-xl border p-5 space-y-4">
           <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Payment to</p>
+            <p className="t-micro-label">Payment to</p>
             <p className="text-lg font-heading font-semibold mt-0.5">{invoice.providerName}</p>
-            {invoice.description && <p className="text-sm text-muted-foreground mt-1">{invoice.description}</p>}
+            {invoice.description && <p className="t-helper mt-1">{invoice.description}</p>}
           </div>
           <div className="border-t pt-4 space-y-2">
             {invoice.lineItems && invoice.lineItems.length > 0 ? (
@@ -602,7 +602,7 @@ export default function PaymentPage() {
                     <div className="min-w-0">
                       <p className="font-medium truncate">{lineLabel(li.serviceType)}</p>
                       {li.description && (
-                        <p className="text-xs text-muted-foreground truncate">{li.description}</p>
+                        <p className="t-helper truncate">{li.description}</p>
                       )}
                     </div>
                     <span className="font-medium shrink-0">{formatCents(li.amountCents, invoice.currency)}</span>
@@ -628,7 +628,7 @@ export default function PaymentPage() {
             <Shield className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "hsl(var(--brand-success))" }} />
             <div>
               <p className="font-semibold" style={{ color: "hsl(var(--brand-success))" }}>GoStork Guarantee</p>
-              <p className="text-muted-foreground text-xs mt-0.5">
+              <p className="t-helper mt-0.5">
                 If your match falls through due to medical clearance failure, GoStork will transfer your deposit to any other agency on our platform - at no extra cost.
               </p>
             </div>
@@ -676,7 +676,7 @@ export default function PaymentPage() {
           <>
             <div className="flex items-center gap-3 my-2">
               <div className="h-px flex-1 bg-border" />
-              <span className="text-xs text-muted-foreground">or</span>
+              <span className="t-helper">or</span>
               <div className="h-px flex-1 bg-border" />
             </div>
             <WireTransferPanel

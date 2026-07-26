@@ -140,7 +140,7 @@ export default function RecordingPage() {
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
           <h2 className="text-lg font-heading">Unable to load recordings</h2>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="t-helper mt-1">
             The recording may not exist or you may not have access.
           </p>
         </div>
@@ -167,7 +167,7 @@ export default function RecordingPage() {
         <h1 className="text-2xl font-heading" data-testid="text-page-title">
           Recording & Transcript
         </h1>
-        <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-muted-foreground">
+        <div className="t-helper flex flex-wrap items-center gap-4 mt-3">
           <div className="flex items-center gap-1.5">
             <Clock className="w-4 h-4" />
             <span data-testid="text-booking-date">
@@ -203,7 +203,7 @@ export default function RecordingPage() {
           ) : null}
         </div>
         {booking.subject && (
-          <p className="text-sm text-muted-foreground mt-1" data-testid="text-booking-subject">
+          <p className="t-helper mt-1" data-testid="text-booking-subject">
             {booking.subject}
           </p>
         )}
@@ -220,7 +220,7 @@ export default function RecordingPage() {
             <div className="flex flex-col items-center justify-center py-16 text-center border rounded-[var(--radius)] bg-secondary/20">
               <Video className="w-10 h-10 text-muted-foreground mb-3" />
               <h2 className="text-lg font-heading" data-testid="text-no-recording">No recording for this call</h2>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="t-helper mt-1">
                 Recording consent was not given for this consultation.
               </p>
             </div>
@@ -232,7 +232,7 @@ export default function RecordingPage() {
             <div className="flex flex-col items-center justify-center py-16 text-center border rounded-[var(--radius)] bg-secondary/20" data-testid="recording-unavailable">
               <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
               <h2 className="text-lg font-heading" data-testid="text-recording-unavailable">Recording Unavailable</h2>
-              <p className="text-sm text-muted-foreground mt-1 max-w-md">
+              <p className="t-helper mt-1 max-w-md">
                 We weren't able to process the recording for this call. This can happen if there was a connection issue during processing.
                 Recordings from future calls will be captured automatically.
               </p>
@@ -296,7 +296,7 @@ export default function RecordingPage() {
                 );
               })}
             </div>
-            <p className="text-xs text-muted-foreground text-center mt-4">
+            <p className="t-helper text-center mt-4">
               This page updates automatically - your recording will appear here once processing is complete.
             </p>
           </div>
@@ -361,7 +361,7 @@ export default function RecordingPage() {
           {recording.status === "processing" && (
             <div className="flex items-center gap-3 p-4 bg-secondary/10">
               <div>
-                <p className="text-sm text-muted-foreground">
+                <p className="t-helper">
                   The recording is being uploaded and will be available shortly.
                 </p>
               </div>
@@ -397,7 +397,7 @@ export default function RecordingPage() {
 
           <div className="p-4 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <div className="t-helper flex items-center gap-3">
                 {recording.duration && (
                   <span data-testid="text-recording-duration">
                     {Math.floor(recording.duration / 60)}m{" "}
@@ -468,7 +468,7 @@ export default function RecordingPage() {
             {recording.transcriptStatus === "processing" && (
               <div className="flex items-center gap-2 p-3 bg-secondary/30 rounded-[var(--radius)]">
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
+                <span className="t-helper">
                   Transcribing recording...
                 </span>
               </div>

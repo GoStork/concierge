@@ -446,12 +446,12 @@ export function CostSheetSidebarSection({
               className="rounded-md border p-2.5 space-y-2"
               style={{ background: "hsl(var(--secondary) / 0.5)" }}
             >
-              <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">
+              <p className="t-micro-label">
                 Vial pricing on file
               </p>
 
               {vialLines.length === 0 && (
-                <p className="text-xs text-muted-foreground">No line items yet. Add one to build the cost sheet.</p>
+                <p className="t-helper">No line items yet. Add one to build the cost sheet.</p>
               )}
 
               <div className="space-y-2">
@@ -525,7 +525,7 @@ export function CostSheetSidebarSection({
                       </div>
 
                       {opt && (
-                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                        <div className="t-helper flex items-center justify-between">
                           <span>{qty} × ${opt.cost.toLocaleString()}</span>
                           <span className="font-semibold text-foreground">${lineSubtotal.toLocaleString()}</span>
                         </div>
@@ -561,7 +561,7 @@ export function CostSheetSidebarSection({
               className="rounded-md border p-2.5 space-y-2"
               style={{ background: "hsl(var(--secondary) / 0.5)" }}
             >
-              <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">
+              <p className="t-micro-label">
                 Egg lot pricing on file
               </p>
               <div className="flex items-center justify-between gap-2">
@@ -594,7 +594,7 @@ export function CostSheetSidebarSection({
                   </Button>
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="t-helper">
                 {eggQuantity} × ${eggLotCost.toLocaleString()} = ${(eggLotCost * eggQuantity).toLocaleString()}
               </p>
             </div>
@@ -636,7 +636,7 @@ export function CostSheetSidebarSection({
           {/* Live invoice preview */}
           {(preview || previewLoading || previewError) && (
             <div className="rounded-md border p-2.5 text-xs space-y-1" style={{ background: "hsl(var(--background))" }}>
-              <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">
+              <p className="t-micro-label">
                 Future Invoice Preview
               </p>
               {previewLoading && <p className="text-muted-foreground">Calculating...</p>}
@@ -657,7 +657,7 @@ export function CostSheetSidebarSection({
                     <span>You receive</span>
                     <span>{formatCents(preview.providerPayoutAmount, preview.currency)}</span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground pt-1">
+                  <p className="t-helper pt-1">
                     Parent-pays basis: {preview.parentPaysBasis === "TOTAL_COST" ? "Total Quoted Cost" : "Default First Payment"}
                   </p>
                 </>
@@ -698,7 +698,7 @@ export function CostSheetSidebarSection({
               <div className="flex items-center justify-between">
                 <span className="font-semibold">{formatCents(q.totalCostCents)}</span>
                 {q.supersededAt ? (
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Superseded</span>
+                  <span className="t-micro-label">Superseded</span>
                 ) : (
                   <span
                     className="text-[10px] uppercase tracking-wide font-medium"

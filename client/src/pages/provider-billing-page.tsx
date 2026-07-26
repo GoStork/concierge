@@ -88,21 +88,21 @@ export default function ProviderBillingPage() {
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
       <div>
         <h1 className="text-2xl font-heading font-bold">Invoices</h1>
-        <p className="text-sm text-muted-foreground mt-1">Every invoice you've sent to parents</p>
+        <p className="t-helper mt-1">Every invoice you've sent to parents</p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Received</p>
+          <p className="t-micro-label">Total Received</p>
           <p className="text-xl font-heading font-bold">{formatCents(totalReceived)}</p>
         </div>
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Awaiting Payment</p>
+          <p className="t-micro-label">Awaiting Payment</p>
           <p className="text-xl font-heading font-bold">{awaitingCount}</p>
         </div>
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Pending Payouts</p>
+          <p className="t-micro-label">Pending Payouts</p>
           <p className="text-xl font-heading font-bold">{pendingPayouts}</p>
         </div>
       </div>
@@ -158,7 +158,7 @@ export default function ProviderBillingPage() {
       ) : !filteredInvoices.length ? (
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <Receipt className="w-8 h-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">{invoices.length ? "No invoices match your filters" : "No invoices yet"}</p>
+          <p className="t-helper">{invoices.length ? "No invoices match your filters" : "No invoices yet"}</p>
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
@@ -166,14 +166,14 @@ export default function ProviderBillingPage() {
             <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/40">
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Amount</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork Fee</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your Payout</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Status</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Payout Status</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Parent</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Service</th>
+                  <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">Amount</th>
+                  <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">GoStork Fee</th>
+                  <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">Your Payout</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Status</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Payout Status</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Date</th>
                   <th className="w-8" />
                 </tr>
               </thead>
@@ -187,7 +187,7 @@ export default function ProviderBillingPage() {
                     data-testid={`provider-billing-invoice-${inv.id}`}
                   >
                     <td className="px-4 py-2.5 whitespace-nowrap">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
-                    <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()}</td>
+                    <td className="t-helper px-4 py-2.5 whitespace-nowrap">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()}</td>
                     <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.serviceAmount, inv.currency)}</td>
                     <td className="px-4 py-2.5 text-right text-muted-foreground whitespace-nowrap">{formatCents(inv.referralFeeAmount, inv.currency)}</td>
                     <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
@@ -202,7 +202,7 @@ export default function ProviderBillingPage() {
                         );
                       })()}
                     </td>
-                    <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.createdAt)}</td>
+                    <td className="t-helper px-4 py-2.5 whitespace-nowrap">{formatDateTime(inv.createdAt)}</td>
                     <td className="px-2 py-2.5 text-muted-foreground">
                       {expandedId === inv.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </td>
@@ -238,7 +238,7 @@ export default function ProviderBillingPage() {
                             {!["AWAITING_PAYMENT", "AUTHORIZED"].includes(inv.status) && inv.sessionId && (
                               <button
                                 onClick={() => navigate(`/chat/${inv.sessionId}`)}
-                                className="text-sm underline text-muted-foreground block"
+                                className="t-helper underline block"
                               >
                                 Open chat with parent
                               </button>

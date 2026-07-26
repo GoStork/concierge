@@ -645,19 +645,19 @@ export default function AdminProviderEditPage() {
             if (!current && scraped) return null;
             return (
               <div key={field} className="border rounded-[var(--radius)] p-3 space-y-2" data-testid={`edit-merge-field-${field}`}>
-                <Label className="font-ui text-sm">{labels[field] || field}</Label>
+                <Label className="font-ui">{labels[field] || field}</Label>
                 <div className="space-y-1.5">
                   <label className={`flex items-start gap-2 p-2 rounded-[var(--radius)] cursor-pointer text-sm ${choice === "keep" ? "bg-accent/10 border border-accent/30 dark:bg-accent/15 dark:border-accent/30" : "bg-secondary/30 hover:bg-secondary/50"}`}>
                     <input type="radio" name={`edit-merge-${field}`} checked={choice === "keep"} onChange={() => setEditMergeSelections(prev => ({ ...prev, [field]: "keep" }))} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-xs font-ui text-muted-foreground">Keep current:</span>
+                      <span className="t-helper font-ui">Keep current:</span>
                       <p className={field === "about" ? "whitespace-pre-wrap break-words" : "truncate"}>{current}</p>
                     </div>
                   </label>
                   <label className={`flex items-start gap-2 p-2 rounded-[var(--radius)] cursor-pointer text-sm ${choice === "scraped" ? "bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] dark:bg-[hsl(var(--brand-success)/0.15)] dark:border-[hsl(var(--brand-success)/0.3)]" : "bg-secondary/30 hover:bg-secondary/50"}`}>
                     <input type="radio" name={`edit-merge-${field}`} checked={choice === "scraped"} onChange={() => setEditMergeSelections(prev => ({ ...prev, [field]: "scraped" }))} className="mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <span className="text-xs font-ui text-muted-foreground">Use scraped:</span>
+                      <span className="t-helper font-ui">Use scraped:</span>
                       <p className={field === "about" ? "whitespace-pre-wrap break-words" : "truncate"}>{scraped}</p>
                     </div>
                   </label>
@@ -667,8 +667,8 @@ export default function AdminProviderEditPage() {
           })}
           {editScrapedData.locations && editScrapedData.locations.length > 0 && (
             <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="edit-merge-field-locations">
-              <Label className="font-ui text-sm">Locations ({editScrapedData.locations.length} found by scraper)</Label>
-              <p className="text-xs text-muted-foreground">Scraped locations will be added to any existing locations.</p>
+              <Label className="font-ui">Locations ({editScrapedData.locations.length} found by scraper)</Label>
+              <p className="t-helper">Scraped locations will be added to any existing locations.</p>
               <div className="space-y-1">
                 {editScrapedData.locations.map((loc, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-sm p-1.5 bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] rounded">
@@ -681,7 +681,7 @@ export default function AdminProviderEditPage() {
           )}
           {editScrapedData.suggestedServices && editScrapedData.suggestedServices.length > 0 && (
             <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="edit-merge-field-services">
-              <Label className="font-ui text-sm">Suggested Services</Label>
+              <Label className="font-ui">Suggested Services</Label>
               <div className="flex flex-wrap gap-2">
                 {editScrapedData.suggestedServices.map((svc, idx) => (
                   <Badge key={idx} variant="outline"><Check className="w-3 h-3 text-[hsl(var(--brand-success))] mr-1" />{svc}</Badge>
@@ -691,8 +691,8 @@ export default function AdminProviderEditPage() {
           )}
           {editScrapedData.teamMembers && editScrapedData.teamMembers.length > 0 && (
             <div className="border rounded-[var(--radius)] p-3 space-y-2" data-testid="edit-merge-field-team">
-              <Label className="font-ui text-sm">Team Members ({editScrapedData.teamMembers.length} found by scraper)</Label>
-              <p className="text-xs text-muted-foreground">Scraped team members will be added to any existing ones.</p>
+              <Label className="font-ui">Team Members ({editScrapedData.teamMembers.length} found by scraper)</Label>
+              <p className="t-helper">Scraped team members will be added to any existing ones.</p>
               <div className="space-y-1">
                 {editScrapedData.teamMembers.map((m, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-sm p-1.5 bg-[hsl(var(--brand-success)/0.08)] dark:bg-[hsl(var(--brand-success)/0.15)] rounded">
@@ -965,7 +965,7 @@ export default function AdminProviderEditPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No services registered yet.</p>
+                <p className="t-helper">No services registered yet.</p>
               )}
               {!isGostorkAdmin && providerTypes && (() => {
                 const existingNames = new Set((provider.services || []).map((s: any) => s.providerType?.name));
@@ -1000,7 +1000,7 @@ export default function AdminProviderEditPage() {
                 <h3 className="text-lg font-heading flex items-center gap-2">
                   <Check className="w-5 h-5 text-primary" /> Partner IVF Clinics
                 </h3>
-                <p className="text-xs text-muted-foreground">Link the IVF clinic(s) that operate in the same country as this agency. The AI will combine both providers' matching requirements (and costs) when evaluating parents for this international program.</p>
+                <p className="t-helper">Link the IVF clinic(s) that operate in the same country as this agency. The AI will combine both providers' matching requirements (and costs) when evaluating parents for this international program.</p>
 
                 {/* Selected partner clinics as removable chips */}
                 {partnerProviderIds.length > 0 && (
@@ -1040,7 +1040,7 @@ export default function AdminProviderEditPage() {
                           .filter((c: any) => c.id !== id && !partnerProviderIds.includes(c.id) && c.name.toLowerCase().includes(q))
                           .slice(0, 10);
                         if (matches.length === 0) {
-                          return <li className="px-3 py-2 text-sm text-muted-foreground italic">No matching clinics</li>;
+                          return <li className="t-helper px-3 py-2 italic">No matching clinics</li>;
                         }
                         return matches.map((clinic: any) => (
                           <li
@@ -1054,7 +1054,7 @@ export default function AdminProviderEditPage() {
                           >
                             <span>{clinic.name}</span>
                             {clinic.locations?.length > 0 && (
-                              <span className="text-xs text-muted-foreground">({clinic.locations.map((l: any) => l.state || l.city).filter(Boolean).slice(0, 2).join(", ")})</span>
+                              <span className="t-helper">({clinic.locations.map((l: any) => l.state || l.city).filter(Boolean).slice(0, 2).join(", ")})</span>
                             )}
                           </li>
                         ));
@@ -1063,7 +1063,7 @@ export default function AdminProviderEditPage() {
                   )}
                 </div>
                 {!allIvfClinics && (
-                  <p className="text-xs text-muted-foreground italic">Loading IVF clinics...</p>
+                  <p className="t-helper italic">Loading IVF clinics...</p>
                 )}
               </Card>
             )}
@@ -1276,7 +1276,7 @@ export default function AdminProviderEditPage() {
                   </div>
                 </div>
                 <div className="space-y-3">
-                  <p className="text-sm font-ui text-muted-foreground">Accepted Surrogate Medical History</p>
+                  <p className="t-helper font-ui">Accepted Surrogate Medical History</p>
                   {[
                     { label: "Covid Vaccination Required", value: ivfSurrogateCovidVaccination, set: setIvfSurrogateCovidVaccination },
                     { label: "Gestational Diabetes (controlled by diet)", value: ivfSurrogateGdDiet, set: setIvfSurrogateGdDiet },
@@ -1288,7 +1288,7 @@ export default function AdminProviderEditPage() {
                     <div key={label} className="flex items-center justify-between max-w-sm">
                       <span className="text-sm">{label}</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground w-6">{value ? "Yes" : "No"}</span>
+                        <span className="t-helper w-6">{value ? "Yes" : "No"}</span>
                         <Switch checked={value} onCheckedChange={set} />
                       </div>
                     </div>
@@ -1337,7 +1337,7 @@ export default function AdminProviderEditPage() {
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
-                            <Label className="text-xs">Name</Label>
+                            <Label className="t-form-label-sm">Name</Label>
                             <Input
                               value={member.name}
                               onChange={e => {
@@ -1350,7 +1350,7 @@ export default function AdminProviderEditPage() {
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">Title</Label>
+                            <Label className="t-form-label-sm">Title</Label>
                             <Input
                               value={member.title || ""}
                               onChange={e => {
@@ -1364,7 +1364,7 @@ export default function AdminProviderEditPage() {
                           </div>
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">Bio</Label>
+                          <Label className="t-form-label-sm">Bio</Label>
                           <Textarea
                             value={member.bio || ""}
                             onChange={e => {
@@ -1378,7 +1378,7 @@ export default function AdminProviderEditPage() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">Specialties <span className="text-muted-foreground">(comma-separated)</span></Label>
+                          <Label className="t-form-label-sm">Specialties <span className="text-muted-foreground">(comma-separated)</span></Label>
                           <Input
                             value={(member.specialties || []).join(", ")}
                             onChange={e => {
@@ -1392,7 +1392,7 @@ export default function AdminProviderEditPage() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">Languages spoken <span className="text-muted-foreground">(comma-separated)</span></Label>
+                          <Label className="t-form-label-sm">Languages spoken <span className="text-muted-foreground">(comma-separated)</span></Label>
                           <Input
                             value={(member.languagesSpoken || []).join(", ")}
                             onChange={e => {
@@ -1432,7 +1432,7 @@ export default function AdminProviderEditPage() {
                           </label>
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">Photo</Label>
+                          <Label className="t-form-label-sm">Photo</Label>
                           <ImageUploader
                             value={member.photoUrl}
                             onChange={(url) => {
@@ -1448,7 +1448,7 @@ export default function AdminProviderEditPage() {
                         </div>
                         {provider && provider.locations && provider.locations.length > 0 && (
                           <div className="space-y-1">
-                            <Label className="text-xs">Assigned Locations</Label>
+                            <Label className="t-form-label-sm">Assigned Locations</Label>
                             <div className="border rounded-[var(--radius)] p-2 space-y-1.5">
                               {provider.locations.map((loc: any) => (
                                 <label key={loc.id} className="flex items-center gap-2 cursor-pointer">
@@ -1471,7 +1471,7 @@ export default function AdminProviderEditPage() {
                                 </label>
                               ))}
                             </div>
-                            <p className="text-xs text-muted-foreground">Leave all unchecked = all locations</p>
+                            <p className="t-helper">Leave all unchecked = all locations</p>
                           </div>
                         )}
                         <div className="flex justify-end">
@@ -1482,7 +1482,7 @@ export default function AdminProviderEditPage() {
                       </div>
                     ) : (
                       <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center text-muted-foreground shrink-0 text-sm font-ui relative overflow-hidden">
+                        <div className="t-helper w-12 h-12 rounded-full bg-secondary flex items-center justify-center shrink-0 font-ui relative overflow-hidden">
                           {member.name ? member.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "?"}
                           {member.photoUrl && (
                             <img
@@ -1496,8 +1496,8 @@ export default function AdminProviderEditPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-ui text-sm">{member.name || "New Member"}</div>
-                          {member.title && <div className="text-xs text-muted-foreground">{member.title}</div>}
-                          {member.bio && <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{member.bio}</div>}
+                          {member.title && <div className="t-helper">{member.title}</div>}
+                          {member.bio && <div className="t-helper mt-1 line-clamp-2">{member.bio}</div>}
                           {member.locationIds && member.locationIds.length > 0 && provider?.locations ? (
                             <div className="text-xs text-accent-foreground mt-1 flex items-center gap-1">
                               <MapPin className="w-3 h-3" />
@@ -1512,7 +1512,7 @@ export default function AdminProviderEditPage() {
                               {member.locationHints.join(", ")}
                             </div>
                           ) : (
-                            <div className="text-xs text-muted-foreground/60 mt-1 flex items-center gap-1">
+                            <div className="t-helper mt-1 flex items-center gap-1">
                               <MapPin className="w-3 h-3" />
                               All locations
                             </div>
@@ -1556,7 +1556,7 @@ export default function AdminProviderEditPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">Test Provider</p>
-                    <p className="text-xs text-muted-foreground">Marks this provider as test data. Developers can delete test providers and reset test sessions.</p>
+                    <p className="t-helper">Marks this provider as test data. Developers can delete test providers and reset test sessions.</p>
                   </div>
                   <Switch checked={isTestData} onCheckedChange={setIsTestData} />
                 </div>
@@ -1691,7 +1691,7 @@ function ProviderBrandingTab({ providerId, brandingEnabled: initialEnabled, prov
         <Palette className="w-5 h-5 text-primary" />
         <div>
           <p className="text-sm font-heading">Allow Provider Branding</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="t-helper">
             {enabled
               ? "Provider can customize their own branding"
               : "Enable to let the provider customize their visual identity"}

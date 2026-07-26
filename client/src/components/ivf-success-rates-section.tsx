@@ -131,7 +131,7 @@ function BarChart({
               );
             })}
           </div>
-          <p className="text-[10px] text-muted-foreground font-ui text-center pt-1">{xAxisLabel}</p>
+          <p className="t-helper font-ui text-center pt-1">{xAxisLabel}</p>
         </div>
       </div>
     </div>
@@ -206,7 +206,7 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
 
   if (!matchedRate) {
     return (
-      <div className="text-center py-6 text-sm text-muted-foreground" data-testid="text-no-personalized-data">
+      <div className="t-helper text-center py-6" data-testid="text-no-personalized-data">
         No CDC success rate data available for your profile ({profileLabel})
       </div>
     );
@@ -218,7 +218,7 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
 
   return (
     <div className="space-y-4" data-testid="personalized-rate-view">
-      <p className="text-xs text-muted-foreground font-ui" data-testid="text-profile-label">
+      <p className="t-helper font-ui" data-testid="text-profile-label">
         Your profile: {profileLabel}
       </p>
 
@@ -226,12 +226,12 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
         <span className="text-4xl font-heading text-foreground" data-testid="text-personalized-rate">
           {Math.round(clinicPct)}%
         </span>
-        <span className="text-sm text-muted-foreground">live birth rate</span>
+        <span className="t-helper">live birth rate</span>
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground w-28 shrink-0">This Clinic</span>
+          <span className="t-helper w-28 shrink-0">This Clinic</span>
           <div className="flex-1 h-5 bg-secondary/30 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-500"
@@ -241,14 +241,14 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
           <span className="text-xs font-heading text-foreground w-12 text-right">{Math.round(clinicPct)}%</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground w-28 shrink-0">National Average</span>
+          <span className="t-helper w-28 shrink-0">National Average</span>
           <div className="flex-1 h-5 bg-secondary/30 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-500"
               style={{ width: `${natPct}%`, backgroundColor: "hsl(var(--accent))" }}
             />
           </div>
-          <span className="text-xs text-muted-foreground w-12 text-right">{Math.round(natPct)}%</span>
+          <span className="t-helper w-12 text-right">{Math.round(natPct)}%</span>
         </div>
       </div>
 
@@ -354,13 +354,13 @@ export function IvfSuccessRatesSection({ rates, filterContext }: { rates: IvfSuc
           <>
             <PersonalizedView rates={rates} filterContext={filterContext!} />
             <div className="border-t border-border/30 pt-4 mt-4">
-              <p className="text-xs font-ui text-muted-foreground mb-3">All age groups comparison</p>
+              <p className="t-helper font-ui mb-3">All age groups comparison</p>
               <BarChart
                 bars={filterContext!.eggSource === "donor" || filterContext!.eggSource === "donated_embryos" ? donorBars : ownBars}
                 xAxisLabel={filterContext!.eggSource === "donor" || filterContext!.eggSource === "donated_embryos" ? "Egg Source" : "Age"}
                 highlightIndex={highlightIndex}
               />
-              <div className="flex items-center gap-4 text-[10px] text-muted-foreground pt-1">
+              <div className="t-helper flex items-center gap-4 pt-1">
                 <span className="flex items-center gap-1.5">
                   <span className="inline-block w-3 h-3 rounded-sm bg-primary" />
                   This Clinic
@@ -401,7 +401,7 @@ export function IvfSuccessRatesSection({ rates, filterContext }: { rates: IvfSuc
               )}
             </div>
 
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               {activeTab === "own"
                 ? patientType === "new"
                   ? "Live birth rate after first egg retrieval for new patients"
@@ -414,7 +414,7 @@ export function IvfSuccessRatesSection({ rates, filterContext }: { rates: IvfSuc
               xAxisLabel={activeTab === "own" ? "Age" : "Egg Source"}
             />
 
-            <div className="flex items-center gap-4 text-[10px] text-muted-foreground pt-1">
+            <div className="t-helper flex items-center gap-4 pt-1">
               <span className="flex items-center gap-1.5">
                 <span className="inline-block w-3 h-3 rounded-sm bg-primary" />
                 This Clinic

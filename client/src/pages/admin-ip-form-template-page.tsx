@@ -94,7 +94,7 @@ export default function AdminIpFormTemplatePage() {
 
   if (!isAdmin) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-16 text-center text-sm text-muted-foreground">GoStork admins only.</div>
+      <div className="t-helper max-w-3xl mx-auto px-4 py-16 text-center">GoStork admins only.</div>
     );
   }
 
@@ -124,7 +124,7 @@ export default function AdminIpFormTemplatePage() {
         </div>
         <div className="flex-1">
           <h1 className="text-2xl font-heading font-bold">Intended Parent Form Template</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             The master template every family fills. Changes apply immediately to new answers; deactivating keeps historical answers
             intact. "Hidden from surrogate PDF" controls what the surrogate-safe download strips.
           </p>
@@ -222,7 +222,7 @@ function SectionEditor({
         <div className="flex-1 min-w-0">
           <p className="font-medium truncate">
             {section.title}
-            <span className="text-xs text-muted-foreground ml-2">
+            <span className="t-helper ml-2">
               {section.questions.filter((q) => q.isActive).length} questions
               {section.perParent ? " - per parent" : ""}
               {(section.appliesTo || []).length ? ` - ${(section.appliesTo || []).map((t) => (t === "ivf" ? "IVF" : t)).join(" + ")} only` : " - all programs"}
@@ -252,11 +252,11 @@ function SectionEditor({
         <div className="space-y-4 pl-7">
           <div className="grid gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Section title</Label>
+              <Label className="t-form-label-sm">Section title</Label>
               <Input value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Description (shown to parents; acknowledgment legal text lives here - {"{{AGENCY_NAME}}"} is replaced per agency)</Label>
+              <Label className="t-form-label-sm">Description (shown to parents; acknowledgment legal text lives here - {"{{AGENCY_NAME}}"} is replaced per agency)</Label>
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
             </div>
             <div className="flex flex-wrap items-center gap-5">
@@ -273,7 +273,7 @@ function SectionEditor({
               )}
             </div>
             <div className="flex flex-wrap items-center gap-4 text-sm rounded-[var(--radius)] bg-secondary/40 p-2.5">
-              <span className="text-xs text-muted-foreground">Applies to</span>
+              <span className="t-helper">Applies to</span>
               {(["surrogacy", "ivf"] as const).map((prog) => {
                 const tags = section.appliesTo || [];
                 // Core (empty appliesTo) renders as every program ON.
@@ -295,7 +295,7 @@ function SectionEditor({
                   </label>
                 );
               })}
-              <span className="text-[11px] text-muted-foreground">Both on = all programs (core). One on = only that program's parents.</span>
+              <span className="t-helper">Both on = all programs (core). One on = only that program's parents.</span>
             </div>
           </div>
 
@@ -378,7 +378,7 @@ function QuestionEditor({
         </button>
         <p className="flex-1 min-w-0 text-sm truncate">
           {question.label}
-          <span className="text-xs text-muted-foreground ml-2">
+          <span className="t-helper ml-2">
             {WIDGETS.find((w) => w.value === question.widget)?.label || question.widget}
             {question.required ? " - required" : ""}
             {question.perParent ? " - per parent" : ""}
@@ -407,15 +407,15 @@ function QuestionEditor({
         <div className="px-3 pb-3 pl-9 space-y-3">
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1 sm:col-span-2">
-              <Label className="text-xs">Question label</Label>
+              <Label className="t-form-label-sm">Question label</Label>
               <Input value={label} onChange={(e) => setLabel(e.target.value)} />
             </div>
             <div className="space-y-1 sm:col-span-2">
-              <Label className="text-xs">Help text (optional)</Label>
+              <Label className="t-form-label-sm">Help text (optional)</Label>
               <Input value={helpText} onChange={(e) => setHelpText(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Answer type</Label>
+              <Label className="t-form-label-sm">Answer type</Label>
               <Select value={question.widget} onValueChange={(v) => save({ widget: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -427,7 +427,7 @@ function QuestionEditor({
             </div>
             {question.widget === "dropdown" && (
               <div className="space-y-1">
-                <Label className="text-xs">Choices (one per line)</Label>
+                <Label className="t-form-label-sm">Choices (one per line)</Label>
                 <Textarea value={optionsText} onChange={(e) => setOptionsText(e.target.value)} rows={3} />
               </div>
             )}
@@ -447,7 +447,7 @@ function QuestionEditor({
 
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Show only when this question...</Label>
+              <Label className="t-form-label-sm">Show only when this question...</Label>
               <Select
                 value={question.conditionalOnQuestionId || "none"}
                 onValueChange={(v) => save({ conditionalOnQuestionId: v === "none" ? null : v })}
@@ -463,7 +463,7 @@ function QuestionEditor({
             </div>
             {question.conditionalOnQuestionId && (
               <div className="space-y-1">
-                <Label className="text-xs">...is answered with</Label>
+                <Label className="t-form-label-sm">...is answered with</Label>
                 <Input value={trigger} onChange={(e) => setTrigger(e.target.value)} placeholder='e.g. "yes"' />
               </div>
             )}

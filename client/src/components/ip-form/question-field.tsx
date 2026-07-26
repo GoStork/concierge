@@ -59,12 +59,12 @@ export function QuestionField({
   return (
     <div className="space-y-1.5" data-testid={`ipform-q-${q.key}`}>
       {!hideLabel && (
-        <Label className="text-sm font-medium leading-snug">
+        <Label className="leading-snug">
           {q.label}
           {q.required && <span className="text-destructive ml-0.5">*</span>}
         </Label>
       )}
-      {q.helpText && !hideLabel && <p className="text-xs text-muted-foreground">{q.helpText}</p>}
+      {q.helpText && !hideLabel && <p className="t-helper">{q.helpText}</p>}
       <WidgetInput question={q} value={value} onChange={onChange} disabled={disabled} fileUpload={fileUpload} />
     </div>
   );
@@ -272,7 +272,7 @@ function FileInput({ value, onChange, disabled, upload }: { value: FileValue | n
             {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ImagePlus className="w-4 h-4 mr-2" />}
             {value ? "Replace file" : "Upload file"}
           </Button>
-          <p className="text-xs text-muted-foreground mt-1">A clear photo or PDF scan. Kept private - shared only with the agency/clinic that requested it.</p>
+          <p className="t-helper mt-1">A clear photo or PDF scan. Kept private - shared only with the agency/clinic that requested it.</p>
         </div>
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -339,7 +339,7 @@ function PhotosInput({ value, onChange, disabled }: { value: string[]; onChange:
             {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ImagePlus className="w-4 h-4 mr-2" />}
             {value.length ? "Add more photos" : "Upload photos"}
           </Button>
-          <p className="text-xs text-muted-foreground mt-1">3-6 warm, natural photos work best. Up to {MAX_PHOTOS}.</p>
+          <p className="t-helper mt-1">3-6 warm, natural photos work best. Up to {MAX_PHOTOS}.</p>
         </div>
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}

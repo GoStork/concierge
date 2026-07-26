@@ -239,7 +239,7 @@ function _InlineBookingNotification_DEAD({ booking, brandColor, onUpdate }: { bo
                   <Crown className="w-3 h-3" style={{ color: brandColor }} />
                 </div>
                 <span className="font-medium text-xs">{providerName}</span>
-                <span className="text-xs text-muted-foreground">(Host)</span>
+                <span className="t-helper">(Host)</span>
               </div>
               {attendees.map((a: any) => (
                 <div key={a.id || a.email} className="flex items-center gap-2 text-sm pl-1">
@@ -247,7 +247,7 @@ function _InlineBookingNotification_DEAD({ booking, brandColor, onUpdate }: { bo
                     <Check className="w-3 h-3 text-primary" />
                   </div>
                   <span className="font-medium text-xs">{a.name || a.email}</span>
-                  {a.email && a.name && <span className="text-xs text-muted-foreground">({a.email})</span>}
+                  {a.email && a.name && <span className="t-helper">({a.email})</span>}
                 </div>
               ))}
             </div>
@@ -283,8 +283,8 @@ function _InlineBookingNotification_DEAD({ booking, brandColor, onUpdate }: { bo
 
           {isRescheduled && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-muted-foreground">Meeting rescheduled</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">This meeting was rescheduled. A new booking has been created.</p>
+              <p className="t-helper">Meeting rescheduled</p>
+              <p className="t-helper mt-0.5">This meeting was rescheduled. A new booking has been created.</p>
             </div>
           )}
 
@@ -441,8 +441,8 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
               <Video className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-muted-foreground">Video Call Ended</p>
-              <p className="text-xs text-muted-foreground">This call session has expired</p>
+              <p className="t-helper font-semibold">Video Call Ended</p>
+              <p className="t-helper">This call session has expired</p>
             </div>
           </div>
         </div>
@@ -467,7 +467,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">{isProviderViewer ? "Start Video Call" : "Join Video Call"}</p>
-            <p className="text-xs text-muted-foreground">{isProviderViewer ? "Click to start the video consultation" : "Click to join the video consultation"}</p>
+            <p className="t-helper">{isProviderViewer ? "Click to start the video consultation" : "Click to join the video consultation"}</p>
           </div>
           <Video className="w-4 h-4 text-muted-foreground shrink-0" />
         </button>
@@ -490,7 +490,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">Book a Meeting</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               {data.providerName === "GoStork"
                 ? `Schedule GoStork Concierge Call with ${data.memberName || "GoStork Team"}`
                 : data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works for you"}
@@ -529,7 +529,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
           </div>
           <div className="px-4 py-3 space-y-1">
             <p className="text-sm font-semibold">Agreement from {providerName}</p>
-            <p className="text-xs text-muted-foreground">{statusLabel}</p>
+            <p className="t-helper">{statusLabel}</p>
           </div>
           <div className="border-t px-4 py-2.5 bg-muted/30 flex items-center justify-between">
             <span className="text-xs font-medium" style={{ color: brandColor }}>
@@ -556,7 +556,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">Agreement Fully Signed</p>
-            <p className="text-xs text-muted-foreground">Tap to view and download the signed agreement</p>
+            <p className="t-helper">Tap to view and download the signed agreement</p>
           </div>
           <Download className="w-4 h-4 text-muted-foreground shrink-0" />
         </a>
@@ -592,7 +592,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold">Cost Sheet from {providerName}</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 Total quoted cost
                 {sentAt ? ` - ${new Date(sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}
               </p>
@@ -613,7 +613,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
                   {fileName || "Open cost sheet"}
                 </a>
               )}
-              {notes && <p className="text-xs text-muted-foreground italic">{notes}</p>}
+              {notes && <p className="t-helper italic">{notes}</p>}
             </div>
           )}
         </div>
@@ -1050,11 +1050,11 @@ const sendMessageMutation = useMutation({
             </span>
           )}
         </div>
-        <p className="text-xs text-muted-foreground leading-relaxed">
+        <p className="t-helper leading-relaxed">
           Questions from this parent forwarded by the AI concierge. Your answer is relayed back - the parent's identity stays private until they schedule a consultation.
         </p>
         {pendingWhispers.length === 0 ? (
-          <p className="text-xs text-muted-foreground italic" data-testid="no-pending-whispers">
+          <p className="t-helper italic" data-testid="no-pending-whispers">
             No pending questions. New questions from this parent will appear here.
           </p>
         ) : (
@@ -1089,7 +1089,7 @@ const sendMessageMutation = useMutation({
                     {ageLabel} ago{isOverdue ? " - SLA breached" : ""}
                   </span>
                   {q.nudgeCount > 0 && (
-                    <span className="text-[10px] text-muted-foreground">Nudged {q.nudgeCount}x</span>
+                    <span className="t-helper">Nudged {q.nudgeCount}x</span>
                   )}
                 </div>
                 <Textarea
@@ -1895,7 +1895,7 @@ const sendMessageMutation = useMutation({
                     </div>
                   </div>
                   {session.lastMessage && (
-                    <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                    <p className="t-helper truncate mt-0.5 flex items-center gap-1">
                       {session.lastMessageRole === "user" && (
                         <MessageStatus deliveredAt={session.lastMessageDeliveredAt} readAt={session.lastMessageReadAt} brandColor={brandColor} className="flex-shrink-0" />
                       )}
@@ -2012,7 +2012,7 @@ const sendMessageMutation = useMutation({
                             </div>
                           </div>
                           {session.lastMessage && (
-                            <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                            <p className="t-helper truncate mt-0.5 flex items-center gap-1">
                               {session.lastMessageRole === "user" && (
                                 <MessageStatus deliveredAt={session.lastMessageDeliveredAt} readAt={session.lastMessageReadAt} brandColor={brandColor} className="flex-shrink-0" />
                               )}
@@ -2106,11 +2106,11 @@ const sendMessageMutation = useMutation({
                     ) : null}
                 </div>
                 <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                  <span className="text-[11px] text-muted-foreground flex-shrink-0">via</span>
+                  <span className="t-helper flex-shrink-0">via</span>
                   {parentHeaderAvatar && (
                     <img src={parentHeaderAvatar} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0 bg-white border border-border/40" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                   )}
-                  <span className="text-[11px] text-muted-foreground truncate">{parentHeaderName}</span>
+                  <span className="t-helper truncate">{parentHeaderName}</span>
                 </div>
               </div>
               <ChevronRight
@@ -2132,7 +2132,7 @@ const sendMessageMutation = useMutation({
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className="text-sm font-ui" style={{ fontWeight: 600 }}>{parentHeaderName}</h2>
-                <p className="text-[11px] font-ui text-muted-foreground truncate">AI Concierge Chat</p>
+                <p className="t-helper font-ui truncate">AI Concierge Chat</p>
               </div>
             </>
           )}
@@ -2463,10 +2463,10 @@ const sendMessageMutation = useMutation({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>AI Concierge</span>
                 {assistantLastMsg && (
-                  <span className="text-[11px] text-muted-foreground flex-shrink-0">{timeAgo(assistantLastMsg.createdAt)}</span>
+                  <span className="t-helper flex-shrink-0">{timeAgo(assistantLastMsg.createdAt)}</span>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground truncate mt-0.5">
+              <p className="t-helper truncate mt-0.5">
                 {assistantLastMsg ? truncateMessage(assistantLastMsg.content) : "Ask about your pipeline, pending questions, or how GoStork works"}
               </p>
             </div>
@@ -2622,7 +2622,7 @@ const sendMessageMutation = useMutation({
                         </div>
                       </div>
                       {s.lastMessage && (
-                        <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                        <p className="t-helper truncate mt-0.5 flex items-center gap-1">
                           {s.lastMessageSenderType === "provider" && (
                             <MessageStatus deliveredAt={null} readAt={null} brandColor={brandColor} className="flex-shrink-0" />
                           )}
@@ -2686,7 +2686,7 @@ const sendMessageMutation = useMutation({
                     )}
                   </div>
                   <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                    <span className="text-[11px] text-muted-foreground flex-shrink-0">re:</span>
+                    <span className="t-helper flex-shrink-0">re:</span>
                     {selectedSession?.profilePhotoUrl ? (
                       <img src={getPhotoSrc(selectedSession.profilePhotoUrl) || undefined} alt="" className="w-3.5 h-3.5 rounded-full object-cover flex-shrink-0" />
                     ) : (
@@ -2694,7 +2694,7 @@ const sendMessageMutation = useMutation({
                         <User className="w-2 h-2 text-muted-foreground" />
                       </div>
                     )}
-                    <span className="text-[11px] text-muted-foreground truncate" data-testid="provider-subject-label">
+                    <span className="t-helper truncate" data-testid="provider-subject-label">
                       {selectedSession ? sessionThreadLabel(selectedSession) : (detail.title || "Conversation")}
                     </span>
                     {selectedSession?.subjectProfileId && <DonorStatusPill status={selectedSession.profileStatus} />}
@@ -2716,7 +2716,7 @@ const sendMessageMutation = useMutation({
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="font-semibold text-sm font-ui truncate block">{detail.user.name || "Prospective Parent"}</span>
-                  <p className="text-[11px] text-muted-foreground truncate">Anonymous Q&A via AI Concierge</p>
+                  <p className="t-helper truncate">Anonymous Q&A via AI Concierge</p>
                 </div>
               </>
             )}
@@ -3002,7 +3002,7 @@ const sendMessageMutation = useMutation({
               />
             ) : (
               <div className="border-t px-4 py-4 bg-muted/30 text-center shrink-0" data-testid="provider-waiting-prompt">
-                <p className="text-sm text-muted-foreground">No pending questions. When the AI concierge receives questions from this parent, they'll appear here.</p>
+                <p className="t-helper">No pending questions. When the AI concierge receives questions from this parent, they'll appear here.</p>
               </div>
             )}
           </div>
@@ -3139,7 +3139,7 @@ const sendMessageMutation = useMutation({
                           </a>
                         </div>
                       ) : (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="t-helper">
                           {detail.ipForm.promptedAt
                             ? "Sent to the parent - not submitted yet. You'll be notified here when it's ready to download."
                             : "Not started yet."}
@@ -3207,7 +3207,7 @@ const sendMessageMutation = useMutation({
           </div>
           <div className="flex-1 min-w-0">
             <span className="font-semibold text-sm font-ui truncate block">AI Concierge</span>
-            <p className="text-[11px] text-muted-foreground truncate">Your GoStork assistant - pipeline, platform help, drafting</p>
+            <p className="t-helper truncate">Your GoStork assistant - pipeline, platform help, drafting</p>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -3221,7 +3221,7 @@ const sendMessageMutation = useMutation({
                 <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
               <p className="text-sm font-medium">Ask Eva anything</p>
-              <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+              <p className="t-helper mt-1 max-w-sm">
                 "What needs my attention today?", "How do anonymous parent questions work?", or "Help me word an answer about our success rates."
               </p>
             </div>
@@ -3257,7 +3257,7 @@ const sendMessageMutation = useMutation({
           sidebarItems={sidebarContent}
           emptyMessage={searchQuery ? "No conversations match your search" : "No conversations yet"}
           emptyAction={!searchQuery ? (
-            <p className="text-xs text-muted-foreground mt-1">When parents request a consultation, their conversations will appear here</p>
+            <p className="t-helper mt-1">When parents request a consultation, their conversations will appear here</p>
           ) : undefined}
           detailContent={assistantOpen ? assistantDetailContent : providerDetailContent}
           brandColor={brandColor}

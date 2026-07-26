@@ -97,9 +97,9 @@ function KpiTile({ icon, label, value, sub }: { icon: React.ReactNode; label: st
     <div className="rounded-[var(--radius)] border bg-secondary/40 p-3 flex items-start gap-2.5 min-w-0">
       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">{icon}</div>
       <div className="min-w-0">
-        <p className="text-[10px] uppercase tracking-wide text-muted-foreground whitespace-nowrap truncate" title={label}>{label}</p>
+        <p className="t-micro-label whitespace-nowrap truncate" title={label}>{label}</p>
         <p className="text-xl font-heading leading-6">{value}</p>
-        {sub && <p className="text-[11px] text-muted-foreground truncate" title={sub}>{sub}</p>}
+        {sub && <p className="t-helper truncate" title={sub}>{sub}</p>}
       </div>
     </div>
   );
@@ -121,7 +121,7 @@ function DetailList({ title, rows, emptyText }: { title: string; rows: DetailRow
       </button>
       {open && (
         <div className="mt-1.5 space-y-1">
-          {rows.length === 0 && <p className="text-[11px] text-muted-foreground">{emptyText}</p>}
+          {rows.length === 0 && <p className="t-helper">{emptyText}</p>}
           {rows.map((r, i) => (
             <div key={i} className="flex items-baseline justify-between gap-2 text-[11px]">
               <span className="min-w-0 truncate">
@@ -150,7 +150,7 @@ function FunnelBars({ funnel }: { funnel: FunnelData["funnels"][number] }) {
         <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide">
           {funnel.typeLabel}
         </span>
-        <span className="text-xs text-muted-foreground">{funnel.journeys} journey{funnel.journeys !== 1 ? "s" : ""}</span>
+        <span className="t-helper">{funnel.journeys} journey{funnel.journeys !== 1 ? "s" : ""}</span>
       </div>
       <div className="space-y-1.5">
         {funnel.stages.map((st) => (
@@ -164,7 +164,7 @@ function FunnelBars({ funnel }: { funnel: FunnelData["funnels"][number] }) {
                 {st.count > 0 && <span className="text-[10px] font-semibold text-primary-foreground">{st.count}</span>}
               </div>
             </div>
-            <p className="text-[10px] text-muted-foreground whitespace-nowrap">
+            <p className="t-helper whitespace-nowrap">
               {st.conversionFromPrev !== null ? `${st.conversionFromPrev}%` : ""}
               {st.medianDaysFromPrev !== null ? ` · ~${Math.round(st.medianDaysFromPrev)}d` : ""}
             </p>
@@ -243,7 +243,7 @@ export function JourneyFunnelDashboard({ scope }: { scope: "admin" | "provider" 
       </div>
     );
   }
-  if (!data) return <p className="text-sm text-muted-foreground">Couldn't load analytics.</p>;
+  if (!data) return <p className="t-helper">Couldn't load analytics.</p>;
 
   const churnEntries = Object.entries(data.leaks.churnReasons || {});
   const responseEntries = Object.entries(data.winback.responses || {});
@@ -326,7 +326,7 @@ export function JourneyFunnelDashboard({ scope }: { scope: "admin" | "provider" 
           <DetailList title="Still waiting for a reply" rows={data.winback.details?.awaitingReply || []} emptyText="Every follow-up got an answer." />
           <div>
             <p className="text-xs font-semibold font-ui mb-1.5">Replies</p>
-            {responseEntries.length === 0 && <p className="text-xs text-muted-foreground">No replies recorded yet.</p>}
+            {responseEntries.length === 0 && <p className="t-helper">No replies recorded yet.</p>}
             {responseEntries.map(([r, n]) => (
               <div key={r} className="flex items-center justify-between py-0.5">
                 <span className="text-xs font-ui">{RESPONSE_LABELS[r] || r}</span>
@@ -340,9 +340,9 @@ export function JourneyFunnelDashboard({ scope }: { scope: "admin" | "provider" 
       {/* Funnels */}
       <Card className="p-5 space-y-6">
         <h3 className="font-heading text-base">Journey funnel{data.funnels.length !== 1 ? "s" : ""}</h3>
-        {data.funnels.length === 0 && <p className="text-sm text-muted-foreground">No journeys in this cohort yet.</p>}
+        {data.funnels.length === 0 && <p className="t-helper">No journeys in this cohort yet.</p>}
         {data.funnels.map((f) => <FunnelBars key={f.journeyType} funnel={f} />)}
-        <p className="text-[10px] text-muted-foreground">Per stage: count · conversion from previous stage · median days from previous stage.</p>
+        <p className="t-helper">Per stage: count · conversion from previous stage · median days from previous stage.</p>
       </Card>
 
       {/* Provider comparison (admin only) */}

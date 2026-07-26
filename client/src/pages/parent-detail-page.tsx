@@ -60,7 +60,7 @@ export default function ParentDetailPage() {
           {isLoading && (
             <div className="flex flex-col items-center justify-center gap-3 py-12">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Loading parent...</p>
+              <p className="t-helper">Loading parent...</p>
             </div>
           )}
 
@@ -68,7 +68,7 @@ export default function ParentDetailPage() {
             <div className="flex flex-col items-center justify-center gap-3 py-12 text-center" data-testid="parent-detail-error">
               <AlertCircle className="w-8 h-8 text-destructive" />
               <p className="text-sm font-medium">{(error as Error).message}</p>
-              <p className="text-xs text-muted-foreground max-w-sm">
+              <p className="t-helper max-w-sm">
                 You can only view parents you've connected with through a chat session or booking.
               </p>
             </div>
@@ -106,7 +106,7 @@ export default function ParentDetailPage() {
                   </div>
                   {parent.ipForm.status === "SUBMITTED" && parent.ipForm.responseId ? (
                     <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">
+                      <p className="t-helper">
                         Submitted{parent.ipForm.submittedAt ? ` on ${new Date(parent.ipForm.submittedAt).toLocaleDateString()}` : ""} - download it with your agency branding.
                       </p>
                       <div className="flex flex-wrap gap-2">
@@ -128,7 +128,7 @@ export default function ParentDetailPage() {
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">
+                    <p className="t-helper">
                       Not submitted yet - a match call cannot be scheduled until the family completes and signs their form.
                       {parent.ipForm.promptedAt ? " They have been asked and receive reminders." : ""}
                     </p>

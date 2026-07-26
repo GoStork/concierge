@@ -27,7 +27,7 @@ export default function AgreementsGuestSigningPage() {
         <span className="text-sm font-heading font-semibold" style={{ color: "hsl(var(--primary))" }}>
           GoStork
         </span>
-        <span className="text-sm font-medium text-muted-foreground">|</span>
+        <span className="t-helper font-medium">|</span>
         <span className="text-sm font-medium">Sign Agreement</span>
       </div>
 
@@ -36,7 +36,7 @@ export default function AgreementsGuestSigningPage() {
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading your agreement...</p>
+            <p className="t-helper">Loading your agreement...</p>
           </div>
         )}
 
@@ -44,7 +44,7 @@ export default function AgreementsGuestSigningPage() {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center">
             <AlertCircle className="w-10 h-10 text-destructive" />
             <p className="text-sm font-medium">Could not load the signing session</p>
-            <p className="text-xs text-muted-foreground max-w-sm">
+            <p className="t-helper max-w-sm">
               {(error as Error).message}
             </p>
             <Button variant="outline" size="sm" onClick={() => window.location.reload()}>

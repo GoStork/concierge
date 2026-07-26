@@ -89,7 +89,7 @@ export function ApprovalCard({
               {title}
             </div>
             {subtitle && (
-              <div className="text-xs text-muted-foreground mt-0.5">{subtitle}</div>
+              <div className="t-helper mt-0.5">{subtitle}</div>
             )}
           </div>
           {!isPending && (
@@ -133,7 +133,7 @@ export function ApprovalCard({
             profile's Costs section. */}
         {excludedItems.length > 0 && (
           <div className="border-t border-border pt-2">
-            <p className="text-[11px] uppercase tracking-wide font-medium text-muted-foreground mb-1">Not included</p>
+            <p className="t-micro-label mb-1">Not included</p>
             <div className="space-y-1 text-sm">
               {excludedItems.map((li, idx) => (
                 <div key={idx} className="flex justify-between gap-3 text-muted-foreground/70">
@@ -160,7 +160,7 @@ export function ApprovalCard({
         )}
 
         {notes && (
-          <div className="text-xs text-muted-foreground bg-muted/40 rounded-[var(--radius)] px-3 py-2 whitespace-pre-wrap">
+          <div className="t-helper bg-muted/40 rounded-[var(--radius)] px-3 py-2 whitespace-pre-wrap">
             {notes}
           </div>
         )}
@@ -168,7 +168,7 @@ export function ApprovalCard({
         {Array.isArray(metadata) && metadata.length > 0 && (
           <div className="border-t border-border pt-2 space-y-0.5">
             {metadata.map((m, idx) => (
-              <div key={idx} className="flex justify-between gap-3 text-[11px] text-muted-foreground">
+              <div key={idx} className="t-helper flex justify-between gap-3">
                 <span>{m.label}</span>
                 <span>{m.value}</span>
               </div>

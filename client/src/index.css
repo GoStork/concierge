@@ -89,11 +89,76 @@
   --swipe-chat: #9B51E0;
   --swipe-compare: #2D9CDB;
 
+  /* Content typography - pre-JS fallbacks. Keep in sync with BRAND_DEFAULTS in
+     use-brand-settings.ts and DEFAULTS in server brand.controller.ts, or the
+     first paint flashes the wrong type before /api/brand/settings resolves.
+     The live values come from the Brand Settings page (Content Typography). */
+  --field-label-size: 13px;
+  --field-label-weight: 500;
+  --field-label-color: hsl(var(--muted-foreground));
+  --field-label-case: none;
+  --field-label-tracking: 0em;
+  --field-value-size: 16px;
+  --field-value-weight: 500;
+  --field-value-color: hsl(var(--foreground));
+  --field-label-gap: 3px;
+  --field-pair-gap: 20px;
+
+  --prompt-eyebrow-size: 12px;
+  --prompt-eyebrow-weight: 600;
+  --prompt-eyebrow-color: hsl(var(--accent));
+  --prompt-eyebrow-tracking: 0.055em;
+  --prompt-eyebrow-case: uppercase;
+  --prompt-answer-size: 17px;
+  --prompt-answer-weight: 400;
+  --prompt-answer-color: hsl(var(--foreground));
+  --prompt-answer-line-height: 1.6;
+  --prompt-block-gap: 22px;
+
+  --micro-label-size: 12px;
+  --micro-value-size: 15px;
+  --micro-label-weight: 500;
+  --micro-label-color: hsl(var(--muted-foreground));
+  --micro-label-tracking: 0.03em;
+
+  --chip-font-size: 13px;
+  --chip-font-weight: 500;
+  --chip-radius: 999px;
+  --chip-px: 11px;
+  --chip-py: 5px;
+  --chip-bg: hsl(var(--secondary));
+  --chip-fg: hsl(var(--secondary-foreground));
+
+  --section-title-size: 18px;
+  --section-title-weight: 600;
+
+  --form-label-size: 14px;
+  --form-label-small-size: 12px;
+  --form-label-weight: 500;
+  --form-label-color: hsl(var(--foreground));
+  --form-label-case: none;
+  --form-label-tracking: 0em;
+  --helper-text-size: 13px;
+  --helper-text-color: hsl(var(--muted-foreground));
+  --card-heading-size: 24px;
+  --card-heading-weight: 700;
+  --page-title-size: 30px;
+  --page-title-weight: 700;
+
   /* Deck (Tinder-style swipe screen) chrome - applied to marketplace deck bg and bottom bar when on Discover/Saved */
   --deck-bg: 228 8% 10%;          /* #17181C - neutral near-black */
   --deck-bg-elevated: 228 8% 15%; /* #23252A - one notch up, for the bottom bar so it separates from the page */
   --deck-fg: 0 0% 100%;
   --deck-fg-muted: 0 0% 60%;
+}
+
+/* PromptStack: prompt blocks separated by the brand's block gap + a hairline.
+   Lives here rather than in the component so the gap can never be overridden
+   by a utility class at a call site. */
+.prompt-stack > * + * {
+  margin-top: var(--prompt-block-gap);
+  padding-top: var(--prompt-block-gap);
+  border-top: 1px solid hsl(var(--border));
 }
 
 /* Filters page: restyle the inline MarketplaceFilterBar into Tinder-style vertical rows */
@@ -600,4 +665,99 @@ input[type="time"]::-webkit-date-and-time-value {
   7%   { opacity: 0.72; }
   86%  { opacity: 0.72; }
   100% { opacity: 0; }
+}
+
+/* ---------------------------------------------------------------------
+   Content typography utilities.
+
+   The React primitives in components/ui/field.tsx cover most call sites;
+   these classes exist for the places a component can't go - <th>, <td>,
+   <span> inside a sentence, table cells. Both read the SAME brand variables,
+   which come from the Brand Settings page (Content Typography section).
+
+   Deliberately declared last and outside @layer so a stray Tailwind text-*
+   utility at a call site can't silently override the brand. If you need a
+   different size here, change the brand setting, not the markup.
+   --------------------------------------------------------------------- */
+.t-field-label {
+  font-size: var(--field-label-size);
+  font-weight: var(--field-label-weight);
+  color: var(--field-label-color);
+  text-transform: var(--field-label-case);
+  letter-spacing: var(--field-label-tracking);
+  line-height: 1.35;
+}
+.t-field-value {
+  font-size: var(--field-value-size);
+  font-weight: var(--field-value-weight);
+  color: var(--field-value-color);
+  line-height: 1.45;
+}
+.t-field-prose {
+  font-size: var(--field-value-size);
+  font-weight: var(--font-weight-body);
+  color: var(--field-value-color);
+  line-height: var(--line-height-body);
+}
+.t-micro-label {
+  font-size: var(--micro-label-size);
+  font-weight: var(--micro-label-weight);
+  color: var(--micro-label-color);
+  letter-spacing: var(--micro-label-tracking);
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+.t-micro-value {
+  font-size: var(--micro-value-size);
+  font-weight: var(--field-value-weight);
+  color: var(--field-value-color);
+  line-height: 1.4;
+}
+.t-prompt-eyebrow {
+  font-size: var(--prompt-eyebrow-size);
+  font-weight: var(--prompt-eyebrow-weight);
+  color: var(--prompt-eyebrow-color);
+  letter-spacing: var(--prompt-eyebrow-tracking);
+  text-transform: var(--prompt-eyebrow-case);
+  line-height: 1.3;
+}
+.t-prompt-answer {
+  font-size: var(--prompt-answer-size);
+  font-weight: var(--prompt-answer-weight);
+  color: var(--prompt-answer-color);
+  line-height: var(--prompt-answer-line-height);
+}
+.t-section-title {
+  font-size: var(--section-title-size);
+  font-weight: var(--section-title-weight);
+  color: hsl(var(--foreground));
+}
+
+.t-form-label {
+  font-size: var(--form-label-size);
+  font-weight: var(--form-label-weight);
+  color: var(--form-label-color);
+  text-transform: var(--form-label-case);
+  letter-spacing: var(--form-label-tracking);
+}
+.t-helper {
+  font-size: var(--helper-text-size);
+  color: var(--helper-text-color);
+  line-height: 1.5;
+}
+.t-card-heading {
+  font-size: var(--card-heading-size);
+  font-weight: var(--card-heading-weight);
+}
+.t-page-title {
+  font-size: var(--page-title-size);
+  font-weight: var(--page-title-weight);
+  line-height: var(--line-height-heading);
+}
+.t-form-label-sm {
+  font-size: var(--form-label-small-size);
+  font-weight: var(--form-label-weight);
+  color: var(--form-label-color);
+  text-transform: var(--form-label-case);
+  letter-spacing: var(--form-label-tracking);
 }

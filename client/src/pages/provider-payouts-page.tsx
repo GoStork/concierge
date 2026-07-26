@@ -92,17 +92,17 @@ export default function ProviderPayoutsPage() {
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
       <div>
         <h1 className="text-2xl font-heading font-bold">Payouts</h1>
-        <p className="text-sm text-muted-foreground mt-1">Every payout GoStork has sent you</p>
+        <p className="t-helper mt-1">Every payout GoStork has sent you</p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Received</p>
+          <p className="t-micro-label">Total Received</p>
           <p className="text-xl font-heading font-bold">{formatCents(totalReceived)}</p>
         </div>
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Pending Payouts</p>
+          <p className="t-micro-label">Pending Payouts</p>
           <p className="text-xl font-heading font-bold">{pendingPayouts}</p>
         </div>
       </div>
@@ -158,7 +158,7 @@ export default function ProviderPayoutsPage() {
       ) : !payoutRows.length ? (
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <Landmark className="w-8 h-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No payouts match your filters</p>
+          <p className="t-helper">No payouts match your filters</p>
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
@@ -166,11 +166,11 @@ export default function ProviderPayoutsPage() {
             <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/40">
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your Payout</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork Paid You</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Parent</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Service</th>
+                  <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">Your Payout</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">GoStork Paid You</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Date</th>
                   <th className="w-8" />
                 </tr>
               </thead>
@@ -186,7 +186,7 @@ export default function ProviderPayoutsPage() {
                       data-testid={`provider-billing-payout-${inv.id}`}
                     >
                       <td className="px-4 py-2.5 whitespace-nowrap">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()}</td>
+                      <td className="t-helper px-4 py-2.5 whitespace-nowrap">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()}</td>
                       <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
                       <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: s.color }}>
                         <span title={s.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
@@ -194,7 +194,7 @@ export default function ProviderPayoutsPage() {
                           {s.label}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt)}</td>
+                      <td className="t-helper px-4 py-2.5 whitespace-nowrap">{formatDateTime(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt)}</td>
                       <td className="px-2 py-2.5 text-muted-foreground">
                         {expandedId === inv.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </td>

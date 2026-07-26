@@ -101,7 +101,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
         <FileText className="w-4 h-4 text-primary shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">W-9 Form</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="t-helper">
             {w9Loading ? "Loading..."
               : !w9?.templateConfigured && w9?.templateNeedsFields ? (isProviderMode ? "Not available yet" : "Template uploaded - assign signature field to finish setup")
               : !w9?.templateConfigured ? (isProviderMode ? "Not available yet" : "No W-9 template configured")
@@ -230,7 +230,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
       {w9ResubmitMutation.isError && (
         <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{(w9ResubmitMutation.error as Error).message}</p>
       )}
-      <p className="text-xs text-muted-foreground">
+      <p className="t-helper">
         {isProviderMode
           ? "Complete and sign your W-9 - GoStork needs it before any payouts can be processed. Fields above auto-fill when you sign."
           : "Send the W-9 to the agency to fill and sign, or download it once completed."}

@@ -149,7 +149,7 @@ export default function AuthPage() {
         </div>
         <Card className="w-full max-w-md border-none shadow-2xl shadow-primary/5">
           <CardHeader className="space-y-2 text-center pb-6">
-            <CardTitle className="font-display text-3xl font-heading text-primary" data-testid="text-auth-title">
+            <CardTitle className="font-display t-page-title text-primary" data-testid="text-auth-title">
               Login
             </CardTitle>
           </CardHeader>
@@ -204,7 +204,7 @@ export default function AuthPage() {
                     ) : "Sign In"}
                   </Button>
                 </form>
-                <p className="text-center text-sm text-muted-foreground">
+                <p className="t-helper text-center">
                   Forgot your password?{" "}
                   <button
                     type="button"
@@ -215,7 +215,7 @@ export default function AuthPage() {
                     Reset Password
                   </button>
                 </p>
-                <p className="text-center text-sm text-muted-foreground">
+                <p className="t-helper text-center">
                   Don't have an account?{" "}
                   <button
                     type="button"

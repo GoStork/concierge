@@ -91,7 +91,7 @@ export function SponsorshipCheckout({ clientSecret, onDone, onCancel }: {
   }
 
   if (loading || !stripe) {
-    return <div className="flex items-center gap-2 text-sm text-muted-foreground p-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading payment form...</div>;
+    return <div className="t-helper flex items-center gap-2 p-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading payment form...</div>;
   }
 
   return (
@@ -154,7 +154,7 @@ export function CheckoutSuccessStep({ plan, sponsorshipId, onClose, showManageHi
   const tab = TAB_BY_TYPE[plan?.slotEntityType];
   const noun = NOUN_BY_TYPE[plan?.slotEntityType] || "profiles";
   const manageLine = (
-    <p className="text-xs text-muted-foreground">
+    <p className="t-helper">
       You can manage this sponsorship and track its performance anytime in the <strong className="text-foreground">Sponsorship</strong> tab.
     </p>
   );
@@ -164,14 +164,14 @@ export function CheckoutSuccessStep({ plan, sponsorshipId, onClose, showManageHi
       <h3 className="font-heading text-lg text-foreground">Payment complete</h3>
       {isBundle && tab ? (
         <>
-          <p className="text-sm text-muted-foreground">Next step: choose the {noun} you want to sponsor.</p>
+          <p className="t-helper">Next step: choose the {noun} you want to sponsor.</p>
           <Button className="w-full" onClick={() => navigate(`/account/${tab}?sponsor=${sponsorshipId}`)} data-testid="button-select-profiles">Select {noun}</Button>
           {showManageHint && manageLine}
-          <button className="text-xs text-muted-foreground hover:text-foreground" onClick={onClose}>I'll do this later</button>
+          <button className="t-helper hover:text-foreground" onClick={onClose}>I'll do this later</button>
         </>
       ) : (
         <>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             {isBundle ? `Manage your sponsored ${noun} on the Sponsorship page.` : "Your profile is now boosted in the marketplace."}
           </p>
           {showManageHint && manageLine}
@@ -202,7 +202,7 @@ export function SponsorshipCheckoutOverlay({ plan, clientSecret, sponsorshipId, 
       {!paid ? (
         <>
           <h3 className="font-heading text-lg text-foreground mb-1">{plan?.displayName}</h3>
-          <p className="text-sm text-muted-foreground mb-4">Complete payment to activate your sponsorship.</p>
+          <p className="t-helper mb-4">Complete payment to activate your sponsorship.</p>
           <SponsorshipCheckout clientSecret={clientSecret} onDone={() => setPaid(true)} onCancel={onClose} />
         </>
       ) : (

@@ -322,7 +322,7 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
         </div>
       </div>
       <div className="p-4 space-y-3">
-        <p className="text-sm text-muted-foreground">
+        <p className="t-helper">
           Here are the key topics to discuss during your first surrogate match call:
         </p>
         <div className="space-y-2.5">
@@ -338,7 +338,7 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
                 <p className="text-sm font-medium" style={{ color: brandColor }}>{section.title}</p>
                 <ul className="mt-0.5 space-y-0.5">
                   {section.items.map((item, j) => (
-                    <li key={j} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                    <li key={j} className="t-helper flex items-start gap-1.5">
                       <span className="mt-1 w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: `${brandColor}60` }} />
                       {item}
                     </li>
@@ -361,7 +361,7 @@ function PrepDocCard({ brandColor }: { brandColor: string }) {
             Download Full Guide (PDF)
           </a>
         </div>
-        <p className="text-xs text-muted-foreground italic">
+        <p className="t-helper italic">
           Tip: Start warm and personal - this is a relationship-building moment, not just a checklist.
         </p>
       </div>
@@ -389,7 +389,7 @@ function AgreementSignCard({ card, brandColor, createdAt }: { card: { agreementI
         </div>
       </div>
       <div className="p-4 space-y-3">
-        <p className="text-sm text-muted-foreground">
+        <p className="t-helper">
           Your agency agreement is ready. Review it carefully and sign electronically to move forward.
         </p>
         {card.agreementId ? (
@@ -402,7 +402,7 @@ function AgreementSignCard({ card, brandColor, createdAt }: { card: { agreementI
             Review &amp; Sign Agreement
           </button>
         ) : (
-          <p className="text-xs text-muted-foreground italic">Check your email for the signing link.</p>
+          <p className="t-helper italic">Check your email for the signing link.</p>
         )}
         {createdAt && (
           <div className="flex justify-end">
@@ -507,7 +507,7 @@ export function RescheduleCalendarPicker({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-7 text-center text-[10px] text-muted-foreground font-medium">
+      <div className="t-helper grid grid-cols-7 text-center font-medium">
         {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => <div key={d} className="py-1">{d}</div>)}
       </div>
       <div className="grid grid-cols-7 gap-0.5">
@@ -617,7 +617,7 @@ function BookingForm({
     <div ref={ref} className="space-y-2 py-1">
       <button
         onClick={onBack}
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        className="t-helper flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
         data-testid="button-back-to-dates-inline"
       >
         <ChevronLeft className="w-3 h-3" />
@@ -631,16 +631,16 @@ function BookingForm({
       <form onSubmit={(e) => { e.preventDefault(); bookMutation.mutate(); }} className="space-y-2">
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-0.5">
-            <Label className="text-[11px] font-medium">Name *</Label>
+            <Label className="t-form-label-sm">Name *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} required className="h-8 text-xs" data-testid="input-book-name-inline" />
           </div>
           <div className="space-y-0.5">
-            <Label className="text-[11px] font-medium">Email *</Label>
+            <Label className="t-form-label-sm">Email *</Label>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-8 text-xs" data-testid="input-book-email-inline" />
           </div>
         </div>
         <div className="space-y-0.5">
-          <Label className="text-[11px] font-medium">Phone</Label>
+          <Label className="t-form-label-sm">Phone</Label>
           <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="h-8 text-xs" data-testid="input-book-phone-inline" />
         </div>
 
@@ -651,7 +651,7 @@ function BookingForm({
                 <div key={ae.email} className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-2 py-1.5" data-testid={`attendee-chip-inline-${ae.email}`}>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium truncate">{ae.name || ae.email}</p>
-                    {ae.name && <p className="text-[11px] text-muted-foreground truncate">{ae.email}</p>}
+                    {ae.name && <p className="t-helper truncate">{ae.email}</p>}
                   </div>
                   <button type="button" onClick={() => removeAttendee(ae.email)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0" data-testid={`button-remove-attendee-inline-${ae.email}`}>
                     <X className="w-3 h-3" />
@@ -667,14 +667,14 @@ function BookingForm({
             </button>
           ) : (
             <div className="space-y-1.5 bg-muted/30 border border-border rounded-[var(--radius)] p-2.5">
-              <Label className="flex items-center gap-1.5 text-[11px] font-medium"><UserPlus className="w-3 h-3" />Additional Attendees</Label>
+              <Label className="flex items-center gap-1.5 t-form-label-sm"><UserPlus className="w-3 h-3" />Additional Attendees</Label>
               {additionalAttendees.length > 0 && (
                 <div className="space-y-1">
                   {additionalAttendees.map((ae) => (
                     <div key={ae.email} className="flex items-center gap-2 bg-primary/5 border border-primary/10 rounded-[var(--radius)] px-2 py-1.5" data-testid={`attendee-chip-inline-${ae.email}`}>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium truncate">{ae.name || ae.email}</p>
-                        {ae.name && <p className="text-[11px] text-muted-foreground truncate">{ae.email}</p>}
+                        {ae.name && <p className="t-helper truncate">{ae.email}</p>}
                       </div>
                       <button type="button" onClick={() => removeAttendee(ae.email)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0" data-testid={`button-remove-attendee-inline-${ae.email}`}>
                         <X className="w-3 h-3" />
@@ -690,14 +690,14 @@ function BookingForm({
               </div>
               <div className="flex gap-1.5">
                 <Button type="button" variant="outline" size="sm" onClick={addAttendee} className="h-7 flex-1 gap-1 text-xs" disabled={!newAttendeeEmail.trim()} data-testid="button-add-attendee-inline"><Plus className="w-3 h-3" />Add</Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setShowAttendeeFields(false)} className="h-7 flex-1 text-[11px] text-muted-foreground" data-testid="button-close-attendee-fields-inline">Done</Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setShowAttendeeFields(false)} className="t-helper h-7 flex-1" data-testid="button-close-attendee-fields-inline">Done</Button>
               </div>
             </div>
           )}
         </div>
 
         {!showNotes ? (
-          <button type="button" onClick={() => setShowNotes(true)} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <button type="button" onClick={() => setShowNotes(true)} className="t-helper flex items-center gap-1.5 hover:text-foreground transition-colors">
             <Plus className="w-3 h-3" />
             Add notes (optional)
           </button>
@@ -772,7 +772,7 @@ function RescheduleDateSlots({
           })}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground text-center py-2">No available slots</p>
+        <p className="t-helper text-center py-2">No available slots</p>
       )}
     </div>
   );
@@ -1061,7 +1061,7 @@ export function InlineBookingCalendar({
             <X className="w-6 h-6 text-destructive" />
           </div>
           <p className="font-bold text-sm">Cancel this meeting?</p>
-          <p className="text-xs text-muted-foreground">Your consultation with {providerName} will be cancelled and all participants will be notified.</p>
+          <p className="t-helper">Your consultation with {providerName} will be cancelled and all participants will be notified.</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -1107,7 +1107,7 @@ export function InlineBookingCalendar({
             Cancelled
           </span>
         </div>
-        <p className="text-xs text-center text-muted-foreground">This meeting has been cancelled and all participants have been notified.</p>
+        <p className="t-helper text-center">This meeting has been cancelled and all participants have been notified.</p>
         <button
           onClick={() => { setSelectedDate(null); setSelectedSlot(null); setCurrentMonth(new Date()); setBooking(null); setStep("date"); }}
           className="w-full text-center text-xs font-semibold py-2.5 rounded-[var(--radius)] text-primary-foreground transition-colors cursor-pointer hover:opacity-90"
@@ -1125,7 +1125,7 @@ export function InlineBookingCalendar({
       <div className="space-y-3 py-2" data-testid="inline-booking-reschedule">
         <button
           onClick={() => setStep("pending")}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          className="t-helper flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
           data-testid="btn-back-from-reschedule"
         >
           <ChevronLeft className="w-3 h-3" />
@@ -1180,7 +1180,7 @@ export function InlineBookingCalendar({
 
   return (
     <div className="space-y-3 py-1" data-testid="inline-booking-calendar">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="t-helper flex items-center gap-2">
         <Clock className="w-3.5 h-3.5" />
         <span>{pageInfo?.meetingDuration || 30} min</span>
         <span className="mx-1">·</span>
@@ -1308,7 +1308,7 @@ function SelectedDateSlots({
           <Loader2 className="w-4 h-4 animate-spin text-primary" />
         </div>
       ) : availability?.slots?.length === 0 ? (
-        <p className="text-xs text-muted-foreground text-center py-3">No available times on this date.</p>
+        <p className="t-helper text-center py-3">No available times on this date.</p>
       ) : (
         <div className="grid grid-cols-3 gap-1.5">
           {availability?.slots?.map((slot: any) => (
@@ -1460,10 +1460,10 @@ function ConsultationBookingCard({
           )}
           <div>
             <p className="font-semibold text-sm">{card.providerName}</p>
-            <p className="text-xs text-muted-foreground">Ready to connect</p>
+            <p className="t-helper">Ready to connect</p>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground mb-4">
+        <p className="t-helper mb-4">
           Take the next step in your journey. Schedule a consultation to discuss your options directly with {card.providerName}.
         </p>
         {card.bookingUrl ? (
@@ -1482,14 +1482,14 @@ function ConsultationBookingCard({
               <CalendarCheck className="w-5 h-5" style={{ color: brandColor }} />
             </div>
             <p className="text-sm font-medium">Request Sent!</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               {card.providerName} will reach out to schedule your consultation.
             </p>
           </div>
         ) : callbackExpanded ? (
           <form onSubmit={handleCallbackSubmit} className="space-y-3 mt-1">
             <div className="space-y-1.5">
-              <Label className="text-xs">Your Name</Label>
+              <Label className="t-form-label-sm">Your Name</Label>
               <Input
                 value={callbackName}
                 onChange={e => setCallbackName(e.target.value)}
@@ -1498,7 +1498,7 @@ function ConsultationBookingCard({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Email</Label>
+              <Label className="t-form-label-sm">Email</Label>
               <Input
                 type="email"
                 value={callbackEmail}
@@ -1508,7 +1508,7 @@ function ConsultationBookingCard({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Message (optional)</Label>
+              <Label className="t-form-label-sm">Message (optional)</Label>
               <Textarea
                 value={callbackMessage}
                 onChange={e => setCallbackMessage(e.target.value)}
@@ -1651,7 +1651,7 @@ function BookingOverlay({
           <div className="flex flex-col items-center justify-center h-full p-6 text-center gap-4">
             <CalendarCheck className="w-12 h-12" style={{ color: brandColor }} />
             <h3 className="text-lg font-semibold">Schedule with {card.providerName}</h3>
-            <p className="text-sm text-muted-foreground max-w-md">
+            <p className="t-helper max-w-md">
               Click below to open the scheduling page in a new tab and book your consultation.
             </p>
             <a
@@ -1678,7 +1678,7 @@ function BookingOverlay({
               <CalendarCheck className="w-8 h-8" style={{ color: brandColor }} />
             </div>
             <h3 className="text-lg font-semibold">Request Sent!</h3>
-            <p className="text-sm text-muted-foreground max-w-md">
+            <p className="t-helper max-w-md">
               We've sent your consultation request to {card.providerName}. They'll reach out to you shortly.
             </p>
             <Button
@@ -1693,7 +1693,7 @@ function BookingOverlay({
         ) : (
           <div className="max-w-md mx-auto p-6 space-y-4">
             <h3 className="text-lg font-semibold">Request a Callback</h3>
-            <p className="text-sm text-muted-foreground">
+            <p className="t-helper">
               {card.providerName} doesn't have online booking set up yet. Fill out this form and they'll reach out to schedule your consultation.
             </p>
             <form onSubmit={handleCallbackSubmit} className="space-y-4">
@@ -1961,7 +1961,7 @@ function CountryProgramCard({ card, brandColor, onAction }: { card: MatchCard; b
           {flag ? <span className="text-2xl" aria-hidden>{flag}</span> : <Globe className="w-5 h-5 text-muted-foreground shrink-0" />}
           <div className="min-w-0">
             <h3 className="font-heading text-xl text-foreground leading-tight">{country || agencyName}</h3>
-            <p className="text-xs text-muted-foreground truncate">{agencyName}{country ? " program" : ""}</p>
+            <p className="t-helper truncate">{agencyName}{country ? " program" : ""}</p>
           </div>
         </div>
         <Badge className="bg-secondary text-secondary-foreground border-secondary rounded-full shrink-0">Program</Badge>
@@ -1970,7 +1970,7 @@ function CountryProgramCard({ card, brandColor, onAction }: { card: MatchCard; b
       {/* Combined total */}
       {hasCost && (
         <div className="px-5 pb-3">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Estimated all-in cost</p>
+          <p className="t-micro-label">Estimated all-in cost</p>
           <p className="text-3xl font-heading text-primary mt-1">{totalLabel}</p>
         </div>
       )}
@@ -1984,7 +1984,7 @@ function CountryProgramCard({ card, brandColor, onAction }: { card: MatchCard; b
                 <CheckCircle2 className="w-4 h-4 text-[hsl(var(--brand-success))] shrink-0 mt-0.5" />
                 <div className="min-w-0">
                   <span className="text-foreground">{c.serviceLabel}</span>
-                  {c.providerName && <span className="text-xs text-muted-foreground block truncate">via {c.providerName}</span>}
+                  {c.providerName && <span className="t-helper block truncate">via {c.providerName}</span>}
                 </div>
               </div>
               <span className="tabular-nums text-foreground shrink-0">
@@ -1993,7 +1993,7 @@ function CountryProgramCard({ card, brandColor, onAction }: { card: MatchCard; b
             </div>
           ))}
           {data?.missingServices?.length > 0 && (
-            <p className="text-xs text-muted-foreground italic pt-1">
+            <p className="t-helper italic pt-1">
               {data.missingServices.map((s: string) => s === "egg_donor" ? "egg donor" : s === "ivf_clinic" ? "IVF" : s).join(", ")} pricing available on consultation
             </p>
           )}
@@ -2013,7 +2013,7 @@ function CountryProgramCard({ card, brandColor, onAction }: { card: MatchCard; b
 
       {!hasCost && (
         <div className="px-5 pb-4">
-          <p className="text-sm text-muted-foreground">Get a personalized all-in quote on a free consultation.</p>
+          <p className="t-helper">Get a personalized all-in quote on a free consultation.</p>
         </div>
       )}
 
@@ -2184,8 +2184,8 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
     if (fetchFailed) {
       return (
         <div className="w-full rounded-[var(--container-radius)] overflow-hidden bg-muted border border-border p-4 text-center">
-          <p className="text-sm font-ui text-muted-foreground">{card.name || cardType || "Profile"}</p>
-          <p className="text-xs text-muted-foreground mt-1">Profile unavailable</p>
+          <p className="t-helper font-ui">{card.name || cardType || "Profile"}</p>
+          <p className="t-helper mt-1">Profile unavailable</p>
         </div>
       );
     }
@@ -2247,7 +2247,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
         <div className="w-full h-full flex flex-col items-center justify-center px-6" style={{ backgroundColor: `${brandColor}10` }}>
           <DoctorMonogram name={card.name} size={80} className="mb-4" />
           <h3 className="font-heading text-xl text-center leading-tight">{card.name}</h3>
-          {card.location && <p className="text-muted-foreground text-sm mt-1">{formatLocationDisplay(card.location)}</p>}
+          {card.location && <p className="t-helper mt-1">{formatLocationDisplay(card.location)}</p>}
         </div>
       )}
       {card.photo && (
@@ -2342,8 +2342,8 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
             <Video className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-muted-foreground">Video Call Ended</p>
-            <p className="text-xs text-muted-foreground">This call session has expired</p>
+            <p className="t-helper font-semibold">Video Call Ended</p>
+            <p className="t-helper">This call session has expired</p>
           </div>
         </div>
       );
@@ -2366,7 +2366,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">Join Video Call</p>
-          <p className="text-xs text-muted-foreground">Click to join the video consultation</p>
+          <p className="t-helper">Click to join the video consultation</p>
         </div>
         <Video className="w-4 h-4 text-muted-foreground shrink-0" />
       </button>
@@ -2388,7 +2388,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">Book a Meeting</p>
-          <p className="text-xs text-muted-foreground">{data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works"}</p>
+          <p className="t-helper">{data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works"}</p>
         </div>
         <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0" />
       </a>
@@ -2407,7 +2407,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">Agreement Fully Signed</p>
-          <p className="text-xs text-muted-foreground">Tap to view and download the signed agreement</p>
+          <p className="t-helper">Tap to view and download the signed agreement</p>
         </div>
         <Download className="w-4 h-4 text-muted-foreground shrink-0" />
       </a>
@@ -2513,7 +2513,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
             <p className={`text-sm font-semibold ${isCancelled ? "line-through text-muted-foreground" : ""}`}>
               Cost Sheet from {providerName}
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               {isCancelled
                 ? `Cancelled${cancelledAt ? ` - ${new Date(cancelledAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
                 : `Total quoted cost${sentAt ? ` - ${new Date(sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`}
@@ -2540,7 +2540,7 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
                 {fileName || "Open cost sheet"}
               </a>
             )}
-            {notes && <p className="text-xs text-muted-foreground italic whitespace-pre-line">{notes}</p>}
+            {notes && <p className="t-helper italic whitespace-pre-line">{notes}</p>}
           </div>
         )}
         {/* Parent-only ack footer. Shows Acknowledge + Have questions buttons
@@ -2653,7 +2653,7 @@ export function ParentChatSidePanel({
                   {statusStyle.label}
                 </p>
               ) : profileAvailable === false ? (
-                <p className="text-[10px] text-muted-foreground">No longer available</p>
+                <p className="t-helper">No longer available</p>
               ) : (
                 <p className="text-[10px] text-[hsl(var(--brand-success))] font-medium">Available</p>
               )}
@@ -4576,7 +4576,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center" data-testid="concierge-no-matchmaker">
         <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
         <h2 className="font-display text-xl font-semibold mb-2">No Matchmaker Selected</h2>
-        <p className="text-muted-foreground text-sm mb-4">
+        <p className="t-helper mb-4">
           Please choose an AI guide to start your concierge experience.
         </p>
         <Button onClick={() => navigate("/account/concierge")} data-testid="btn-go-select-matchmaker">
@@ -4649,11 +4649,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   <span className="font-semibold text-sm font-ui truncate" data-testid="parent-chat-subject-label">{subjectInfo.profileLabel || providerChatName}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                  <span className="text-[11px] text-muted-foreground flex-shrink-0">via</span>
+                  <span className="t-helper flex-shrink-0">via</span>
                   {subjectInfo.providerLogo ? (
                     <img src={getPhotoSrc(subjectInfo.providerLogo) || undefined} alt="" className="w-3.5 h-3.5 rounded-sm object-contain flex-shrink-0 bg-white border border-border/40" />
                   ) : null}
-                  <span className="text-[11px] text-muted-foreground truncate">{providerChatName}</span>
+                  <span className="t-helper truncate">{providerChatName}</span>
                 </div>
               </div>
             </div>
@@ -4680,7 +4680,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 <h2 className="text-[17px] font-ui" style={{ fontWeight: 600 }}>
                   {providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}
                 </h2>
-                <p className="text-[13px] font-ui text-muted-foreground truncate" data-testid="chat-subject-label">
+                <p className="t-helper font-ui truncate" data-testid="chat-subject-label">
                   {providerInChat && sessionTitle
                     ? sessionTitle
                     : (selectedMatchmaker?.title || "Your AI Matchmaker")}
@@ -4866,7 +4866,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 if (!prevDate || msgDate !== prevDate) {
                   return (
                     <div className="flex items-center justify-center my-3">
-                      <span className="px-3 py-1 text-[11px] font-medium text-muted-foreground bg-muted/60 rounded-full shadow-sm">
+                      <span className="t-helper px-3 py-1 font-medium bg-muted/60 rounded-full shadow-sm">
                         {chatDateLabel(msg.createdAt)}
                       </span>
                     </div>
@@ -4897,7 +4897,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 <div className={`flex flex-col min-w-0 flex-1 ${alignRight ? "items-end" : "items-start"}`}>
                   {/* Name label */}
                   {!alignRight && (
-                    <span className="text-[11px] font-medium text-muted-foreground mb-0.5" data-testid={`name-label-${i}`}>
+                    <span className="t-helper font-medium mb-0.5" data-testid={`name-label-${i}`}>
                       {msgNameLabel}
                     </span>
                   )}
@@ -5305,7 +5305,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
                 <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
               </div>
-              <span className="text-xs text-muted-foreground">{aiName || "AI Concierge"} is typing</span>
+              <span className="t-helper">{aiName || "AI Concierge"} is typing</span>
             </div>
           )}
           {(externalBookingSlug || conciergeBookingSlug) && (() => {
@@ -5341,7 +5341,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         </div>
 
         {!isOnline && (
-          <div className="flex items-center justify-center gap-2 px-3 py-2 text-xs text-muted-foreground border-t bg-muted/40">
+          <div className="t-helper flex items-center justify-center gap-2 px-3 py-2 border-t bg-muted/40">
             <div className="flex gap-0.5">
               <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "0ms" }} />
               <div className="w-1 h-1 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: "150ms" }} />

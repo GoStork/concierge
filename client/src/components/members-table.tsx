@@ -244,7 +244,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
     <div className="space-y-4">
       {!compact && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">{sortedMembers.length} {context === "parent" ? "member" : "team member"}{sortedMembers.length !== 1 ? "s" : ""}</p>
+          <p className="t-helper">{sortedMembers.length} {context === "parent" ? "member" : "team member"}{sortedMembers.length !== 1 ? "s" : ""}</p>
           {canManage && (
             <Button size="sm" onClick={() => navigate(getAddUrl(context, providerId))} data-testid="button-add-member">
               <Plus className="w-4 h-4 mr-1" /> {getAddLabel(context)}
@@ -295,7 +295,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                           <span data-testid={`text-member-name-${member.id}`}>{member.name || "-"}</span>
                         )}
                         {member.name && <CopyButton value={member.name} testId={`btn-copy-name-${member.id}`} />}
-                        {isSelf && <span className="text-xs text-muted-foreground ml-1">(you)</span>}
+                        {isSelf && <span className="t-helper ml-1">(you)</span>}
                       </div>
                       {member.isDisabled && (
                         <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-member-${member.id}`}>Disabled</span>
@@ -314,7 +314,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                         <Phone className="w-3 h-3 text-muted-foreground" />{formatPhoneDisplay(member.mobileNumber)}
                         <CopyButton value={member.mobileNumber} testId={`btn-copy-mobile-${member.id}`} />
                       </span>
-                    ) : <span className="text-muted-foreground text-sm">-</span>}
+                    ) : <span className="t-helper">-</span>}
                   </TableCell>
                   {hasLocations && (
                     <TableCell className="hidden lg:table-cell" data-testid={`text-member-location-${member.id}`}>
@@ -330,7 +330,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                             ))}
                           </div>
                         ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
+                          <span className="t-helper">-</span>
                         )
                       ) : (
                         member.city || member.state || member.country ? (
@@ -339,7 +339,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                             {[member.city, member.state, member.country].filter(Boolean).join(", ")}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
+                          <span className="t-helper">-</span>
                         )
                       )}
                     </TableCell>
@@ -367,7 +367,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                           <span className="truncate">{member.dailyRoomUrl.split("/").pop()}</span>
                         </a>
                       ) : (
-                        <span className="text-muted-foreground text-sm">-</span>
+                        <span className="t-helper">-</span>
                       )}
                     </TableCell>
                   )}
@@ -388,7 +388,7 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
                           ))}
                         </div>
                       ) : (
-                        <span className="text-muted-foreground text-sm">-</span>
+                        <span className="t-helper">-</span>
                       )}
                     </TableCell>
                   )}

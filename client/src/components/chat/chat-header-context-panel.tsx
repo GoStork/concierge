@@ -121,7 +121,7 @@ export function ChatHeaderContextPanel({
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
         {(matchStatus || extraTopContent) && (
           <div className="rounded-[var(--radius)] bg-secondary/40 border p-4" data-testid="context-panel-match-status-card">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Match Status</p>
+            <p className="t-micro-label mb-2">Match Status</p>
             <div className="flex flex-wrap items-center gap-2">
               {matchStatus && <MatchStatusPill status={matchStatus} />}
               {extraTopContent}
@@ -144,7 +144,7 @@ export function ChatHeaderContextPanel({
 
         {showParentCard && user && (
           <div className="rounded-[var(--radius)] bg-secondary/40 border p-4" data-testid="context-panel-parent-card">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-2">Parent</p>
+            <p className="t-micro-label mb-2">Parent</p>
             <ParentProfileCard user={user} testId="context-panel-parent-profile" />
             {user.id && (
               <button

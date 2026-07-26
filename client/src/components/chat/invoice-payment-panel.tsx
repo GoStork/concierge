@@ -198,7 +198,7 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
         )}
 
         {!error && !invoice && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
+          <div className="t-helper flex items-center gap-2 py-3">
             <Loader2 className="w-4 h-4 animate-spin" />
             Loading invoice...
           </div>
@@ -212,7 +212,7 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
             amount without the bulk. */}
         {invoice && (
           <div className="mb-3 flex justify-between items-baseline border-b pb-2">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">Total due</span>
+            <span className="t-micro-label">Total due</span>
             <span className="text-lg font-bold" style={{ color: brandColor }}>
               {formatCents(invoice.serviceAmount, invoice.currency)}
             </span>
@@ -220,7 +220,7 @@ export function InvoicePaymentPanel({ paymentToken, brandColor, onClose, onSucce
         )}
 
         {invoice && !clientSecret && !error && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
+          <div className="t-helper flex items-center gap-2 py-3">
             <Loader2 className="w-4 h-4 animate-spin" />
             Preparing secure payment...
           </div>
@@ -316,7 +316,7 @@ function EmbeddedPaymentForm({
       <div className="flex flex-col items-center gap-2 py-4">
         <CheckCircle2 className="w-10 h-10" style={{ color: "hsl(var(--brand-success))" }} />
         <p className="text-sm font-semibold">Payment confirmed!</p>
-        <p className="text-xs text-muted-foreground">Updating chat...</p>
+        <p className="t-helper">Updating chat...</p>
       </div>
     );
   }
@@ -340,7 +340,7 @@ function EmbeddedPaymentForm({
           `Pay Securely - ${formatCents(invoice.serviceAmount, invoice.currency)}`
         )}
       </Button>
-      <p className="text-center text-[11px] text-muted-foreground">
+      <p className="t-helper text-center">
         Payments processed securely by Stripe. GoStork never stores your card details.
       </p>
     </form>

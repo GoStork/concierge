@@ -137,7 +137,7 @@ export default function BookingConfirmationPage() {
               <div>
                 <p className="font-ui text-sm">{booking.providerUser?.name || "Provider"}</p>
                 {booking.providerUser?.provider && (
-                  <p className="text-xs text-muted-foreground">{booking.providerUser.provider.name}</p>
+                  <p className="t-helper">{booking.providerUser.provider.name}</p>
                 )}
               </div>
             </div>
@@ -158,13 +158,13 @@ export default function BookingConfirmationPage() {
               </div>
             )}
             {booking.subject && (
-              <p className="text-sm text-muted-foreground">{booking.subject}</p>
+              <p className="t-helper">{booking.subject}</p>
             )}
             {booking.notes && (
-              <p className="text-sm text-muted-foreground italic">{booking.notes}</p>
+              <p className="t-helper italic">{booking.notes}</p>
             )}
             {booking.rescheduledFrom && (
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 Rescheduled from {format(new Date(booking.rescheduledFrom.scheduledAt), "MMM d, yyyy h:mm a")}
               </p>
             )}
@@ -212,7 +212,7 @@ export default function BookingConfirmationPage() {
                       </div>
                       <div className="min-w-0">
                         <span className="font-ui" data-testid={`text-participant-name-${i}`}>{p.label}</span>
-                        {p.sub && <span className="text-muted-foreground ml-1 text-xs">({p.sub})</span>}
+                        {p.sub && <span className="t-helper ml-1">({p.sub})</span>}
                       </div>
                     </div>
                   ))}
@@ -230,7 +230,7 @@ export default function BookingConfirmationPage() {
 
           {isConfirmed && (
             <div className="mb-4">
-              <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1.5" data-testid="text-calendar-invite-note">
+              <p className="t-helper mb-3 flex items-center gap-1.5" data-testid="text-calendar-invite-note">
                 <Check className="w-3.5 h-3.5 text-[hsl(var(--brand-success))] shrink-0" />
                 A calendar invitation has been sent to your email
               </p>
@@ -260,7 +260,7 @@ export default function BookingConfirmationPage() {
           )}
         </div>
 
-        <p className="text-center text-xs text-muted-foreground mt-4">
+        <p className="t-helper text-center mt-4">
           Powered by <span className="font-ui text-primary">{companyName}</span>
         </p>
       </div>

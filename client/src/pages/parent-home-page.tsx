@@ -144,7 +144,7 @@ export default function ParentHomePage() {
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6 pb-24 md:pb-6">
       <div>
         <h1 className="text-2xl font-heading">Welcome back, {firstName}</h1>
-        <p className="text-sm text-muted-foreground mt-1">Here's where your journey stands.</p>
+        <p className="t-helper mt-1">Here's where your journey stands.</p>
       </div>
 
       {/* Top row: the action queue and the upcoming meetings sit side by side
@@ -283,7 +283,7 @@ export default function ParentHomePage() {
               <div key={b.id} className="flex items-center gap-3 py-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{b.subject || `Meeting with ${b.providerUser?.name || "your provider"}`}</p>
-                  <p className="text-xs text-muted-foreground">{fmtWhen(b.scheduledAt)}</p>
+                  <p className="t-helper">{fmtWhen(b.scheduledAt)}</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setSelectedMeeting(b)}>
                   Details
@@ -319,7 +319,7 @@ export default function ParentHomePage() {
           <Card className="p-5 space-y-3" data-testid="home-ip-form-card">
             <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Your Intended Parent Form" />
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">
+              <p className="t-helper">
                 {submitted
                   ? "Submitted and shared with your surrogacy agency. You can review it any time."
                   : readyToSubmit
@@ -339,14 +339,14 @@ export default function ParentHomePage() {
         <Card className="p-5 space-y-3">
           <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Cost Sheets" viewAllTo="/my/cost-sheets" />
           {costSheets.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-2">No cost sheets yet. Providers share their pricing here after your consultations.</p>
+            <p className="t-helper py-2">No cost sheets yet. Providers share their pricing here after your consultations.</p>
           ) : (
             <div className="divide-y">
               {costSheets.slice(0, 3).map((cs: any) => (
                 <div key={cs.id} className="flex items-center gap-3 py-3" style={{ opacity: cs.supersededAt ? 0.65 : 1 }}>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{cs.providerName || "Provider"}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="t-helper">
                       {new Date(cs.createdAt).toLocaleDateString()}
                       {cs.supersededAt ? " - Superseded" : cs.parentAcknowledgedAt ? " - Acknowledged" : " - Awaiting your review"}
                     </p>
@@ -368,11 +368,11 @@ export default function ParentHomePage() {
           <SectionHeader icon={<ReceiptIcon className="w-5 h-5 text-primary" />} title="Invoices" viewAllTo="/my/invoices" />
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total paid</p>
+              <p className="t-micro-label">Total paid</p>
               <p className="text-lg font-heading font-bold">{formatCents(totalPaid)}</p>
             </div>
             <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Awaiting payment</p>
+              <p className="t-micro-label">Awaiting payment</p>
               <p className="text-lg font-heading font-bold">{unpaidInvoices.length}</p>
             </div>
           </div>
@@ -380,7 +380,7 @@ export default function ParentHomePage() {
             <div key={inv.id} className="flex items-center gap-3 py-2 border-t">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{inv.providerName}</p>
-                <p className="text-xs text-muted-foreground">{inv.serviceType} - {new Date(inv.createdAt).toLocaleDateString()}</p>
+                <p className="t-helper">{inv.serviceType} - {new Date(inv.createdAt).toLocaleDateString()}</p>
               </div>
               <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={(inv as any).medicalClearanceStatus} />
               <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.serviceAmount, inv.currency)}</p>

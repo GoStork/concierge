@@ -143,7 +143,7 @@ export function AgreementSidebarSection({
       </div>
 
       {autoStart && generateAgreementMutation.isPending && !partnerRequired ? (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5" data-testid="agreement-sending-status">
+        <div className="t-helper flex items-center gap-2 py-1.5" data-testid="agreement-sending-status">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
           Generating &amp; sending the agreement...
         </div>
@@ -176,7 +176,7 @@ export function AgreementSidebarSection({
       {!readOnly && partnerRequired && (
         <div ref={partnerFormRef} className="mt-3 space-y-3 p-3 rounded-[var(--radius)] border bg-muted/40">
           <p className="text-xs font-medium">Second Signer Required</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="t-helper">
             This agreement requires 2 signers. We have {partnerRequired.parent1.firstName}'s information. Please add the second signer's details.
           </p>
           <div className="text-xs border rounded-[var(--radius)] p-2 bg-background">
@@ -194,7 +194,7 @@ export function AgreementSidebarSection({
                 }}
                 className="rounded border-input accent-primary w-3.5 h-3.5"
               />
-              <span className="text-xs text-muted-foreground">Send to {partnerRequired.parent1.firstName} only - skip partner</span>
+              <span className="t-helper">Send to {partnerRequired.parent1.firstName} only - skip partner</span>
             </label>
           )}
 
@@ -351,7 +351,7 @@ export function AgreementSidebarSection({
               }
               return (
                 <div key={email} className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-muted-foreground truncate">{name}</span>
+                  <span className="t-helper truncate">{name}</span>
                   <span className={`text-[11px] font-medium shrink-0 ${stateColor}`}>{stateLabel}</span>
                 </div>
               );

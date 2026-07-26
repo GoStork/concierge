@@ -70,7 +70,7 @@ function SystemSettingsCard() {
         <Settings className="w-5 h-5 text-primary" />
         <h3 className="font-display text-base font-semibold">Parent Experience Mode</h3>
       </div>
-      <p className="text-xs text-muted-foreground mb-4">
+      <p className="t-helper mb-4">
         Controls what parents see after onboarding.
       </p>
 
@@ -86,14 +86,14 @@ function SystemSettingsCard() {
               <RadioGroupItem value="CONCIERGE_FIRST" className="mt-0.5" data-testid="radio-concierge-first" />
               <div>
                 <span className="text-sm font-medium">AI First</span>
-                <p className="text-xs text-muted-foreground">Direct parents to Eva after onboarding</p>
+                <p className="t-helper">Direct parents to Eva after onboarding</p>
               </div>
             </label>
             <label className="flex items-start gap-3 p-3 rounded-[var(--radius)] border cursor-pointer hover:bg-muted/30 transition-colors">
               <RadioGroupItem value="MARKETPLACE_ONLY" className="mt-0.5" data-testid="radio-marketplace-only" />
               <div>
                 <span className="text-sm font-medium">Marketplace Only</span>
-                <p className="text-xs text-muted-foreground">Skip Eva, direct parents to search</p>
+                <p className="t-helper">Skip Eva, direct parents to search</p>
               </div>
             </label>
           </RadioGroup>
@@ -136,7 +136,7 @@ function RuleForm({
   return (
     <Card className="p-4 space-y-3 border-primary/30">
       <div>
-        <Label className="text-xs font-semibold">IF the user mentions...</Label>
+        <Label className="t-form-label-sm font-semibold">IF the user mentions...</Label>
         <Input
           value={condition}
           onChange={(e) => setCondition(e.target.value)}
@@ -146,7 +146,7 @@ function RuleForm({
         />
       </div>
       <div>
-        <Label className="text-xs font-semibold">THEN guide with...</Label>
+        <Label className="t-form-label-sm font-semibold">THEN guide with...</Label>
         <textarea
           value={guidance}
           onChange={(e) => setGuidance(e.target.value)}
@@ -158,10 +158,10 @@ function RuleForm({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Switch checked={isActive} onCheckedChange={setIsActive} data-testid="switch-rule-active" />
-          <span className="text-xs text-muted-foreground">Active</span>
+          <span className="t-helper">Active</span>
         </div>
         <div className="flex items-center gap-2">
-          <Label className="text-xs">Priority</Label>
+          <Label className="t-form-label-sm">Priority</Label>
           <NumberInput
             allowDecimal={false}
             value={String(sortOrder)}
@@ -258,7 +258,7 @@ function PromptEditorCard() {
         <FileText className="w-5 h-5 text-primary" />
         <div>
           <h3 className="font-display text-base font-semibold">AI Prompt Instructions</h3>
-          <p className="text-xs text-muted-foreground">Edit the system prompt sections that control AI concierge behavior. Changes take effect within 2 minutes.</p>
+          <p className="t-helper">Edit the system prompt sections that control AI concierge behavior. Changes take effect within 2 minutes.</p>
         </div>
       </div>
 
@@ -267,7 +267,7 @@ function PromptEditorCard() {
           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
         </div>
       ) : sections.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-4">Loading prompt sections...</p>
+        <p className="t-helper py-4">Loading prompt sections...</p>
       ) : (
         <div className="space-y-2">
           {sections.map(section => {
@@ -285,12 +285,12 @@ function PromptEditorCard() {
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-semibold text-foreground">{section.label}</span>
                       {section.description && (
-                        <p className="text-xs text-muted-foreground truncate">{section.description}</p>
+                        <p className="t-helper truncate">{section.description}</p>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {!section.isActive && <span className="text-xs text-muted-foreground">Disabled</span>}
+                    {!section.isActive && <span className="t-helper">Disabled</span>}
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </div>
                 </button>
@@ -309,7 +309,7 @@ function PromptEditorCard() {
                           checked={section.isActive}
                           onCheckedChange={() => handleToggle(section)}
                         />
-                        <span className="text-xs text-muted-foreground">
+                        <span className="t-helper">
                           {section.isActive ? "Active" : "Disabled"}
                         </span>
                       </div>
@@ -407,7 +407,7 @@ function IntelligenceRulesCard() {
           <Plus className="w-3.5 h-3.5 mr-1" /> Add Rule
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground mb-4">
+      <p className="t-helper mb-4">
         If/Then rules injected into the AI's system prompt. When a user mentions the condition, the AI follows the guidance.
       </p>
 
@@ -422,12 +422,12 @@ function IntelligenceRulesCard() {
       )}
 
       {rulesQuery.isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+        <div className="t-helper flex items-center gap-2 py-4">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading rules...
         </div>
       ) : rules.length === 0 && !showNewRule ? (
         <div className="p-6 text-center border rounded-[var(--radius)]">
-          <p className="text-sm text-muted-foreground">No expert guidance rules yet. Add rules to steer the AI concierge's responses.</p>
+          <p className="t-helper">No expert guidance rules yet. Add rules to steer the AI concierge's responses.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -452,7 +452,7 @@ function IntelligenceRulesCard() {
                         <span className="font-semibold text-primary">THEN</span>{" "}
                         <span className="text-muted-foreground">{rule.guidance}</span>
                       </p>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                      <div className="t-helper flex items-center gap-3 mt-2">
                         <span>Priority: {rule.sortOrder}</span>
                         <span>{rule.isActive ? "Active" : "Inactive"}</span>
                       </div>
@@ -597,7 +597,7 @@ function KnowledgeBaseCard() {
         <Brain className="w-5 h-5 text-primary" />
         <h3 className="font-display text-base font-semibold">Knowledge Base</h3>
       </div>
-      <p className="text-xs text-muted-foreground mb-5">
+      <p className="t-helper mb-5">
         Upload documents and sync provider websites so the AI concierge can answer questions accurately.
       </p>
 
@@ -612,17 +612,17 @@ function KnowledgeBaseCard() {
               </span>
             )}
           </h4>
-          <p className="text-xs text-muted-foreground mb-3">
+          <p className="t-helper mb-3">
             When the AI concierge can't answer a parent's question, it appears here. Your response will be sent to the parent and taught to the AI.
           </p>
           {pendingWhispers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No unanswered questions right now.</p>
+            <p className="t-helper">No unanswered questions right now.</p>
           ) : (
             <div className="space-y-3">
               {pendingWhispers.map((w: any) => (
                 <div key={w.id} className="p-3 rounded-[var(--radius)] border border-[hsl(var(--brand-warning))]/30 bg-[hsl(var(--brand-warning))]/5" data-testid={`card-whisper-${w.id}`}>
                   <p className="text-sm font-medium mb-1">"{w.questionText}"</p>
-                  <p className="text-xs text-muted-foreground mb-2">
+                  <p className="t-helper mb-2">
                     {new Date(w.createdAt).toLocaleDateString()} · Anonymous prospective parent
                   </p>
                   <textarea
@@ -655,14 +655,14 @@ function KnowledgeBaseCard() {
             Answered Questions
           </h4>
           {answeredWhispers.length === 0 ? (
-            <p className="text-sm text-muted-foreground mt-2">No answered questions yet. Answers you provide above will appear here.</p>
+            <p className="t-helper mt-2">No answered questions yet. Answers you provide above will appear here.</p>
           ) : (
             <div className="space-y-2 mt-3">
               {answeredWhispers.slice(0, 5).map((w: any) => (
                 <div key={w.id} className="p-3 rounded-[var(--radius)] border opacity-70" data-testid={`card-answered-${w.id}`}>
                   <p className="text-xs font-medium">Q: {w.questionText}</p>
-                  <p className="text-xs text-muted-foreground mt-1">A: {w.answerText}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="t-helper mt-1">A: {w.answerText}</p>
+                  <p className="t-helper mt-1">
                     Answered {new Date(w.updatedAt).toLocaleDateString()}
                   </p>
                 </div>
@@ -691,13 +691,13 @@ function KnowledgeBaseCard() {
                 <>
                   <Loader2 className="w-8 h-8 text-primary animate-spin" />
                   <p className="text-sm font-medium">Processing document...</p>
-                  <p className="text-xs text-muted-foreground">Extracting text, generating embeddings</p>
+                  <p className="t-helper">Extracting text, generating embeddings</p>
                 </>
               ) : (
                 <>
                   <Upload className="w-8 h-8 text-muted-foreground" />
                   <p className="text-sm font-medium">Drop a file here or click to upload</p>
-                  <p className="text-xs text-muted-foreground">Supported: PDF, CSV, TXT, DOCX (max 20MB)</p>
+                  <p className="t-helper">Supported: PDF, CSV, TXT, DOCX (max 20MB)</p>
                 </>
               )}
             </div>
@@ -713,12 +713,12 @@ function KnowledgeBaseCard() {
 
           <div className="mt-4">
             {documentsQuery.isLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
+              <div className="t-helper flex items-center gap-2 py-3">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Loading...
               </div>
             ) : docs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
+              <p className="t-helper">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
             ) : (
               <div className="space-y-2">
                 {docs.map((doc: any, i: number) => (
@@ -733,7 +733,7 @@ function KnowledgeBaseCard() {
                         <p className="text-sm font-medium truncate">
                           {doc.sourceFileName || doc.sourceUrl || "Website Content"}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="t-helper">
                           {doc.chunk_count} chunks · {doc.sourceType}
                           {doc.createdAt ? ` · ${new Date(doc.createdAt).toLocaleDateString()}` : ""}
                         </p>
@@ -762,7 +762,7 @@ function KnowledgeBaseCard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Bulk Provider Website Sync</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="t-helper mt-0.5">
                 Crawl all provider websites and update the AI knowledge base. Rate-limited to 1 request/second.
               </p>
             </div>
@@ -792,7 +792,7 @@ function KnowledgeBaseCard() {
                 </div>
               )}
               {bulkSyncResult.errors?.length > 0 && (
-                <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                <div className="t-helper mt-2 space-y-0.5">
                   {bulkSyncResult.errors.map((e: string, i: number) => (
                     <p key={i}>• {e}</p>
                   ))}
@@ -918,35 +918,35 @@ export default function AdminConciergePage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Name *</Label>
+            <Label >Name *</Label>
             <Input placeholder="e.g. Ariel" value={editForm.name || ""} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} data-testid="input-matchmaker-name" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Title *</Label>
+            <Label >Title *</Label>
             <Input placeholder="e.g. The Warm Guide" value={editForm.title || ""} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} data-testid="input-matchmaker-title" />
           </div>
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-sm font-medium">Description *</Label>
+          <Label >Description *</Label>
           <Textarea placeholder="Brief description of this matchmaker's personality..." value={editForm.description || ""} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={2} data-testid="input-matchmaker-description" />
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-sm font-medium">Personality Prompt *</Label>
+          <Label >Personality Prompt *</Label>
           <Textarea placeholder="System prompt that defines the AI's personality and behavior..." value={editForm.personalityPrompt || ""} onChange={(e) => setEditForm({ ...editForm, personalityPrompt: e.target.value })} rows={4} className="font-mono text-xs" data-testid="input-matchmaker-prompt" />
-          <p className="text-xs text-muted-foreground">This prompt shapes how the AI persona communicates. It is never visible to parents.</p>
+          <p className="t-helper">This prompt shapes how the AI persona communicates. It is never visible to parents.</p>
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-sm font-medium">Initial Greeting</Label>
+          <Label >Initial Greeting</Label>
           <Textarea placeholder="The first message parents see when they select this matchmaker..." value={editForm.initialGreeting || ""} onChange={(e) => setEditForm({ ...editForm, initialGreeting: e.target.value })} rows={2} data-testid="input-matchmaker-greeting" />
-          <p className="text-xs text-muted-foreground">Optional. Displayed as the opening message when a parent selects this persona.</p>
+          <p className="t-helper">Optional. Displayed as the opening message when a parent selects this persona.</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Avatar</Label>
+            <Label >Avatar</Label>
             <div className="flex items-center gap-3">
               {editForm.avatarUrl && (
                 <img src={getPhotoSrc(editForm.avatarUrl) || undefined} alt={editForm.name || "Avatar"} className="w-10 h-10 rounded-full object-cover border" data-testid="img-matchmaker-avatar-preview" />
@@ -975,10 +975,10 @@ export default function AdminConciergePage() {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Status</Label>
+            <Label >Status</Label>
             <div className="flex items-center gap-2 pt-1">
               <Switch checked={editForm.isActive !== false} onCheckedChange={(checked) => setEditForm({ ...editForm, isActive: checked })} data-testid="switch-matchmaker-active" />
-              <span className="text-sm text-muted-foreground">{editForm.isActive !== false ? "Active - visible to parents" : "Inactive - hidden from parents"}</span>
+              <span className="t-helper">{editForm.isActive !== false ? "Active - visible to parents" : "Inactive - hidden from parents"}</span>
             </div>
           </div>
         </div>
@@ -1012,7 +1012,7 @@ export default function AdminConciergePage() {
         </div>
 
         {matchmakers.length > 0 && (
-          <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4" data-testid="matchmaker-stats">
+          <div className="t-helper flex items-center gap-4 mb-4" data-testid="matchmaker-stats">
             <span>{matchmakers.length} persona{matchmakers.length !== 1 ? "s" : ""} total</span>
             <span className="text-[hsl(var(--brand-success))]">{activeCount} active</span>
             {matchmakers.length - activeCount > 0 && (
@@ -1047,12 +1047,12 @@ export default function AdminConciergePage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{m.name}</span>
-                      <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded">{m.title}</span>
+                      <span className="t-helper px-1.5 py-0.5 bg-muted rounded">{m.title}</span>
                       {!m.isActive && (
                         <span className="text-xs text-[hsl(var(--brand-warning))] px-1.5 py-0.5 bg-[hsl(var(--brand-warning))]/10 rounded" data-testid={`badge-inactive-${m.id}`}>Inactive</span>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{m.description}</p>
+                    <p className="t-helper line-clamp-1 mt-0.5">{m.description}</p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <Switch checked={m.isActive} onCheckedChange={(checked) => toggleActiveMutation.mutate({ id: m.id, isActive: checked })} data-testid={`switch-active-${m.id}`} />
@@ -1072,19 +1072,19 @@ export default function AdminConciergePage() {
                   <div className="px-4 pb-4 pt-0 border-t space-y-3" data-testid={`matchmaker-details-${m.id}`}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        <div className="t-micro-label flex items-center gap-1.5">
                           <Bot className="w-3.5 h-3.5" /> Personality Prompt
                         </div>
                         <p className="text-sm bg-muted/50 rounded-[var(--radius)] p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">{m.personalityPrompt}</p>
                       </div>
                       <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        <div className="t-micro-label flex items-center gap-1.5">
                           <MessageSquare className="w-3.5 h-3.5" /> Initial Greeting
                         </div>
                         {m.initialGreeting ? (
                           <p className="text-sm bg-muted/50 rounded-[var(--radius)] p-3 leading-relaxed">{m.initialGreeting}</p>
                         ) : (
-                          <p className="text-sm text-muted-foreground italic p-3">No custom greeting set</p>
+                          <p className="t-helper italic p-3">No custom greeting set</p>
                         )}
                       </div>
                     </div>
@@ -1098,7 +1098,7 @@ export default function AdminConciergePage() {
         {!matchmakersQuery.isLoading && matchmakers.length === 0 && !showAddForm && (
           <div className="rounded-[var(--radius)] p-12 text-center border" data-testid="matchmakers-empty">
             <Sparkles className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">No matchmaker personas configured yet.</p>
+            <p className="t-helper">No matchmaker personas configured yet.</p>
             <Button size="sm" className="mt-4" onClick={() => { setShowAddForm(true); setEditForm({ isActive: true }); }} data-testid="btn-add-first-matchmaker">
               <Plus className="w-4 h-4 mr-1.5" /> Create Your First Persona
             </Button>
@@ -1193,7 +1193,7 @@ function PrepGuideSlot({ slot }: { slot: (typeof PREP_GUIDE_SLOTS)[number] }) {
     <div className="rounded-lg border p-4 flex flex-wrap items-center justify-between gap-3 bg-secondary/30">
       <div className="min-w-0">
         <p className="font-medium text-sm">{slot.label}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{slot.description}</p>
+        <p className="t-helper mt-0.5">{slot.description}</p>
         {asset ? (
           <p className="text-xs mt-1.5">
             <a
@@ -1242,7 +1242,7 @@ function ParentPrepGuidesCard() {
     <Card className="p-6 space-y-4">
       <div>
         <h3 className="font-heading font-semibold text-lg">Parent Prep Guides</h3>
-        <p className="text-sm text-muted-foreground mt-0.5">
+        <p className="t-helper mt-0.5">
           Documents Eva automatically sends to parents at key journey moments.
         </p>
       </div>

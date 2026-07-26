@@ -133,7 +133,7 @@ export default function DocumentsTab() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-heading">Documents & Agreements</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="t-helper mt-1">
           Upload your agreement template{multiService ? "s" : ""} and manage contracts sent to parents.
         </p>
       </div>
@@ -214,7 +214,7 @@ export default function DocumentsTab() {
           <Zap className="w-5 h-5 text-primary" />
           <h2 className="text-lg font-heading">Agreement Automation</h2>
         </div>
-        <p className="text-sm text-muted-foreground">
+        <p className="t-helper">
           Choose what happens when a parent's deposit payment clears.
         </p>
         <div className="space-y-2">
@@ -239,7 +239,7 @@ export default function DocumentsTab() {
               />
               <span>
                 <span className="block text-sm font-medium">{opt.label}</span>
-                <span className="block text-xs text-muted-foreground mt-0.5">{opt.description}</span>
+                <span className="t-helper block mt-0.5">{opt.description}</span>
               </span>
             </label>
           ))}

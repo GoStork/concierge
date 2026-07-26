@@ -119,7 +119,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
         <Sparkles className="w-5 h-5 text-accent" />
         <h2 className="text-xl font-heading text-foreground">{isPerformance ? "Performance" : "Profile Sponsorship"}</h2>
       </div>
-      <p className="text-sm text-muted-foreground -mt-4">
+      <p className="t-helper -mt-4">
         {isPerformance
           ? "Engagement and conversions across all your marketplace profiles - impressions, clicks, saves, inquiries and consultations."
           : 'Boost your profiles to the top of the marketplace with a "Sponsored" badge and priority in the AI concierge.'}
@@ -187,9 +187,9 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent"><TrendingUp className="w-6 h-6" /></div>
             <div className="min-w-0">
               <div className="text-2xl font-heading text-foreground">
-                {a.lift.multiple.toFixed(1)}× more impressions <span className="text-base font-body text-muted-foreground">than your non-sponsored profiles</span>
+                {a.lift.multiple.toFixed(1)}× more impressions <span className="t-helper font-body">than your non-sponsored profiles</span>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="t-helper">
                 Your sponsored profiles average <strong className="text-foreground">{a.lift.sponsoredAvg.toFixed(1)}</strong> views each vs <strong className="text-foreground">{a.lift.baselineAvg.toFixed(1)}</strong> for your {a.lift.baselineCount} non-sponsored profiles, this period.
               </p>
             </div>
@@ -217,24 +217,24 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
             <div className="flex items-center gap-x-8 gap-y-3 flex-wrap">
               <div>
                 <div className="text-2xl font-heading text-foreground">#{a.ranking.avgPosition}</div>
-                <div className="text-xs text-muted-foreground">avg position (boosted)</div>
+                <div className="t-helper">avg position (boosted)</div>
               </div>
-              <span className="text-muted-foreground text-sm">vs</span>
+              <span className="t-helper">vs</span>
               <div>
                 <div className="text-2xl font-heading text-muted-foreground">#{a.ranking.avgOrganicPosition}</div>
-                <div className="text-xs text-muted-foreground">organic (without boost)</div>
+                <div className="t-helper">organic (without boost)</div>
               </div>
               <div className="h-8 w-px bg-border hidden sm:block" />
               <div>
                 <div className="text-2xl font-heading text-[hsl(var(--brand-success))]">▲ {a.ranking.lift}</div>
-                <div className="text-xs text-muted-foreground">spots higher</div>
+                <div className="t-helper">spots higher</div>
               </div>
               <div>
                 <div className="text-2xl font-heading text-foreground">{a.ranking.topFiveRate}%</div>
-                <div className="text-xs text-muted-foreground">in the top 5</div>
+                <div className="t-helper">in the top 5</div>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-3">
+            <p className="t-helper mt-3">
               Sponsorship moves your {rankingNouns(a.ranking.types)} profiles about <strong className="text-foreground">{a.ranking.lift} spots</strong> up the marketplace deck (from ~#{a.ranking.avgOrganicPosition} organically to ~#{a.ranking.avgPosition}), across {a.ranking.samples} periodic ranking checks this period.
             </p>
           </CardContent>
@@ -260,7 +260,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
           <CardContent className="p-4 flex items-center justify-between gap-4 flex-wrap" data-testid="cost-strip">
             <div className="flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Monthly spend</span>
+              <span className="t-helper">Monthly spend</span>
               <span className="font-heading text-foreground text-lg">{formatMoneyCents(kpis.monthlySpendCents)}</span>
             </div>
             <div className="flex gap-5 flex-wrap">
@@ -274,7 +274,7 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
         </Card>
       )}
 
-      <p className="text-xs text-muted-foreground -mt-3">
+      <p className="t-helper -mt-3">
         {scope === "all"
           ? "Engagement across every marketplace profile you own. Impressions count every time a profile is shown (with unique parents reached shown beneath); clicks are click-throughs that opened the full profile; saves, inquiries and consultations are deeper engagement. Hot leads and consultations are account-level signals. Switch to \"Sponsored only\" to see your sponsorship ROI (lift, ranking, cost-per-result)."
           : 'All metrics are measured only while you have an active sponsorship. Impressions count every time a sponsored profile is shown (with unique parents reached shown beneath); clicks are click-throughs that opened the full profile; saves, inquiries and consultations are deeper engagement on your sponsored profiles. Hot leads are an account-level signal during the sponsored period. Lift compares your sponsored donor/surrogate profiles against your own non-sponsored ones.'}
@@ -379,7 +379,7 @@ function KpiCard({ icon, label, value, hint, delta }: { icon: React.ReactNode; l
   return (
     <Card>
       <CardContent className="p-3">
-        <div className="flex items-center gap-1.5 text-muted-foreground text-xs mb-1">{icon}<span>{label}</span></div>
+        <div className="t-helper flex items-center gap-1.5 mb-1">{icon}<span>{label}</span></div>
         <div className="flex items-baseline gap-1.5">
           <div className="text-2xl font-heading text-foreground">{value}</div>
           {pct != null && (
@@ -388,7 +388,7 @@ function KpiCard({ icon, label, value, hint, delta }: { icon: React.ReactNode; l
             </span>
           )}
         </div>
-        {hint && <div className="text-[11px] text-muted-foreground">{hint}</div>}
+        {hint && <div className="t-helper">{hint}</div>}
       </CardContent>
     </Card>
   );
@@ -443,7 +443,7 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
       <CardContent>
         {byType.length > 1 && (
           <div className="mb-4 space-y-1.5">
-            <div className="text-xs text-muted-foreground">Impressions by type</div>
+            <div className="t-helper">Impressions by type</div>
             {byType.map((t) => (
               <div key={t.type} className="flex items-center gap-2 text-xs">
                 <span className="w-28 shrink-0 truncate">{t.type}</span>
@@ -493,7 +493,7 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
             })}
           </TableBody>
         </Table>
-        <p className="text-xs text-muted-foreground mt-3">
+        <p className="t-helper mt-3">
           Hot leads aren't shown per profile - a hot lead is an account-level signal (a high-intent parent for your whole account, not tied to one profile). See the Hot leads KPI above.
         </p>
       </CardContent>
@@ -510,7 +510,7 @@ function rankingNouns(types?: string[]): string {
 
 /** Tiny inline impressions sparkline (no chart lib) for a per-profile row. */
 function Sparkline({ data }: { data?: number[] }) {
-  if (!data || data.length < 2 || data.every((v) => v === 0)) return <span className="text-xs text-muted-foreground">-</span>;
+  if (!data || data.length < 2 || data.every((v) => v === 0)) return <span className="t-helper">-</span>;
   const w = 64, h = 18, max = Math.max(...data, 1);
   const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - (v / max) * (h - 2) - 1}`).join(" ");
   return (
@@ -536,7 +536,7 @@ function downloadCsv(rows: any[], filename: string) {
 }
 
 function EmptyHint({ text }: { text: string }) {
-  return <div className="h-full flex items-center justify-center text-sm text-muted-foreground">{text}</div>;
+  return <div className="t-helper h-full flex items-center justify-center">{text}</div>;
 }
 
 /** apiRequest throws errors like `400: {"message":"..."}`; surface just the message. */
@@ -666,7 +666,7 @@ function PlansSection({ plans, isAdmin, providerId, base, onChanged }: {
         </div>
 
         {savedCard?.last4 && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="t-helper flex items-center gap-2">
             <CreditCard className="w-4 h-4" />
             <span>Paying with your saved card {savedCard.brand ? `${savedCard.brand} ` : ""}••••{savedCard.last4} - no need to re-enter it.</span>
           </div>
@@ -718,9 +718,9 @@ function PlanCard({ plan, busy, isAdmin, onCharge, onComp }: { plan: any; busy: 
     <div className="rounded-xl border border-border p-4 flex flex-col gap-2 bg-card" data-testid={`plan-${plan.tierKey}`}>
       <div className="flex items-baseline justify-between">
         <span className="font-heading text-foreground">{plan.displayName}</span>
-        <span className="font-ui text-foreground">{formatMoneyCents(plan.priceCents, plan.currency)}<span className="text-xs text-muted-foreground">/mo</span></span>
+        <span className="font-ui text-foreground">{formatMoneyCents(plan.priceCents, plan.currency)}<span className="t-helper">/mo</span></span>
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p className="t-helper">
         {plan.productType === "SLOT_BUNDLE" ? `Up to ${plan.slotCount} sponsored profiles` : "Boosts your top-level profile"}
       </p>
       <div className="flex gap-2 mt-auto pt-1">
@@ -735,7 +735,7 @@ function PlanCard({ plan, busy, isAdmin, onCharge, onComp }: { plan: any; busy: 
       </div>
       {isAdmin && comping && (
         <div className="mt-2 pt-2 border-t border-border flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground">Free for</span>
+          <span className="t-helper">Free for</span>
           <select value={months} onChange={(e) => setMonths(parseInt(e.target.value, 10))} className="h-8 rounded-md border border-input bg-background px-2 text-sm" data-testid={`comp-months-${plan.tierKey}`}>
             {[1, 2, 3, 6, 12].map((m) => <option key={m} value={m}>{m} month{m > 1 ? "s" : ""}</option>)}
           </select>
@@ -752,7 +752,7 @@ function PlanCard({ plan, busy, isAdmin, onCharge, onComp }: { plan: any; busy: 
 function SponsorshipsTable({ sponsorships, loading, isAdmin, providerId, base, onChanged }: {
   sponsorships: any[]; loading: boolean; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void;
 }) {
-  if (loading) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>;
+  if (loading) return <div className="t-helper flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>;
   // Show current/actionable sponsorships plus any that were ever activated (real
   // subscriptions). Hide discarded pendings that never activated, so the table
   // stays clean. Server already orders newest-first.
@@ -880,18 +880,18 @@ function SponsorshipTableRow({ s, isAdmin, providerId, base, onChanged }: { s: a
           <div className="font-medium text-foreground">{s.plan?.displayName}</div>
           <div className="flex items-center gap-2 mt-0.5">
             {s.isComped && <Badge variant="secondary" className="text-[11px]"><Gift className="w-3 h-3 mr-1" />Complimentary</Badge>}
-            {isBundle && <span className="text-xs text-muted-foreground">{s.slotsUsed}/{s.slotsTotal} slots</span>}
+            {isBundle && <span className="t-helper">{s.slotsUsed}/{s.slotsTotal} slots</span>}
           </div>
         </TableCell>
         <TableCell><Badge className={STATUS_STYLES[s.status] || ""}>{String(s.status).replace("_", " ")}</Badge></TableCell>
         <TableCell className="text-xs">
           {isAutoRenew ? "Auto-renew" : "One month"}
-          {isAutoRenew && s.canceledAt && <div className="text-[11px] text-muted-foreground">(auto-renew off)</div>}
+          {isAutoRenew && s.canceledAt && <div className="t-helper">(auto-renew off)</div>}
         </TableCell>
         <TableCell className="text-right">{s.isComped ? "Free" : formatMoneyCents(s.priceCentsSnapshot ?? s.priceCents)}</TableCell>
-        <TableCell className="text-xs text-muted-foreground">{period || "-"}</TableCell>
+        <TableCell className="t-helper">{period || "-"}</TableCell>
         <TableCell className="text-right">
-          {hasActions ? <div className="flex gap-2 justify-end flex-wrap">{actions}</div> : <span className="text-xs text-muted-foreground">-</span>}
+          {hasActions ? <div className="flex gap-2 justify-end flex-wrap">{actions}</div> : <span className="t-helper">-</span>}
         </TableCell>
       </TableRow>
       {payment && (
@@ -958,8 +958,8 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
 
       {slotsFull && <p className="text-xs text-[hsl(var(--brand-warning))]">All slots filled. Remove one to add another.</p>}
       <div className="max-h-56 overflow-y-auto rounded-lg border border-border divide-y divide-border">
-        {eligibleQ.isLoading && <div className="p-3 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Loading...</div>}
-        {eligibleQ.data?.length === 0 && <div className="p-3 text-sm text-muted-foreground">No profiles of this type.</div>}
+        {eligibleQ.isLoading && <div className="t-helper p-3"><Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Loading...</div>}
+        {eligibleQ.data?.length === 0 && <div className="t-helper p-3">No profiles of this type.</div>}
         {(eligibleQ.data || []).map((e: any) => {
           const filled = filledIds.has(e.id);
           return (
@@ -974,7 +974,7 @@ function SlotManager({ s, isAdmin, providerId, base, onChanged }: { s: any; isAd
                   <div className="text-sm font-medium text-foreground truncate flex items-center gap-1">
                     {e.displayName}{e.sponsored && <Sparkles className="w-3 h-3 text-accent shrink-0" />}
                   </div>
-                  {e.subtitle && <div className="text-xs text-muted-foreground truncate">{e.subtitle}</div>}
+                  {e.subtitle && <div className="t-helper truncate">{e.subtitle}</div>}
                 </div>
               </div>
               {filled ? (

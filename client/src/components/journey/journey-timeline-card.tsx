@@ -127,7 +127,7 @@ function StageRow({ stage, isLast }: { stage: StageOut; isLast: boolean }) {
           {stage.label}
           {stage.optional && stage.state === "upcoming" && <span className="text-muted-foreground font-normal"> (if needed)</span>}
         </p>
-        {stage.reachedAt && <p className="text-[10px] text-muted-foreground leading-3">{fmtDate(stage.reachedAt)}</p>}
+        {stage.reachedAt && <p className="t-helper leading-3">{fmtDate(stage.reachedAt)}</p>}
       </div>
     </div>
   );
@@ -282,7 +282,7 @@ export function JourneyTimelineCard({
   }
   const journeys = timelineQuery.data?.journeys || [];
   if (journeys.length === 0) {
-    return <p className="text-xs text-muted-foreground" data-testid={`${testId}-empty`}>No journey activity yet.</p>;
+    return <p className="t-helper" data-testid={`${testId}-empty`}>No journey activity yet.</p>;
   }
 
   if (variant === "home") {
@@ -321,7 +321,7 @@ export function JourneyTimelineCard({
         <div>
           <button
             type="button"
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            className="t-helper inline-flex items-center gap-1 hover:text-foreground"
             onClick={() => setEventsOpen((v) => !v)}
             data-testid="journey-events-toggle"
           >
@@ -334,11 +334,11 @@ export function JourneyTimelineCard({
               {(eventsQuery.data?.events || []).map((ev) => (
                 <div key={ev.id} className="flex items-baseline justify-between gap-2">
                   <span className="text-[11px] text-foreground/80 font-ui">{EVENT_LABELS[ev.eventType] || ev.eventType.toLowerCase().replace(/_/g, " ")}</span>
-                  <span className="text-[10px] text-muted-foreground shrink-0">{fmtDate(ev.createdAt)}</span>
+                  <span className="t-helper shrink-0">{fmtDate(ev.createdAt)}</span>
                 </div>
               ))}
               {eventsQuery.data && eventsQuery.data.events.length === 0 && (
-                <p className="text-[11px] text-muted-foreground">No activity recorded yet.</p>
+                <p className="t-helper">No activity recorded yet.</p>
               )}
             </div>
           )}

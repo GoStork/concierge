@@ -98,7 +98,7 @@ export function InvoiceCard({ data, isParent = true, onPayInline, onEditResend, 
       {/* Header */}
       <div className="px-4 py-3 flex items-center justify-between border-b" style={{ background: "hsl(var(--primary) / 0.05)" }}>
         <div>
-          <p className="text-xs text-muted-foreground">Payment Request</p>
+          <p className="t-helper">Payment Request</p>
           <p className="font-semibold text-sm mt-0.5">{data.providerName}</p>
         </div>
         <InvoiceStatusBadge status={data.status} />
@@ -114,7 +114,7 @@ export function InvoiceCard({ data, isParent = true, onPayInline, onEditResend, 
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{lineLabel(li)}</p>
                     {li.description && (
-                      <p className="text-xs text-muted-foreground truncate">{li.description}</p>
+                      <p className="t-helper truncate">{li.description}</p>
                     )}
                   </div>
                   <span className="text-sm font-medium shrink-0">
@@ -132,13 +132,13 @@ export function InvoiceCard({ data, isParent = true, onPayInline, onEditResend, 
           </>
         ) : (
           <div className="flex justify-between items-center">
-            <span className="text-sm text-muted-foreground">{data.serviceType}</span>
+            <span className="t-helper">{data.serviceType}</span>
             <span className="font-heading font-bold text-lg">{formatCents(data.serviceAmount, data.currency)}</span>
           </div>
         )}
 
         {data.description && (
-          <p className="text-xs text-muted-foreground">{data.description}</p>
+          <p className="t-helper">{data.description}</p>
         )}
 
         {/* Countdown */}

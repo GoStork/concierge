@@ -170,26 +170,26 @@ export function ParentProfileCard({ user, isOnline, testId = "parent-profile-car
         </div>
       </div>
       <div className="space-y-1.5 mb-3">
-        <div className="text-sm truncate"><span className="text-muted-foreground">Email:</span> {user.email}</div>
+        <div className="t-micro-value truncate"><span className="t-micro-label">Email</span> {user.email}</div>
         {(user.city || user.state) && (
-          <div className="text-sm"><span className="text-muted-foreground">Location:</span> {[user.city, user.state].filter(Boolean).join(", ")}</div>
+          <div className="t-micro-value"><span className="t-micro-label">Location</span> {[user.city, user.state].filter(Boolean).join(", ")}</div>
         )}
-        {basics.phone && <div className="text-sm"><span className="text-muted-foreground">Phone:</span> {basics.phone}</div>}
-        {basics.age && <div className="text-sm"><span className="text-muted-foreground">Age:</span> {basics.age}</div>}
+        {basics.phone && <div className="t-micro-value"><span className="t-micro-label">Phone</span> {basics.phone}</div>}
+        {basics.age && <div className="t-micro-value"><span className="t-micro-label">Age</span> {basics.age}</div>}
         {basics.relationshipStatus && (
-          <div className="text-sm"><span className="text-muted-foreground">Relationship Status:</span> {basics.relationshipStatus}</div>
+          <div className="t-micro-value"><span className="t-micro-label">Relationship status</span> {basics.relationshipStatus}</div>
         )}
-        {basics.partnerName && <div className="text-sm"><span className="text-muted-foreground">Partner Name:</span> {basics.partnerName}</div>}
-        {basics.partnerAge && <div className="text-sm"><span className="text-muted-foreground">Partner's Age:</span> {basics.partnerAge}</div>}
+        {basics.partnerName && <div className="t-micro-value"><span className="t-micro-label">Partner name</span> {basics.partnerName}</div>}
+        {basics.partnerAge && <div className="t-micro-value"><span className="t-micro-label">Partner's age</span> {basics.partnerAge}</div>}
       </div>
 
       {sections.map((section) => (
         <div key={section.title} className="border-t pt-3 mt-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">{section.title}</p>
+          <p className="t-micro-label mb-2">{section.title}</p>
           <div className="space-y-1.5">
             {section.rows.map((row) => (
-              <div key={row.label} className="text-sm">
-                <span className="text-muted-foreground">{row.label}:</span>{" "}
+              <div key={row.label} className="t-micro-value">
+                <span className="t-micro-label">{row.label}</span>{" "}
                 <span>{row.value}</span>
               </div>
             ))}

@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ProfileSection } from "@/components/ui/profile-section";
+import {
+  Field, FieldValue, FieldGrid, MicroField,
+  PromptBlock, PromptStack, PromptEyebrow, PromptAnswer,
+  AttributeChip, ChipRow, toChipParts,
+} from "@/components/ui/field";
 import { DonorPhotoFallback } from "@/components/marketplace/donor-photo-fallback";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAppDispatch, useAppSelector } from "@/store";
@@ -36,6 +41,18 @@ import {
 
 function isEmbedVideo(url: string): boolean {
   return /vimeo\.com|youtube\.com|youtu\.be/i.test(url);
+}
+
+/**
+ * True when there is an in-app history entry to go back to. React Router v6
+ * stamps an incrementing `idx` onto history.state, so idx > 0 means we pushed
+ * our way here. On a deep link / hard refresh / shared URL idx is 0 (or absent)
+ * and `navigate(-1)` is a silent no-op - the caller must send the user
+ * somewhere explicit instead.
+ */
+function hasInAppHistory(): boolean {
+  const idx = (window.history.state as { idx?: number } | null)?.idx;
+  return typeof idx === "number" && idx > 0;
 }
 
 function isDirectVideo(url: string): boolean {
@@ -303,6 +320,16 @@ const HIDDEN_PROFILE_KEYS = new Set([
 ]);
 
 const AGENCY_COMMENT_PATTERN = /^(agency\s*(comment|recommendation|note)s?|recommendation\s*points?)$/i;
+
+/**
+ * Sections that are a person talking, not a data table. Every entry in these
+ * renders as a PromptBlock (small accent eyebrow + large prose answer) no
+ * matter how short the answer is - the question is scaffolding, the answer is
+ * her voice. Everything else renders as a Field pair, where the value is the
+ * thing being scanned for.
+ */
+const PERSONALITY_SECTION_PATTERN =
+  /(things\s*about\s*me|about\s*me|letter|personal|interests|hobbies|favorites?|my\s*story|why\s*i|motivation|self\s*description|in\s*her\s*own\s*words|message\s*to)/i;
 
 const IMAGE_KEYS = new Set([
   "All Photos", "Genetic Report Images",
@@ -657,7 +684,8 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
     } else {
       const isAdmin = window.location.pathname.startsWith("/admin/");
       if (!isAdmin) {
-        navigate(-1);
+        if (hasInAppHistory()) navigate(-1);
+        else navigate("/marketplace", { replace: true });
       } else {
         navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
       }
@@ -866,7 +894,9 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
               marginLeft: "calc(50% - 50vw)",
               marginRight: "calc(50% - 50vw)",
               paddingLeft: "calc(50vw - 50% + 1rem)",
-              paddingRight: "calc(50vw - 50% + 1rem)",
+              // Reserve the lane the floating close button (rendered by the page
+              // wrapper, outside this animated card) occupies.
+              paddingRight: "calc(50vw - 50% + 3.75rem)",
             }}
             data-testid="mobile-detail-header"
           >
@@ -889,14 +919,6 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                 )}
               </div>
             </div>
-            <button
-              onClick={handleBack}
-              className="shrink-0 w-10 h-10 rounded-full bg-[hsl(var(--brand-success))] hover:brightness-110 shadow-lg flex items-center justify-center transition-all"
-              data-testid="button-mobile-back-down"
-              aria-label="Back to marketplace"
-            >
-              <ArrowDown className="w-5 h-5 text-white" strokeWidth={2.5} />
-            </button>
           </motion.div>
         </>
       )}
@@ -962,7 +984,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
       {fromChat && matchReasons.length > 0 && (
         <Card className="overflow-hidden border-primary/20 bg-primary/5" data-testid="section-match-reasons">
           <div className="p-4 space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Why This Match</p>
+            <p className="t-micro-label">Why This Match</p>
             {matchReasons.map((reason, i) => (
               <div key={i} className="flex items-start gap-2 text-sm">
                 <Check className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
@@ -986,10 +1008,12 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
               }
               return mandatoryFields;
             })().map(({ label, value }) => (
-              <div key={label} data-testid={`field-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-                <p className="text-base font-ui text-foreground">{label}</p>
-                <p className="text-base text-foreground">{value}</p>
-              </div>
+              <Field
+                key={label}
+                label={label}
+                value={value}
+                data-testid={`field-${label.toLowerCase().replace(/\s+/g, "-")}`}
+              />
             ))}
           </div>
       </ProfileSection>
@@ -1169,14 +1193,14 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
             return (
               <ProfileSection key="letter-to-intended-parents" title="Letter to Intended Parents" data-testid="section-letter-to-intended-parents">
                   {letterTitle && <p className="text-sm font-semibold text-foreground mb-2">{letterTitle}</p>}
-                  <p className="text-base leading-body text-foreground whitespace-pre-line">{letterContent}</p>
+                  <p className="t-prompt-answer whitespace-pre-line">{letterContent}</p>
               </ProfileSection>
             );
           }
           if (sectionName === "__AGENCY_COMMENTS__" && agencyCommentContent) {
             return (
               <ProfileSection key="agency-comments" title="Agency Comments" data-testid="section-agency-comments">
-                  <p className="text-base leading-body text-foreground whitespace-pre-line">{agencyCommentContent}</p>
+                  <p className="t-prompt-answer whitespace-pre-line">{agencyCommentContent}</p>
               </ProfileSection>
             );
           }
@@ -1200,15 +1224,15 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                         const otherCols = columns.filter((c) => c !== headerCol);
                         return (
                           <div key={ri} className="rounded-[var(--radius)] border border-border/60 bg-secondary/30 p-3">
-                            <p className="text-sm font-ui font-heading text-foreground mb-2">{headerValue}</p>
+                            <p className="t-field-value font-heading mb-2">{headerValue}</p>
                             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                               {otherCols.map((col) => {
                                 const val = String(row[col] ?? "").trim();
                                 if (!val || val === "-") return null;
                                 return (
                                   <div key={col} className="min-w-0">
-                                    <p className="text-[11px] font-ui text-foreground">{col}</p>
-                                    <p className="text-xs text-foreground break-words">{val}</p>
+                                    <p className="t-micro-label">{col}</p>
+                                    <p className="t-micro-value break-words">{val}</p>
                                   </div>
                                 );
                               })}
@@ -1223,7 +1247,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                       <thead>
                         <tr className="border-b border-border">
                           {columns.map((col) => (
-                            <th key={col} className="text-left py-2 pr-3 text-sm font-ui text-foreground">{col}</th>
+                            <th key={col} className="t-micro-label text-left py-2 pr-3">{col}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1245,7 +1269,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
             const displayName = sectionName.endsWith(":") ? sectionName.slice(0, -1) : sectionName;
             return (
               <ProfileSection key={sectionName} title={displayName} data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
-                  <p className="text-base leading-body text-foreground whitespace-pre-line">{sectionData}</p>
+                  <p className="t-prompt-answer whitespace-pre-line">{sectionData}</p>
               </ProfileSection>
             );
           }
@@ -1266,8 +1290,8 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-3">
                         {metaKeys.map((k) => (
                           <div key={k}>
-                            <p className="text-base font-ui text-foreground">{k}</p>
-                            <p className="text-base text-foreground">{String(kvData[k] ?? "")}</p>
+                            <p className="t-field-label">{k}</p>
+                            <p className="t-field-value">{String(kvData[k] ?? "")}</p>
                           </div>
                         ))}
                       </div>
@@ -1277,7 +1301,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                         <thead>
                           <tr className="border-b border-border">
                             {rowKeys.map((col) => (
-                              <th key={col} className="text-left py-2 pr-4 text-sm font-ui text-foreground whitespace-nowrap">{col}</th>
+                              <th key={col} className="t-micro-label text-left py-2 pr-4 whitespace-nowrap">{col}</th>
                             ))}
                           </tr>
                         </thead>
@@ -1479,21 +1503,21 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
 
               return (
                 <div key={label || "table"} className="mt-4">
-                  {label && <p className="text-base font-ui text-foreground mb-2">{label}</p>}
+                  {label && <p className="t-field-label mb-2">{label}</p>}
                   <div className="md:hidden overflow-x-auto -mx-6 px-6">
                     <table className="w-full text-sm table-auto" style={{ minWidth: 0 }}>
                       <thead>
                         <tr className="border-b border-border">
                           <th className="text-left py-2 pr-2 text-sm font-ui text-foreground" style={{ width: '25%', minWidth: 70 }}></th>
                           {headerLabels.map((h, i) => (
-                            <th key={i} className="text-left py-2 px-1 text-sm font-ui text-foreground" style={{ minWidth: 50 }}>{h}</th>
+                            <th key={i} className="t-micro-label text-left py-2 px-1" style={{ minWidth: 50 }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {attrCols.map((attr) => (
                           <tr key={attr} className="border-b border-border/50 last:border-0">
-                            <td className="py-2 pr-2 text-sm font-ui text-foreground">{renameCol(attr)}</td>
+                            <td className="t-micro-label py-2 pr-2">{renameCol(attr)}</td>
                             {rows.map((row, ri) => (
                               <td key={ri} className="py-2 px-1 text-foreground text-xs">{String(row[attr] ?? "-")}</td>
                             ))}
@@ -1507,7 +1531,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                       <thead>
                         <tr className="border-b border-border">
                           {cols.map((col) => (
-                            <th key={col} className="text-left py-2 pr-4 text-sm font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
+                            <th key={col} className="t-micro-label text-left py-2 pr-4 whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1531,7 +1555,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
 
             return (
               <div key={label || "table"} className="mt-4">
-                {label && <p className="text-base font-ui text-foreground mb-2">{label}</p>}
+                {label && <p className="t-field-label mb-2">{label}</p>}
                 {renderMobileCards && (
                   <div className="md:hidden space-y-3" data-testid={`table-mobile-cards-${label || ""}`}>
                     {rows.map((row: Record<string, any>, ri: number) => {
@@ -1540,15 +1564,15 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                       const otherCols = cols.filter((c) => c !== headerCol);
                       return (
                         <div key={ri} className="rounded-[var(--radius)] border border-border/60 bg-secondary/30 p-3">
-                          <p className="text-sm font-ui font-heading text-foreground mb-2">{headerValue}</p>
+                          <p className="t-field-value font-heading mb-2">{headerValue}</p>
                           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                             {otherCols.map((col) => {
                               const val = String(row[col] ?? "").trim();
                               if (!val || val === "-") return null;
                               return (
                                 <div key={col} className="min-w-0">
-                                  <p className="text-[11px] font-ui text-foreground">{renameCol(col)}</p>
-                                  <p className="text-xs text-foreground break-words">{val}</p>
+                                  <p className="t-micro-label">{renameCol(col)}</p>
+                                  <p className="t-micro-value break-words">{val}</p>
                                 </div>
                               );
                             })}
@@ -1563,7 +1587,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                     <thead>
                       <tr className="border-b border-border">
                         {cols.map((col) => (
-                          <th key={col} className="text-left py-2 pr-4 text-sm font-ui text-foreground whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
+                          <th key={col} className="t-micro-label text-left py-2 pr-4 whitespace-nowrap" style={getColStyle(col)}>{renameCol(col)}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1583,12 +1607,13 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
           };
 
           const displaySectionName = sectionName.endsWith(":") ? sectionName.slice(0, -1) : sectionName;
+          const isPersonalitySection = PERSONALITY_SECTION_PATTERN.test(displaySectionName);
           return (
             <ProfileSection key={sectionName} title={displaySectionName} contentClassName="p-6 space-y-3" data-testid={`section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}>
                 {sectionLetterText && (
                   <div className="mb-4">
-                    {sectionLetterTitle && <p className="text-sm font-semibold text-foreground mb-2">{sectionLetterTitle}</p>}
-                    <p className="text-base leading-body text-foreground whitespace-pre-line">{sectionLetterText}</p>
+                    {sectionLetterTitle && <PromptEyebrow>{sectionLetterTitle}</PromptEyebrow>}
+                    <PromptAnswer>{sectionLetterText}</PromptAnswer>
                   </div>
                 )}
                 {fieldEntries2.length > 0 && (() => {
@@ -1607,50 +1632,65 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                     if (typeof v === "object" && v !== null && !Array.isArray(v)) return false;
                     return renderFlat(v).length >= LONG_THRESHOLD;
                   });
+                  // A section that is the donor talking renders every entry as
+                  // a prompt block - eyebrow question, prose answer - however
+                  // short the answer is. Data sections keep the label/value
+                  // pair, where the value is what gets scanned for.
+                  if (isPersonalitySection) {
+                    return (
+                      <PromptStack>
+                        {fieldEntries2.map(([question, answer]) => (
+                          <PromptBlock
+                            key={question}
+                            question={question}
+                            answer={renderFlat(answer)}
+                            data-testid={`prompt-${question.toLowerCase().replace(/\s+/g, "-").slice(0, 40)}`}
+                          />
+                        ))}
+                      </PromptStack>
+                    );
+                  }
                   return (
                     <>
-                      {longEntries.map(([question, answer]) => (
-                        <div key={question} className="mb-3">
-                          <p className="text-base font-ui text-foreground mb-1">{question}</p>
-                          <p className="text-base text-foreground whitespace-pre-line">{renderFlat(answer)}</p>
+                      {longEntries.length > 0 && (
+                        <div style={{ display: "grid", rowGap: "var(--field-pair-gap)", marginBottom: "var(--field-pair-gap)" }}>
+                          {longEntries.map(([question, answer]) => (
+                            <Field key={question} label={question} value={renderFlat(answer)} prose />
+                          ))}
                         </div>
-                      ))}
+                      )}
                       {shortEntries.length > 0 && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-3">
+                        <FieldGrid columns={3}>
                           {shortEntries.map(([question, answer]) => {
                             if (typeof answer === "object" && answer !== null && !Array.isArray(answer)) {
                               const subEntries = Object.entries(answer);
                               return (
-                                <div key={question}>
-                                  <p className="text-base font-ui text-foreground mb-1">{question}</p>
-                                  <div className="grid grid-cols-2 gap-1 pl-2">
-                                    {subEntries.map(([subKey, subVal]) => {
-                                      const renderVal = (v: any): string => {
-                                        if (v == null) return "";
-                                        if (Array.isArray(v)) return v.map(renderVal).join(", ");
-                                        if (typeof v === "object") return Object.entries(v).map(([k2, v2]) => `${k2}: ${renderVal(v2)}`).join(", ");
-                                        return String(v);
-                                      };
-                                      return (
-                                        <div key={subKey} className="text-sm">
-                                          <span className="text-muted-foreground">{subKey}: </span>
-                                          <span className="text-foreground">{renderVal(subVal)}</span>
-                                        </div>
-                                      );
-                                    })}
+                                <Field key={question} label={question}>
+                                  <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                                    {subEntries.map(([subKey, subVal]) => (
+                                      <MicroField key={subKey} label={subKey} value={renderFlat(subVal)} />
+                                    ))}
                                   </div>
-                                </div>
+                                </Field>
                               );
                             }
                             const answerStr = renderFlat(answer);
+                            const chips = toChipParts(answerStr);
                             return (
-                              <div key={question}>
-                                <p className="text-base font-ui text-foreground">{question}</p>
-                                <p className="text-base text-foreground">{answerStr}</p>
-                              </div>
+                              <Field key={question} label={question}>
+                                {chips ? (
+                                  <ChipRow>
+                                    {chips.map((c) => (
+                                      <AttributeChip key={c}>{c}</AttributeChip>
+                                    ))}
+                                  </ChipRow>
+                                ) : (
+                                  <FieldValue prose={answerStr.length > 90}>{answerStr}</FieldValue>
+                                )}
+                              </Field>
                             );
                           })}
-                        </div>
+                        </FieldGrid>
                       )}
                     </>
                   );
@@ -1665,7 +1705,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
 
       {longTextEntries.length > 0 && longTextEntries.map(([key, value]) => (
         <ProfileSection key={key} title={formatFieldLabel(key)} data-testid={`section-${key.toLowerCase().replace(/\s+/g, "-")}`}>
-            <p className="text-base leading-body text-foreground whitespace-pre-line">{String(value)}</p>
+            <p className="t-prompt-answer whitespace-pre-line">{String(value)}</p>
         </ProfileSection>
       ))}
 
@@ -1679,8 +1719,8 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                 else display = String(value);
                 return (
                   <div key={key} data-testid={`field-extra-${key.toLowerCase().replace(/\s+/g, "-")}`}>
-                    <p className="text-base font-ui text-foreground">{formatFieldLabel(key)}</p>
-                    <p className="text-base text-foreground">{display}</p>
+                    <p className="t-field-label">{formatFieldLabel(key)}</p>
+                    <p className="t-field-value">{display}</p>
                   </div>
                 );
               })}
@@ -1735,6 +1775,32 @@ function ProfileThrowStamp({ dir }: { dir: "like" | "pass" }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Fixed mobile close button.
+ *
+ * Lives OUTSIDE ProfileCard for the same reason the action bar does: inside the
+ * card it sat in a `sticky` header nested in the deck's animated (transformed)
+ * `motion.div`, and iOS Safari hit-tests a sticky element inside a transformed
+ * ancestor at its *unstuck* position - so once you scrolled, the visible button
+ * stopped receiving taps. As a fixed sibling of the card it is always tappable.
+ */
+function ProfileDetailCloseButton({ onBack }: { onBack: () => void }) {
+  return (
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24, delay: 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
+      onClick={onBack}
+      className="fixed top-3 right-4 z-[56] w-11 h-11 rounded-full bg-[hsl(var(--brand-success))] hover:brightness-110 shadow-lg flex items-center justify-center transition-all active:scale-95 touch-manipulation"
+      data-testid="button-mobile-back-down"
+      aria-label="Back to marketplace"
+    >
+      <ArrowDown className="w-5 h-5 text-white" strokeWidth={2.5} />
+    </motion.button>
   );
 }
 
@@ -1810,7 +1876,10 @@ export default function DonorProfilePage() {
   const goBack = useCallback(() => {
     if (fromChat) navigate(chatPath);
     else if (window.location.pathname.startsWith("/admin/")) navigate(`/admin/providers/${providerId}?tab=${TYPE_ENDPOINTS[type || "egg-donor"]}`);
-    else navigate(-1);
+    else if (hasInAppHistory()) navigate(-1);
+    // Deep link / hard refresh / shared URL: there is nothing behind us, so
+    // navigate(-1) is a silent no-op. Send them to the marketplace instead.
+    else navigate("/marketplace", { replace: true });
   }, [fromChat, chatPath, navigate, providerId, type]);
 
   const useDeck = isMobile && !!deckList && deckList.length > 0;
@@ -1884,7 +1953,10 @@ export default function DonorProfilePage() {
       <>
         <ProfileCard providerId={current.providerId} donorId={current.id} type={type} initialPhotoUrl={current.photoUrl || undefined} onBack={goBack} />
         {isMobile && (
-          <ProfileDetailActionBar isSaved={isSaved} busy={busy} onPass={() => handleAction("pass")} onLike={() => handleAction("like")} onMessage={handleMessage} />
+          <>
+            <ProfileDetailCloseButton onBack={goBack} />
+            <ProfileDetailActionBar isSaved={isSaved} busy={busy} onPass={() => handleAction("pass")} onLike={() => handleAction("like")} onMessage={handleMessage} />
+          </>
         )}
       </>
     );
@@ -1907,6 +1979,7 @@ export default function DonorProfilePage() {
         <ProfileCard key={`cur-${current.id}`} providerId={current.providerId} donorId={current.id} type={type} initialPhotoUrl={current.photoUrl || undefined} onBack={goBack} />
         {throwDir && <ProfileThrowStamp dir={throwDir} />}
       </motion.div>
+      <ProfileDetailCloseButton onBack={goBack} />
       <ProfileDetailActionBar isSaved={isSaved} busy={busy} onPass={() => handleAction("pass")} onLike={() => handleAction("like")} onMessage={handleMessage} />
     </div>
   );

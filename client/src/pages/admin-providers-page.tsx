@@ -176,7 +176,7 @@ export default function AdminProvidersPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">Providers</h1>
+          <h1 className="font-display t-page-title text-primary" data-testid="text-page-title">Providers</h1>
           <p className="text-muted-foreground">Manage clinics, agencies, and banks.</p>
         </div>
         <Button onClick={() => navigate("/admin/providers/new")} className="shrink-0" data-testid="button-add-provider">
@@ -387,7 +387,7 @@ export default function AdminProvidersPage() {
                         <span className="truncate">{provider.websiteUrl.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}</span>
                       </a>
                     ) : (
-                      <span className="text-muted-foreground text-sm">-</span>
+                      <span className="t-helper">-</span>
                     )}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell" onClick={(e) => e.stopPropagation()}>
@@ -398,7 +398,7 @@ export default function AdminProvidersPage() {
                         </Badge>
                       ))}
                       {(!provider.services || provider.services.length === 0) && (
-                        <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setManageServicesProvider(provider)}>
+                        <Button variant="ghost" size="sm" className="t-helper" onClick={() => setManageServicesProvider(provider)}>
                           + Add service
                         </Button>
                       )}
@@ -419,7 +419,7 @@ export default function AdminProvidersPage() {
                           ))}
                         </div>
                       ) : (
-                        <span className="text-sm text-muted-foreground">-</span>
+                        <span className="t-helper">-</span>
                       );
                     })()}
                   </TableCell>
@@ -427,10 +427,10 @@ export default function AdminProvidersPage() {
                     <span className="text-sm">{provider.locations?.length || 0} location(s)</span>
                   </TableCell>
                   <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                    <span className="text-sm text-muted-foreground">{provider.createdAt ? new Date(provider.createdAt).toLocaleDateString() : "-"}</span>
+                    <span className="t-helper">{provider.createdAt ? new Date(provider.createdAt).toLocaleDateString() : "-"}</span>
                   </TableCell>
                   <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                    <span className="text-sm text-muted-foreground">{provider.updatedAt ? new Date(provider.updatedAt).toLocaleDateString() : "-"}</span>
+                    <span className="t-helper">{provider.updatedAt ? new Date(provider.updatedAt).toLocaleDateString() : "-"}</span>
                   </TableCell>
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">

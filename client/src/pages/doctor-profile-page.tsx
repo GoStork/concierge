@@ -117,7 +117,7 @@ export default function DoctorProfilePage() {
           </h1>
           {doctor.title && <p className="text-sm text-primary font-ui mt-0.5">{doctor.title}</p>}
           {doctor.npiTaxonomy && (
-            <p className="text-xs text-muted-foreground mt-0.5">{doctor.npiTaxonomy}</p>
+            <p className="t-helper mt-0.5">{doctor.npiTaxonomy}</p>
           )}
 
           <div className="flex flex-wrap gap-2 mt-3">
@@ -147,7 +147,7 @@ export default function DoctorProfilePage() {
       {/* About */}
       {doctor.bio && (
         <ProfileSection title="About" data-testid="section-about">
-            <p className="text-base text-foreground whitespace-pre-line leading-relaxed">{doctor.bio}</p>
+            <p className="t-prompt-answer whitespace-pre-line">{doctor.bio}</p>
         </ProfileSection>
       )}
 
@@ -174,41 +174,41 @@ export default function DoctorProfilePage() {
         <ProfileSection title="Education & Background" contentClassName="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6" data-testid="section-education">
             {doctor.boardCertifications?.length > 0 && (
               <div>
-                <p className="text-base font-ui text-foreground mb-2 flex items-center gap-1.5">
+                <p className="t-field-label mb-2 flex items-center gap-1.5">
                   <Award className="w-3.5 h-3.5 text-primary" /> Board Certifications
                 </p>
                 <ul className="space-y-1">
                   {doctor.boardCertifications.map((c: string) => (
-                    <li key={c} className="text-base text-foreground">{c}</li>
+                    <li key={c} className="t-field-value">{c}</li>
                   ))}
                 </ul>
               </div>
             )}
             {doctor.education?.length > 0 && (
               <div>
-                <p className="text-base font-ui text-foreground mb-2 flex items-center gap-1.5">
+                <p className="t-field-label mb-2 flex items-center gap-1.5">
                   <GraduationCap className="w-3.5 h-3.5 text-primary" /> Education & Training
                 </p>
                 <ul className="space-y-1">
                   {doctor.education.map((e: string) => (
-                    <li key={e} className="text-base text-foreground">{e}</li>
+                    <li key={e} className="t-field-value">{e}</li>
                   ))}
                 </ul>
               </div>
             )}
             {doctor.professionalMemberships?.length > 0 && (
               <div>
-                <p className="text-base font-ui text-foreground mb-2">Professional Memberships</p>
+                <p className="t-field-label mb-2">Professional Memberships</p>
                 <ul className="space-y-1">
                   {doctor.professionalMemberships.map((m: string) => (
-                    <li key={m} className="text-base text-foreground">{m}</li>
+                    <li key={m} className="t-field-value">{m}</li>
                   ))}
                 </ul>
               </div>
             )}
             {doctor.languagesSpoken?.length > 0 && (
               <div>
-                <p className="text-base font-ui text-foreground mb-2 flex items-center gap-1.5">
+                <p className="t-field-label mb-2 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-primary" /> Languages Spoken
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -220,28 +220,28 @@ export default function DoctorProfilePage() {
             )}
             {doctor.medicalSchool && (
               <div>
-                <p className="text-base font-ui text-foreground">Medical School</p>
-                <p className="text-base text-foreground">
+                <p className="t-field-label">Medical School</p>
+                <p className="t-field-value">
                   {doctor.medicalSchool}{doctor.graduationYear ? ` (${doctor.graduationYear})` : ""}
                 </p>
               </div>
             )}
             {doctor.yearsExperience != null && (
               <div>
-                <p className="text-base font-ui text-foreground">Years of Experience</p>
-                <p className="text-base text-foreground">{doctor.yearsExperience}</p>
+                <p className="t-field-label">Years of Experience</p>
+                <p className="t-field-value">{doctor.yearsExperience}</p>
               </div>
             )}
             {doctor.providerGender && (
               <div>
-                <p className="text-base font-ui text-foreground">Provider's Gender</p>
-                <p className="text-base text-foreground">{doctor.providerGender}</p>
+                <p className="t-field-label">Provider's Gender</p>
+                <p className="t-field-value">{doctor.providerGender}</p>
               </div>
             )}
             {doctor.npiNumber && (
               <div>
-                <p className="text-base font-ui text-foreground">NPI Number</p>
-                <p className="text-base text-foreground">{doctor.npiNumber}</p>
+                <p className="t-field-label">NPI Number</p>
+                <p className="t-field-value">{doctor.npiNumber}</p>
               </div>
             )}
         </ProfileSection>
@@ -285,7 +285,7 @@ export default function DoctorProfilePage() {
                     <p className="font-ui text-sm text-foreground group-hover:text-primary transition-colors">{a.providerName}</p>
                     {a.title && <p className="text-xs text-primary">{a.title}</p>}
                     {locs.length > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1 flex items-start gap-1">
+                      <p className="t-helper mt-1 flex items-start gap-1">
                         <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
                         <span>{locs.map((l: any) => [l.city, l.state].filter(Boolean).join(", ")).filter(Boolean).join(" · ")}</span>
                       </p>
@@ -296,7 +296,7 @@ export default function DoctorProfilePage() {
                 {rate && (
                   <div className="bg-secondary/40 rounded-[var(--radius)] px-3 py-2">
                     <p className="text-lg font-heading text-foreground leading-none">{rate.value}%</p>
-                    <p className="text-[11px] text-muted-foreground mt-1">{rate.label} (CDC)</p>
+                    <p className="t-helper mt-1">{rate.label} (CDC)</p>
                   </div>
                 )}
               </Link>
@@ -312,7 +312,7 @@ export default function DoctorProfilePage() {
             isParent={!!(user as any)?.parentAccountId && !(user as any)?.providerId}
           />
           {!hasReviews && (
-            <p className="text-xs text-muted-foreground/70 max-w-sm mt-2">
+            <p className="t-helper max-w-sm mt-2">
               GoStork reviews come from intended parents after a verified consultation, so every review is from someone who actually met with this doctor.
             </p>
           )}

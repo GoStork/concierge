@@ -38,7 +38,7 @@ export default function ProviderParentFormsPage() {
         </div>
         <div>
           <h1 className="text-2xl font-heading font-bold">Intended Parent Forms</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             Signed profile forms from your connected families, branded with your agency's logo. Share the Surrogate Version with
             candidates - it excludes the parents' private information and contact details.
           </p>
@@ -53,7 +53,7 @@ export default function ProviderParentFormsPage() {
         <Card className="p-8 text-center space-y-2">
           <FileText className="w-8 h-8 text-muted-foreground mx-auto" />
           <p className="font-medium">No submitted forms yet</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             When a connected family completes and signs their Intended Parent Form, it appears here and you're notified by email.
           </p>
         </Card>
@@ -63,7 +63,7 @@ export default function ProviderParentFormsPage() {
             <div key={f.responseId} className="flex flex-col sm:flex-row sm:items-center gap-3 p-4" data-testid={`ipform-row-${f.responseId}`}>
               <div className="flex-1 min-w-0">
                 <p className="font-medium">{f.parentNames.join(" & ") || "Intended Parents"}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="t-helper">
                   {f.hasSecondParent ? "Two intended parents" : "Single intended parent"}
                   {f.submittedAt ? ` - submitted ${new Date(f.submittedAt).toLocaleDateString()}` : ""}
                 </p>

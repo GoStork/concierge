@@ -67,7 +67,7 @@ function LatestReviewsCard() {
     <Card className="p-5 space-y-3">
       <SectionHeader icon={<Star className="w-5 h-5 text-primary" />} title="Latest parent reviews" viewAllTo="/admin/reviews" viewAllLabel="Review Queue" />
       {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-2">No reviews yet - parents are invited after consultations, matches, and handoff.</p>
+        <p className="t-helper py-2">No reviews yet - parents are invited after consultations, matches, and handoff.</p>
       ) : (
         <div className="divide-y">
           {rows.map((r) => (
@@ -79,7 +79,7 @@ function LatestReviewsCard() {
                   {r.visibility === "PRIVATE_FEEDBACK" && <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded-full bg-secondary text-foreground">Private</span>}
                   {r.flaggedByProviderAt && <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]">Flagged</span>}
                 </p>
-                {r.text && <p className="text-xs text-muted-foreground truncate">{r.text}</p>}
+                {r.text && <p className="t-helper truncate">{r.text}</p>}
               </div>
               <Link to="/admin/reviews" className="text-xs text-primary hover:underline shrink-0">Open</Link>
             </div>
@@ -209,7 +209,7 @@ export default function AdminHomePage() {
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6 pb-24 md:pb-6">
       <div>
         <h1 className="text-2xl font-heading">Welcome back, {firstName}</h1>
-        <p className="text-sm text-muted-foreground mt-1">The full picture - every parent, provider, and journey on the platform.</p>
+        <p className="t-helper mt-1">The full picture - every parent, provider, and journey on the platform.</p>
       </div>
 
       {/* Needs attention: escalations, unconfirmed meetings, overdue deposits, failed payouts */}
@@ -219,7 +219,7 @@ export default function AdminHomePage() {
           title={queueCount > 0 ? `Needs attention (${queueCount})` : "Needs attention"}
         />
         {isLoading ? (
-          <p className="text-sm text-muted-foreground py-2">Loading...</p>
+          <p className="t-helper py-2">Loading...</p>
         ) : queueCount === 0 ? (
           <div className="flex items-center gap-2 py-3 text-sm" style={{ color: "hsl(var(--brand-success))" }}>
             <CheckCircle2 className="w-4 h-4" />
@@ -291,7 +291,7 @@ export default function AdminHomePage() {
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Video className="w-5 h-5 text-primary" />} title="Upcoming meetings" viewAllTo="/calendar" />
         {(data?.upcomingMeetings || []).length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No upcoming meetings scheduled.</p>
+          <p className="t-helper py-2">No upcoming meetings scheduled.</p>
         ) : (() => {
           const meetings = data?.upcomingMeetings || [];
           const myId = (user as any)?.id;
@@ -301,7 +301,7 @@ export default function AdminHomePage() {
             <div key={b.id} className="flex items-center gap-3 py-3">
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{b.subject || `${b.parentName} with ${b.providerName}`}</p>
-                <p className="text-xs text-muted-foreground">{b.parentName} - {b.providerName} - {fmtWhen(b.scheduledAt)}</p>
+                <p className="t-helper">{b.parentName} - {b.providerName} - {fmtWhen(b.scheduledAt)}</p>
               </div>
               {b.status === "PENDING" && (
                 <span className="text-xs font-medium shrink-0" style={{ color: "hsl(var(--brand-warning))" }}>Awaiting confirm</span>
@@ -347,7 +347,7 @@ export default function AdminHomePage() {
       {/* Platform funnel - last 30 days */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<TrendingUp className="w-5 h-5 text-primary" />} title="Platform funnel" viewAllTo="/admin/analytics" viewAllLabel="Journey Analytics" />
-        <p className="text-xs text-muted-foreground -mt-2">Last 30 days (Matched and On Hold are current counts)</p>
+        <p className="t-helper -mt-2">Last 30 days (Matched and On Hold are current counts)</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatTile label="Active sessions" value={data?.funnel.activeSessions ?? 0} />
           <StatTile label="Hot leads" value={data?.funnel.hotLeads ?? 0} />
@@ -372,7 +372,7 @@ export default function AdminHomePage() {
               <div key={inv.id} className="flex items-center gap-3 py-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{inv.parentName} - {inv.providerName || "Provider"}</p>
-                  <p className="text-xs text-muted-foreground">Due {fmtWhen(inv.dueAt)}</p>
+                  <p className="t-helper">Due {fmtWhen(inv.dueAt)}</p>
                 </div>
                 <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.amountCents)}</p>
                 <Button variant="outline" size="sm" onClick={() => navigate(`/admin/billing?q=${inv.id}`)}>
@@ -388,14 +388,14 @@ export default function AdminHomePage() {
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<FileSignature className="w-5 h-5 text-primary" />} title="Out for signature" viewAllTo="/admin/agreements?status=sent" />
         {(data?.sentAgreements || []).length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No agreements awaiting signatures right now.</p>
+          <p className="t-helper py-2">No agreements awaiting signatures right now.</p>
         ) : (
           <div className="divide-y">
             {(data?.sentAgreements || []).map(a => (
               <div key={a.agreementId} className="flex items-center gap-3 py-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{a.parentName} - {a.providerName || "Provider"}</p>
-                  <p className="text-xs text-muted-foreground">{a.documentType} - sent {new Date(a.createdAt).toLocaleDateString()}</p>
+                  <p className="t-helper">{a.documentType} - sent {new Date(a.createdAt).toLocaleDateString()}</p>
                 </div>
                 <span className="text-xs font-medium shrink-0" style={{ color: "hsl(var(--brand-warning))" }}>
                   {a.signerCount > 0 ? `${a.signedCount}/${a.signerCount} signed` : "Awaiting signature"}
@@ -425,14 +425,14 @@ export default function AdminHomePage() {
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Receipt className="w-5 h-5 text-primary" />} title="Invoices" viewAllTo="/admin/billing" />
         {(data?.recentInvoices || []).length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No invoices yet.</p>
+          <p className="t-helper py-2">No invoices yet.</p>
         ) : (
           <div className="divide-y">
             {(data?.recentInvoices || []).map(inv => (
               <div key={inv.id} className="flex items-center gap-3 py-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{inv.parentName} - {inv.providerName || "Provider"}</p>
-                  <p className="text-xs text-muted-foreground">{(inv.serviceType || "").replace(/_/g, " ").toLowerCase()} - {new Date(inv.createdAt).toLocaleDateString()}</p>
+                  <p className="t-helper">{(inv.serviceType || "").replace(/_/g, " ").toLowerCase()} - {new Date(inv.createdAt).toLocaleDateString()}</p>
                 </div>
                 <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={(inv as any).medicalClearanceStatus} />
                 <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.amountCents)}</p>
@@ -449,7 +449,7 @@ export default function AdminHomePage() {
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Landmark className="w-5 h-5 text-primary" />} title="Payouts" viewAllTo="/admin/billing?tab=PAID" />
         {(data?.recentPayouts || []).length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No payouts yet.</p>
+          <p className="t-helper py-2">No payouts yet.</p>
         ) : (
           <div className="divide-y">
             {(data?.recentPayouts || []).map(po => {
@@ -458,7 +458,7 @@ export default function AdminHomePage() {
                 <div key={po.id} className="flex items-center gap-3 py-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{po.providerName || "Provider"}</p>
-                    <p className="text-xs text-muted-foreground">{po.parentName}'s invoice - {po.paidAt ? new Date(po.paidAt).toLocaleDateString() : ""}</p>
+                    <p className="t-helper">{po.parentName}'s invoice - {po.paidAt ? new Date(po.paidAt).toLocaleDateString() : ""}</p>
                   </div>
                   <span className="text-xs font-medium shrink-0" title={ps.tooltip} style={{ color: ps.color }}>{ps.label}</span>
                   <p className="text-sm font-heading font-bold shrink-0">{formatCents(po.amountCents)}</p>
@@ -475,7 +475,7 @@ export default function AdminHomePage() {
       {/* Automation adoption */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Zap className="w-5 h-5 text-primary" />} title="Automation adoption" viewAllTo="/admin/providers?automation=all_on" viewAllLabel="Providers" />
-        <p className="text-xs text-muted-foreground -mt-2">Providers with each automation live, out of {data?.adoption.total ?? 0} approved providers. Click a tile to see who.</p>
+        <p className="t-helper -mt-2">Providers with each automation live, out of {data?.adoption.total ?? 0} approved providers. Click a tile to see who.</p>
         <div className="grid grid-cols-3 gap-3">
           <Link to="/admin/providers?automation=cost_sheet" className="block" data-testid="adoption-link-cost-sheet">
             <StatTile label="Cost-sheet drafts" value={`${data?.adoption.costSheet ?? 0}/${data?.adoption.total ?? 0}`} hint="on booking" />

@@ -84,7 +84,7 @@ function downloadIcs(bk: any) {
 export function AddToCalendarButtons({ booking }: { booking: any }) {
   return (
     <div className="flex flex-col gap-2" data-testid="add-to-calendar-section">
-      <p className="text-sm font-heading text-muted-foreground mb-1">Add to Calendar</p>
+      <p className="t-helper font-heading mb-1">Add to Calendar</p>
       <a
         href={googleCalUrl(booking)}
         target="_blank"

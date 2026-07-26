@@ -329,7 +329,7 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
           <h2 className="text-lg font-heading">{uploadHeading || `Step 1 - Upload ${templateLabel}`}</h2>
         </div>
       )}
-      <p className="text-sm text-muted-foreground">{description}</p>
+      <p className="t-helper">{description}</p>
 
       <div
         onDrop={handleDrop}
@@ -352,19 +352,19 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
               : dragging ? "Drop your file here" : "Drag & drop your file here"}
           </p>
           {!uploading && (
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="t-helper mt-1">
               or <span className="text-primary underline underline-offset-2">click to browse</span>
             </p>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">PDF, DOC, DOCX - max 16MB</p>
+        <p className="t-helper">PDF, DOC, DOCX - max 16MB</p>
       </div>
 
       {templateUrl && (
         <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border bg-muted/40">
           <FileText className="w-4 h-4 text-primary shrink-0" />
           <span className="text-sm font-medium truncate flex-1">{templateFilename}</span>
-          <span className="text-xs text-muted-foreground shrink-0">Current file</span>
+          <span className="t-helper shrink-0">Current file</span>
           <Button
             variant="ghost"
             size="sm"
@@ -396,7 +396,7 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
           <h2 className="text-lg font-heading">{fieldsHeading || "Step 2 - Assign Signature Fields"}</h2>
         </div>
       )}
-      <p className="text-sm text-muted-foreground">{fieldInstructions}</p>
+      <p className="t-helper">{fieldInstructions}</p>
 
       <div className="flex items-center gap-3">
         {pandaDocTemplateId && !editorEToken && (
@@ -427,7 +427,7 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
               size="sm"
               disabled={loadingEditor}
               onClick={openFieldEditor}
-              className="text-xs text-muted-foreground h-7 px-2"
+              className="t-helper h-7 px-2"
             >
               <RefreshCw className="w-3 h-3 mr-1" />
               Reload
@@ -462,7 +462,7 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
         }}
       >
         <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/40 shrink-0">
-          <p className="text-xs text-muted-foreground">Changes are saved automatically. When done, click Save.</p>
+          <p className="t-helper">Changes are saved automatically. When done, click Save.</p>
           <Button variant="outline" size="sm" onClick={handleSaveFields}>
             Save
           </Button>

@@ -147,7 +147,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
         {enabledServices.length === 0 ? (
           <div className="rounded-lg border p-6 bg-secondary/40">
             <p className="text-sm font-medium">No services enabled yet</p>
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="t-helper mt-1">
               This provider has no APPROVED services. Approve a service in the Profile tab before configuring referral fees.
             </p>
           </div>
@@ -191,7 +191,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
             </div>
 
             {/* Active-tab description - sits between pills and form body */}
-            <p className="text-sm text-muted-foreground">
+            <p className="t-helper">
               {activeTab === "COMBINED"
                 ? "What the parent's multi-line invoice will look like across every configured service. Type a sample Total Quoted Cost per service to see the breakdown."
                 : `How GoStork's referral fee is calculated for the ${LINE_SERVICE_LABELS[activeTab as LineServiceType].toLowerCase()} service.`}
@@ -230,7 +230,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
         <section className="space-y-3">
           <div>
             <h3 className="font-semibold">{isProviderMode ? "Payments received" : "Invoice history"}</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <p className="t-helper mt-0.5">
               {isProviderMode
                 ? `${invoices.length} invoice${invoices.length !== 1 ? "s" : ""} - GoStork transfers your share to your bank when the parent pays.`
                 : `${invoices.length} invoice${invoices.length !== 1 ? "s" : ""} for this provider - full money flow from parent payment through GoStork to the provider's bank.`}
@@ -241,16 +241,16 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
             <table className="w-full min-w-[960px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/40">
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Amount paid</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork fee</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">{isProviderMode ? "Your payout" : "Provider payout"}</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent paid GoStork</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">{isProviderMode ? "GoStork paid you" : "GoStork paid provider"}</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Parent</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Service</th>
+                  <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">Amount paid</th>
+                  <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">GoStork fee</th>
+                  <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">{isProviderMode ? "Your payout" : "Provider payout"}</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Parent paid GoStork</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">{isProviderMode ? "GoStork paid you" : "GoStork paid provider"}</th>
+                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Date</th>
                   {!isProviderMode && (
-                    <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Actions</th>
+                    <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">Actions</th>
                   )}
                 </tr>
               </thead>
@@ -294,7 +294,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                           </button>
                         ) : parentLabel}
                       </td>
-                      <td className="px-4 py-2.5 text-muted-foreground text-xs">{inv.serviceType?.replace(/_/g, " ").toLowerCase() || "-"}</td>
+                      <td className="t-helper px-4 py-2.5">{inv.serviceType?.replace(/_/g, " ").toLowerCase() || "-"}</td>
                       <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.serviceAmount, inv.currency)}</td>
                       <td className="px-4 py-2.5 text-right" style={{ color: "hsl(var(--brand-success))" }}>{formatCents(inv.referralFeeAmount, inv.currency)}</td>
                       <td className="px-4 py-2.5 text-right font-medium">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
@@ -317,7 +317,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{formatDateTime(inv.paidAt || inv.createdAt)}</td>
+                      <td className="t-helper px-4 py-2.5 whitespace-nowrap">{formatDateTime(inv.paidAt || inv.createdAt)}</td>
                       {!isProviderMode && (
                         <td className="px-4 py-2.5 text-right whitespace-nowrap">
                           {(inv.status === "PAID" || inv.status === "PARTIALLY_REFUNDED") && (
@@ -341,7 +341,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
       {invoices.length === 0 && isProviderMode && (
         <section className="space-y-3">
           <h3 className="font-semibold">Payments received</h3>
-          <div className="rounded-xl border p-6 bg-secondary/40 text-sm text-muted-foreground">
+          <div className="t-helper rounded-xl border p-6 bg-secondary/40">
             No payments yet. When a parent pays an invoice for one of your services, you'll see it here along with the amount GoStork transferred to your bank.
           </div>
         </section>
@@ -463,7 +463,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
             <div className="max-w-3xl mx-auto space-y-3">
               <div>
                 <div className="font-display text-lg font-semibold text-foreground">Refund this invoice?</div>
-                <p className="text-sm text-muted-foreground">
+                <p className="t-helper">
                   The parent will be refunded via Stripe (5-10 business days back to their card). The provider's
                   share will be reversed proportionally from their payout. This cannot be undone from here -
                   additional refunds against the same invoice are allowed up to the original amount.
@@ -496,7 +496,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
                   value={amountDollars}
                   onChange={setAmountDollars}
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="t-helper">
                   Max refundable: {formatMoneyCents(remainingCents)}
                   {alreadyRefunded > 0 && ` (${formatMoneyCents(alreadyRefunded)} already refunded)`}
                 </p>
@@ -528,7 +528,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
                   }}
                 >
                   <p className="text-sm font-medium">Proportional</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="t-helper mt-0.5">
                     GoStork fee refunded proportionally. Use for goodwill, fraud, duplicate charge.
                   </p>
                 </button>
@@ -542,7 +542,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
                   }}
                 >
                   <p className="text-sm font-medium">Keep GoStork fee</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="t-helper mt-0.5">
                     Refund comes entirely from provider's share. GoStork fee preserved. Use for Guarantee scenarios.
                   </p>
                 </button>
@@ -562,7 +562,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
             <div className="space-y-1.5">
               <Label>Internal notes (optional)</Label>
               <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Why are we issuing this refund?" />
-              <p className="text-xs text-muted-foreground">Stored on the invoice for the audit trail. Not shown to the parent.</p>
+              <p className="t-helper">Stored on the invoice for the audit trail. Not shown to the parent.</p>
             </div>
             {error && (
               <div className="rounded-lg border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
@@ -682,7 +682,7 @@ function CombinedPreview({ services, configByService }: CombinedPreviewProps) {
       {missingConfigs.length > 0 && (
         <div className="rounded-lg border p-3 bg-accent/20 text-sm">
           <p className="font-medium">Missing configuration</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="t-helper mt-0.5">
             {missingConfigs.join(", ")} {missingConfigs.length === 1 ? "has" : "have"} no Referral Fee Configuration yet.
             Invoices that include {missingConfigs.length === 1 ? "this service" : "these services"} will be rejected until configured.
           </p>
@@ -697,13 +697,13 @@ function CombinedPreview({ services, configByService }: CombinedPreviewProps) {
             <div key={st} className="flex items-center gap-3">
               <div className="w-44 shrink-0">
                 <p className="text-sm font-medium">{LINE_SERVICE_LABELS[st]}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="t-helper">
                   {cfg
                     ? `${cfg.feeType === "PERCENTAGE" ? `GoStork: ${Number(cfg.percentage)}%` : `GoStork: ${formatCents(Number(cfg.flatAmount) || 0)} flat`}`
                     : "Not configured"}
                 </p>
                 {cfg && (
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="t-helper">
                     Parent pays: {cfg.parentPaysBasis === "TOTAL_COST"
                       ? "Total Quoted Cost"
                       : `Default ${cfg.defaultServiceAmount ? formatCents(Number(cfg.defaultServiceAmount)) : "(none)"}`}
@@ -725,7 +725,7 @@ function CombinedPreview({ services, configByService }: CombinedPreviewProps) {
           Total quoted cost / Parent pays / GoStork keeps / Provider receives */}
       {hasAnyAmount && (
         <div className="rounded-lg border p-4 space-y-2 bg-secondary/40">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Split Preview (Combined)</p>
+          <p className="t-micro-label">Payment Split Preview (Combined)</p>
           <div className="space-y-1.5 text-sm">
             {/* Total quoted cost - per line + grand total */}
             {lines.filter(l => l.quotedCents > 0).map(l => (

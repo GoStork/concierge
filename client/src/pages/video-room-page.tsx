@@ -368,7 +368,7 @@ export default function VideoRoomPage() {
                 <Video className="w-7 h-7 text-primary" />
               </div>
               <h1 className="text-xl font-display font-heading mb-1" data-testid="text-guest-join-title">Join Meeting</h1>
-              <p className="text-sm text-muted-foreground">{subtitle}</p>
+              <p className="t-helper">{subtitle}</p>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               {formStep === "guest" && (
@@ -422,7 +422,7 @@ export default function VideoRoomPage() {
               </Button>
             </form>
           </Card>
-          <p className="text-center text-xs text-muted-foreground mt-4">
+          <p className="t-helper text-center mt-4">
             Powered by <span className="font-ui text-primary">{companyName}</span>
           </p>
         </div>
@@ -448,7 +448,7 @@ export default function VideoRoomPage() {
           <h2 className="text-xl font-display font-heading mb-2" data-testid="text-video-error">
             Unable to Load Meeting
           </h2>
-          <p className="text-muted-foreground text-sm">
+          <p className="t-helper">
             {bookingQuery.error?.message || "Booking not found or you don't have access."}
           </p>
           {user && (
@@ -476,7 +476,7 @@ export default function VideoRoomPage() {
           <h2 className="text-xl font-display font-heading mb-2" data-testid="text-video-not-ready">
             Meeting Not Available
           </h2>
-          <p className="text-muted-foreground text-sm">
+          <p className="t-helper">
             {booking.status === "PENDING"
               ? "This meeting hasn't been confirmed yet."
               : booking.status === "CANCELLED"
@@ -519,7 +519,7 @@ export default function VideoRoomPage() {
             <DialogDescription className="text-center text-sm leading-body">
               This call will be recorded and transcribed. You'll get a link to rewatch the video and review the transcript anytime.
             </DialogDescription>
-            <p className="text-center text-xs text-muted-foreground">
+            <p className="t-helper text-center">
               You can decline and still join without recording.
             </p>
           </DialogHeader>
@@ -557,7 +557,7 @@ export default function VideoRoomPage() {
               />
               <label
                 htmlFor="remember-consent"
-                className="text-xs text-muted-foreground cursor-pointer select-none leading-tight"
+                className="t-helper cursor-pointer select-none leading-tight"
               >
                 Always record my calls - don't ask me again. You can change this in Settings.
               </label>

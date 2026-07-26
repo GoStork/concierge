@@ -95,7 +95,7 @@ export function ConciergeMemoryTab({ admin }: { admin?: { parentAccountId: strin
   const list = q.isLoading ? (
     <div className={admin ? "py-4 flex justify-center" : "py-10 flex justify-center"}><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
   ) : items.length === 0 ? (
-    <p className={admin ? "text-xs text-muted-foreground py-2" : "text-sm text-muted-foreground py-6"}>
+    <p className={admin ? "t-helper py-2" : "t-helper py-6"}>
       {admin
         ? "No memory notes for this family yet - Eva extracts them as the conversation grows."
         : 'Nothing remembered yet. As you chat, your concierge will note the things worth carrying forward - or you can ask in any chat: "remember that we prefer morning calls."'}
@@ -119,7 +119,7 @@ export function ConciergeMemoryTab({ admin }: { admin?: { parentAccountId: strin
             <>
               <div className="flex-1 min-w-0">
                 <p className={admin ? "text-xs text-foreground" : "text-sm text-foreground"}>{m.text}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
+                <p className="t-helper mt-0.5">
                   {sourceLabel(m)}
                   {" · "}{new Date(m.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
                 </p>
@@ -174,7 +174,7 @@ export function ConciergeMemoryTab({ admin }: { admin?: { parentAccountId: strin
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-lg font-heading flex items-center gap-2"><Brain className="w-5 h-5 text-primary" /> What your concierge remembers</h2>
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+          <p className="t-helper mt-1 max-w-2xl">
             Small notes your AI concierge keeps about your family across all your conversations - soft preferences,
             decisions, and context that make the guidance feel personal. You're in full control: edit or remove
             anything here, or add something you'd like remembered. Your intake answers (services, preferences,

@@ -123,7 +123,7 @@ export function ConversationsShell({
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="inbox-empty">
               <MessageSquare className="w-10 h-10 text-muted-foreground mb-3" />
-              <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+              <p className="t-helper">{emptyMessage}</p>
               {emptyAction}
             </div>
           )}
@@ -136,7 +136,7 @@ export function ConversationsShell({
             <div>
               <MessageSquare className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
               <h3 className="font-display text-lg font-semibold text-muted-foreground mb-1">Select a conversation</h3>
-              <p className="text-sm text-muted-foreground">Choose a conversation from the list to view messages</p>
+              <p className="t-helper">Choose a conversation from the list to view messages</p>
             </div>
           </div>
         ) : detailContent}

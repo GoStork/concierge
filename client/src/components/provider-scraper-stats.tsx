@@ -138,7 +138,7 @@ export default function ProviderScraperStats({ providerId, types, showRunButton 
         <div>
           <h3 className="text-base font-heading" data-testid="heading-scraper-stats">Scraper Overview</h3>
           {latestSync && (
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               Last sync: {latestSync.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
               {" at "}
               {latestSync.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
@@ -166,31 +166,31 @@ export default function ProviderScraperStats({ providerId, types, showRunButton 
         <Card>
           <CardContent className="pt-3 pb-2.5 px-3">
             <div className="text-xl font-heading" data-testid="text-stat-configured">{configured.length}</div>
-            <div className="text-[11px] text-muted-foreground">Databases Configured</div>
+            <div className="t-helper">Databases Configured</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-3 pb-2.5 px-3">
             <div className="text-xl font-heading" data-testid="text-stat-profiles">{totalProfiles.toLocaleString()}</div>
-            <div className="text-[11px] text-muted-foreground">Total Profiles</div>
+            <div className="t-helper">Total Profiles</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-3 pb-2.5 px-3">
             <div className="text-xl font-heading" data-testid="text-stat-synced">{syncedProfiles.toLocaleString()}</div>
-            <div className="text-[11px] text-muted-foreground">Synced Profiles</div>
+            <div className="t-helper">Synced Profiles</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-3 pb-2.5 px-3">
             <div className="text-xl font-heading text-[hsl(var(--brand-success))]" data-testid="text-stat-successful">{successCount}</div>
-            <div className="text-[11px] text-muted-foreground">Successful</div>
+            <div className="t-helper">Successful</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-3 pb-2.5 px-3">
             <div className="text-xl font-heading text-destructive" data-testid="text-stat-failed">{failedCount}</div>
-            <div className="text-[11px] text-muted-foreground">Failed / Partial</div>
+            <div className="t-helper">Failed / Partial</div>
           </CardContent>
         </Card>
       </div>

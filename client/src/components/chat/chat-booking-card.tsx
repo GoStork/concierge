@@ -140,10 +140,10 @@ export function ChatBookingCard({ booking, onUpdate, readOnly }: ChatBookingCard
     >
       <div>
         <p className="text-sm font-ui truncate">{attendeeName || "Meeting Request"}</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="t-helper">
           {startValid ? `${format(start, "EEE, MMM d")} · ${format(start, "h:mm a")} · ` : ""}{booking.duration || 30}min
         </p>
-        <p className="text-xs text-muted-foreground truncate mt-0.5">{subject}</p>
+        <p className="t-helper truncate mt-0.5">{subject}</p>
       </div>
 
       {(isCancelled || isRescheduled || isPast || readOnly || (isConfirmed && !isPast)) && !isPending && (

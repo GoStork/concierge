@@ -45,10 +45,10 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
       <Card className="w-full max-w-md border-none shadow-2xl shadow-primary/5">
         <CardHeader className="space-y-2 text-center pb-4">
-          <CardTitle className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">
+          <CardTitle className="font-display t-page-title text-primary" data-testid="text-page-title">
             Reset your password
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             Don't worry, just enter the email address you registered with and we will send you a link to reset your password.
           </p>
         </CardHeader>
@@ -85,7 +85,7 @@ export default function ForgotPasswordPage() {
             <button
               type="button"
               onClick={() => navigate("/auth")}
-              className="flex items-center gap-1 mx-auto text-sm text-muted-foreground hover:text-primary cursor-pointer transition-colors font-ui"
+              className="t-helper flex items-center gap-1 mx-auto hover:text-primary cursor-pointer transition-colors font-ui"
               data-testid="link-back-to-login"
             >
               <ArrowLeft className="w-3.5 h-3.5" />

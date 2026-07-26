@@ -85,7 +85,7 @@ export function ClinicCostProgramsSection({
   if (isLoading) {
     return (
       <ProfileSection title="Costs" data-testid="clinic-cost-programs">
-        <p className="py-2 text-center text-base text-muted-foreground">
+        <p className="t-helper py-2 text-center">
           Loading cost programs...
         </p>
       </ProfileSection>
@@ -115,7 +115,7 @@ export function ClinicCostProgramsSection({
         ) : programs.length === 0 ? (
           <div className="py-10 text-center space-y-3">
             <DollarSign className="w-10 h-10 mx-auto text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            <p className="t-helper max-w-md mx-auto">
               This provider hasn't published a cost program yet. Ask our concierge to request a custom quote on your behalf.
             </p>
             <Button

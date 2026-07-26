@@ -22,7 +22,7 @@ async function getJson(url: string): Promise<any> {
 
 function FieldLabel({ question }: { question: IpFormQuestionDef }) {
   return (
-    <Label className="text-sm font-medium leading-snug">
+    <Label className="leading-snug">
       {question.label}
       {question.required && <span className="text-destructive ml-0.5">*</span>}
     </Label>
@@ -106,7 +106,7 @@ export function ClinicAddressField({ question, value, providerId, onChange, disa
       <FieldLabel question={question} />
       {!disabled && locations.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          <span className="text-xs text-muted-foreground w-full">Use one of this clinic's addresses:</span>
+          <span className="t-helper w-full">Use one of this clinic's addresses:</span>
           {locations.map((loc, i) => (
             <button
               key={i}

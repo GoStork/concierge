@@ -217,7 +217,7 @@ export default function AdminUserAddPage() {
 
   return (
     <div className="space-y-6 w-full">
-      <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="button-back">
+      <button onClick={() => navigate(-1)} className="t-helper flex items-center gap-1.5 hover:text-foreground transition-colors" data-testid="button-back">
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
@@ -239,7 +239,7 @@ export default function AdminUserAddPage() {
       <form onSubmit={handleSubmit} className="space-y-6">
         {isProviderMode && teamMembers && teamMembers.length > 0 && (
           <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-            <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <h2 className="t-micro-label font-heading flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5" /> Team Members
             </h2>
             <div className="space-y-2">
@@ -282,7 +282,7 @@ export default function AdminUserAddPage() {
         )}
 
         <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-          <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Account Details</h2>
+          <h2 className="t-micro-label font-heading">Account Details</h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -311,7 +311,7 @@ export default function AdminUserAddPage() {
         </div>
 
         <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-          <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Security</h2>
+          <h2 className="t-micro-label font-heading">Security</h2>
 
           <div className="space-y-2">
             <Label>Password</Label>
@@ -334,7 +334,7 @@ export default function AdminUserAddPage() {
 
         {isParentAccountMode && (
           <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-            <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Role</h2>
+            <h2 className="t-micro-label font-heading">Role</h2>
             <div className="space-y-2">
               <Label>Account Role</Label>
               <div className="space-y-2 border rounded-[var(--radius)] p-3">
@@ -342,14 +342,14 @@ export default function AdminUserAddPage() {
                   <input type="radio" name="parentAccountRole" value="INTENDED_PARENT_2" checked={parentAccountRole === "INTENDED_PARENT_2"} onChange={() => setParentAccountRole("INTENDED_PARENT_2")} data-testid="radio-role-ip2" />
                   <div>
                     <span className="text-sm font-ui">Intended Parent 2</span>
-                    <p className="text-xs text-muted-foreground">Full access - can book, view calendar, and receive all notifications.</p>
+                    <p className="t-helper">Full access - can book, view calendar, and receive all notifications.</p>
                   </div>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="parentAccountRole" value="VIEWER" checked={parentAccountRole === "VIEWER"} onChange={() => setParentAccountRole("VIEWER")} data-testid="radio-role-viewer" />
                   <div>
                     <span className="text-sm font-ui">Viewer</span>
-                    <p className="text-xs text-muted-foreground">Browse-only - can view marketplace and provider profiles but cannot book.</p>
+                    <p className="t-helper">Browse-only - can view marketplace and provider profiles but cannot book.</p>
                   </div>
                 </label>
               </div>
@@ -359,7 +359,7 @@ export default function AdminUserAddPage() {
 
         {isGostorkTeamMode && (
           <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-            <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Role</h2>
+            <h2 className="t-micro-label font-heading">Role</h2>
             <div className="space-y-2">
               <Label>Role</Label>
               <div className="space-y-2 border rounded-[var(--radius)] p-3">
@@ -376,7 +376,7 @@ export default function AdminUserAddPage() {
 
         {isProviderMode && (
           <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-            <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Roles & Access</h2>
+            <h2 className="t-micro-label font-heading">Roles & Access</h2>
 
             <div className="space-y-2">
               <Label>Roles</Label>

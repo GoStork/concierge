@@ -39,7 +39,7 @@ function CarrierLogo({ carrier, size = 32 }: { carrier: InsuranceCarrier; size?:
   return (
     <div
       style={{ width: size, height: size }}
-      className="rounded bg-secondary flex items-center justify-center text-[10px] font-ui text-muted-foreground shrink-0"
+      className="t-helper rounded bg-secondary flex items-center justify-center font-ui shrink-0"
     >
       {initials}
     </div>
@@ -173,7 +173,7 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
           {/* Popular carriers - big logo grid (hidden while searching) */}
           {!search.trim() && (
             <div className="space-y-2">
-              <p className="text-xs font-ui text-muted-foreground">Popular carriers</p>
+              <p className="t-helper font-ui">Popular carriers</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {popularCarriers().map((c) => (
                   <button
@@ -194,7 +194,7 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
 
           {/* All carriers - text list, no logos */}
           <div className="space-y-1">
-            {!search.trim() && <p className="text-xs font-ui text-muted-foreground">All carriers</p>}
+            {!search.trim() && <p className="t-helper font-ui">All carriers</p>}
             <div className="max-h-48 overflow-y-auto rounded-[var(--radius)] border border-border/40 divide-y divide-border/30">
               {filtered.map((c) => (
                 <button
@@ -208,7 +208,7 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
                 </button>
               ))}
               {filtered.length === 0 && (
-                <p className="px-3 py-2 text-xs text-muted-foreground">No carriers match "{search}".</p>
+                <p className="t-helper px-3 py-2">No carriers match "{search}".</p>
               )}
             </div>
           </div>
@@ -226,7 +226,7 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
             <ChevronLeft className="w-3.5 h-3.5 text-muted-foreground" />
             {carrierObj && <CarrierLogo carrier={carrierObj} size={24} />}
             <span className="text-sm">{carrier}</span>
-            <span className="text-xs text-muted-foreground">· change</span>
+            <span className="t-helper">· change</span>
           </button>
 
           {plans.length === 0 ? (
@@ -242,7 +242,7 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
             </Button>
           ) : mode === "single" ? (
             <div className="space-y-1.5">
-              <p className="text-xs text-muted-foreground">Choose your plan</p>
+              <p className="t-helper">Choose your plan</p>
               <div className="space-y-1.5 max-h-[55vh] overflow-y-auto">
                 <Button type="button" variant="outline" className="w-full justify-start" disabled={disabled} onClick={() => commitSinglePlan(ALL_PLANS)} data-testid="plan-option-all">
                   {ALL_PLANS}
@@ -256,7 +256,7 @@ export function InsurancePicker({ value, onChange, mode = "multi", disabled, ...
             </div>
           ) : (
             <>
-              <p className="text-xs text-muted-foreground">Select the plans you accept:</p>
+              <p className="t-helper">Select the plans you accept:</p>
               <div className="max-h-52 overflow-y-auto rounded-[var(--radius)] border border-border/40 p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <Checkbox checked={checked.includes(ALL_PLANS)} onCheckedChange={() => toggleChecked(ALL_PLANS)} disabled={disabled} data-testid="checkbox-plan-all" />

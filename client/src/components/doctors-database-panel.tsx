@@ -157,7 +157,7 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
   };
 
   if (membersQ.isLoading) {
-    return <div className="flex items-center gap-2 text-sm text-muted-foreground p-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading doctors...</div>;
+    return <div className="t-helper flex items-center gap-2 p-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading doctors...</div>;
   }
 
   return (
@@ -232,7 +232,7 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+        <div className="t-helper rounded-xl border border-dashed border-border p-10 text-center">
           {doctors.length === 0 ? "No doctor profiles yet. Add doctors from the Team tab." : "No doctors match your filters."}
         </div>
       ) : (
@@ -317,12 +317,12 @@ function DoctorRecordCard({ doctor, sponsored, busy, campaignMode, onSponsor }: 
           <div className="min-w-0">
             <div className="font-heading text-sm text-foreground truncate flex items-center gap-1">
               {doctor.name}
-              {doctor.credential && <span className="text-xs font-normal text-muted-foreground">{doctor.credential}</span>}
+              {doctor.credential && <span className="t-helper">{doctor.credential}</span>}
             </div>
-            {doctor.title && <div className="text-xs text-muted-foreground truncate">{doctor.title}</div>}
+            {doctor.title && <div className="t-helper truncate">{doctor.title}</div>}
           </div>
         </div>
-        {locLabel && <div className="text-xs text-muted-foreground truncate">{locLabel}</div>}
+        {locLabel && <div className="t-helper truncate">{locLabel}</div>}
         <div className="flex flex-wrap gap-1 mt-auto pt-1">
           {doctor.isMedicalDirector && (
             <Badge variant="secondary" className="gap-1 text-[11px]"><Award className="w-3 h-3" /> Medical director</Badge>

@@ -1322,6 +1322,75 @@ model SiteSettings {
   // delete). Used to detect stale per-provider PandaDoc documents that were
   // created from an earlier version of the template.
   w9TemplateUpdatedAt    DateTime?
+
+  // ---------------------------------------------------------------------
+  // Content typography. Drives every label/value pair, prompt block, dense
+  // card key, and attribute chip in the product (profiles, settings pages,
+  // detail views, chat cards). Rendered through the shared primitives in
+  // client/src/components/ui/field.tsx - never hardcode these in a page.
+  // Colors are nullable: null means "inherit the theme role" (labels fall
+  // back to --muted-foreground, values to --foreground, eyebrows to --accent).
+  // ---------------------------------------------------------------------
+
+  // Attribute pair: "Health Status" / "Excellent"
+  fieldLabelSize        Int?
+  fieldLabelWeight      String?
+  fieldLabelColor       String?
+  fieldLabelCase        String?
+  fieldLabelTracking    Float?
+  fieldValueSize        Int?
+  fieldValueWeight      String?
+  fieldValueColor       String?
+  fieldLabelGap         Int?
+  fieldPairGap          Int?
+
+  // Prompt block: eyebrow question + prose answer ("My worst fear")
+  promptEyebrowSize     Int?
+  promptEyebrowWeight   String?
+  promptEyebrowColor    String?
+  promptEyebrowTracking Float?
+  promptEyebrowCase     String?
+  promptAnswerSize      Int?
+  promptAnswerWeight    String?
+  promptAnswerColor     String?
+  promptAnswerLineHeight Float?
+  promptBlockGap        Int?
+
+  // Compact uppercase key used inside dense cards and tables
+  microLabelSize        Int?
+  microValueSize        Int?
+  microLabelWeight      String?
+  microLabelColor       String?
+  microLabelTracking    Float?
+
+  // Attribute chip ("Anxiety disorder", "Master's", "5'7\"")
+  chipFontSize          Int?
+  chipFontWeight        String?
+  chipRadius            Int?
+  chipPaddingX          Int?
+  chipPaddingY          Int?
+  chipBgColor           String?
+  chipTextColor         String?
+
+  // Section card header ("Family Health History")
+  sectionTitleSize      Int?
+  sectionTitleWeight    String?
+
+  // Interface typography. Applied through the shared shadcn primitives
+  // (ui/label.tsx, ui/card.tsx, ui/table.tsx) so every form, card and table in
+  // the product inherits them - do not restyle those per page.
+  formLabelSize         Int?
+  formLabelSmallSize    Int?
+  formLabelWeight       String?
+  formLabelColor        String?
+  formLabelCase         String?
+  formLabelTracking     Float?
+  helperTextSize        Int?
+  helperTextColor       String?
+  cardHeadingSize       Int?
+  cardHeadingWeight     String?
+  pageTitleSize         Int?
+  pageTitleWeight       String?
 }
 
 model Matchmaker {

@@ -109,7 +109,7 @@ export function ProviderProfileCard({
           <p className="text-sm font-semibold truncate">{providerName || "Provider"}</p>
           {/* The GoStork house profile is the concierge team, not a provider */}
           {(providerName || "").trim().toLowerCase() !== "gostork" && typeLabel && (
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{typeLabel}</p>
+            <p className="t-micro-label">{typeLabel}</p>
           )}
           {/* Verified-parent rating - hidden while the agency identity is masked
               pre-booking (a rating on an anonymous card is just noise). */}
@@ -134,7 +134,7 @@ export function ProviderProfileCard({
 
       {calendar?.slug && (
         <div className="border-t pt-3">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">{isLawFirm ? "Attorney" : "Coordinator"}</p>
+          <p className="t-micro-label mb-1">{isLawFirm ? "Attorney" : "Coordinator"}</p>
           {calendar.memberName && (
             <p className="text-sm font-medium mb-3">{calendar.memberName}</p>
           )}

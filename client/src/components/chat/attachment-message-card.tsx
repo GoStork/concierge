@@ -90,7 +90,7 @@ export function AttachmentMessageCard({
           >
             {data.originalName || "File"}
           </div>
-          {subtitle && <div className="text-xs text-muted-foreground mt-0.5">{subtitle}</div>}
+          {subtitle && <div className="t-helper mt-0.5">{subtitle}</div>}
         </div>
         <button
           type="button"

@@ -145,7 +145,7 @@ export default function OnboardingAiIntroPage() {
         </div>
 
         {/* Disclaimer */}
-        <p className="text-center text-muted-foreground text-xs leading-relaxed max-w-sm mx-auto">
+        <p className="t-helper text-center leading-relaxed max-w-sm mx-auto">
           Our AI is not perfect yet. It can have some glitches.
         </p>
       </div>

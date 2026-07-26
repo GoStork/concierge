@@ -48,7 +48,7 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl md:text-4xl font-heading text-primary mb-2" data-testid="text-greeting">
+          <h1 className="font-display t-page-title text-primary mb-2" data-testid="text-greeting">
             Hello, {user.name || user.email}
           </h1>
           <p className="text-muted-foreground text-lg">
@@ -90,7 +90,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-heading text-primary" data-testid="text-services-count">--</div>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="t-helper mt-1">
                 View and manage your services
               </p>
               <Link to="/provider/services">
@@ -113,7 +113,7 @@ export default function DashboardPage() {
                 <div className="text-2xl font-heading text-primary" data-testid="text-providers-count">
                   {stats ? stats.providers.toLocaleString() : "--"}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="t-helper mt-1">
                   Registered on platform
                 </p>
                 <Link to="/admin/providers">
@@ -133,7 +133,7 @@ export default function DashboardPage() {
                 <div className="text-2xl font-heading text-primary" data-testid="text-parents-count">
                   {stats ? stats.parents.toLocaleString() : "--"}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="t-helper mt-1">
                   {stats ? `+${stats.parentsThisWeek} this week` : "Loading..."}
                 </p>
                 <Link to="/parents">
@@ -153,7 +153,7 @@ export default function DashboardPage() {
                 <div className="text-2xl font-heading text-primary" data-testid="text-scrapers-profiles">
                   {stats ? stats.scrapers.totalDonorProfiles.toLocaleString() : "--"}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="t-helper mt-1">
                   {stats ? `${stats.scrapers.activeScrapers} active scraper${stats.scrapers.activeScrapers !== 1 ? "s" : ""}` : "Loading..."}
                 </p>
                 <Link to="/admin/scrapers">
@@ -173,14 +173,14 @@ export default function DashboardPage() {
                 <div className="text-2xl font-heading text-primary" data-testid="text-video-total">
                   {stats ? stats.video.totalBookings.toLocaleString() : "--"}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="t-helper mt-1">
                   {stats ? (
                     <>
                       {stats.video.completedCalls} completed · {stats.video.upcomingCalls} upcoming
                     </>
                   ) : "Loading..."}
                 </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="t-helper mt-0.5">
                   {stats ? `${stats.video.activeRooms} active room${stats.video.activeRooms !== 1 ? "s" : ""}` : ""}
                 </p>
                 <Link to="/calendar">
@@ -205,7 +205,7 @@ export default function DashboardPage() {
               <div className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] animate-pulse" />
               <span className="text-sm font-ui">All Systems Operational</span>
             </div>
-            <p className="text-xs text-muted-foreground">Last checked: Just now</p>
+            <p className="t-helper">Last checked: Just now</p>
           </CardContent>
         </Card>
       </div>

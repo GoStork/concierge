@@ -138,7 +138,7 @@ export function AgreementDraftApprovalCard({
       {status === "pending" && partnerRequired && (
         <div ref={partnerFormRef} className="max-w-2xl space-y-3 p-3 rounded-[var(--radius)] border bg-secondary/40">
           <p className="text-xs font-medium">Second Signer Required</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="t-helper">
             This agreement requires 2 signers. We have {partnerRequired.parent1.firstName}'s information - add the second signer's details, or send to {partnerRequired.parent1.firstName} only.
           </p>
           <div className="text-xs border rounded-[var(--radius)] p-2 bg-background">
@@ -155,7 +155,7 @@ export function AgreementDraftApprovalCard({
               }}
               className="rounded border-input accent-primary w-3.5 h-3.5"
             />
-            <span className="text-xs text-muted-foreground">Send to {partnerRequired.parent1.firstName} only - skip partner</span>
+            <span className="t-helper">Send to {partnerRequired.parent1.firstName} only - skip partner</span>
           </label>
           {!skipPartner && (
             <div className="space-y-2">

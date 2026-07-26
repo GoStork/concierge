@@ -97,7 +97,7 @@ export default function ResetPasswordPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-4">
-            <p className="text-sm text-muted-foreground">
+            <p className="t-helper">
               This password reset link is invalid or has expired. Please request a new one.
             </p>
             <Button
@@ -117,10 +117,10 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
       <Card className="w-full max-w-md border-none shadow-2xl shadow-primary/5">
         <CardHeader className="space-y-2 text-center pb-4">
-          <CardTitle className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">
+          <CardTitle className="font-display t-page-title text-primary" data-testid="text-page-title">
             Reset your password
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             Please enter your new password.
           </p>
         </CardHeader>

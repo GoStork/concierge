@@ -101,14 +101,14 @@ function CalendarLinkSection({ slug }: { slug: string }) {
     <div className="bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
       <div className="flex items-center gap-2">
         <Link2 className="w-5 h-5 text-primary" />
-        <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Your Calendar Link</h2>
+        <h2 className="t-micro-label font-heading">Your Calendar Link</h2>
       </div>
-      <p className="text-sm text-muted-foreground">
+      <p className="t-helper">
         Share this link with anyone to let them book time with you. It can be embedded on websites or shared via email.
       </p>
       <div className="flex items-center gap-2">
         <div className="flex-1 flex items-center bg-secondary/30 border border-border/50 rounded-[var(--radius)] px-3 py-2">
-          <span className="text-sm text-muted-foreground mr-1 shrink-0">/book/</span>
+          <span className="t-helper mr-1 shrink-0">/book/</span>
           <span className="text-sm font-ui font-heading" data-testid="text-calendar-slug">{slug}</span>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={handleCopy} data-testid="button-copy-calendar-link">
@@ -364,7 +364,7 @@ export default function AdminUserEditPage() {
   if (!userData) {
     return (
       <div className="space-y-6 w-full">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6" data-testid="button-back">
+        <button onClick={() => navigate(-1)} className="t-helper flex items-center gap-1.5 hover:text-foreground transition-colors mb-6" data-testid="button-back">
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
         <p className="text-muted-foreground">User not found.</p>
@@ -380,7 +380,7 @@ export default function AdminUserEditPage() {
 
   return (
     <div className="space-y-6 w-full">
-      <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6" data-testid="button-back">
+      <button onClick={() => navigate(-1)} className="t-helper flex items-center gap-1.5 hover:text-foreground transition-colors mb-6" data-testid="button-back">
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
@@ -419,10 +419,10 @@ export default function AdminUserEditPage() {
                 <Label>Email</Label>
                 <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Mail className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground" data-testid="text-account-email">{userData.email}</span>
+                  <span className="t-helper" data-testid="text-account-email">{userData.email}</span>
                   <CopyButton value={userData.email} testId="btn-copy-account-email" />
                 </div>
-                <p className="text-xs text-muted-foreground">Email cannot be changed</p>
+                <p className="t-helper">Email cannot be changed</p>
               </div>
               <div className="space-y-2">
                 <Label>Mobile Number</Label>
@@ -511,7 +511,7 @@ export default function AdminUserEditPage() {
                 <Label>Role</Label>
                 <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Shield className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground" data-testid="text-account-role">{roleDisplay}</span>
+                  <span className="t-helper" data-testid="text-account-role">{roleDisplay}</span>
                 </div>
               </div>
               {userData.provider && (
@@ -519,7 +519,7 @@ export default function AdminUserEditPage() {
                   <Label>Organization</Label>
                   <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                     <Building2 className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground" data-testid="text-account-provider">{userData.provider.name}</span>
+                    <span className="t-helper" data-testid="text-account-provider">{userData.provider.name}</span>
                   </div>
                 </div>
               )}
@@ -528,20 +528,20 @@ export default function AdminUserEditPage() {
 
           {isParentAccountMode && userData.parentAccountRole !== "INTENDED_PARENT_1" && id !== currentUser?.id && (
             <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-              <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Account Role</h2>
+              <h2 className="t-micro-label font-heading">Account Role</h2>
               <div className="space-y-2 border rounded-[var(--radius)] p-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="parentAccountRole" value="INTENDED_PARENT_2" checked={parentAccountRole === "INTENDED_PARENT_2"} onChange={() => setParentAccountRole("INTENDED_PARENT_2")} data-testid="radio-role-ip2" />
                   <div>
                     <span className="text-sm font-ui">Intended Parent 2</span>
-                    <p className="text-xs text-muted-foreground">Full access - can book, view calendar, and receive all notifications.</p>
+                    <p className="t-helper">Full access - can book, view calendar, and receive all notifications.</p>
                   </div>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="parentAccountRole" value="VIEWER" checked={parentAccountRole === "VIEWER"} onChange={() => setParentAccountRole("VIEWER")} data-testid="radio-role-viewer" />
                   <div>
                     <span className="text-sm font-ui">Viewer</span>
-                    <p className="text-xs text-muted-foreground">Browse-only - can view marketplace and provider profiles but cannot book.</p>
+                    <p className="t-helper">Browse-only - can view marketplace and provider profiles but cannot book.</p>
                   </div>
                 </label>
               </div>
@@ -550,7 +550,7 @@ export default function AdminUserEditPage() {
 
           {isGostorkTeamUser && (
             <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-              <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">GoStork Role</h2>
+              <h2 className="t-micro-label font-heading">GoStork Role</h2>
               <div className="space-y-2 border rounded-[var(--radius)] p-3">
                 {GOSTORK_ROLES.map(r => (
                   <label key={r.value} className="flex items-center gap-2 cursor-pointer">
@@ -564,7 +564,7 @@ export default function AdminUserEditPage() {
 
           {isProviderUser && (
             <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-              <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Roles & Access</h2>
+              <h2 className="t-micro-label font-heading">Roles & Access</h2>
 
               <div className="space-y-2">
                 <Label>Roles</Label>
@@ -600,7 +600,7 @@ export default function AdminUserEditPage() {
 
           {userData.dailyRoomUrl && (
             <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-              <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Video Room</h2>
+              <h2 className="t-micro-label font-heading">Video Room</h2>
               <div className="flex items-center gap-2">
                 <Video className="w-4 h-4 text-primary shrink-0" />
                 <a href={userData.dailyRoomUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate" data-testid="link-video-room-url">
@@ -612,7 +612,7 @@ export default function AdminUserEditPage() {
 
           {!isParentAccountMode && (
             <div className="mt-8 bg-card rounded-[var(--radius)] border border-border/50 shadow-sm p-6 space-y-4">
-              <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Connected Calendars</h2>
+              <h2 className="t-micro-label font-heading">Connected Calendars</h2>
               {userData.calendarConnections && userData.calendarConnections.length > 0 ? (
                 <div className="space-y-2">
                   {userData.calendarConnections.map((conn) => {
@@ -635,7 +635,7 @@ export default function AdminUserEditPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">No calendar connected yet.</p>
+                  <p className="t-helper">No calendar connected yet.</p>
                   <Button type="button" variant="outline" size="sm" onClick={() => navigate("/account/calendar?connect=true")} data-testid="button-connect-calendar">
                     <Calendar className="w-4 h-4 mr-1.5" />
                     Connect Your Calendar

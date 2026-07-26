@@ -143,10 +143,10 @@ export function MeetingReminderPopup() {
           <p className="text-sm font-medium text-foreground truncate" data-testid="text-meeting-subject">
             {booking.subject || "Video Consultation"}
           </p>
-          <p className="text-sm text-muted-foreground truncate" data-testid="text-meeting-counterparty">
+          <p className="t-helper truncate" data-testid="text-meeting-counterparty">
             with {booking.counterpartyName}
           </p>
-          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5" data-testid="text-meeting-time">
+          <p className="t-helper mt-1 flex items-center gap-1.5" data-testid="text-meeting-time">
             <CalendarDays className="w-3.5 h-3.5 shrink-0" />
             {isToday(new Date(booking.scheduledAt))
               ? `Today at ${format(new Date(booking.scheduledAt), "h:mm a")}`
@@ -155,10 +155,10 @@ export function MeetingReminderPopup() {
           </p>
         </div>
 
-        <p className="text-sm text-muted-foreground mb-1 leading-relaxed">
+        <p className="t-helper mb-1 leading-relaxed">
           This call will be recorded and transcribed. You'll get a link to rewatch the video and review the transcript anytime.
         </p>
-        <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
+        <p className="t-helper mb-6 leading-relaxed">
           You can decline and still join without recording.
         </p>
 
@@ -173,7 +173,7 @@ export function MeetingReminderPopup() {
         </Button>
 
         <button
-          className="mt-4 text-sm text-muted-foreground hover:text-foreground font-medium transition-colors"
+          className="t-helper mt-4 hover:text-foreground font-medium transition-colors"
           onClick={() => handleJoin(false)}
           data-testid="btn-join-without-recording"
         >

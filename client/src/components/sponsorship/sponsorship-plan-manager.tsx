@@ -41,19 +41,19 @@ export function SponsorshipPlanManager() {
         <Sparkles className="w-5 h-5 text-accent" />
         <h2 className="text-xl font-heading text-foreground">Sponsorship Programs</h2>
       </div>
-      <p className="text-sm text-muted-foreground -mt-4">
+      <p className="t-helper -mt-4">
         Pricing and slots for every provider. Price changes apply to <strong>new</strong> sponsorships only - existing
         subscriptions keep the price they signed up at.
       </p>
 
-      {plansQ.isLoading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>}
+      {plansQ.isLoading && <div className="t-helper flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>}
 
       {/* Slot bundles */}
       <Card>
         <CardHeader className="pb-2 flex-row items-center justify-between">
           <div>
             <CardTitle className="text-base font-semibold text-foreground">Slot bundles</CardTitle>
-            <p className="text-xs text-muted-foreground mt-1">Tiers are scoped per sub-profile type, so egg/sperm donor rosters and the much smaller surrogate/doctor rosters can be priced differently.</p>
+            <p className="t-helper mt-1">Tiers are scoped per sub-profile type, so egg/sperm donor rosters and the much smaller surrogate/doctor rosters can be priced differently.</p>
           </div>
           <Button size="sm" variant="outline" onClick={() => setAdding((v) => !v)} data-testid="button-add-plan">
             <Plus className="w-4 h-4 mr-1" /> Add tier
@@ -65,7 +65,7 @@ export function SponsorshipPlanManager() {
             <div key={g.type} className="space-y-2">
               <p className="text-sm font-medium text-foreground">{g.label}</p>
               {g.tiers.map((p) => <PlanRow key={p.id} plan={p} onChanged={refetch} />)}
-              {!g.tiers.length && <p className="text-xs text-muted-foreground pl-1">No {g.label.toLowerCase()} tiers.</p>}
+              {!g.tiers.length && <p className="t-helper pl-1">No {g.label.toLowerCase()} tiers.</p>}
             </div>
           ))}
         </CardContent>
@@ -75,9 +75,9 @@ export function SponsorshipPlanManager() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base font-semibold text-foreground">Whole-profile boosts</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">Per-type pricing for boosting a provider's own clinic or agency profile.</p>
+          <p className="t-helper">Per-type pricing for boosting a provider's own clinic or agency profile.</p>
           {wholeProfiles.map((p) => <PlanRow key={p.id} plan={p} onChanged={refetch} />)}
-          {!wholeProfiles.length && !plansQ.isLoading && <p className="text-sm text-muted-foreground">No whole-profile plans configured.</p>}
+          {!wholeProfiles.length && !plansQ.isLoading && <p className="t-helper">No whole-profile plans configured.</p>}
         </CardContent>
       </Card>
     </div>
@@ -123,16 +123,16 @@ function PlanRow({ plan, onChanged }: { plan: any; onChanged: () => void }) {
     <div className="rounded-lg border border-border p-3 space-y-2" data-testid={`plan-${plan.tierKey}`}>
       <div className="flex items-end gap-3 flex-wrap">
         <div className="min-w-[160px]">
-          <label className="text-xs text-muted-foreground">Name</label>
+          <label className="t-helper">Name</label>
           <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9" data-testid={`plan-name-${plan.tierKey}`} />
         </div>
         <div className="w-28">
-          <label className="text-xs text-muted-foreground">Price / mo ($)</label>
+          <label className="t-helper">Price / mo ($)</label>
           <NumberInput value={price} onChange={setPrice} className="h-9" data-testid={`plan-price-${plan.tierKey}`} />
         </div>
         {isBundle && (
           <div className="w-24">
-            <label className="text-xs text-muted-foreground">Slots</label>
+            <label className="t-helper">Slots</label>
             <NumberInput value={slots} onChange={setSlots} allowDecimal={false} className="h-9" data-testid={`plan-slots-${plan.tierKey}`} />
           </div>
         )}
@@ -144,7 +144,7 @@ function PlanRow({ plan, onChanged }: { plan: any; onChanged: () => void }) {
           {active ? "Active" : "Inactive"}
         </button>
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground font-mono">{plan.tierKey}</span>
+          <span className="t-helper font-mono">{plan.tierKey}</span>
           <Button size="sm" onClick={save} disabled={!dirty || busy} data-testid={`plan-save-${plan.tierKey}`}>
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4 mr-1" />Save</>}
           </Button>
@@ -190,15 +190,15 @@ function NewBundleForm({ onDone, onCancel }: { onDone: () => void; onCancel: () 
     <div className="rounded-lg border border-dashed border-primary/40 bg-secondary/30 p-3 space-y-2">
       <div className="flex items-end gap-3 flex-wrap">
         <div className="w-36">
-          <label className="text-xs text-muted-foreground">Type</label>
+          <label className="t-helper">Type</label>
           <select value={entityType} onChange={(e) => setEntityType(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" data-testid="new-plan-type">
             {SLOT_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
           </select>
         </div>
-        <div className="w-28"><label className="text-xs text-muted-foreground">Key</label><Input value={tierKey} onChange={(e) => setTierKey(e.target.value)} placeholder="enterprise" className="h-9" data-testid="new-plan-key" /></div>
-        <div className="min-w-[140px]"><label className="text-xs text-muted-foreground">Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enterprise" className="h-9" data-testid="new-plan-name" /></div>
-        <div className="w-28"><label className="text-xs text-muted-foreground">Price / mo ($)</label><NumberInput value={price} onChange={setPrice} className="h-9" data-testid="new-plan-price" /></div>
-        <div className="w-24"><label className="text-xs text-muted-foreground">Slots</label><NumberInput value={slots} onChange={setSlots} allowDecimal={false} className="h-9" data-testid="new-plan-slots" /></div>
+        <div className="w-28"><label className="t-helper">Key</label><Input value={tierKey} onChange={(e) => setTierKey(e.target.value)} placeholder="enterprise" className="h-9" data-testid="new-plan-key" /></div>
+        <div className="min-w-[140px]"><label className="t-helper">Name</label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enterprise" className="h-9" data-testid="new-plan-name" /></div>
+        <div className="w-28"><label className="t-helper">Price / mo ($)</label><NumberInput value={price} onChange={setPrice} className="h-9" data-testid="new-plan-price" /></div>
+        <div className="w-24"><label className="t-helper">Slots</label><NumberInput value={slots} onChange={setSlots} allowDecimal={false} className="h-9" data-testid="new-plan-slots" /></div>
         <div className="ml-auto flex gap-2">
           <Button size="sm" onClick={create} disabled={busy || !tierKey || !name || !price || !slots} data-testid="new-plan-create">
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create tier"}

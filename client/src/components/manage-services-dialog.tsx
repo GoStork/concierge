@@ -118,7 +118,7 @@ export default function ManageServicesDialog({ provider, open, onOpenChange }: M
                   <div className="flex items-center gap-2">
                     {confirmRemoveId === service.id ? (
                       <>
-                        <span className="text-xs text-muted-foreground">Remove this service?</span>
+                        <span className="t-helper">Remove this service?</span>
                         <Button
                           variant="destructive"
                           size="sm"
@@ -184,12 +184,12 @@ export default function ManageServicesDialog({ provider, open, onOpenChange }: M
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground text-center py-4">No services registered yet.</p>
+            <p className="t-helper text-center py-4">No services registered yet.</p>
           )}
 
           {availableTypes.length > 0 && (
             <div className="border-t pt-4">
-              <Label className="text-sm font-ui mb-2 block">Add Service Type</Label>
+              <Label className="font-ui mb-2 block">Add Service Type</Label>
               <div className="flex flex-wrap gap-2">
                 {availableTypes.map((type: any) => (
                   <Button

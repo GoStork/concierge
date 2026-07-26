@@ -61,7 +61,7 @@ export function IpFormPromptCard({ data, brandColor }: { data: any; brandColor: 
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">Intended Parent Form</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="t-helper">
             {submitted ? "Submitted - you're all set!" : `${providerName} shares it with potential surrogates before your match call`}
           </p>
         </div>
@@ -76,7 +76,7 @@ export function IpFormPromptCard({ data, brandColor }: { data: any; brandColor: 
             <Button className="w-full" onClick={openForm} data-testid="ip-form-prompt-open">
               {ctaLabel}
             </Button>
-            <p className="text-[11px] text-muted-foreground mt-1.5 text-center">
+            <p className="t-helper mt-1.5 text-center">
               About 20-30 minutes - saves as you go, and both partners can fill it in parallel.
             </p>
           </>

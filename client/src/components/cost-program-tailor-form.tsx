@@ -224,7 +224,7 @@ export function CostProgramTailorForm({
             <h3 className="font-heading text-base text-foreground">
               Help us tailor the cost programs for you
             </h3>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="t-helper mt-1">
               We need a few details about your journey to show the programs that match your situation.
               Or skip the questions and we'll show you everything this provider has published.
             </p>
@@ -242,7 +242,7 @@ export function CostProgramTailorForm({
         {expanded && (
           <div className="space-y-5 pt-2" data-testid="tailor-form-body">
             <div className="space-y-2">
-              <Label className="text-sm">What are you looking for?</Label>
+              <Label >What are you looking for?</Label>
               <ChipRow
                 options={SERVICE_CHIPS}
                 selected={services}
@@ -256,12 +256,12 @@ export function CostProgramTailorForm({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-2">
-                <Label className="text-sm">Your gender identity</Label>
+                <Label >Your gender identity</Label>
                 <ChipRow options={GENDER_CHIPS} selected={gender} onSelect={setGender} testIdPrefix="chip-gender" />
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm">Relationship status</Label>
+                <Label >Relationship status</Label>
                 <ChipRow
                   options={RELATIONSHIP_CHIPS}
                   selected={relationship}
@@ -273,7 +273,7 @@ export function CostProgramTailorForm({
 
             {hasPartner && (
               <div className="space-y-2">
-                <Label className="text-sm">Partner's gender</Label>
+                <Label >Partner's gender</Label>
                 <ChipRow
                   options={PARTNER_GENDER_CHIPS}
                   selected={partnerGender}
@@ -285,7 +285,7 @@ export function CostProgramTailorForm({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-2">
-                <Label className="text-sm">Egg source</Label>
+                <Label >Egg source</Label>
                 <ChipRow
                   options={EGG_SOURCE_CHIPS}
                   selected={eggSource}
@@ -295,7 +295,7 @@ export function CostProgramTailorForm({
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm">Sperm source</Label>
+                <Label >Sperm source</Label>
                 <ChipRow
                   options={SPERM_SOURCE_CHIPS}
                   selected={spermSource}
@@ -307,7 +307,7 @@ export function CostProgramTailorForm({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="space-y-2">
-                <Label className="text-sm">Who will carry?</Label>
+                <Label >Who will carry?</Label>
                 <ChipRow
                   options={CARRIER_CHIPS}
                   selected={carrier}
@@ -317,7 +317,7 @@ export function CostProgramTailorForm({
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm">Do you already have embryos?</Label>
+                <Label >Do you already have embryos?</Label>
                 <ChipRow
                   options={EMBRYO_CHIPS}
                   selected={hasEmbryos}
@@ -334,9 +334,9 @@ export function CostProgramTailorForm({
                 onCheckedChange={(v) => setSkip(v === true)}
                 data-testid="checkbox-skip-tailor"
               />
-              <Label htmlFor="tailor-skip" className="text-sm cursor-pointer leading-tight">
+              <Label htmlFor="tailor-skip" className="cursor-pointer leading-tight">
                 Skip these questions and just show me every cost program this provider has published.
-                <span className="block text-xs text-muted-foreground mt-0.5">
+                <span className="t-helper block mt-0.5">
                   You can answer them later from your settings page.
                 </span>
               </Label>

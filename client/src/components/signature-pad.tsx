@@ -194,7 +194,7 @@ export function SignaturePad({
               data-testid="signature-canvas"
             />
             {!hasInk && (
-              <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground pointer-events-none">
+              <p className="t-helper absolute inset-0 flex items-center justify-center pointer-events-none">
                 Sign here with your mouse or finger
               </p>
             )}

@@ -18,15 +18,11 @@ import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileCloseButton } from "@/components/mobile-profile-close-header";
 import { ReviewsSection, RatingBadge } from "@/components/reviews/reviews-ui";
+import { Field } from "@/components/ui/field";
 
 function FieldItem({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
-  return (
-    <div data-testid={`field-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-      <p className="text-base font-ui text-foreground">{label}</p>
-      <p className="text-base text-foreground">{value}</p>
-    </div>
-  );
+  return <Field label={label} value={value} data-testid={`field-${label.toLowerCase().replace(/\s+/g, "-")}`} />;
 }
 
 export default function ProviderProfilePage() {
@@ -176,8 +172,8 @@ export default function ProviderProfilePage() {
           </div>
           {provider.about && (
             <div className="mt-4" data-testid="field-about">
-              <p className="text-base font-ui text-foreground">About</p>
-              <p className="text-base text-foreground whitespace-pre-line leading-body mt-1">{provider.about}</p>
+              <p className="t-field-label">About</p>
+              <p className="t-prompt-answer whitespace-pre-line mt-1">{provider.about}</p>
             </div>
           )}
       </ProfileSection>
@@ -240,14 +236,14 @@ export default function ProviderProfilePage() {
           <ProfileSection title="Surrogate Matching Requirements" contentClassName="p-6 space-y-4" data-testid="section-surrogate-matching-requirements">
               {(provider.ivfSurrogateMinAge != null || provider.ivfSurrogateMaxAge != null) && (
                 <div>
-                  <p className="text-base font-ui text-foreground">Age Range of Surrogate</p>
-                  <p className="text-base text-foreground">{provider.ivfSurrogateMinAge ?? 18} - {provider.ivfSurrogateMaxAge ?? 45} years</p>
+                  <p className="t-field-label">Age Range of Surrogate</p>
+                  <p className="t-field-value">{provider.ivfSurrogateMinAge ?? 18} - {provider.ivfSurrogateMaxAge ?? 45} years</p>
                 </div>
               )}
               {(provider.ivfSurrogateMinBmi != null || provider.ivfSurrogateMaxBmi != null) && (
                 <div>
-                  <p className="text-base font-ui text-foreground">BMI Range of Surrogate</p>
-                  <p className="text-base text-foreground">{provider.ivfSurrogateMinBmi ?? 18} - {provider.ivfSurrogateMaxBmi ?? 35}</p>
+                  <p className="t-field-label">BMI Range of Surrogate</p>
+                  <p className="t-field-value">{provider.ivfSurrogateMinBmi ?? 18} - {provider.ivfSurrogateMaxBmi ?? 35}</p>
                 </div>
               )}
               {[
@@ -260,8 +256,8 @@ export default function ProviderProfilePage() {
                 { label: "Months Post Vaginal Delivery", value: provider.ivfSurrogateMonthsPostVaginal },
               ].filter(({ value }) => value != null).map(({ label, value }) => (
                 <div key={label}>
-                  <p className="text-base font-ui text-foreground">{label}</p>
-                  <p className="text-base text-foreground">{value}</p>
+                  <p className="t-field-label">{label}</p>
+                  <p className="t-field-value">{value}</p>
                 </div>
               ))}
               {[
@@ -278,13 +274,13 @@ export default function ProviderProfilePage() {
                   ) : (
                     <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
                   )}
-                  <span className="text-base text-foreground">{label}</span>
+                  <span className="t-field-value">{label}</span>
                 </div>
               ))}
               {provider.ivfSurrogateMentalHealthHistory && (
                 <div>
-                  <p className="text-base font-ui text-foreground mb-1">Health History Notes</p>
-                  <p className="text-base text-foreground whitespace-pre-wrap">{provider.ivfSurrogateMentalHealthHistory}</p>
+                  <p className="t-field-label mb-1">Health History Notes</p>
+                  <p className="t-prompt-answer whitespace-pre-wrap">{provider.ivfSurrogateMentalHealthHistory}</p>
                 </div>
               )}
           </ProfileSection>
@@ -301,7 +297,7 @@ export default function ProviderProfilePage() {
               return (
                 <div key={loc.id || idx} className="flex items-start gap-2" data-testid={`location-${idx}`}>
                   <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                  <p className="text-base text-foreground">{parts.join(", ")}</p>
+                  <p className="t-field-value">{parts.join(", ")}</p>
                 </div>
               );
             })}
@@ -340,10 +336,10 @@ export default function ProviderProfilePage() {
                         <p className="text-xs text-primary font-ui">{member.title}</p>
                       )}
                       {member.bio && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{member.bio}</p>
+                        <p className="t-helper mt-1 line-clamp-3">{member.bio}</p>
                       )}
                       {memberLocations && memberLocations.length > 0 && (
-                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                        <p className="t-helper mt-1 flex items-center gap-1">
                           <MapPin className="w-3 h-3 shrink-0" />
                           {memberLocations.join(" · ")}
                         </p>
@@ -405,7 +401,7 @@ export default function ProviderProfilePage() {
                   ) : (
                     <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
                   )}
-                  <span className="text-base text-foreground">{label}</span>
+                  <span className="t-field-value">{label}</span>
                 </div>
               ))}
             </div>

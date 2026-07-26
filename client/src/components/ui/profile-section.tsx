@@ -36,7 +36,8 @@ export function ProfileSection({
     <Card className={cn("overflow-hidden", className)} data-testid={testId}>
       <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b bg-muted/50">
         <h3
-          className="text-lg font-heading font-semibold text-foreground"
+          className="font-heading text-foreground"
+          style={{ fontSize: "var(--section-title-size)", fontWeight: "var(--section-title-weight)" as any }}
           data-testid={
             typeof title === "string"
               ? `section-header-${title.toLowerCase().replace(/\s+/g, "-")}`

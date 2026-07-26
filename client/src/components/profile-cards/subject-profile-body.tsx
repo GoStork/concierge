@@ -3,6 +3,7 @@ import { ExternalLink, Loader2 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getDonorStatusStyle } from "@/lib/donor-status";
 import { getProfileUrlSlug } from "@/components/chat/chat-utils";
+import { MicroLabel } from "@/components/ui/field";
 import {
   buildSidebarSections,
   buildTitle,
@@ -111,7 +112,7 @@ export function SubjectProfileBody({
             </p>
           ) : profileAvailable != null && (
             profileAvailable === false ? (
-              <p className="text-[10px] text-muted-foreground">No longer available</p>
+              <p className="t-helper">No longer available</p>
             ) : (
               <p className="text-[10px] text-[hsl(var(--brand-success))] font-medium">Available</p>
             )
@@ -129,22 +130,20 @@ export function SubjectProfileBody({
         View Full Profile
       </button>
       {isLoading && !swipeProfile ? (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="t-helper flex items-center gap-2">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
           Loading profile...
         </div>
       ) : (
         sections.map((section, i) => (
           <div key={i} className={i > 0 ? "border-t pt-2 mt-2" : "mt-1"}>
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
-              {section.title}
-            </p>
+            <MicroLabel className="mb-1.5">{section.title}</MicroLabel>
             <div className="space-y-1">
               {section.rows.map((row, j) => (
-                <div key={j} className="flex items-center gap-1.5 text-xs">
-                  {row.icon && <row.icon className="w-3 h-3 text-muted-foreground shrink-0" />}
-                  <span className="text-muted-foreground shrink-0">{row.label}:</span>
-                  <span className="text-foreground">{row.value}</span>
+                <div key={j} className="flex items-baseline gap-1.5">
+                  {row.icon && <row.icon className="w-3 h-3 shrink-0 self-center" style={{ color: "var(--micro-label-color)" }} />}
+                  <span className="t-micro-label shrink-0">{row.label}</span>
+                  <span className="t-micro-value">{row.value}</span>
                 </div>
               ))}
             </div>

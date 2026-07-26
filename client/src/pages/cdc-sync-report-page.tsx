@@ -104,7 +104,7 @@ function DisappearedClinicsSection({ clinics, syncId, navigate }: { clinics: Dis
           <MinusCircle className="w-5 h-5 text-warning" />
           Clinics No Longer in CDC Data
         </h3>
-        <p className="text-sm text-muted-foreground italic">None - all previous clinics are still present.</p>
+        <p className="t-helper italic">None - all previous clinics are still present.</p>
       </div>
     );
   }
@@ -114,7 +114,7 @@ function DisappearedClinicsSection({ clinics, syncId, navigate }: { clinics: Dis
       <h3 className="text-lg font-heading mb-3 flex items-center gap-2">
         <MinusCircle className="w-5 h-5 text-warning" />
         Clinics No Longer in CDC Data
-        <span className="text-sm font-normal text-muted-foreground">({clinics.length})</span>
+        <span className="t-helper font-normal">({clinics.length})</span>
       </h3>
       <Card className="overflow-hidden border-warning/30">
         <Table>
@@ -138,7 +138,7 @@ function DisappearedClinicsSection({ clinics, syncId, navigate }: { clinics: Dis
                 >
                   <div className="font-ui">{clinic.name}</div>
                   {(clinic.city || clinic.state) && (
-                    <div className="text-xs text-muted-foreground">
+                    <div className="t-helper">
                       {[clinic.city, clinic.state].filter(Boolean).join(", ")}
                     </div>
                   )}
@@ -190,7 +190,7 @@ function DisappearedClinicsSection({ clinics, syncId, navigate }: { clinics: Dis
                           <ExternalLink className="w-3 h-3 flex-shrink-0" />
                         </a>
                       ) : (
-                        <span className="text-muted-foreground italic text-xs">No website</span>
+                        <span className="t-helper italic">No website</span>
                       )}
                     </div>
                   )}
@@ -347,7 +347,7 @@ export default function CdcSyncReportPage() {
         ]}
         title="CDC Sync Report"
       >
-        <p className="text-muted-foreground text-sm" data-testid="text-no-report">Report not found.</p>
+        <p className="t-helper" data-testid="text-no-report">Report not found.</p>
       </AdminReportLayout>
     );
   }
@@ -413,7 +413,7 @@ export default function CdcSyncReportPage() {
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-primary animate-pulse" />
             <span className="text-sm font-heading text-primary">Live - CDC Sync in Progress</span>
-            <span className="ml-auto text-xs text-muted-foreground">Auto-refreshing every 5s</span>
+            <span className="t-helper ml-auto">Auto-refreshing every 5s</span>
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-sm">
@@ -433,7 +433,7 @@ export default function CdcSyncReportPage() {
             <div className="text-2xl font-heading" data-testid="stat-clinics-processed">
               {job.clinicsProcessed.toLocaleString()}
             </div>
-            <div className="text-xs text-muted-foreground">Clinics Processed</div>
+            <div className="t-helper">Clinics Processed</div>
           </CardContent>
         </Card>
 
@@ -442,7 +442,7 @@ export default function CdcSyncReportPage() {
             <div className="text-2xl font-heading" data-testid="stat-records-processed">
               {job.recordsProcessed.toLocaleString()}
             </div>
-            <div className="text-xs text-muted-foreground">Records Processed</div>
+            <div className="t-helper">Records Processed</div>
           </CardContent>
         </Card>
 
@@ -451,7 +451,7 @@ export default function CdcSyncReportPage() {
             <div className="text-2xl font-heading" data-testid="stat-success-rates">
               {stats.totalSuccessRates.toLocaleString()}
             </div>
-            <div className="text-xs text-muted-foreground">Success Rates</div>
+            <div className="t-helper">Success Rates</div>
           </CardContent>
         </Card>
 
@@ -460,7 +460,7 @@ export default function CdcSyncReportPage() {
             <div className="text-2xl font-heading" data-testid="stat-duration">
               {formatDuration(job.startedAt, job.completedAt)}
             </div>
-            <div className="text-xs text-muted-foreground">Duration</div>
+            <div className="t-helper">Duration</div>
           </CardContent>
         </Card>
       </div>
@@ -510,7 +510,7 @@ export default function CdcSyncReportPage() {
                       <TableCell className="text-sm">
                         <div className="font-ui">{clinic.name}</div>
                         {(clinic.city || clinic.state) && (
-                          <div className="text-xs text-muted-foreground">
+                          <div className="t-helper">
                             {[clinic.city, clinic.state].filter(Boolean).join(", ")}
                           </div>
                         )}
@@ -533,7 +533,7 @@ export default function CdcSyncReportPage() {
               <h3 className="text-lg font-heading mb-3 flex items-center gap-2">
                 <Plus className="w-5 h-5 text-success" />
                 New Clinics for This Year
-                <span className="text-sm font-normal text-muted-foreground">({clinicResults.newClinics.length})</span>
+                <span className="t-helper font-normal">({clinicResults.newClinics.length})</span>
               </h3>
               <Card className="overflow-hidden border-success/30">
                 <Table>
@@ -555,7 +555,7 @@ export default function CdcSyncReportPage() {
                         <TableCell className="text-sm">
                           <div className="font-ui">{clinic.name}</div>
                           {(clinic.city || clinic.state) && (
-                            <div className="text-xs text-muted-foreground">
+                            <div className="t-helper">
                               {[clinic.city, clinic.state].filter(Boolean).join(", ")}
                             </div>
                           )}
@@ -580,7 +580,7 @@ export default function CdcSyncReportPage() {
                 <Plus className="w-5 h-5 text-success" />
                 New Clinics for This Year
               </h3>
-              <p className="text-sm text-muted-foreground italic">None - all clinics were present in previous years.</p>
+              <p className="t-helper italic">None - all clinics were present in previous years.</p>
             </div>
           )}
 

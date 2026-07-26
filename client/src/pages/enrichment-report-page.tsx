@@ -64,8 +64,8 @@ function CoverageBar({ label, icon, count, total }: { label: string; icon: React
         </div>
         <div className="flex items-baseline gap-1 mb-1.5">
           <span className="text-lg font-heading leading-none">{count}</span>
-          <span className="text-[10px] text-muted-foreground">/ {total}</span>
-          <span className="text-[10px] text-muted-foreground ml-auto font-ui">{pct}%</span>
+          <span className="t-helper">/ {total}</span>
+          <span className="t-helper ml-auto font-ui">{pct}%</span>
         </div>
         <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
           <div
@@ -351,7 +351,7 @@ export default function EnrichmentReportPage() {
         ]}
         title="Enrichment Report"
       >
-        <p className="text-muted-foreground text-sm" data-testid="text-no-report">Report not found.</p>
+        <p className="t-helper" data-testid="text-no-report">Report not found.</p>
       </AdminReportLayout>
     );
   }
@@ -386,7 +386,7 @@ export default function EnrichmentReportPage() {
           {(() => {
             const anyBusy = isResuming || isRestarting || isRestartingSkipped || isRestartingTeam || isRestartingLogo || isRestartingAbout || isRestartingPhone || isRestartingLocations || isRestartingUrls || isRestartingPhotos || doctorBusy !== null;
             const Label = ({ children }: { children: any }) => (
-              <span className="text-[11px] font-ui uppercase tracking-wide text-muted-foreground w-full sm:w-32 sm:shrink-0">{children}</span>
+              <span className="t-micro-label font-ui w-full sm:w-32 sm:shrink-0">{children}</span>
             );
             return (
               <div className="space-y-3">
@@ -498,7 +498,7 @@ export default function EnrichmentReportPage() {
             <span className="text-sm font-heading text-primary">
               Live - {modeLabel ? `${modeLabel} in Progress` : "Enrichment in Progress"}
             </span>
-            <span className="ml-auto text-xs text-muted-foreground">Auto-refreshing every 5s</span>
+            <span className="t-helper ml-auto">Auto-refreshing every 5s</span>
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-sm">
@@ -509,7 +509,7 @@ export default function EnrichmentReportPage() {
             </div>
             <Progress value={pct} className="h-2" data-testid="enrichment-live-progress" />
             {(job.enrichmentErrors > 0 || job.enrichmentSkipped > 0) && (
-              <div className="text-xs text-muted-foreground space-x-3">
+              <div className="t-helper space-x-3">
                 {job.enrichmentSkipped > 0 && (
                   <span className="text-warning">
                     {job.enrichmentSkipped} skipped (
@@ -535,7 +535,7 @@ export default function EnrichmentReportPage() {
             <div className="text-2xl font-heading" data-testid="stat-processed">
               {job.enrichmentProcessed}
             </div>
-            <div className="text-xs text-muted-foreground">Processed</div>
+            <div className="t-helper">Processed</div>
           </CardContent>
         </Card>
 
@@ -544,7 +544,7 @@ export default function EnrichmentReportPage() {
             <div className="text-2xl font-heading text-[hsl(var(--brand-success))]" data-testid="stat-succeeded">
               {succeeded}
             </div>
-            <div className="text-xs text-muted-foreground">Succeeded</div>
+            <div className="t-helper">Succeeded</div>
           </CardContent>
         </Card>
 
@@ -553,7 +553,7 @@ export default function EnrichmentReportPage() {
             <div className="text-2xl font-heading text-warning" data-testid="stat-skipped">
               {job.enrichmentSkipped}
             </div>
-            <div className="text-xs text-muted-foreground">Skipped</div>
+            <div className="t-helper">Skipped</div>
           </CardContent>
         </Card>
 
@@ -562,7 +562,7 @@ export default function EnrichmentReportPage() {
             <div className="text-2xl font-heading text-destructive" data-testid="stat-errors">
               {job.enrichmentErrors}
             </div>
-            <div className="text-xs text-muted-foreground">Errors</div>
+            <div className="t-helper">Errors</div>
           </CardContent>
         </Card>
       </div>
@@ -726,7 +726,7 @@ export default function EnrichmentReportPage() {
                 {missingWebsite.map((clinic) => (
                   <TableRow key={clinic.id} data-testid={`row-missing-${clinic.id}`}>
                     <TableCell className="font-ui text-sm">{clinic.name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">
+                    <TableCell className="t-helper hidden sm:table-cell">
                       {[clinic.city, clinic.state].filter(Boolean).join(", ") || "-"}
                     </TableCell>
                   </TableRow>

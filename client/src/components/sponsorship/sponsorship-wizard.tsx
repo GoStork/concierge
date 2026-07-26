@@ -117,7 +117,7 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
   }, [canPreselect, history.length, step, selectedPlan, initialEntityType]);
 
   const savedCardNote = savedCard?.last4 ? (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="t-helper flex items-center gap-2">
       <CreditCard className="w-3.5 h-3.5" />
       <span>Paying with your saved card {savedCard.brand ? `${savedCard.brand} ` : ""}••••{savedCard.last4}.</span>
     </div>
@@ -126,13 +126,13 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
   return (
     <ModalShell onClose={step === "payment" || step === "success" ? close : onClose} onBack={back} maxWidth="sm:max-w-lg">
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground p-6 justify-center">
+        <div className="t-helper flex items-center gap-2 p-6 justify-center">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading sponsorship options...
         </div>
       ) : noOptions ? (
         <div className="text-center space-y-2 py-6">
           <Sparkles className="w-8 h-8 mx-auto text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No sponsorship options are available for your account yet.</p>
+          <p className="t-helper">No sponsorship options are available for your account yet.</p>
           <Button variant="outline" onClick={onClose}>Close</Button>
         </div>
       ) : (
@@ -142,7 +142,7 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
             <div className="space-y-4">
               <div>
                 <h3 className="font-heading text-lg text-foreground flex items-center gap-2"><Sparkles className="w-5 h-5 text-accent" /> Start a sponsorship</h3>
-                <p className="text-sm text-muted-foreground mt-0.5">What would you like to sponsor?</p>
+                <p className="t-helper mt-0.5">What would you like to sponsor?</p>
               </div>
               {error && <ErrorNote text={error} />}
               <div className="space-y-2">
@@ -167,7 +167,7 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
             <div className="space-y-4">
               <div>
                 <h3 className="font-heading text-lg text-foreground">{CATEGORY_META[selectedType].label} sponsorship</h3>
-                <p className="text-sm text-muted-foreground mt-0.5">Choose how many profiles you want to feature.</p>
+                <p className="t-helper mt-0.5">Choose how many profiles you want to feature.</p>
               </div>
               {error && <ErrorNote text={error} />}
               <div className="space-y-2">
@@ -180,10 +180,10 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
                       <div className="flex items-center justify-between gap-2">
                         <div>
                           <div className="font-heading text-foreground">{p.displayName}</div>
-                          <div className="text-xs text-muted-foreground">Up to {p.slotCount} sponsored profiles</div>
+                          <div className="t-helper">Up to {p.slotCount} sponsored profiles</div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-ui text-foreground">{formatMoneyCents(p.priceCents, p.currency)}<span className="text-xs text-muted-foreground">/mo</span></span>
+                          <span className="font-ui text-foreground">{formatMoneyCents(p.priceCents, p.currency)}<span className="t-helper">/mo</span></span>
                           {selected && <Check className="w-4 h-4 text-primary" />}
                         </div>
                       </div>
@@ -202,7 +202,7 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
             <div className="space-y-4">
               <div>
                 <h3 className="font-heading text-lg text-foreground">Billing</h3>
-                <p className="text-sm text-muted-foreground mt-0.5">Choose how you'd like to be billed for this sponsorship.</p>
+                <p className="t-helper mt-0.5">Choose how you'd like to be billed for this sponsorship.</p>
               </div>
               <div className="space-y-2">
                 {(["AUTO_RENEW", "ONE_TIME"] as BillingMode[]).map((m) => {
@@ -214,7 +214,7 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
                       <div className="flex items-center justify-between gap-2">
                         <div>
                           <div className="font-heading text-foreground">{m === "AUTO_RENEW" ? "Auto-renew monthly" : "One month"}</div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="t-helper">
                             {m === "AUTO_RENEW" ? "Renews automatically each month until you cancel." : "A single month - it won't renew automatically."}
                           </div>
                         </div>
@@ -237,7 +237,7 @@ export function StartSponsorshipWizard({ onClose, onChanged, initialEntityType, 
             <div className="space-y-3">
               <div>
                 <h3 className="font-heading text-lg text-foreground">{selectedPlan?.displayName}</h3>
-                <p className="text-sm text-muted-foreground">Complete payment to activate your sponsorship.</p>
+                <p className="t-helper">Complete payment to activate your sponsorship.</p>
               </div>
               <SponsorshipCheckout clientSecret={clientSecret} onDone={() => { setStep("success"); onChanged?.(); }} onCancel={close} />
             </div>
@@ -261,7 +261,7 @@ function CategoryRow({ icon, title, subtitle, onClick, busy, testid }: { icon: R
       <div className="w-10 h-10 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0">{icon}</div>
       <div className="min-w-0 flex-1">
         <div className="font-heading text-foreground">{title}</div>
-        <div className="text-xs text-muted-foreground">{subtitle}</div>
+        <div className="t-helper">{subtitle}</div>
       </div>
       {busy ? <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
     </button>
@@ -302,7 +302,7 @@ export function BoostProfilesCard({ initialEntityType, onChanged, className, sho
           </div>
           <div className="min-w-0">
             <div className="font-heading text-base text-foreground">Boost your {noun || "profiles"}</div>
-            <p className="max-w-xl text-sm text-muted-foreground">{desc}</p>
+            <p className="t-helper max-w-xl">{desc}</p>
           </div>
         </div>
         <StartSponsorshipButton initialEntityType={initialEntityType} onChanged={onChanged} showManageHint={showManageHint ?? !!initialEntityType} />

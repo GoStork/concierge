@@ -223,7 +223,7 @@ function SecondParentToggle({
   // else: checkbox means "add a second parent" (checked => hasSecondParent true).
   const checked = impliesTwo ? !hasSecondParent : hasSecondParent;
   return (
-    <label className="mt-2 flex items-start gap-2 text-sm text-muted-foreground cursor-pointer" data-testid="ipform-second-parent-toggle">
+    <label className="t-helper mt-2 flex items-start gap-2 cursor-pointer" data-testid="ipform-second-parent-toggle">
       <Checkbox
         checked={checked}
         onCheckedChange={(c) => onSet(impliesTwo ? !c : !!c)}
@@ -266,11 +266,11 @@ function MailingAddressField({
   const editValue = value && !value.sameAsResidential ? value : undefined;
   return (
     <div className="space-y-1.5" data-testid="ipform-mailing-address">
-      <Label className="text-sm font-medium leading-snug">
+      <Label className="leading-snug">
         {question.label}
         {question.required && <span className="text-destructive ml-0.5">*</span>}
       </Label>
-      <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+      <label className="t-helper flex items-center gap-2 cursor-pointer">
         <Checkbox
           checked={sameAs}
           disabled={disabled}
@@ -439,7 +439,7 @@ export function SectionQuestions({
   if (section.perParent) {
     return (
       <div className="space-y-8">
-        {section.description && <p className="text-sm text-muted-foreground">{section.description}</p>}
+        {section.description && <p className="t-helper">{section.description}</p>}
         {slots.map((slot) => {
           const anyEditable = activeQuestions.some((q) => canEdit(q, slot));
           return (
@@ -458,7 +458,7 @@ export function SectionQuestions({
 
   return (
     <div className="space-y-6">
-      {section.description && <p className="text-sm text-muted-foreground">{section.description}</p>}
+      {section.description && <p className="t-helper">{section.description}</p>}
       {clinicNoneBlock}
       {maritalBlock}
       {/* When "no clinic yet" is checked, the clinic fields are hidden. */}

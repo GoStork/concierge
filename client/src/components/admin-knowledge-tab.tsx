@@ -29,7 +29,7 @@ function RuleForm({
   return (
     <Card className="p-4 space-y-3 border-primary/30">
       <div>
-        <Label className="text-xs font-semibold">IF the user mentions...</Label>
+        <Label className="t-form-label-sm font-semibold">IF the user mentions...</Label>
         <Input
           value={condition}
           onChange={(e) => setCondition(e.target.value)}
@@ -39,7 +39,7 @@ function RuleForm({
         />
       </div>
       <div>
-        <Label className="text-xs font-semibold">THEN guide with...</Label>
+        <Label className="t-form-label-sm font-semibold">THEN guide with...</Label>
         <textarea
           value={guidance}
           onChange={(e) => setGuidance(e.target.value)}
@@ -51,10 +51,10 @@ function RuleForm({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Switch checked={isActive} onCheckedChange={setIsActive} data-testid="switch-rule-active" />
-          <span className="text-xs text-muted-foreground">Active</span>
+          <span className="t-helper">Active</span>
         </div>
         <div className="flex items-center gap-2">
-          <Label className="text-xs">Priority</Label>
+          <Label className="t-form-label-sm">Priority</Label>
           <NumberInput
             value={String(sortOrder)}
             onChange={(v) => setSortOrder(parseInt(v) || 0)}
@@ -182,7 +182,7 @@ export default function AdminKnowledgeTab() {
           <Brain className="w-5 h-5" />
           Knowledge Base Management
         </h2>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="t-helper mt-1">
           Manage provider website syncing and configure expert guidance rules for the AI concierge.
         </p>
       </div>
@@ -194,7 +194,7 @@ export default function AdminKnowledgeTab() {
               <Globe className="w-4 h-4" />
               Bulk Provider Website Sync
             </h3>
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="t-helper mt-1">
               Crawl all provider websites and update the AI knowledge base. Rate-limited to 1 request/second.
             </p>
           </div>
@@ -234,7 +234,7 @@ export default function AdminKnowledgeTab() {
                   </div>
                 )}
                 {bulkSyncJob.errors?.length > 0 && (
-                  <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                  <div className="t-helper mt-2 space-y-0.5">
                     {bulkSyncJob.errors.map((e: string, i: number) => (
                       <p key={i}>- {e}</p>
                     ))}
@@ -266,7 +266,7 @@ export default function AdminKnowledgeTab() {
             <Plus className="w-3.5 h-3.5 mr-1" /> Add Rule
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground mb-4">
+        <p className="t-helper mb-4">
           If/Then rules injected into the AI's system prompt. When a user mentions the condition, the AI follows the guidance.
         </p>
 
@@ -281,13 +281,13 @@ export default function AdminKnowledgeTab() {
         )}
 
         {rulesQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+          <div className="t-helper flex items-center gap-2 py-4">
             <Loader2 className="w-4 h-4 animate-spin" />
             Loading rules...
           </div>
         ) : rules.length === 0 && !showNewRule ? (
           <Card className="p-6 text-center">
-            <p className="text-sm text-muted-foreground">No expert guidance rules yet. Add rules to steer the AI concierge's responses.</p>
+            <p className="t-helper">No expert guidance rules yet. Add rules to steer the AI concierge's responses.</p>
           </Card>
         ) : (
           <div className="space-y-2">
@@ -312,7 +312,7 @@ export default function AdminKnowledgeTab() {
                           <span className="font-semibold text-primary">THEN</span>{" "}
                           <span className="text-muted-foreground">{rule.guidance}</span>
                         </p>
-                        <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                        <div className="t-helper flex items-center gap-3 mt-2">
                           <span>Priority: {rule.sortOrder}</span>
                           <span>{rule.isActive ? "Active" : "Inactive"}</span>
                         </div>

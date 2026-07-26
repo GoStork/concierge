@@ -365,7 +365,7 @@ export function PhoneInput({
       </div>
 
       {!isoCode && focused && !loadingCountry && (
-        <p className="mt-2 text-xs text-muted-foreground">Please select a country first</p>
+        <p className="t-helper mt-2">Please select a country first</p>
       )}
 
       {errorToShow && (
@@ -398,7 +398,7 @@ export function PhoneInput({
           <div className="overflow-y-auto flex-1">
             {!search && filteredPopular.length > 0 && (
               <>
-                <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                <div className="t-micro-label px-3 pt-2 pb-1">
                   Popular
                 </div>
                 {filteredPopular.map((c, idx) => (
@@ -427,7 +427,7 @@ export function PhoneInput({
               ));
             })()}
             {flatList.length === 0 && (
-              <div className="px-3 py-4 text-sm text-muted-foreground text-center">No countries found</div>
+              <div className="t-helper px-3 py-4 text-center">No countries found</div>
             )}
           </div>
         </div>

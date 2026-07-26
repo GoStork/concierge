@@ -274,10 +274,10 @@ function LogoEditorOverlay({
             data-testid={`${testId}-zoom-slider`}
           />
           <ZoomIn className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span className="text-xs text-muted-foreground w-12 text-right">{zoom}%</span>
+          <span className="t-helper w-12 text-right">{zoom}%</span>
         </div>
         <div className="flex items-center justify-center gap-4 flex-wrap">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <label className="t-helper flex items-center gap-1.5 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={trimWhite}
@@ -287,7 +287,7 @@ function LogoEditorOverlay({
             />
             Trim white
           </label>
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <label className="t-helper flex items-center gap-1.5 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={removeWhiteBg}
@@ -592,7 +592,7 @@ export default function ImageUploader({
               </div>
             )}
           </div>
-          {label && <p className="text-xs text-muted-foreground">{label}</p>}
+          {label && <p className="t-helper">{label}</p>}
         </div>
       </>
     );
@@ -603,7 +603,7 @@ export default function ImageUploader({
     <>
       {editorOverlay}
       <div className="space-y-2">
-        {label && <Label className="text-sm font-medium">{label}</Label>}
+        {label && <Label >{label}</Label>}
         <div
           className={`relative border-2 border-dashed rounded-[var(--radius)] p-6 text-center transition-colors ${
             disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
@@ -638,7 +638,7 @@ export default function ImageUploader({
                 />
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground">Click or drag to replace</span>
+                <span className="t-helper">Click or drag to replace</span>
                 {mode === "logo" && !isSvgUrl(value) && (
                   <button
                     type="button"
@@ -651,7 +651,7 @@ export default function ImageUploader({
                 )}
                 <button
                   type="button"
-                  className="text-xs text-muted-foreground hover:text-destructive font-medium flex items-center gap-1"
+                  className="t-helper hover:text-destructive flex items-center gap-1"
                   onClick={(e) => { e.stopPropagation(); onChange(null); }}
                   data-testid={`${testId}-delete`}
                 >
@@ -662,14 +662,14 @@ export default function ImageUploader({
           ) : (
             <div className="flex flex-col items-center gap-2">
               <Upload className="w-8 h-8 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Drag &amp; drop or click to upload</span>
-              <span className="text-xs text-muted-foreground">SVG, PNG, JPG (max 16MB)</span>
+              <span className="t-helper">Drag &amp; drop or click to upload</span>
+              <span className="t-helper">SVG, PNG, JPG (max 16MB)</span>
             </div>
           )}
         </div>
         {!disabled && showRemoveBg && (
           <label
-            className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none"
+            className="t-helper flex items-center gap-1.5 cursor-pointer select-none"
             onClick={(e) => e.stopPropagation()}
           >
             <input

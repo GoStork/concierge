@@ -145,7 +145,7 @@ export function ProviderPayoutsTab() {
       <div className="space-y-6">
         <header>
           <h2 className="text-2xl font-heading">Payouts</h2>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="t-helper mt-1">
             Money GoStork sends to your bank when parents pay invoices.
           </p>
         </header>
@@ -159,7 +159,7 @@ export function ProviderPayoutsTab() {
     <div className="space-y-6">
       <header>
         <h2 className="text-2xl font-heading">Payouts</h2>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="t-helper mt-1">
           Tell GoStork how to send you the money parents pay. One-time setup.
         </p>
       </header>
@@ -172,7 +172,7 @@ export function ProviderPayoutsTab() {
       {/* Method picker - only when nothing has been started yet */}
       {!state?.payoutMethod && (
         <section className="space-y-3">
-          <Label className="text-base">How do you want to receive payouts?</Label>
+          <Label >How do you want to receive payouts?</Label>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <MethodCard
               selected={selectedMethod === "STRIPE_CONNECT_CUSTOM"}
@@ -198,7 +198,7 @@ export function ProviderPayoutsTab() {
       {selectedMethod === "STRIPE_CONNECT_EXPRESS" && (
         <section className="rounded-xl border p-6 bg-secondary/40 space-y-3">
           <h3 className="font-semibold">Stripe Connect onboarding</h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             You'll be redirected to a secure Stripe-hosted page where you'll enter your business info,
             owner details, and bank account. Takes about 5-10 minutes. After you finish, you'll come back
             here automatically.
@@ -257,7 +257,7 @@ function MethodCard({
         <span className="text-xs font-medium uppercase tracking-wide">{tag}</span>
       </div>
       <h4 className="font-semibold">{title}</h4>
-      <p className="text-sm text-muted-foreground mt-1">{body}</p>
+      <p className="t-helper mt-1">{body}</p>
     </button>
   );
 }
@@ -269,7 +269,7 @@ function StatusBanner({ state }: { state: PayoutsState }) {
         <CheckCircle2 className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-success))" }} />
         <div>
           <p className="text-sm font-medium">Payouts enabled</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="t-helper mt-0.5">
             GoStork will automatically send your share to your bank when invoices are paid.
           </p>
         </div>
@@ -282,11 +282,11 @@ function StatusBanner({ state }: { state: PayoutsState }) {
         <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-error))" }} />
         <div>
           <p className="text-sm font-medium">Stripe needs more from you</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="t-helper mt-0.5">
             Reason: {state.requirementsDisabledReason.replace(/_/g, " ")}
           </p>
           {state.requirementsCurrentlyDue.length > 0 && (
-            <ul className="text-xs text-muted-foreground mt-2 list-disc list-inside">
+            <ul className="t-helper mt-2 list-disc list-inside">
               {state.requirementsCurrentlyDue.map(r => (
                 <li key={r}>{humanizeRequirement(r)}</li>
               ))}
@@ -302,7 +302,7 @@ function StatusBanner({ state }: { state: PayoutsState }) {
         <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
         <div className="flex-1">
           <p className="text-sm font-medium">A few more details needed</p>
-          <ul className="text-xs text-muted-foreground mt-1 list-disc list-inside">
+          <ul className="t-helper mt-1 list-disc list-inside">
             {state.requirementsCurrentlyDue.map(r => (
               <li key={r}>{humanizeRequirement(r)}</li>
             ))}
@@ -317,7 +317,7 @@ function StatusBanner({ state }: { state: PayoutsState }) {
         <Loader2 className="w-5 h-5 mt-0.5 shrink-0 animate-spin text-muted-foreground" />
         <div>
           <p className="text-sm font-medium">Onboarding in progress</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="t-helper mt-0.5">
             Resume below to finish setting up.
           </p>
         </div>
@@ -380,7 +380,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
         <CheckCircle2 className="w-6 h-6 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-success))" }} />
         <div className="flex-1">
           <h3 className="font-semibold">Payouts are enabled</h3>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="t-helper mt-1">
             GoStork sends your share to your bank automatically when parents pay invoices. Payouts usually
             land within 2 business days.
           </p>
@@ -388,7 +388,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
       </div>
       {(state.bankName || state.accountLast4) && (
         <div className="rounded-lg border p-3 bg-background/60 text-sm">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Receiving bank</p>
+          <p className="t-micro-label">Receiving bank</p>
           <p className="mt-1 font-medium">
             {state.bankName || "Bank on file"}{state.accountLast4 ? ` -- ${state.accountLast4}` : ""}
             {state.accountType ? ` (${state.accountType})` : ""}
@@ -410,7 +410,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
           <div className="border-t p-4">
             {state.payoutMethod === "STRIPE_CONNECT_EXPRESS" ? (
               <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
+                <p className="t-helper">
                   Your account is on Stripe Express. Bank changes happen on the Stripe-hosted dashboard.
                 </p>
                 <Button
@@ -437,7 +437,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
       <div className="rounded-lg border bg-background/60 p-3 flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium">Disconnect payout account</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="t-helper mt-0.5">
             Stops future payouts. Only allowed when there are no pending or failed transfers.
           </p>
         </div>
@@ -709,7 +709,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="font-semibold text-sm">Business identity</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="t-helper mt-0.5">
               From your Legal Identity tab. Used for Stripe Connect KYC.
             </p>
           </div>
@@ -757,7 +757,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
         <h3 className="font-semibold text-sm">
           {legalIdentity?.businessType === "individual" ? "Personal info" : "Authorized representative (owner or officer)"}
         </h3>
-        <p className="text-xs text-muted-foreground">
+        <p className="t-helper">
           Required by US banking regulations. Used for identity verification only - not displayed publicly.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -799,7 +799,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
       {/* Bank */}
       <div className="space-y-3">
         <h3 className="font-semibold text-sm">Where to send payouts</h3>
-        <p className="text-xs text-muted-foreground">
+        <p className="t-helper">
           Bank account that will receive your share. US bank, USD only.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -881,7 +881,7 @@ function Field({
         {required && <span style={{ color: "hsl(var(--brand-error))" }} className="ml-0.5">*</span>}
       </Label>
       {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p className="t-helper">{hint}</p>}
     </div>
   );
 }
@@ -889,7 +889,7 @@ function Field({
 function ReadOnly({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dt className="t-micro-label">{label}</dt>
       <dd className="text-sm whitespace-pre-line">{value || <span className="text-muted-foreground italic">Not set</span>}</dd>
     </div>
   );
@@ -949,7 +949,7 @@ function PayoutHistoryTable() {
     return (
       <section className="space-y-3">
         <h3 className="font-semibold flex items-center gap-2"><History className="w-4 h-4" /> Payout history</h3>
-        <div className="rounded-xl border p-6 bg-secondary/40 text-sm text-muted-foreground">
+        <div className="t-helper rounded-xl border p-6 bg-secondary/40">
           No payouts yet. When a parent pays an invoice for one of your services, you'll see the payout here.
         </div>
       </section>
@@ -960,7 +960,7 @@ function PayoutHistoryTable() {
     <section className="space-y-3">
       <div>
         <h3 className="font-semibold flex items-center gap-2"><History className="w-4 h-4" /> Payout history</h3>
-        <p className="text-sm text-muted-foreground mt-0.5">
+        <p className="t-helper mt-0.5">
           {payouts.length} payout{payouts.length === 1 ? "" : "s"} - what GoStork has sent (or is sending) to your bank.
         </p>
       </div>
@@ -969,11 +969,11 @@ function PayoutHistoryTable() {
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Parent</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Service</th>
-                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Your payout</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">GoStork paid you</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground text-xs whitespace-nowrap">Date</th>
+                <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Parent</th>
+                <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Service</th>
+                <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">Your payout</th>
+                <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">GoStork paid you</th>
+                <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Date</th>
               </tr>
             </thead>
             <tbody>
@@ -990,7 +990,7 @@ function PayoutHistoryTable() {
                     title="Open invoice document"
                   >
                     <td className="px-4 py-2.5 whitespace-nowrap">{parent}</td>
-                    <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{service}</td>
+                    <td className="t-helper px-4 py-2.5 whitespace-nowrap">{service}</td>
                     <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
                     <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
                       <span title={status.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
@@ -998,7 +998,7 @@ function PayoutHistoryTable() {
                         {status.label}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-muted-foreground text-xs whitespace-nowrap">{dateStr}</td>
+                    <td className="t-helper px-4 py-2.5 whitespace-nowrap">{dateStr}</td>
                   </tr>
                 );
               })}

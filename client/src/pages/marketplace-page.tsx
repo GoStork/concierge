@@ -84,13 +84,13 @@ function ScheduleConsultationDialog({ providerId, providerName, open, onClose }:
         <DialogHeader>
           <DialogTitle>Schedule a Consultation</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground mb-2">
+        <p className="t-helper mb-2">
           Choose a team member from {providerName} to schedule with:
         </p>
         {isLoading ? (
           <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
         ) : members?.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">No team members have booking pages set up yet.</p>
+          <p className="t-helper py-4 text-center">No team members have booking pages set up yet.</p>
         ) : (
           <div className="space-y-2">
             {members?.map((m: any) => {
@@ -109,7 +109,7 @@ function ScheduleConsultationDialog({ providerId, providerName, open, onClose }:
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-ui truncate">{m.name || "Team Member"}</p>
-                    <p className="text-xs text-muted-foreground">{m.meetingDuration} min consultation</p>
+                    <p className="t-helper">{m.meetingDuration} min consultation</p>
                   </div>
                   <Calendar className="w-4 h-4 text-primary shrink-0" />
                 </a>
@@ -197,7 +197,7 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
         {(() => {
           const loc = dedupeProviderLocations(provider.locations || [])[0];
           return loc && (
-          <p className="text-sm text-muted-foreground flex items-center gap-1" data-testid={`text-provider-location-${provider.id}`}>
+          <p className="t-helper flex items-center gap-1" data-testid={`text-provider-location-${provider.id}`}>
             <MapPin className="w-3.5 h-3.5 shrink-0" />
             {loc.city}{loc.state ? `, ${loc.state}` : ""}
           </p>
@@ -208,9 +208,9 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
           <div data-testid={`ivf-rate-section-${provider.id}`}>
             <div className="flex items-baseline gap-1.5 mb-0.5">
               <span className="text-2xl font-heading text-foreground">{pct}%</span>
-              <span className="text-sm text-muted-foreground">success rate</span>
+              <span className="t-helper">success rate</span>
             </div>
-            <p className="text-xs text-muted-foreground mb-2">{filterLabel}</p>
+            <p className="t-helper mb-2">{filterLabel}</p>
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
@@ -244,7 +244,7 @@ function IvfClinicCard({ provider, matchedRate, filterLabel, onSchedule, onNavig
       </CardContent>
 
       <CardFooter className="pt-3 border-t border-border/50 flex items-center justify-between">
-        <p className="text-xs text-muted-foreground flex items-center gap-1" data-testid={`text-cycles-${provider.id}`}>
+        <p className="t-helper flex items-center gap-1" data-testid={`text-cycles-${provider.id}`}>
           <Clock className="w-3 h-3" />
           {matchedRate?.cycleCount != null ? `${matchedRate.cycleCount.toLocaleString()} cycles reported` : ""}
         </p>
@@ -760,7 +760,7 @@ function ProviderGrid({ providers, searchQuery, providerTypeName, onSchedule }: 
             {(() => {
               const loc = dedupeProviderLocations(provider.locations || [])[0];
               return loc && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1" data-testid={`text-provider-location-${provider.id}`}>
+              <p className="t-helper flex items-center gap-1" data-testid={`text-provider-location-${provider.id}`}>
                 <MapPin className="w-3.5 h-3.5" />
                 {loc.city}{loc.state ? `, ${loc.state}` : ""}
               </p>
@@ -1166,8 +1166,8 @@ function InlineRangeFilter({ filterKey, label, min, max, step = 1, unit = "", fo
         data-testid={`${filterKey}-slider`}
       />
       <div className="flex justify-between mt-2">
-        <span className="font-ui text-xs text-muted-foreground">{fmt(min)}</span>
-        <span className="font-ui text-xs text-muted-foreground">{fmt(max)}</span>
+        <span className="t-helper font-ui">{fmt(min)}</span>
+        <span className="t-helper font-ui">{fmt(max)}</span>
       </div>
     </div>
   );
@@ -1509,7 +1509,7 @@ function MarketplaceFiltersDrawer({ providerType, open, onOpenChange, barFilterP
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
         {/* Location pinned to the top of every filters drawer. */}
         <div>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Location</h2>
+          <h2 className="t-micro-label mb-3">Location</h2>
           <InlineLocationFilter providerType={providerType} />
         </div>
 
@@ -1517,7 +1517,7 @@ function MarketplaceFiltersDrawer({ providerType, open, onOpenChange, barFilterP
             types including IVF clinics + doctors. "Experienced only" stays
             donor/surrogate-specific. */}
         <div>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Quick filters</h2>
+          <h2 className="t-micro-label mb-3">Quick filters</h2>
           <div className="space-y-2">
             {(providerType === "egg-donor" || providerType === "surrogate" || providerType === "sperm-donor") && (
               <button
@@ -1557,7 +1557,7 @@ function MarketplaceFiltersDrawer({ providerType, open, onOpenChange, barFilterP
 
         {providerType === "surrogacy-agency" && (
           <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Agency requirements</h2>
+            <h2 className="t-micro-label mb-3">Agency requirements</h2>
             <div className="space-y-2">
               <AgencyToggleRow icon={Baby} label="Twins allowed" filterKey="agencyTwins" activeFilters={activeFilters} dispatch={dispatch} />
               <AgencyToggleRow icon={Heart} label="LGBTQ+ care" filterKey="agencyLgbtq" activeFilters={activeFilters} dispatch={dispatch} />
@@ -1569,7 +1569,7 @@ function MarketplaceFiltersDrawer({ providerType, open, onOpenChange, barFilterP
         )}
 
         <div>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Preferences</h2>
+          <h2 className="t-micro-label mb-3">Preferences</h2>
           {providerType === "surrogacy-agency" && (
             <InlineRangeFilter filterKey="maxCost" label="Total Cost" min={0} max={500000} step={10000} formatValue={formatMoneyDollars} />
           )}
@@ -2230,7 +2230,7 @@ export default function MarketplacePage() {
               <span className="text-primary font-heading">{ivfClinicCount}</span> clinics found
             </p>
             {!ivfLocation && (
-              <span className="text-xs text-muted-foreground">
+              <span className="t-helper">
                 &middot; Add a location to enable distance sorting
               </span>
             )}
@@ -2244,7 +2244,7 @@ export default function MarketplacePage() {
             </button>
             {showCdcInfo && (
               <div className="absolute top-full left-0 mt-1 z-20 bg-card border border-border rounded-[var(--radius)] shadow-lg p-3 max-w-sm" data-testid="alert-cdc-info">
-                <ul className="text-xs text-muted-foreground space-y-0.5 list-disc list-inside">
+                <ul className="t-helper space-y-0.5 list-disc list-inside">
                   <li>Patient characteristics affect success rates and may not be comparable between clinics</li>
                   <li>These statistics do not predict your individual chances of success</li>
                   <li>Always consult a physician for personalized medical advice</li>

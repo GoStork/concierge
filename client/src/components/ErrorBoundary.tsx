@@ -65,11 +65,11 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
           <div className="max-w-md w-full rounded-[var(--radius)] border border-border bg-card p-6 space-y-4 shadow-sm">
             <div>
               <h2 className="font-heading text-xl text-foreground">Something went wrong</h2>
-              <p className="font-body text-sm text-muted-foreground mt-1">
+              <p className="t-helper font-body mt-1">
                 The page hit an unexpected error. Reloading usually clears it.
               </p>
             </div>
-            <pre className="text-xs font-mono whitespace-pre-wrap break-words rounded bg-muted text-muted-foreground p-3 max-h-40 overflow-auto">
+            <pre className="t-helper font-mono whitespace-pre-wrap break-words rounded bg-muted p-3 max-h-40 overflow-auto">
               {this.state.error.message || String(this.state.error)}
             </pre>
             <div className="flex gap-2">

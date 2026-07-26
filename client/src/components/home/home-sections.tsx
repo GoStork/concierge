@@ -26,7 +26,7 @@ export function QueueRow({ icon, title, detail, cta, onClick, action, onDismiss 
         </span>
         <span className="flex-1 min-w-0">
           <span className="block text-sm font-medium truncate">{title}</span>
-          <span className="block text-xs text-muted-foreground truncate">{detail}</span>
+          <span className="t-helper block truncate">{detail}</span>
         </span>
       </button>
       {action && (
@@ -83,9 +83,9 @@ export function SectionHeader({ icon, title, viewAllTo, viewAllLabel = "View all
 export function StatTile({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
     <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="t-micro-label">{label}</p>
       <p className="text-lg font-heading font-bold">{value}</p>
-      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="t-helper">{hint}</p>}
     </div>
   );
 }

@@ -79,7 +79,7 @@ export default function AgreementsSigningPage() {
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading agreement...</p>
+            <p className="t-helper">Loading agreement...</p>
           </div>
         )}
 
@@ -87,7 +87,7 @@ export default function AgreementsSigningPage() {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center">
             <AlertCircle className="w-10 h-10 text-destructive" />
             <p className="text-sm font-medium">Could not load the signing session</p>
-            <p className="text-xs text-muted-foreground max-w-sm">
+            <p className="t-helper max-w-sm">
               {(error as Error).message}
             </p>
             <Button variant="outline" size="sm" onClick={handleBack}>

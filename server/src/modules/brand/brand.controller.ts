@@ -125,7 +125,79 @@ const DEFAULTS = {
   chatBubbleParentColor: null,
   chatBubbleParentTextColor: null,
   chatBubbleParentBorderColor: null,
+
+  // Content typography. Every label/value pair, prompt block, dense-card key,
+  // attribute chip and section header in the product reads these through the
+  // shared primitives in client/src/components/ui/field.tsx. Color nulls mean
+  // "inherit the theme role" (label -> muted-foreground, value -> foreground,
+  // eyebrow -> accent, chip -> secondary).
+  fieldLabelSize: 13,
+  fieldLabelWeight: "500",
+  fieldLabelColor: null,
+  fieldLabelCase: "none",
+  fieldLabelTracking: 0,
+  fieldValueSize: 16,
+  fieldValueWeight: "500",
+  fieldValueColor: null,
+  fieldLabelGap: 3,
+  fieldPairGap: 20,
+  promptEyebrowSize: 12,
+  promptEyebrowWeight: "600",
+  promptEyebrowColor: null,
+  promptEyebrowTracking: 0.055,
+  promptEyebrowCase: "uppercase",
+  promptAnswerSize: 17,
+  promptAnswerWeight: "400",
+  promptAnswerColor: null,
+  promptAnswerLineHeight: 1.6,
+  promptBlockGap: 22,
+  microLabelSize: 12,
+  microValueSize: 15,
+  microLabelWeight: "500",
+  microLabelColor: null,
+  microLabelTracking: 0.03,
+  chipFontSize: 13,
+  chipFontWeight: "500",
+  chipRadius: 999,
+  chipPaddingX: 11,
+  chipPaddingY: 5,
+  chipBgColor: null,
+  chipTextColor: null,
+  sectionTitleSize: 18,
+  sectionTitleWeight: "600",
+  formLabelSize: 14,
+  formLabelSmallSize: 12,
+  formLabelWeight: "500",
+  formLabelColor: null,
+  formLabelCase: "none",
+  formLabelTracking: 0,
+  helperTextSize: 13,
+  helperTextColor: null,
+  cardHeadingSize: 24,
+  cardHeadingWeight: "700",
+  pageTitleSize: 30,
+  pageTitleWeight: "700",
 };
+
+const CONTENT_TYPOGRAPHY_FIELDS = [
+  "fieldLabelSize", "fieldLabelWeight", "fieldLabelColor", "fieldLabelCase", "fieldLabelTracking",
+  "fieldValueSize", "fieldValueWeight", "fieldValueColor", "fieldLabelGap", "fieldPairGap",
+  "promptEyebrowSize", "promptEyebrowWeight", "promptEyebrowColor", "promptEyebrowTracking", "promptEyebrowCase",
+  "promptAnswerSize", "promptAnswerWeight", "promptAnswerColor", "promptAnswerLineHeight", "promptBlockGap",
+  "microLabelSize", "microValueSize", "microLabelWeight", "microLabelColor", "microLabelTracking",
+  "chipFontSize", "chipFontWeight", "chipRadius", "chipPaddingX", "chipPaddingY", "chipBgColor", "chipTextColor",
+  "sectionTitleSize", "sectionTitleWeight",
+  "formLabelSize", "formLabelSmallSize", "formLabelWeight", "formLabelColor", "formLabelCase", "formLabelTracking",
+  "helperTextSize", "helperTextColor",
+  "cardHeadingSize", "cardHeadingWeight", "pageTitleSize", "pageTitleWeight",
+];
+
+/** Content-typography fields that hold a hex color and may be null. */
+const CONTENT_TYPOGRAPHY_COLOR_FIELDS = [
+  "fieldLabelColor", "fieldValueColor", "promptEyebrowColor", "promptAnswerColor",
+  "microLabelColor", "chipBgColor", "chipTextColor",
+  "formLabelColor", "helperTextColor",
+];
 
 const ADVANCED_COLOR_FIELDS = [
   "backgroundColor", "foregroundColor",
@@ -163,6 +235,7 @@ const ALLOWED_FIELDS = [
   // Billing identity (legalName + taxId) moved to ProviderLegalIdentity.
   // See /api/provider/legal-identity and /api/admin/providers/:id/legal-identity.
   ...ADVANCED_COLOR_FIELDS,
+  ...CONTENT_TYPOGRAPHY_FIELDS,
 ];
 
 function validateBrandBody(body: any) {
@@ -181,7 +254,7 @@ function validateBrandBody(body: any) {
     "chatBubbleOwnTextColor", "chatBubbleAiTextColor", "chatBubbleProviderTextColor", "chatBubbleParentTextColor",
     "chatBubbleOwnBorderColor", "chatBubbleAiBorderColor", "chatBubbleProviderBorderColor", "chatBubbleParentBorderColor",
   ];
-  for (const field of [...ADVANCED_COLOR_FIELDS, ...SWIPE_COLOR_FIELDS, ...NAV_COLOR_FIELDS, ...CHAT_BUBBLE_COLOR_FIELDS]) {
+  for (const field of [...ADVANCED_COLOR_FIELDS, ...SWIPE_COLOR_FIELDS, ...NAV_COLOR_FIELDS, ...CHAT_BUBBLE_COLOR_FIELDS, ...CONTENT_TYPOGRAPHY_COLOR_FIELDS]) {
     if (body[field] !== undefined && body[field] !== null && body[field] !== "") {
       const trimmed = typeof body[field] === "string" ? body[field].trim() : body[field];
       if (!hexRegex.test(trimmed)) {

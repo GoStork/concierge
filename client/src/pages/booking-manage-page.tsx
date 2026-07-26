@@ -110,9 +110,9 @@ export default function BookingManagePage() {
               <X className="w-7 h-7 text-destructive" />
             </div>
             <h1 className="text-2xl font-display font-heading mb-2" data-testid="text-manage-error">Unable to Process</h1>
-            <p className="text-muted-foreground text-sm">{error}</p>
+            <p className="t-helper">{error}</p>
           </div>
-          <p className="text-center text-xs text-muted-foreground mt-4">
+          <p className="t-helper text-center mt-4">
             Powered by <span className="font-ui text-primary">{companyName}</span>
           </p>
         </div>
@@ -140,7 +140,7 @@ export default function BookingManagePage() {
             <h1 className="text-2xl font-display font-heading mb-1" data-testid="text-manage-result">
               {isConfirm ? "Meeting Confirmed!" : isDecline ? "Meeting Declined" : "New Time Suggested"}
             </h1>
-            <p className="text-muted-foreground text-sm mb-6">
+            <p className="t-helper mb-6">
               {isConfirm ? `${rb?.attendeeName || "The parent"} has been notified that you've confirmed the meeting.` :
                isDecline ? `${rb?.attendeeName || "The parent"} has been notified that the meeting was declined.` :
                `${rb?.attendeeName || "The parent"} has been notified about the suggested new time.`}
@@ -172,10 +172,10 @@ export default function BookingManagePage() {
             )}
 
             {isConfirm && (
-              <p className="text-xs text-muted-foreground">The meeting has been added to your calendar and reminders will be sent before the meeting.</p>
+              <p className="t-helper">The meeting has been added to your calendar and reminders will be sent before the meeting.</p>
             )}
           </div>
-          <p className="text-center text-xs text-muted-foreground mt-4">
+          <p className="t-helper text-center mt-4">
             Powered by <span className="font-ui text-primary">{companyName}</span>
           </p>
         </div>
@@ -198,7 +198,7 @@ export default function BookingManagePage() {
               {isPending ? "New Meeting Request" : "Meeting Details"}
             </h1>
             {isPending && (
-              <p className="text-muted-foreground text-sm mt-1">
+              <p className="t-helper mt-1">
                 {booking.attendeeName || "Someone"} would like to schedule a meeting with you.
               </p>
             )}
@@ -257,7 +257,7 @@ export default function BookingManagePage() {
               )}
               {booking.notes && (
                 <div className="border-t border-border/50 pt-3 mt-3">
-                  <p className="text-xs text-muted-foreground mb-1">Notes:</p>
+                  <p className="t-helper mb-1">Notes:</p>
                   <p className="text-sm">{booking.notes}</p>
                 </div>
               )}
@@ -355,7 +355,7 @@ export default function BookingManagePage() {
             <div className="space-y-3">
               {start && (
                 <div className="bg-secondary/50 rounded-[var(--radius)] p-3">
-                  <p className="text-xs text-muted-foreground mb-1">Originally requested:</p>
+                  <p className="t-helper mb-1">Originally requested:</p>
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
                     <span className="line-through text-muted-foreground">{format(start, "EEEE, MMMM d, yyyy")} at {format(start, "h:mm a")}</span>
@@ -409,7 +409,7 @@ export default function BookingManagePage() {
             </div>
           )}
         </div>
-        <p className="text-center text-xs text-muted-foreground mt-4">
+        <p className="t-helper text-center mt-4">
           Powered by <span className="font-ui text-primary">{companyName}</span>
         </p>
       </div>

@@ -506,7 +506,7 @@ export default function AdminConciergeMonitor() {
               {onlineStatuses[first.userId] && (
                 <span className="text-[10px] font-medium text-[hsl(var(--brand-success))]">Online</span>
               )}
-              <span className="text-[10px] text-muted-foreground">
+              <span className="t-helper">
                 {groupSessions.length} {groupSessions.length === 1 ? "chat" : "chats"}
               </span>
             </div>
@@ -600,10 +600,10 @@ export default function AdminConciergeMonitor() {
                       </div>
                     </div>
                     {isProviderThread && s.providerName && s.title && (
-                      <p className="text-[11px] text-muted-foreground truncate mt-0.5">via {s.providerName}</p>
+                      <p className="t-helper truncate mt-0.5">via {s.providerName}</p>
                     )}
                     {s.lastMessage && (
-                      <p className="text-sm text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+                      <p className="t-helper truncate mt-0.5 flex items-center gap-1">
                         {s.lastMessageSenderType === "human" && (
                           <MessageStatus deliveredAt={null} readAt={null} brandColor={brandColor} className="flex-shrink-0" />
                         )}
@@ -713,11 +713,11 @@ export default function AdminConciergeMonitor() {
                 || headerMatchmakerName
                 || null;
               if (!subjectLabel) {
-                return <p className="text-[11px] text-muted-foreground truncate">{detail.user.email}</p>;
+                return <p className="t-helper truncate">{detail.user.email}</p>;
               }
               return (
                 <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                  <span className="text-[11px] text-muted-foreground flex-shrink-0">re:</span>
+                  <span className="t-helper flex-shrink-0">re:</span>
                   {subjectAvatar ? (
                     <img src={subjectAvatar} alt="" className={`w-3.5 h-3.5 rounded-full flex-shrink-0 bg-background border ${!selectedSummary?.profilePhotoUrl && selectedSummary?.providerLogo ? "object-contain" : "object-cover"}`} />
                   ) : headerMatchmakerName ? (
@@ -729,7 +729,7 @@ export default function AdminConciergeMonitor() {
                       <Sparkles className="w-2 h-2" style={{ color: brandColor }} />
                     </div>
                   )}
-                  <span className="text-[11px] text-muted-foreground truncate" data-testid="admin-subject-label">
+                  <span className="t-helper truncate" data-testid="admin-subject-label">
                     {subjectLabel}
                   </span>
                   {selectedSummary?.subjectProfileId && <DonorStatusPill status={selectedSummary.profileStatus} />}
@@ -1176,19 +1176,19 @@ function EvaKnowledgePanel({ historySummary, parentAccountId }: { historySummary
       {open && (
         <div className="mt-3 space-y-4">
           <div>
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Session summary</p>
+            <p className="t-micro-label mb-1">Session summary</p>
             {historySummary ? (
               <p className="text-xs text-foreground whitespace-pre-wrap bg-secondary/50 rounded-md p-2.5" data-testid="text-history-summary">
                 {historySummary}
               </p>
             ) : (
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 No rolling summary yet - it starts once the conversation is long enough to fold (about 28 turns).
               </p>
             )}
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Family memory</p>
+            <p className="t-micro-label mb-1">Family memory</p>
             <ConciergeMemoryTab admin={{ parentAccountId }} />
           </div>
         </div>

@@ -80,7 +80,7 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+      <div className="t-helper flex items-center gap-2 py-2">
         <Loader2 className="w-4 h-4 animate-spin" />
         Loading run history...
       </div>
@@ -89,7 +89,7 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
 
   if (!logs || logs.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground py-2">No run history yet - history is recorded from this point forward.</p>
+      <p className="t-helper py-2">No run history yet - history is recorded from this point forward.</p>
     );
   }
 
@@ -101,15 +101,15 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              <th className="text-left px-3 py-2 font-ui text-muted-foreground text-xs">Started</th>
-              <th className="text-left px-3 py-2 font-ui text-muted-foreground text-xs">Source</th>
-              <th className="text-left px-3 py-2 font-ui text-muted-foreground text-xs">Result</th>
-              <th className="text-right px-3 py-2 font-ui text-muted-foreground text-xs">Synced</th>
-              <th className="text-right px-3 py-2 font-ui text-muted-foreground text-xs">Skipped</th>
-              <th className="text-right px-3 py-2 font-ui text-muted-foreground text-xs">New</th>
-              <th className="text-right px-3 py-2 font-ui text-muted-foreground text-xs">Inactive</th>
-              <th className="text-right px-3 py-2 font-ui text-muted-foreground text-xs">Errors</th>
-              <th className="text-right px-3 py-2 font-ui text-muted-foreground text-xs">Duration</th>
+              <th className="t-helper text-left px-3 py-2 font-ui">Started</th>
+              <th className="t-helper text-left px-3 py-2 font-ui">Source</th>
+              <th className="t-helper text-left px-3 py-2 font-ui">Result</th>
+              <th className="t-helper text-right px-3 py-2 font-ui">Synced</th>
+              <th className="t-helper text-right px-3 py-2 font-ui">Skipped</th>
+              <th className="t-helper text-right px-3 py-2 font-ui">New</th>
+              <th className="t-helper text-right px-3 py-2 font-ui">Inactive</th>
+              <th className="t-helper text-right px-3 py-2 font-ui">Errors</th>
+              <th className="t-helper text-right px-3 py-2 font-ui">Duration</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -125,7 +125,7 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
               return (
                 <Fragment key={log.id}>
                   <tr className="hover:bg-muted/30">
-                    <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                    <td className="t-helper px-3 py-2 whitespace-nowrap">
                       {formatDateTimeShort(log.startedAt)}
                     </td>
                     <td className="px-3 py-2 text-xs text-foreground/70">
@@ -155,9 +155,9 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
                       )}
                     </td>
                     <td className="px-3 py-2 text-xs text-right font-heading">{log.succeeded || "-"}</td>
-                    <td className="px-3 py-2 text-xs text-right text-muted-foreground">{log.skipped || "-"}</td>
+                    <td className="t-helper px-3 py-2 text-right">{log.skipped || "-"}</td>
                     <td className="px-3 py-2 text-xs text-right text-[hsl(var(--brand-success))]">{log.newProfiles > 0 ? `+${log.newProfiles}` : "-"}</td>
-                    <td className="px-3 py-2 text-xs text-right text-muted-foreground">{log.staleMarked > 0 ? log.staleMarked : "-"}</td>
+                    <td className="t-helper px-3 py-2 text-right">{log.staleMarked > 0 ? log.staleMarked : "-"}</td>
                     <td className="px-3 py-2 text-xs text-right">
                       {errors.length > 0 ? (
                         <button
@@ -171,7 +171,7 @@ function SyncLogHistory({ providerId, type }: { providerId: string; type: string
                         </button>
                       ) : "-"}
                     </td>
-                    <td className="px-3 py-2 text-xs text-right text-muted-foreground whitespace-nowrap">
+                    <td className="t-helper px-3 py-2 text-right whitespace-nowrap">
                       {formatDuration(log.startedAt, log.completedAt)}
                     </td>
                   </tr>
@@ -334,31 +334,31 @@ export function SyncReportContent({
           <Card data-testid="stat-total-profiles">
             <CardContent className="pt-4 pb-3 px-4">
               <div className="text-2xl font-heading">{(data.totalProfiles || 0).toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Total Profiles</div>
+              <div className="t-helper">Total Profiles</div>
             </CardContent>
           </Card>
           <Card data-testid="stat-profiles-processed">
             <CardContent className="pt-4 pb-3 px-4">
               <div className="text-2xl font-heading">{(liveProgress?.succeeded ?? data.lastSyncStats?.succeeded ?? 0).toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Profiles Synced</div>
+              <div className="t-helper">Profiles Synced</div>
             </CardContent>
           </Card>
           <Card data-testid="stat-new-profiles">
             <CardContent className="pt-4 pb-3 px-4">
               <div className="text-2xl font-heading">{(data.newProfiles || 0).toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">New Profiles</div>
+              <div className="t-helper">New Profiles</div>
             </CardContent>
           </Card>
           <Card data-testid="stat-deleted-profiles">
             <CardContent className="pt-4 pb-3 px-4">
               <div className="text-2xl font-heading">{(data.staleProfilesMarked || 0).toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">Marked Inactive</div>
+              <div className="t-helper">Marked Inactive</div>
             </CardContent>
           </Card>
           <Card data-testid="stat-duration">
             <CardContent className="pt-4 pb-3 px-4">
               <div className="text-2xl font-heading">{duration}</div>
-              <div className="text-xs text-muted-foreground">Duration</div>
+              <div className="t-helper">Duration</div>
             </CardContent>
           </Card>
         </div>

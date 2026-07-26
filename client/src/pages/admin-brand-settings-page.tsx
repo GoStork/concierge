@@ -72,6 +72,9 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, SpermIcon } from "@/components/icons/marketplace-icons";
 import { SYSTEM_FONT_STACK } from "@/hooks/use-brand-settings";
+import {
+  Field, FieldGrid, MicroLabel, PromptBlock, PromptStack, AttributeChip, ChipRow,
+} from "@/components/ui/field";
 
 const SYSTEM_FONT_VALUE = "__system__";
 
@@ -181,6 +184,115 @@ function FileDropZone({
   );
 }
 
+const WEIGHT_OPTIONS = [
+  { value: "300", label: "300 - Light" },
+  { value: "400", label: "400 - Regular" },
+  { value: "500", label: "500 - Medium" },
+  { value: "600", label: "600 - Semibold" },
+  { value: "700", label: "700 - Bold" },
+];
+
+const CASE_OPTIONS = [
+  { value: "none", label: "As written" },
+  { value: "uppercase", label: "UPPERCASE" },
+  { value: "capitalize", label: "Capitalize" },
+];
+
+/** Weight picker used by every content-typography role. */
+function WeightSelect({
+  label,
+  value,
+  onChange,
+  testId,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  testId: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label >{label}</Label>
+      <Select value={value} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger data-testid={testId}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {WEIGHT_OPTIONS.map((o) => (
+            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/** Letter-case picker used by the field label and prompt eyebrow roles. */
+function CaseSelect({
+  label,
+  value,
+  onChange,
+  testId,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  testId: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label >{label}</Label>
+      <Select value={value} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger data-testid={testId}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {CASE_OPTIONS.map((o) => (
+            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/** Pixel/number field used by every content-typography size and spacing knob. */
+function SizeInput({
+  label,
+  value,
+  onChange,
+  testId,
+  disabled,
+  allowDecimal = false,
+  hint,
+}: {
+  label: string;
+  value: number | null | undefined;
+  onChange: (v: number) => void;
+  testId: string;
+  disabled?: boolean;
+  allowDecimal?: boolean;
+  hint?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label >{label}</Label>
+      <NumberInput
+        allowDecimal={allowDecimal}
+        value={String(value ?? "")}
+        onChange={(v) => onChange(v === "" ? 0 : Number(v))}
+        disabled={disabled}
+        data-testid={testId}
+      />
+      {hint && <p className="t-helper">{hint}</p>}
+    </div>
+  );
+}
+
 function ColorInput({
   label,
   value,
@@ -196,7 +308,7 @@ function ColorInput({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm font-medium">{label}</Label>
+      <Label >{label}</Label>
       <div className="flex items-center gap-2">
         <div className="relative">
           <input
@@ -246,7 +358,7 @@ function OptionalColorInput({
 
   return (
     <div className="space-y-1">
-      <Label className="text-xs font-medium">{label}</Label>
+      <Label className="t-form-label-sm">{label}</Label>
       <div className="flex items-center gap-1.5">
         <div className="relative">
           <input
@@ -426,13 +538,13 @@ function TemplateManager({
         <LayoutTemplate className="w-5 h-5 text-primary" />
         <h2 className="font-display text-lg font-semibold">Brand Templates</h2>
       </div>
-      <p className="text-sm text-muted-foreground">
+      <p className="t-helper">
         Save, preview, and switch between brand configurations. Selecting a template previews it - "Save Changes" applies it live and updates the template.
       </p>
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-full sm:w-64">
-          <Label className="text-sm font-medium mb-1.5 block">Template</Label>
+          <Label className="mb-1.5 block">Template</Label>
           <Select
             value={selectedId}
             onValueChange={(val) => {
@@ -523,7 +635,7 @@ function TemplateManager({
       {showRenameInput && (
         <div className="flex items-end gap-2">
           <div className="flex-1 max-w-xs">
-            <Label className="text-sm font-medium mb-1.5 block">Rename Template</Label>
+            <Label className="mb-1.5 block">Rename Template</Label>
             <Input
               value={renameName}
               onChange={(e) => setRenameName(e.target.value)}
@@ -557,7 +669,7 @@ function TemplateManager({
       {showNameInput && (
         <div className="flex items-end gap-2">
           <div className="flex-1 max-w-xs">
-            <Label className="text-sm font-medium mb-1.5 block">Template Name</Label>
+            <Label className="mb-1.5 block">Template Name</Label>
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
@@ -742,7 +854,7 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
 
   return (
     <div className="space-y-3">
-      <Label className="text-xs text-muted-foreground block">Chat Preview</Label>
+      <Label className="t-form-label-sm text-muted-foreground block">Chat Preview</Label>
       <div className="border rounded-[var(--radius)] overflow-hidden bg-card flex flex-col" style={{ height: "400px" }}>
         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-background/50">
 
@@ -807,14 +919,14 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
                 <span style={tsStyle}>1:40 PM</span>
               </div>
               <div className="flex flex-col items-start">
-                <span className="text-[10px] font-medium text-muted-foreground mb-0.5 ml-1">Provider</span>
+                <span className="t-helper font-medium mb-0.5 ml-1">Provider</span>
                 <div style={providerBubble}>
                   Happy to walk you through our program whenever you're ready.
                 </div>
                 <span style={tsStyle}>1:41 PM</span>
               </div>
               <div className="flex flex-col items-start">
-                <span className="text-[10px] font-medium text-muted-foreground mb-0.5 ml-1">Parent</span>
+                <span className="t-helper font-medium mb-0.5 ml-1">Parent</span>
                 <div style={parentBubble}>
                   Thanks - I'd love that. When are you free this week?
                 </div>
@@ -850,7 +962,7 @@ function NavPreview({ form }: { form: BrandSettings }) {
 
   return (
     <div className="pt-2">
-      <Label className="text-xs text-muted-foreground mb-2 block">Preview</Label>
+      <Label className="t-form-label-sm text-muted-foreground mb-2 block">Preview</Label>
       <div
         className="relative overflow-hidden rounded-[var(--radius)] border"
         style={{
@@ -945,7 +1057,7 @@ function TabPreview({ form }: { form: BrandSettings }) {
 
   return (
     <div className="pt-2">
-      <Label className="text-xs text-muted-foreground mb-2 block">Preview</Label>
+      <Label className="t-form-label-sm text-muted-foreground mb-2 block">Preview</Label>
       <div className="border rounded-[var(--radius)] overflow-hidden bg-card" data-testid="preview-tab-nav">
         <div className="border-b border-border/40">
           <nav className="flex">
@@ -983,7 +1095,7 @@ function TabPreview({ form }: { form: BrandSettings }) {
             })}
           </nav>
         </div>
-        <div className="h-10 flex items-center justify-center text-xs text-muted-foreground">
+        <div className="t-helper h-10 flex items-center justify-center">
           {TAB_PREVIEW_TABS[activeIdx].label} content
         </div>
       </div>
@@ -1028,7 +1140,7 @@ function HeaderNavPreview({ form, previewMode, setPreviewMode }: { form: BrandSe
     <div className="pt-2">
       <div className="flex items-center gap-2 mb-2">
         <Eye className="w-4 h-4 text-muted-foreground" />
-        <Label className="text-xs text-muted-foreground">Header Preview</Label>
+        <Label className="t-form-label-sm text-muted-foreground">Header Preview</Label>
         <div className="flex items-center ml-auto gap-1 bg-secondary rounded-[var(--radius)] p-0.5">
           <button
             className={`px-3 py-1 rounded-[var(--radius)] text-xs font-medium transition ${
@@ -1255,7 +1367,7 @@ export function BrandSettingsForm({
       )}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <p className="text-sm text-muted-foreground" data-testid="text-brand-title">
+        <p className="t-helper" data-testid="text-brand-title">
           Manage your platform's visual identity - logo, colors, and typography.
         </p>
         <div className="flex items-center gap-3">
@@ -1289,7 +1401,7 @@ export function BrandSettingsForm({
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Company Name</Label>
+              <Label >Company Name</Label>
               <Input
                 placeholder="e.g. GoStork"
                 value={form.companyName || ""}
@@ -1297,7 +1409,7 @@ export function BrandSettingsForm({
                 disabled={formDisabled}
                 data-testid="input-company-name"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 This name appears in the navigation header and throughout the platform
               </p>
             </div>
@@ -1313,7 +1425,7 @@ export function BrandSettingsForm({
               {overrideAction && enabled && (
                 <button
                   type="button"
-                  className="text-xs text-muted-foreground hover:text-primary underline"
+                  className="t-helper hover:text-primary underline"
                   data-testid="button-override-logos"
                   onClick={async () => {
                     await overrideAction.onOverride();
@@ -1326,8 +1438,8 @@ export function BrandSettingsForm({
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Logo with Name</Label>
-              <p className="text-xs text-muted-foreground">
+              <Label >Logo with Name</Label>
+              <p className="t-helper">
                 Your primary logo - displayed in the navigation header on desktop. This is typically the full logo including your company name.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1374,8 +1486,8 @@ export function BrandSettingsForm({
             )}
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Icon-Only Logo (mobile fallback)</Label>
-              <p className="text-xs text-muted-foreground">
+              <Label >Icon-Only Logo (mobile fallback)</Label>
+              <p className="t-helper">
                 A compact icon version of your logo, used on mobile and tight spaces where the full logo doesn't fit.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1416,7 +1528,7 @@ export function BrandSettingsForm({
               <ImageIcon className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Onboarding Images</h2>
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="t-helper">
               These images appear on the AI concierge intro page during parent onboarding. Upload photos that represent each service type - shown based on what the parent selected.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1471,7 +1583,7 @@ export function BrandSettingsForm({
             </div>
 
             <div className="border-t border-border/30 pt-4 space-y-3">
-              <Label className="text-sm font-medium">WCAG Contrast - Primary Color</Label>
+              <Label >WCAG Contrast - Primary Color</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30">
                   <div
@@ -1485,7 +1597,7 @@ export function BrandSettingsForm({
                       <WhiteIcon className={`w-4 h-4 ${whiteWcag.color}`} />
                       <span className={`text-sm font-semibold ${whiteWcag.color}`}>{whiteWcag.level}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">White text - {whiteContrast.toFixed(1)}:1</span>
+                    <span className="t-helper">White text - {whiteContrast.toFixed(1)}:1</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30">
@@ -1500,7 +1612,7 @@ export function BrandSettingsForm({
                       <BlackIcon className={`w-4 h-4 ${blackWcag.color}`} />
                       <span className={`text-sm font-semibold ${blackWcag.color}`}>{blackWcag.level}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">Black text - {blackContrast.toFixed(1)}:1</span>
+                    <span className="t-helper">Black text - {blackContrast.toFixed(1)}:1</span>
                   </div>
                 </div>
               </div>
@@ -1512,7 +1624,7 @@ export function BrandSettingsForm({
               <MessageCircle className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold" data-testid="heading-chat-palette">Chat Participant Palette</h2>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               These tints are automatically derived from your primary brand color and used in 3-way chat conversations.
             </p>
             {(() => {
@@ -1525,7 +1637,7 @@ export function BrandSettingsForm({
                     </div>
                     <div>
                       <div className="text-sm font-semibold">AI Concierge</div>
-                      <span className="text-[10px] text-muted-foreground">Primary · 8% tint</span>
+                      <span className="t-helper">Primary · 8% tint</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30" data-testid="palette-partner">
@@ -1534,7 +1646,7 @@ export function BrandSettingsForm({
                     </div>
                     <div>
                       <div className="text-sm font-semibold">Partners</div>
-                      <span className="text-[10px] text-muted-foreground">Hue +30° · 8% tint</span>
+                      <span className="t-helper">Hue +30° · 8% tint</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border border-border/40 bg-secondary/30" data-testid="palette-expert">
@@ -1543,7 +1655,7 @@ export function BrandSettingsForm({
                     </div>
                     <div>
                       <div className="text-sm font-semibold">Experts</div>
-                      <span className="text-[10px] text-muted-foreground">Hue -30° · 8% tint</span>
+                      <span className="t-helper">Hue -30° · 8% tint</span>
                     </div>
                   </div>
                 </div>
@@ -1556,91 +1668,91 @@ export function BrandSettingsForm({
               <MessageCircle className="w-5 h-5 text-primary" />
               <h2 className="font-display text-lg font-semibold">Chat Bubble & Input Styling</h2>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               Control font sizes, padding, and dimensions for chat message bubbles and the message input field.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Bubble Font Size (Mobile)</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatBubbleFontSize ?? 21}px</span>
+                  <Label >Bubble Font Size (Mobile)</Label>
+                  <span className="t-helper">{form.chatBubbleFontSize ?? 21}px</span>
                 </div>
                 <Slider min={13} max={28} step={1} value={[form.chatBubbleFontSize ?? 21]} onValueChange={([v]) => updateField("chatBubbleFontSize", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Bubble Font Size (Desktop)</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatBubbleFontSizeDesktop ?? 15}px</span>
+                  <Label >Bubble Font Size (Desktop)</Label>
+                  <span className="t-helper">{form.chatBubbleFontSizeDesktop ?? 15}px</span>
                 </div>
                 <Slider min={13} max={24} step={1} value={[form.chatBubbleFontSizeDesktop ?? 15]} onValueChange={([v]) => updateField("chatBubbleFontSizeDesktop", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Bubble Line Height</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatBubbleLineHeight ?? 1.35}</span>
+                  <Label >Bubble Line Height</Label>
+                  <span className="t-helper">{form.chatBubbleLineHeight ?? 1.35}</span>
                 </div>
                 <Slider min={1.1} max={2.0} step={0.05} value={[form.chatBubbleLineHeight ?? 1.35]} onValueChange={([v]) => updateField("chatBubbleLineHeight", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Bubble Horizontal Padding</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatBubblePaddingX ?? 14}px</span>
+                  <Label >Bubble Horizontal Padding</Label>
+                  <span className="t-helper">{form.chatBubblePaddingX ?? 14}px</span>
                 </div>
                 <Slider min={8} max={28} step={1} value={[form.chatBubblePaddingX ?? 14]} onValueChange={([v]) => updateField("chatBubblePaddingX", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Bubble Top Padding</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatBubblePaddingY ?? 8}px</span>
+                  <Label >Bubble Top Padding</Label>
+                  <span className="t-helper">{form.chatBubblePaddingY ?? 8}px</span>
                 </div>
                 <Slider min={4} max={20} step={1} value={[form.chatBubblePaddingY ?? 8]} onValueChange={([v]) => updateField("chatBubblePaddingY", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Bubble Max Width</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatBubbleMaxWidth ?? 80}%</span>
+                  <Label >Bubble Max Width</Label>
+                  <span className="t-helper">{form.chatBubbleMaxWidth ?? 80}%</span>
                 </div>
                 <Slider min={50} max={95} step={5} value={[form.chatBubbleMaxWidth ?? 80]} onValueChange={([v]) => updateField("chatBubbleMaxWidth", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Bubble Corner Radius</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatBubbleRadius ?? 20}px</span>
+                  <Label >Bubble Corner Radius</Label>
+                  <span className="t-helper">{form.chatBubbleRadius ?? 20}px</span>
                 </div>
                 <Slider min={4} max={32} step={1} value={[form.chatBubbleRadius ?? 20]} onValueChange={([v]) => updateField("chatBubbleRadius", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Timestamp Font Size</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatTimestampFontSize ?? 11}px</span>
+                  <Label >Timestamp Font Size</Label>
+                  <span className="t-helper">{form.chatTimestampFontSize ?? 11}px</span>
                 </div>
                 <Slider min={8} max={16} step={1} value={[form.chatTimestampFontSize ?? 11]} onValueChange={([v]) => updateField("chatTimestampFontSize", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Timestamp Opacity</Label>
-                  <span className="text-sm text-muted-foreground">{Math.round((form.chatTimestampOpacity ?? 0.45) * 100)}%</span>
+                  <Label >Timestamp Opacity</Label>
+                  <span className="t-helper">{Math.round((form.chatTimestampOpacity ?? 0.45) * 100)}%</span>
                 </div>
                 <Slider min={0.1} max={1} step={0.05} value={[form.chatTimestampOpacity ?? 0.45]} onValueChange={([v]) => updateField("chatTimestampOpacity", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Input Font Size (Mobile)</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatInputFontSize ?? 17}px</span>
+                  <Label >Input Font Size (Mobile)</Label>
+                  <span className="t-helper">{form.chatInputFontSize ?? 17}px</span>
                 </div>
                 <Slider min={13} max={22} step={1} value={[form.chatInputFontSize ?? 17]} onValueChange={([v]) => updateField("chatInputFontSize", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Input Font Size (Desktop)</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatInputFontSizeDesktop ?? 15}px</span>
+                  <Label >Input Font Size (Desktop)</Label>
+                  <span className="t-helper">{form.chatInputFontSizeDesktop ?? 15}px</span>
                 </div>
                 <Slider min={13} max={20} step={1} value={[form.chatInputFontSizeDesktop ?? 15]} onValueChange={([v]) => updateField("chatInputFontSizeDesktop", v)} disabled={formDisabled} />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Input Height</Label>
-                  <span className="text-sm text-muted-foreground">{form.chatInputHeight ?? 36}px</span>
+                  <Label >Input Height</Label>
+                  <span className="t-helper">{form.chatInputHeight ?? 36}px</span>
                 </div>
                 <Slider min={28} max={56} step={2} value={[form.chatInputHeight ?? 36]} onValueChange={([v]) => updateField("chatInputHeight", v)} disabled={formDisabled} />
               </div>
@@ -1650,9 +1762,9 @@ export function BrandSettingsForm({
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <MessageCircle className="w-4 h-4 text-muted-foreground" />
-                <Label className="text-sm font-medium">Bubble Colors</Label>
+                <Label >Bubble Colors</Label>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 Bubble colors are role-based: every message is colored by who sent it, regardless of who's viewing. Your own messages always render on the right with the "You" color; everyone else's render on the left with the color for their role. The AI keeps the same color in every conversation. The Provider color is used wherever a provider's message appears (parent's view, staff view, etc.); the Parent color is used wherever a parent's message appears (provider's view, staff view, co-parent view). Defaults follow the brand palette: Primary for you, Accent for AI and Parent, Secondary for Provider. Text and outline are optional - text auto-picks from background luminance when unset, outline is invisible when unset.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1759,37 +1871,37 @@ export function BrandSettingsForm({
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-muted-foreground" />
-                <Label className="text-sm font-medium">Quick Reply Chips</Label>
+                <Label >Quick Reply Chips</Label>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 Style the suggestion chips shown below AI messages.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Font Size</Label>
-                    <span className="text-sm text-muted-foreground">{form.quickReplyFontSize ?? 13}px</span>
+                    <Label >Font Size</Label>
+                    <span className="t-helper">{form.quickReplyFontSize ?? 13}px</span>
                   </div>
                   <Slider min={10} max={18} step={1} value={[form.quickReplyFontSize ?? 13]} onValueChange={([v]) => updateField("quickReplyFontSize", v)} disabled={formDisabled} />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Corner Radius</Label>
-                    <span className="text-sm text-muted-foreground">{form.quickReplyRadius ?? 999}px</span>
+                    <Label >Corner Radius</Label>
+                    <span className="t-helper">{form.quickReplyRadius ?? 999}px</span>
                   </div>
                   <Slider min={0} max={999} step={1} value={[form.quickReplyRadius ?? 999]} onValueChange={([v]) => updateField("quickReplyRadius", v)} disabled={formDisabled} />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Horizontal Padding</Label>
-                    <span className="text-sm text-muted-foreground">{form.quickReplyPaddingX ?? 14}px</span>
+                    <Label >Horizontal Padding</Label>
+                    <span className="t-helper">{form.quickReplyPaddingX ?? 14}px</span>
                   </div>
                   <Slider min={6} max={28} step={1} value={[form.quickReplyPaddingX ?? 14]} onValueChange={([v]) => updateField("quickReplyPaddingX", v)} disabled={formDisabled} />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Vertical Padding</Label>
-                    <span className="text-sm text-muted-foreground">{form.quickReplyPaddingY ?? 6}px</span>
+                    <Label >Vertical Padding</Label>
+                    <span className="t-helper">{form.quickReplyPaddingY ?? 6}px</span>
                   </div>
                   <Slider min={2} max={16} step={1} value={[form.quickReplyPaddingY ?? 6]} onValueChange={([v]) => updateField("quickReplyPaddingY", v)} disabled={formDisabled} />
                 </div>
@@ -1797,8 +1909,8 @@ export function BrandSettingsForm({
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm font-medium">Show chip border</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">Border visible on filled and secondary chips. Outline chips always keep their border.</p>
+                  <Label >Show chip border</Label>
+                  <p className="t-helper mt-0.5">Border visible on filled and secondary chips. Outline chips always keep their border.</p>
                 </div>
                 <Switch
                   checked={form.quickReplyShowBorder ?? true}
@@ -1809,8 +1921,8 @@ export function BrandSettingsForm({
 
               {/* Color Style picker */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Chip Color Style</Label>
-                <p className="text-xs text-muted-foreground">Controls the fill of the positive or multi-choice chips.</p>
+                <Label >Chip Color Style</Label>
+                <p className="t-helper">Controls the fill of the positive or multi-choice chips.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
                   {([
                     { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
@@ -1851,8 +1963,8 @@ export function BrandSettingsForm({
 
               {/* Decline Button Style picker */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Decline Button Style</Label>
-                <p className="text-xs text-muted-foreground">Style of the second button when there are exactly 2 choices (e.g. Yes / No).</p>
+                <Label >Decline Button Style</Label>
+                <p className="t-helper">Style of the second button when there are exactly 2 choices (e.g. Yes / No).</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
                   {([
                     { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
@@ -1893,8 +2005,8 @@ export function BrandSettingsForm({
 
               {/* Multi-Choice Unselected Style picker */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Multi-Choice Button Style</Label>
-                <p className="text-xs text-muted-foreground">Style of unselected options when the user can pick multiple choices (e.g. donor preferences).</p>
+                <Label >Multi-Choice Button Style</Label>
+                <p className="t-helper">Style of unselected options when the user can pick multiple choices (e.g. donor preferences).</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
                   {([
                     { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
@@ -1947,9 +2059,9 @@ export function BrandSettingsForm({
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Palette className="w-4 h-4 text-muted-foreground" />
-                <Label className="text-sm font-medium" data-testid="heading-marketplace-action-colors">Action Colors</Label>
+                <Label data-testid="heading-marketplace-action-colors">Action Colors</Label>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 These vibrant colors are used exclusively for the high-energy swipe actions in the marketplace to ensure clear visual feedback.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-x-6 gap-y-4">
@@ -1967,79 +2079,79 @@ export function BrandSettingsForm({
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Type className="w-4 h-4 text-muted-foreground" />
-                <Label className="text-sm font-medium" data-testid="heading-marketplace-sizing">Sizing</Label>
+                <Label data-testid="heading-marketplace-sizing">Sizing</Label>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 Control font sizes and layout dimensions on marketplace cards, filter labels, badges, and the filter drawer.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Card Title</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-card-title-size">{form.cardTitleSize ?? 24}px</span>
+                    <Label >Card Title</Label>
+                    <span className="t-helper" data-testid="text-card-title-size">{form.cardTitleSize ?? 24}px</span>
                   </div>
                   <Slider min={16} max={40} step={1} value={[form.cardTitleSize ?? 24]} onValueChange={([v]) => updateField("cardTitleSize", v)} disabled={formDisabled} data-testid="slider-card-title-size" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Card Overlay Text</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-card-overlay-size">{form.cardOverlaySize ?? 16}px</span>
+                    <Label >Card Overlay Text</Label>
+                    <span className="t-helper" data-testid="text-card-overlay-size">{form.cardOverlaySize ?? 16}px</span>
                   </div>
                   <Slider min={12} max={28} step={1} value={[form.cardOverlaySize ?? 16]} onValueChange={([v]) => updateField("cardOverlaySize", v)} disabled={formDisabled} data-testid="slider-card-overlay-size" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Filter Labels</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-filter-label-size">{form.filterLabelSize ?? 18}px</span>
+                    <Label >Filter Labels</Label>
+                    <span className="t-helper" data-testid="text-filter-label-size">{form.filterLabelSize ?? 18}px</span>
                   </div>
                   <Slider min={12} max={28} step={1} value={[form.filterLabelSize ?? 18]} onValueChange={([v]) => updateField("filterLabelSize", v)} disabled={formDisabled} data-testid="slider-filter-label-size" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Badge Text</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-badge-text-size">{form.badgeTextSize ?? 13}px</span>
+                    <Label >Badge Text</Label>
+                    <span className="t-helper" data-testid="text-badge-text-size">{form.badgeTextSize ?? 13}px</span>
                   </div>
                   <Slider min={10} max={22} step={1} value={[form.badgeTextSize ?? 13]} onValueChange={([v]) => updateField("badgeTextSize", v)} disabled={formDisabled} data-testid="slider-badge-text-size" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Drawer Min Height</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-drawer-min-height">{form.drawerMinHeight ?? 50}%</span>
+                    <Label >Drawer Min Height</Label>
+                    <span className="t-helper" data-testid="text-drawer-min-height">{form.drawerMinHeight ?? 50}%</span>
                   </div>
                   <Slider min={30} max={80} step={5} value={[form.drawerMinHeight ?? 50]} onValueChange={([v]) => updateField("drawerMinHeight", v)} disabled={formDisabled} data-testid="slider-drawer-min-height" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Drawer Title</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-drawer-title-size">{form.drawerTitleSize ?? 24}px</span>
+                    <Label >Drawer Title</Label>
+                    <span className="t-helper" data-testid="text-drawer-title-size">{form.drawerTitleSize ?? 24}px</span>
                   </div>
                   <Slider min={16} max={40} step={1} value={[form.drawerTitleSize ?? 24]} onValueChange={([v]) => updateField("drawerTitleSize", v)} disabled={formDisabled} data-testid="slider-drawer-title-size" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Drawer Body Text</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-drawer-body-size">{form.drawerBodySize ?? 16}px</span>
+                    <Label >Drawer Body Text</Label>
+                    <span className="t-helper" data-testid="text-drawer-body-size">{form.drawerBodySize ?? 16}px</span>
                   </div>
                   <Slider min={12} max={24} step={1} value={[form.drawerBodySize ?? 16]} onValueChange={([v]) => updateField("drawerBodySize", v)} disabled={formDisabled} data-testid="slider-drawer-body-size" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Drawer Handle Width</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-drawer-handle-width">{form.drawerHandleWidth ?? 60}px</span>
+                    <Label >Drawer Handle Width</Label>
+                    <span className="t-helper" data-testid="text-drawer-handle-width">{form.drawerHandleWidth ?? 60}px</span>
                   </div>
                   <Slider min={30} max={120} step={5} value={[form.drawerHandleWidth ?? 60]} onValueChange={([v]) => updateField("drawerHandleWidth", v)} disabled={formDisabled} data-testid="slider-drawer-handle-width" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Slider Value Text</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-slider-value-size">{form.sliderValueSize ?? 22}px</span>
+                    <Label >Slider Value Text</Label>
+                    <span className="t-helper" data-testid="text-slider-value-size">{form.sliderValueSize ?? 22}px</span>
                   </div>
                   <Slider min={14} max={36} step={1} value={[form.sliderValueSize ?? 22]} onValueChange={([v]) => updateField("sliderValueSize", v)} disabled={formDisabled} data-testid="slider-slider-value-size" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Slider Thumb Size</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-slider-thumb-size">{form.sliderThumbSize ?? 24}px</span>
+                    <Label >Slider Thumb Size</Label>
+                    <span className="t-helper" data-testid="text-slider-thumb-size">{form.sliderThumbSize ?? 24}px</span>
                   </div>
                   <Slider min={16} max={40} step={1} value={[form.sliderThumbSize ?? 24]} onValueChange={([v]) => updateField("sliderThumbSize", v)} disabled={formDisabled} data-testid="slider-slider-thumb-size" />
                 </div>
@@ -2052,12 +2164,12 @@ export function BrandSettingsForm({
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 text-muted-foreground" />
-                <Label className="text-sm font-medium">Preview</Label>
+                <Label >Preview</Label>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Card Preview */}
                 <div className="space-y-3">
-                  <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Card</span>
+                  <span className="t-micro-label">Card</span>
                   <div className="relative w-full aspect-[3/4] max-w-[280px] rounded-[var(--container-radius,16px)] overflow-hidden shadow-lg bg-muted" data-testid="marketplace-preview-card">
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/30 via-accent/20 to-muted" />
                     <div className="absolute inset-0 flex items-center justify-center opacity-20">
@@ -2124,7 +2236,7 @@ export function BrandSettingsForm({
 
                 {/* Filter & Drawer Preview */}
                 <div className="space-y-3">
-                  <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Filters & Drawer</span>
+                  <span className="t-micro-label">Filters & Drawer</span>
                   <div className="space-y-4" data-testid="marketplace-preview-filters">
                     {/* Filter pills */}
                     <div className="flex flex-wrap gap-2">
@@ -2181,14 +2293,14 @@ export function BrandSettingsForm({
               <h2 className="font-display text-lg font-semibold" data-testid="heading-advanced-colors">Advanced Theme Colors</h2>
             </div>
 
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               Fine-tune individual UI color tokens. Leave empty to use default values derived from your primary theme colors.
             </p>
 
                 <div className="space-y-2">
                   <div className="flex items-center gap-1.5">
                     <Layers className="w-4 h-4 text-muted-foreground" />
-                    <Label className="text-sm font-medium">Surfaces</Label>
+                    <Label >Surfaces</Label>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-3">
                     <OptionalColorInput label="Background" value={form.backgroundColor} onChange={(v) => updateField("backgroundColor", v)} testId="color-background" disabled={formDisabled} />
@@ -2202,7 +2314,7 @@ export function BrandSettingsForm({
                 <div className="space-y-2">
                   <div className="flex items-center gap-1.5">
                     <TypeIcon className="w-4 h-4 text-muted-foreground" />
-                    <Label className="text-sm font-medium">Text / Foregrounds</Label>
+                    <Label >Text / Foregrounds</Label>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3">
                     <OptionalColorInput label="Foreground" value={form.foregroundColor} onChange={(v) => updateField("foregroundColor", v)} testId="color-foreground" disabled={formDisabled} />
@@ -2219,7 +2331,7 @@ export function BrandSettingsForm({
                 <div className="space-y-2">
                   <div className="flex items-center gap-1.5">
                     <Frame className="w-4 h-4 text-muted-foreground" />
-                    <Label className="text-sm font-medium">Borders</Label>
+                    <Label >Borders</Label>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
                     <OptionalColorInput label="Border" value={form.borderColor} onChange={(v) => updateField("borderColor", v)} testId="color-border" disabled={formDisabled} />
@@ -2236,11 +2348,11 @@ export function BrandSettingsForm({
 
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Font Families</span>
+                <span className="t-micro-label">Font Families</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Heading Font</Label>
+                  <Label >Heading Font</Label>
                   <Select value={toFontSelectValue(form.headingFont)} onValueChange={(v) => updateField("headingFont", fromFontSelectValue(v))} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-heading-font">
                       <SelectValue />
@@ -2254,7 +2366,7 @@ export function BrandSettingsForm({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Body Font</Label>
+                  <Label >Body Font</Label>
                   <Select value={toFontSelectValue(form.bodyFont)} onValueChange={(v) => updateField("bodyFont", fromFontSelectValue(v))} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-body-font">
                       <SelectValue />
@@ -2272,10 +2384,10 @@ export function BrandSettingsForm({
 
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Native App Font</span>
+                <span className="t-micro-label">Native App Font</span>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Native Body Font (iOS / Android)</Label>
+                <Label >Native Body Font (iOS / Android)</Label>
                 <Select
                   value={form.nativeBodyFont ?? SYSTEM_FONT_VALUE}
                   onValueChange={(v) => updateField("nativeBodyFont", v === SYSTEM_FONT_VALUE ? null : v)}
@@ -2297,11 +2409,11 @@ export function BrandSettingsForm({
 
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Size & Scale</span>
+                <span className="t-micro-label">Size & Scale</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Base Font Size (px)</Label>
+                  <Label >Base Font Size (px)</Label>
                   <NumberInput
                     allowDecimal={false}
                     value={String(form.baseFontSize ?? "")}
@@ -2311,7 +2423,7 @@ export function BrandSettingsForm({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Small Text Size (px)</Label>
+                  <Label >Small Text Size (px)</Label>
                   <NumberInput
                     allowDecimal={false}
                     value={String(form.smallTextSize ?? "")}
@@ -2321,7 +2433,7 @@ export function BrandSettingsForm({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Type Scale Ratio</Label>
+                  <Label >Type Scale Ratio</Label>
                   <Select value={String(form.typeScaleRatio)} onValueChange={(v) => updateField("typeScaleRatio", Number(v))} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-type-scale-ratio">
                       <SelectValue />
@@ -2340,11 +2452,11 @@ export function BrandSettingsForm({
 
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Font Weights</span>
+                <span className="t-micro-label">Font Weights</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Body Weight</Label>
+                  <Label >Body Weight</Label>
                   <Select value={form.baseBodyWeight} onValueChange={(v) => updateField("baseBodyWeight", v)} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-body-weight">
                       <SelectValue />
@@ -2359,7 +2471,7 @@ export function BrandSettingsForm({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Heading Weight</Label>
+                  <Label >Heading Weight</Label>
                   <Select value={form.headingWeight} onValueChange={(v) => updateField("headingWeight", v)} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-heading-weight">
                       <SelectValue />
@@ -2375,7 +2487,7 @@ export function BrandSettingsForm({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">UI / Button Weight</Label>
+                  <Label >UI / Button Weight</Label>
                   <Select value={form.uiButtonWeight} onValueChange={(v) => updateField("uiButtonWeight", v)} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-ui-weight">
                       <SelectValue />
@@ -2393,11 +2505,11 @@ export function BrandSettingsForm({
 
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Line Heights</span>
+                <span className="t-micro-label">Line Heights</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Base Line Height</Label>
+                  <Label >Base Line Height</Label>
                   <NumberInput
                     value={String(form.lineHeight ?? "")}
                     onChange={(v) => updateField("lineHeight", v === "" ? 0 : Number(v))}
@@ -2406,7 +2518,7 @@ export function BrandSettingsForm({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Body Line Height</Label>
+                  <Label >Body Line Height</Label>
                   <NumberInput
                     value={String(form.bodyLineHeight ?? "")}
                     onChange={(v) => updateField("bodyLineHeight", v === "" ? 0 : Number(v))}
@@ -2415,7 +2527,7 @@ export function BrandSettingsForm({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Heading Line Height</Label>
+                  <Label >Heading Line Height</Label>
                   <NumberInput
                     value={String(form.headingLineHeight ?? "")}
                     onChange={(v) => updateField("headingLineHeight", v === "" ? 0 : Number(v))}
@@ -2428,11 +2540,11 @@ export function BrandSettingsForm({
 
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Spacing & Style</span>
+                <span className="t-micro-label">Spacing & Style</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Letter Spacing</Label>
+                  <Label >Letter Spacing</Label>
                   <Select value={form.letterSpacing} onValueChange={(v) => updateField("letterSpacing", v)} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-letter-spacing">
                       <SelectValue />
@@ -2445,7 +2557,7 @@ export function BrandSettingsForm({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Button Text Case</Label>
+                  <Label >Button Text Case</Label>
                   <Select value={form.buttonTextCase} onValueChange={(v) => updateField("buttonTextCase", v)} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-button-text-case">
                       <SelectValue />
@@ -2458,7 +2570,7 @@ export function BrandSettingsForm({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Link Decoration</Label>
+                  <Label >Link Decoration</Label>
                   <Select value={form.linkDecoration} onValueChange={(v) => updateField("linkDecoration", v)} disabled={formDisabled}>
                     <SelectTrigger data-testid="select-link-decoration">
                       <SelectValue />
@@ -2473,7 +2585,7 @@ export function BrandSettingsForm({
             </div>
 
             <div className="border-t border-border/30 pt-4 space-y-3">
-              <Label className="text-sm font-medium">Typography Preview</Label>
+              <Label >Typography Preview</Label>
               <div className="p-4 rounded-[var(--radius)] border border-border/40 bg-secondary/10 space-y-3">
                 <h2
                   className="text-2xl"
@@ -2526,6 +2638,147 @@ export function BrandSettingsForm({
             </div>
           </Card>
 
+          <Card className="rounded-[var(--container-radius)] p-6 space-y-6" data-testid="card-content-typography">
+            <div className="flex items-center gap-2">
+              <Type className="w-5 h-5 text-primary" />
+              <h2 className="font-display text-lg font-semibold" data-testid="heading-content-typography">Content &amp; Interface Typography</h2>
+            </div>
+            <p className="t-helper">
+              Controls every question/answer pair, prompt block, dense-card key and attribute chip in the product - donor, surrogate, sperm donor, clinic, doctor and provider profiles, plus settings and detail pages. Two roles do most of the work: an <strong>attribute pair</strong> is scanned, so the label recedes and the value is the anchor; a <strong>prompt block</strong> is read, so the question shrinks to an eyebrow and the answer becomes the largest text on the card. Leave a color unset to inherit the theme role.
+            </p>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Attribute Pair - label</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <SizeInput label="Label Size (px)" value={form.fieldLabelSize} onChange={(v) => updateField("fieldLabelSize", v)} testId="input-field-label-size" disabled={formDisabled} />
+                <WeightSelect label="Label Weight" value={form.fieldLabelWeight ?? "500"} onChange={(v) => updateField("fieldLabelWeight", v)} testId="select-field-label-weight" disabled={formDisabled} />
+                <CaseSelect label="Label Case" value={form.fieldLabelCase ?? "none"} onChange={(v) => updateField("fieldLabelCase", v)} testId="select-field-label-case" disabled={formDisabled} />
+                <SizeInput label="Label Letter Spacing (em)" value={form.fieldLabelTracking} onChange={(v) => updateField("fieldLabelTracking", v)} testId="input-field-label-tracking" disabled={formDisabled} allowDecimal />
+                <OptionalColorInput label="Label Color (muted if unset)" value={form.fieldLabelColor} onChange={(v) => updateField("fieldLabelColor", v)} testId="color-field-label" disabled={formDisabled} />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Attribute Pair - value &amp; spacing</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <SizeInput label="Value Size (px)" value={form.fieldValueSize} onChange={(v) => updateField("fieldValueSize", v)} testId="input-field-value-size" disabled={formDisabled} />
+                <WeightSelect label="Value Weight" value={form.fieldValueWeight ?? "500"} onChange={(v) => updateField("fieldValueWeight", v)} testId="select-field-value-weight" disabled={formDisabled} />
+                <OptionalColorInput label="Value Color (foreground if unset)" value={form.fieldValueColor} onChange={(v) => updateField("fieldValueColor", v)} testId="color-field-value" disabled={formDisabled} />
+                <SizeInput label="Label → Value Gap (px)" value={form.fieldLabelGap} onChange={(v) => updateField("fieldLabelGap", v)} testId="input-field-label-gap" disabled={formDisabled} hint="Keep well below the pair gap." />
+                <SizeInput label="Pair → Pair Gap (px)" value={form.fieldPairGap} onChange={(v) => updateField("fieldPairGap", v)} testId="input-field-pair-gap" disabled={formDisabled} hint="Must exceed the label gap or answers group with the wrong question." />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Prompt Block - question eyebrow</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <SizeInput label="Eyebrow Size (px)" value={form.promptEyebrowSize} onChange={(v) => updateField("promptEyebrowSize", v)} testId="input-prompt-eyebrow-size" disabled={formDisabled} />
+                <WeightSelect label="Eyebrow Weight" value={form.promptEyebrowWeight ?? "600"} onChange={(v) => updateField("promptEyebrowWeight", v)} testId="select-prompt-eyebrow-weight" disabled={formDisabled} />
+                <CaseSelect label="Eyebrow Case" value={form.promptEyebrowCase ?? "uppercase"} onChange={(v) => updateField("promptEyebrowCase", v)} testId="select-prompt-eyebrow-case" disabled={formDisabled} />
+                <SizeInput label="Eyebrow Letter Spacing (em)" value={form.promptEyebrowTracking} onChange={(v) => updateField("promptEyebrowTracking", v)} testId="input-prompt-eyebrow-tracking" disabled={formDisabled} allowDecimal />
+                <OptionalColorInput label="Eyebrow Color (accent if unset)" value={form.promptEyebrowColor} onChange={(v) => updateField("promptEyebrowColor", v)} testId="color-prompt-eyebrow" disabled={formDisabled} />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Prompt Block - answer</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <SizeInput label="Answer Size (px)" value={form.promptAnswerSize} onChange={(v) => updateField("promptAnswerSize", v)} testId="input-prompt-answer-size" disabled={formDisabled} />
+                <WeightSelect label="Answer Weight" value={form.promptAnswerWeight ?? "400"} onChange={(v) => updateField("promptAnswerWeight", v)} testId="select-prompt-answer-weight" disabled={formDisabled} />
+                <SizeInput label="Answer Line Height" value={form.promptAnswerLineHeight} onChange={(v) => updateField("promptAnswerLineHeight", v)} testId="input-prompt-answer-line-height" disabled={formDisabled} allowDecimal />
+                <OptionalColorInput label="Answer Color (foreground if unset)" value={form.promptAnswerColor} onChange={(v) => updateField("promptAnswerColor", v)} testId="color-prompt-answer" disabled={formDisabled} />
+                <SizeInput label="Block Gap (px)" value={form.promptBlockGap} onChange={(v) => updateField("promptBlockGap", v)} testId="input-prompt-block-gap" disabled={formDisabled} hint="Space and hairline between consecutive prompts." />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Dense Card Key</span>
+              <p className="t-helper">Compact uppercase key inside packed cards and tables - family health history, education rows, cost tables.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <SizeInput label="Key Size (px)" value={form.microLabelSize} onChange={(v) => updateField("microLabelSize", v)} testId="input-micro-label-size" disabled={formDisabled} />
+                <SizeInput label="Compact Value Size (px)" value={form.microValueSize} onChange={(v) => updateField("microValueSize", v)} testId="input-micro-value-size" disabled={formDisabled} hint="Value size inside dense cards - a notch below the reading size." />
+                <WeightSelect label="Key Weight" value={form.microLabelWeight ?? "500"} onChange={(v) => updateField("microLabelWeight", v)} testId="select-micro-label-weight" disabled={formDisabled} />
+                <SizeInput label="Key Letter Spacing (em)" value={form.microLabelTracking} onChange={(v) => updateField("microLabelTracking", v)} testId="input-micro-label-tracking" disabled={formDisabled} allowDecimal />
+                <OptionalColorInput label="Key Color (muted if unset)" value={form.microLabelColor} onChange={(v) => updateField("microLabelColor", v)} testId="color-micro-label" disabled={formDisabled} />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Attribute Chip</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <SizeInput label="Chip Text Size (px)" value={form.chipFontSize} onChange={(v) => updateField("chipFontSize", v)} testId="input-chip-font-size" disabled={formDisabled} />
+                <WeightSelect label="Chip Text Weight" value={form.chipFontWeight ?? "500"} onChange={(v) => updateField("chipFontWeight", v)} testId="select-chip-font-weight" disabled={formDisabled} />
+                <SizeInput label="Chip Radius (px)" value={form.chipRadius} onChange={(v) => updateField("chipRadius", v)} testId="input-chip-radius" disabled={formDisabled} hint="999 = fully round pill." />
+                <SizeInput label="Chip Padding X (px)" value={form.chipPaddingX} onChange={(v) => updateField("chipPaddingX", v)} testId="input-chip-px" disabled={formDisabled} />
+                <SizeInput label="Chip Padding Y (px)" value={form.chipPaddingY} onChange={(v) => updateField("chipPaddingY", v)} testId="input-chip-py" disabled={formDisabled} />
+                <OptionalColorInput label="Chip Background (secondary if unset)" value={form.chipBgColor} onChange={(v) => updateField("chipBgColor", v)} testId="color-chip-bg" disabled={formDisabled} />
+                <OptionalColorInput label="Chip Text (secondary foreground if unset)" value={form.chipTextColor} onChange={(v) => updateField("chipTextColor", v)} testId="color-chip-text" disabled={formDisabled} />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Section Header</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <SizeInput label="Section Title Size (px)" value={form.sectionTitleSize} onChange={(v) => updateField("sectionTitleSize", v)} testId="input-section-title-size" disabled={formDisabled} />
+                <WeightSelect label="Section Title Weight" value={form.sectionTitleWeight ?? "600"} onChange={(v) => updateField("sectionTitleWeight", v)} testId="select-section-title-weight" disabled={formDisabled} />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Interface - form labels</span>
+              <p className="t-helper">Applied by the shared Label component, so every form in the product follows it. The compact size is used by dense panels - filter drawers, admin side panels, inline editors.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <SizeInput label="Form Label Size (px)" value={form.formLabelSize} onChange={(v) => updateField("formLabelSize", v)} testId="input-form-label-size" disabled={formDisabled} />
+                <SizeInput label="Compact Label Size (px)" value={form.formLabelSmallSize} onChange={(v) => updateField("formLabelSmallSize", v)} testId="input-form-label-small-size" disabled={formDisabled} />
+                <WeightSelect label="Form Label Weight" value={form.formLabelWeight ?? "500"} onChange={(v) => updateField("formLabelWeight", v)} testId="select-form-label-weight" disabled={formDisabled} />
+                <CaseSelect label="Form Label Case" value={form.formLabelCase ?? "none"} onChange={(v) => updateField("formLabelCase", v)} testId="select-form-label-case" disabled={formDisabled} />
+                <SizeInput label="Form Label Letter Spacing (em)" value={form.formLabelTracking} onChange={(v) => updateField("formLabelTracking", v)} testId="input-form-label-tracking" disabled={formDisabled} allowDecimal />
+                <OptionalColorInput label="Form Label Color (foreground if unset)" value={form.formLabelColor} onChange={(v) => updateField("formLabelColor", v)} testId="color-form-label" disabled={formDisabled} />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Interface - helper text, card &amp; page headings</span>
+              <p className="t-helper">Helper text is every hint, caption, timestamp and empty-state line in the product. Card heading drives the shared Card component; page title drives the h1 on every page.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <SizeInput label="Helper Text Size (px)" value={form.helperTextSize} onChange={(v) => updateField("helperTextSize", v)} testId="input-helper-text-size" disabled={formDisabled} />
+                <OptionalColorInput label="Helper Text Color (muted if unset)" value={form.helperTextColor} onChange={(v) => updateField("helperTextColor", v)} testId="color-helper-text" disabled={formDisabled} />
+                <SizeInput label="Card Heading Size (px)" value={form.cardHeadingSize} onChange={(v) => updateField("cardHeadingSize", v)} testId="input-card-heading-size" disabled={formDisabled} />
+                <WeightSelect label="Card Heading Weight" value={form.cardHeadingWeight ?? "700"} onChange={(v) => updateField("cardHeadingWeight", v)} testId="select-card-heading-weight" disabled={formDisabled} />
+                <SizeInput label="Page Title Size (px)" value={form.pageTitleSize} onChange={(v) => updateField("pageTitleSize", v)} testId="input-page-title-size" disabled={formDisabled} />
+                <WeightSelect label="Page Title Weight" value={form.pageTitleWeight ?? "700"} onChange={(v) => updateField("pageTitleWeight", v)} testId="select-page-title-weight" disabled={formDisabled} />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <span className="t-micro-label">Live Preview</span>
+              <div className="rounded-[var(--container-radius)] border border-border overflow-hidden" data-testid="preview-content-typography">
+                <div className="px-5 py-3.5 border-b bg-muted/50">
+                  <h3 className="font-heading text-foreground" style={{ fontSize: "var(--section-title-size)", fontWeight: "var(--section-title-weight)" as any }}>
+                    Medical History
+                  </h3>
+                </div>
+                <div className="p-5 space-y-5 bg-card">
+                  <FieldGrid columns={2}>
+                    <Field label="Have you ever had an abnormal pap smear?" value="Yes" />
+                    <Field label="Have you ever used fertility medication?" value="No" />
+                  </FieldGrid>
+                  <div>
+                    <MicroLabel>Health conditions</MicroLabel>
+                    <ChipRow className="mt-2">
+                      <AttributeChip>Anxiety disorder</AttributeChip>
+                      <AttributeChip>Panic attacks</AttributeChip>
+                    </ChipRow>
+                  </div>
+                  <PromptStack>
+                    <PromptBlock question="Why I'm an egg donor" answer="I want to help a family in a way that I personally believe is very unique and special." />
+                    <PromptBlock question="My worst fear" answer="Becoming unhealthy" />
+                  </PromptStack>
+                </div>
+              </div>
+            </div>
+          </Card>
+
           <Card className="rounded-[var(--container-radius)] p-6 space-y-6">
             <div className="flex items-center gap-2">
               <Frame className="w-5 h-5 text-primary" />
@@ -2534,10 +2787,10 @@ export function BrandSettingsForm({
 
             <div className="space-y-6">
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Top Header Navigation</h3>
+                <h3 className="t-micro-label">Top Header Navigation</h3>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Nav Link Style</Label>
+                  <Label >Nav Link Style</Label>
                   <div className="flex gap-2">
                     {[
                       { value: "pill", label: "Pill" },
@@ -2562,7 +2815,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Inactive Link Color</Label>
+                  <Label >Inactive Link Color</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -2589,7 +2842,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Hover Link Color</Label>
+                  <Label >Hover Link Color</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -2616,7 +2869,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Active Link Color</Label>
+                  <Label >Active Link Color</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -2646,9 +2899,9 @@ export function BrandSettingsForm({
               </div>
 
               <div className="border-t pt-6 space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Action Shape (Buttons & Tags)</h3>
+                <h3 className="t-micro-label">Action Shape (Buttons & Tags)</h3>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Preset</Label>
+                  <Label >Preset</Label>
                   <Select
                     value={
                       form.borderRadius === 0 ? "0" :
@@ -2676,8 +2929,8 @@ export function BrandSettingsForm({
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Radius</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-radius-value">{form.borderRadius}rem</span>
+                    <Label >Radius</Label>
+                    <span className="t-helper" data-testid="text-radius-value">{form.borderRadius}rem</span>
                   </div>
                   <Slider
                     min={0}
@@ -2692,9 +2945,9 @@ export function BrandSettingsForm({
               </div>
 
               <div className="border-t pt-6 space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Container Shape (Cards & Inputs)</h3>
+                <h3 className="t-micro-label">Container Shape (Cards & Inputs)</h3>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Preset</Label>
+                  <Label >Preset</Label>
                   <Select
                     value={
                       form.containerRadius === 0 ? "0" :
@@ -2722,8 +2975,8 @@ export function BrandSettingsForm({
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Radius</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-container-radius-value">{form.containerRadius}rem</span>
+                    <Label >Radius</Label>
+                    <span className="t-helper" data-testid="text-container-radius-value">{form.containerRadius}rem</span>
                   </div>
                   <Slider
                     min={0}
@@ -2738,10 +2991,10 @@ export function BrandSettingsForm({
               </div>
 
               <div className="border-t pt-6 space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Bottom App Navigation</h3>
+                <h3 className="t-micro-label">Bottom App Navigation</h3>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Button Style</Label>
+                  <Label >Button Style</Label>
                   <Select
                     value={form.bottomNavStyle || "icon-label"}
                     onValueChange={(v) => updateField("bottomNavStyle", v)}
@@ -2758,7 +3011,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Bar Shape</Label>
+                  <Label >Bar Shape</Label>
                   <Select
                     value={
                       form.bottomNavRadius === 0 ? "0" :
@@ -2786,8 +3039,8 @@ export function BrandSettingsForm({
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Corner Radius</Label>
-                    <span className="text-sm text-muted-foreground" data-testid="text-bottom-nav-radius-value">{form.bottomNavRadius}rem</span>
+                    <Label >Corner Radius</Label>
+                    <span className="t-helper" data-testid="text-bottom-nav-radius-value">{form.bottomNavRadius}rem</span>
                   </div>
                   <Slider
                     min={0}
@@ -2801,7 +3054,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Shadow Effect</Label>
+                  <Label >Shadow Effect</Label>
                   <Select
                     value={form.bottomNavShadow || "shadow-lg"}
                     onValueChange={(v) => updateField("bottomNavShadow", v)}
@@ -2822,7 +3075,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Background Opacity</Label>
+                  <Label >Background Opacity</Label>
                   <div className="flex items-center gap-3">
                     <Slider
                       min={0}
@@ -2833,13 +3086,13 @@ export function BrandSettingsForm({
                       disabled={formDisabled}
                       data-testid="slider-bottom-nav-opacity"
                     />
-                    <span className="text-sm text-muted-foreground w-10 text-right" data-testid="text-bottom-nav-opacity-value">{form.bottomNavOpacity ?? 100}%</span>
+                    <span className="t-helper w-10 text-right" data-testid="text-bottom-nav-opacity-value">{form.bottomNavOpacity ?? 100}%</span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">Lower opacity for a frosted glass effect. Works best with blur enabled.</p>
+                  <p className="t-helper mt-1">Lower opacity for a frosted glass effect. Works best with blur enabled.</p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Background Blur</Label>
+                  <Label >Background Blur</Label>
                   <Select
                     value={form.bottomNavBlur || "none"}
                     onValueChange={(v) => updateField("bottomNavBlur", v)}
@@ -2857,11 +3110,11 @@ export function BrandSettingsForm({
                       <SelectItem value="2xl">Maximum</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-[10px] text-muted-foreground mt-1">Blurs content behind the navigation for a frosted glass look.</p>
+                  <p className="t-helper mt-1">Blurs content behind the navigation for a frosted glass look.</p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Background Color</Label>
+                  <Label >Background Color</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -2888,7 +3141,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Safe Area Background</Label>
+                  <Label >Safe Area Background</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -2912,11 +3165,11 @@ export function BrandSettingsForm({
                       </Button>
                     )}
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">Color for the space behind the floating pill. Clear it to make it transparent.</p>
+                  <p className="t-helper mt-1">Color for the space behind the floating pill. Clear it to make it transparent.</p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Inactive Icon Color</Label>
+                  <Label >Inactive Icon Color</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -2943,7 +3196,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Active Icon Color</Label>
+                  <Label >Active Icon Color</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -2973,10 +3226,10 @@ export function BrandSettingsForm({
               </div>
 
               <div className="border-t pt-6 space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Tab Navigation Colors</h3>
+                <h3 className="t-micro-label">Tab Navigation Colors</h3>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Inactive Tab Color</Label>
+                  <Label >Inactive Tab Color</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -3003,7 +3256,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Inactive Tab Hover Color</Label>
+                  <Label >Inactive Tab Hover Color</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -3030,7 +3283,7 @@ export function BrandSettingsForm({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Active Tab Color</Label>
+                  <Label >Active Tab Color</Label>
                   <div className="flex gap-2 items-center">
                     <input
                       type="color"
@@ -3067,7 +3320,7 @@ export function BrandSettingsForm({
             <h3 className="font-display text-base font-semibold">Theme Preview</h3>
 
             <div className="space-y-3">
-              <Label className="text-xs text-muted-foreground">Buttons</Label>
+              <Label className="t-form-label-sm text-muted-foreground">Buttons</Label>
               <Button className="w-full" data-testid="preview-primary-button">
                 Primary Button
               </Button>
@@ -3087,7 +3340,7 @@ export function BrandSettingsForm({
             </div>
 
             <div className="space-y-3">
-              <Label className="text-xs text-muted-foreground">Input</Label>
+              <Label className="t-form-label-sm text-muted-foreground">Input</Label>
               <Input
                 placeholder="Type a message..."
                 data-testid="preview-input"
@@ -3095,7 +3348,7 @@ export function BrandSettingsForm({
             </div>
 
             <div className="space-y-3">
-              <Label className="text-xs text-muted-foreground">Dropdown</Label>
+              <Label className="t-form-label-sm text-muted-foreground">Dropdown</Label>
               <Select data-testid="preview-select">
                 <SelectTrigger data-testid="preview-select-trigger">
                   <SelectValue placeholder="Choose an option" />
@@ -3109,7 +3362,7 @@ export function BrandSettingsForm({
             </div>
 
             <div className="space-y-3">
-              <Label className="text-xs text-muted-foreground">Badges</Label>
+              <Label className="t-form-label-sm text-muted-foreground">Badges</Label>
               <div className="flex gap-2 flex-wrap">
                 <Badge data-testid="preview-badge-default">New York</Badge>
                 <Badge variant="secondary" data-testid="preview-badge-secondary">Monogamy</Badge>
@@ -3119,7 +3372,7 @@ export function BrandSettingsForm({
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Alerts</Label>
+              <Label className="t-form-label-sm text-muted-foreground">Alerts</Label>
               <div
                 className="p-3 rounded-[var(--radius)] text-sm flex items-center gap-2"
                 style={{ backgroundColor: form.successColor + "15", color: form.successColor, border: `1px solid ${form.successColor}30` }}
@@ -3147,7 +3400,7 @@ export function BrandSettingsForm({
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Sample Card</Label>
+              <Label className="t-form-label-sm text-muted-foreground">Sample Card</Label>
               <Card className="p-4 space-y-2">
                 <div className="flex items-center gap-2">
                   <div
@@ -3164,7 +3417,7 @@ export function BrandSettingsForm({
                       Sample Card
                     </p>
                     <p
-                      className="text-xs text-muted-foreground"
+                      className="t-helper"
                       style={{ ...fontPreviewStyle(form.bodyFont) }}
                     >
                       Subtitle text preview
@@ -3172,7 +3425,7 @@ export function BrandSettingsForm({
                   </div>
                 </div>
                 <p
-                  className="text-sm text-muted-foreground"
+                  className="t-helper"
                   style={{ ...fontPreviewStyle(form.bodyFont), lineHeight: form.lineHeight }}
                 >
                   This card shows how your brand looks across various UI elements.

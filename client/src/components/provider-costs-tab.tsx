@@ -929,7 +929,7 @@ function DiffValueCell({ label, pendingVal, approvedVal, isCurrency = true }: { 
         {pendingVal != null ? fmt(pendingVal) : "-"}
       </span>
       {changed && approvedVal != null && (
-        <div className="text-xs text-muted-foreground line-through">
+        <div className="t-helper line-through">
           {fmt(approvedVal)}
         </div>
       )}
@@ -1910,7 +1910,7 @@ function SingleCostsTab({
                     <p className="text-sm font-medium truncate" data-testid="text-filename">
                       {displaySheet.originalFileName || "Cost Sheet"}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="t-helper">
                       Version {displaySheet.version}
                     </p>
                   </div>
@@ -1959,7 +1959,7 @@ function SingleCostsTab({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        className="t-helper h-6 px-2 hover:text-destructive"
                         disabled={cancelUploadMutation.isPending}
                         onClick={() => { const s = parsingSheet; if (s) cancelUploadMutation.mutate(s.id); }}
                       >
@@ -1973,7 +1973,7 @@ function SingleCostsTab({
                         data-testid="parse-progress-fill"
                       />
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-1.5">
+                    <p className="t-helper mt-1.5">
                       AI is reading your document and mapping costs to the GoStork template
                     </p>
                   </div>
@@ -2005,7 +2005,7 @@ function SingleCostsTab({
                   <>
                     <Loader2 className="w-8 h-8 mx-auto mb-2 text-primary animate-spin" />
                     <p className="text-sm font-medium">Uploading file...</p>
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="t-helper mt-1">
                       This may take a moment
                     </p>
                   </>
@@ -2021,7 +2021,7 @@ function SingleCostsTab({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        className="t-helper h-6 px-2 hover:text-destructive"
                         disabled={cancelUploadMutation.isPending}
                         onClick={(e) => { e.stopPropagation(); const s = parsingSheet; if (s) cancelUploadMutation.mutate(s.id); }}
                       >
@@ -2035,7 +2035,7 @@ function SingleCostsTab({
                         data-testid="parse-progress-fill"
                       />
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-1.5 text-center">
+                    <p className="t-helper mt-1.5 text-center">
                       AI is reading your document and mapping costs to the GoStork template
                     </p>
                   </div>
@@ -2045,7 +2045,7 @@ function SingleCostsTab({
                     <p className="text-sm font-medium">
                       Drop a PDF or Excel file here, or click to browse
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="t-helper mt-1">
                       Supports PDF, XLS, XLSX (max 20MB) · AI will auto-parse your costs
                     </p>
                   </>
@@ -2060,7 +2060,7 @@ function SingleCostsTab({
       {displaySheet && (!effectiveEditing || !isAdminView) && (
         <div className="flex items-center gap-3 flex-wrap" data-testid="sheet-status-bar">
           {getStatusBadge(displaySheet.status)}
-          <span className="text-xs text-muted-foreground">
+          <span className="t-helper">
             v{displaySheet.version} · Updated{" "}
             {new Date(displaySheet.updatedAt).toLocaleDateString()}
           </span>
@@ -2177,7 +2177,7 @@ function SingleCostsTab({
         <Card data-testid="card-no-custom-quote">
           <CardContent className="py-8 text-center">
             <DollarSign className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="t-helper mb-4">
               No custom cost sheet for this parent yet.
             </p>
             <Button
@@ -2189,7 +2189,7 @@ function SingleCostsTab({
               Create Custom Cost Sheet
             </Button>
             {!approvedSheet && (
-              <p className="text-xs text-muted-foreground mt-2">
+              <p className="t-helper mt-2">
                 An approved master cost sheet is required first.
               </p>
             )}
@@ -2207,7 +2207,7 @@ function SingleCostsTab({
                 {tierItems.length} option{tierItems.length === 1 ? "" : "s"}
               </Badge>
             </CardTitle>
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               The parent picks one tier. Each tier renders as its own card on the parent profile, with the same Included items repeated under each.
             </p>
           </CardHeader>
@@ -2228,7 +2228,7 @@ function SingleCostsTab({
                   />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground">$</span>
+                  <span className="t-helper">$</span>
                   <NumberInput
                     value={tier.minValue != null ? String(tier.minValue) : ""}
                     onChange={(raw) => {
@@ -2308,7 +2308,7 @@ function SingleCostsTab({
                 <AccordionTrigger className="text-sm font-semibold py-3">
                   <div className="flex items-center gap-2">
                     {category}
-                    <span className="text-xs text-muted-foreground font-normal">
+                    <span className="t-helper">
                       ({items.length} item{items.length !== 1 ? "s" : ""})
                     </span>
                     {categoryHasChanges && (
@@ -2320,7 +2320,7 @@ function SingleCostsTab({
                 </AccordionTrigger>
                 <AccordionContent>
                   {showDiffView && (
-                    <div className="flex text-xs text-muted-foreground border-b pb-2 mb-2 px-3 gap-2">
+                    <div className="t-helper flex border-b pb-2 mb-2 px-3 gap-2">
                       <div className="flex-1">Item</div>
                       <div className="w-28 text-right">Pending</div>
                       <div className="w-4 shrink-0" />
@@ -2377,19 +2377,19 @@ function SingleCostsTab({
                               <div className="w-28 text-right">
                                 {approvedItem ? (
                                   <>
-                                    <span className="text-sm tabular-nums text-muted-foreground">
+                                    <span className="t-helper tabular-nums">
                                       {approvedItem.minValue != null
                                         ? (isNumericOnlyField(getBaseKey(item.key)) ? String(approvedItem.minValue) : formatCurrency(approvedItem.minValue))
                                         : "-"}
                                     </span>
                                     {approvedItem.maxValue !== approvedItem.minValue && approvedItem.maxValue != null && (
-                                      <div className="text-xs text-muted-foreground">
+                                      <div className="t-helper">
                                         – {isNumericOnlyField(getBaseKey(item.key)) ? String(approvedItem.maxValue) : formatCurrency(approvedItem.maxValue)}
                                       </div>
                                     )}
                                   </>
                                 ) : (
-                                  <span className="text-xs text-muted-foreground italic">New</span>
+                                  <span className="t-helper italic">New</span>
                                 )}
                               </div>
                               <div className="w-16 text-center">
@@ -2398,7 +2398,7 @@ function SingleCostsTab({
                                 ) : itemChanged ? (
                                   <Badge className="text-xs bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">Changed</Badge>
                                 ) : (
-                                  <span className="text-xs text-muted-foreground">-</span>
+                                  <span className="t-helper">-</span>
                                 )}
                               </div>
                             </div>
@@ -2459,7 +2459,7 @@ function SingleCostsTab({
                                     data-testid={`input-comment-${item._editIdx}`}
                                   />
                                 ) : item.comment ? (
-                                  <p className="text-xs text-muted-foreground italic" data-testid={`text-comment-${item._editIdx}`}>
+                                  <p className="t-helper italic" data-testid={`text-comment-${item._editIdx}`}>
                                     {item.comment}
                                   </p>
                                 ) : null}
@@ -2487,7 +2487,7 @@ function SingleCostsTab({
                                   ) : (
                                   <>
                                     <div className="flex items-center gap-1">
-                                      <span className="text-xs text-muted-foreground">$</span>
+                                      <span className="t-helper">$</span>
                                       <NumberInput
                                         value={item.minValue != null ? String(item.minValue) : ""}
                                         onChange={(raw) =>
@@ -2506,7 +2506,7 @@ function SingleCostsTab({
                                     </div>
                                     <span className="text-muted-foreground">–</span>
                                     <div className="flex items-center gap-1">
-                                      <span className="text-xs text-muted-foreground">$</span>
+                                      <span className="t-helper">$</span>
                                       <NumberInput
                                         value={item.maxValue != null ? String(item.maxValue) : ""}
                                         onChange={(raw) =>
@@ -2614,7 +2614,7 @@ function SingleCostsTab({
                             <span className="text-sm font-medium line-through text-destructive">{ri.key}</span>
                           </div>
                           <div className="w-28 text-right">
-                            <span className="text-sm tabular-nums text-muted-foreground italic">-</span>
+                            <span className="t-helper tabular-nums italic">-</span>
                           </div>
                           <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
                           <div className="w-28 text-right">
@@ -2660,7 +2660,7 @@ function SingleCostsTab({
               </span>
             </div>
             {showDiffView && approvedSheet && (
-              <div className="flex items-center justify-between mt-1 text-xs text-muted-foreground">
+              <div className="t-helper flex items-center justify-between mt-1">
                 <span>Previously approved total</span>
                 <span className="tabular-nums">
                   {(() => {
@@ -2687,7 +2687,7 @@ function SingleCostsTab({
         saving={updateMutation.isPending || submitMutation.isPending}
         message={
           autoSaveStatus === "saving" ? (
-            <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+            <span className="t-helper flex items-center gap-1" data-testid="text-auto-save-status">
               <Loader2 className="w-3 h-3 animate-spin" />
               Saving draft...
             </span>
@@ -2727,7 +2727,7 @@ function SingleCostsTab({
         saveDisabled={missingMandatory.length > 0 || isParsing}
         message={
           autoSaveStatus === "saving" ? (
-            <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="text-auto-save-status">
+            <span className="t-helper flex items-center gap-1" data-testid="text-auto-save-status">
               <Loader2 className="w-3 h-3 animate-spin" />
               Saving draft...
             </span>
@@ -2834,7 +2834,7 @@ function ProgramTotalBadge({ program }: { program: CostProgram }) {
   return (
     <span className="text-sm font-semibold tabular-nums text-primary" data-testid="program-total-badge">
       {display}
-      {isDraft && <span className="ml-1 text-xs font-normal text-muted-foreground">(draft)</span>}
+      {isDraft && <span className="t-helper ml-1">(draft)</span>}
     </span>
   );
 }
@@ -3389,7 +3389,7 @@ function ProgramsView({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
+        <p className="t-helper">
           {programs.length === 0 ? "No programs yet" : `${programs.length} program${programs.length !== 1 ? "s" : ""}`}
         </p>
         {/* Legacy add-program button only for provider types outside the
@@ -3447,7 +3447,7 @@ function ProgramsView({
             <>
               <Loader2 className="w-8 h-8 mx-auto mb-2 text-primary animate-spin" />
               <p className="text-sm font-medium text-foreground">Uploading...</p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="t-helper mt-1">
                 AI will set up the program for you in a moment.
               </p>
             </>
@@ -3457,7 +3457,7 @@ function ProgramsView({
               <p className="text-sm font-medium text-foreground">
                 Drop a cost sheet here to create a new program
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="t-helper mt-1">
                 PDF, XLS, XLSX (max 20MB) - AI auto-detects program name, country, type, and Fixed/Not-Fixed.
               </p>
             </>
@@ -3470,7 +3470,7 @@ function ProgramsView({
           <p className="text-sm font-medium">New Program</p>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Program Name</Label>
+              <Label className="t-form-label-sm">Program Name</Label>
               <Input
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
@@ -3478,7 +3478,7 @@ function ProgramsView({
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Country</Label>
+              <Label className="t-form-label-sm">Country</Label>
               <SingleCountryAutocompleteInput
                 value={formCountry}
                 onChange={setFormCountry}

@@ -71,7 +71,7 @@ export function PartnerInfoRequestCard({ data, messageId, sessionId, brandColor,
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">{data?.documentType || "Agreement"} - partner details</p>
-          <p className="text-xs text-muted-foreground">Both parents sign; add your partner or continue solo.</p>
+          <p className="t-helper">Both parents sign; add your partner or continue solo.</p>
         </div>
       </div>
       <div className="px-4 py-3 space-y-2">

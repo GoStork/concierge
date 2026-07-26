@@ -198,7 +198,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       <div className="space-y-6">
         <header>
           <h2 className="text-2xl font-heading">Legal Identity - Admin tools</h2>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="t-helper mt-1">
             GoStork-wide W-9 template configuration. Per-provider Legal Identity is edited
             on each provider's admin page (<code className="text-xs bg-muted px-1 rounded">/admin/providers/:id</code> → Legal Identity tab).
           </p>
@@ -206,7 +206,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         <section className="space-y-3 rounded-xl border bg-secondary/30 p-5">
           <div>
             <h3 className="font-semibold">W-9 PandaDoc template</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="t-helper mt-0.5">
               Upload the master W-9 template that gets sent to every provider for signature.
               Configure the field IDs (Full_Name, Company_Name, RadioButtons1, Address,
               City_State_zipcode, SSN, EIN) so signed W-9s auto-fill into each provider's
@@ -224,7 +224,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       <header className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-heading">Legal Identity</h2>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="t-helper mt-1">
             {isAdmin
               ? "This provider's legal name, tax ID, and address. Used on payment receipts, the W-9, and Stripe Connect KYC for payouts."
               : "Your business's legal name, tax ID, and address. Used on payment receipts, the W-9, and Stripe Connect KYC for payouts."}
@@ -270,7 +270,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         <section className="space-y-3 rounded-xl border bg-secondary/30 p-5">
           <div>
             <h3 className="font-semibold">W-9 Form</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="t-helper mt-0.5">
               Required by US tax law for any provider receiving payments. When you sign it via PandaDoc,
               the fields below auto-fill from the form.
             </p>
@@ -420,7 +420,7 @@ function Field({
         {required && <span style={{ color: "hsl(var(--brand-error))" }} className="ml-0.5">*</span>}
       </Label>
       {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p className="t-helper">{hint}</p>}
     </div>
   );
 }

@@ -98,7 +98,7 @@ function MetricValue({ entry, isAvg }: { entry: MetricEntry | undefined; isAvg?:
 function NatAvgValue({ entry, isAvg }: { entry: MetricEntry | undefined; isAvg?: boolean }) {
   if (!entry || entry.nationalAverage === null) return null;
   return (
-    <span className="text-muted-foreground text-[11px]">
+    <span className="t-helper">
       {isAvg ? formatAvg(entry.nationalAverage) : formatPct(entry.nationalAverage)}
     </span>
   );
@@ -107,7 +107,7 @@ function NatAvgValue({ entry, isAvg }: { entry: MetricEntry | undefined; isAvg?:
 function PercentileValue({ entry }: { entry: MetricEntry | undefined }) {
   if (!entry || entry.percentile === null) return null;
   return (
-    <span className="text-muted-foreground text-[11px]">
+    <span className="t-helper">
       {Math.round(entry.percentile * 100)}th pctl
     </span>
   );
@@ -199,7 +199,7 @@ function MetricRow({
   if (row.isAvg) {
     return (
       <tr className="border-t border-border/50 bg-muted/20 hover:bg-muted/40 transition-colors">
-        <td className="px-4 py-2.5 text-xs leading-snug italic text-muted-foreground">{row.label}</td>
+        <td className="t-helper px-4 py-2.5 leading-snug italic">{row.label}</td>
         {keys.map((k) => {
           const entry = metricData[k];
           return (
@@ -214,7 +214,7 @@ function MetricRow({
 
   return (
     <tr className="border-t border-border/30 hover:bg-muted/30 transition-colors">
-      <td className="px-4 py-2.5 text-xs leading-snug text-muted-foreground">{row.label}</td>
+      <td className="t-helper px-4 py-2.5 leading-snug">{row.label}</td>
       {keys.map((k) => {
         const entry = metricData[k];
         return (
@@ -410,7 +410,7 @@ export default function CdcClinicSuccessRatesPage() {
         ]}
         title="Clinic Success Rates"
       >
-        <p className="text-muted-foreground text-sm" data-testid="text-no-data">No data found for this clinic.</p>
+        <p className="t-helper" data-testid="text-no-data">No data found for this clinic.</p>
       </AdminReportLayout>
     );
   }
@@ -444,13 +444,13 @@ export default function CdcClinicSuccessRatesPage() {
           href={provider.cdcClinicId ? `https://art.cdc.gov/?clinicid=${provider.cdcClinicId}` : `https://www.cdc.gov/art/artdata/index.html`}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
+          className="t-helper hover:text-primary transition-colors flex items-center gap-1"
           data-testid="link-cdc-website"
         >
           <ExternalLink className="w-3 h-3" />
           View on CDC
         </a>
-        <div className="flex items-center gap-4 text-sm text-muted-foreground ml-auto flex-wrap">
+        <div className="t-helper flex items-center gap-4 ml-auto flex-wrap">
           <span data-testid="text-total-records">{data.totalRecords} total records</span>
           {provider.address && (
             <span data-testid="text-address">{provider.address}{provider.zip ? `, ${provider.zip}` : ""}</span>
@@ -466,7 +466,7 @@ export default function CdcClinicSuccessRatesPage() {
       ) : (
         <Card>
           <CardContent className="pt-5 pb-4 px-5">
-            <p className="text-sm text-muted-foreground" data-testid="text-no-rates">No success rate data available for this clinic.</p>
+            <p className="t-helper" data-testid="text-no-rates">No success rate data available for this clinic.</p>
           </CardContent>
         </Card>
       )}

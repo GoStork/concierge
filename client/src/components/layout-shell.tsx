@@ -1284,7 +1284,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
               <p className="text-sm font-ui font-medium text-foreground">
                 {calendarBannerHeadline}
               </p>
-              <p className="text-xs text-muted-foreground mt-0.5">New bookings won't sync until you reconnect.</p>
+              <p className="t-helper mt-0.5">New bookings won't sync until you reconnect.</p>
               <div className="flex flex-wrap gap-2 mt-2">
                 {expiredCalendarConnections.map((conn: any) => {
                   const isMs = conn.provider === "microsoft";

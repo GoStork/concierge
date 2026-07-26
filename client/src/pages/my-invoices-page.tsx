@@ -68,17 +68,17 @@ export default function MyInvoicesPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <div>
         <h1 className="text-2xl font-heading font-bold">Invoices</h1>
-        <p className="text-sm text-muted-foreground mt-1">Every invoice from all your providers, in one place</p>
+        <p className="t-helper mt-1">Every invoice from all your providers, in one place</p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Paid</p>
+          <p className="t-micro-label">Total Paid</p>
           <p className="text-xl font-heading font-bold">{formatCents(totalPaid)}</p>
         </div>
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Pending Payments</p>
+          <p className="t-micro-label">Pending Payments</p>
           <p className="text-xl font-heading font-bold">{pendingCount}</p>
         </div>
       </div>
@@ -88,7 +88,7 @@ export default function MyInvoicesPage() {
         <Shield className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "hsl(var(--brand-success))" }} />
         <div>
           <p className="font-semibold" style={{ color: "hsl(var(--brand-success))" }}>GoStork Guarantee</p>
-          <p className="text-muted-foreground text-xs mt-0.5">
+          <p className="t-helper mt-0.5">
             All payments made through GoStork are protected. If a surrogate match fails medical clearance, your deposit can be redirected to any other GoStork agency at no extra cost.
           </p>
         </div>
@@ -131,7 +131,7 @@ export default function MyInvoicesPage() {
       ) : !filteredInvoices.length ? (
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <Receipt className="w-8 h-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">{invoices.length ? "No invoices match your filters" : "No invoices yet"}</p>
+          <p className="t-helper">{invoices.length ? "No invoices match your filters" : "No invoices yet"}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -144,7 +144,7 @@ export default function MyInvoicesPage() {
               >
                 <div className="space-y-0.5">
                   <p className="font-semibold">{inv.providerName}</p>
-                  <p className="text-sm text-muted-foreground">{inv.serviceType} - {new Date(inv.createdAt).toLocaleDateString()}</p>
+                  <p className="t-helper">{inv.serviceType} - {new Date(inv.createdAt).toLocaleDateString()}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={inv.medicalClearanceStatus} />
@@ -163,7 +163,7 @@ export default function MyInvoicesPage() {
                       <span>{formatCents(inv.serviceAmount, inv.currency)}</span>
                     </div>
                     {inv.description && (
-                      <p className="text-xs text-muted-foreground">{inv.description}</p>
+                      <p className="t-helper">{inv.description}</p>
                     )}
                   </div>
 

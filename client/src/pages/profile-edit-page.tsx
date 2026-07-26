@@ -81,7 +81,7 @@ function FieldRow({
   return (
     <div className="space-y-1" data-testid={`field-row-${field}`}>
       <div className="flex items-center">
-        <Label className="text-xs font-ui text-foreground">{label}</Label>
+        <Label className="t-form-label-sm font-ui text-foreground">{label}</Label>
         {isManual && <ManualBadge />}
       </div>
       {type === "textarea" ? (
@@ -422,11 +422,11 @@ export default function DonorEditPage() {
         <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-edit-title">
           Edit Donor #{displayId}
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="t-helper mt-1">
           {provider?.name} &middot; {type?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
         </p>
         {donor.externalId && (
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="t-helper mt-1">
             External ID: <span className="font-mono">{donor.externalId}</span> (read-only)
           </p>
         )}
@@ -439,7 +439,7 @@ export default function DonorEditPage() {
             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <div className="flex items-center">
-                  <Label className="text-xs font-ui">Status</Label>
+                  <Label className="t-form-label-sm font-ui">Status</Label>
                   {manualFields.has("status") && <ManualBadge />}
                 </div>
                 <Select value={formData.status} onValueChange={(v) => updateField("status", v)}>
@@ -462,7 +462,7 @@ export default function DonorEditPage() {
               </div>
               <FieldRow label="Donor Type" field="donorType" value={formData.donorType} onChange={updateField} isManual={manualFields.has("donorType")} />
               <div className="space-y-1 sm:col-span-2">
-                <Label className="text-xs font-ui">Search Visibility</Label>
+                <Label className="t-form-label-sm font-ui">Search Visibility</Label>
                 <button
                   type="button"
                   className={`flex items-center gap-2 w-full px-3 py-2 rounded-[var(--radius)] border text-sm transition-colors ${
@@ -485,14 +485,14 @@ export default function DonorEditPage() {
                     </>
                   )}
                 </button>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="t-helper">
                   {formData.hiddenFromSearch
                     ? "This donor will not appear in search results for intended parents unless explicitly shared."
                     : "This donor is visible to all intended parents browsing the marketplace."}
                 </p>
               </div>
               <div className="space-y-1 sm:col-span-2">
-                <Label className="text-xs font-ui">Experienced</Label>
+                <Label className="t-form-label-sm font-ui">Experienced</Label>
                 <button
                   type="button"
                   className={`flex items-center gap-2 w-full px-3 py-2 rounded-[var(--radius)] border text-sm transition-colors ${
@@ -506,7 +506,7 @@ export default function DonorEditPage() {
                   <Award className="w-4 h-4" />
                   {formData.isExperienced ? "Marked as Experienced" : "Not marked as Experienced"}
                 </button>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="t-helper">
                   {formData.isExperienced
                     ? "This profile is flagged as experienced and will appear when filtering for experienced donors/surrogates."
                     : "Toggle to mark this profile as experienced. This is auto-detected from donation/pregnancy history during sync."}
@@ -559,7 +559,7 @@ export default function DonorEditPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <Label className="text-xs font-ui">Photos</Label>
+                    <Label className="t-form-label-sm font-ui">Photos</Label>
                     {manualFields.has("photos") && <ManualBadge />}
                   </div>
                   <label className="cursor-pointer" data-testid="button-upload-photo">
@@ -626,7 +626,7 @@ export default function DonorEditPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No photos uploaded.</p>
+                  <p className="t-helper">No photos uploaded.</p>
                 )}
               </div>
             </div>
@@ -635,7 +635,7 @@ export default function DonorEditPage() {
           <Card className="overflow-hidden" data-testid="section-profile-data">
             <SectionHeader title="Profile Data" />
             <div className="p-6 space-y-3">
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 Key-value pairs from the donor's scraped profile. Changes here will be protected from future sync overwrites.
               </p>
               {profileDataEntries && profileDataEntries.map(([key, value], idx) => (
@@ -700,7 +700,7 @@ export default function DonorEditPage() {
                 <div className="p-6 space-y-3">
                   {entries.map(([question, answer], idx) => (
                     <div key={idx} className="space-y-1" data-testid={`details-row-${sectionName.toLowerCase().replace(/\s+/g, "-")}-${idx}`}>
-                      <Label className="text-xs font-ui text-foreground">{question}</Label>
+                      <Label className="t-form-label-sm font-ui text-foreground">{question}</Label>
                       <Textarea
                         value={answer}
                         onChange={(e) => {
@@ -725,7 +725,7 @@ export default function DonorEditPage() {
           )}
 
           {donor.lastEditedBy && (
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               Last edited by {donor.lastEditedBy} on {new Date(donor.lastEditedAt).toLocaleString()}
             </p>
           )}

@@ -414,7 +414,7 @@ function CreateAppointmentDialog({ open, onClose, config }: { open: boolean; onC
                           >
                             <User className="w-3 h-3 text-muted-foreground shrink-0" />
                             <span className="font-ui truncate">{c.name}</span>
-                            <span className="text-xs text-muted-foreground truncate ml-auto">{c.email}</span>
+                            <span className="t-helper truncate ml-auto">{c.email}</span>
                           </button>
                         ))}
                       </div>
@@ -521,11 +521,11 @@ function PendingBookingCard({ booking, start, onSelect, readOnly, expired }: { b
         data-testid={`pending-detail-${booking.id}`}
       >
         <p className={`text-sm font-ui truncate ${expired ? "text-muted-foreground" : ""}`}>{booking.attendeeName || booking.subject || "Meeting Request"}</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="t-helper">
           {format(start, "EEE, MMM d")} · {format(start, "h:mm a")} · {booking.duration}min
         </p>
         {booking.subject && booking.attendeeName && (
-          <p className="text-xs text-muted-foreground truncate mt-0.5">{booking.subject}</p>
+          <p className="t-helper truncate mt-0.5">{booking.subject}</p>
         )}
       </button>
       {readOnly ? (
@@ -538,7 +538,7 @@ function PendingBookingCard({ booking, start, onSelect, readOnly, expired }: { b
         <SuggestTimeForm bookingId={booking.id} onCancel={() => setShowSuggest(false)} onSuccess={() => setShowSuggest(false)} />
       ) : expired ? (
         <div className="space-y-2">
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-ui bg-muted text-muted-foreground border border-border">
+          <span className="t-helper inline-flex items-center px-2 py-0.5 rounded-full font-ui bg-muted border border-border">
             Expired - not confirmed in time
           </span>
           <div className="flex gap-1.5 flex-nowrap">
@@ -693,7 +693,7 @@ function BlockEditForm({
   return (
     <div className="space-y-4" data-testid="block-edit-form">
       {isRecurringOccurrence && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-3 py-2 rounded-[var(--radius)]">
+        <div className="t-helper flex items-center gap-2 bg-muted/50 px-3 py-2 rounded-[var(--radius)]">
           <Repeat className="w-3 h-3" />
           This is part of a recurring series. Changes apply to the entire series.
         </div>
@@ -792,7 +792,7 @@ function BlockEditForm({
           />
         </div>
       )}
-      <div className="text-xs text-muted-foreground">
+      <div className="t-helper">
         {format(blockStart, "EEE, MMM d · h:mm a")} – {format(blockEnd, "h:mm a")}
       </div>
       <DialogFooter className="flex justify-between sm:justify-between">
@@ -880,14 +880,14 @@ function ParentBookDialog({ open, onClose }: { open: boolean; onClose: () => voi
                   >
                     <User className="w-3 h-3 text-muted-foreground shrink-0" />
                     <span className="font-ui truncate">{p.name}</span>
-                    <span className="text-xs text-muted-foreground truncate ml-auto">{p.providerName || p.email}</span>
+                    <span className="t-helper truncate ml-auto">{p.providerName || p.email}</span>
                   </button>
                 ))}
               </div>
             )}
             {showDropdown && search.trim() && filtered.length === 0 && (
               <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card border border-border rounded-[var(--radius)] shadow-lg px-3 py-3">
-                <p className="text-sm text-muted-foreground" data-testid="text-no-providers">No providers found.</p>
+                <p className="t-helper" data-testid="text-no-providers">No providers found.</p>
               </div>
             )}
           </div>
@@ -1675,7 +1675,7 @@ export default function CalendarPage() {
 
   return (
     <div className="w-full space-y-3">
-      <h1 className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">Meetings</h1>
+      <h1 className="font-display t-page-title text-primary" data-testid="text-page-title">Meetings</h1>
 
       {expiredConnections.length > 0 && (
         <div className="rounded-[var(--radius)] border border-[hsl(var(--brand-warning)/0.4)] bg-[hsl(var(--brand-warning)/0.08)] p-4">
@@ -1685,7 +1685,7 @@ export default function CalendarPage() {
               <p className="text-sm font-ui font-medium text-foreground">
                 {expiredConnections.length === 1 ? "A calendar connection has expired" : `${expiredConnections.length} calendar connections have expired`}
               </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="t-helper mt-0.5">
                 New bookings won't sync until you reconnect. Click below to fix this now.
               </p>
               <div className="flex flex-wrap gap-2 mt-3">
@@ -1738,7 +1738,7 @@ export default function CalendarPage() {
               <p className="text-sm font-ui font-medium text-foreground">
                 No calendar connected
               </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="t-helper mt-0.5">
                 {isParentUser
                   ? "Connect your calendar to automatically filter available booking slots based on your schedule, and sync confirmed appointments to your calendar."
                   : "Connect your calendar to sync events and prevent double-bookings. Events from connected calendars will appear as busy blocks."}
@@ -2130,7 +2130,7 @@ export default function CalendarPage() {
         {mobileDateOpen && (
           <div className="flex sm:hidden items-center gap-2">
             <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              <label className="text-xs text-muted-foreground font-ui shrink-0">From</label>
+              <label className="t-helper font-ui shrink-0">From</label>
               <Input
                 type="date"
                 value={searchFrom}
@@ -2140,7 +2140,7 @@ export default function CalendarPage() {
               />
             </div>
             <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              <label className="text-xs text-muted-foreground font-ui shrink-0">To</label>
+              <label className="t-helper font-ui shrink-0">To</label>
               <Input
                 type="date"
                 value={searchTo}
@@ -2161,7 +2161,7 @@ export default function CalendarPage() {
               <Search className="w-3.5 h-3.5 text-muted-foreground" />
               Search Results
             </h3>
-            <span className="text-xs text-muted-foreground" data-testid="text-search-count">
+            <span className="t-helper" data-testid="text-search-count">
               {searchLoading ? "Searching..." : `${searchResults?.length || 0} meetings found`}
             </span>
           </div>
@@ -2170,7 +2170,7 @@ export default function CalendarPage() {
               <Loader2 className="w-6 h-6 animate-spin text-primary" />
             </div>
           ) : !searchResults || searchResults.length === 0 ? (
-            <div className="p-12 text-center text-muted-foreground text-sm" data-testid="text-no-search-results">
+            <div className="t-helper p-12 text-center" data-testid="text-no-search-results">
               No meetings found matching your search.
             </div>
           ) : (
@@ -2189,7 +2189,7 @@ export default function CalendarPage() {
                 return groups.map((group) => (
                   <div key={group.key}>
                     <div className="px-4 py-2 bg-muted/30 border-b border-border/10">
-                      <span className="text-[11px] font-heading uppercase tracking-wider text-muted-foreground">{group.label}</span>
+                      <span className="t-micro-label font-heading">{group.label}</span>
                     </div>
                     {group.items.map((b: any) => {
                       const start = new Date(b.scheduledAt);
@@ -2214,7 +2214,7 @@ export default function CalendarPage() {
                             <p className={`font-heading text-[13px] truncate ${isPast || isCancelled ? "text-muted-foreground" : "text-foreground"}`}>
                               {b.subject || "Meeting"}
                             </p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
+                            <p className="t-helper mt-0.5">
                               {format(start, "h:mm a")} – {format(end, "h:mm a")} · {b.duration || 30}min
                             </p>
                             <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">
@@ -2280,16 +2280,16 @@ export default function CalendarPage() {
             <Card className="shadow-[0_1px_2px_rgba(0,0,0,0.07)] overflow-hidden">
               <div className="px-4 py-3 border-b border-border/20 flex items-center justify-between">
                 <h3 className="text-sm font-heading text-foreground" data-testid="text-list-header">Upcoming Appointments</h3>
-                <span className="text-xs text-muted-foreground">{listEvents.length} total</span>
+                <span className="t-helper">{listEvents.length} total</span>
               </div>
               {listEvents.length === 0 ? (
-                <div className="p-12 text-center text-muted-foreground text-sm">No upcoming appointments.</div>
+                <div className="t-helper p-12 text-center">No upcoming appointments.</div>
               ) : (
                 <div>
                   {dateGroups.map((group) => (
                     <div key={group.key}>
                       <div className="px-4 py-2 bg-muted/30 border-b border-border/10">
-                        <span className="text-[11px] font-heading uppercase tracking-wider text-muted-foreground">{group.label}</span>
+                        <span className="t-micro-label font-heading">{group.label}</span>
                       </div>
                       {group.events.map((event) => {
                         const isPending = event.resource?.status === "PENDING";
@@ -2307,7 +2307,7 @@ export default function CalendarPage() {
                             <div className="w-[3px] self-stretch rounded-full shrink-0" style={{ backgroundColor: barColor }} />
                             <div className="flex-1 min-w-0">
                               <p className="font-heading text-[13px] truncate" style={{ color: textColor }}>{event.title}</p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
+                              <p className="t-helper mt-0.5">
                                 {format(event.start, "h:mm a")} – {format(event.end, "h:mm a")} · {event.resource?.duration || 30}min
                               </p>
                             </div>
@@ -2378,7 +2378,7 @@ export default function CalendarPage() {
                   </div>
                 </div>
                 {filteredPastEvents.length === 0 ? (
-                  <div className="p-12 text-center text-muted-foreground text-sm">
+                  <div className="t-helper p-12 text-center">
                     {pastMeetingsTab === "recordings" ? "No recordings yet." : pastMeetingsTab === "transcripts" ? "No transcripts yet." : "No past meetings."}
                   </div>
                 ) : (
@@ -2386,7 +2386,7 @@ export default function CalendarPage() {
                     {filteredPastDateGroups.map((group) => (
                       <div key={group.key}>
                         <div className="px-4 py-2 bg-muted/30 border-b border-border/10">
-                          <span className="text-[11px] font-heading uppercase tracking-wider text-muted-foreground">{group.label}</span>
+                          <span className="t-micro-label font-heading">{group.label}</span>
                         </div>
                         {group.events.map((event) => {
                           const recInfo = recordingsByBookingId[event.id];
@@ -2402,7 +2402,7 @@ export default function CalendarPage() {
                               <div className="w-[3px] self-stretch rounded-full shrink-0 bg-primary/30" />
                               <div className="flex-1 min-w-0">
                                 <p className="font-heading text-[13px] truncate text-foreground">{event.title}</p>
-                                <p className="text-xs text-muted-foreground/70 mt-0.5">
+                                <p className="t-helper mt-0.5">
                                   {format(event.start, "h:mm a")} – {format(event.end, "h:mm a")} · {event.resource?.duration || 30}min
                                 </p>
                               </div>
@@ -2497,7 +2497,7 @@ export default function CalendarPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
-                      <h3 className="text-[11px] font-heading text-muted-foreground uppercase tracking-wider">
+                      <h3 className="t-micro-label font-heading">
                         Expired ({expiredTasks.length})
                       </h3>
                     </div>
@@ -2553,7 +2553,7 @@ export default function CalendarPage() {
                 {sidebarTab === "upcoming" && (
                   <>
                     {groupedUpcoming.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">No upcoming appointments.</p>
+                      <p className="t-helper text-center py-4">No upcoming appointments.</p>
                     ) : (
                       <div className="space-y-4">
                         {groupedUpcoming.map((group) => (
@@ -2585,7 +2585,7 @@ export default function CalendarPage() {
                                         {b.subject || b.attendeeName || "Appointment"}
                                       </p>
                                       <div className="flex items-center gap-1.5 mt-0.5">
-                                        <span className="text-[11px] text-muted-foreground">
+                                        <span className="t-helper">
                                           {format(start, "h:mm a")} – {format(end, "h:mm a")}
                                         </span>
                                         {b.meetingType === "video" && b.meetingUrl && (
@@ -2619,7 +2619,7 @@ export default function CalendarPage() {
                 {(sidebarTab === "past" || sidebarTab === "recordings" || sidebarTab === "transcripts") && (
                   <>
                     {sidebarPastFiltered.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">
+                      <p className="t-helper text-center py-4">
                         {sidebarTab === "recordings" ? "No recordings yet." : sidebarTab === "transcripts" ? "No transcripts yet." : "No past meetings."}
                       </p>
                     ) : (
@@ -2676,11 +2676,11 @@ export default function CalendarPage() {
 
             <Card className="shadow-[0_1px_2px_rgba(0,0,0,0.07)] p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-heading text-muted-foreground uppercase tracking-wider">Legend</h3>
+                <h3 className="t-micro-label font-heading">Legend</h3>
                 {!isParentUser && (
                   <Link
                     to="/account/calendar"
-                    className="text-[11px] text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
+                    className="t-helper hover:text-primary transition-colors flex items-center gap-1"
                     data-testid="link-calendar-settings"
                   >
                     <Settings className="w-3 h-3" />
@@ -2805,20 +2805,20 @@ export default function CalendarPage() {
               <div className="space-y-4">
                 <div>
                   <h3 className="font-heading text-base" data-testid="text-external-event-title">{ev.title}</h3>
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-1">
+                  <div className="t-helper flex items-center gap-1.5 mt-1">
                     <Clock className="h-3.5 w-3.5" />
                     <span data-testid="text-external-event-time">
                       {format(ev.start, "EEE, MMM d")} &middot; {format(ev.start, "h:mm a")} – {format(ev.end, "h:mm a")}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-1">
+                  <div className="t-helper flex items-center gap-1.5 mt-1">
                     <Link2 className="h-3.5 w-3.5" />
                     <span data-testid="text-external-event-source">
                       {ev.calendarLabel || providerLabel}
                     </span>
                   </div>
                   {isRecurring && (
-                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-1">
+                    <div className="t-helper flex items-center gap-1.5 mt-1">
                       <Repeat className="h-3.5 w-3.5" />
                       <span>Recurring event</span>
                     </div>
@@ -2834,7 +2834,7 @@ export default function CalendarPage() {
                         {isSingleFree ? <Check className="h-4 w-4 text-[hsl(var(--brand-success))]" /> : <X className="h-4 w-4 text-muted-foreground" />}
                         <div>
                           <p className="text-sm font-ui" data-testid="text-single-override-label">This occurrence</p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="t-helper">
                             {isSingleFree ? "Won't block scheduling" : "Blocks scheduling"}
                           </p>
                         </div>
@@ -2865,7 +2865,7 @@ export default function CalendarPage() {
                         {isSeriesFree ? <Check className="h-4 w-4 text-[hsl(var(--brand-success))]" /> : <X className="h-4 w-4 text-muted-foreground" />}
                         <div>
                           <p className="text-sm font-ui" data-testid="text-series-override-label">All occurrences</p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="t-helper">
                             {isSeriesFree ? "Entire series won't block scheduling" : "Entire series blocks scheduling"}
                           </p>
                         </div>
@@ -2910,7 +2910,7 @@ export default function CalendarPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-ui">Availability Override</p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="t-helper">
                           {isFree ? "This event won't block your scheduling" : "This event blocks your scheduling"}
                         </p>
                       </div>

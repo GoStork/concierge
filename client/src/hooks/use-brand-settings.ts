@@ -124,6 +124,53 @@ export interface BrandSettings {
   onboardingEggDonorImageUrl: string | null;
   onboardingSurrogateImageUrl: string | null;
   onboardingSpermDonorImageUrl: string | null;
+  // Content typography - see applyBrandToDocument for the CSS vars these emit.
+  fieldLabelSize: number;
+  fieldLabelWeight: string;
+  fieldLabelColor: string | null;
+  fieldLabelCase: string;
+  fieldLabelTracking: number;
+  fieldValueSize: number;
+  fieldValueWeight: string;
+  fieldValueColor: string | null;
+  fieldLabelGap: number;
+  fieldPairGap: number;
+  promptEyebrowSize: number;
+  promptEyebrowWeight: string;
+  promptEyebrowColor: string | null;
+  promptEyebrowTracking: number;
+  promptEyebrowCase: string;
+  promptAnswerSize: number;
+  promptAnswerWeight: string;
+  promptAnswerColor: string | null;
+  promptAnswerLineHeight: number;
+  promptBlockGap: number;
+  microLabelSize: number;
+  microValueSize: number;
+  microLabelWeight: string;
+  microLabelColor: string | null;
+  microLabelTracking: number;
+  chipFontSize: number;
+  chipFontWeight: string;
+  chipRadius: number;
+  chipPaddingX: number;
+  chipPaddingY: number;
+  chipBgColor: string | null;
+  chipTextColor: string | null;
+  sectionTitleSize: number;
+  sectionTitleWeight: string;
+  formLabelSize: number;
+  formLabelSmallSize: number;
+  formLabelWeight: string;
+  formLabelColor: string | null;
+  formLabelCase: string;
+  formLabelTracking: number;
+  helperTextSize: number;
+  helperTextColor: string | null;
+  cardHeadingSize: number;
+  cardHeadingWeight: string;
+  pageTitleSize: number;
+  pageTitleWeight: string;
   enableAiConcierge?: boolean;
   parentExperienceMode?: string;
   matchmakers?: Matchmaker[];
@@ -242,6 +289,52 @@ export const BRAND_DEFAULTS: BrandSettings = {
   onboardingEggDonorImageUrl: null,
   onboardingSurrogateImageUrl: null,
   onboardingSpermDonorImageUrl: null,
+  fieldLabelSize: 13,
+  fieldLabelWeight: "500",
+  fieldLabelColor: null,
+  fieldLabelCase: "none",
+  fieldLabelTracking: 0,
+  fieldValueSize: 16,
+  fieldValueWeight: "500",
+  fieldValueColor: null,
+  fieldLabelGap: 3,
+  fieldPairGap: 20,
+  promptEyebrowSize: 12,
+  promptEyebrowWeight: "600",
+  promptEyebrowColor: null,
+  promptEyebrowTracking: 0.055,
+  promptEyebrowCase: "uppercase",
+  promptAnswerSize: 17,
+  promptAnswerWeight: "400",
+  promptAnswerColor: null,
+  promptAnswerLineHeight: 1.6,
+  promptBlockGap: 22,
+  microLabelSize: 12,
+  microValueSize: 15,
+  microLabelWeight: "500",
+  microLabelColor: null,
+  microLabelTracking: 0.03,
+  chipFontSize: 13,
+  chipFontWeight: "500",
+  chipRadius: 999,
+  chipPaddingX: 11,
+  chipPaddingY: 5,
+  chipBgColor: null,
+  chipTextColor: null,
+  sectionTitleSize: 18,
+  sectionTitleWeight: "600",
+  formLabelSize: 14,
+  formLabelSmallSize: 12,
+  formLabelWeight: "500",
+  formLabelColor: null,
+  formLabelCase: "none",
+  formLabelTracking: 0,
+  helperTextSize: 13,
+  helperTextColor: null,
+  cardHeadingSize: 24,
+  cardHeadingWeight: "700",
+  pageTitleSize: 30,
+  pageTitleWeight: "700",
   legalName: null,
   taxId: null,
 };
@@ -493,6 +586,76 @@ export function applyBrandToDocument(settings: BrandSettings) {
   root.style.setProperty("--chat-bubble-parent-bg", bubbleParentBg);
   root.style.setProperty("--chat-bubble-parent-fg", bubbleParentFg);
   root.style.setProperty("--chat-bubble-parent-border", bubbleParentBorder);
+
+  // ---------------------------------------------------------------------
+  // Content typography. Consumed by the shared primitives in
+  // client/src/components/ui/field.tsx (Field, FieldLabel, FieldValue,
+  // PromptBlock, MicroField, AttributeChip) and by ProfileSection. Every
+  // label/value pair in the product renders through those, so these vars are
+  // the single place a brand admin changes content type.
+  //
+  // Colors emit a COMPLETE css color value, not an HSL triplet, so consumers
+  // can write `color: var(--field-label-color)` with no wrapper. A null
+  // override falls back to the matching theme role.
+  // ---------------------------------------------------------------------
+  const contentColor = (override: string | null | undefined, themeRole: string) =>
+    override && /^#[0-9a-fA-F]{6}$/.test(override) ? override : `hsl(var(${themeRole}))`;
+  const caseValue = (v: string | null | undefined) =>
+    v === "uppercase" || v === "capitalize" || v === "lowercase" ? v : "none";
+
+  root.style.setProperty("--field-label-size", `${settings.fieldLabelSize ?? 13}px`);
+  root.style.setProperty("--field-label-weight", settings.fieldLabelWeight ?? "500");
+  root.style.setProperty("--field-label-color", contentColor(settings.fieldLabelColor, "--muted-foreground"));
+  root.style.setProperty("--field-label-case", caseValue(settings.fieldLabelCase));
+  root.style.setProperty("--field-label-tracking", `${settings.fieldLabelTracking ?? 0}em`);
+  root.style.setProperty("--field-value-size", `${settings.fieldValueSize ?? 16}px`);
+  root.style.setProperty("--field-value-weight", settings.fieldValueWeight ?? "500");
+  root.style.setProperty("--field-value-color", contentColor(settings.fieldValueColor, "--foreground"));
+  root.style.setProperty("--field-label-gap", `${settings.fieldLabelGap ?? 3}px`);
+  root.style.setProperty("--field-pair-gap", `${settings.fieldPairGap ?? 20}px`);
+
+  root.style.setProperty("--prompt-eyebrow-size", `${settings.promptEyebrowSize ?? 12}px`);
+  root.style.setProperty("--prompt-eyebrow-weight", settings.promptEyebrowWeight ?? "600");
+  root.style.setProperty("--prompt-eyebrow-color", contentColor(settings.promptEyebrowColor, "--accent"));
+  root.style.setProperty("--prompt-eyebrow-tracking", `${settings.promptEyebrowTracking ?? 0.055}em`);
+  root.style.setProperty("--prompt-eyebrow-case", caseValue(settings.promptEyebrowCase ?? "uppercase"));
+  root.style.setProperty("--prompt-answer-size", `${settings.promptAnswerSize ?? 17}px`);
+  root.style.setProperty("--prompt-answer-weight", settings.promptAnswerWeight ?? "400");
+  root.style.setProperty("--prompt-answer-color", contentColor(settings.promptAnswerColor, "--foreground"));
+  root.style.setProperty("--prompt-answer-line-height", String(settings.promptAnswerLineHeight ?? 1.6));
+  root.style.setProperty("--prompt-block-gap", `${settings.promptBlockGap ?? 22}px`);
+
+  root.style.setProperty("--micro-label-size", `${settings.microLabelSize ?? 12}px`);
+  root.style.setProperty("--micro-value-size", `${settings.microValueSize ?? 15}px`);
+  root.style.setProperty("--micro-label-weight", settings.microLabelWeight ?? "500");
+  root.style.setProperty("--micro-label-color", contentColor(settings.microLabelColor, "--muted-foreground"));
+  root.style.setProperty("--micro-label-tracking", `${settings.microLabelTracking ?? 0.03}em`);
+
+  root.style.setProperty("--chip-font-size", `${settings.chipFontSize ?? 13}px`);
+  root.style.setProperty("--chip-font-weight", settings.chipFontWeight ?? "500");
+  root.style.setProperty("--chip-radius", `${settings.chipRadius ?? 999}px`);
+  root.style.setProperty("--chip-px", `${settings.chipPaddingX ?? 11}px`);
+  root.style.setProperty("--chip-py", `${settings.chipPaddingY ?? 5}px`);
+  root.style.setProperty("--chip-bg", contentColor(settings.chipBgColor, "--secondary"));
+  root.style.setProperty("--chip-fg", contentColor(settings.chipTextColor, "--secondary-foreground"));
+
+  root.style.setProperty("--section-title-size", `${settings.sectionTitleSize ?? 18}px`);
+  root.style.setProperty("--section-title-weight", settings.sectionTitleWeight ?? "600");
+
+  // Interface typography - consumed by ui/label.tsx, ui/card.tsx, ui/table.tsx
+  // and the .t-form-label / .t-helper / .t-card-heading / .t-page-title classes.
+  root.style.setProperty("--form-label-size", `${settings.formLabelSize ?? 14}px`);
+  root.style.setProperty("--form-label-small-size", `${settings.formLabelSmallSize ?? 12}px`);
+  root.style.setProperty("--form-label-weight", settings.formLabelWeight ?? "500");
+  root.style.setProperty("--form-label-color", contentColor(settings.formLabelColor, "--foreground"));
+  root.style.setProperty("--form-label-case", caseValue(settings.formLabelCase));
+  root.style.setProperty("--form-label-tracking", `${settings.formLabelTracking ?? 0}em`);
+  root.style.setProperty("--helper-text-size", `${settings.helperTextSize ?? 13}px`);
+  root.style.setProperty("--helper-text-color", contentColor(settings.helperTextColor, "--muted-foreground"));
+  root.style.setProperty("--card-heading-size", `${settings.cardHeadingSize ?? 24}px`);
+  root.style.setProperty("--card-heading-weight", settings.cardHeadingWeight ?? "700");
+  root.style.setProperty("--page-title-size", `${settings.pageTitleSize ?? 30}px`);
+  root.style.setProperty("--page-title-weight", settings.pageTitleWeight ?? "700");
 
   // Remove any previously injected media query style (no longer needed).
   document.getElementById("brand-chat-responsive")?.remove();

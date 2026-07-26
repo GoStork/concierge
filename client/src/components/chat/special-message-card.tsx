@@ -191,7 +191,7 @@ export function ProviderReadinessButtons({
   }
   if (answered === "no") {
     return (
-      <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+      <div className="t-helper mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted">
         <X className="w-3.5 h-3.5" />
         Not moving forward - hold released
       </div>
@@ -411,8 +411,8 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
               <Video className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-muted-foreground">Video Call Ended</p>
-              <p className="text-xs text-muted-foreground">This call session has expired</p>
+              <p className="t-helper font-semibold">Video Call Ended</p>
+              <p className="t-helper">This call session has expired</p>
             </div>
           </div>
         </div>
@@ -437,7 +437,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">{isProviderViewer ? "Start Video Call" : "Join Video Call"}</p>
-            <p className="text-xs text-muted-foreground">{isProviderViewer ? "Click to start the video consultation" : "Click to join the video consultation"}</p>
+            <p className="t-helper">{isProviderViewer ? "Click to start the video consultation" : "Click to join the video consultation"}</p>
           </div>
           <Video className="w-4 h-4 text-muted-foreground shrink-0" />
         </button>
@@ -460,7 +460,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">Book a Meeting</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               {data.providerName === "GoStork"
                 ? `Schedule GoStork Concierge Call with ${data.memberName || "GoStork Team"}`
                 : data.memberName ? `Schedule with ${data.memberName}` : "Pick a time that works for you"}
@@ -485,7 +485,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">{signerName} Signed</p>
-            <p className="text-xs text-muted-foreground">Has signed the agreement</p>
+            <p className="t-helper">Has signed the agreement</p>
           </div>
           <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: brandColor }} />
         </div>
@@ -510,7 +510,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <div className="px-4 py-3 space-y-0.5">
             <p className="text-sm font-semibold">{parentNames}</p>
-            <p className="text-xs text-muted-foreground">Completed and signed - ready to download.</p>
+            <p className="t-helper">Completed and signed - ready to download.</p>
           </div>
           {responseId && (
             <div className="border-t px-4 py-3 space-y-2">
@@ -559,7 +559,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <div className="px-4 py-3 space-y-1">
             <p className="text-sm font-semibold">Agreement from {providerName}</p>
-            <p className="text-xs text-muted-foreground">{statusLabel}</p>
+            <p className="t-helper">{statusLabel}</p>
           </div>
           <div className="border-t px-4 py-2.5 bg-muted/30 flex items-center justify-between">
             <span className="text-xs font-medium" style={{ color: brandColor }}>
@@ -589,7 +589,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">Agreement Fully Signed</p>
-            <p className="text-xs text-muted-foreground">Click to download the signed PDF</p>
+            <p className="t-helper">Click to download the signed PDF</p>
           </div>
           <Download className="w-4 h-4 text-muted-foreground shrink-0" />
         </a>
@@ -666,7 +666,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
               <p className={`text-sm font-semibold ${isCancelled ? "line-through text-muted-foreground" : ""}`}>
                 Cost Sheet from {providerName}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 {isCancelled
                   ? `Cancelled${cancelledAt ? ` - ${new Date(cancelledAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
                   : `Total quoted cost${sentAt ? ` - ${new Date(sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`}
@@ -695,7 +695,7 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
                   {fileName || "Open cost sheet"}
                 </a>
               )}
-              {notes && <p className="text-xs text-muted-foreground italic whitespace-pre-line">{notes}</p>}
+              {notes && <p className="t-helper italic whitespace-pre-line">{notes}</p>}
             </div>
           )}
           {/* Phase 2 ack footer: parent-only, only while not yet acknowledged

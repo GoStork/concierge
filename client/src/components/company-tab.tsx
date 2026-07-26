@@ -572,7 +572,7 @@ export default function CompanyTab() {
         <h2 className="text-lg font-heading flex items-center gap-2">
           <Calendar className="w-5 h-5 text-primary" /> Scheduling & Consultations
         </h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="t-helper">
           Add your scheduling link so parents can book consultations directly through GoStork.
         </p>
         <div className="space-y-2">
@@ -588,7 +588,7 @@ export default function CompanyTab() {
               data-testid="input-consultation-booking-url"
             />
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="t-helper">
             Paste a Calendly, Acuity, or other scheduling link. Parents will be able to book directly.
           </p>
         </div>
@@ -600,7 +600,7 @@ export default function CompanyTab() {
             disabled={readOnly || !consultationBookingUrl}
             data-testid="toggle-consultation-iframe"
           />
-          <Label htmlFor="consultation-iframe" className="text-sm cursor-pointer">
+          <Label htmlFor="consultation-iframe" className="cursor-pointer">
             Enable in-app booking (load scheduling page within GoStork)
           </Label>
         </div>
@@ -627,7 +627,7 @@ export default function CompanyTab() {
           )}
         </div>
         {locations.length === 0 && (
-          <p className="text-sm text-muted-foreground py-2">No locations added yet.</p>
+          <p className="t-helper py-2">No locations added yet.</p>
         )}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleLocationDragEnd}>
           <SortableContext items={locations.map((loc, idx) => getSortId(loc, idx))} strategy={verticalListSortingStrategy}>
@@ -705,7 +705,7 @@ export default function CompanyTab() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground py-2">No services registered yet.</p>
+          <p className="t-helper py-2">No services registered yet.</p>
         )}
       </Card>
       )}
@@ -715,7 +715,7 @@ export default function CompanyTab() {
           <h2 className="text-lg font-heading flex items-center gap-2">
             <ScanFace className="w-5 h-5 text-primary" /> Look-Alike Face Matching
           </h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             GoStork creates a faceprint from your donors' / surrogates' profile photos (processed via AWS Rekognition) so intended parents can find profiles that resemble them. This is biometric processing and is enabled by default under your agency agreement. If you have not obtained the necessary biometric consent from your donors and surrogates, turn it off - your profiles will then be excluded and their faceprints removed.
           </p>
           <label className="flex items-start gap-3 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-4">
@@ -945,7 +945,7 @@ export default function CompanyTab() {
             </div>
           </div>
           <div className="space-y-3">
-            <p className="text-sm font-ui text-muted-foreground">Accepted Surrogate Medical History</p>
+            <p className="t-helper font-ui">Accepted Surrogate Medical History</p>
             {[
               { label: "Covid Vaccination Required", value: ivfSurrogateCovidVaccination, set: setIvfSurrogateCovidVaccination },
               { label: "Gestational Diabetes (controlled by diet)", value: ivfSurrogateGdDiet, set: setIvfSurrogateGdDiet },
@@ -957,7 +957,7 @@ export default function CompanyTab() {
               <div key={label} className="flex items-center justify-between max-w-sm">
                 <span className="text-sm">{label}</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground w-6">{value ? "Yes" : "No"}</span>
+                  <span className="t-helper w-6">{value ? "Yes" : "No"}</span>
                   <Switch checked={value} onCheckedChange={set} disabled={readOnly} />
                 </div>
               </div>
@@ -1002,7 +1002,7 @@ export default function CompanyTab() {
           )}
         </div>
         {teamMembers.length === 0 && (
-          <p className="text-sm text-muted-foreground py-2">No team members added yet.</p>
+          <p className="t-helper py-2">No team members added yet.</p>
         )}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleMemberDragEnd}>
           <SortableContext items={teamMembers.map((m, idx) => getSortId(m, idx))} strategy={verticalListSortingStrategy}>
@@ -1016,7 +1016,7 @@ export default function CompanyTab() {
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs">Name</Label>
+                      <Label className="t-form-label-sm">Name</Label>
                       <Input
                         value={member.name}
                         onChange={e => {
@@ -1029,7 +1029,7 @@ export default function CompanyTab() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Title</Label>
+                      <Label className="t-form-label-sm">Title</Label>
                       <Input
                         value={member.title || ""}
                         onChange={e => {
@@ -1043,7 +1043,7 @@ export default function CompanyTab() {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Bio</Label>
+                    <Label className="t-form-label-sm">Bio</Label>
                     <Textarea
                       value={member.bio || ""}
                       onChange={e => {
@@ -1057,7 +1057,7 @@ export default function CompanyTab() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Specialties <span className="text-muted-foreground">(comma-separated)</span></Label>
+                    <Label className="t-form-label-sm">Specialties <span className="text-muted-foreground">(comma-separated)</span></Label>
                     <Input
                       value={(member.specialties || []).join(", ")}
                       onChange={e => {
@@ -1071,7 +1071,7 @@ export default function CompanyTab() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Languages spoken <span className="text-muted-foreground">(comma-separated)</span></Label>
+                    <Label className="t-form-label-sm">Languages spoken <span className="text-muted-foreground">(comma-separated)</span></Label>
                     <Input
                       value={(member.languagesSpoken || []).join(", ")}
                       onChange={e => {
@@ -1111,7 +1111,7 @@ export default function CompanyTab() {
                     </label>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Photo</Label>
+                    <Label className="t-form-label-sm">Photo</Label>
                     <ImageUploader
                       value={member.photoUrl}
                       onChange={(url) => {
@@ -1127,7 +1127,7 @@ export default function CompanyTab() {
                   </div>
                   {locations.length > 0 && (
                     <div className="space-y-1">
-                      <Label className="text-xs">Assigned Locations</Label>
+                      <Label className="t-form-label-sm">Assigned Locations</Label>
                       <div className="border rounded-[var(--radius)] p-2 space-y-1.5">
                         {locations.filter(l => l.id).map((loc) => (
                           <label key={loc.id} className="flex items-center gap-2 cursor-pointer">
@@ -1150,7 +1150,7 @@ export default function CompanyTab() {
                           </label>
                         ))}
                       </div>
-                      <p className="text-xs text-muted-foreground">Leave all unchecked = all locations</p>
+                      <p className="t-helper">Leave all unchecked = all locations</p>
                     </div>
                   )}
                   <div className="flex justify-end">
@@ -1161,7 +1161,7 @@ export default function CompanyTab() {
                 </div>
               ) : (
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center text-muted-foreground shrink-0 text-sm font-ui relative overflow-hidden">
+                  <div className="t-helper w-12 h-12 rounded-full bg-secondary flex items-center justify-center shrink-0 font-ui relative overflow-hidden">
                     {member.name ? member.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "?"}
                     {member.photoUrl && (
                       <img
@@ -1175,8 +1175,8 @@ export default function CompanyTab() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-ui text-sm" data-testid={`text-member-name-${idx}`}>{member.name || "New Member"}</div>
-                    {member.title && <div className="text-xs text-muted-foreground" data-testid={`text-member-title-${idx}`}>{member.title}</div>}
-                    {member.bio && <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{member.bio}</div>}
+                    {member.title && <div className="t-helper" data-testid={`text-member-title-${idx}`}>{member.title}</div>}
+                    {member.bio && <div className="t-helper mt-1 line-clamp-2">{member.bio}</div>}
                     {member.locationIds && member.locationIds.length > 0 ? (
                       <div className="text-xs text-accent-foreground mt-1 flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
@@ -1186,7 +1186,7 @@ export default function CompanyTab() {
                         }).filter(Boolean).join(", ")}
                       </div>
                     ) : (
-                      <div className="text-xs text-muted-foreground/60 mt-1 flex items-center gap-1">
+                      <div className="t-helper mt-1 flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
                         All locations
                       </div>

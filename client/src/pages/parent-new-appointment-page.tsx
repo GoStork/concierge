@@ -61,7 +61,7 @@ export default function ParentNewAppointmentPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-heading" data-testid="text-page-title">New Appointment</h1>
-            <p className="text-sm text-muted-foreground">Select a provider or {companyName} team member to schedule with</p>
+            <p className="t-helper">Select a provider or {companyName} team member to schedule with</p>
           </div>
         </div>
 
@@ -90,7 +90,7 @@ export default function ParentNewAppointmentPage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <Shield className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wide" data-testid="text-gostork-section">{companyName} Team</h2>
+                  <h2 className="t-micro-label font-heading" data-testid="text-gostork-section">{companyName} Team</h2>
                 </div>
                 <div className="space-y-2">
                   {goStorkMembers.map((p) => (
@@ -109,9 +109,9 @@ export default function ParentNewAppointmentPage() {
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="font-ui truncate" data-testid={`text-provider-name-${p.id}`}>{p.name}</p>
-                        <p className="text-sm text-muted-foreground truncate">{companyName} Team</p>
+                        <p className="t-helper truncate">{companyName} Team</p>
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                      <div className="t-helper flex items-center gap-1.5 shrink-0">
                         <Video className="w-3.5 h-3.5" />
                         {p.meetingDuration} min
                       </div>
@@ -125,7 +125,7 @@ export default function ParentNewAppointmentPage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <Building2 className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wide" data-testid="text-providers-section">Providers</h2>
+                  <h2 className="t-micro-label font-heading" data-testid="text-providers-section">Providers</h2>
                 </div>
                 <div className="space-y-2">
                   {providerStaff.map((p) => (
@@ -144,9 +144,9 @@ export default function ParentNewAppointmentPage() {
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="font-ui truncate" data-testid={`text-provider-name-${p.id}`}>{p.name}</p>
-                        <p className="text-sm text-muted-foreground truncate">{p.providerName || p.email}</p>
+                        <p className="t-helper truncate">{p.providerName || p.email}</p>
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                      <div className="t-helper flex items-center gap-1.5 shrink-0">
                         <Video className="w-3.5 h-3.5" />
                         {p.meetingDuration} min
                       </div>

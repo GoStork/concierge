@@ -253,7 +253,7 @@ export default function BookingPage() {
             >
               {isPending ? "Request Submitted" : "Booking Confirmed"}
             </h1>
-            <p className="text-muted-foreground text-sm mb-8" style={{ fontFamily: fontBody }}>
+            <p className="t-helper mb-8" style={{ fontFamily: fontBody }}>
               {isPending
                 ? `Your request has been sent - you'll be notified when ${booking.providerUser?.name || "the provider"} confirms.`
                 : "You're all set. Details are below."}
@@ -330,7 +330,7 @@ export default function BookingPage() {
                         </div>
                         <div className="min-w-0">
                           <span className="font-medium" style={{ fontFamily: fontBody }} data-testid={`text-participant-name-${i}`}>{p.label}</span>
-                          {p.sub && <span className="text-muted-foreground ml-1 text-xs">({p.sub})</span>}
+                          {p.sub && <span className="t-helper ml-1">({p.sub})</span>}
                         </div>
                       </div>
                     ))}
@@ -349,7 +349,7 @@ export default function BookingPage() {
             <div className="flex flex-col gap-3">
               {!isPending && (
                 <>
-                  <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5" data-testid="text-calendar-invite-note">
+                  <p className="t-helper mb-1 flex items-center gap-1.5" data-testid="text-calendar-invite-note">
                     <Check className="w-3.5 h-3.5 text-primary shrink-0" />
                     A calendar invitation has been sent to your email
                   </p>
@@ -403,7 +403,7 @@ export default function BookingPage() {
                     {userInfo?.name || "Team Member"}
                   </h2>
                   {providerInfo && (
-                    <p className="text-sm text-muted-foreground mt-0.5" style={{ fontFamily: fontBody }}>
+                    <p className="t-helper mt-0.5" style={{ fontFamily: fontBody }}>
                       {providerInfo.name}
                     </p>
                   )}
@@ -415,7 +415,7 @@ export default function BookingPage() {
                   <div className="w-9 h-9 rounded-[var(--radius)] bg-primary/8 flex items-center justify-center shrink-0">
                     <Clock className="w-4.5 h-4.5 text-secondary-foreground/60" />
                   </div>
-                  <span className="text-sm text-muted-foreground" style={{ fontFamily: fontBody }}>
+                  <span className="t-helper" style={{ fontFamily: fontBody }}>
                     {pageInfo?.meetingDuration || 30} minutes
                   </span>
                 </div>
@@ -423,7 +423,7 @@ export default function BookingPage() {
                   <div className="w-9 h-9 rounded-[var(--radius)] bg-primary/8 flex items-center justify-center shrink-0">
                     <Video className="w-4.5 h-4.5 text-secondary-foreground/60" />
                   </div>
-                  <span className="text-sm text-muted-foreground" style={{ fontFamily: fontBody }}>Video call</span>
+                  <span className="t-helper" style={{ fontFamily: fontBody }}>Video call</span>
                 </div>
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-9 h-9 rounded-[var(--radius)] bg-primary/8 flex items-center justify-center shrink-0">
@@ -432,7 +432,7 @@ export default function BookingPage() {
                   <Popover open={tzSearchOpen} onOpenChange={setTzSearchOpen}>
                     <PopoverTrigger asChild>
                       <button
-                        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors min-w-0"
+                        className="t-helper flex items-center gap-1 hover:text-primary transition-colors min-w-0"
                         data-testid="select-booker-timezone"
                       >
                         <span style={{ fontFamily: fontBody }}>{formatTzLabel(bookerTimezone)}</span>
@@ -571,7 +571,7 @@ export default function BookingPage() {
                         <div className="flex flex-col items-center gap-3 py-8 px-4 bg-white/5 backdrop-blur-sm rounded-[var(--container-radius)] border border-white/10" data-testid="text-no-slots">
                           <Clock className="w-8 h-8 text-muted-foreground/40" />
                           <p className="text-sm font-medium" style={{ fontFamily: fontHeading }}>No available times</p>
-                          <p className="text-xs text-muted-foreground text-center" style={{ fontFamily: fontBody }}>There are no open slots on this date. Please try another day.</p>
+                          <p className="t-helper text-center" style={{ fontFamily: fontBody }}>There are no open slots on this date. Please try another day.</p>
                         </div>
                       ) : (
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -604,7 +604,7 @@ export default function BookingPage() {
                 <div className="space-y-6">
                   <button
                     onClick={() => setStep("date")}
-                    className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer group"
+                    className="t-helper flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer group"
                     data-testid="button-back-to-dates"
                   >
                     <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
@@ -617,7 +617,7 @@ export default function BookingPage() {
                     </div>
                     <div>
                       <span className="text-sm font-semibold" style={{ fontFamily: fontHeading }}>{format(selectedDate, "EEEE, MMMM d")}</span>
-                      <span className="text-sm text-muted-foreground ml-2" style={{ fontFamily: fontBody }}>at {formatTime12(selectedSlot)}</span>
+                      <span className="t-helper ml-2" style={{ fontFamily: fontBody }}>at {formatTime12(selectedSlot)}</span>
                     </div>
                   </div>
 
@@ -626,7 +626,7 @@ export default function BookingPage() {
                     className="space-y-4"
                   >
                     <div className="space-y-1.5">
-                      <Label className="text-sm font-medium" style={{ fontFamily: fontBody }}>Name *</Label>
+                      <Label style={{ fontFamily: fontBody }}>Name *</Label>
                       <Input
                         value={name}
                         onChange={(e) => setName(e.target.value)}
@@ -636,7 +636,7 @@ export default function BookingPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-sm font-medium" style={{ fontFamily: fontBody }}>Email *</Label>
+                      <Label style={{ fontFamily: fontBody }}>Email *</Label>
                       <Input
                         type="email"
                         value={email}
@@ -647,7 +647,7 @@ export default function BookingPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-sm font-medium" style={{ fontFamily: fontBody }}>Phone</Label>
+                      <Label style={{ fontFamily: fontBody }}>Phone</Label>
                       <Input
                         type="tel"
                         value={phone}
@@ -668,8 +668,8 @@ export default function BookingPage() {
                             >
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate" style={{ fontFamily: fontBody }}>{ae.name || ae.email}</p>
-                                {ae.name && <p className="text-xs text-muted-foreground truncate">{ae.email}</p>}
-                                {ae.phone && <p className="text-xs text-muted-foreground">{formatPhoneDisplay(ae.phone)}</p>}
+                                {ae.name && <p className="t-helper truncate">{ae.email}</p>}
+                                {ae.phone && <p className="t-helper">{formatPhoneDisplay(ae.phone)}</p>}
                               </div>
                               <button
                                 type="button"
@@ -696,11 +696,11 @@ export default function BookingPage() {
                         </button>
                       ) : (
                         <div className="space-y-3 bg-white/5 border border-white/10 rounded-[var(--container-radius)] p-4">
-                          <Label className="flex items-center gap-1.5 text-sm font-medium" style={{ fontFamily: fontHeading }}>
+                          <Label className="flex items-center gap-1.5" style={{ fontFamily: fontHeading }}>
                             <UserPlus className="w-3.5 h-3.5" />
                             Additional Attendees
                           </Label>
-                          <p className="text-[11px] text-muted-foreground leading-tight" style={{ fontFamily: fontBody }}>
+                          <p className="t-helper leading-tight" style={{ fontFamily: fontBody }}>
                             Invite others to this meeting. They'll receive all notifications.
                           </p>
                           {additionalAttendees.length > 0 && (
@@ -713,8 +713,8 @@ export default function BookingPage() {
                                 >
                                   <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium truncate" style={{ fontFamily: fontBody }}>{ae.name || ae.email}</p>
-                                    {ae.name && <p className="text-xs text-muted-foreground truncate">{ae.email}</p>}
-                                    {ae.phone && <p className="text-xs text-muted-foreground">{formatPhoneDisplay(ae.phone)}</p>}
+                                    {ae.name && <p className="t-helper truncate">{ae.email}</p>}
+                                    {ae.phone && <p className="t-helper">{formatPhoneDisplay(ae.phone)}</p>}
                                   </div>
                                   <button
                                     type="button"
@@ -776,7 +776,7 @@ export default function BookingPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => setShowAttendeeFields(false)}
-                            className="h-7 w-full text-xs text-muted-foreground"
+                            className="t-helper h-7 w-full"
                             data-testid="button-close-attendee-fields"
                           >
                             Done
@@ -786,7 +786,7 @@ export default function BookingPage() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label className="text-sm font-medium" style={{ fontFamily: fontBody }}>Notes</Label>
+                      <Label style={{ fontFamily: fontBody }}>Notes</Label>
                       <Textarea
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
@@ -821,7 +821,7 @@ export default function BookingPage() {
           </div>
         </div>
 
-        <p className="text-center text-xs text-muted-foreground/60 mt-6" style={{ fontFamily: fontBody }}>
+        <p className="t-helper text-center mt-6" style={{ fontFamily: fontBody }}>
           Powered by <span className="font-semibold text-primary/70">{companyName}</span>
         </p>
       </div>

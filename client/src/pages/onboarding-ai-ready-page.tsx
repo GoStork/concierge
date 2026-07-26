@@ -100,7 +100,7 @@ export default function OnboardingAiReadyPage() {
                     <CalendarCheck className="w-3.5 h-3.5 text-primary" />
                     <span>Fri, Apr 4 - 10:00 AM</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <div className="t-helper flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5" />
                     <span>30 min - Free consultation</span>
                   </div>

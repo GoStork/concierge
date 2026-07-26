@@ -174,7 +174,7 @@ export function LocationSearchInput({
           data-testid="location-suggestions"
         >
           {loading && suggestions.length === 0 && (
-            <div className="px-3 py-2 text-sm font-ui text-muted-foreground">Searching...</div>
+            <div className="t-helper px-3 py-2 font-ui">Searching...</div>
           )}
           {suggestions.map((s, i) => (
             <button

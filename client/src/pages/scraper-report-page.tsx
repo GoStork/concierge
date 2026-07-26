@@ -95,7 +95,7 @@ export default function ScraperReportPage() {
       ) : data ? (
         <SyncReportContent data={data} liveProgress={syncProgress} providerId={providerId} type={type} hideMissingFields />
       ) : (
-        <p className="text-muted-foreground text-sm" data-testid="text-no-report">No report data available.</p>
+        <p className="t-helper" data-testid="text-no-report">No report data available.</p>
       )}
 
       {providerId && isValidType && (

@@ -119,7 +119,7 @@ export default function ProviderKnowledgeTab() {
           <Brain className="w-5 h-5" />
           AI Knowledge Base
         </h2>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="t-helper mt-1">
           Upload documents and sync your website so the AI concierge can answer questions about your practice accurately.
         </p>
       </div>
@@ -133,14 +133,14 @@ export default function ProviderKnowledgeTab() {
               {pendingWhispers.length}
             </span>
           </h3>
-          <p className="text-xs text-muted-foreground mb-3">
+          <p className="t-helper mb-3">
             A prospective parent asked the AI concierge a question it couldn't answer. Your response will be sent to the parent and taught to the AI for future reference.
           </p>
           <div className="space-y-3">
             {pendingWhispers.map((w: any) => (
               <Card key={w.id} className="p-4 border-[hsl(var(--brand-warning))]/30" data-testid={`card-whisper-${w.id}`}>
                 <p className="text-sm font-medium mb-2">"{w.questionText}"</p>
-                <p className="text-xs text-muted-foreground mb-3">
+                <p className="t-helper mb-3">
                   {new Date(w.createdAt).toLocaleDateString()} · Anonymous prospective parent
                 </p>
                 <div className="flex gap-2">
@@ -192,8 +192,8 @@ export default function ProviderKnowledgeTab() {
             {answeredWhispers.slice(0, 5).map((w: any) => (
               <Card key={w.id} className="p-3 opacity-70" data-testid={`card-answered-${w.id}`}>
                 <p className="text-xs font-medium">Q: {w.questionText}</p>
-                <p className="text-xs text-muted-foreground mt-1">A: {w.answerText}</p>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="t-helper mt-1">A: {w.answerText}</p>
+                <p className="t-helper mt-1">
                   Answered {new Date(w.updatedAt).toLocaleDateString()}
                 </p>
               </Card>
@@ -217,13 +217,13 @@ export default function ProviderKnowledgeTab() {
             <>
               <Loader2 className="w-10 h-10 text-primary animate-spin" />
               <p className="text-sm font-medium">Processing document...</p>
-              <p className="text-xs text-muted-foreground">Extracting text, generating embeddings</p>
+              <p className="t-helper">Extracting text, generating embeddings</p>
             </>
           ) : (
             <>
               <Upload className="w-10 h-10 text-muted-foreground" />
               <p className="text-sm font-medium">Drop a file here or click to upload</p>
-              <p className="text-xs text-muted-foreground">Supported: PDF, CSV, TXT, DOCX (max 20MB)</p>
+              <p className="t-helper">Supported: PDF, CSV, TXT, DOCX (max 20MB)</p>
             </>
           )}
         </div>
@@ -257,7 +257,7 @@ export default function ProviderKnowledgeTab() {
             )}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="t-helper">
           Crawl your website and feed its content to the AI concierge. Re-sync anytime you update your site.
         </p>
       </Card>
@@ -268,13 +268,13 @@ export default function ProviderKnowledgeTab() {
           Uploaded Documents
         </h3>
         {documentsQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+          <div className="t-helper flex items-center gap-2 py-4">
             <Loader2 className="w-4 h-4 animate-spin" />
             Loading...
           </div>
         ) : docs.length === 0 ? (
           <Card className="p-6 text-center">
-            <p className="text-sm text-muted-foreground">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
+            <p className="t-helper">No documents uploaded yet. Upload files above to teach the AI about your practice.</p>
           </Card>
         ) : (
           <div className="space-y-2">
@@ -290,7 +290,7 @@ export default function ProviderKnowledgeTab() {
                     <p className="text-sm font-medium">
                       {doc.sourceFileName || doc.sourceUrl || "Website Content"}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="t-helper">
                       {doc.chunk_count} chunks · {doc.sourceType}
                       {doc.createdAt ? ` · ${new Date(doc.createdAt).toLocaleDateString()}` : ""}
                     </p>

@@ -306,7 +306,7 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
                     : [r.address, r.city].filter(Boolean).join(", ")
                   }
                 </div>
-                <div className="text-xs text-muted-foreground truncate">
+                <div className="t-helper truncate">
                   {isOnboarding
                     ? r.country
                     : [r.state, r.zip].filter(Boolean).join(" ")

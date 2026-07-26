@@ -212,7 +212,7 @@ export default function ProviderHomePage() {
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6 pb-24 md:pb-6">
       <div>
         <h1 className="text-2xl font-heading">Welcome back, {firstName}</h1>
-        <p className="text-sm text-muted-foreground mt-1">Everything that needs your attention, in one place.</p>
+        <p className="t-helper mt-1">Everything that needs your attention, in one place.</p>
       </div>
 
       {/* Work queue */}
@@ -302,14 +302,14 @@ export default function ProviderHomePage() {
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Video className="w-5 h-5 text-primary" />} title="Upcoming meetings" viewAllTo="/calendar" />
         {upcomingMeetings.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No upcoming meetings scheduled.</p>
+          <p className="t-helper py-2">No upcoming meetings scheduled.</p>
         ) : (
           <div className="divide-y">
             {upcomingMeetings.slice(0, 3).map((b: any) => (
               <div key={b.id} className="flex items-center gap-3 py-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{b.subject || `Meeting with ${b.parentUser?.name || b.attendeeName || "a parent"}`}</p>
-                  <p className="text-xs text-muted-foreground">{fmtWhen(b.scheduledAt)}</p>
+                  <p className="t-helper">{fmtWhen(b.scheduledAt)}</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setSelectedMeeting(b)}>
                   Details
@@ -324,7 +324,7 @@ export default function ProviderHomePage() {
           forms parents complete before a match call can be scheduled. */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Intended Parent Forms" viewAllTo="/provider/parent-forms" />
-        <p className="text-sm text-muted-foreground py-1">
+        <p className="t-helper py-1">
           Download each family's signed profile form with your agency branding - including the surrogate-safe version you can share with candidates.
         </p>
       </Card>
@@ -333,14 +333,14 @@ export default function ProviderHomePage() {
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Cost Sheets" viewAllTo="/provider/cost-sheets" />
         {costSheets.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No cost sheets shared yet. Eva drafts one when a parent books a consult (with auto-draft on), or share one from the + menu in any chat.</p>
+          <p className="t-helper py-2">No cost sheets shared yet. Eva drafts one when a parent books a consult (with auto-draft on), or share one from the + menu in any chat.</p>
         ) : (
           <div className="divide-y">
             {costSheets.slice(0, 3).map((cs: any) => (
               <div key={cs.id} className="flex items-center gap-3 py-3" style={{ opacity: cs.supersededAt ? 0.65 : 1 }}>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{cs.parentName}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="t-helper">
                     {new Date(cs.createdAt).toLocaleDateString()}
                     {cs.supersededAt ? " - Superseded" : cs.parentAcknowledgedAt ? " - Acknowledged" : " - Awaiting parent review"}
                   </p>
@@ -360,15 +360,15 @@ export default function ProviderHomePage() {
         <SectionHeader icon={<DollarSign className="w-5 h-5 text-primary" />} title="Invoices" viewAllTo="/provider/invoices" />
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Total received</p>
+            <p className="t-micro-label">Total received</p>
             <p className="text-lg font-heading font-bold">{formatCents(totalReceived)}</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Awaiting payment</p>
+            <p className="t-micro-label">Awaiting payment</p>
             <p className="text-lg font-heading font-bold">{awaitingCount}</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Pending payouts</p>
+            <p className="t-micro-label">Pending payouts</p>
             <p className="text-lg font-heading font-bold">{pendingPayouts}</p>
           </div>
         </div>
@@ -376,7 +376,7 @@ export default function ProviderHomePage() {
           <div key={inv.id} className="flex items-center gap-3 py-2 border-t">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{inv.parentName || inv.parentUser?.name || "Parent"}</p>
-              <p className="text-xs text-muted-foreground">{inv.serviceType} - {new Date(inv.createdAt).toLocaleDateString()}</p>
+              <p className="t-helper">{inv.serviceType} - {new Date(inv.createdAt).toLocaleDateString()}</p>
             </div>
             <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={(inv as any).medicalClearanceStatus} />
             <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.serviceAmount, inv.currency)}</p>
@@ -391,7 +391,7 @@ export default function ProviderHomePage() {
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Landmark className="w-5 h-5 text-primary" />} title="Payouts" viewAllTo="/provider/payouts" />
         {payoutRows.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No payouts yet. GoStork sends your payout automatically after a parent's payment clears.</p>
+          <p className="t-helper py-2">No payouts yet. GoStork sends your payout automatically after a parent's payment clears.</p>
         ) : (
           <div className="divide-y">
             {payoutRows.slice(0, 3).map((inv: any) => {
@@ -400,7 +400,7 @@ export default function ProviderHomePage() {
                 <div key={inv.id} className="flex items-center gap-3 py-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{inv.parentName || inv.parentUser?.name || "Parent"}</p>
-                    <p className="text-xs text-muted-foreground">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()} - {new Date(inv.payoutInitiatedAt || inv.paidAt || inv.createdAt).toLocaleDateString()}</p>
+                    <p className="t-helper">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()} - {new Date(inv.payoutInitiatedAt || inv.paidAt || inv.createdAt).toLocaleDateString()}</p>
                   </div>
                   <span className="text-xs font-medium shrink-0" style={{ color: ps.color }}>{ps.label}</span>
                   <p className="text-sm font-heading font-bold shrink-0">{formatCents(inv.providerPayoutAmount, inv.currency)}</p>
@@ -417,32 +417,32 @@ export default function ProviderHomePage() {
       {/* Performance - last 30 days engagement across all profiles */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<BarChart3 className="w-5 h-5 text-primary" />} title="Profile Performance" viewAllTo="/performance?tab=profiles" viewAllLabel="Full report" />
-        <p className="text-xs text-muted-foreground -mt-2">Marketing engagement, last 30 days across all your profiles</p>
+        <p className="t-helper -mt-2">Marketing engagement, last 30 days across all your profiles</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Impressions</p>
+            <p className="t-micro-label">Impressions</p>
             <p className="text-lg font-heading font-bold">{(kpis?.totalImpressions ?? 0).toLocaleString()}</p>
-            <p className="text-[11px] text-muted-foreground">{(kpis?.uniqueReach ?? 0).toLocaleString()} parents reached</p>
+            <p className="t-helper">{(kpis?.uniqueReach ?? 0).toLocaleString()} parents reached</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Clicks</p>
+            <p className="t-micro-label">Clicks</p>
             <p className="text-lg font-heading font-bold">{(kpis?.profileViews ?? 0).toLocaleString()}</p>
-            <p className="text-[11px] text-muted-foreground">opened full profile</p>
+            <p className="t-helper">opened full profile</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Saves</p>
+            <p className="t-micro-label">Saves</p>
             <p className="text-lg font-heading font-bold">{(kpis?.saves ?? 0).toLocaleString()}</p>
-            <p className="text-[11px] text-muted-foreground">hearted by parents</p>
+            <p className="t-helper">hearted by parents</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Inquiries</p>
+            <p className="t-micro-label">Inquiries</p>
             <p className="text-lg font-heading font-bold">{(kpis?.inquiries ?? 0).toLocaleString()}</p>
-            <p className="text-[11px] text-muted-foreground">about your profiles</p>
+            <p className="t-helper">about your profiles</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Hot Leads</p>
+            <p className="t-micro-label">Hot Leads</p>
             <p className="text-lg font-heading font-bold">{(kpis?.hotLeads ?? 0).toLocaleString()}</p>
-            <p className="text-[11px] text-muted-foreground">account-level</p>
+            <p className="t-helper">account-level</p>
           </div>
         </div>
       </Card>
@@ -452,27 +452,27 @@ export default function ProviderHomePage() {
           Kept strictly separate from profile/marketing metrics above. */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Route className="w-5 h-5 text-primary" />} title="Journey Funnel" viewAllTo="/performance?tab=funnel" viewAllLabel="Full funnel" />
-        <p className="text-xs text-muted-foreground -mt-2">Parents moving through their journey with you - all time</p>
+        <p className="t-helper -mt-2">Parents moving through their journey with you - all time</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Engaged parents</p>
+            <p className="t-micro-label">Engaged parents</p>
             <p className="text-lg font-heading font-bold">{(funnelKpis?.kpis?.accountsWithJourney ?? 0).toLocaleString()}</p>
-            <p className="text-[11px] text-muted-foreground">connected with you</p>
+            <p className="t-helper">connected with you</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Consultations</p>
+            <p className="t-micro-label">Consultations</p>
             <p className="text-lg font-heading font-bold">{(funnelKpis?.leaks?.consultationsScheduled ?? 0).toLocaleString()}</p>
-            <p className="text-[11px] text-muted-foreground">scheduled</p>
+            <p className="t-helper">scheduled</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Handed off</p>
+            <p className="t-micro-label">Handed off</p>
             <p className="text-lg font-heading font-bold">{(funnelKpis?.kpis?.handedOffTotal ?? 0).toLocaleString()}</p>
-            <p className="text-[11px] text-muted-foreground">journeys completed</p>
+            <p className="t-helper">journeys completed</p>
           </div>
           <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Conversion</p>
+            <p className="t-micro-label">Conversion</p>
             <p className="text-lg font-heading font-bold">{funnelKpis?.kpis?.overallConversionPct != null ? `${funnelKpis.kpis.overallConversionPct}%` : "-"}</p>
-            <p className="text-[11px] text-muted-foreground">engaged to handed off</p>
+            <p className="t-helper">engaged to handed off</p>
           </div>
         </div>
       </Card>

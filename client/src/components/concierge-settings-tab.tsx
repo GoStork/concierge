@@ -92,7 +92,7 @@ export default function ConciergeSettingsTab() {
       <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="concierge-disabled">
         <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
         <h2 className="font-display text-lg font-semibold mb-2">AI Concierge Not Available</h2>
-        <p className="text-muted-foreground text-sm">The AI Concierge is currently not enabled.</p>
+        <p className="t-helper">The AI Concierge is currently not enabled.</p>
       </div>
     );
   }
@@ -102,7 +102,7 @@ export default function ConciergeSettingsTab() {
       <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="concierge-no-matchmakers">
         <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
         <h2 className="font-display text-lg font-semibold mb-2">AI Concierges Coming Soon</h2>
-        <p className="text-muted-foreground text-sm">Our AI Concierges are currently being set up.</p>
+        <p className="t-helper">Our AI Concierges are currently being set up.</p>
       </div>
     );
   }
@@ -118,7 +118,7 @@ export default function ConciergeSettingsTab() {
             Your AI Concierge
           </h2>
         </div>
-        <p className="text-sm text-muted-foreground mb-6">
+        <p className="t-helper mb-6">
           {isParent
             ? "Choose the concierge personality that best fits your communication style. Switching will update your existing conversation - the new concierge picks up right where you left off."
             : "View the available AI concierge personalities that assist parents on the platform."
@@ -183,10 +183,10 @@ export default function ConciergeSettingsTab() {
                   </div>
                   <div>
                     <h3 className="font-display font-semibold text-base">{m.name}</h3>
-                    <p className="text-xs text-muted-foreground">{m.title}</p>
+                    <p className="t-helper">{m.title}</p>
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">{m.description}</p>
+                <p className="t-helper leading-relaxed">{m.description}</p>
               </div>
             );
           })}

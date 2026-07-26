@@ -279,7 +279,7 @@ function GostorkAdminUsersView() {
     <div className="space-y-8">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">Parents</h1>
+          <h1 className="font-display t-page-title text-primary" data-testid="text-page-title">Parents</h1>
           <p className="text-muted-foreground">Manage intended parent accounts.</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -455,7 +455,7 @@ function GostorkAdminUsersView() {
                       <span className="whitespace-nowrap">{formatPhoneDisplay(member.mobileNumber)}</span>
                       <CopyButton value={member.mobileNumber} testId={`btn-copy-mobile-${member.id}`} />
                     </div>
-                  ) : <span className="text-muted-foreground text-sm">-</span>}
+                  ) : <span className="t-helper">-</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   {(overview[member.id]?.services || []).length > 0 ? (
@@ -475,7 +475,7 @@ function GostorkAdminUsersView() {
                         </span>
                       )}
                     </div>
-                  ) : <span className="text-muted-foreground text-sm">-</span>}
+                  ) : <span className="t-helper">-</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <MatchStatusBadge status={overview[member.id]?.matchStatus} />
@@ -491,13 +491,13 @@ function GostorkAdminUsersView() {
                 </TableCell>
                 <TableCell className="hidden lg:table-cell" data-testid={`text-created-${member.id}`}>
                   {member.createdAt ? (
-                    <span className="text-sm text-muted-foreground">{new Date(member.createdAt).toLocaleDateString()}</span>
-                  ) : <span className="text-muted-foreground text-sm">-</span>}
+                    <span className="t-helper">{new Date(member.createdAt).toLocaleDateString()}</span>
+                  ) : <span className="t-helper">-</span>}
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap">
                   {overview[member.id]?.updatedAt ? (
-                    <span className="text-sm text-muted-foreground">{new Date(overview[member.id].updatedAt).toLocaleDateString()}</span>
-                  ) : <span className="text-muted-foreground text-sm">-</span>}
+                    <span className="t-helper">{new Date(overview[member.id].updatedAt).toLocaleDateString()}</span>
+                  ) : <span className="t-helper">-</span>}
                 </TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end gap-1">
@@ -640,7 +640,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">Parents</h1>
+        <h1 className="font-display t-page-title text-primary" data-testid="text-page-title">Parents</h1>
         <p className="text-muted-foreground">Parents who have connected with you via the AI concierge or meetings.</p>
       </div>
 
@@ -789,7 +789,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                     // share one phone, so dedupe by value.
                     const source: any[] = row.members?.length > 1 ? row.members : [{ id: row.id, mobileNumber: row.mobileNumber }];
                     const mobiles = Array.from(new Map(source.filter(m => m.mobileNumber).map(m => [m.mobileNumber, m])).values()) as any[];
-                    if (mobiles.length === 0) return <span className="text-muted-foreground text-sm">-</span>;
+                    if (mobiles.length === 0) return <span className="t-helper">-</span>;
                     return (
                       <div className="flex flex-col gap-0.5">
                         {mobiles.map(m => (
@@ -807,7 +807,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                     <span className="text-xs font-ui px-2 py-0.5 rounded-full" style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
                       {SERVICE_LABELS[row.serviceType] || row.serviceType}
                     </span>
-                  ) : <span className="text-muted-foreground text-sm">-</span>}
+                  ) : <span className="t-helper">-</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <MatchStatusBadge status={row.matchStatus} />
@@ -822,10 +822,10 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                   <ParentAgreementsCell agreements={row.agreements || []} />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <span className="text-sm text-muted-foreground">{row.sessionCreatedAt ? new Date(row.sessionCreatedAt).toLocaleDateString() : "-"}</span>
+                  <span className="t-helper">{row.sessionCreatedAt ? new Date(row.sessionCreatedAt).toLocaleDateString() : "-"}</span>
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <span className="text-sm text-muted-foreground">{row.sessionUpdatedAt ? new Date(row.sessionUpdatedAt).toLocaleDateString() : "-"}</span>
+                  <span className="t-helper">{row.sessionUpdatedAt ? new Date(row.sessionUpdatedAt).toLocaleDateString() : "-"}</span>
                 </TableCell>
               </TableRow>
             )) : (
@@ -853,7 +853,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
 // out so the agency only sees parents who've actually committed to a
 // consultation. Anything unexpected falls through to a neutral pill.
 function MatchStatusBadge({ status }: { status: string | null | undefined }) {
-  if (!status) return <span className="text-muted-foreground text-sm">-</span>;
+  if (!status) return <span className="t-helper">-</span>;
   // Journey ladder (server derives the most-advanced stage per session):
   // Call Booked -> Connected -> Match Call -> Matched -> Deposit Paid ->
   // Agreement Signed. Early stages green, match milestones accent/primary.
@@ -899,7 +899,7 @@ function MatchStatusBadge({ status }: { status: string | null | undefined }) {
 // without leaving the Parents list.
 function ParentInvoicesCell({ invoices }: { invoices: any[] }) {
   if (!invoices || invoices.length === 0) {
-    return <span className="text-muted-foreground text-sm">-</span>;
+    return <span className="t-helper">-</span>;
   }
   // Cap at 2 chips + "+N" so a busy journey doesn't blow up the row
   const shown = invoices.slice(0, 2);
@@ -953,7 +953,7 @@ function ParentInvoicesCell({ invoices }: { invoices: any[] }) {
 function ParentCostSheetsCell({ costSheets, sessionId }: { costSheets: any[]; sessionId: string | null }) {
   const navigate = useNavigate();
   if (!costSheets || costSheets.length === 0) {
-    return <span className="text-muted-foreground text-sm">-</span>;
+    return <span className="t-helper">-</span>;
   }
   // Cap at 2 chips + "+N" (some journeys accumulate many superseded quotes)
   const shown = costSheets.slice(0, 2);
@@ -1005,7 +1005,7 @@ function ParentCostSheetsCell({ costSheets, sessionId }: { costSheets: any[]; se
 // opens the agreement page in a new tab without leaving the Parents list.
 function ParentAgreementsCell({ agreements }: { agreements: any[] }) {
   if (!agreements || agreements.length === 0) {
-    return <span className="text-muted-foreground text-sm">-</span>;
+    return <span className="t-helper">-</span>;
   }
   const shown = agreements.slice(0, 2);
   const extra = agreements.length - shown.length;

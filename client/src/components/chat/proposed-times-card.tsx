@@ -125,7 +125,7 @@ export function ProposedTimesCard({
                 type="button"
                 disabled={!!pendingSlot}
                 onClick={() => { setChanging(false); setSelected(null); }}
-                className="text-xs text-muted-foreground hover:underline"
+                className="t-helper hover:underline"
                 data-testid="proposed-times-keep"
               >
                 Keep current time
@@ -143,7 +143,7 @@ export function ProposedTimesCard({
               <button
                 type="button"
                 onClick={() => { setChanging(true); setSelected(null); }}
-                className="text-xs text-muted-foreground hover:underline shrink-0"
+                className="t-helper hover:underline shrink-0"
                 data-testid="proposed-times-change"
               >
                 Change time
@@ -151,11 +151,11 @@ export function ProposedTimesCard({
             )}
           </div>
         ) : chosen && changing ? (
-          <p className="text-xs text-muted-foreground pt-0.5">Pick a new time and confirm - the invite updates for everyone.</p>
+          <p className="t-helper pt-0.5">Pick a new time and confirm - the invite updates for everyone.</p>
         ) : canPick ? (
-          <p className="text-xs text-muted-foreground pt-0.5">Tap the time that works best, then hit Confirm - you can change your pick until then.</p>
+          <p className="t-helper pt-0.5">Tap the time that works best, then hit Confirm - you can change your pick until then.</p>
         ) : (
-          <p className="text-xs text-muted-foreground pt-0.5">Waiting for the parent to pick a time.</p>
+          <p className="t-helper pt-0.5">Waiting for the parent to pick a time.</p>
         )}
       </div>
     </div>

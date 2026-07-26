@@ -556,7 +556,7 @@ export default function ProfileDatabasePanel({
             <div>
               <h3 className="text-base font-heading">Scraper Overview</h3>
               {lastSyncAt && (
-                <p className="text-xs text-muted-foreground">
+                <p className="t-helper">
                   Last sync: {lastSyncAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                   {" at "}
                   {lastSyncAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
@@ -579,7 +579,7 @@ export default function ProfileDatabasePanel({
                 ) : syncStatus === "FAILED" ? (
                   <><XCircle className="w-5 h-5 text-destructive" /><span className="text-destructive">Failed</span></>
                 ) : (
-                  <span className="text-muted-foreground text-base">{syncStatus}</span>
+                  <span className="t-helper">{syncStatus}</span>
                 )}
                 {showReport ? (
                   <ChevronUp className="w-4 h-4 text-muted-foreground ml-auto" />
@@ -587,11 +587,11 @@ export default function ProfileDatabasePanel({
                   <ChevronDown className="w-4 h-4 text-muted-foreground ml-auto" />
                 )}
               </div>
-              <div className="text-[11px] text-muted-foreground">Sync Status</div>
+              <div className="t-helper">Sync Status</div>
             </button>
             <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
               <div className="text-xl font-heading" data-testid={`text-stat-profiles-${type}`}>{profiles.length.toLocaleString()}</div>
-              <div className="text-[11px] text-muted-foreground">Total Profiles</div>
+              <div className="t-helper">Total Profiles</div>
             </div>
             <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
               <div className="text-xl font-heading" data-testid={`text-stat-latest-${type}`}>
@@ -599,19 +599,19 @@ export default function ProfileDatabasePanel({
                   ? (() => { const d = new Date(Math.max(...profiles.map((p) => new Date(p.createdAt).getTime()))); return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`; })()
                   : "N/A"}
               </div>
-              <div className="text-[11px] text-muted-foreground">Latest Profile Added</div>
+              <div className="t-helper">Latest Profile Added</div>
             </div>
             <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
               <div className="text-xl font-heading" data-testid={`text-stat-last-synced-donor-${type}`}>
                 {lastSyncedProfileLabel}
               </div>
-              <div className="text-[11px] text-muted-foreground">Last Synced At</div>
+              <div className="t-helper">Last Synced At</div>
             </div>
             <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
               <div className="text-xl font-heading text-muted-foreground" data-testid={`text-stat-errors-${type}`}>
                 {lastReport?.failed || 0}
               </div>
-              <div className="text-[11px] text-muted-foreground">Last Sync Errors</div>
+              <div className="t-helper">Last Sync Errors</div>
             </div>
           </div>
           {showReport && (
@@ -629,11 +629,11 @@ export default function ProfileDatabasePanel({
         >
           <Globe className="w-4 h-4" />
           Sync Configuration
-          {!isAdmin && <span className="text-xs font-normal text-muted-foreground ml-1">(managed by GoStork)</span>}
+          {!isAdmin && <span className="t-helper ml-1">(managed by GoStork)</span>}
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <Label htmlFor={`url-${type}`} className="text-xs">
+            <Label htmlFor={`url-${type}`} className="t-form-label-sm">
               Source URL
             </Label>
             <Input
@@ -646,7 +646,7 @@ export default function ProfileDatabasePanel({
             />
           </div>
           <div>
-            <Label htmlFor={`user-${type}`} className="text-xs">
+            <Label htmlFor={`user-${type}`} className="t-form-label-sm">
               Username (optional)
             </Label>
             <div className="relative">
@@ -663,7 +663,7 @@ export default function ProfileDatabasePanel({
             </div>
           </div>
           <div>
-            <Label htmlFor={`pass-${type}`} className="text-xs">
+            <Label htmlFor={`pass-${type}`} className="t-form-label-sm">
               Password (optional)
             </Label>
             <div className="relative">
@@ -815,7 +815,7 @@ export default function ProfileDatabasePanel({
             </>
           )}
           {configQuery.data?.lastSyncAt && !isSyncRunning && (
-            <span className="text-xs text-muted-foreground ml-2">
+            <span className="t-helper ml-2">
               Last synced:{" "}
               {new Date(configQuery.data.lastSyncAt).toLocaleString()}
             </span>
@@ -833,7 +833,7 @@ export default function ProfileDatabasePanel({
               <RefreshCw className="w-4 h-4 animate-spin" />
               Sync in Progress
             </h4>
-            <span className="text-sm text-muted-foreground">
+            <span className="t-helper">
               {jobProgress.processed} / {jobProgress.total || "?"}
             </span>
           </div>
@@ -846,11 +846,11 @@ export default function ProfileDatabasePanel({
             />
           </div>
           {jobProgress.currentStep && (
-            <p className="text-xs text-muted-foreground italic" data-testid="sync-current-step">
+            <p className="t-helper italic" data-testid="sync-current-step">
               {jobProgress.currentStep}
             </p>
           )}
-          <div className="flex gap-4 text-xs text-muted-foreground">
+          <div className="t-helper flex gap-4">
             <span className="text-[hsl(var(--brand-success))]">
               {jobProgress.succeeded} succeeded
             </span>
@@ -904,7 +904,7 @@ export default function ProfileDatabasePanel({
           <div className="grid grid-cols-4 gap-3 text-center">
             <Card className="p-2 rounded-[var(--radius)] text-center">
               <div className="text-lg font-heading">{lastReport.total}</div>
-              <div className="text-xs text-muted-foreground">
+              <div className="t-helper">
                 Total Found
               </div>
             </Card>
@@ -912,7 +912,7 @@ export default function ProfileDatabasePanel({
               <div className="text-lg font-heading text-[hsl(var(--brand-success))]">
                 {lastReport.succeeded}
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="t-helper">
                 Imported
               </div>
             </Card>
@@ -920,7 +920,7 @@ export default function ProfileDatabasePanel({
               <div className="text-lg font-heading text-destructive">
                 {lastReport.failed}
               </div>
-              <div className="text-xs text-muted-foreground">Failed</div>
+              <div className="t-helper">Failed</div>
             </Card>
             <Card className="p-2 rounded-[var(--radius)] text-center">
               <div className="text-lg font-heading">
@@ -941,7 +941,7 @@ export default function ProfileDatabasePanel({
                     })()
                   : "-"}
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="t-helper">
                 Duration
               </div>
             </Card>
@@ -1005,7 +1005,7 @@ export default function ProfileDatabasePanel({
             <FileUp className="w-4 h-4" />
             Bulk PDF Upload
           </h4>
-          <p className="text-xs text-muted-foreground">
+          <p className="t-helper">
             Upload surrogate profile PDFs to extract and import profiles automatically using AI.
           </p>
           <div className="space-y-3">
@@ -1096,7 +1096,7 @@ export default function ProfileDatabasePanel({
               )}
             </div>
             {pdfFiles.length > 0 && (
-              <div className="text-xs text-muted-foreground space-y-1" data-testid="pdf-file-list">
+              <div className="t-helper space-y-1" data-testid="pdf-file-list">
                 {pdfFiles.map((f, i) => (
                   <div key={i} className="flex items-center gap-1.5">
                     <FileUp className="w-3 h-3 shrink-0" />
@@ -1126,11 +1126,11 @@ export default function ProfileDatabasePanel({
                   />
                 </div>
                 {pdfJobProgress.currentStep && (
-                  <div className="text-xs text-muted-foreground">
+                  <div className="t-helper">
                     {pdfJobProgress.currentStep}
                   </div>
                 )}
-                <div className="text-xs text-muted-foreground">
+                <div className="t-helper">
                   {pdfJobProgress.succeeded} succeeded
                   {pdfJobProgress.failed > 0 && (
                     <span className="text-destructive ml-2">
@@ -1165,7 +1165,7 @@ export default function ProfileDatabasePanel({
               <ShieldCheck className="w-4 h-4 text-primary" />
               <h4 className="font-heading text-sm text-foreground">ASRM Minimum Requirements (GoStork)</h4>
             </div>
-            <p className="text-xs text-muted-foreground mb-2">
+            <p className="t-helper mb-2">
               Every surrogate profile is automatically checked against these ASRM-based minimums when it is uploaded, synced, or edited.
               Profiles that do not meet them are still saved, but are hidden from parents and labeled "Below ASRM minimum". This cannot be overridden.
             </p>
@@ -1286,12 +1286,12 @@ export default function ProfileDatabasePanel({
             <Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground" />
           </div>
         ) : profiles.length === 0 ? (
-          <div className="py-8 text-center text-muted-foreground text-sm">
+          <div className="t-helper py-8 text-center">
             No {label.toLowerCase()} records yet. Configure a source URL
             and start syncing to import profiles.
           </div>
         ) : filteredProfiles.length === 0 ? (
-          <div className="py-8 text-center text-muted-foreground text-sm">
+          <div className="t-helper py-8 text-center">
             No {label.toLowerCase()} records match your filters.
           </div>
         ) : (
@@ -1344,7 +1344,7 @@ function ProfileDetailSection({ sectionName, sectionData }: { sectionName: strin
         data-testid={`toggle-section-${sectionName.toLowerCase().replace(/\s+/g, "-")}`}
       >
         <span className="text-sm font-ui">{sectionName}</span>
-        <span className="text-xs text-muted-foreground">{expanded ? "▲" : "▼"} {entries.length} fields</span>
+        <span className="t-helper">{expanded ? "▲" : "▼"} {entries.length} fields</span>
       </button>
       {expanded && (
         <div className="px-4 py-3 space-y-2">
@@ -1371,7 +1371,7 @@ function ProfileDetailSection({ sectionName, sectionData }: { sectionName: strin
 
             return (
               <div key={question} className={`py-2 px-3 rounded-[var(--radius)] bg-muted/50 border border-border/50 ${isLong ? "col-span-2" : ""}`}>
-                <p className="text-xs text-muted-foreground">{question}</p>
+                <p className="t-helper">{question}</p>
                 <p className={`text-sm ${isLong ? "leading-body mt-1" : "font-ui"} break-words`}>{answerStr}</p>
               </div>
             );
@@ -1406,7 +1406,7 @@ function ProfileDataSection({ data }: { data: Record<string, any> }) {
 
   return (
     <div data-testid="section-all-scraped-data" className="space-y-4">
-      <h4 className="text-sm font-ui text-muted-foreground">Full Provider Profile</h4>
+      <h4 className="t-helper font-ui">Full Provider Profile</h4>
 
       {longTextEntries.map(([key, value]) => (
         <div
@@ -1414,7 +1414,7 @@ function ProfileDataSection({ data }: { data: Record<string, any> }) {
           className="py-3 px-4 rounded-[var(--radius)] bg-muted/50 border border-border/50"
           data-testid={`scraped-field-${key.toLowerCase().replace(/\s+/g, "-")}`}
         >
-          <p className="text-xs text-muted-foreground mb-1">{formatFieldLabel(key)}</p>
+          <p className="t-helper mb-1">{formatFieldLabel(key)}</p>
           <p className="text-sm leading-body">{String(value)}</p>
         </div>
       ))}
@@ -1433,7 +1433,7 @@ function ProfileDataSection({ data }: { data: Record<string, any> }) {
                 className="py-2 px-3 rounded-[var(--radius)] bg-muted/50 border border-border/50"
                 data-testid={`scraped-field-${key.toLowerCase().replace(/\s+/g, "-")}`}
               >
-                <p className="text-xs text-muted-foreground">{formatFieldLabel(key)}</p>
+                <p className="t-helper">{formatFieldLabel(key)}</p>
                 <p className="text-sm font-ui break-words">{display}</p>
               </div>
             );
@@ -1443,7 +1443,7 @@ function ProfileDataSection({ data }: { data: Record<string, any> }) {
 
       {imageEntries.map(([key, value]) => (
         <div key={key} data-testid={`scraped-field-${key.toLowerCase().replace(/\s+/g, "-")}`}>
-          <p className="text-xs text-muted-foreground mb-2">{formatFieldLabel(key)}</p>
+          <p className="t-helper mb-2">{formatFieldLabel(key)}</p>
           <div className="grid grid-cols-3 gap-2">
             {(value as string[]).map((url: string, idx: number) => (
               <a key={idx} href={`/api/uploads/proxy?url=${encodeURIComponent(url)}`} target="_blank" rel="noopener noreferrer">
@@ -1462,7 +1462,7 @@ function ProfileDataSection({ data }: { data: Record<string, any> }) {
 
       {profileDetails && Object.keys(profileDetails).length > 0 && (
         <div className="space-y-2">
-          <h5 className="text-xs font-ui text-muted-foreground mt-4">Detailed Profile Questionnaire</h5>
+          <h5 className="t-helper font-ui mt-4">Detailed Profile Questionnaire</h5>
           {Object.entries(profileDetails).map(([sectionName, sectionData]) => (
             <ProfileDetailSection key={sectionName} sectionName={sectionName} sectionData={sectionData as Record<string, any>} />
           ))}

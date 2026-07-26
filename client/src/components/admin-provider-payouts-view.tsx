@@ -110,7 +110,7 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
       <div className="space-y-4">
         <header>
           <h3 className="font-semibold">Payouts</h3>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="t-helper mt-0.5">
             Provider hasn't started Stripe Connect setup yet.
           </p>
         </header>
@@ -132,7 +132,7 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
       <header className="flex items-start justify-between gap-4">
         <div>
           <h3 className="font-semibold">Payouts</h3>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="t-helper mt-0.5">
             Read-only view of the provider's Stripe Connect setup.
           </p>
         </div>
@@ -156,7 +156,7 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
           <CheckCircle2 className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-success))" }} />
           <div>
             <p className="text-sm font-medium">Payouts enabled</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="t-helper mt-0.5">
               Auto-transfers are firing when invoices for this provider flip to PAID.
             </p>
           </div>
@@ -166,7 +166,7 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
           <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-error))" }} />
           <div>
             <p className="text-sm font-medium">Payouts blocked</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="t-helper mt-0.5">
               Reason: <code className="bg-muted px-1 rounded">{state.requirementsDisabledReason}</code>
             </p>
           </div>
@@ -176,7 +176,7 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
           <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
           <div>
             <p className="text-sm font-medium">Onboarding in progress</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="t-helper mt-0.5">
               Provider has started setup but Stripe hasn't approved payouts yet.
             </p>
           </div>
@@ -221,7 +221,7 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
       {pendingData && pendingData.invoices.length > 0 && (
         <section className="space-y-3">
           <h4 className="text-sm font-medium">Pending payouts</h4>
-          <p className="text-xs text-muted-foreground">
+          <p className="t-helper">
             PAID invoices where GoStork hasn't yet successfully transferred the provider's cut. Either
             the auto-transfer failed, or the provider wasn't onboarded when the invoice was paid.
           </p>
@@ -254,7 +254,7 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
                         <span className="text-muted-foreground">Never auto-fired</span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-muted-foreground text-xs">
+                    <td className="t-helper px-4 py-2">
                       {new Date(inv.paidAt).toLocaleString()}
                     </td>
                     <td className="px-4 py-2 text-right">
@@ -284,7 +284,7 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 px-4 py-2.5 border-b last:border-0">
-      <span className="text-xs text-muted-foreground uppercase tracking-wide w-48 shrink-0">{label}</span>
+      <span className="t-micro-label w-48 shrink-0">{label}</span>
       <span className="text-sm text-right break-all">{value}</span>
     </div>
   );
@@ -295,7 +295,7 @@ function RequirementsList({ label, items, tone }: { label: string; items: string
   return (
     <div className="rounded-lg border p-3 bg-background">
       <p className="text-xs font-medium" style={{ color }}>{label}</p>
-      <ul className="text-xs mt-1.5 list-disc list-inside text-muted-foreground space-y-0.5">
+      <ul className="t-helper mt-1.5 list-disc list-inside space-y-0.5">
         {items.map(r => <li key={r}><code className="bg-muted px-1 rounded">{r}</code></li>)}
       </ul>
     </div>

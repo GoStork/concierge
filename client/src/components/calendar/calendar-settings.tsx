@@ -529,7 +529,7 @@ export function CalendarSettings() {
             ) : (
               <WifiOff className="w-5 h-5 text-muted-foreground" />
             )}
-            <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Connected Calendars</h2>
+            <h2 className="t-micro-label font-heading">Connected Calendars</h2>
           </div>
           <Button size="sm" variant="outline" onClick={() => setConnectDialogOpen(true)} data-testid="button-connect-calendar">
             <CalendarPlus className="w-4 h-4 mr-1" /> Connect
@@ -544,7 +544,7 @@ export function CalendarSettings() {
                 <p className="text-sm font-ui font-medium text-foreground">
                   {expiredConnections.length === 1 ? "A calendar connection has expired" : `${expiredConnections.length} calendar connections have expired`}
                 </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="t-helper mt-0.5">
                   New bookings won't sync until you reconnect. Click below to fix this now.
                 </p>
                 <div className="flex flex-wrap gap-2 mt-3">
@@ -645,7 +645,7 @@ export function CalendarSettings() {
                       )}
                     </div>
                     {conn.email && (
-                      <p className="text-xs text-muted-foreground truncate">{conn.email}</p>
+                      <p className="t-helper truncate">{conn.email}</p>
                     )}
                     {conn.tokenValid === false && (conn.provider === "google" || conn.provider === "microsoft") && (
                       <div className="flex items-center gap-1.5 mt-1">
@@ -692,7 +692,7 @@ export function CalendarSettings() {
                         onCheckedChange={(v) => updateConnectionMutation.mutate({ id: conn.id, data: { isConflictCalendar: v } })}
                         data-testid={`switch-conflict-${conn.id}`}
                       />
-                      <span className="text-xs text-muted-foreground">Check conflicts</span>
+                      <span className="t-helper">Check conflicts</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Switch
@@ -703,7 +703,7 @@ export function CalendarSettings() {
                         disabled={conn.isBookingCalendar}
                         data-testid={`switch-booking-${conn.id}`}
                       />
-                      <span className="text-xs text-muted-foreground">Booking</span>
+                      <span className="t-helper">Booking</span>
                     </div>
                     <button
                       type="button"
@@ -735,7 +735,7 @@ export function CalendarSettings() {
             })}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             Connect your calendars to sync events and prevent double-bookings. Events from connected calendars will appear as busy blocks.
           </p>
         )}
@@ -745,14 +745,14 @@ export function CalendarSettings() {
       <Card className="p-6" data-testid="booking-link-section">
         <div className="flex items-center gap-2 mb-4">
           <Link2 className="w-5 h-5 text-primary" />
-          <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Your Calendar Link</h2>
+          <h2 className="t-micro-label font-heading">Your Calendar Link</h2>
         </div>
-        <p className="text-sm text-muted-foreground mb-3">
+        <p className="t-helper mb-3">
           Share this link with anyone to let them book time with you. It can be embedded on websites or shared via email.
         </p>
         <div className="flex items-center gap-2 mb-3">
           <div className="flex-1 flex items-center bg-secondary/30 border border-border/50 rounded-[var(--radius)] px-3 py-2">
-            <span className="text-sm text-muted-foreground mr-1 shrink-0">/book/</span>
+            <span className="t-helper mr-1 shrink-0">/book/</span>
             <Input
               value={bookingPageSlug}
               onChange={(e) => setBookingPageSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
@@ -772,7 +772,7 @@ export function CalendarSettings() {
       <Card className="p-6" data-testid="scheduling-rules-section">
         <div className="flex items-center gap-2 mb-4">
           <Clock className="w-5 h-5 text-primary" />
-          <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Scheduling Rules</h2>
+          <h2 className="t-micro-label font-heading">Scheduling Rules</h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -896,7 +896,7 @@ export function CalendarSettings() {
               data-testid="input-meeting-link"
             />
           )}
-          <p className="text-xs text-muted-foreground">This link will be attached to all your bookings automatically.</p>
+          <p className="t-helper">This link will be attached to all your bookings automatically.</p>
         </div>
 
         <div className="mt-4 space-y-2">
@@ -909,7 +909,7 @@ export function CalendarSettings() {
             placeholder="e.g. GoStork Consultation"
             data-testid="input-default-subject"
           />
-          <p className="text-xs text-muted-foreground">Default subject line used for booking page appointments and pre-filled when creating new meetings.</p>
+          <p className="t-helper">Default subject line used for booking page appointments and pre-filled when creating new meetings.</p>
         </div>
 
         {authUser && (hasProviderRole(authUser.roles || []) || (authUser.roles || []).includes("GOSTORK_ADMIN")) && (
@@ -926,7 +926,7 @@ export function CalendarSettings() {
               <label htmlFor="auto-consent-recording" className="text-sm font-ui cursor-pointer select-none">
                 Always record & transcribe my calls
               </label>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="t-helper mt-0.5">
                 When enabled, calls will be recorded and transcribed automatically without asking each time. Uncheck to be prompted before every meeting.
               </p>
             </div>
@@ -938,7 +938,7 @@ export function CalendarSettings() {
       <Card className="p-6" data-testid="availability-section">
         <div className="flex items-center gap-2 mb-4">
           <Globe className="w-5 h-5 text-primary" />
-          <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Weekly Availability</h2>
+          <h2 className="t-micro-label font-heading">Weekly Availability</h2>
         </div>
 
         <div className="space-y-3">
@@ -973,7 +973,7 @@ export function CalendarSettings() {
                             className="w-28 text-sm"
                             data-testid={`input-start-${dayIndex}-${i}`}
                           />
-                          <span className="text-muted-foreground text-sm">to</span>
+                          <span className="t-helper">to</span>
                           <Input
                             type="time"
                             value={slot.endTime}
@@ -993,7 +993,7 @@ export function CalendarSettings() {
                       </Button>
                     </>
                   ) : (
-                    <p className="text-sm text-muted-foreground pt-1.5">Unavailable</p>
+                    <p className="t-helper pt-1.5">Unavailable</p>
                   )}
                 </div>
               </div>
@@ -1006,7 +1006,7 @@ export function CalendarSettings() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <CalendarCheck className="w-5 h-5 text-primary" />
-            <h2 className="text-sm font-heading text-muted-foreground uppercase tracking-wider">Date Overrides</h2>
+            <h2 className="t-micro-label font-heading">Date Overrides</h2>
           </div>
           <Button
             size="sm"
@@ -1021,7 +1021,7 @@ export function CalendarSettings() {
           </Button>
         </div>
 
-        <p className="text-sm text-muted-foreground mb-4">
+        <p className="t-helper mb-4">
           Override your weekly hours for specific dates. Add custom availability or mark days as unavailable.
         </p>
 
@@ -1038,12 +1038,12 @@ export function CalendarSettings() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-ui">{formatOverrideDate(ov.date)}</span>
                     {ov.label && (
-                      <span className="text-xs text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded">
+                      <span className="t-helper bg-secondary/50 px-1.5 py-0.5 rounded">
                         {ov.label}
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="t-helper">
                     {ov.isAvailable ? (
                       ov.slots && ov.slots.length > 0
                         ? ov.slots.map((s) => `${s.startTime} – ${s.endTime}`).join(", ")
@@ -1067,7 +1067,7 @@ export function CalendarSettings() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-4 text-sm text-muted-foreground border border-dashed border-border/50 rounded-[var(--radius)]">
+          <div className="t-helper text-center py-4 border border-dashed border-border/50 rounded-[var(--radius)]">
             No date overrides set. Your weekly availability applies to all dates.
           </div>
         )}
@@ -1102,7 +1102,7 @@ export function CalendarSettings() {
 
           {connectStep === "pick" && (
             <>
-              <p className="text-sm text-muted-foreground">
+              <p className="t-helper">
                 Select a calendar provider. Events from connected calendars will block your booking availability.
               </p>
               <div className="grid grid-cols-3 gap-3 py-3">
@@ -1157,7 +1157,7 @@ export function CalendarSettings() {
                     </div>
                     <div className="space-y-0.5">
                       <div className="text-sm font-heading text-foreground">{p.name}</div>
-                      <div className="text-xs text-muted-foreground">{p.desc}</div>
+                      <div className="t-helper">{p.desc}</div>
                     </div>
                     {p.id === "google" && googleConnecting && (
                       <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -1188,7 +1188,7 @@ export function CalendarSettings() {
 
           {connectStep === "google-calendars" && (
             <>
-              <p className="text-sm text-muted-foreground">
+              <p className="t-helper">
                 {connectingGoogleEmail && (
                   <span className="font-ui text-foreground">{connectingGoogleEmail} - </span>
                 )}
@@ -1200,7 +1200,7 @@ export function CalendarSettings() {
                     <Loader2 className="w-5 h-5 animate-spin text-primary" />
                   </div>
                 ) : googleCalendars.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No calendars found.</p>
+                  <p className="t-helper text-center py-4">No calendars found.</p>
                 ) : (
                   <>
                     <div className="flex items-center justify-between pb-1">
@@ -1220,7 +1220,7 @@ export function CalendarSettings() {
                       >
                         {selectedCalendarIds.length === googleCalendars.length ? "Deselect All" : "Select All"}
                       </button>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="t-helper">
                         {selectedCalendarIds.length} of {googleCalendars.length} selected
                       </span>
                     </div>
@@ -1255,10 +1255,10 @@ export function CalendarSettings() {
                             <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cal.backgroundColor || "#4285f4" }} />
                             <div className="flex-1 min-w-0">
                               <span className="text-sm font-ui truncate block">{cal.summary}</span>
-                              <span className="text-xs text-muted-foreground truncate block">{cal.id}</span>
+                              <span className="t-helper truncate block">{cal.id}</span>
                             </div>
                             {cal.primary && (
-                              <span className="text-xs text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded">Primary</span>
+                              <span className="t-helper bg-secondary/50 px-1.5 py-0.5 rounded">Primary</span>
                             )}
                           </button>
                           {isSelected && (
@@ -1272,7 +1272,7 @@ export function CalendarSettings() {
                                 }}
                                 data-testid={`switch-conflict-select-${cal.id}`}
                               />
-                              <span className="text-xs text-muted-foreground">Check conflicts</span>
+                              <span className="t-helper">Check conflicts</span>
                               <span className="text-[10px] text-muted-foreground/60">- blocks booking slots</span>
                             </div>
                           )}
@@ -1300,7 +1300,7 @@ export function CalendarSettings() {
 
           {connectStep === "microsoft-calendars" && (
             <>
-              <p className="text-sm text-muted-foreground">
+              <p className="t-helper">
                 {connectingMicrosoftEmail && (
                   <span className="font-ui text-foreground">{connectingMicrosoftEmail} - </span>
                 )}
@@ -1312,7 +1312,7 @@ export function CalendarSettings() {
                     <Loader2 className="w-5 h-5 animate-spin text-primary" />
                   </div>
                 ) : microsoftCalendars.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No calendars found.</p>
+                  <p className="t-helper text-center py-4">No calendars found.</p>
                 ) : (
                   <>
                     <div className="flex items-center justify-between pb-1">
@@ -1332,7 +1332,7 @@ export function CalendarSettings() {
                       >
                         {selectedCalendarIds.length === microsoftCalendars.length ? "Deselect All" : "Select All"}
                       </button>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="t-helper">
                         {selectedCalendarIds.length} of {microsoftCalendars.length} selected
                       </span>
                     </div>
@@ -1369,7 +1369,7 @@ export function CalendarSettings() {
                               <span className="text-sm font-ui truncate block">{cal.summary}</span>
                             </div>
                             {cal.primary && (
-                              <span className="text-xs text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded">Default</span>
+                              <span className="t-helper bg-secondary/50 px-1.5 py-0.5 rounded">Default</span>
                             )}
                           </button>
                           {isSelected && (
@@ -1383,7 +1383,7 @@ export function CalendarSettings() {
                                 }}
                                 data-testid={`switch-conflict-select-ms-${cal.id}`}
                               />
-                              <span className="text-xs text-muted-foreground">Check conflicts</span>
+                              <span className="t-helper">Check conflicts</span>
                               <span className="text-[10px] text-muted-foreground/60">- blocks booking slots</span>
                             </div>
                           )}
@@ -1411,7 +1411,7 @@ export function CalendarSettings() {
 
           {connectStep === "email" && (
             <>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="t-helper flex items-center gap-2">
                 {(() => { const P = CALENDAR_PROVIDERS.find((p) => p.id === connectProvider); return P ? <P.icon className="w-5 h-5" style={{ color: P.color }} /> : null; })()}
                 <span className="font-ui">{(() => { const P = CALENDAR_PROVIDERS.find((p) => p.id === connectProvider); return P ? `${P.name} - ${P.desc}` : ""; })()}</span>
               </div>
@@ -1440,7 +1440,7 @@ export function CalendarSettings() {
 
           {connectStep === "apple-connect" && (
             <>
-              <p className="text-sm text-muted-foreground">
+              <p className="t-helper">
                 Because Apple prioritizes security, you will need to generate a one-time &ldquo;App-Specific Password&rdquo; to connect your calendar. It only takes a minute!
               </p>
               <div className="space-y-3 py-2">
@@ -1507,7 +1507,7 @@ export function CalendarSettings() {
 
           {connectStep === "caldav-calendars" && (
             <>
-              <p className="text-sm text-muted-foreground">
+              <p className="t-helper">
                 {caldavConnectingEmail && (
                   <span className="font-ui text-foreground">{caldavConnectingEmail} - </span>
                 )}
@@ -1515,7 +1515,7 @@ export function CalendarSettings() {
               </p>
               <div className="space-y-2 py-2">
                 {caldavCalendars.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No calendars found.</p>
+                  <p className="t-helper text-center py-4">No calendars found.</p>
                 ) : (
                   <>
                     <div className="flex items-center justify-between pb-1">
@@ -1535,7 +1535,7 @@ export function CalendarSettings() {
                       >
                         {selectedCalendarIds.length === caldavCalendars.length ? "Deselect All" : "Select All"}
                       </button>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="t-helper">
                         {selectedCalendarIds.length} of {caldavCalendars.length} selected
                       </span>
                     </div>
@@ -1583,7 +1583,7 @@ export function CalendarSettings() {
                                 }}
                                 data-testid={`switch-caldav-conflict-${cal.name}`}
                               />
-                              <span className="text-xs text-muted-foreground">Check conflicts</span>
+                              <span className="t-helper">Check conflicts</span>
                               <span className="text-[10px] text-muted-foreground/60">- blocks booking slots</span>
                             </div>
                           )}
@@ -1692,7 +1692,7 @@ export function CalendarSettings() {
                       className="w-28 text-sm"
                       data-testid={`input-override-start-${i}`}
                     />
-                    <span className="text-muted-foreground text-sm">to</span>
+                    <span className="t-helper">to</span>
                     <Input
                       type="time"
                       value={slot.endTime}

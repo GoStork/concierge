@@ -43,13 +43,13 @@ export default function PerformancePage() {
       ) : tab === "funnel" ? (
         <div>
           <h2 className="text-xl font-heading mb-1">Journey Funnel</h2>
-          <p className="text-sm text-muted-foreground mb-4">How parents move through their journey with you - from first consultation to handoff.</p>
+          <p className="t-helper mb-4">How parents move through their journey with you - from first consultation to handoff.</p>
           <JourneyFunnelDashboard scope="provider" />
         </div>
       ) : (
         <div>
           <h2 className="text-xl font-heading mb-1">Reviews</h2>
-          <p className="text-sm text-muted-foreground mb-4">Verified reviews from intended parents. You can post one public response per review, or flag a review for GoStork to re-check.</p>
+          <p className="t-helper mb-4">Verified reviews from intended parents. You can post one public response per review, or flag a review for GoStork to re-check.</p>
           <ProviderReviewsPanel brandColor="hsl(var(--primary))" />
         </div>
       )}

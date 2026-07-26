@@ -195,7 +195,7 @@ export function ReferralFeeConfigSection({
         <div className="space-y-2">
           <Label>
             GoStork Referral Fee Type
-            {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+            {isProviderMode && <span className="t-helper ml-2">(set by GoStork)</span>}
           </Label>
           <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
             {[
@@ -226,7 +226,7 @@ export function ReferralFeeConfigSection({
           <div className="space-y-1.5 max-w-md">
             <Label>
               GoStork Referral Percentage (%)
-              {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+              {isProviderMode && <span className="t-helper ml-2">(set by GoStork)</span>}
             </Label>
             <NumberInput
               placeholder="e.g. 10"
@@ -234,7 +234,7 @@ export function ReferralFeeConfigSection({
               onChange={setPercentage}
               disabled={isProviderMode}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               GoStork keeps this % of the Total Quoted Cost the provider sends the parent for this service.
             </p>
           </div>
@@ -242,7 +242,7 @@ export function ReferralFeeConfigSection({
           <div className="space-y-1.5 max-w-md">
             <Label>
               Flat Amount ($)
-              {isProviderMode && <span className="text-xs text-muted-foreground ml-2 font-normal">(set by GoStork)</span>}
+              {isProviderMode && <span className="t-helper ml-2">(set by GoStork)</span>}
             </Label>
             <NumberInput
               placeholder="e.g. 500"
@@ -250,7 +250,7 @@ export function ReferralFeeConfigSection({
               onChange={setFlatAmount}
               disabled={isProviderMode}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               GoStork keeps this fixed dollar amount regardless of service cost.
             </p>
           </div>
@@ -301,7 +301,7 @@ export function ReferralFeeConfigSection({
                     required
                     aria-invalid={defaultFirstPaymentMissing}
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="t-helper">
                     The standard amount collected from the parent. Pre-fills the invoice - admin or agency can override per invoice.
                   </p>
                   {defaultFirstPaymentMissing && (
@@ -314,7 +314,7 @@ export function ReferralFeeConfigSection({
             </div>
           </label>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="t-helper">
           {parentPaysBasis === "TOTAL_COST"
             ? "Each invoice charges the parent the full Total Quoted Cost from the provider's cost sheet."
             : "Each invoice charges the parent the Default First Payment above. The provider can still send a cost sheet that drives the GoStork % calculation."}
@@ -329,7 +329,7 @@ export function ReferralFeeConfigSection({
           value={sampleTotalCost}
           onChange={setSampleTotalCost}
         />
-        <p className="text-xs text-muted-foreground">
+        <p className="t-helper">
           Pretend the provider quoted this total - the preview below shows the resulting invoice split for this service.
         </p>
       </div>
@@ -337,7 +337,7 @@ export function ReferralFeeConfigSection({
       {/* Live split preview */}
       {showPreview && (
         <div className="rounded-lg border p-4 space-y-2 bg-secondary/40 max-w-md">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment Split Preview</p>
+          <p className="t-micro-label">Payment Split Preview</p>
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between text-muted-foreground">
               <span>Total quoted cost</span>
@@ -356,7 +356,7 @@ export function ReferralFeeConfigSection({
               <span>{formatCents(previewPayoutCents)}</span>
             </div>
           </div>
-          <p className="text-[10px] text-muted-foreground pt-1">
+          <p className="t-helper pt-1">
             Parent-pays basis: {parentPaysBasis === "TOTAL_COST" ? "Total Quoted Cost" : "Default First Payment"}
           </p>
         </div>
@@ -367,7 +367,7 @@ export function ReferralFeeConfigSection({
         <div className="space-y-4 border-t pt-4">
           <div>
             <h4 className="text-sm font-medium">Surrogacy Deposit Trigger</h4>
-            <p className="text-xs text-muted-foreground mt-0.5">When should GoStork request the parent's deposit?</p>
+            <p className="t-helper mt-0.5">When should GoStork request the parent's deposit?</p>
           </div>
           <div className="space-y-2">
             {[
@@ -392,7 +392,7 @@ export function ReferralFeeConfigSection({
                 />
                 <div>
                   <p className="text-sm font-medium">{opt.label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                  <p className="t-helper mt-0.5">{opt.desc}</p>
                 </div>
               </label>
             ))}
@@ -407,7 +407,7 @@ export function ReferralFeeConfigSection({
                 onChange={setAverageClearanceDays}
                 placeholder="21"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="t-helper">
                 Used to schedule AI check-in messages. GoStork will reach out to the parent around days{" "}
                 {Math.max(1, parseInt(averageClearanceDays || "21") - 7)}, {averageClearanceDays}, and{" "}
                 {parseInt(averageClearanceDays || "21") + 7}.

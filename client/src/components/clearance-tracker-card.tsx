@@ -72,7 +72,7 @@ export function ClearanceTrackerCard({ data, isParent = true }: ClearanceTracker
       <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ background: "hsl(var(--primary) / 0.05)" }}>
         <Lock className="w-4 h-4" style={{ color: "hsl(var(--primary))" }} />
         <div>
-          <p className="text-xs text-muted-foreground">GoStork Secure Vault</p>
+          <p className="t-helper">GoStork Secure Vault</p>
           <p className="font-semibold text-sm mt-0.5">{data.providerName}</p>
         </div>
       </div>
@@ -120,7 +120,7 @@ export function ClearanceTrackerCard({ data, isParent = true }: ClearanceTracker
         {/* Resolution actions - either side of the escrow can answer */}
         {status === "PENDING" && !actionTaken && (
           <div className="space-y-2 pt-1">
-            <p className="text-xs text-muted-foreground font-medium">Has the surrogate passed medical screening?</p>
+            <p className="t-helper">Has the surrogate passed medical screening?</p>
             <div className="flex gap-2">
               <Button
                 size="sm"

@@ -66,7 +66,7 @@ export function BankCheckoutCard({ data, brandColor }: { data: any; brandColor: 
         )}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate">Donor {donorLabel}</p>
-          <p className="text-xs text-muted-foreground truncate">{providerName} - ready for direct checkout</p>
+          <p className="t-helper truncate">{providerName} - ready for direct checkout</p>
         </div>
         <p className="text-base font-heading font-bold shrink-0">{formatMoneyCents(priceCents)}</p>
       </div>
@@ -75,7 +75,7 @@ export function BankCheckoutCard({ data, brandColor }: { data: any; brandColor: 
           {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShoppingBag className="w-4 h-4 mr-2" />}
           Buy Now - {formatMoneyCents(priceCents)}
         </Button>
-        <p className="text-[11px] text-muted-foreground mt-1.5 text-center">
+        <p className="t-helper mt-1.5 text-center">
           Creates your order with {providerName} - cost sheet and invoice arrive in a new chat.
         </p>
       </div>

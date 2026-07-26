@@ -262,7 +262,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
             {typeLabel} #{displayId}
           </h4>
           {profile.provider?.name && (
-            <p className="text-[11px] text-muted-foreground truncate">{profile.provider.name}</p>
+            <p className="t-helper truncate">{profile.provider.name}</p>
           )}
           <div className="flex flex-wrap gap-1 pt-0.5">
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{typeLabel}</Badge>
@@ -273,7 +273,7 @@ export function ProfileCard({ profile, type, onNavigate, variant, showNewBadge, 
           <div className="space-y-1 pt-1">
             {getProfileCardSummary(profile, type).map(({ label, value }) => (
               <p key={label} className="text-xs leading-snug truncate">
-                <span className="text-[10px] text-muted-foreground">{label}</span>{" "}
+                <span className="t-helper">{label}</span>{" "}
                 <span className="font-ui text-foreground">{value}</span>
               </p>
             ))}

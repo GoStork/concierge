@@ -75,17 +75,17 @@ export default function ProviderAgreementsPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <div>
         <h1 className="text-2xl font-heading font-bold">Agreements</h1>
-        <p className="text-sm text-muted-foreground mt-1">Every contract you've sent to parents, across all services</p>
+        <p className="t-helper mt-1">Every contract you've sent to parents, across all services</p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Awaiting Signature</p>
+          <p className="t-micro-label">Awaiting Signature</p>
           <p className="text-xl font-heading font-bold">{sentCount}</p>
         </div>
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Fully Signed</p>
+          <p className="t-micro-label">Fully Signed</p>
           <p className="text-xl font-heading font-bold">{signedCount}</p>
         </div>
       </div>
@@ -141,7 +141,7 @@ export default function ProviderAgreementsPage() {
       ) : !filtered.length ? (
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <FileSignature className="w-8 h-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
+          <p className="t-helper">
             {agreements.length ? "No agreements match your filters" : "No agreements sent yet. Agreements appear here once drafted or sent for signature."}
           </p>
         </div>

@@ -130,7 +130,7 @@ function ConfirmBar({
               {title ? (
                 <div className="font-medium text-foreground">{title}</div>
               ) : null}
-              <div className="text-sm text-muted-foreground">{message}</div>
+              <div className="t-helper">{message}</div>
             </div>
           </div>
           <div className="flex items-center gap-2 justify-end shrink-0">

@@ -175,7 +175,7 @@ export function ReviewForm({
         <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} className="rounded border-input accent-primary w-4 h-4 mt-0.5" />
         <span className="text-sm text-foreground">
           Hide my name
-          <span className="block text-xs text-muted-foreground">Reviews only ever show your first name and last initial (e.g. "Sarah K."). Check this to show "Verified GoStork Parent" instead.</span>
+          <span className="t-helper block">Reviews only ever show your first name and last initial (e.g. "Sarah K."). Check this to show "Verified GoStork Parent" instead.</span>
         </span>
       </label>
       {error && <p className="text-xs text-destructive">{error}</p>}
@@ -238,7 +238,7 @@ export function ReviewPromptCard({ messageId, data }: {
   if (submitted && updating) {
     const existing = existingQuery.data?.existing;
     if (existingQuery.isLoading) {
-      return <div className="mt-1.5 text-xs text-muted-foreground">Loading your review...</div>;
+      return <div className="t-helper mt-1.5">Loading your review...</div>;
     }
     return (
       <div className="mt-1.5 max-w-md">
@@ -354,10 +354,10 @@ export function ReviewsSection({ providerId, memberId, targetLabel, isParent }: 
             <span className="flex items-center gap-2">
               <StarDisplay value={agg.avg} size={16} />
               <span className="text-sm font-semibold">{agg.avg}</span>
-              <span className="text-xs text-muted-foreground">{agg.count} verified {agg.count === 1 ? "review" : "reviews"}</span>
+              <span className="t-helper">{agg.count} verified {agg.count === 1 ? "review" : "reviews"}</span>
             </span>
           ) : (
-            <span className="text-xs text-muted-foreground">No reviews yet</span>
+            <span className="t-helper">No reviews yet</span>
           )}
         </div>
         {canWrite && !writing && (
@@ -370,7 +370,7 @@ export function ReviewsSection({ providerId, memberId, targetLabel, isParent }: 
       {agg?.count > 0 && Object.keys(agg.categoryAverages || {}).length > 0 && (
         <div className="flex flex-wrap gap-x-5 gap-y-1">
           {Object.entries(agg.categoryAverages as Record<string, number>).map(([k, v]) => (
-            <span key={k} className="text-xs text-muted-foreground capitalize">
+            <span key={k} className="t-helper capitalize">
               {k === "transparency" ? "Transparency & Pricing" : k === "support" ? "Support & Care" : k === "care" ? "Care & Empathy" : k}:{" "}
               <span className="font-medium text-foreground">{v}</span>
             </span>
@@ -389,7 +389,7 @@ export function ReviewsSection({ providerId, memberId, targetLabel, isParent }: 
         />
       )}
       {writing && !resolvedProviderId && (
-        <p className="text-xs text-muted-foreground">Loading review form...</p>
+        <p className="t-helper">Loading review form...</p>
       )}
 
       <div className="space-y-3">
@@ -400,12 +400,12 @@ export function ReviewsSection({ providerId, memberId, targetLabel, isParent }: 
                 <StarDisplay value={r.rating} />
                 <span className="text-xs font-medium">{r.reviewerLabel}</span>
               </div>
-              <span className="text-[11px] text-muted-foreground">{reviewDateLabel(r)}</span>
+              <span className="t-helper">{reviewDateLabel(r)}</span>
             </div>
             {r.text && <p className="text-sm mt-1.5 whitespace-pre-wrap">{r.text}</p>}
             {r.providerReply && (
               <div className="mt-2 pl-3 border-l-2 border-primary/30">
-                <p className="text-[11px] font-medium text-muted-foreground">Response from {targetLabel}</p>
+                <p className="t-helper font-medium">Response from {targetLabel}</p>
                 <p className="text-xs mt-0.5 whitespace-pre-wrap">{r.providerReply}</p>
               </div>
             )}
@@ -447,7 +447,7 @@ export function ProviderReviewsPanel({ brandColor }: { brandColor: string }) {
   if (q.isLoading) return <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
   const reviews = q.data || [];
   if (reviews.length === 0) {
-    return <p className="text-sm text-muted-foreground py-6">No reviews yet. Parents are invited to review after consultations, matches, and handoff - reviews will appear here as they come in.</p>;
+    return <p className="t-helper py-6">No reviews yet. Parents are invited to review after consultations, matches, and handoff - reviews will appear here as they come in.</p>;
   }
   return (
     <div className="space-y-3" data-testid="provider-reviews-panel">
@@ -459,14 +459,14 @@ export function ProviderReviewsPanel({ brandColor }: { brandColor: string }) {
               <span className="text-xs font-medium">{r.reviewerLabel}</span>
               {r.memberName && <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))]">Dr. review: {r.memberName}</span>}
             </div>
-            <span className="text-[11px] text-muted-foreground">{reviewDateLabel(r)}</span>
+            <span className="t-helper">{reviewDateLabel(r)}</span>
           </div>
           {r.text && <p className="text-sm mt-1.5 whitespace-pre-wrap">{r.text}</p>}
           {r.providerReply ? (
             <div className="mt-2 pl-3 border-l-2 border-primary/30">
-              <p className="text-[11px] font-medium text-muted-foreground">Your response</p>
+              <p className="t-helper font-medium">Your response</p>
               <p className="text-xs mt-0.5 whitespace-pre-wrap">{r.providerReply}</p>
-              <button type="button" className="text-[11px] underline text-muted-foreground mt-1" onClick={() => { setReplyFor(r.id); setReplyText(r.providerReply); }}>Edit response</button>
+              <button type="button" className="t-helper underline mt-1" onClick={() => { setReplyFor(r.id); setReplyText(r.providerReply); }}>Edit response</button>
             </div>
           ) : null}
           {replyFor === r.id ? (
@@ -484,14 +484,14 @@ export function ProviderReviewsPanel({ brandColor }: { brandColor: string }) {
           ) : (
             <div className="mt-2 flex gap-3">
               {!r.providerReply && (
-                <button type="button" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setReplyFor(r.id)} data-testid={`btn-reply-${r.id}`}>
+                <button type="button" className="t-helper inline-flex items-center gap-1 hover:text-foreground" onClick={() => setReplyFor(r.id)} data-testid={`btn-reply-${r.id}`}>
                   <MessageSquare className="w-3 h-3" /> Respond publicly
                 </button>
               )}
               {r.flaggedByProviderAt ? (
                 <span className="inline-flex items-center gap-1 text-[11px] text-[hsl(var(--brand-warning))]"><Flag className="w-3 h-3" /> Flagged - GoStork is reviewing</span>
               ) : (
-                <button type="button" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setFlagFor(r.id)} data-testid={`btn-flag-${r.id}`}>
+                <button type="button" className="t-helper inline-flex items-center gap-1 hover:text-foreground" onClick={() => setFlagFor(r.id)} data-testid={`btn-flag-${r.id}`}>
                   <Flag className="w-3 h-3" /> Flag for re-check
                 </button>
               )}

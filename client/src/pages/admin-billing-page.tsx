@@ -34,12 +34,12 @@ import { ParentInfoBlock, InvoiceInfoBlock } from "@/components/invoice-details-
 function StatCard({ label, value, icon: Icon, sub }: { label: string; value: string; icon: any; sub?: string }) {
   return (
     <div className="rounded-xl border p-4 space-y-1">
-      <div className="flex items-center gap-2 text-muted-foreground text-sm">
+      <div className="t-helper flex items-center gap-2">
         <Icon className="w-4 h-4" />
         <span>{label}</span>
       </div>
       <p className="text-2xl font-heading font-bold">{value}</p>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      {sub && <p className="t-helper">{sub}</p>}
     </div>
   );
 }
@@ -147,7 +147,7 @@ export default function AdminBillingPage() {
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
       <div>
         <h1 className="text-2xl font-heading font-bold">Billing Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Track all parent payments and provider payouts</p>
+        <p className="t-helper mt-1">Track all parent payments and provider payouts</p>
       </div>
 
       {/* Stats */}
@@ -163,7 +163,7 @@ export default function AdminBillingPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-nowrap sm:overflow-x-auto sm:scrollbar-hide sm:flex-1 sm:min-w-0">
         <div className="flex-1 min-w-[180px]">
-          <label className="text-xs text-muted-foreground mb-1 block">Search</label>
+          <label className="t-helper mb-1 block">Search</label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -187,7 +187,7 @@ export default function AdminBillingPage() {
         </div>
 
         <div className="w-[170px] shrink-0">
-          <label className="text-xs text-muted-foreground mb-1 block">Invoice Status</label>
+          <label className="t-helper mb-1 block">Invoice Status</label>
           <select
             value={tab}
             onChange={e => setStatus(e.target.value)}
@@ -201,7 +201,7 @@ export default function AdminBillingPage() {
         </div>
 
         <div className="w-[170px] shrink-0">
-          <label className="text-xs text-muted-foreground mb-1 block">Payout Status</label>
+          <label className="t-helper mb-1 block">Payout Status</label>
           <select
             value={payoutStatus}
             onChange={e => setPayoutStatus(e.target.value)}
@@ -217,7 +217,7 @@ export default function AdminBillingPage() {
         </div>
 
         <div className="w-[170px] shrink-0">
-          <label className="text-xs text-muted-foreground mb-1 block">Service Type</label>
+          <label className="t-helper mb-1 block">Service Type</label>
           <select
             value={serviceType}
             onChange={e => setServiceType(e.target.value)}
@@ -232,12 +232,12 @@ export default function AdminBillingPage() {
         </div>
 
         <div className="w-[150px] shrink-0">
-          <label className="text-xs text-muted-foreground mb-1 block">Date From</label>
+          <label className="t-helper mb-1 block">Date From</label>
           <Input type="date" value={paidFrom} onChange={e => setPaidFrom(e.target.value)} data-testid="billing-paid-from" />
         </div>
 
         <div className="w-[150px] shrink-0">
-          <label className="text-xs text-muted-foreground mb-1 block">Date To</label>
+          <label className="t-helper mb-1 block">Date To</label>
           <Input type="date" value={paidTo} onChange={e => setPaidTo(e.target.value)} data-testid="billing-paid-to" />
         </div>
 
@@ -253,7 +253,7 @@ export default function AdminBillingPage() {
       ) : !data?.invoices?.length ? (
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <AlertCircle className="w-8 h-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No invoices found</p>
+          <p className="t-helper">No invoices found</p>
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
@@ -297,7 +297,7 @@ export default function AdminBillingPage() {
                         );
                       })()}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(inv.paidAt || inv.createdAt).toLocaleDateString()}</td>
+                    <td className="t-helper px-4 py-3">{new Date(inv.paidAt || inv.createdAt).toLocaleDateString()}</td>
                     <td className="px-4 py-3">
                       {expandedId === inv.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </td>
@@ -364,7 +364,7 @@ export default function AdminBillingPage() {
                             )}
 
                             {inv.status === "PAID" && inv.payoutInitiatedAt && !inv.payoutCompletedAt && (
-                              <p className="text-sm text-muted-foreground">Payout initiated - awaiting confirmation</p>
+                              <p className="t-helper">Payout initiated - awaiting confirmation</p>
                             )}
 
                             {inv.status === "PAID" && inv.payoutCompletedAt && (
@@ -373,7 +373,7 @@ export default function AdminBillingPage() {
 
                             <a
                               href={`/chat?session=${inv.sessionId}`}
-                              className="text-sm underline text-muted-foreground"
+                              className="t-helper underline"
                             >
                               View session in chat
                             </a>
@@ -389,7 +389,7 @@ export default function AdminBillingPage() {
 
           {/* Pagination */}
           {data.total > 25 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
+            <div className="t-helper flex items-center justify-between px-4 py-3 border-t">
               <span>Showing {Math.min((page - 1) * 25 + 1, data.total)}-{Math.min(page * 25, data.total)} of {data.total}</span>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button>

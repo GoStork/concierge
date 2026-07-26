@@ -849,10 +849,10 @@ function AccountTab() {
                 <Label>Email</Label>
                 <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Mail className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground" data-testid="text-account-email">{user.email}</span>
+                  <span className="t-helper" data-testid="text-account-email">{user.email}</span>
                   <CopyButton value={user.email} testId="btn-copy-account-email" />
                 </div>
-                <p className="text-xs text-muted-foreground">Email cannot be changed</p>
+                <p className="t-helper">Email cannot be changed</p>
               </div>
               <div className="space-y-2">
                 <Label>Mobile Number</Label>
@@ -1032,7 +1032,7 @@ function AccountTab() {
                 <Label>Role</Label>
                 <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Shield className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground" data-testid="text-account-role">{roleDisplay}</span>
+                  <span className="t-helper" data-testid="text-account-role">{roleDisplay}</span>
                 </div>
               </div>
               {providerName && (
@@ -1040,7 +1040,7 @@ function AccountTab() {
                   <Label>Organization</Label>
                   <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                     <Building2 className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground" data-testid="text-account-provider">{providerName}</span>
+                    <span className="t-helper" data-testid="text-account-provider">{providerName}</span>
                   </div>
                 </div>
               )}
@@ -1055,10 +1055,10 @@ function AccountTab() {
                 <Label>Email</Label>
                 <div className="flex items-center gap-2 h-10 px-3 rounded-[var(--radius)] border border-border/40 bg-muted/30">
                   <Mail className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground" data-testid="text-account-email">{user.email}</span>
+                  <span className="t-helper" data-testid="text-account-email">{user.email}</span>
                   <CopyButton value={user.email} testId="btn-copy-account-email" />
                 </div>
-                <p className="text-xs text-muted-foreground">Email cannot be changed</p>
+                <p className="t-helper">Email cannot be changed</p>
               </div>
               <div className="space-y-2">
                 <Label>Mobile Number</Label>
@@ -1158,7 +1158,7 @@ function AccountTab() {
                 <Input disabled type="password" value="placeholder" placeholder="••••••••" data-testid="text-account-password" />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Role</label>
+                <label className="t-micro-label font-ui">Role</label>
                 <div className="flex items-center gap-2">
                   <Shield className="w-3.5 h-3.5 text-muted-foreground" />
                   <p className="text-sm font-ui" data-testid="text-account-role">{roleDisplay}</p>
@@ -1166,7 +1166,7 @@ function AccountTab() {
               </div>
               {providerName && (
                 <div className="space-y-1">
-                  <label className="text-xs font-ui text-muted-foreground uppercase tracking-wider">Organization</label>
+                  <label className="t-micro-label font-ui">Organization</label>
                   <div className="flex items-center gap-2">
                     <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
                     <p className="text-sm font-ui" data-testid="text-account-provider">{providerName}</p>
@@ -1486,7 +1486,7 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
                 {editing ? (
                   <InsurancePicker value={arr} onChange={f.setter} mode="single" />
                 ) : (
-                  <p className="text-sm text-muted-foreground">{raw || "Not set"}</p>
+                  <p className="t-helper">{raw || "Not set"}</p>
                 )}
               </div>
             );
@@ -1572,7 +1572,7 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
               <div key={f.key} className="space-y-3 md:col-span-2">
                 <div className="flex items-center justify-between">
                   <Label>{f.label}</Label>
-                  <span className="text-sm font-ui text-muted-foreground">{fmt(lo)} - {fmt(hi)}</span>
+                  <span className="t-helper font-ui">{fmt(lo)} - {fmt(hi)}</span>
                 </div>
                 <Slider
                   min={min} max={max} step={step}
@@ -1594,7 +1594,7 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
               <div key={f.key} className="space-y-3 md:col-span-2">
                 <div className="flex items-center justify-between">
                   <Label>{f.label}</Label>
-                  <span className="text-sm font-ui text-muted-foreground">
+                  <span className="t-helper font-ui">
                     {isAtMax ? "Any" : `Up to ${fmt(current)}`}
                   </span>
                 </div>

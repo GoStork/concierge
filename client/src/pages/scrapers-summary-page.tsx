@@ -95,7 +95,7 @@ function CdcSyncProgressBar({ job }: { job: CdcSyncJob }) {
           />
         </div>
       </button>
-      <div className="text-[10px] text-muted-foreground mt-0.5">
+      <div className="t-helper mt-0.5">
         {hasEstimate
           ? `${currentRecords.toLocaleString()} / ${totalRecords.toLocaleString()} records`
           : "Estimating..."}
@@ -313,7 +313,7 @@ function CdcEnrichmentCell({ job, onTrigger, onRestart, onCancel, compact }: { j
   };
 
   if (job.status !== "COMPLETED") {
-    return compact ? null : <span className="text-muted-foreground text-xs">-</span>;
+    return compact ? null : <span className="t-helper">-</span>;
   }
 
   if (!job.enrichmentStatus) {
@@ -416,7 +416,7 @@ function CdcEnrichmentCell({ job, onTrigger, onRestart, onCancel, compact }: { j
             />
           </div>
         </button>
-        <div className="text-[10px] text-muted-foreground mt-0.5">
+        <div className="t-helper mt-0.5">
           {job.enrichmentProcessed} / {job.enrichmentTotal} profiles
           {job.enrichmentErrors > 0 && ` (${job.enrichmentErrors} errors)`}
         </div>
@@ -501,7 +501,7 @@ function CdcEnrichmentCell({ job, onTrigger, onRestart, onCancel, compact }: { j
     );
   }
 
-  return <span className="text-muted-foreground text-xs">-</span>;
+  return <span className="t-helper">-</span>;
 }
 
 function friendlyDeleteError(msg: string): string {
@@ -704,10 +704,10 @@ function CdcSyncSection() {
                   <TableCell className="hidden sm:table-cell" data-testid={`text-cdc-clinics-${job.id}`}>
                     {job.clinicsProcessed.toLocaleString()}
                   </TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                  <TableCell className="t-helper hidden md:table-cell">
                     {formatDateTime(job.startedAt)}
                   </TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                  <TableCell className="t-helper hidden md:table-cell">
                     {formatDateTime(job.completedAt)}
                   </TableCell>
                   <TableCell className="min-w-0 px-2 sm:px-4">
@@ -793,10 +793,10 @@ function CdcSyncSection() {
                         <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                    <TableCell className="t-helper hidden md:table-cell">
                       {job.enrichmentStatus && job.enrichmentStatus !== "PENDING" ? formatDateTime(job.startedAt) : "-"}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                    <TableCell className="t-helper hidden md:table-cell">
                       {job.enrichmentStatus === "COMPLETED" ? formatDateTime(job.completedAt) : "-"}
                     </TableCell>
                     <TableCell className="min-w-0 px-2 sm:px-4" data-testid={`cell-enrichment-status-${job.id}`}>
@@ -869,7 +869,7 @@ function SyncProgressBar({ progress }: { progress: SyncProgress }) {
         />
       </div>
       {!isFetchingList && (
-        <div className="text-[10px] text-muted-foreground mt-0.5">
+        <div className="t-helper mt-0.5">
           {progress.processed} / {progress.total} profiles
         </div>
       )}
@@ -1166,10 +1166,10 @@ function ScraperTypeSection({
                     <TableCell className="hidden sm:table-cell" data-testid={`text-total-profiles-${item.providerId}`}>
                       {item.totalProfiles}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground" data-testid={`text-started-${item.providerId}`}>
+                    <TableCell className="t-helper hidden md:table-cell" data-testid={`text-started-${item.providerId}`}>
                       {formatDateTime(item.lastSyncStartedAt)}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground" data-testid={`text-completed-${item.providerId}`}>
+                    <TableCell className="t-helper hidden md:table-cell" data-testid={`text-completed-${item.providerId}`}>
                       {/* Show lastSyncAt (actual last success), falling back to lastSyncEndedAt if completed recently */}
                       {formatDateTime(item.lastSyncAt || item.lastSyncEndedAt)}
                     </TableCell>
@@ -1291,8 +1291,8 @@ export default function ScrapersSummaryPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-3xl font-heading text-primary" data-testid="heading-scrapers-summary">Scrapers</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="font-display t-page-title text-primary" data-testid="heading-scrapers-summary">Scrapers</h1>
+          <p className="t-helper mt-1">
             Nightly sync runs at 2:00 AM ET
             {data?.lastNightlySyncAt && (
               <> · Last run: {formatDateTime(data.lastNightlySyncAt)}</>
@@ -1305,49 +1305,49 @@ export default function ScrapersSummaryPage() {
         <Card>
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-providers">{totalProviders}</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">Scrapers Configured</div>
+            <div className="t-helper leading-tight">Scrapers Configured</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-clinics">{totalClinics.toLocaleString()}</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">IVF Clinics</div>
+            <div className="t-helper leading-tight">IVF Clinics</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-egg-donors">{eggDonorTotal.toLocaleString()}</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">Egg Donors</div>
+            <div className="t-helper leading-tight">Egg Donors</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-surrogates">{surrogateTotal.toLocaleString()}</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">Surrogates</div>
+            <div className="t-helper leading-tight">Surrogates</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1" data-testid="text-total-sperm-donors">{spermDonorTotal.toLocaleString()}</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">Sperm Donors</div>
+            <div className="t-helper leading-tight">Sperm Donors</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1 text-[hsl(var(--brand-success))]" data-testid="text-successful-count">{successCount}</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">Successful (25h)</div>
+            <div className="t-helper leading-tight">Successful (25h)</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1 text-[hsl(var(--brand-warning))]" data-testid="text-overdue-count">{overdueCount}</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">Overdue</div>
+            <div className="t-helper leading-tight">Overdue</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
             <div className="text-xl font-heading leading-none mb-1 text-destructive" data-testid="text-failed-count">{failedCount}</div>
-            <div className="text-[11px] text-muted-foreground leading-tight">Failed / Partial</div>
+            <div className="t-helper leading-tight">Failed / Partial</div>
           </CardContent>
         </Card>
       </div>

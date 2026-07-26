@@ -84,7 +84,7 @@ export function ProviderAutoFeaturesCard({
           <p className="text-sm font-medium" style={{ fontFamily: "var(--font-display)" }}>
             Automation
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="t-helper">
             GoStork-only controls. Flip per provider to roll out automations safely.
           </p>
         </div>
@@ -92,7 +92,7 @@ export function ProviderAutoFeaturesCard({
           <div key={def.key} className="flex items-center justify-between border-t border-border pt-3">
             <div className="pr-4">
               <p className="text-sm">{def.label}</p>
-              <p className="text-xs text-muted-foreground">{def.description}</p>
+              <p className="t-helper">{def.description}</p>
             </div>
             <Switch
               checked={flags[def.key] === true}

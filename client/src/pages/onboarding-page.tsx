@@ -481,7 +481,7 @@ export default function OnboardingPage() {
               <p className="text-sm">{AI_INTRO_SERVICE_CONFIG[visibleServices[0]]?.replyText || "Tell me more!"}</p>
             </div>
           </div>
-          <p className="text-center text-muted-foreground text-xs leading-relaxed max-w-sm mx-auto">
+          <p className="t-helper text-center leading-relaxed max-w-sm mx-auto">
             Our AI is not perfect yet. It can have some glitches.
           </p>
         </div>
@@ -525,7 +525,7 @@ export default function OnboardingPage() {
           >
             Building a family is a deeply personal journey.
           </h1>
-          <p className="text-muted-foreground text-base">
+          <p className="t-helper">
             We're here to guide you every step of the way.
           </p>
 
@@ -692,7 +692,7 @@ export default function OnboardingPage() {
             )}
           </button>
           {step === ACCOUNT_STEP && isRegistration && (
-            <p className="text-center text-sm text-muted-foreground mt-4">
+            <p className="t-helper text-center mt-4">
               Already have an account?{" "}
               <button
                 type="button"
@@ -742,7 +742,7 @@ function StepAccount({
       >
         Create your account
       </h1>
-      <p className="text-muted-foreground mb-8 text-sm">Enter your email and choose a password to get started.</p>
+      <p className="t-helper mb-8">Enter your email and choose a password to get started.</p>
       <div className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Email</label>
@@ -848,7 +848,7 @@ function StepGoals({ goals, onChange }: { goals: string[]; onChange: (g: string[
       >
         What are you looking for?
       </h1>
-      <p className="text-muted-foreground mb-8 text-sm -mt-6">Select all that apply</p>
+      <p className="t-helper mb-8 -mt-6">Select all that apply</p>
       <div className="space-y-3">
         {GOALS.map(goal => (
           <PillButton
@@ -885,7 +885,7 @@ function StepName({
       >
         What's your name?
       </h1>
-      <p className="text-muted-foreground mb-8 text-sm">Please use your real name - providers will see it when you connect</p>
+      <p className="t-helper mb-8">Please use your real name - providers will see it when you connect</p>
       <div className="space-y-6">
         <input
           type="text"
@@ -970,7 +970,7 @@ function StepPhone({
       >
         What's your phone number?
       </h1>
-      <p className="text-muted-foreground mb-8 text-sm">
+      <p className="t-helper mb-8">
         We will send you a verification code on this number. We make sure our users are real people
       </p>
 

@@ -163,13 +163,13 @@ export function ScheduleCallSection({
       <div className="rounded-lg border p-3 space-y-3" style={{ background: "hsl(var(--muted) / 0.4)" }}>
         {/* Host picker - coordinators/doctors only (schedulers never host) */}
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">
+          <label className="t-helper">
             {isMatch ? "Coordinator hosting the call" : "Doctor hosting the call"}
           </label>
           {hostsQuery.isLoading ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading team calendars...</div>
+            <div className="t-helper flex items-center gap-2 py-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading team calendars...</div>
           ) : hosts.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-1.5">No coordinator or doctor has a booking calendar set up yet. Ask them to connect one in Settings.</p>
+            <p className="t-helper py-1.5">No coordinator or doctor has a booking calendar set up yet. Ask them to connect one in Settings.</p>
           ) : (
             <select
               value={hostUserId}
@@ -190,7 +190,7 @@ export function ScheduleCallSection({
             options (across days) that match the surrogate's availability. */}
         {selectedHost && (
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">
+            <label className="t-helper">
               Pick up to 6 time options on {selectedHost.name.split(" ")[0]}'s calendar ({selectedHost.meetingDuration} min)
             </label>
             <div className="rounded-md border bg-background flex justify-center">
@@ -203,9 +203,9 @@ export function ScheduleCallSection({
               />
             </div>
             {slotsQuery.isLoading ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground py-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking availability...</div>
+              <div className="t-helper flex items-center gap-2 py-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking availability...</div>
             ) : slots.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-1.5">No open slots that day - try another date.</p>
+              <p className="t-helper py-1.5">No open slots that day - try another date.</p>
             ) : (
               <div className="grid grid-cols-3 gap-1.5">
                 {slots.map(t => (
@@ -239,8 +239,8 @@ export function ScheduleCallSection({
 
         {/* Attendees */}
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Users className="w-3 h-3" /> Attendees</label>
-          <p className="text-xs text-muted-foreground">
+          <label className="t-helper flex items-center gap-1"><Users className="w-3 h-3" /> Attendees</label>
+          <p className="t-helper">
             {parentName || "The parent"} and their account members are invited automatically once they pick a time.
           </p>
           <div className="grid grid-cols-2 gap-1.5">
@@ -287,7 +287,7 @@ export function ScheduleCallSection({
             <button
               type="button"
               onClick={() => { onSendPickATime({ slug: selectedHost.slug, name: selectedHost.name }); onClose(); }}
-              className="text-xs text-muted-foreground hover:underline"
+              className="t-helper hover:underline"
               data-testid="schedule-call-pick-a-time"
             >
               Or let the parent pick any time

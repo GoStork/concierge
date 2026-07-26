@@ -389,7 +389,7 @@ export function ChatInputBar({
  */
 export function WhisperDisclaimer() {
   return (
-    <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
+    <div className="t-helper flex items-center gap-1.5 mb-2">
       <Shield className="w-3 h-3" />
       <span>Your answer will be relayed to the parent by the AI concierge</span>
     </div>
@@ -401,7 +401,7 @@ export function WhisperDisclaimer() {
  */
 export function ExpertSenderLabel({ adminName }: { adminName: string }) {
   return (
-    <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
+    <div className="t-helper flex items-center gap-1.5 mb-2">
       <Headphones className="w-3 h-3" />
       <span>Sending as <strong className="text-foreground">GoStork Expert</strong> - {adminName}</span>
     </div>

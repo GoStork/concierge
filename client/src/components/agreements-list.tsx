@@ -87,7 +87,7 @@ export function AgreementRows({
     return (
       <div className="py-10 text-center space-y-2">
         <FileSignature className="w-8 h-8 mx-auto text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">{emptyText}</p>
+        <p className="t-helper">{emptyText}</p>
       </div>
     );
   }
@@ -98,7 +98,7 @@ export function AgreementRows({
         <div key={item.id} className="flex items-center gap-4 py-3" data-testid={`agreement-row-${item.id}`}>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{item.title}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="t-helper">
               {item.documentType} - {new Date(item.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
               {item.signedAt && ` - Signed ${new Date(item.signedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
             </p>

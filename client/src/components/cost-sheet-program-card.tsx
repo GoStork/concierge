@@ -70,7 +70,7 @@ export function CostSheetProgramCard({
             {program.programName}
           </h3>
           {program.subTypeLabel && (
-            <p className="text-xs text-muted-foreground mt-0.5">{program.subTypeLabel}</p>
+            <p className="t-helper mt-0.5">{program.subTypeLabel}</p>
           )}
           <div className="flex items-center justify-between gap-3 mt-3">
             <div className="flex items-center gap-2 min-w-0">

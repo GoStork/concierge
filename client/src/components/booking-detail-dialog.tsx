@@ -199,7 +199,7 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
             <div className="flex items-center gap-2 text-sm">
               <Crown className="w-4 h-4 text-primary" />
               <span>{booking.providerUser.name || booking.providerUser.email}</span>
-              <span className="text-xs text-muted-foreground">(Host)</span>
+              <span className="t-helper">(Host)</span>
             </div>
           )}
           {(() => {
@@ -229,7 +229,7 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
             </div>
           )}
           {booking.notes && (
-            <p className="text-sm text-muted-foreground bg-secondary/30 rounded-[var(--radius)] p-2">{booking.notes}</p>
+            <p className="t-helper bg-secondary/30 rounded-[var(--radius)] p-2">{booking.notes}</p>
           )}
           <div className="flex items-center gap-2">
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-ui ${
@@ -282,29 +282,29 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
 
           {wasCompleted && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-sm font-ui text-muted-foreground">Meeting completed</p>
-              <p className="text-xs text-muted-foreground mt-1">Both parties joined this consultation.</p>
+              <p className="t-helper font-ui">Meeting completed</p>
+              <p className="t-helper mt-1">Both parties joined this consultation.</p>
             </div>
           )}
 
           {isParentNoShow && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-sm font-ui text-muted-foreground">Parent no show</p>
-              <p className="text-xs text-muted-foreground mt-1">The provider joined the meeting room but the parent did not.</p>
+              <p className="t-helper font-ui">Parent no show</p>
+              <p className="t-helper mt-1">The provider joined the meeting room but the parent did not.</p>
             </div>
           )}
 
           {isProviderNoShow && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-sm font-ui text-muted-foreground">Provider no show</p>
-              <p className="text-xs text-muted-foreground mt-1">The parent joined the meeting room but the provider did not.</p>
+              <p className="t-helper font-ui">Provider no show</p>
+              <p className="t-helper mt-1">The parent joined the meeting room but the provider did not.</p>
             </div>
           )}
 
           {isNoShow && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-sm font-ui text-muted-foreground">No show</p>
-              <p className="text-xs text-muted-foreground mt-1">The scheduled time has passed and no one joined the meeting room.</p>
+              <p className="t-helper font-ui">No show</p>
+              <p className="t-helper mt-1">The scheduled time has passed and no one joined the meeting room.</p>
             </div>
           )}
 

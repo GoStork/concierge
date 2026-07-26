@@ -540,7 +540,7 @@ export function InvoiceSidebarSection({
           )}
 
           {activeQuote && (
-            <div className="text-xs text-muted-foreground">
+            <div className="t-helper">
               Active quote: <span className="font-medium text-foreground">{formatCents(activeQuote.totalCostCents)}</span>
             </div>
           )}
@@ -635,7 +635,7 @@ export function InvoiceSidebarSection({
           {/* Invoice preview - itemized lines, sub-total, GoStork fee, total */}
           {activeQuote && hasUsableLines && (
             <div className="rounded-md border p-2.5 text-xs space-y-1" style={{ background: "hsl(var(--background))" }}>
-              <p className="font-medium text-muted-foreground uppercase tracking-wide text-[10px]">Invoice Preview</p>
+              <p className="t-micro-label">Invoice Preview</p>
               {lineItems
                 .filter(li => parseFloat(li.amountInput) > 0)
                 .map((li, idx) => (

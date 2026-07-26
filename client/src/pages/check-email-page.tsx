@@ -15,7 +15,7 @@ export default function CheckEmailPage() {
             <Mail className="w-10 h-10 text-primary" />
           </div>
         </div>
-        <h1 className="font-display text-3xl font-heading text-primary" data-testid="text-page-title">
+        <h1 className="font-display t-page-title text-primary" data-testid="text-page-title">
           Check your email
         </h1>
         <div className="space-y-2 text-muted-foreground">

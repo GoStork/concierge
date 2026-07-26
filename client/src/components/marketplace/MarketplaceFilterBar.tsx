@@ -1721,7 +1721,7 @@ export function MarketplaceFilterBar({
           <DrawerHeaderActions title="Your IVF" onClose={() => setIvfPatientDrawerOpen(false)} />
           <div className="px-6 pb-6 space-y-4 max-h-[70vh] overflow-y-auto">
             <div className="space-y-2">
-              <p className="text-xs font-ui text-muted-foreground">Egg source</p>
+              <p className="t-helper font-ui">Egg source</p>
               {EGG_SOURCE_OPTIONS.map((opt) => (
                 <Button key={opt.value} variant={ivfEggSource === opt.value ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfEggSourceChange?.(ivfEggSource === opt.value ? "" : opt.value)} data-testid={`ivf-egg-source-${opt.value}`}>
                   {opt.label}
@@ -1729,7 +1729,7 @@ export function MarketplaceFilterBar({
               ))}
             </div>
             <div className={`space-y-2 ${ivfAgeDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-              <p className="text-xs font-ui text-muted-foreground">Your age</p>
+              <p className="t-helper font-ui">Your age</p>
               {AGE_GROUP_OPTIONS.map((opt) => (
                 <Button key={opt.value} variant={ivfAgeGroup === opt.value ? "default" : "outline"} className="w-full justify-start" disabled={ivfAgeDisabled} onClick={() => onIvfAgeGroupChange?.(ivfAgeGroup === opt.value ? "" : opt.value)} data-testid={`ivf-age-${opt.value}`}>
                   {opt.label}
@@ -1737,7 +1737,7 @@ export function MarketplaceFilterBar({
               ))}
             </div>
             <div className="space-y-2">
-              <p className="text-xs font-ui text-muted-foreground">IVF history</p>
+              <p className="t-helper font-ui">IVF history</p>
               {IVF_HISTORY_OPTIONS.map((opt) => (
                 <Button key={opt.value} variant={ivfIsNewPatient === opt.value ? "default" : "outline"} className="w-full justify-start" onClick={() => onIvfIsNewPatientChange?.(ivfIsNewPatient === opt.value ? "" : opt.value)} data-testid={`ivf-history-${opt.value}`}>
                   {opt.label}
@@ -2054,7 +2054,7 @@ export function MarketplaceFilterBar({
         <PopoverContent className="w-60 p-3" align="start">
           <div className="space-y-3">
             <div className="space-y-1">
-              <p className="text-xs font-ui text-muted-foreground">Egg source</p>
+              <p className="t-helper font-ui">Egg source</p>
               {EGG_SOURCE_OPTIONS.map((opt) => (
                 <Button key={opt.value} variant={ivfEggSource === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => onIvfEggSourceChange?.(ivfEggSource === opt.value ? "" : opt.value)} data-testid={`ivf-egg-source-${opt.value}`}>
                   {opt.label}
@@ -2062,7 +2062,7 @@ export function MarketplaceFilterBar({
               ))}
             </div>
             <div className={`space-y-1 ${ivfAgeDisabled ? "opacity-50 pointer-events-none" : ""}`}>
-              <p className="text-xs font-ui text-muted-foreground">Your age</p>
+              <p className="t-helper font-ui">Your age</p>
               {AGE_GROUP_OPTIONS.map((opt) => (
                 <Button key={opt.value} variant={ivfAgeGroup === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" disabled={ivfAgeDisabled} onClick={() => onIvfAgeGroupChange?.(ivfAgeGroup === opt.value ? "" : opt.value)} data-testid={`ivf-age-${opt.value}`}>
                   {opt.label}
@@ -2070,7 +2070,7 @@ export function MarketplaceFilterBar({
               ))}
             </div>
             <div className="space-y-1">
-              <p className="text-xs font-ui text-muted-foreground">IVF history</p>
+              <p className="t-helper font-ui">IVF history</p>
               {IVF_HISTORY_OPTIONS.map((opt) => (
                 <Button key={opt.value} variant={ivfIsNewPatient === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => onIvfIsNewPatientChange?.(ivfIsNewPatient === opt.value ? "" : opt.value)} data-testid={`ivf-history-${opt.value}`}>
                   {opt.label}
@@ -2511,7 +2511,7 @@ export function MarketplaceFilterBar({
             <Button
               variant="ghost"
               size="sm"
-              className="text-xs h-6 text-muted-foreground"
+              className="t-helper h-6"
               onClick={() => dispatch(clearFilters())}
               data-testid="button-clear-all-mobile"
             >
@@ -2567,7 +2567,7 @@ export function MarketplaceFilterBar({
           <Button
             variant="ghost"
             size="sm"
-            className="text-xs text-muted-foreground shrink-0"
+            className="t-helper shrink-0"
             onClick={() => dispatch(clearFilters())}
             data-testid="button-clear-all-desktop"
           >

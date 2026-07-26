@@ -181,7 +181,7 @@ export function MarketplaceFilterDrawer({ open, onClose, providerType, initialTa
                   variant="ghost"
                   size="sm"
                   onClick={() => dispatch(clearFilters())}
-                  className="text-xs font-ui text-muted-foreground"
+                  className="t-helper font-ui"
                   data-testid="button-clear-filters"
                 >
                   <RotateCcw className="w-3 h-3 mr-1" />

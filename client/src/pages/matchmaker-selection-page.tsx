@@ -110,7 +110,7 @@ export default function MatchmakerSelectionPage() {
           >
             Connecting you with {transitionMatchmaker.name}...
           </h2>
-          <p className="text-muted-foreground text-sm">{transitionMatchmaker.title}</p>
+          <p className="t-helper">{transitionMatchmaker.title}</p>
           <Loader2 className="w-6 h-6 animate-spin text-primary mt-6" />
         </div>
         <style>{`
@@ -136,7 +136,7 @@ export default function MatchmakerSelectionPage() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center" data-testid="matchmaker-empty">
         <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
         <h2 className="font-display text-xl font-semibold mb-2">AI Concierges Coming Soon</h2>
-        <p className="text-muted-foreground text-sm max-w-md">
+        <p className="t-helper max-w-md">
           Our AI Concierges are currently being set up. Please check back shortly.
         </p>
       </div>

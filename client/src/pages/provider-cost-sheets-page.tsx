@@ -70,17 +70,17 @@ export default function ProviderCostSheetsPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <div>
         <h1 className="text-2xl font-heading font-bold">Cost Sheets</h1>
-        <p className="text-sm text-muted-foreground mt-1">Every pricing quote you've shared with parents</p>
+        <p className="t-helper mt-1">Every pricing quote you've shared with parents</p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Active Cost Sheets</p>
+          <p className="t-micro-label">Active Cost Sheets</p>
           <p className="text-xl font-heading font-bold">{currentCount}</p>
         </div>
         <div className="rounded-xl border p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Acknowledged by Parents</p>
+          <p className="t-micro-label">Acknowledged by Parents</p>
           <p className="text-xl font-heading font-bold">{acknowledgedCount}</p>
         </div>
       </div>
@@ -134,7 +134,7 @@ export default function ProviderCostSheetsPage() {
       ) : !filtered.length ? (
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <FileText className="w-8 h-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">{costSheets.length ? "No cost sheets match your filters" : "No cost sheets shared yet"}</p>
+          <p className="t-helper">{costSheets.length ? "No cost sheets match your filters" : "No cost sheets shared yet"}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -147,7 +147,7 @@ export default function ProviderCostSheetsPage() {
             >
               <div className="space-y-0.5 min-w-0">
                 <p className="font-semibold truncate">{cs.parentName}</p>
-                <p className="text-sm text-muted-foreground">
+                <p className="t-helper">
                   {new Date(cs.createdAt).toLocaleDateString()}
                   {cs.parentAcknowledgedAt && (
                     <span className="inline-flex items-center gap-1 ml-2" style={{ color: "hsl(var(--brand-success))" }}>
@@ -155,11 +155,11 @@ export default function ProviderCostSheetsPage() {
                     </span>
                   )}
                 </p>
-                {cs.notes && <p className="text-xs text-muted-foreground italic truncate">{cs.notes}</p>}
+                {cs.notes && <p className="t-helper italic truncate">{cs.notes}</p>}
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 {cs.supersededAt ? (
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Superseded</span>
+                  <span className="t-micro-label">Superseded</span>
                 ) : (
                   <span className="text-[10px] uppercase tracking-wide font-medium" style={{ color: "hsl(var(--brand-success))" }}>Current</span>
                 )}

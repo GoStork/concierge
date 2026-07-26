@@ -200,7 +200,7 @@ export function InlineBookingNotification({
                   <Check className="w-6 h-6 text-muted-foreground" />
                 </div>
                 <p className="font-bold text-sm">Meeting Completed</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
                   Completed
                 </span>
               </>
@@ -210,7 +210,7 @@ export function InlineBookingNotification({
                   <Clock className="w-6 h-6 text-muted-foreground" />
                 </div>
                 <p className="font-bold text-sm">Parent No Show</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
                   Parent No Show
                 </span>
               </>
@@ -220,7 +220,7 @@ export function InlineBookingNotification({
                   <Clock className="w-6 h-6 text-muted-foreground" />
                 </div>
                 <p className="font-bold text-sm">Provider No Show</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
                   Provider No Show
                 </span>
               </>
@@ -230,7 +230,7 @@ export function InlineBookingNotification({
                   <Clock className="w-6 h-6 text-muted-foreground" />
                 </div>
                 <p className="font-bold text-sm">No Show</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
                   No Show
                 </span>
               </>
@@ -250,7 +250,7 @@ export function InlineBookingNotification({
                   <CalendarClock className="w-6 h-6 text-muted-foreground" />
                 </div>
                 <p className="font-bold text-sm">Rescheduled</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
                   Rescheduled
                 </span>
               </>
@@ -316,7 +316,7 @@ export function InlineBookingNotification({
                   )}
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate">{counterpartyName}</p>
-                    {counterpartySubtitle && <p className="text-xs text-muted-foreground truncate">{counterpartySubtitle}</p>}
+                    {counterpartySubtitle && <p className="t-helper truncate">{counterpartySubtitle}</p>}
                   </div>
                 </div>
               );
@@ -342,7 +342,7 @@ export function InlineBookingNotification({
                   <Crown className="w-3 h-3" style={{ color: brandColor }} />
                 </div>
                 <span className="font-medium text-xs">{isAdminHost ? adminName : providerName}</span>
-                <span className="text-xs text-muted-foreground">{isAdminHost ? "(GoStork - Host)" : "(Host)"}</span>
+                <span className="t-helper">{isAdminHost ? "(GoStork - Host)" : "(Host)"}</span>
               </div>
               {attendees.map((a: any) => (
                 <div key={a.id || a.email} className="flex items-center gap-2 text-sm pl-1">
@@ -350,7 +350,7 @@ export function InlineBookingNotification({
                     <Check className="w-3 h-3 text-primary" />
                   </div>
                   <span className="font-medium text-xs">{a.name || a.email}</span>
-                  {a.email && a.name && <span className="text-xs text-muted-foreground">({a.email})</span>}
+                  {a.email && a.name && <span className="t-helper">({a.email})</span>}
                 </div>
               ))}
             </div>
@@ -379,29 +379,29 @@ export function InlineBookingNotification({
 
           {wasCompleted && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-muted-foreground">Meeting completed</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Both parties joined this consultation.</p>
+              <p className="t-helper">Meeting completed</p>
+              <p className="t-helper mt-0.5">Both parties joined this consultation.</p>
             </div>
           )}
 
           {isParentNoShow && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-muted-foreground">Parent no show</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">The provider joined the meeting room but the parent did not.</p>
+              <p className="t-helper">Parent no show</p>
+              <p className="t-helper mt-0.5">The provider joined the meeting room but the parent did not.</p>
             </div>
           )}
 
           {isProviderNoShow && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-muted-foreground">Provider no show</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">The parent joined the meeting room but the provider did not.</p>
+              <p className="t-helper">Provider no show</p>
+              <p className="t-helper mt-0.5">The parent joined the meeting room but the provider did not.</p>
             </div>
           )}
 
           {isNoShow && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-muted-foreground">No show</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">The scheduled time has passed and no one joined the meeting room.</p>
+              <p className="t-helper">No show</p>
+              <p className="t-helper mt-0.5">The scheduled time has passed and no one joined the meeting room.</p>
             </div>
           )}
 
@@ -428,8 +428,8 @@ export function InlineBookingNotification({
 
           {isRescheduled && (
             <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-muted-foreground">Meeting rescheduled</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">This meeting was rescheduled. A new booking has been created.</p>
+              <p className="t-helper">Meeting rescheduled</p>
+              <p className="t-helper mt-0.5">This meeting was rescheduled. A new booking has been created.</p>
             </div>
           )}
 
