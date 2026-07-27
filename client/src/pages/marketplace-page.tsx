@@ -45,7 +45,6 @@ import {
   type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
 import { CompareDrawer, COMPARE_MAX, toggleCompareSelection } from "@/components/marketplace/compare-drawer";
-import { profileContentUpdatedAt } from "@/lib/profile-freshness";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
 
@@ -2194,7 +2193,7 @@ export default function MarketplacePage() {
           : mapDatabaseDonorToSwipeProfile(d);
     return compareSource
       .filter((d: any) => favoritedDonorIdsForCompare.includes(d.id))
-      .map((d: any) => ({ ...mapOne(d), id: d.id, providerId: d.providerId, updatedAt: profileContentUpdatedAt(d) }));
+      .map((d: any) => ({ ...mapOne(d), id: d.id, providerId: d.providerId }));
   }, [compareKind, compareSource, favoritedDonorIdsForCompare]);
   const toggleCompare = useCallback((id: string) => {
     setCompareIds((prev) => toggleCompareSelection(prev, id));

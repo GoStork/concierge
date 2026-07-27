@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { formatRelativeTime } from "@/lib/format-relative-time";
 import { formatStatusLabel } from "@/lib/format-label";
 import { buildTitle, type SwipeDeckProfile } from "@/components/marketplace/swipe-mappers";
 
@@ -51,7 +50,6 @@ export function rowsFor(kind: CompareKind): { group: string; rows: Row[] }[] {
   const decide: Row[] = [
     ...cost,
     { label: "Availability", get: (p) => formatStatusLabel(text(p.donorStatus)) || (p.available === false ? "Not available" : "Available") },
-    { label: "Last updated", get: (p) => formatRelativeTime(p.updatedAt) },
     { label: "Age", get: (p) => (p.age ? `${p.age}` : null) },
     { label: "Location", get: (p) => formatLocationDisplay(text(p.location)) || text(p.location) },
   ];

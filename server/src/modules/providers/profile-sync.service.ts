@@ -15,6 +15,7 @@ import {
 } from "./captcha-solver";
 import { encryptNullable, decryptNullable } from "../../lib/encrypt";
 import { applyAsrmGate } from "./asrm";
+import { dedupeEntityPhotos } from "./photo-dedup";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -1566,7 +1567,10 @@ function isValidImageUrl(url: string): boolean {
 }
 
 function extractPhotosArray(entity: any): string[] {
-  const filterValid = (arr: any[]) => arr.filter((p: any) => typeof p === "string" && p.length > 0 && isValidImageUrl(p));
+  // Distinct URLs only: agencies repeat the primary photo into their gallery
+  // list, and without this the repeat is stored and counted as a second photo.
+  const filterValid = (arr: any[]) =>
+    Array.from(new Set(arr.filter((p: any): p is string => typeof p === "string" && p.length > 0 && isValidImageUrl(p))));
   const toArray = (val: any): any[] | null => {
     if (Array.isArray(val) && val.length > 0) return val;
     if (typeof val === "string" && val.length > 0) return [val];
@@ -1768,16 +1772,22 @@ async function persistPhotoUrls(
     }
   }
 
+  // De-duplicating AFTER migration (not before) is what makes this catch the
+  // agency's own repeats: persisted object names are the md5 of the bytes, so
+  // two different source URLs serving identical bytes converge on one GCS URL
+  // here. Same-picture-different-encoding still gets through - that is what the
+  // perceptual pass in photo-dedup.ts is for.
   const migrateArray = async (arr: any[]): Promise<string[]> => {
     const out: string[] = [];
+    const seen = new Set<string>();
     for (const item of arr) {
       if (typeof item !== "string" || !item) continue;
-      if (isAlreadyPersisted(item)) {
-        out.push(item);
-        continue;
-      }
-      const migrated = await persistSinglePhoto(item, providerId, storageService, cookies);
-      if (migrated) out.push(migrated);
+      const persisted = isAlreadyPersisted(item)
+        ? item
+        : await persistSinglePhoto(item, providerId, storageService, cookies);
+      if (!persisted || seen.has(persisted)) continue;
+      seen.add(persisted);
+      out.push(persisted);
     }
     return out;
   };
@@ -1794,6 +1804,14 @@ async function persistPhotoUrls(
       if (Array.isArray(pd[key])) {
         pd[key] = await migrateArray(pd[key]);
       }
+    }
+    // _sections.Photos is the same gallery again, and was the one list left
+    // holding raw source URLs. Those are presigned and expire within a day, so
+    // leaving them there both broke the images and made them read as extra
+    // photos rather than copies of the ones we already stored.
+    const sections = pd["_sections"];
+    if (sections && typeof sections === "object" && Array.isArray(sections["Photos"])) {
+      sections["Photos"] = await migrateArray(sections["Photos"]);
     }
   }
 }
@@ -1927,6 +1945,12 @@ async function upsertEggDonor(
     }
   }
   await persistPhotoUrls(donor, providerId, storageService || null, cookies);
+  // Runs on every sync, not just the first: the agency's list is the source of
+  // the duplicates, so a re-scrape would otherwise re-add the copy we dropped.
+  // A hand-curated gallery is left exactly as the admin arranged it.
+  if (!(existing?.manuallyEditedFields || []).includes("photos")) {
+    await dedupeEntityPhotos(prisma, donor, storageService || null);
+  }
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
   const normalizedProfile = preserveExistingSections(
@@ -2118,6 +2142,9 @@ async function upsertSurrogate(
     }
   }
   await persistPhotoUrls(surrogate, providerId, storageService || null, cookies);
+  if (!(existing?.manuallyEditedFields || []).includes("photos")) {
+    await dedupeEntityPhotos(prisma, surrogate, storageService || null);
+  }
 
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];
@@ -2255,6 +2282,9 @@ async function upsertSpermDonor(
     }
   }
   await persistPhotoUrls(donor, providerId, storageService || null, cookies);
+  if (!(existing?.manuallyEditedFields || []).includes("photos")) {
+    await dedupeEntityPhotos(prisma, donor, storageService || null);
+  }
 
   const isNew = !existing;
   const mf = existing?.manuallyEditedFields || [];

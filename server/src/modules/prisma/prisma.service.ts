@@ -315,6 +315,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.ipFormReminder;
   }
 
+  get photoFingerprint() {
+    return prisma.photoFingerprint;
+  }
+
   get $transaction() {
     return prisma.$transaction.bind(prisma);
   }

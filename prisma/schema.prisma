@@ -2677,3 +2677,24 @@ model IpFormReminder {
   @@unique([responseId, reminderType, channel])
   @@index([responseId])
 }
+
+// One row per stored photo, keyed by the persisted URL. Holds a 64-bit dHash
+// (as 16 hex chars) so the sync can tell that two different files are the same
+// picture - agencies routinely carry one photo at two resolutions, which the
+// md5-named GCS objects cannot collapse because the bytes genuinely differ.
+//
+// Cached rather than computed per sync: fingerprinting means downloading the
+// image, and a profile's photos almost never change. `failed` marks an object
+// we could not read or decode so a broken file is not re-fetched on every run.
+model PhotoFingerprint {
+  url       String   @id
+  phash     String? // 16 hex chars = 64-bit dHash; null when failed
+  width     Int?
+  height    Int?
+  bytes     Int?
+  failed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phash])
+}

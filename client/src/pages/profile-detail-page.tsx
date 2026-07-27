@@ -9,7 +9,7 @@ import { ProfileFitLine } from "@/components/profile-fit-line";
 import { ProfileQuote } from "@/components/profile-quote";
 import { sectionBand, BAND_LABEL, orderSectionsIntoBands } from "@/lib/profile-sections";
 import { resolveHeroSelection } from "@/lib/profile-hero";
-import { profileContentUpdatedAt } from "@/lib/profile-freshness";
+import { profileAddedLabel } from "@/lib/profile-freshness";
 import { ToggleLabel } from "@/components/ui/toggle-label";
 import { useConciergeName } from "@/hooks/use-concierge-name";
 import { safeCompensation } from "@/lib/compensation-sanity";
@@ -897,6 +897,17 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
     const pd = nestedPdPhotos && typeof nestedPdPhotos === "object" && nestedPdPhotos["_sections"]
       ? { ...rawPd, ...nestedPdPhotos, profileData: undefined }
       : rawPd;
+    // The profileData galleries ("Photos", "All Photos", _sections.Photos) are the
+    // SAME gallery as the photos[] column, in the agency's own URLs - photos[] is
+    // derived from them at sync time. Reading both double-listed every photo on a
+    // freshly-synced profile: the persisted GCS copy and the source S3 copy are
+    // different URL strings, so the de-dup below could not see they were one
+    // picture. (It looked self-correcting because the source URLs are presigned
+    // and 404 out of the gallery a day later.) When the column has photos it is
+    // authoritative; profileData is only the fallback for rows that never
+    // persisted one.
+    const galleryFromColumn = urls.length > 0 && Array.isArray(donor.photos) && donor.photos.length > 0;
+    if (galleryFromColumn) return urls;
     Object.entries(pd)
       .filter(([key]) => PHOTO_GALLERY_KEYS.has(key))
       .forEach(([, value]) => {
@@ -1017,8 +1028,15 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
       !sectionFieldKeys.has(key),
   );
 
-  // updatedAt moves on any write, including background jobs - see profileContentUpdatedAt.
-  const freshness = formatRelativeTime(profileContentUpdatedAt(donor as any));
+  // Parents never see a date here. A synced profile is re-checked nightly, so
+  // any "last checked" value reads the same across the catalogue - decoration
+  // next to the status badge, which is the claim that actually matters. And the
+  // marketplace card already settled this: its "Added <date>" chip is
+  // provider/admin-only, with parents explicitly excluded. Same rule, same
+  // wording, so the two surfaces agree.
+  const addedOn = (!user || user.roles?.includes("PARENT"))
+    ? null
+    : profileAddedLabel(donor as any);
 
 
   const headerMeta: string[] = [];
@@ -1090,7 +1108,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
               </h1>
               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                 <StatusBadge status={donor.status} />
-                {freshness && <span className="t-helper" data-testid="text-freshness-mobile">Updated {freshness}</span>}
+                {addedOn && <span className="t-helper" data-testid="text-added-on-mobile">{addedOn}</span>}
                 {donor.donorType && (
                   <Badge variant="outline" className="text-xs" data-testid="badge-donor-type-mobile">{donor.donorType}</Badge>
                 )}
@@ -1129,7 +1147,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
             <StatusBadge status={donor.status} />
             {/* Availability is the most perishable fact here; "AVAILABLE" alone
                 reads the same whether it was synced today or months ago. */}
-            {freshness && <span className="t-helper" data-testid="text-freshness">Updated {freshness}</span>}
+            {addedOn && <span className="t-helper" data-testid="text-added-on">{addedOn}</span>}
             {donor.isExperienced && (
               <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning)/0.3)]" data-testid="badge-experienced">
                 Experienced
