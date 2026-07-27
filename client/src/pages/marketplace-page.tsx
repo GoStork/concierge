@@ -44,7 +44,7 @@ import {
   mapDatabaseDonorToSwipeProfile, mapDatabaseSurrogateToSwipeProfile, mapDatabaseSpermDonorToSwipeProfile,
   type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
-import { CompareDrawer, COMPARE_MAX } from "@/components/marketplace/compare-drawer";
+import { CompareDrawer, COMPARE_MAX, toggleCompareSelection } from "@/components/marketplace/compare-drawer";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
 
@@ -2196,7 +2196,7 @@ export default function MarketplacePage() {
       .map((d: any) => ({ ...mapOne(d), id: d.id, providerId: d.providerId, updatedAt: d.updatedAt }));
   }, [compareKind, compareSource, favoritedDonorIdsForCompare]);
   const toggleCompare = useCallback((id: string) => {
-    setCompareIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : (prev.length >= COMPARE_MAX ? prev : [...prev, id]));
+    setCompareIds((prev) => toggleCompareSelection(prev, id));
   }, []);
 
   // What the deck actually renders, not how many the query returned - Discover

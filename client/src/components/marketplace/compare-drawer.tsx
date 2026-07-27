@@ -90,6 +90,20 @@ export function rowsFor(kind: CompareKind): { group: string; rows: Row[] }[] {
 
 export const COMPARE_MAX = 4;
 
+/**
+ * Add or drop one profile from the shortlist.
+ *
+ * The cap is a reading limit, not a technical one: five columns on a laptop
+ * makes every value too narrow to compare, which defeats the point. An attempt
+ * to exceed it is IGNORED rather than silently evicting an earlier pick - a
+ * parent who has chosen four and taps a fifth should keep the four they chose.
+ */
+export function toggleCompareSelection(selected: string[], id: string, max = COMPARE_MAX): string[] {
+  if (selected.includes(id)) return selected.filter((x) => x !== id);
+  if (selected.length >= max) return selected;
+  return [...selected, id];
+}
+
 export type CompareTableGroup = { group: string; rows: { label: string; values: (string | null)[] }[] };
 
 /**

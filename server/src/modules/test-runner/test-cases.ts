@@ -868,8 +868,9 @@ export const TEST_CASES: TestCaseDef[] = [
   // Every one is a RENDERING decision, the class of change no other suite here
   // can see: the concierge suites assert what Eva says and the journey suite
   // asserts what moves, so neither notices a profile quoting a sentence she
-  // never wrote or publishing a $300,000 compensation figure. Pure logic, no
-  // server, no DB.
+  // never wrote or publishing a $300,000 compensation figure. Pure logic and
+  // no server - PX-13 is the one exception, re-checking every quote already
+  // published against the database.
   {
     id: "PX-01", persona: "profile-ux",
     name: "PX-01: Cost labels read as English, and raw keys are flagged",
@@ -940,6 +941,30 @@ export const TEST_CASES: TestCaseDef[] = [
     id: "PX-12", persona: "profile-ux",
     name: "PX-12: The desktop hero never renders blank",
     desc: "An index past the end of a shrunken photo array is clamped, and a video hero whose URL is gone falls back to photos instead of rendering empty",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-13", persona: "profile-ux",
+    name: "PX-13: Every quote already published really is hers",
+    desc: "Re-checks all ~490 stored quotes against each person's own writing in the database - PX-08 tests the gate with fixtures, this tests the sentences the gate has already let through and parents are reading now",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-14", persona: "profile-ux",
+    name: "PX-14: The guards are applied where profiles are actually built",
+    desc: "PX-02 and PX-03 would still pass if a mapper stopped calling them, which is the likelier regression - so this drives real rows through mapDatabase*ToSwipeProfile and buildTitle, the bug that rendered every compare column as a bare '#'",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-15", persona: "profile-ux",
+    name: "PX-15: The compare shortlist behaves at its edges",
+    desc: "A fifth pick is refused without evicting an earlier one, picks toggle off, and removing at the cap still works",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-16", persona: "profile-ux",
+    name: "PX-16: The new surfaces are brand-managed, not hardcoded",
+    desc: "No Tailwind palette utilities, hex colours or font-family in the new profile components - the standing CLAUDE.md rule, invisible until someone restyles the brand and half a page ignores it",
     interestedServices: [], messageCount: 0,
   },
 ];

@@ -19,7 +19,13 @@
  *   npx tsx scripts/test-profile-ux.ts --id=PX-08
  */
 
-import { formatFieldLabel, looksLikeRawKey, isPlaceholderValue } from "../client/src/lib/format-label";
+import { readFileSync } from "node:fs";
+import "dotenv/config";
+import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import pg from "pg";
+
+import { formatFieldLabel, looksLikeRawKey, isPlaceholderValue, formatStatusLabel } from "../client/src/lib/format-label";
 import { safeCompensation, compensationWarning, isPlausibleCompensation } from "../client/src/lib/compensation-sanity";
 import { formatRelativeTime, isStale } from "../client/src/lib/format-relative-time";
 import { splitSharedItems, groupProgramFamilies, variantLabels } from "../client/src/lib/cost-program-family";
@@ -27,9 +33,13 @@ import { sectionBand, orderSectionsIntoBands, BAND_LABEL } from "../client/src/l
 import { resolveHeroSelection } from "../client/src/lib/profile-hero";
 import { describeRateDelta, RATE_TONE_CLASS } from "../client/src/lib/rate-delta";
 import { preferencesFromFilters, preferencesFromParentProfile } from "../client/src/hooks/use-parent-preferences";
-import { getMatchedPreferences } from "../client/src/components/marketplace/swipe-mappers";
-import { buildCompareTable, COMPARE_MAX } from "../client/src/components/marketplace/compare-drawer";
+import {
+  getMatchedPreferences, mapDatabaseDonorToSwipeProfile, mapDatabaseSurrogateToSwipeProfile,
+  mapDatabaseSpermDonorToSwipeProfile, buildTitle,
+} from "../client/src/components/marketplace/swipe-mappers";
+import { buildCompareTable, COMPARE_MAX, toggleCompareSelection } from "../client/src/components/marketplace/compare-drawer";
 import { collectOwnWords, validateQuote } from "../server/src/modules/providers/highlight-quote";
+import { profileDataToText } from "../server/src/modules/providers/profile-sync.service";
 import uiReducer, { toggleFavoriteDonor, passDonor } from "../client/src/store/uiSlice";
 
 const BASE = process.env.TEST_BASE_URL || "http://localhost:5001";
@@ -424,6 +434,168 @@ async function px12() {
     JSON.stringify(resolveHeroSelection({ video: false, idx: Number.NaN }, 3, null)));
 }
 
+
+// ─── PX-13: every quote we already published really is hers ──────────────────
+// The other quote case tests the gate with fixtures. This one tests the ~490
+// sentences that gate has ALREADY let through and that parents are reading
+// right now - a rule is only as good as the data it produced.
+async function px13() {
+  // Prisma 7 needs the pg adapter in a standalone script.
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
+  try {
+    const models: Array<["eggDonor" | "surrogate" | "spermDonor", string]> = [
+      ["eggDonor", "egg donor"], ["surrogate", "surrogate"], ["spermDonor", "sperm donor"],
+    ];
+    let checked = 0;
+    const notVerbatim: string[] = [];
+    const fragments: string[] = [];
+    const tooLong: string[] = [];
+
+    for (const [model, label] of models) {
+      const rows: any[] = await (prisma as any)[model].findMany({
+        where: { highlightQuote: { not: null } },
+        select: { id: true, highlightQuote: true, profileData: true },
+      });
+      for (const row of rows) {
+        checked++;
+        const quote = String(row.highlightQuote);
+        const source = collectOwnWords(row.profileData);
+        if (validateQuote(source, quote) !== quote) {
+          // Distinguish the two failure modes - they have different causes.
+          if (!/[.!?\u2026]["'\u201d\u2019)]?$/.test(quote.trim())) fragments.push(`${label} ${row.id}: ...${quote.slice(-45)}`);
+          else if (quote.length > 180) tooLong.push(`${label} ${row.id}: ${quote.length} chars`);
+          else notVerbatim.push(`${label} ${row.id}: ${quote.slice(0, 60)}`);
+        }
+      }
+    }
+
+    check(`there are published quotes to check (${checked})`, checked > 0, String(checked));
+    check("every published quote appears verbatim in her own writing",
+      notVerbatim.length === 0, notVerbatim.slice(0, 3).join(" ~ "));
+    check("no published quote trails off mid-sentence",
+      fragments.length === 0, fragments.slice(0, 3).join(" ~ "));
+    check("no published quote exceeds the length limit",
+      tooLong.length === 0, tooLong.slice(0, 3).join(" ~ "));
+  } finally {
+    await prisma.$disconnect();
+    await pool.end();
+  }
+}
+
+// ─── PX-14: the guards are applied where profiles are actually built ─────────
+// PX-02/PX-03 prove the helpers are correct. They would still pass if a mapper
+// stopped calling them - which is the likelier regression, since the helper is
+// stable and the mappers are edited constantly.
+async function px14() {
+  const donor = mapDatabaseDonorToSwipeProfile({
+    id: "d1", externalId: "EG-2429", providerId: "p1", age: 27,
+    donorCompensation: 300000, profileData: {},
+  } as any);
+  check("an absurd donor compensation does not reach the card",
+    !donor.donorCompensation, String(donor.donorCompensation));
+
+  const sane = mapDatabaseDonorToSwipeProfile({
+    id: "d2", externalId: "EG-2430", providerId: "p1", age: 27, donorCompensation: 12000, profileData: {},
+  } as any);
+  check("a plausible one does", Number(sane.donorCompensation) === 12000, String(sane.donorCompensation));
+
+  const surrogate = mapDatabaseSurrogateToSwipeProfile({
+    id: "s1", externalId: "SU-25996", providerId: "p1", age: 32,
+    baseCompensation: 75000, profileData: {},
+  } as any);
+  check("a legitimate six-figure surrogate fee survives the same path",
+    Number(surrogate.baseCompensation) === 75000, String(surrogate.baseCompensation));
+
+  const sperm = mapDatabaseSpermDonorToSwipeProfile({
+    id: "sp1", externalId: "SP-77", providerId: "p1", compensation: 120000, profileData: {},
+  } as any);
+  check("a surrogate-sized figure on a sperm donor is refused",
+    !sperm.donorCompensation, String(sperm.donorCompensation));
+
+  // Titles: the compare columns, the saved cards and the deck must agree, and
+  // they only do if they all go through buildTitle. They did not, briefly - the
+  // compare header had its own fallback and rendered every column as "#".
+  check("a surrogate with no name still gets a readable title",
+    buildTitle(surrogate) === "Surrogate #25996", buildTitle(surrogate));
+  check("a donor gets the donor wording", buildTitle(donor) === "Donor #2429", buildTitle(donor));
+  check("a profile with no externalId falls back to its id, never a bare #",
+    /#[0-9a-z]/i.test(buildTitle({ id: "abc12345-0000", providerType: "surrogate" } as any)),
+    buildTitle({ id: "abc12345-0000", providerType: "surrogate" } as any));
+
+  // Status prose, used by the comparison's Availability row.
+  check('"AVAILABLE" reads as prose', formatStatusLabel("AVAILABLE") === "Available", String(formatStatusLabel("AVAILABLE")));
+  check("an underscored status is split", formatStatusLabel("SOLD_OUT") === "Sold Out", String(formatStatusLabel("SOLD_OUT")));
+  check("a missing status says nothing", formatStatusLabel(null) === null && formatStatusLabel("") === null);
+
+  // The quote's source collector must not swallow a profile the embedding
+  // pipeline can read - if profileDataToText finds prose, so should we.
+  const profileData = { "Letter to Intended Parents": "I have wanted to do this since my sister struggled for years. It changed how I see family." };
+  check("the quote collector sees what the rest of the pipeline sees",
+    collectOwnWords(profileData).length > 0 && profileDataToText(profileData).length > 0);
+}
+
+// ─── PX-15: the compare shortlist behaves at its edges ───────────────────────
+async function px15() {
+  let sel: string[] = [];
+  sel = toggleCompareSelection(sel, "a");
+  sel = toggleCompareSelection(sel, "b");
+  check("picks accumulate in the order chosen", JSON.stringify(sel) === '["a","b"]', JSON.stringify(sel));
+
+  sel = toggleCompareSelection(sel, "a");
+  check("picking again removes it", JSON.stringify(sel) === '["b"]', JSON.stringify(sel));
+
+  sel = ["a", "b", "c", "d"];
+  const full = toggleCompareSelection(sel, "e");
+  check("a fifth pick is refused at the cap", JSON.stringify(full) === JSON.stringify(sel), JSON.stringify(full));
+  // The important half: refusing must not silently evict someone's first pick.
+  check("the refusal does not evict an earlier pick", full.includes("a") && full.length === 4, JSON.stringify(full));
+  check("removing one at the cap still works",
+    JSON.stringify(toggleCompareSelection(sel, "b")) === '["a","c","d"]', JSON.stringify(toggleCompareSelection(sel, "b")));
+  check("the cap is the shared constant", COMPARE_MAX === 4, String(COMPARE_MAX));
+
+  // The drawer must never render a table it cannot fill.
+  check("a table is only built for the profiles actually passed",
+    buildCompareTable("egg-donor", [{ id: "a", age: 27 }]).flatMap((g) => g.rows).every((r) => r.values.length === 1));
+}
+
+// ─── PX-16: the new surfaces are brand-managed, not hardcoded ────────────────
+// A standing rule in CLAUDE.md, and one that is invisible until someone
+// restyles the brand and half a page ignores it.
+const NEW_SURFACES = [
+  "client/src/components/marketplace/compare-drawer.tsx",
+  "client/src/components/profile-quote.tsx",
+  "client/src/components/profile-fit-line.tsx",
+  "client/src/components/cost-program-family-card.tsx",
+  "client/src/lib/rate-delta.ts",
+];
+async function px16() {
+  // Tailwind's palette utilities and raw hex both bypass the brand entirely.
+  const PALETTE = /\b(?:bg|text|border|ring|from|to|via)-(?:slate|gray|grey|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/g;
+  const HEX = /#[0-9a-fA-F]{3,8}\b/g;
+  const FONT = /font-family\s*:/g;
+
+  for (const file of NEW_SURFACES) {
+    const src = readFileSync(file, "utf8");
+    const palette = src.match(PALETTE) || [];
+    const hex = src.match(HEX) || [];
+    const font = src.match(FONT) || [];
+    const short = file.split("/").pop();
+    check(`${short}: no Tailwind palette colours`, palette.length === 0, palette.slice(0, 4).join(", "));
+    check(`${short}: no hardcoded hex`, hex.length === 0, hex.slice(0, 4).join(", "));
+    check(`${short}: no hardcoded font-family`, font.length === 0, String(font.length));
+  }
+
+  // And the positive half: they DO reach for the brand variables.
+  const drawer = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");
+  check("the comparison uses the brand radius", /var\(--radius\)/.test(drawer));
+  check("the comparison uses the shared type scale", /t-(?:field|micro)-/.test(drawer));
+
+  const quote = readFileSync("client/src/components/profile-quote.tsx", "utf8");
+  check("the pull-quote sits on a brand surface, not a grey one",
+    /bg-secondary|bg-accent/.test(quote) && !/bg-muted|bg-gray/.test(quote));
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "PX-01", name: "Cost labels read as English, and raw keys are flagged", run: px01 },
   { id: "PX-02", name: "Implausible compensation is suppressed, never rewritten", run: px02 },
@@ -437,6 +609,10 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "PX-10", name: "The comparison drops dead rows and keeps real gaps", run: px10 },
   { id: "PX-11", name: "A rate below national is stated, not condemned", run: px11 },
   { id: "PX-12", name: "The desktop hero never renders blank", run: px12 },
+  { id: "PX-13", name: "Every quote already published really is hers", run: px13 },
+  { id: "PX-14", name: "The guards are applied where profiles are actually built", run: px14 },
+  { id: "PX-15", name: "The compare shortlist behaves at its edges", run: px15 },
+  { id: "PX-16", name: "The new surfaces are brand-managed, not hardcoded", run: px16 },
 ];
 
 (async () => {
