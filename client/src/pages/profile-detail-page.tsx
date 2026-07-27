@@ -10,6 +10,7 @@ import { ProfileQuote } from "@/components/profile-quote";
 import { sectionBand, BAND_LABEL, orderSectionsIntoBands } from "@/lib/profile-sections";
 import { resolveHeroSelection } from "@/lib/profile-hero";
 import { ToggleLabel } from "@/components/ui/toggle-label";
+import { useConciergeName } from "@/hooks/use-concierge-name";
 import { safeCompensation } from "@/lib/compensation-sanity";
 import { useParentPreferences } from "@/hooks/use-parent-preferences";
 import {
@@ -51,6 +52,7 @@ import {
   Play,
   Pencil,
   Check,
+  Sparkles,
 } from "lucide-react";
 
 function isEmbedVideo(url: string): boolean {
@@ -1139,7 +1141,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
             )}
           </div>
           {/* Why this person suits THIS parent - previously only rendered when
-              arriving from Eva, so most readers saw an identical page. */}
+              arriving from the concierge, so most readers saw an identical page. */}
           <ProfileFitLine profile={swipeProfile} preferences={parentPreferences} className="mt-3" />
           {/* Her own voice, above the attribute tables. The full letter stays
               below - this is a way in, not a substitute. */}
@@ -2050,11 +2052,12 @@ function ProfileDetailDesktopRail({ isSaved, onSave, onMessage, onPass, isPassed
   onPass: () => void;
   subjectLabel: string;
 }) {
+  const conciergeName = useConciergeName();
   return (
     <div className="hidden md:block sticky bottom-6 z-30 mt-6" data-testid="desktop-action-rail">
       <div className="mx-auto max-w-[560px] rounded-full border border-border bg-card/95 backdrop-blur shadow-lg px-3 py-2 flex items-center gap-2">
         <Button className="flex-1 rounded-full" onClick={onMessage} data-testid="btn-rail-ask-eva">
-          <Send className="w-4 h-4 mr-2" /> Ask Eva about {subjectLabel}
+          <Sparkles className="w-4 h-4 mr-2" /> Ask {conciergeName} about {subjectLabel}
         </Button>
         <Button
           variant="outline"

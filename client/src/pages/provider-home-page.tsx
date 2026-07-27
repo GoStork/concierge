@@ -10,6 +10,7 @@
  */
 
 import { useState } from "react";
+import { useConciergeName } from "@/hooks/use-concierge-name";
 import { useQuery } from "@tanstack/react-query";
 import { BookingDetailDialog } from "@/components/booking-detail-dialog";
 import { Link, useNavigate } from "react-router-dom";
@@ -50,14 +51,14 @@ function fmtWhen(iso: string) {
   return new Date(iso).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function approvalLabel(a: ProviderQueue["openApprovals"][number]): { title: string; detail: string; cta: string } {
+function approvalLabel(a: ProviderQueue["openApprovals"][number], conciergeName: string): { title: string; detail: string; cta: string } {
   switch (a.type) {
     case "cost_sheet_draft_approval":
-      return { title: `Cost sheet draft for ${a.parentName}`, detail: "Eva drafted it - review and approve to send", cta: "Review" };
+      return { title: `Cost sheet draft for ${a.parentName}`, detail: `${conciergeName} drafted it - review and approve to send`, cta: "Review" };
     case "invoice_draft_approval":
       return {
         title: `Invoice draft for ${a.parentName}${a.totalCents ? ` - ${formatCents(a.totalCents)}` : ""}`,
-        detail: "Eva drafted it - review and approve to send",
+        detail: `${conciergeName} drafted it - review and approve to send`,
         cta: "Review",
       };
     case "agreement_draft_approval":
@@ -70,6 +71,7 @@ function approvalLabel(a: ProviderQueue["openApprovals"][number]): { title: stri
 }
 
 export default function ProviderHomePage() {
+  const conciergeName = useConciergeName();
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -229,7 +231,7 @@ export default function ProviderHomePage() {
         ) : (
           <div className="space-y-2">
             {(queue?.openApprovals || []).map(a => {
-              const { title, detail, cta } = approvalLabel(a);
+              const { title, detail, cta } = approvalLabel(a, conciergeName);
               const icon = a.type === "invoice_draft_approval" ? <Receipt className="w-4 h-4" />
                 : a.type === "agreement_draft_approval" ? <FileSignature className="w-4 h-4" />
                 : a.type === "provider_readiness_prompt" ? <MessageCircleQuestion className="w-4 h-4" />
@@ -333,7 +335,7 @@ export default function ProviderHomePage() {
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Cost Sheets" viewAllTo="/provider/cost-sheets" />
         {costSheets.length === 0 ? (
-          <p className="t-helper py-2">No cost sheets shared yet. Eva drafts one when a parent books a consult (with auto-draft on), or share one from the + menu in any chat.</p>
+          <p className="t-helper py-2">No cost sheets shared yet. {conciergeName} drafts one when a parent books a consult (with auto-draft on), or share one from the + menu in any chat.</p>
         ) : (
           <div className="divide-y">
             {costSheets.slice(0, 3).map((cs: any) => (

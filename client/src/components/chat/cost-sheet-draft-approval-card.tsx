@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useConciergeName } from "@/hooks/use-concierge-name";
 import { useMutation } from "@tanstack/react-query";
 import { Receipt } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -37,6 +38,7 @@ export interface CostSheetDraftApprovalCardProps {
 }
 
 export function CostSheetDraftApprovalCard({ msg, sessionId, onEdit }: CostSheetDraftApprovalCardProps) {
+  const conciergeName = useConciergeName();
   const { toast } = useToast();
   const data = msg.uiCardData || {};
   const d = data as any;
@@ -100,7 +102,7 @@ export function CostSheetDraftApprovalCard({ msg, sessionId, onEdit }: CostSheet
   else if (data.sourceCostSheetCategory) subtitleParts.push(data.sourceCostSheetCategory);
   const subtitle = subtitleParts.length > 0
     ? subtitleParts.join(" - ")
-    : "Auto-drafted by Eva from your cost sheet library";
+    : `Auto-drafted by ${conciergeName} from your cost sheet library`;
 
   const resolvedLabel = status === "approved"
     ? "Sent ✓"

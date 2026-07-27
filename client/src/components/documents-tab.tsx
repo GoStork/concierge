@@ -66,7 +66,7 @@ const AUTOMATION_OPTIONS: Array<{ value: string; label: string; description: str
   {
     value: "approval",
     label: "Draft for my approval",
-    description: "When a parent's deposit payment clears, Eva drafts the agreement and posts it in the chat for you to approve before it's sent for signature.",
+    description: "When a parent's deposit payment clears, your AI concierge drafts the agreement and posts it in the chat for you to approve before it's sent for signature.",
   },
   {
     value: "auto_send",

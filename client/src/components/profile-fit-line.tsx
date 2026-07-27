@@ -7,7 +7,7 @@ import { AttributeChip, ChipRow } from "@/components/ui/field";
 /**
  * Why this person suits THIS parent.
  *
- * "Why This Match" only ever rendered when a parent arrived from Eva, so on the
+ * "Why This Match" only ever rendered when a parent arrived from the concierge, so on the
  * marketplace, a shared link or the Saved tab every reader saw an identical
  * page - even though we know their journey, their IVF context and their
  * filters. That turns a recommendation back into a directory entry.

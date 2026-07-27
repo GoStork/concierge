@@ -21,19 +21,19 @@ const FLAG_DEFS: Array<{ key: keyof AutoFeaturesShape; label: string; descriptio
   {
     key: "autoCostSheetDraft",
     label: "Auto cost-sheet draft on booking",
-    description: "Eva drafts a cost sheet when a parent books a consult. Provider approves before send.",
+    description: "Your AI concierge drafts a cost sheet when a parent books a consult. Provider approves before send.",
     testId: "switch-auto-cost-sheet-draft",
   },
   {
     key: "autoInvoiceDraft",
     label: "Auto invoice draft on parent-ready",
-    description: "Eva drafts the invoice when the parent confirms they're ready. Provider approves before send.",
+    description: "Your AI concierge drafts the invoice when the parent confirms they're ready. Provider approves before send.",
     testId: "switch-auto-invoice-draft",
   },
   {
     key: "autoAgreementDraft",
     label: "Auto agreement draft on invoice-paid",
-    description: "Eva drafts the agreement when the deposit invoice is paid. The provider's own Documents setting can override this (off / approval / fully automated).",
+    description: "Your AI concierge drafts the agreement when the deposit invoice is paid. The provider's own Documents setting can override this (off / approval / fully automated).",
     testId: "switch-auto-agreement-draft",
   },
 ];

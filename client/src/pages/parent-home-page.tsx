@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { useConciergeName } from "@/hooks/use-concierge-name";
 import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import { Map } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -49,6 +50,7 @@ function fmtWhen(iso: string) {
 }
 
 export default function ParentHomePage() {
+  const conciergeName = useConciergeName();
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -228,7 +230,7 @@ export default function ParentHomePage() {
               <QueueRow
                 icon={<MessageCircle className="w-4 h-4" />}
                 title={`${unreadMessages} unread message${unreadMessages === 1 ? "" : "s"}`}
-                detail="Eva or your providers wrote to you"
+                detail={`${conciergeName} or your providers wrote to you`}
                 cta="Open chats"
                 onClick={() => navigate("/chat")}
               />

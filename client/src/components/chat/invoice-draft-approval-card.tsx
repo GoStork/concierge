@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import { useConciergeName } from "@/hooks/use-concierge-name";
 import { FileText } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -44,6 +45,7 @@ export function InvoiceDraftApprovalCard({
   // this draft server-side (createInvoice flips pending drafts).
   onEdit?: (initial: { lineItems: InvoiceDraftLineItem[]; description: string | null }) => void;
 }) {
+  const conciergeName = useConciergeName();
   const { toast } = useToast();
   const data = msg.uiCardData || {};
   const lineItems = Array.isArray(data.lineItems) ? data.lineItems : [];
@@ -107,7 +109,7 @@ export function InvoiceDraftApprovalCard({
   return (
     <ApprovalCard
       title={data.parentName ? `Auto-drafted invoice for ${data.parentName}` : "Auto-drafted Invoice"}
-      subtitle="Drafted by Eva when the parent confirmed they're ready to move forward"
+      subtitle={`Drafted by ${conciergeName} when the parent confirmed they're ready to move forward`}
       icon={<FileText className="h-4 w-4" />}
       amountCents={total}
       lineItems={cardLineItems}

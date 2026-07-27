@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useConciergeName } from "@/hooks/use-concierge-name";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileSignature, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -33,6 +34,7 @@ export function AgreementDraftApprovalCard({
   msg: DraftMsg;
   sessionId: string;
 }) {
+  const conciergeName = useConciergeName();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const data = msg.uiCardData || {};
@@ -111,7 +113,7 @@ export function AgreementDraftApprovalCard({
     <div className="space-y-2">
       <ApprovalCard
         title={data.parentName ? `${docTitle} for ${data.parentName}` : `Auto-drafted ${docTitle}`}
-        subtitle="Drafted by Eva when the deposit payment cleared - approve to send it for signature"
+        subtitle={`Drafted by ${conciergeName} when the deposit payment cleared - approve to send it for signature`}
         icon={<FileSignature className="h-4 w-4" />}
         status={status}
         resolvedLabel={status === "approved" ? "Sent for signature ✓" : status === "rejected" ? "Dismissed" : undefined}
