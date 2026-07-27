@@ -32,6 +32,7 @@ import { SwipeDeck, type SwipeDeckCardMode, type SwipeDeckCardApi } from "@/comp
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
 import { ParentProgramsProvider } from "@/lib/parent-programs";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { DoctorSwipeCard } from "@/components/marketplace/doctor-swipe-card";
 import { AgencySwipeCard } from "@/components/marketplace/agency-swipe-card";
 import { useMarketplaceViewContext, recordProfileView, recordImpression, useScrollPastView } from "@/lib/profile-views";
@@ -902,11 +903,25 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
     onFilteredCountChange?.(filtered?.length ?? 0);
   }, [filtered?.length, onFilteredCountChange]);
 
-  // Auto-load next page when filter leaves too few visible results
+  // Auto-load the next page when a client-side FILTER leaves too few visible
+  // results. Each pass waits for the previous page, so this is a sequential
+  // crawl - it is why a narrow query used to sit at a spinner for 15 seconds
+  // while it walked all ~16 pages one request at a time.
+  //
+  // Search no longer uses this path at all: the donor lists now narrow
+  // server-side, so a search's own result set IS the paged set and page 0
+  // already holds the matches. What remains is the filter case, and it is
+  // bounded - past AUTO_PAGE_LIMIT the parent scrolls (the sentinel below) or
+  // relaxes a filter, rather than the grid silently pulling the whole table.
+  const autoPagesRef = useRef(0);
+  const AUTO_PAGE_LIMIT = 3;
+  useEffect(() => { autoPagesRef.current = 0; }, [searchQuery, activeFilters]);
   useEffect(() => {
-    if (fetchMore && hasNextPage && !isFetchingMore && (filtered?.length ?? 0) < 12) {
-      fetchMore();
-    }
+    if (!fetchMore || !hasNextPage || isFetchingMore) return;
+    if ((filtered?.length ?? 0) >= 12) return;
+    if (autoPagesRef.current >= AUTO_PAGE_LIMIT) return;
+    autoPagesRef.current += 1;
+    fetchMore();
   }, [filtered?.length, fetchMore, hasNextPage, isFetchingMore]);
 
   // Intersection observer sentinel to load next page as user scrolls near bottom
@@ -1646,6 +1661,11 @@ export default function MarketplacePage() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const searchQuery = useAppSelector((state) => state.ui.marketplaceSearchQuery);
+  // The donor lists now search server-side, so the query key uses a settled
+  // value - otherwise every keystroke would be its own request. The live
+  // searchQuery still drives omniSearch over the rows already in hand, so
+  // typing narrows the grid instantly while the wider set is fetched.
+  const donorSearch = useDebouncedValue(searchQuery, 300);
   const activeTab = useAppSelector((state) => state.ui.marketplaceTab);
   const activeFilters = useAppSelector((state) => state.ui.activeFilters);
   const showFavoritesOnly = useAppSelector((state) => state.ui.showFavoritesOnly);
@@ -2073,9 +2093,11 @@ export default function MarketplacePage() {
     hasNextPage: hasMoreEggDonors,
     isFetchingNextPage: isFetchingMoreEggDonors,
   } = useInfiniteQuery({
-    queryKey: ["/api/providers/marketplace/egg-donors"],
+    queryKey: ["/api/providers/marketplace/egg-donors", donorSearch],
     queryFn: async ({ pageParam = 0 }) => {
-      const res = await fetch(`/api/providers/marketplace/egg-donors?page=${pageParam}`, { credentials: "include" });
+      const qs = new URLSearchParams({ page: String(pageParam) });
+      if (donorSearch.trim()) qs.set("search", donorSearch.trim());
+      const res = await fetch(`/api/providers/marketplace/egg-donors?${qs}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch egg donors");
       return res.json() as Promise<{ data: any[]; hasMore: boolean; nextPage: number | null }>;
     },
@@ -2092,9 +2114,11 @@ export default function MarketplacePage() {
     hasNextPage: hasMoreSurrogates,
     isFetchingNextPage: isFetchingMoreSurrogates,
   } = useInfiniteQuery({
-    queryKey: ["/api/providers/marketplace/surrogates"],
+    queryKey: ["/api/providers/marketplace/surrogates", donorSearch],
     queryFn: async ({ pageParam = 0 }) => {
-      const res = await fetch(`/api/providers/marketplace/surrogates?page=${pageParam}`, { credentials: "include" });
+      const qs = new URLSearchParams({ page: String(pageParam) });
+      if (donorSearch.trim()) qs.set("search", donorSearch.trim());
+      const res = await fetch(`/api/providers/marketplace/surrogates?${qs}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch surrogates");
       return res.json() as Promise<{ data: any[]; hasMore: boolean; nextPage: number | null }>;
     },
@@ -2111,9 +2135,11 @@ export default function MarketplacePage() {
     hasNextPage: hasMoreSpermDonors,
     isFetchingNextPage: isFetchingMoreSpermDonors,
   } = useInfiniteQuery({
-    queryKey: ["/api/providers/marketplace/sperm-donors"],
+    queryKey: ["/api/providers/marketplace/sperm-donors", donorSearch],
     queryFn: async ({ pageParam = 0 }) => {
-      const res = await fetch(`/api/providers/marketplace/sperm-donors?page=${pageParam}`, { credentials: "include" });
+      const qs = new URLSearchParams({ page: String(pageParam) });
+      if (donorSearch.trim()) qs.set("search", donorSearch.trim());
+      const res = await fetch(`/api/providers/marketplace/sperm-donors?${qs}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch sperm donors");
       return res.json() as Promise<{ data: any[]; hasMore: boolean; nextPage: number | null }>;
     },

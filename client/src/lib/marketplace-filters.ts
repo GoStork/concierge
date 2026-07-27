@@ -1,3 +1,4 @@
+import { resolveEthnicityTerms } from "@shared/donor-search";
 const STATE_ABBREV_MAP: Record<string, string> = {
   AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",
   CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",
@@ -42,26 +43,9 @@ function resolveLocationTerms(input: string): string[] {
   return [trimmed];
 }
 
-const ETHNICITY_SYNONYMS: Record<string, string[]> = {
-  "white": ["white", "caucasian"],
-  "caucasian": ["caucasian", "white"],
-  "black": ["black", "african american", "african"],
-  "african american": ["african american", "black", "african"],
-  "african": ["african", "black", "african american"],
-  "hispanic": ["hispanic", "latino", "latina"],
-  "latino": ["latino", "latina", "hispanic"],
-  "latina": ["latina", "latino", "hispanic"],
-  "middle eastern": ["middle eastern", "arab", "arabic"],
-  "arab": ["arab", "arabic", "middle eastern"],
-  "mixed": ["mixed", "biracial", "multiracial"],
-  "biracial": ["biracial", "mixed", "multiracial"],
-  "multiracial": ["multiracial", "mixed", "biracial"],
-};
-
-export function resolveEthnicityTerms(val: string): string[] {
-  const lower = val.toLowerCase().trim();
-  return ETHNICITY_SYNONYMS[lower] || [lower];
-}
+// Ethnicity synonyms live in shared/donor-search so the marketplace list
+// endpoints narrow by the same table this filter matches on.
+export { resolveEthnicityTerms };
 
 function extractCountryFromLocation(location: string | null | undefined): string | null {
   if (!location) return null;

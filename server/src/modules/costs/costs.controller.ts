@@ -575,6 +575,12 @@ export class CostsController {
     if (!resolvedParentAccountId) {
       throw new HttpException("parentAccountId required", HttpStatus.BAD_REQUEST);
     }
+    // Matched pricing is derived from the parent's own journey profile, so it is
+    // theirs to read. Only an admin may ask on behalf of another account.
+    const isAdmin = !!user?.roles?.includes("GOSTORK_ADMIN");
+    if (!isAdmin && resolvedParentAccountId !== user?.parentAccountId) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
     const providerIds = Array.isArray(body?.providerIds) ? body.providerIds : [];
     if (providerIds.length === 0) return {};
     return this.costsService.getParentProgramsForProviders(providerIds, resolvedParentAccountId);

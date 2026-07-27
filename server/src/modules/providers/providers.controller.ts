@@ -68,6 +68,7 @@ import { Prisma } from "@prisma/client";
 import { type EggSource, type AgeGroup } from "../../lib/ivf-success-rate";
 import { DOCTOR_MEMBER_SELECT, enrichDoctorRows } from "../../lib/doctor-enrichment";
 import { applySponsoredOrdering, SPONSORED_FIRST_ORDER } from "./sponsorship-sort";
+import { buildDonorSearchWhere } from "@shared/donor-search";
 
 const JSON_NULLABLE_FIELDS = ["ivfAcceptingPatients", "surrogacyCitizensNotAllowed", "surrogacyBirthCertificateListing", "partnerProviderIds"] as const;
 
@@ -155,7 +156,7 @@ export class ProvidersController {
   @Get("marketplace/egg-donors")
   @ApiOperation({ summary: "List egg donors (paginated, 100 per page)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceEggDonors(@Req() req: Request, @Query("page") page = "0", @Query("status") status?: string) {
+  async marketplaceEggDonors(@Req() req: Request, @Query("page") page = "0", @Query("status") status?: string, @Query("search") search?: string) {
     const PAGE_SIZE = 100;
     const statusFilter = buildDonorStatusFilter(status);
     const user = req.user as any;
@@ -171,7 +172,11 @@ export class ProvidersController {
       return { data, hasMore: false, nextPage: null };
     }
     const pageNum = Math.max(0, parseInt(page) || 0);
-    const cacheKey = `marketplace:egg-donors:p${pageNum}:s${status || "all"}`;
+    // Narrow server-side so a specific search stops paging the whole table.
+    // buildDonorSearchWhere returns a SUPERSET of what the client's omniSearch
+    // accepts, so omniSearch still decides the final set - see shared/donor-search.
+    const searchWhere = buildDonorSearchWhere(search, "egg-donor");
+    const cacheKey = `marketplace:egg-donors:p${pageNum}:s${status || "all"}:q${(search || "").trim().toLowerCase()}`;
     const cached = getCached(cacheKey);
     if (cached) return cached;
     const rows = await this.prisma.eggDonor.findMany({
@@ -188,6 +193,7 @@ export class ProvidersController {
             },
           },
         },
+        ...(searchWhere || {}),
       },
       include: {
         provider: {
@@ -216,7 +222,7 @@ export class ProvidersController {
   @Get("marketplace/surrogates")
   @ApiOperation({ summary: "List surrogates (paginated, 100 per page)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceSurrogates(@Req() req: Request, @Query("page") page = "0", @Query("status") status?: string) {
+  async marketplaceSurrogates(@Req() req: Request, @Query("page") page = "0", @Query("status") status?: string, @Query("search") search?: string) {
     const PAGE_SIZE = 100;
     const statusFilter = buildDonorStatusFilter(status);
     const user = req.user as any;
@@ -232,7 +238,11 @@ export class ProvidersController {
       return { data, hasMore: false, nextPage: null };
     }
     const pageNum = Math.max(0, parseInt(page) || 0);
-    const cacheKey = `marketplace:surrogates:p${pageNum}:s${status || "all"}`;
+    // Narrow server-side so a specific search stops paging the whole table.
+    // buildDonorSearchWhere returns a SUPERSET of what the client's omniSearch
+    // accepts, so omniSearch still decides the final set - see shared/donor-search.
+    const searchWhere = buildDonorSearchWhere(search, "surrogate");
+    const cacheKey = `marketplace:surrogates:p${pageNum}:s${status || "all"}:q${(search || "").trim().toLowerCase()}`;
     const cached = getCached(cacheKey);
     if (cached) return cached;
     const rows = await this.prisma.surrogate.findMany({
@@ -250,6 +260,7 @@ export class ProvidersController {
             },
           },
         },
+        ...(searchWhere || {}),
       },
       include: {
         provider: {
@@ -375,7 +386,7 @@ export class ProvidersController {
   @Get("marketplace/sperm-donors")
   @ApiOperation({ summary: "List sperm donors (paginated, 100 per page)" })
   @Header("Cache-Control", "public, max-age=30")
-  async marketplaceSpermDonors(@Req() req: Request, @Query("page") page = "0", @Query("status") status?: string) {
+  async marketplaceSpermDonors(@Req() req: Request, @Query("page") page = "0", @Query("status") status?: string, @Query("search") search?: string) {
     const PAGE_SIZE = 100;
     const statusFilter = buildDonorStatusFilter(status);
     const user = req.user as any;
@@ -391,7 +402,11 @@ export class ProvidersController {
       return { data, hasMore: false, nextPage: null };
     }
     const pageNum = Math.max(0, parseInt(page) || 0);
-    const cacheKey = `marketplace:sperm-donors:p${pageNum}:s${status || "all"}`;
+    // Narrow server-side so a specific search stops paging the whole table.
+    // buildDonorSearchWhere returns a SUPERSET of what the client's omniSearch
+    // accepts, so omniSearch still decides the final set - see shared/donor-search.
+    const searchWhere = buildDonorSearchWhere(search, "sperm-donor");
+    const cacheKey = `marketplace:sperm-donors:p${pageNum}:s${status || "all"}:q${(search || "").trim().toLowerCase()}`;
     const cached = getCached(cacheKey);
     if (cached) return cached;
     const rows = await this.prisma.spermDonor.findMany({
@@ -408,6 +423,7 @@ export class ProvidersController {
             },
           },
         },
+        ...(searchWhere || {}),
       },
       include: {
         provider: {
