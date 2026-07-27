@@ -28,6 +28,7 @@ import pg from "pg";
 import { formatFieldLabel, looksLikeRawKey, isPlaceholderValue, formatStatusLabel } from "../client/src/lib/format-label";
 import { safeCompensation, compensationWarning, isPlausibleCompensation } from "../client/src/lib/compensation-sanity";
 import { formatRelativeTime, isStale } from "../client/src/lib/format-relative-time";
+import { profileContentUpdatedAt } from "../client/src/lib/profile-freshness";
 import { splitSharedItems, groupProgramFamilies, variantLabels } from "../client/src/lib/cost-program-family";
 import { sectionBand, orderSectionsIntoBands, BAND_LABEL } from "../client/src/lib/profile-sections";
 import { resolveHeroSelection } from "../client/src/lib/profile-hero";
@@ -143,6 +144,27 @@ async function px04() {
   check("a 60-day-old record is stale", isStale(daysAgo(60)));
   check("the threshold is configurable", isStale(daysAgo(10), 7) && !isStale(daysAgo(10), 30));
   check("a missing timestamp is not called stale", !isStale(null));
+
+  // The source matters as much as the formatting. `updatedAt` is Prisma's
+  // @updatedAt: it moves on ANY write, including background jobs. A surrogate
+  // uploaded in March, never synced and never edited, read "Updated today"
+  // because a backfill wrote one derived field to her row that morning.
+  const marchUpload = { createdAt: "2026-03-23T18:53:56Z", lastFullSyncAt: null, lastEditedAt: null, updatedAt: new Date().toISOString() };
+  check("a background write does not make an old profile look fresh",
+    formatRelativeTime(profileContentUpdatedAt(marchUpload as any)) !== "today",
+    String(formatRelativeTime(profileContentUpdatedAt(marchUpload as any))));
+  check("an untouched upload dates from when it arrived",
+    profileContentUpdatedAt(marchUpload as any)?.getUTCFullYear() === 2026 && profileContentUpdatedAt(marchUpload as any)?.getUTCMonth() === 2,
+    String(profileContentUpdatedAt(marchUpload as any)));
+
+  const synced = { createdAt: "2026-01-01T00:00:00Z", lastFullSyncAt: "2026-07-20T00:00:00Z", lastEditedAt: null };
+  check("a real agency sync is what the label reports",
+    profileContentUpdatedAt(synced as any)?.toISOString().startsWith("2026-07-20"), String(profileContentUpdatedAt(synced as any)));
+
+  const edited = { createdAt: "2026-01-01T00:00:00Z", lastFullSyncAt: "2026-07-20T00:00:00Z", lastEditedAt: "2026-07-25T00:00:00Z" };
+  check("a human edit after a sync wins", profileContentUpdatedAt(edited as any)?.toISOString().startsWith("2026-07-25"),
+    String(profileContentUpdatedAt(edited as any)));
+  check("nothing at all resolves to null", profileContentUpdatedAt(null) === null && profileContentUpdatedAt({} as any) === null);
 }
 
 // ─── PX-05: the cost ladder collapses only what is genuinely identical ───────

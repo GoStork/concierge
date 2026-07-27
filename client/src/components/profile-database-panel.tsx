@@ -170,6 +170,8 @@ export default function ProfileDatabasePanel({
   const [isStopping, setIsStopping] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [pdfFiles, setPdfFiles] = useState<File[]>([]);
+  const [pdfDragOver, setPdfDragOver] = useState(false);
+  const [pdfDropError, setPdfDropError] = useState<string | null>(null);
   const [isPdfUploading, setIsPdfUploading] = useState(false);
   const [isDeletingPdfs, setIsDeletingPdfs] = useState(false);
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -364,6 +366,32 @@ export default function ProfileDatabasePanel({
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  // Shared by the file picker and the drop zone: keep only PDFs, drop duplicates
+  // (same name + size) so dragging the same batch twice does not queue it twice.
+  const addPdfFiles = (incoming: File[]) => {
+    const pdfs = incoming.filter(
+      (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"),
+    );
+    const rejected = incoming.length - pdfs.length;
+    setPdfDropError(
+      rejected > 0
+        ? `${rejected} file${rejected > 1 ? "s were" : " was"} skipped - only PDF files can be uploaded.`
+        : null,
+    );
+    if (pdfs.length === 0) return;
+    setPdfFiles((prev) => {
+      const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
+      return [...prev, ...pdfs.filter((f) => !seen.has(`${f.name}:${f.size}`))];
+    });
+  };
+
+  const handlePdfDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setPdfDragOver(false);
+    if (activePdfJobId !== null || isPdfUploading) return;
+    addPdfFiles(Array.from(e.dataTransfer.files || []));
   };
 
   const handlePdfUpload = async () => {
@@ -1010,29 +1038,62 @@ export default function ProfileDatabasePanel({
             Upload surrogate profile PDFs to extract and import profiles automatically using AI.
           </p>
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <input
-                ref={pdfInputRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                multiple
-                className="hidden"
-                data-testid="input-pdf-files"
-                onChange={(e) => {
-                  const files = Array.from(e.target.files || []);
-                  setPdfFiles((prev) => [...prev, ...files]);
-                }}
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => pdfInputRef.current?.click()}
-                disabled={isPdfRunning || isPdfUploading}
-                data-testid="btn-select-pdfs"
-              >
-                <Upload className="w-4 h-4 mr-1" />
-                Select PDFs
-              </Button>
+            <input
+              ref={pdfInputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              multiple
+              className="hidden"
+              data-testid="input-pdf-files"
+              onChange={(e) => {
+                addPdfFiles(Array.from(e.target.files || []));
+                e.target.value = "";
+              }}
+            />
+            <div
+              role="button"
+              tabIndex={0}
+              aria-disabled={isPdfRunning || isPdfUploading}
+              className={`rounded-[var(--radius)] border-2 border-dashed p-5 sm:p-6 text-center transition-colors ${
+                isPdfRunning || isPdfUploading
+                  ? "border-border/60 opacity-60 cursor-not-allowed"
+                  : pdfDragOver
+                    ? "border-primary bg-primary/5 cursor-pointer"
+                    : "border-border/60 bg-secondary/40 hover:border-primary/40 cursor-pointer"
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (isPdfRunning || isPdfUploading) return;
+                setPdfDragOver(true);
+              }}
+              onDragLeave={() => setPdfDragOver(false)}
+              onDrop={handlePdfDrop}
+              onClick={() => {
+                if (isPdfRunning || isPdfUploading) return;
+                pdfInputRef.current?.click();
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                if (isPdfRunning || isPdfUploading) return;
+                pdfInputRef.current?.click();
+              }}
+              data-testid="dropzone-pdf-files"
+            >
+              <div className="flex flex-col items-center gap-2">
+                <Upload className="w-7 h-7 text-muted-foreground" />
+                <p className="text-sm font-ui text-foreground">
+                  Drop PDFs here or click to browse
+                </p>
+                <p className="t-helper">PDF files only - you can select several at once</p>
+              </div>
+            </div>
+            {pdfDropError && (
+              <p className="t-helper text-[hsl(var(--brand-warning))]" data-testid="pdf-drop-error">
+                {pdfDropError}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
               {pdfFiles.length > 0 && !isPdfRunning && (
                 <>
                   <Button
@@ -1053,6 +1114,7 @@ export default function ProfileDatabasePanel({
                     variant="ghost"
                     onClick={() => {
                       setPdfFiles([]);
+                      setPdfDropError(null);
                       if (pdfInputRef.current) pdfInputRef.current.value = "";
                     }}
                     data-testid="btn-clear-pdfs"
@@ -1099,10 +1161,21 @@ export default function ProfileDatabasePanel({
             {pdfFiles.length > 0 && (
               <div className="t-helper space-y-1" data-testid="pdf-file-list">
                 {pdfFiles.map((f, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
+                  <div key={`${f.name}:${f.size}:${i}`} className="flex items-center gap-1.5">
                     <FileUp className="w-3 h-3 shrink-0" />
                     <span className="truncate">{f.name}</span>
-                    <span className="text-muted-foreground/60">({(f.size / 1024).toFixed(0)} KB)</span>
+                    <span className="text-muted-foreground/60 shrink-0">({(f.size / 1024).toFixed(0)} KB)</span>
+                    {!isPdfRunning && !isPdfUploading && (
+                      <button
+                        type="button"
+                        className="ml-auto shrink-0 p-1 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setPdfFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                        aria-label={`Remove ${f.name}`}
+                        data-testid={`btn-remove-pdf-${i}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

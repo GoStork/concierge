@@ -9,6 +9,7 @@ import { ProfileFitLine } from "@/components/profile-fit-line";
 import { ProfileQuote } from "@/components/profile-quote";
 import { sectionBand, BAND_LABEL, orderSectionsIntoBands } from "@/lib/profile-sections";
 import { resolveHeroSelection } from "@/lib/profile-hero";
+import { profileContentUpdatedAt } from "@/lib/profile-freshness";
 import { ToggleLabel } from "@/components/ui/toggle-label";
 import { useConciergeName } from "@/hooks/use-concierge-name";
 import { safeCompensation } from "@/lib/compensation-sanity";
@@ -1016,7 +1017,8 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
       !sectionFieldKeys.has(key),
   );
 
-  const freshness = formatRelativeTime((donor as any)?.updatedAt);
+  // updatedAt moves on any write, including background jobs - see profileContentUpdatedAt.
+  const freshness = formatRelativeTime(profileContentUpdatedAt(donor as any));
 
 
   const headerMeta: string[] = [];
