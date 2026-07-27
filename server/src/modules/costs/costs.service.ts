@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import { programDisplayName } from "./program-name";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { CostsAiService } from "./costs-ai.service";
@@ -1522,7 +1523,7 @@ export class CostsService {
           const cardLineItems = [mapLineItem(tier), ...baselineItems.map(mapLineItem)];
           return {
             ...programMeta,
-            programName: `${p.name} · ${tier.key}`,
+            programName: programDisplayName(p.name, tier.key, tierItems.length),
             tierLabel: tier.key,
             minTotal: baseMin + tierMin,
             maxTotal: baseMax + (tierMax === 0 && tierMin > 0 ? tierMin : tierMax),

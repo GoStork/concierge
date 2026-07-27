@@ -40,6 +40,7 @@ import {
 import { buildCompareTable, COMPARE_MAX, toggleCompareSelection } from "../client/src/components/marketplace/compare-drawer";
 import { collectOwnWords, validateQuote } from "../server/src/modules/providers/highlight-quote";
 import { profileDataToText } from "../server/src/modules/providers/profile-sync.service";
+import { programDisplayName } from "../server/src/modules/costs/program-name";
 import uiReducer, { toggleFavoriteDonor, passDonor } from "../client/src/store/uiSlice";
 
 const BASE = process.env.TEST_BASE_URL || "http://localhost:5001";
@@ -205,6 +206,22 @@ async function px05() {
   check("the ladder is labelled by what differs",
     JSON.stringify(variantLabels(["IVF Program - One Cycle", "IVF Program - Two Cycles"])) === JSON.stringify(["One Cycle", "Two Cycles"]),
     JSON.stringify(variantLabels(["IVF Program - One Cycle", "IVF Program - Two Cycles"])));
+  // A tiered program becomes one card per tier, named "<program> - <tier>". When
+  // the tier key IS the program name, that rendered as "Fixed Egg Donation
+  // Program - Fixed Egg Donation Program" on a live donor profile.
+  check("a tier suffix that repeats the program name is dropped",
+    programDisplayName("Fixed Egg Donation Program", "Fixed Egg Donation Program", 1) === "Fixed Egg Donation Program",
+    programDisplayName("Fixed Egg Donation Program", "Fixed Egg Donation Program", 1));
+  check("a single tier needs no suffix at all",
+    programDisplayName("Regular Egg Donation Program", "Standard", 1) === "Regular Egg Donation Program",
+    programDisplayName("Regular Egg Donation Program", "Standard", 1));
+  check("real tiers still distinguish their cards",
+    programDisplayName("IUI", "Premium", 2) === "IUI \u00b7 Premium" && programDisplayName("IUI", "Platinum", 2) === "IUI \u00b7 Platinum",
+    `${programDisplayName("IUI", "Premium", 2)} / ${programDisplayName("IUI", "Platinum", 2)}`);
+  check("siblings are named consistently - one keeps its tier, so both do",
+    programDisplayName("IUI Premium", "Premium", 2).includes("\u00b7") === programDisplayName("IUI Premium", "Platinum", 2).includes("\u00b7"),
+    `${programDisplayName("IUI Premium", "Premium", 2)} / ${programDisplayName("IUI Premium", "Platinum", 2)}`);
+
   check("unrelated names are kept whole rather than trimmed to nothing",
     JSON.stringify(variantLabels(["Shared Risk", "Shared Risk"])) === JSON.stringify(["Shared Risk", "Shared Risk"]),
     JSON.stringify(variantLabels(["Shared Risk", "Shared Risk"])));
