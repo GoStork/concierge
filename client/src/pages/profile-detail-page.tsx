@@ -1987,8 +1987,12 @@ export default function DonorProfilePage() {
     if (!type || !id) return;
     recordProfileView(id, type);
     if (dir === "like") {
-      // Heart = like + advance (Tinder). Only dispatch if not already saved.
-      if (!favoritedIds.includes(id)) { dispatch(toggleFavoriteDonor(id)); syncPref("favorite", id, "add"); }
+      // Heart toggles. A saved profile now stays in the marketplace with a
+      // filled heart instead of disappearing, so the button has to be able to
+      // un-save too - otherwise the only way back is the Saved tab.
+      const wasSaved = favoritedIds.includes(id);
+      dispatch(toggleFavoriteDonor(id));
+      syncPref("favorite", id, wasSaved ? "remove" : "add");
     } else {
       dispatch(passDonor(id)); syncPref("skip", id, "add");
     }
@@ -1997,13 +2001,19 @@ export default function DonorProfilePage() {
   const handleAction = useCallback(async (dir: "like" | "pass") => {
     if (busy) return;
     const actedId = current.id;
+    // Saving keeps you on the profile. It used to throw the card off and return
+    // to the deck, which only made sense while a saved profile vanished from
+    // the marketplace; now it stays with a filled heart, so being ejected from
+    // the page you are reading would just be disorienting.
+    if (dir === "like") { commit(dir, actedId); return; }
     // No deck context: commit and leave (keeps the single-card layout intact).
     if (!useDeck) { commit(dir, actedId); goBack(); return; }
     setBusy(true);
     setThrowDir(dir);
     await controls.start({
-      x: dir === "like" ? 500 : -500,
-      rotate: dir === "like" ? 20 : -20,
+      // Only a pass reaches here now, so the throw is always leftward.
+      x: -500,
+      rotate: -20,
       transition: { duration: 0.2, ease: "easeOut" }, // opacity intentionally untouched - stays opaque
     });
     commit(dir, actedId);

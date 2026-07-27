@@ -135,10 +135,17 @@ export function SwipeDeck<T>({
     if (active) onActiveChange(active, currentIndex);
   }, [isMobile, currentIndex, ordered, onActiveChange]);
 
-  // Saving/passing removes the card from `items` upstream (saved + passed are
-  // hidden from Explore), which auto-advances - so we do NOT bump the index
-  // (that would skip the previewed card). We only record it for the back button.
-  const doSave = (key: string) => { onSave(key); setHistory((h) => [...h, key]); setPinFrontId(null); };
+  // Passing removes the card from `items` upstream, which auto-advances the
+  // deck - so doPass must NOT bump the index (that would skip the previewed
+  // card). Saving no longer removes anything: a saved profile stays in the deck
+  // with a filled heart, so saving has to advance the index itself or the same
+  // card would sit under the parent's thumb.
+  const doSave = (key: string) => {
+    onSave(key);
+    setHistory((h) => [...h, key]);
+    setPinFrontId(null);
+    setCurrentIndex((i) => i + 1);
+  };
   const doPass = (key: string) => { onPass(key); setHistory((h) => [...h, key]); setPinFrontId(null); };
   const goBack = () => {
     const lastId = history[history.length - 1];
@@ -146,6 +153,9 @@ export function SwipeDeck<T>({
     onUndo(lastId);
     setHistory((h) => h.slice(0, -1));
     setPinFrontId(lastId);
+    // A passed card returns to `items` on undo and lands back in front on its
+    // own; a saved one never left, so step the index back to reach it.
+    setCurrentIndex((i) => (ordered.some((o) => getKey(o) === lastId) ? Math.max(0, i - 1) : i));
   };
 
   if (ordered.length === 0) {
