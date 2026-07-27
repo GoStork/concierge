@@ -44,6 +44,18 @@ import {
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
 
+/**
+ * URL params that belong to whichever marketplace tab set them - a search, a
+ * location, or a clinic filter. Cleared on every tab change. Deliberately does
+ * NOT include the params that describe the view itself (tab, view, filters,
+ * clinicView, sortBy), which survive because they aren't filters.
+ */
+const TAB_SCOPED_PARAMS = [
+  "search", "location", "eggLocation", "surrogateLocation", "spermLocation", "agencyLocation",
+  "eggSource", "ageGroup", "insurance", "lgbtq", "ivfHistory", "specialty",
+];
+
+
 // "LGBTQ+ Family Building" intentionally omitted - the dedicated "LGBTQ+ care"
 // toggle is the single control for that, so it is not duplicated here.
 const SPECIALTY_OPTIONS = [
@@ -1702,6 +1714,26 @@ export default function MarketplacePage() {
   useEffect(() => {
     dispatch(setShowFavoritesOnly(viewParam === "saved"));
   }, [viewParam, activeTab, dispatch]);
+
+  // The IVF/clinic tab keeps its search and filters in the URL rather than in
+  // Redux, so clearing Redux on a tab change isn't enough - those params would
+  // survive a trip through Egg Donors and reappear. Strip them whenever the tab
+  // actually changes, never on first render, so a deep link like
+  // /marketplace?tab=ivf-clinics&location=NY from the concierge still lands
+  // with its filters intact.
+  const prevTabRef = useRef(activeTab);
+  useEffect(() => {
+    if (prevTabRef.current === activeTab) return;
+    prevTabRef.current = activeTab;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      let touched = false;
+      for (const key of TAB_SCOPED_PARAMS) {
+        if (next.has(key)) { next.delete(key); touched = true; }
+      }
+      return touched ? next : prev;
+    }, { replace: true });
+  }, [activeTab, setSearchParams]);
 
   const filtersOpen = searchParams.get("filters") === "1";
   const openFiltersPage = useCallback(() => {

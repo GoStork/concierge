@@ -142,11 +142,23 @@ const uiSlice = createSlice({
       persistMarketplaceFilters(state);
     },
     setMarketplaceTab(state, action: PayloadAction<string>) {
+      // Only reset when the tab actually changes. This action also fires
+      // defensively on mount (when the stored tab isn't available to this
+      // parent, or a redirect lands on doctors), and those must not wipe a
+      // search the user just typed.
+      const changed = state.marketplaceTab !== action.payload;
       state.marketplaceTab = action.payload;
-      state.activeFilters = {};
-      state.showFavoritesOnly = false;
-      state.showSkippedOnly = false;
-      state.showExperiencedOnly = false;
+      if (changed) {
+        // A search or filter belongs to the tab it was entered on. Searching an
+        // egg donor's ID and then opening Surrogates used to carry the query
+        // across and show "No surrogates found", which reads as an empty
+        // marketplace rather than a stale filter.
+        state.marketplaceSearchQuery = "";
+        state.activeFilters = {};
+        state.showFavoritesOnly = false;
+        state.showSkippedOnly = false;
+        state.showExperiencedOnly = false;
+      }
       try {
         sessionStorage.setItem("marketplaceTab", action.payload);
         localStorage.setItem("marketplaceTab", action.payload);
