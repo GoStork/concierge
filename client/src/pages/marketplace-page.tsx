@@ -1712,6 +1712,17 @@ export default function MarketplacePage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const viewParam = searchParams.get("view");
+  // Two different surfaces share the "favorites" state, and they are NOT the same
+  // thing:
+  //   - the dedicated Saved view (nav Heart -> /marketplace?view=saved) is its own
+  //     stripped-down page: type pills only, no filter bar, no result count.
+  //   - the heart TOGGLE inside the marketplace filter bar is just a filter. It
+  //     must keep the parent in the marketplace with the full chrome intact
+  //     (search, filters, count) and simply narrow the deck to saved profiles.
+  // So `showFavoritesOnly` drives the DATA filter (every deck already honors it)
+  // and `isSavedView` drives the CHROME. Keying the chrome off showFavoritesOnly
+  // is what made the in-marketplace heart look like it navigated to Saved.
+  const isSavedView = viewParam === "saved";
   // Re-sync on every tab change too: setMarketplaceTab resets showFavoritesOnly,
   // so if we're still on ?view=saved the Saved view would silently flip back to the deck.
   useEffect(() => {
@@ -2123,7 +2134,7 @@ export default function MarketplacePage() {
   if (isMobile && (isDonorTab || isIvfTab || isDoctorTab || activeTab === "surrogacy-agencies")) {
     return (
       <div className="fixed inset-x-0 top-0 bottom-[calc(88px+env(safe-area-inset-bottom))] z-[60] flex flex-col" style={{ backgroundColor: 'hsl(var(--deck-bg))' }} data-testid="marketplace-mobile-immersive">
-        {showFavoritesOnly && (
+        {isSavedView && (
           <div className="shrink-0 w-full px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)' }} data-testid="saved-type-switcher-mobile">
             <DeckTypeSwitcher
               types={parentAvailableTypes}
@@ -2135,7 +2146,7 @@ export default function MarketplacePage() {
         )}
 
         <div className="flex-1 min-h-0 relative" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-          {!showFavoritesOnly && <MobileDeckControls onOpenFilters={openFiltersPage} />}
+          {!isSavedView && <MobileDeckControls onOpenFilters={openFiltersPage} />}
           {isLoading ? (
             <div className="flex justify-center items-center h-full">
               <Loader2 className="w-8 h-8 animate-spin text-primary" data-testid="loading-spinner" />
@@ -2143,27 +2154,27 @@ export default function MarketplacePage() {
           ) : (
             <>
               {activeTab === "egg-donors" && (
-                showFavoritesOnly
+                isSavedView
                   ? <MobileSavedGrid kind="egg-donor" items={eggDonors} />
                   : <DonorGrid donors={eggDonors} searchQuery={searchQuery} type="egg-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreEggDonors} hasNextPage={hasMoreEggDonors} isFetchingMore={isFetchingMoreEggDonors} />
               )}
               {activeTab === "surrogates" && (
-                showFavoritesOnly
+                isSavedView
                   ? <MobileSavedGrid kind="surrogate" items={surrogates} />
                   : <DonorGrid donors={surrogates} searchQuery={searchQuery} type="surrogate" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSurrogates} hasNextPage={hasMoreSurrogates} isFetchingMore={isFetchingMoreSurrogates} />
               )}
               {activeTab === "sperm-donors" && (
-                showFavoritesOnly
+                isSavedView
                   ? <MobileSavedGrid kind="sperm-donor" items={spermDonors} />
                   : <DonorGrid donors={spermDonors} searchQuery={searchQuery} type="sperm-donor" onFilteredCountChange={onFilteredCountChange} fetchMore={fetchMoreSpermDonors} hasNextPage={hasMoreSpermDonors} isFetchingMore={isFetchingMoreSpermDonors} />
               )}
               {isIvfTab && (
-                showFavoritesOnly
+                isSavedView
                   ? <MobileSavedGrid kind="clinic" items={(clinics as any) || []} />
                   : <IvfClinicDeckGrid providers={clinics as any} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} onFilteredCountChange={onFilteredCountChange} />
               )}
               {isDoctorTab && (
-                showFavoritesOnly
+                isSavedView
                   ? <MobileSavedGrid kind="doctor" items={(doctors as any) || []} />
                   : <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
               )}
@@ -2209,7 +2220,7 @@ export default function MarketplacePage() {
       )}
 
       {/* Mobile + Discover: sliders icon left, type pills center, spacer right */}
-      {isParentOnly && isMobile && !showFavoritesOnly && (
+      {isParentOnly && isMobile && !isSavedView && (
         <div className="w-full pt-2 grid grid-cols-[auto_1fr_auto] items-center gap-2">
           <button
             onClick={openFiltersPage}
@@ -2230,7 +2241,7 @@ export default function MarketplacePage() {
       )}
 
       {/* Saved view (mobile clinics/agencies or desktop): centered type pills only - no filters */}
-      {isParentOnly && showFavoritesOnly && (
+      {isParentOnly && isSavedView && (
         <div className="w-full pt-2">
           <DeckTypeSwitcher
             types={parentAvailableTypes}
@@ -2243,10 +2254,12 @@ export default function MarketplacePage() {
 
 
       <div className={isAdmin ? "pt-6" : ""}>
-        {/* Parents get a clean, pills-only saved view; admins/providers keep the
-            full filter bar in saved mode (mirrors the skipped/hidden view) so they
-            don't lose the tab + filter controls when toggling favorites. */}
-        {(!showFavoritesOnly || !isParentOnly) && (
+        {/* Parents get a clean, pills-only view only on the dedicated Saved page
+            (?view=saved); admins/providers keep the full filter bar there too
+            (mirrors the skipped/hidden view). The filter bar's own heart toggle is
+            just a filter, so it always keeps the bar - otherwise it would remove
+            the very control the parent clicked. */}
+        {(!isSavedView || !isParentOnly) && (
           <div className="mb-4" data-testid="marketplace-filter-bar-wrapper">
             <MarketplaceFilterBar
               providerType={currentProviderType}
@@ -2263,7 +2276,7 @@ export default function MarketplacePage() {
           </div>
         )}
 
-        {isIvfTab && !showFavoritesOnly && (
+        {isIvfTab && !isSavedView && (
           <div className="flex items-center gap-2 relative mb-4">
             <p className="text-sm font-ui text-foreground" data-testid="text-clinic-count">
               <span className="text-primary font-heading">{ivfClinicCount}</span> clinics found
