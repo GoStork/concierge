@@ -190,6 +190,18 @@ async function px05() {
   check("three variants of one product form one family", families.some((f: any[]) => f.length === 3), JSON.stringify(families.map((f: any[]) => f.length)));
   check("a genuinely different product stays its own card", families.some((f: any[]) => f.length === 1), JSON.stringify(families.map((f: any[]) => f.length)));
 
+  // Found on a live donor profile: "Fixed Egg Donation Program" and "Regular
+  // Egg Donation Program" shared a tab, subtype and country, so they rendered
+  // as two rungs of one ladder - which reads as "same product, pick a size"
+  // when they carry different terms. Variants share a leading stem; different
+  // products diverge at the first word.
+  const fixedVsRegular = groupProgramFamilies([
+    program("f1", "Fixed Egg Donation Program", [line("Agency Fee", 10_000)], { subType: "egg-donation", tab: "egg-donation" }),
+    program("r1", "Regular Egg Donation Program", [line("Agency Fee", 12_000)], { subType: "egg-donation", tab: "egg-donation" }),
+  ]);
+  check("Fixed and Regular Egg Donation are never merged into one ladder",
+    fixedVsRegular.length === 2, JSON.stringify(fixedVsRegular.map((f: any[]) => f.map((p: any) => p.programName))));
+
   check("the ladder is labelled by what differs",
     JSON.stringify(variantLabels(["IVF Program - One Cycle", "IVF Program - Two Cycles"])) === JSON.stringify(["One Cycle", "Two Cycles"]),
     JSON.stringify(variantLabels(["IVF Program - One Cycle", "IVF Program - Two Cycles"])));

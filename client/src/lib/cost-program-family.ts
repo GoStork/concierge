@@ -74,7 +74,14 @@ export function splitSharedItems(programs: ProgramCardData[]): FamilySplit {
 export function groupProgramFamilies(programs: ProgramCardData[]): ProgramCardData[][] {
   const groups = new Map<string, ProgramCardData[]>();
   for (const p of programs) {
-    const key = [p.tab ?? "", p.subType ?? "", p.country ?? "", p.isFixedCost ? "fixed" : "var"].join("::");
+    // The name's first word joins the key. Tab + subtype + country alone merged
+    // "Fixed Egg Donation Program" with "Regular Egg Donation Program" - two
+    // products with different terms, presented as two rungs of one ladder, which
+    // reads as "same thing, pick a size". Variants of one product share a
+    // leading stem ("IVF Program - One Cycle" / "- Two Cycles"); genuinely
+    // different products diverge at the first word.
+    const stem = (p.programName || "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+    const key = [p.tab ?? "", p.subType ?? "", p.country ?? "", p.isFixedCost ? "fixed" : "var", stem].join("::");
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(p);
   }

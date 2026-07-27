@@ -73,10 +73,10 @@ export function CostSheetProgramCard({
           {program.subTypeLabel && (
             <p className="t-helper mt-0.5">{program.subTypeLabel}</p>
           )}
-          <div className="flex items-center justify-between gap-3 mt-3">
+          <div className="flex items-center justify-between gap-x-3 gap-y-1 mt-3 flex-wrap">
             <div className="flex items-center gap-2 min-w-0">
               {flag ? <span className="text-xl shrink-0" aria-hidden>{flag}</span> : null}
-              <span className="font-heading text-base text-foreground truncate" data-testid="program-country">
+              <span className="font-heading text-base text-foreground" data-testid="program-country">
                 {program.country}
               </span>
             </div>

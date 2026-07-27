@@ -17,6 +17,7 @@
 const ACRONYMS = new Set([
   "ivf", "iui", "ici", "pgt", "gs", "npi", "id", "dna", "hiv", "aids", "tb",
   "bmi", "lgbtq", "cdc", "abog", "asrm", "md", "do", "us", "usa", "hcg", "fet",
+  "vip", "icsi", "pgs", "pgd", "tese", "hsg", "amh", "fsh", "sart", "eta",
 ]);
 
 export function formatFieldLabel(key: string): string {

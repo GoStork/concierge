@@ -9,6 +9,7 @@ import { ProfileFitLine } from "@/components/profile-fit-line";
 import { ProfileQuote } from "@/components/profile-quote";
 import { sectionBand, BAND_LABEL, orderSectionsIntoBands } from "@/lib/profile-sections";
 import { resolveHeroSelection } from "@/lib/profile-hero";
+import { safeCompensation } from "@/lib/compensation-sanity";
 import { useParentPreferences } from "@/hooks/use-parent-preferences";
 import {
   mapDatabaseDonorToSwipeProfile,
@@ -142,7 +143,7 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
     if (!showFallback) return null;
     // Anonymous / photo-less donor: branded silhouette instead of an empty hero.
     return (
-      <div className="mx-auto w-full max-w-[420px] aspect-[4/5] rounded-[var(--radius)] overflow-hidden" data-testid="photo-gallery-fallback">
+      <div className="w-full max-w-[420px] aspect-[4/5] rounded-[var(--radius)] overflow-hidden" data-testid="photo-gallery-fallback">
         <DonorPhotoFallback />
       </div>
     );
@@ -164,7 +165,7 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
       <div className="relative" data-testid="photo-gallery-bar">
         <button
           onClick={() => (heroIsVideo ? setShowVideo(true) : setLightboxIdx(heroPhotoIdx))}
-          className="block mx-auto w-full max-w-[420px] overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40 relative group"
+          className="block w-full max-w-[420px] overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40 relative group"
           data-testid="gallery-hero"
           aria-label={heroIsVideo ? "Play video" : "Expand photo"}
         >
@@ -188,7 +189,7 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
         {(photos.length > 1 || videoUrl) && (
           <div
             ref={scrollRef}
-            className="flex gap-1.5 overflow-x-auto scroll-smooth gallery-scroll mt-1.5 mx-auto w-full max-w-[420px]"
+            className="flex gap-1.5 overflow-x-auto scroll-smooth gallery-scroll mt-1.5 w-full max-w-[420px]"
             style={{ scrollbarWidth: "none" }}
             data-testid="gallery-scroll-container"
           >
@@ -471,7 +472,10 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
       { label: "Ethnicity", value: V(r.ethnicity) },
       { label: "Occupation", value: V(r.occupation) },
       { label: "Religion", value: V(r.religion) },
-      { label: "Egg Donor Compensation", value: fmtUSD(r.resolvedCompensation ?? r.donorCompensation) },
+      // Same band check the cards use. This row published $200,000 for an egg
+      // donor - the exact figure the guard exists to withhold - because the
+      // guard lived in the swipe mapper and this summary builds its own rows.
+      { label: "Egg Donor Compensation", value: fmtUSD(safeCompensation(r.resolvedCompensation ?? r.donorCompensation, "egg-donor")) },
       { label: "Height", value: V(r.height) },
       { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCost(r.calculatedTotalCost) : (r.totalCost ? fmtUSD(r.totalCost) : "-") },
       { label: "Weight", value: V(r.weight) },
@@ -501,7 +505,7 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
       { label: "Selective Reduction", value: B(r.agreesToSelectiveReduction) },
       { label: "Same Sex Couple", value: B(r.openToSameSexCouple) },
       { label: "International Parents", value: B(r.agreesToInternationalParents) },
-      { label: "Base Compensation", value: fmtUSD(r.resolvedCompensation ?? r.baseCompensation) },
+      { label: "Base Compensation", value: fmtUSD(safeCompensation(r.resolvedCompensation ?? r.baseCompensation, "surrogate")) },
       { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCost(r.calculatedTotalCost) : (r.totalCostMin ? `${fmtUSD(r.totalCostMin)}${r.totalCostMax && r.totalCostMax !== r.totalCostMin ? ` – ${fmtUSD(r.totalCostMax)}` : ""}` : "-") },
     ];
   } else {
@@ -1018,60 +1022,68 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
         )}
       </div>
 
-      {isMobile
-        ? (
-          <motion.div
-            layoutId={`card-hero-${donorId}`}
-            transition={{ duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] }}
-          >
-            <MobilePhotoViewer photos={allPhotos} videoUrl={donorVideoUrl} showFallback />
-            <ProfileQuote quote={donor.highlightQuote} className="mt-3" />
-          </motion.div>
-        )
-        : <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} showFallback />}
-
-      <div className={isMobile ? "hidden" : ""}>
-        <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-donor-title">
-          {typeLabel} #{displayId}
-        </h1>
-        <div className="flex flex-wrap items-center gap-2 mt-1">
-          <StatusBadge status={donor.status} />
-          {/* Availability is the most perishable fact here; "AVAILABLE" alone
-              reads the same whether it was synced today or months ago. */}
-          {freshness && <span className="t-helper" data-testid="text-freshness">Updated {freshness}</span>}
-          {donor.isExperienced && (
-            <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning)/0.3)]" data-testid="badge-experienced">
-              Experienced
-            </Badge>
+      {isMobile ? (
+        <motion.div
+          layoutId={`card-hero-${donorId}`}
+          transition={{ duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] }}
+        >
+          <MobilePhotoViewer photos={allPhotos} videoUrl={donorVideoUrl} showFallback />
+          <ProfileQuote quote={donor.highlightQuote} className="mt-3" />
+        </motion.div>
+      ) : (
+        // Desktop: her photo and who she is, side by side. Bounding the hero to
+        // a portrait fixed the cropping, but left it centred over left-aligned
+        // content - one column of photo floating above another of text. Pairing
+        // them uses the width and puts her face next to her name, which is the
+        // pairing a parent is actually making.
+        <div className="flex items-start gap-8" data-testid="profile-desktop-header">
+          <div className="w-[420px] shrink-0">
+            <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} showFallback />
+          </div>
+          <div className="flex-1 min-w-0">
+          <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-donor-title">
+            {typeLabel} #{displayId}
+          </h1>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <StatusBadge status={donor.status} />
+            {/* Availability is the most perishable fact here; "AVAILABLE" alone
+                reads the same whether it was synced today or months ago. */}
+            {freshness && <span className="t-helper" data-testid="text-freshness">Updated {freshness}</span>}
+            {donor.isExperienced && (
+              <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning)/0.3)]" data-testid="badge-experienced">
+                Experienced
+              </Badge>
+            )}
+            {donor.donorType && (
+              <Badge variant="outline" className="text-xs">{donor.donorType}</Badge>
+            )}
+            {type === "sperm-donor" && Array.isArray(donor.vialTypes) && donor.vialTypes.length > 0 && (
+              <Badge variant="outline" className="text-xs">Available for: {donor.vialTypes.join(", ")}</Badge>
+            )}
+          </div>
+          {/* Why this person suits THIS parent - previously only rendered when
+              arriving from Eva, so most readers saw an identical page. */}
+          <ProfileFitLine profile={swipeProfile} preferences={parentPreferences} className="mt-3" />
+          {/* Her own voice, above the attribute tables. The full letter stays
+              below - this is a way in, not a substitute. */}
+          <ProfileQuote quote={donor.highlightQuote} className="mt-3" />
+          {donor.profileUrl && user && (
+            hasAnyRole(user.roles || [], [...GOSTORK_ROLES]) ||
+            (hasProviderRole(user.roles || []) && user.providerId === providerId)
+          ) && (
+            <a
+              href={donor.profileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline flex items-center gap-1 mt-1"
+              data-testid="link-donor-profile-external"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> {donor.externalId?.startsWith("pdf-") ? "View PDF" : "View on Provider Site"}
+            </a>
           )}
-          {donor.donorType && (
-            <Badge variant="outline" className="text-xs">{donor.donorType}</Badge>
-          )}
-          {type === "sperm-donor" && Array.isArray(donor.vialTypes) && donor.vialTypes.length > 0 && (
-            <Badge variant="outline" className="text-xs">Available for: {donor.vialTypes.join(", ")}</Badge>
-          )}
+          </div>
         </div>
-        {/* Why this person suits THIS parent - previously only rendered when
-            arriving from Eva, so most readers saw an identical page. */}
-        <ProfileFitLine profile={swipeProfile} preferences={parentPreferences} className="mt-3" />
-        {/* Her own voice, above the attribute tables. The full letter stays
-            below - this is a way in, not a substitute. */}
-        <ProfileQuote quote={donor.highlightQuote} className="mt-3" />
-        {donor.profileUrl && user && (
-          hasAnyRole(user.roles || [], [...GOSTORK_ROLES]) ||
-          (hasProviderRole(user.roles || []) && user.providerId === providerId)
-        ) && (
-          <a
-            href={donor.profileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-primary hover:underline flex items-center gap-1 mt-1"
-            data-testid="link-donor-profile-external"
-          >
-            <ExternalLink className="h-3.5 w-3.5" /> {donor.externalId?.startsWith("pdf-") ? "View PDF" : "View on Provider Site"}
-          </a>
-        )}
-      </div>
+      )}
 
       {fromChat && matchReasons.length > 0 && (
         <Card className="overflow-hidden border-primary/20 bg-primary/5" data-testid="section-match-reasons">
