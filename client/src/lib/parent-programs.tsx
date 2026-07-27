@@ -101,25 +101,39 @@ export function ParentProgramsProvider({ providerIds, children }: {
   }, [providerIds]);
 
   const chunks = useMemo(() => chunkIds(ids), [ids]);
+  const firstChunk = chunks[0] ?? [];
+  const restChunks = useMemo(() => chunks.slice(1), [chunks]);
 
-  const results = useQueries({
-    queries: chunks.map((chunk, i) => ({
+  // Chunk 0 covers the cards on screen and goes out immediately.
+  const first = useQuery<ProgramsMap>({
+    queryKey: ["parent-programs-batch", parentAccountId, firstChunk.join(",")],
+    queryFn: () => fetchPrograms(firstChunk, parentAccountId!),
+    enabled: !!parentAccountId && firstChunk.length > 0,
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+  });
+
+  // The rest fill in off-screen cards only AFTER the visible ones have their
+  // prices, so the server is never pricing 450 providers while the parent waits
+  // on the nine they can actually see.
+  const rest = useQueries({
+    queries: restChunks.map((chunk) => ({
       queryKey: ["parent-programs-batch", parentAccountId, chunk.join(",")],
       queryFn: () => fetchPrograms(chunk, parentAccountId!),
-      // Chunk 0 (visible cards) goes immediately; the background chunks wait for
-      // it so the server isn't pricing 450 providers while the parent is waiting
-      // on the 9 they can actually see.
-      enabled: !!parentAccountId && chunk.length > 0,
+      enabled: !!parentAccountId && chunk.length > 0 && !first.isPending,
       staleTime: 5 * 60_000,
       gcTime: 10 * 60_000,
     })),
   });
 
+  const restStamp = rest.map((r) => r.dataUpdatedAt).join(",");
   const map = useMemo(() => {
     const merged: ProgramsMap = {};
-    for (const r of results) Object.assign(merged, (r.data as ProgramsMap) || {});
+    Object.assign(merged, first.data || {});
+    for (const r of rest) Object.assign(merged, (r.data as ProgramsMap) || {});
     return merged;
-  }, [results.map((r) => r.dataUpdatedAt).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [first.data, restStamp]);
 
   const value = useMemo(() => ({ map }), [map]);
 

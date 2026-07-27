@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { formatMoneyDollars } from "@/lib/format-money";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SwipeDeckCard } from "./swipe-deck-card";
+import { useParentCostItems } from "@/lib/parent-programs";
 import { getAgencyTabs } from "./swipe-mappers";
 
 // Leadership-first ordering for the rotating team faces: the CEO/Owner/Founder
@@ -61,7 +61,6 @@ export function AgencySwipeCard({
 }) {
   const [fetchedProvider, setFetchedProvider] = useState<any>(null);
   const provider = providerProp ?? fetchedProvider;
-  const [costItems, setCostItems] = useState<{ label: string; value?: string; country?: string | null; programName?: string; subLabel?: string | null; total?: string }[]>([]);
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const parentAccountId = (user as any)?.parentAccountId as string | undefined;
@@ -81,35 +80,7 @@ export function AgencySwipeCard({
   // Parent-matched surrogacy programs -> one Costs row per program (name +
   // total), cheapest first. Same endpoint as the clinic card (type-agnostic
   // by providerId).
-  useEffect(() => {
-    if (!parentAccountId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/costs/provider/${providerId}/parent-programs?parentAccountId=${parentAccountId}`, { credentials: "include" });
-        if (!res.ok) return;
-        const data = await res.json();
-        const programs: any[] = data?.programs || [];
-        const items = programs
-          .map((p: any) => {
-            const min = Number(p.minTotal);
-            const max = Number(p.maxTotal);
-            if (!Number.isFinite(min) || min <= 0) return null;
-            const cost = Number.isFinite(max) && max > min
-              ? `${formatMoneyDollars(min)} - ${formatMoneyDollars(max)}`
-              : formatMoneyDollars(min);
-            const name = p.programName || p.country || "Program";
-            // Structured fields drive the cost_cards layout; label is the fallback.
-            return { label: `${name}: ${cost}`, country: p.country || null, programName: name, subLabel: p.subTypeLabel || null, total: cost, _min: min };
-          })
-          .filter(Boolean) as { label: string; country: string | null; programName: string; subLabel: string | null; total: string; _min: number }[];
-        items.sort((a, b) => a._min - b._min);
-        if (cancelled) return;
-        setCostItems(items.map(({ _min, ...rest }) => rest));
-      } catch { /* non-critical */ }
-    })();
-    return () => { cancelled = true; };
-  }, [providerId, parentAccountId]);
+  const costItems = useParentCostItems(providerId);
 
   if (!provider) {
     return (

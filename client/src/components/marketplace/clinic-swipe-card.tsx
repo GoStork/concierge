@@ -6,10 +6,10 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { formatMoneyDollars } from "@/lib/format-money";
 import { parseInsuranceValue } from "@shared/insurance-data";
 import { SwipeDeckCard } from "./swipe-deck-card";
 import { getClinicTabs, buildClinicDoctorTab } from "./swipe-mappers";
+import { useParentCostItems } from "@/lib/parent-programs";
 
 /**
  * Shared clinic card - the SINGLE clinic SwipeDeckCard used by BOTH the AI
@@ -62,7 +62,6 @@ export function ClinicSwipeCard({
 }) {
   const [fetchedProvider, setFetchedProvider] = useState<any>(null);
   const provider = providerProp ?? fetchedProvider;
-  const [costItems, setCostItems] = useState<{ label: string; country?: string | null; programName?: string; subLabel?: string | null; total?: string }[]>([]);
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const parentAccountId = (user as any)?.parentAccountId as string | undefined;
@@ -105,35 +104,9 @@ export function ClinicSwipeCard({
   }, [providerId, providerProp]);
 
   // Parent-matched cost programs -> one Costs row per program (name + total),
-  // cheapest first - same as the agency card.
-  useEffect(() => {
-    if (!parentAccountId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/costs/provider/${providerId}/parent-programs?parentAccountId=${parentAccountId}`, { credentials: "include" });
-        if (!res.ok) return;
-        const data = await res.json();
-        const programs: any[] = data?.programs || [];
-        const items = programs
-          .map((p: any) => {
-            const min = Number(p.minTotal);
-            const max = Number(p.maxTotal);
-            if (!Number.isFinite(min) || min <= 0) return null;
-            const cost = Number.isFinite(max) && max > min
-              ? `${formatMoneyDollars(min)} - ${formatMoneyDollars(max)}`
-              : formatMoneyDollars(min);
-            const name = p.programName || p.country || "Program";
-            return { label: `${name}: ${cost}`, country: p.country || null, programName: name, subLabel: p.subTypeLabel || null, total: cost, _min: min };
-          })
-          .filter(Boolean) as { label: string; country: string | null; programName: string; subLabel: string | null; total: string; _min: number }[];
-        items.sort((a, b) => a._min - b._min);
-        if (cancelled) return;
-        setCostItems(items.map(({ _min, ...rest }) => rest));
-      } catch { /* non-critical */ }
-    })();
-    return () => { cancelled = true; };
-  }, [providerId, parentAccountId]);
+  // cheapest first. Batched for the whole deck by ParentProgramsProvider; see
+  // lib/parent-programs for why this is no longer a per-card fetch.
+  const costItems = useParentCostItems(providerId);
 
   // Phase 4: does this parent meet the clinic's matching requirements?
   // Same shared evaluator the AI search + booking check use. Providers and

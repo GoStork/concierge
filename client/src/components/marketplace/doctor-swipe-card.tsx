@@ -1,7 +1,5 @@
-import { useState, useEffect } from "react";
-import { useAuth } from "@/hooks/use-auth";
-import { formatMoneyDollars } from "@/lib/format-money";
 import { SwipeDeckCard } from "./swipe-deck-card";
+import { useParentCostItems } from "@/lib/parent-programs";
 import { buildDoctorCardProps, type DoctorCardData } from "./swipe-mappers";
 
 /**
@@ -42,41 +40,11 @@ export function DoctorSwipeCard({
   // Opens an AI concierge chat about this doctor (the airplane button).
   onMessage?: () => void;
 }) {
-  const { user } = useAuth();
-  const parentAccountId = (user as any)?.parentAccountId as string | undefined;
-  const [costItems, setCostItems] = useState<{ label: string; country?: string | null; programName?: string; subLabel?: string | null; total?: string }[]>([]);
   const primaryClinicId = doctor.clinics?.[0]?.providerId || null;
 
-  // Cost programs come from the doctor's primary clinic - same endpoint + shape
-  // as the clinic card (parent-matched, one row per program).
-  useEffect(() => {
-    if (!parentAccountId || !primaryClinicId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/costs/provider/${primaryClinicId}/parent-programs?parentAccountId=${parentAccountId}`, { credentials: "include" });
-        if (!res.ok) return;
-        const data = await res.json();
-        const programs: any[] = data?.programs || [];
-        const items = programs
-          .map((p: any) => {
-            const min = Number(p.minTotal);
-            const max = Number(p.maxTotal);
-            if (!Number.isFinite(min) || min <= 0) return null;
-            const cost = Number.isFinite(max) && max > min
-              ? `${formatMoneyDollars(min)} - ${formatMoneyDollars(max)}`
-              : formatMoneyDollars(min);
-            const name = p.programName || p.country || "Program";
-            return { label: `${name}: ${cost}`, country: p.country || null, programName: name, subLabel: p.subTypeLabel || null, total: cost, _min: min };
-          })
-          .filter(Boolean) as { label: string; country: string | null; programName: string; subLabel: string | null; total: string; _min: number }[];
-        items.sort((a, b) => a._min - b._min);
-        if (cancelled) return;
-        setCostItems(items.map(({ _min, ...rest }) => rest));
-      } catch { /* non-critical */ }
-    })();
-    return () => { cancelled = true; };
-  }, [primaryClinicId, parentAccountId]);
+  // Cost programs come from the doctor's primary clinic - batched for the whole
+  // deck by ParentProgramsProvider (see lib/parent-programs).
+  const costItems = useParentCostItems(primaryClinicId);
 
   const { photos, photoLabels, logoSrc, successBadge, tabs, headerLocation, firstSlidePlain } =
     buildDoctorCardProps(doctor, { contextLabel, compact, reasons, costs: costItems });

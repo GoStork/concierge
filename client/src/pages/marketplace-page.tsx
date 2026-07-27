@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from "react";
-import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, keepPreviousData } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { typeToUrlSlug } from "@/lib/profile-utils";
 import { api } from "@shared/routes";
@@ -31,6 +31,7 @@ import { SwipeDeckCard } from "@/components/marketplace/swipe-deck-card";
 import { SwipeDeck, type SwipeDeckCardMode, type SwipeDeckCardApi } from "@/components/marketplace/swipe-deck";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { ClinicSwipeCard } from "@/components/marketplace/clinic-swipe-card";
+import { ParentProgramsProvider } from "@/lib/parent-programs";
 import { DoctorSwipeCard } from "@/components/marketplace/doctor-swipe-card";
 import { AgencySwipeCard } from "@/components/marketplace/agency-swipe-card";
 import { useMarketplaceViewContext, recordProfileView, recordImpression, useScrollPastView } from "@/lib/profile-views";
@@ -458,29 +459,31 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
   );
 
   return (
-    <SwipeDeck
-      items={sorted}
-      getKey={(p) => p.id}
-      renderCard={renderCard}
-      onSave={onSave}
-      onPass={onPass}
-      onUndo={onUndo}
-      onActiveChange={(p) => recordImpression(p.id, "clinic")}
-      renderGridItem={(item, card, key) => (
-        <GridDwellItem profileId={key} profileType="clinic" testId={`clinic-card-container-${key}`}>{card}</GridDwellItem>
-      )}
-      resetDeps={[showFavoritesOnly, showSkippedOnly, providers]}
-      dim={showSkippedOnly}
-      emptyTitle="No clinics found"
-      emptySubtitle="Try adjusting your filters or search criteria."
-      seenAllTitle="You've seen all clinics!"
-      seenAllSubtitle="Adjust your filters or check back later."
-      emptyTestId="text-no-clinics"
-      seenAllTestId="text-no-more-clinics"
-      restartTestId="button-restart-clinic-swipe"
-      mobileDeckTestId="clinic-swipe-deck-mobile"
-      cardTestIdPrefix="clinic-card"
-    />
+    <ParentProgramsProvider providerIds={sorted.map((p) => p.id)}>
+      <SwipeDeck
+        items={sorted}
+        getKey={(p) => p.id}
+        renderCard={renderCard}
+        onSave={onSave}
+        onPass={onPass}
+        onUndo={onUndo}
+        onActiveChange={(p) => recordImpression(p.id, "clinic")}
+        renderGridItem={(item, card, key) => (
+          <GridDwellItem profileId={key} profileType="clinic" testId={`clinic-card-container-${key}`}>{card}</GridDwellItem>
+        )}
+        resetDeps={[showFavoritesOnly, showSkippedOnly, providers]}
+        dim={showSkippedOnly}
+        emptyTitle="No clinics found"
+        emptySubtitle="Try adjusting your filters or search criteria."
+        seenAllTitle="You've seen all clinics!"
+        seenAllSubtitle="Adjust your filters or check back later."
+        emptyTestId="text-no-clinics"
+        seenAllTestId="text-no-more-clinics"
+        restartTestId="button-restart-clinic-swipe"
+        mobileDeckTestId="clinic-swipe-deck-mobile"
+        cardTestIdPrefix="clinic-card"
+      />
+    </ParentProgramsProvider>
   );
 }
 
@@ -562,29 +565,31 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
   }
 
   return (
-    <SwipeDeck
-      items={filtered}
-      getKey={(d) => d.slug}
-      renderCard={renderCard}
-      onSave={onSave}
-      onPass={onPass}
-      onUndo={onUndo}
-      onActiveChange={(d) => recordImpression(d.slug, "doctor")}
-      renderGridItem={(item, card, key) => (
-        <GridDwellItem profileId={key} profileType="doctor" testId={`doctor-card-container-${key}`}>{card}</GridDwellItem>
-      )}
-      resetDeps={[showFavoritesOnly, showSkippedOnly, doctors]}
-      dim={showSkippedOnly}
-      emptyTitle="No doctors found"
-      emptySubtitle="Try a different name, specialty, or location."
-      seenAllTitle="You've seen all doctors!"
-      seenAllSubtitle="Adjust your filters or check back later."
-      emptyTestId="text-no-doctors"
-      seenAllTestId="text-no-more-doctors"
-      restartTestId="button-restart-doctor-swipe"
-      mobileDeckTestId="doctor-swipe-deck-mobile"
-      cardTestIdPrefix="doctor-card"
-    />
+    <ParentProgramsProvider providerIds={(filtered || []).map((d: any) => d.clinics?.[0]?.providerId)}>
+      <SwipeDeck
+        items={filtered}
+        getKey={(d) => d.slug}
+        renderCard={renderCard}
+        onSave={onSave}
+        onPass={onPass}
+        onUndo={onUndo}
+        onActiveChange={(d) => recordImpression(d.slug, "doctor")}
+        renderGridItem={(item, card, key) => (
+          <GridDwellItem profileId={key} profileType="doctor" testId={`doctor-card-container-${key}`}>{card}</GridDwellItem>
+        )}
+        resetDeps={[showFavoritesOnly, showSkippedOnly, doctors]}
+        dim={showSkippedOnly}
+        emptyTitle="No doctors found"
+        emptySubtitle="Try a different name, specialty, or location."
+        seenAllTitle="You've seen all doctors!"
+        seenAllSubtitle="Adjust your filters or check back later."
+        emptyTestId="text-no-doctors"
+        seenAllTestId="text-no-more-doctors"
+        restartTestId="button-restart-doctor-swipe"
+        mobileDeckTestId="doctor-swipe-deck-mobile"
+        cardTestIdPrefix="doctor-card"
+      />
+    </ParentProgramsProvider>
   );
 }
 
@@ -695,25 +700,27 @@ function AgencyDeck({ providers, searchQuery }: {
   );
 
   return (
-    <SwipeDeck
-      items={sorted}
-      getKey={(p) => p.id}
-      renderCard={renderCard}
-      onSave={onSave}
-      onPass={onPass}
-      onUndo={onUndo}
-      resetDeps={[showFavoritesOnly, showSkippedOnly, providers, q, activeFilters]}
-      dim={showSkippedOnly}
-      emptyTitle="No surrogacy agencies found"
-      emptySubtitle="Try adjusting your search."
-      seenAllTitle="You've seen all agencies!"
-      seenAllSubtitle="Adjust your filters or check back later."
-      emptyTestId="text-no-agencies"
-      seenAllTestId="text-no-more-agencies"
-      restartTestId="button-restart-agency-swipe"
-      mobileDeckTestId="agency-swipe-deck-mobile"
-      cardTestIdPrefix="agency-card"
-    />
+    <ParentProgramsProvider providerIds={(sorted || []).map((p: any) => p.id)}>
+      <SwipeDeck
+        items={sorted}
+        getKey={(p) => p.id}
+        renderCard={renderCard}
+        onSave={onSave}
+        onPass={onPass}
+        onUndo={onUndo}
+        resetDeps={[showFavoritesOnly, showSkippedOnly, providers, q, activeFilters]}
+        dim={showSkippedOnly}
+        emptyTitle="No surrogacy agencies found"
+        emptySubtitle="Try adjusting your search."
+        seenAllTitle="You've seen all agencies!"
+        seenAllSubtitle="Adjust your filters or check back later."
+        emptyTestId="text-no-agencies"
+        seenAllTestId="text-no-more-agencies"
+        restartTestId="button-restart-agency-swipe"
+        mobileDeckTestId="agency-swipe-deck-mobile"
+        cardTestIdPrefix="agency-card"
+      />
+    </ParentProgramsProvider>
   );
 }
 
@@ -1937,6 +1944,11 @@ export default function MarketplacePage() {
       return res.json();
     },
     enabled: isIvfTab,
+    // Keep the current deck on screen while the next search runs. Without this
+    // every keystroke blanked the grid to "0 clinics found" + a spinner, which
+    // reads as "the search is broken" even when the request takes 200ms.
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
   });
 
   const doctorQueryParams = new URLSearchParams(
@@ -1960,7 +1972,12 @@ export default function MarketplacePage() {
   const savedDoctorSlugs = useAppSelector((s) => s.ui.favoritedDoctorSlugs);
   const hiddenDoctorSlugs = useAppSelector((s) => s.ui.passedDoctorSlugs);
   const doctorsShowSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
-  const doctorSlugScope = isSavedView ? savedDoctorSlugs : doctorsShowSkippedOnly ? hiddenDoctorSlugs : null;
+  // Keyed off showFavoritesOnly, NOT isSavedView: per the note above,
+  // showFavoritesOnly drives the DATA and isSavedView only the chrome. The
+  // filter bar's heart turns on the saved filter without touching the URL, so
+  // scoping the fetch to ?view=saved left that in-marketplace toggle filtering
+  // the capped 250 again - the same gap, one surface over.
+  const doctorSlugScope = showFavoritesOnly ? savedDoctorSlugs : doctorsShowSkippedOnly ? hiddenDoctorSlugs : null;
   const doctorSlugParam = doctorSlugScope && doctorSlugScope.length > 0 ? doctorSlugScope.join(",") : "";
 
   const { data: doctors, isLoading: doctorsLoading } = useQuery<any[]>({
@@ -1975,6 +1992,8 @@ export default function MarketplacePage() {
     },
     // A saved/hidden view with an empty list has nothing to ask for.
     enabled: isDoctorTab && !(doctorSlugScope !== null && doctorSlugScope.length === 0),
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
   });
 
   const setFilterParam = (key: string, value: string | null) => {
