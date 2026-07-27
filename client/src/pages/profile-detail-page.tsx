@@ -372,6 +372,35 @@ function collectDuplicateLabels(
 }
 
 /**
+ * Which of the three reading bands a section belongs to.
+ *
+ * A profile answers three different questions and used to present all three at
+ * one weight, in whatever order the scraper emitted: 31 medical answers carried
+ * the same visual authority as her letter. Parents decide in band 1, commit in
+ * band 2, and hand band 3 to their doctor - so that is the order.
+ *
+ * Band 3 stays fully visible (Eran's call) - moved down, not hidden.
+ */
+const BAND_PERSONAL_PATTERN =
+  /(letter|things\s*about\s*me|about\s*me|general\s*interests|interests|hobbies|favorites?|personal\s*statement|support\s*system|agency\s*comment|significant\s*other|my\s*story|in\s*her\s*own\s*words|message\s*to)/i;
+const BAND_DILIGENCE_PATTERN =
+  /(medical|health|histor|pregnanc|donation|famil|genetic|screening|surger|medication|diagnos|allerg|infection|vaccin|lab\b)/i;
+
+/** 1 = is this a fit, 2 = who she is, 3 = due diligence. */
+function sectionBand(name: string): 1 | 2 | 3 {
+  const n = (name || "").replace(/^__|__$/g, "").replace(/_/g, " ");
+  if (BAND_PERSONAL_PATTERN.test(n)) return 2;
+  if (BAND_DILIGENCE_PATTERN.test(n)) return 3;
+  return 1;
+}
+
+const BAND_LABEL: Record<1 | 2 | 3, string> = {
+  1: "At a glance",
+  2: "In her own words",
+  3: "Medical & background",
+};
+
+/**
  * Sections that are a person talking, not a data table. Every entry in these
  * renders as a PromptBlock (small accent eyebrow + large prose answer) no
  * matter how short the answer is - the question is scaffolding, the answer is
@@ -1245,6 +1274,25 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
           }
         }
 
+        // Stable band sort: everything keeps its current relative order inside
+        // its own band, so the letter anchoring above still holds.
+        const bandSorted = sectionNames
+          .map((name, i) => ({ name, i, band: sectionBand(name) }))
+          .sort((a, b) => (a.band - b.band) || (a.i - b.i))
+          .map((x) => x.name);
+        sectionNames.length = 0;
+        // A marker before the first section of each band; the map renders it as
+        // a heading. Only bands that actually have sections get one.
+        let lastBand: 1 | 2 | 3 | null = null;
+        for (const name of bandSorted) {
+          const band = sectionBand(name);
+          if (band !== lastBand) {
+            sectionNames.push(`__BAND_${band}__`);
+            lastBand = band;
+          }
+          sectionNames.push(name);
+        }
+
         if (agencyCommentContent) {
           const letterIdx = sectionNames.indexOf("__LETTER__");
           if (letterIdx >= 0) {
@@ -1273,6 +1321,19 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
         }
 
         return sectionNames.filter((n) => !consumed.has(n)).map((sectionName) => {
+          const bandMatch = sectionName.match(/^__BAND_([123])__$/);
+          if (bandMatch) {
+            const band = Number(bandMatch[1]) as 1 | 2 | 3;
+            return (
+              <h2
+                key={sectionName}
+                className="t-micro-label pt-2"
+                data-testid={`band-heading-${band}`}
+              >
+                {BAND_LABEL[band]}
+              </h2>
+            );
+          }
           if (sectionName === "__LETTER__" && letterContent) {
             return (
               <ProfileSection key="letter-to-intended-parents" title="Letter to Intended Parents" data-testid="section-letter-to-intended-parents">
