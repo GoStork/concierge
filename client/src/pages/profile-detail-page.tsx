@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ProfileSection } from "@/components/ui/profile-section";
 import {
-  Field, FieldValue, FieldGrid, MicroField,
+  Field, FieldValue, FieldGrid, MicroField, isWideField,
   PromptBlock, PromptStack, PromptEyebrow, PromptAnswer,
   AttributeChip, ChipRow, toChipParts,
 } from "@/components/ui/field";
@@ -1683,7 +1683,11 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                             if (typeof answer === "object" && answer !== null && !Array.isArray(answer)) {
                               const subEntries = Object.entries(answer);
                               return (
-                                <Field key={question} label={question}>
+                                <Field
+                                  key={question}
+                                  label={question}
+                                  wide={shortEntries.length === 1 || subEntries.length > 4 || question.length > 70}
+                                >
                                   <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                                     {subEntries.map(([subKey, subVal]) => (
                                       <MicroField key={subKey} label={subKey} value={renderFlat(subVal)} />
@@ -1694,8 +1698,12 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                             }
                             const answerStr = renderFlat(answer);
                             const chips = toChipParts(answerStr);
+                            // A single-field section, a long question or a long
+                            // answer takes the whole row - in a third-width
+                            // column those wrap into a cramped stack.
+                            const wide = shortEntries.length === 1 || isWideField(question, answerStr);
                             return (
-                              <Field key={question} label={question}>
+                              <Field key={question} label={question} wide={wide}>
                                 {chips ? (
                                   <ChipRow>
                                     {chips.map((c) => (

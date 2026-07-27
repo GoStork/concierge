@@ -77,6 +77,7 @@ export function Field({
   label,
   value,
   prose,
+  wide,
   className,
   children,
   "data-testid": testId,
@@ -85,16 +86,34 @@ export function Field({
   /** Rendered through FieldValue. Omit and pass children for custom content. */
   value?: React.ReactNode;
   prose?: boolean;
+  /**
+   * Claim the whole row inside a FieldGrid. Use for a long question or a long
+   * answer: at a third of the width a 170-character question wraps three times,
+   * which reads as a cramped column rather than a sentence.
+   */
+  wide?: boolean;
   className?: string;
   children?: React.ReactNode;
   "data-testid"?: string;
 }) {
   return (
-    <div className={cn("min-w-0", className)} data-testid={testId}>
+    <div
+      className={cn("min-w-0", wide && "md:col-span-2 lg:col-span-3", className)}
+      data-testid={testId}
+    >
       <FieldLabel>{label}</FieldLabel>
       {children ?? <FieldValue prose={prose}>{value}</FieldValue>}
     </div>
   );
+}
+
+/**
+ * True when a pair should span the full row rather than sit in one grid column.
+ * Thresholds are in characters and tuned to a third-width column at the brand's
+ * value size - roughly 75 characters per line.
+ */
+export function isWideField(label: string, value: string): boolean {
+  return (label || "").length > 70 || (value || "").length > 140;
 }
 
 /**
