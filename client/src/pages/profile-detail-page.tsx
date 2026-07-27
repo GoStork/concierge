@@ -271,7 +271,7 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false, va
               data-testid="photo-rail-video"
               aria-label="Play video"
             >
-              <img src={photos[0]} alt="Video thumbnail" className="w-full aspect-[4/5] object-cover object-center brightness-75" />
+              <img src={photos[0]} alt="Video thumbnail" className="w-full aspect-[3/4] object-cover object-center brightness-75" />
               <span className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                 <span className="w-14 h-14 rounded-full bg-card/90 flex items-center justify-center shadow-lg">
                   <Play className="w-7 h-7 text-primary ml-0.5" fill="currentColor" />
@@ -289,10 +289,16 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false, va
               data-testid={`photo-rail-item-${idx}`}
               aria-label={`Expand photo ${idx + 1}`}
             >
+              {/* Nothing in this column is cropped, including the lead photo.
+                  A fixed portrait frame made the column tidy, but it cut the
+                  two children out of the sides of a family photo - and on these
+                  profiles the family IS the photo. A ragged right edge is a
+                  much smaller price than deciding for a parent which half of
+                  someone's family they get to see. */}
               <img
                 src={src}
                 alt={`Photo ${idx + 1}`}
-                className="w-full aspect-[4/5] object-cover object-center transition-transform duration-500 group-hover:scale-[1.02]"
+                className="w-full h-auto transition-transform duration-500 group-hover:scale-[1.02]"
                 loading={idx < 2 ? "eager" : "lazy"}
                 onError={() => setErrored((e) => ({ ...e, [src]: true }))}
               />
@@ -1039,7 +1045,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
   return (
     // Desktop: sections on the left, her photos running down the right, level
     // with them. See ProfilePhotoRail for why the big-hero layout was wrong.
-    <div className="w-full pb-32 md:pb-0 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-8 lg:items-start">
+    <div className="w-full pb-32 md:pb-0 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8 lg:items-start">
       <div className="space-y-6 min-w-0">
       {isMobile && (
         <>

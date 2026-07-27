@@ -463,6 +463,18 @@ async function px12() {
   const drawer = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");
   check("the comparison columns follow the same framing rule",
     /max-w-\[\d+px\] aspect-\[\d+\/\d+\]/.test(drawer));
+
+  // The profile's photo rail crops NOTHING. A fixed portrait frame cut the two
+  // children out of the sides of a surrogate's family photo, and on these
+  // profiles the family is the photo - a ragged right edge is a far smaller
+  // price than deciding which half of someone's family a parent gets to see.
+  const railStart = page.indexOf('data-testid="profile-photo-rail"');
+  check("the photo rail exists", railStart > 0);
+  const itemStart = page.indexOf('data-testid={`photo-rail-item-${idx}`}', railStart);
+  const item = page.slice(itemStart, itemStart + 1400);
+  check("the rail renders its photos", itemStart > 0 && /<img/.test(item));
+  check("no rail photo is cropped to a fixed frame", !/object-cover/.test(item), item.slice(0, 0));
+  check("rail photos keep their own height", /h-auto/.test(item), item.slice(0, 0));
 }
 
 
