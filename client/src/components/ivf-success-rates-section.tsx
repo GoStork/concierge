@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 
 export interface IvfSuccessRate {
@@ -16,6 +17,28 @@ export interface IvfFilterContext {
   eggSource?: string;
   ageGroup?: string;
   isNewPatient?: string;
+}
+
+/**
+ * The parent's IVF context ("Your IVF" in the marketplace), read from the URL.
+ * Success rates are personalised against it, so every surface that shows a
+ * clinic's rates - the clinic profile, a doctor's profile, the deck cards -
+ * must read it the same way. Returns undefined when the parent hasn't picked
+ * one, which makes IvfSuccessRatesSection fall back to its overview.
+ */
+export function useIvfFilterContext(): IvfFilterContext | undefined {
+  const [searchParams] = useSearchParams();
+  return useMemo(() => {
+    const eggSource = searchParams.get("eggSource");
+    const ageGroup = searchParams.get("ageGroup");
+    const isNewPatient = searchParams.get("isNewPatient");
+    if (!eggSource && !ageGroup) return undefined;
+    return {
+      ...(eggSource ? { eggSource } : {}),
+      ...(ageGroup ? { ageGroup } : {}),
+      ...(isNewPatient ? { isNewPatient } : {}),
+    };
+  }, [searchParams]);
 }
 
 const AGE_GROUPS = ["under_35", "35_37", "38_40", "over_40"] as const;

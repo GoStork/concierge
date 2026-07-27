@@ -5,9 +5,12 @@ import { recordProfileView, recordProfileOpen } from "@/lib/profile-views";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProfileSection } from "@/components/ui/profile-section";
+import { IvfSuccessRatesSection, useIvfFilterContext } from "@/components/ivf-success-rates-section";
+import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-section";
+import { InsuranceSection } from "@/components/insurance-section";
 import {
   ArrowLeft, MapPin, Building2, Loader2, GraduationCap, Award, Globe,
-  Stethoscope, Heart, Video, BadgeCheck, Star, ShieldCheck,
+  Stethoscope, Heart, Video, BadgeCheck, Star,
 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
@@ -55,6 +58,7 @@ export default function DoctorProfilePage() {
   });
 
   const isParentViewer = !!(user as any)?.parentAccountId && !(user as any)?.providerId;
+  const filterContext = useIvfFilterContext();
   // Above the early returns below so hook order stays stable. The queries
   // no-op until the doctor resolves, and share ReviewsSection's cache.
   const hasReviewsContent = useHasReviewsContent({ memberId: doctor?.id ?? null, isParent: isParentViewer });
@@ -92,6 +96,8 @@ export default function DoctorProfilePage() {
   const acceptedInsurance: string[] = Array.from(
     new Set(affiliations.flatMap((a) => a.acceptedInsurance || [])),
   ).sort();
+  // Same clinic the swipe card uses for its success-rate and cost tabs.
+  const primaryClinic: any = affiliations[0] || null;
   const reviews: any[] = doctor.reviews || [];
   const hasReviews = (doctor.reviewCount ?? 0) > 0 && reviews.length > 0;
 
@@ -252,17 +258,22 @@ export default function DoctorProfilePage() {
         </ProfileSection>
       )}
 
-      {/* Insurances accepted (clinic-level, unioned across affiliations) */}
-      {acceptedInsurance.length > 0 && (
-        <ProfileSection title="In-Network Insurances" data-testid="section-insurance">
-            <div className="flex flex-wrap gap-2">
-              {acceptedInsurance.map((ins) => (
-                <Badge key={ins} variant="secondary" className="gap-1">
-                  <ShieldCheck className="w-3 h-3 text-[hsl(var(--brand-success))]" /> {ins}
-                </Badge>
-              ))}
-            </div>
-        </ProfileSection>
+      {/* Insurances accepted (clinic-level, unioned across affiliations). */}
+      <InsuranceSection insurance={acceptedInsurance} />
+
+      {/* Success rates and costs belong to the doctor's primary clinic, not to
+          the doctor - but the doctor's swipe card shows both, so the profile
+          has to as well or opening a card loses information. Attributed to the
+          clinic so nobody reads a clinic's rates as this doctor's own. */}
+      {primaryClinic?.successRates?.length > 0 && (
+        <IvfSuccessRatesSection rates={primaryClinic.successRates} filterContext={filterContext} />
+      )}
+      {primaryClinic?.providerId && (
+        <ClinicCostProgramsSection
+          providerId={primaryClinic.providerId}
+          parentAccountId={(user as any)?.parentAccountId ?? null}
+          hasIvfClinicService={true}
+        />
       )}
 
       {/* Works at - clinic affiliations */}

@@ -10,7 +10,8 @@ import {
   Loader2, Check,
 } from "lucide-react";
 import { ProfileSection } from "@/components/ui/profile-section";
-import { IvfSuccessRatesSection } from "@/components/ivf-success-rates-section";
+import { IvfSuccessRatesSection, useIvfFilterContext } from "@/components/ivf-success-rates-section";
+import { InsuranceSection } from "@/components/insurance-section";
 import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-section";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { dedupeProviderLocations } from "@/lib/format-location";
@@ -39,17 +40,7 @@ export default function ProviderProfilePage() {
   // Shares ReviewsSection's query keys, so this costs no extra requests.
   const hasReviewsContent = useHasReviewsContent({ providerId: id, isParent: isParentViewer });
 
-  const filterContext = useMemo(() => {
-    const eggSource = searchParams.get("eggSource");
-    const ageGroup = searchParams.get("ageGroup");
-    const isNewPatient = searchParams.get("isNewPatient");
-    if (!eggSource && !ageGroup) return undefined;
-    return {
-      ...(eggSource ? { eggSource } : {}),
-      ...(ageGroup ? { ageGroup } : {}),
-      ...(isNewPatient ? { isNewPatient } : {}),
-    };
-  }, [searchParams]);
+  const filterContext = useIvfFilterContext();
 
   const { data: provider, isLoading } = useQuery<any>({
     queryKey: ["/api/providers", id],
@@ -184,6 +175,12 @@ export default function ProviderProfilePage() {
       {provider.ivfSuccessRates && provider.ivfSuccessRates.length > 0 && (
         <IvfSuccessRatesSection rates={provider.ivfSuccessRates} filterContext={filterContext} />
       )}
+
+      {/* In-network insurance. The field lives on the clinic and already powers
+          the marketplace insurance filter and the clinic card, but the clinic's
+          own profile never rendered it - a parent could see it on a doctor's
+          page and not on the clinic it actually belongs to. */}
+      <InsuranceSection insurance={provider.acceptedInsurance} />
 
       {(() => {
         // The cost-programs section now serves every fertility-tier provider
