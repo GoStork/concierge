@@ -77,6 +77,8 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const [showVideo, setShowVideo] = useState(false);
+  // Which item fills the hero. The video, when there is one, leads.
+  const [hero, setHero] = useState<{ video: boolean; idx: number }>({ video: !!videoUrl, idx: 0 });
   // Drop any photo whose URL 404s so a dead link never renders as a broken image.
   const [errored, setErrored] = useState<Record<string, boolean>>({});
   const photos = rawPhotos.filter((p) => !errored[p]);
@@ -122,6 +124,10 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
     el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
   }, []);
 
+  // Clamp the hero if a photo dropped out after a load error.
+  const heroIsVideo = hero.video && !!videoUrl;
+  const heroPhotoIdx = Math.min(Math.max(hero.idx, 0), Math.max(photos.length - 1, 0));
+
   if (photos.length === 0 && !videoUrl) {
     if (!showFallback) return null;
     // Anonymous / photo-less donor: branded silhouette instead of an empty hero.
@@ -134,74 +140,78 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
 
   return (
     <>
-      <div className="relative group" data-testid="photo-gallery-bar">
-        {showLeftArrow && (
-          <button
-            onClick={() => scroll("left")}
-            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white transition-opacity opacity-0 group-hover:opacity-100"
-            data-testid="gallery-scroll-left"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-        )}
-        {showRightArrow && (
-          <button
-            onClick={() => scroll("right")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white transition-opacity opacity-0 group-hover:opacity-100"
-            data-testid="gallery-scroll-right"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        )}
-        <div
-          ref={scrollRef}
-          className="flex gap-1.5 overflow-x-auto scroll-smooth gallery-scroll"
-          style={{ scrollSnapType: "x mandatory", scrollbarWidth: "none" }}
-          data-testid="gallery-scroll-container"
+      {/* Desktop hero + strip. The gallery used to be a row of equal thumbnails,
+          which asks a parent to squint at the person they are deciding about;
+          mobile already led with a full-bleed hero. One large image, the rest
+          beneath. */}
+      <div className="relative" data-testid="photo-gallery-bar">
+        <button
+          onClick={() => (heroIsVideo ? setShowVideo(true) : setLightboxIdx(heroPhotoIdx))}
+          className="block w-full overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40 relative group"
+          data-testid="gallery-hero"
+          aria-label={heroIsVideo ? "Play video" : "Expand photo"}
         >
-          {videoUrl && (
-            <button
-              onClick={() => setShowVideo(true)}
-              className="shrink-0 cursor-pointer overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40 relative"
-              style={{ scrollSnapAlign: "start" }}
-              data-testid="gallery-video-thumb"
-            >
-              {photos.length > 0 ? (
-                <img
-                  src={photos[0]}
-                  alt="Video thumbnail"
-                  className="h-[280px] w-[220px] object-cover brightness-75"
-                  onError={() => setErrored((e) => ({ ...e, [photos[0]]: true }))}
-                />
-              ) : (
-                <div className="h-[280px] w-[220px] bg-foreground/90" />
-              )}
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                <div className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
-                  <Play className="w-7 h-7 text-primary ml-0.5" fill="currentColor" />
-                </div>
-                <span className="text-white text-sm font-ui drop-shadow-lg">Play Video</span>
-              </div>
-            </button>
+          <img
+            src={photos[heroPhotoIdx] || photos[0]}
+            alt={heroIsVideo ? "Video thumbnail" : `Photo ${heroPhotoIdx + 1}`}
+            className={`w-full h-[min(58vh,460px)] object-cover object-top transition-transform duration-500 group-hover:scale-[1.02] ${heroIsVideo ? "brightness-75" : ""}`}
+            loading="eager"
+            onError={() => setErrored((e) => ({ ...e, [photos[heroPhotoIdx]]: true }))}
+          />
+          {heroIsVideo && (
+            <span className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+              <span className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+                <Play className="w-8 h-8 text-primary ml-0.5" fill="currentColor" />
+              </span>
+              <span className="text-white text-sm font-ui drop-shadow-lg">Play Video</span>
+            </span>
           )}
-          {photos.map((url, idx) => (
-            <button
-              key={idx}
-              onClick={() => setLightboxIdx(idx)}
-              className="shrink-0 cursor-pointer overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40"
-              style={{ scrollSnapAlign: "start" }}
-              data-testid={`gallery-photo-${idx}`}
-            >
-              <img
-                src={url}
-                alt={`Photo ${idx + 1}`}
-                className="h-[280px] w-auto min-w-[180px] max-w-[260px] object-cover hover:scale-105 transition-transform duration-300"
-                loading={idx < 5 ? "eager" : "lazy"}
-                onError={() => setErrored((e) => ({ ...e, [url]: true }))}
-              />
-            </button>
-          ))}
-        </div>
+        </button>
+
+        {(photos.length > 1 || videoUrl) && (
+          <div
+            ref={scrollRef}
+            className="flex gap-1.5 overflow-x-auto scroll-smooth gallery-scroll mt-1.5"
+            style={{ scrollbarWidth: "none" }}
+            data-testid="gallery-scroll-container"
+          >
+            {videoUrl && (
+              <button
+                onClick={() => setHero({ video: true, idx: 0 })}
+                className={`shrink-0 cursor-pointer overflow-hidden rounded-[var(--radius)] relative focus:outline-none focus:ring-2 focus:ring-primary/40 ${heroIsVideo ? "ring-2 ring-primary" : ""}`}
+                data-testid="gallery-video-thumb"
+                aria-label="Show video"
+              >
+                {photos.length > 0 ? (
+                  <img src={photos[0]} alt="Video thumbnail" className="h-[76px] w-[76px] object-cover brightness-75" />
+                ) : (
+                  <div className="h-[76px] w-[76px] bg-foreground/90" />
+                )}
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <Play className="w-5 h-5 text-white drop-shadow" fill="currentColor" />
+                </span>
+              </button>
+            )}
+            {photos.map((url, idx) => (
+              <button
+                key={idx}
+                onClick={() => setHero({ video: false, idx })}
+                onDoubleClick={() => setLightboxIdx(idx)}
+                className={`shrink-0 cursor-pointer overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40 ${!heroIsVideo && idx === heroPhotoIdx ? "ring-2 ring-primary" : ""}`}
+                data-testid={`gallery-photo-${idx}`}
+                aria-label={`Show photo ${idx + 1}`}
+              >
+                <img
+                  src={url}
+                  alt={`Photo ${idx + 1}`}
+                  className="h-[76px] w-[76px] object-cover object-top hover:opacity-90 transition-opacity"
+                  loading={idx < 8 ? "eager" : "lazy"}
+                  onError={() => setErrored((e) => ({ ...e, [url]: true }))}
+                />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {showVideo && videoUrl && (
@@ -1865,6 +1875,57 @@ function ProfileThrowStamp({ dir }: { dir: "like" | "pass" }) {
   );
 }
 
+
+/**
+ * Desktop action rail.
+ *
+ * Mobile has the pass / save / message bar; on desktop a parent reached the end
+ * of a long profile with nothing to press. Sticky so every scroll depth has an
+ * exit into the funnel.
+ *
+ * "Ask Eva about her" is the primary action rather than a direct booking: a
+ * donor belongs to an agency, and Eva already runs the anonymous whisper and
+ * the intro. Booking straight into a calendar would skip the qualification the
+ * concierge does - and can book a call about someone already matched.
+ */
+function ProfileDetailDesktopRail({ isSaved, onSave, onMessage, onPass, isPassed, subjectLabel }: {
+  isSaved: boolean;
+  isPassed: boolean;
+  onSave: () => void;
+  onMessage: () => void;
+  onPass: () => void;
+  subjectLabel: string;
+}) {
+  return (
+    <div className="hidden md:block sticky bottom-6 z-30 mt-6" data-testid="desktop-action-rail">
+      <div className="mx-auto max-w-[560px] rounded-full border border-border bg-card/95 backdrop-blur shadow-lg px-3 py-2 flex items-center gap-2">
+        <Button className="flex-1 rounded-full" onClick={onMessage} data-testid="btn-rail-ask-eva">
+          <Send className="w-4 h-4 mr-2" /> Ask Eva about {subjectLabel}
+        </Button>
+        <Button
+          variant="outline"
+          className="rounded-full"
+          onClick={onSave}
+          aria-pressed={isSaved}
+          data-testid="btn-rail-save"
+        >
+          <Heart className="w-4 h-4 mr-2" fill={isSaved ? "currentColor" : "none"} />
+          {isSaved ? "Saved" : "Save"}
+        </Button>
+        <Button
+          variant="ghost"
+          className="rounded-full text-muted-foreground"
+          onClick={onPass}
+          data-testid="btn-rail-pass"
+          title={isPassed ? "Already hidden" : "Hide from your marketplace"}
+        >
+          <X className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Fixed mobile close button.
  *
@@ -1932,6 +1993,7 @@ export default function DonorProfilePage() {
   const isMobile = useIsMobile();
   const dispatch = useAppDispatch();
   const favoritedIds = useAppSelector((s) => s.ui.favoritedDonorIds);
+  const passedIds = useAppSelector((s) => s.ui.passedDonorIds);
   const type = deriveTypeFromPath(location.pathname, paramType);
 
   const navState = location.state as {
@@ -2049,11 +2111,20 @@ export default function DonorProfilePage() {
     return (
       <>
         <ProfileCard providerId={current.providerId} donorId={current.id} type={type} initialPhotoUrl={current.photoUrl || undefined} onBack={goBack} />
-        {isMobile && (
+        {isMobile ? (
           <>
             <ProfileDetailCloseButton onBack={goBack} />
             <ProfileDetailActionBar isSaved={isSaved} busy={busy} onPass={() => handleAction("pass")} onLike={() => handleAction("like")} onMessage={handleMessage} />
           </>
+        ) : (
+          <ProfileDetailDesktopRail
+            isSaved={isSaved}
+            isPassed={passedIds.includes(current.id)}
+            onSave={() => handleAction("like")}
+            onPass={() => handleAction("pass")}
+            onMessage={handleMessage}
+            subjectLabel={type === "surrogate" ? "her" : type === "sperm-donor" ? "him" : "her"}
+          />
         )}
       </>
     );
