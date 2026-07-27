@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CostSheetProgramCard, ProgramCardData } from "@/components/cost-sheet-program-card";
+import { CostProgramFamilyCard, groupProgramFamilies } from "@/components/cost-program-family-card";
 import { CostProgramTailorForm } from "@/components/cost-program-tailor-form";
 import { ProfileSection } from "@/components/ui/profile-section";
 import { Button } from "@/components/ui/button";
@@ -129,9 +130,16 @@ export function ClinicCostProgramsSection({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {programs.map((program, idx) => (
-              <CostSheetProgramCard key={program.programId} program={program} index={idx} />
-            ))}
+            {/* Variants of one product collapse into a price ladder; genuinely
+                different products keep their own card. A four-variant family was
+                previously 4 cards x ~14 near-identical rows to diff by hand. */}
+            {groupProgramFamilies(programs).map((family, idx) =>
+              family.length > 1 ? (
+                <CostProgramFamilyCard key={family[0].programId} programs={family} />
+              ) : (
+                <CostSheetProgramCard key={family[0].programId} program={family[0]} index={idx} />
+              ),
+            )}
           </div>
         )}
     </ProfileSection>
