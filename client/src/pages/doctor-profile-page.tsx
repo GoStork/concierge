@@ -101,6 +101,159 @@ export default function DoctorProfilePage() {
   const reviews: any[] = doctor.reviews || [];
   const hasReviews = (doctor.reviewCount ?? 0) > 0 && reviews.length > 0;
 
+  // Which clinic a doctor sits in, and where, is part of choosing them, so the
+  // affiliation is pinned as the SECOND card - directly under whichever intro
+  // card comes first. Held as values rather than left inline because every card
+  // above it is conditional; ordering them explicitly is the only way "second
+  // from the top" holds for every doctor.
+  const practicesAtCard = (
+      <ProfileSection title={affiliations.length > 1 ? `Practices At ${affiliations.length} Clinics` : "Practices At"} contentClassName="p-6 grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-affiliations">
+          {affiliations.map((a) => {
+            const logo = getPhotoSrc(a.logoUrl);
+            const rate = headlineRate(a.successRates);
+            const locs = (a.memberLocations?.length ? a.memberLocations : a.clinicLocations) || [];
+            return (
+              <Link
+                key={a.memberId}
+                to={`/providers/${a.providerId}`}
+                className="group no-underline border border-border/40 rounded-[var(--radius)] p-4 flex flex-col gap-3 hover:border-primary hover:bg-secondary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                data-testid={`affiliation-${a.providerId}`}
+              >
+                <div className="flex items-start gap-3">
+                  {logo ? (
+                    <img src={logo} alt={a.providerName} className="w-12 h-12 rounded-[var(--radius)] object-contain border border-border/30 bg-background p-0.5 shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-[var(--radius)] bg-secondary/30 flex items-center justify-center border border-border/30 shrink-0">
+                      <Building2 className="w-6 h-6 text-muted-foreground/40" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-ui text-sm text-foreground group-hover:text-primary transition-colors">{a.providerName}</p>
+                    {a.title && <p className="text-xs text-primary">{a.title}</p>}
+                    {locs.length > 0 && (
+                      <p className="t-helper mt-1 flex items-start gap-1">
+                        <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
+                        <span>{locs.map((l: any) => [l.city, l.state].filter(Boolean).join(", ")).filter(Boolean).join(" · ")}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {rate && (
+                  <div className="bg-secondary/40 rounded-[var(--radius)] px-3 py-2">
+                    <p className="text-lg font-heading text-foreground leading-none">{rate.value}%</p>
+                    <p className="t-helper mt-1">{rate.label} (CDC)</p>
+                  </div>
+                )}
+              </Link>
+            );
+          })}
+      </ProfileSection>
+  );
+
+  const introCards = [
+    // About
+    doctor.bio && (
+          <ProfileSection key="about" title="About" data-testid="section-about">
+              <p className="t-prompt-answer whitespace-pre-line">{doctor.bio}</p>
+          </ProfileSection>
+    ),
+    // Specialties
+    doctor.specialties?.length > 0 && (
+          <ProfileSection key="specialties" title="Specialties" contentClassName="p-6" data-testid="section-specialties">
+              <div className="flex flex-wrap gap-2">
+                {doctor.specialties.map((s: string) => (
+                  <Badge key={s} variant="secondary">{s}</Badge>
+                ))}
+              </div>
+          </ProfileSection>
+    ),
+    // Education & background
+    (doctor.boardCertifications?.length > 0 ||
+          doctor.education?.length > 0 ||
+          doctor.professionalMemberships?.length > 0 ||
+          doctor.languagesSpoken?.length > 0 ||
+          doctor.medicalSchool ||
+          doctor.npiNumber ||
+          doctor.providerGender ||
+          doctor.yearsExperience != null) && (
+          <ProfileSection key="education" title="Education & Background" contentClassName="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6" data-testid="section-education">
+              {doctor.boardCertifications?.length > 0 && (
+                <div>
+                  <p className="t-field-label mb-2 flex items-center gap-1.5">
+                    <Award className="w-3.5 h-3.5 text-primary" /> Board Certifications
+                  </p>
+                  <ul className="space-y-1">
+                    {doctor.boardCertifications.map((c: string) => (
+                      <li key={c} className="t-field-value">{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {doctor.education?.length > 0 && (
+                <div>
+                  <p className="t-field-label mb-2 flex items-center gap-1.5">
+                    <GraduationCap className="w-3.5 h-3.5 text-primary" /> Education & Training
+                  </p>
+                  <ul className="space-y-1">
+                    {doctor.education.map((e: string) => (
+                      <li key={e} className="t-field-value">{e}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {doctor.professionalMemberships?.length > 0 && (
+                <div>
+                  <p className="t-field-label mb-2">Professional Memberships</p>
+                  <ul className="space-y-1">
+                    {doctor.professionalMemberships.map((m: string) => (
+                      <li key={m} className="t-field-value">{m}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {doctor.languagesSpoken?.length > 0 && (
+                <div>
+                  <p className="t-field-label mb-2 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-primary" /> Languages Spoken
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {doctor.languagesSpoken.map((l: string) => (
+                      <Badge key={l} variant="outline">{l}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {doctor.medicalSchool && (
+                <div>
+                  <p className="t-field-label">Medical School</p>
+                  <p className="t-field-value">
+                    {doctor.medicalSchool}{doctor.graduationYear ? ` (${doctor.graduationYear})` : ""}
+                  </p>
+                </div>
+              )}
+              {doctor.yearsExperience != null && (
+                <div>
+                  <p className="t-field-label">Years of Experience</p>
+                  <p className="t-field-value">{doctor.yearsExperience}</p>
+                </div>
+              )}
+              {doctor.providerGender && (
+                <div>
+                  <p className="t-field-label">Provider's Gender</p>
+                  <p className="t-field-value">{doctor.providerGender}</p>
+                </div>
+              )}
+              {doctor.npiNumber && (
+                <div>
+                  <p className="t-field-label">NPI Number</p>
+                  <p className="t-field-value">{doctor.npiNumber}</p>
+                </div>
+              )}
+          </ProfileSection>
+    ),
+  ].filter(Boolean);
+
   return (
     <div className="space-y-6 w-full">
       {/* Desktop: the "Back" text link (hidden on mobile). */}
@@ -155,108 +308,11 @@ export default function DoctorProfilePage() {
         )}
       </div>
 
-      {/* About */}
-      {doctor.bio && (
-        <ProfileSection title="About" data-testid="section-about">
-            <p className="t-prompt-answer whitespace-pre-line">{doctor.bio}</p>
-        </ProfileSection>
-      )}
+      {introCards[0]}
 
-      {/* Specialties */}
-      {doctor.specialties?.length > 0 && (
-        <ProfileSection title="Specialties" contentClassName="p-6" data-testid="section-specialties">
-            <div className="flex flex-wrap gap-2">
-              {doctor.specialties.map((s: string) => (
-                <Badge key={s} variant="secondary">{s}</Badge>
-              ))}
-            </div>
-        </ProfileSection>
-      )}
+      {practicesAtCard}
 
-      {/* Education & background */}
-      {(doctor.boardCertifications?.length > 0 ||
-        doctor.education?.length > 0 ||
-        doctor.professionalMemberships?.length > 0 ||
-        doctor.languagesSpoken?.length > 0 ||
-        doctor.medicalSchool ||
-        doctor.npiNumber ||
-        doctor.providerGender ||
-        doctor.yearsExperience != null) && (
-        <ProfileSection title="Education & Background" contentClassName="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6" data-testid="section-education">
-            {doctor.boardCertifications?.length > 0 && (
-              <div>
-                <p className="t-field-label mb-2 flex items-center gap-1.5">
-                  <Award className="w-3.5 h-3.5 text-primary" /> Board Certifications
-                </p>
-                <ul className="space-y-1">
-                  {doctor.boardCertifications.map((c: string) => (
-                    <li key={c} className="t-field-value">{c}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {doctor.education?.length > 0 && (
-              <div>
-                <p className="t-field-label mb-2 flex items-center gap-1.5">
-                  <GraduationCap className="w-3.5 h-3.5 text-primary" /> Education & Training
-                </p>
-                <ul className="space-y-1">
-                  {doctor.education.map((e: string) => (
-                    <li key={e} className="t-field-value">{e}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {doctor.professionalMemberships?.length > 0 && (
-              <div>
-                <p className="t-field-label mb-2">Professional Memberships</p>
-                <ul className="space-y-1">
-                  {doctor.professionalMemberships.map((m: string) => (
-                    <li key={m} className="t-field-value">{m}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {doctor.languagesSpoken?.length > 0 && (
-              <div>
-                <p className="t-field-label mb-2 flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5 text-primary" /> Languages Spoken
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {doctor.languagesSpoken.map((l: string) => (
-                    <Badge key={l} variant="outline">{l}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {doctor.medicalSchool && (
-              <div>
-                <p className="t-field-label">Medical School</p>
-                <p className="t-field-value">
-                  {doctor.medicalSchool}{doctor.graduationYear ? ` (${doctor.graduationYear})` : ""}
-                </p>
-              </div>
-            )}
-            {doctor.yearsExperience != null && (
-              <div>
-                <p className="t-field-label">Years of Experience</p>
-                <p className="t-field-value">{doctor.yearsExperience}</p>
-              </div>
-            )}
-            {doctor.providerGender && (
-              <div>
-                <p className="t-field-label">Provider's Gender</p>
-                <p className="t-field-value">{doctor.providerGender}</p>
-              </div>
-            )}
-            {doctor.npiNumber && (
-              <div>
-                <p className="t-field-label">NPI Number</p>
-                <p className="t-field-value">{doctor.npiNumber}</p>
-              </div>
-            )}
-        </ProfileSection>
-      )}
+      {introCards.slice(1)}
 
       {/* Insurances accepted (clinic-level, unioned across affiliations). */}
       <InsuranceSection insurance={acceptedInsurance} />
@@ -275,50 +331,6 @@ export default function DoctorProfilePage() {
           hasIvfClinicService={true}
         />
       )}
-
-      {/* Works at - clinic affiliations */}
-      <ProfileSection title={affiliations.length > 1 ? `Practices At ${affiliations.length} Clinics` : "Practices At"} contentClassName="p-6 grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-affiliations">
-          {affiliations.map((a) => {
-            const logo = getPhotoSrc(a.logoUrl);
-            const rate = headlineRate(a.successRates);
-            const locs = (a.memberLocations?.length ? a.memberLocations : a.clinicLocations) || [];
-            return (
-              <Link
-                key={a.memberId}
-                to={`/providers/${a.providerId}`}
-                className="group no-underline border border-border/40 rounded-[var(--radius)] p-4 flex flex-col gap-3 hover:border-primary hover:bg-secondary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
-                data-testid={`affiliation-${a.providerId}`}
-              >
-                <div className="flex items-start gap-3">
-                  {logo ? (
-                    <img src={logo} alt={a.providerName} className="w-12 h-12 rounded-[var(--radius)] object-contain border border-border/30 bg-background p-0.5 shrink-0" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-[var(--radius)] bg-secondary/30 flex items-center justify-center border border-border/30 shrink-0">
-                      <Building2 className="w-6 h-6 text-muted-foreground/40" />
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="font-ui text-sm text-foreground group-hover:text-primary transition-colors">{a.providerName}</p>
-                    {a.title && <p className="text-xs text-primary">{a.title}</p>}
-                    {locs.length > 0 && (
-                      <p className="t-helper mt-1 flex items-start gap-1">
-                        <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
-                        <span>{locs.map((l: any) => [l.city, l.state].filter(Boolean).join(", ")).filter(Boolean).join(" · ")}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {rate && (
-                  <div className="bg-secondary/40 rounded-[var(--radius)] px-3 py-2">
-                    <p className="text-lg font-heading text-foreground leading-none">{rate.value}%</p>
-                    <p className="t-helper mt-1">{rate.label} (CDC)</p>
-                  </div>
-                )}
-              </Link>
-            );
-          })}
-      </ProfileSection>
 
       {/* Reviews - shared Phase 8 component (list + eligible-parent self-serve
           form). Hidden when there is nothing to read and nothing to do, same
