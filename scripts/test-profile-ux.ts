@@ -432,6 +432,25 @@ async function px12() {
   check("a NaN index does not propagate",
     resolveHeroSelection({ video: false, idx: Number.NaN }, 3, null).photoIdx === 0,
     JSON.stringify(resolveHeroSelection({ video: false, idx: Number.NaN }, 3, null)));
+
+  // The framing contract, which shipped wrong twice - once on the hero and once
+  // in the comparison. A portrait photo inside a full-width box with a fixed
+  // short height is scaled by object-cover to cover ~1900px of width, so a
+  // 460px-tall band showed nothing but the top of her hair. The fix is the same
+  // in both places: bound the width, and let an aspect ratio set the height.
+  const page = readFileSync("client/src/pages/profile-detail-page.tsx", "utf8");
+  const heroBtn = /data-testid="gallery-hero"/.test(page)
+    ? page.slice(Math.max(0, page.indexOf('data-testid="gallery-hero"') - 400), page.indexOf('data-testid="gallery-hero"') + 900)
+    : "";
+  check("the hero exists in the page", heroBtn.length > 0);
+  check("the hero frame is width-bounded, not full-bleed", /max-w-\[\d+px\]/.test(heroBtn), heroBtn.slice(0, 0));
+  check("the hero height comes from an aspect ratio", /aspect-\[\d+\/\d+\]/.test(heroBtn));
+  check("the hero is not a fixed-height band over a full-width box",
+    !/w-full h-\[min\(/.test(heroBtn));
+
+  const drawer = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");
+  check("the comparison columns follow the same framing rule",
+    /max-w-\[\d+px\] aspect-\[\d+\/\d+\]/.test(drawer));
 }
 
 

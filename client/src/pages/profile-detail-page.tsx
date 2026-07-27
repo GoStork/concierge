@@ -142,7 +142,7 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
     if (!showFallback) return null;
     // Anonymous / photo-less donor: branded silhouette instead of an empty hero.
     return (
-      <div className="h-[280px] w-full max-w-[420px] rounded-[var(--radius)] overflow-hidden" data-testid="photo-gallery-fallback">
+      <div className="mx-auto w-full max-w-[420px] aspect-[4/5] rounded-[var(--radius)] overflow-hidden" data-testid="photo-gallery-fallback">
         <DonorPhotoFallback />
       </div>
     );
@@ -153,18 +153,25 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
       {/* Desktop hero + strip. The gallery used to be a row of equal thumbnails,
           which asks a parent to squint at the person they are deciding about;
           mobile already led with a full-bleed hero. One large image, the rest
-          beneath. */}
+          beneath.
+
+          The hero is a BOUNDED PORTRAIT, not a full-width band. "Full-bleed"
+          ported from mobile literally means a box as wide as the window, and
+          object-cover then scales a portrait photo to cover ~1900px of width -
+          so a 460px-tall band showed nothing but hair. Almost every photo here
+          is a phone portrait or a group shot; a 4:5 frame fits both, and
+          object-center keeps faces rather than the tops of heads. */}
       <div className="relative" data-testid="photo-gallery-bar">
         <button
           onClick={() => (heroIsVideo ? setShowVideo(true) : setLightboxIdx(heroPhotoIdx))}
-          className="block w-full overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40 relative group"
+          className="block mx-auto w-full max-w-[420px] overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40 relative group"
           data-testid="gallery-hero"
           aria-label={heroIsVideo ? "Play video" : "Expand photo"}
         >
           <img
             src={photos[heroPhotoIdx] || photos[0]}
             alt={heroIsVideo ? "Video thumbnail" : `Photo ${heroPhotoIdx + 1}`}
-            className={`w-full h-[min(58vh,460px)] object-cover object-top transition-transform duration-500 group-hover:scale-[1.02] ${heroIsVideo ? "brightness-75" : ""}`}
+            className={`w-full aspect-[4/5] max-h-[min(62vh,540px)] object-cover object-center transition-transform duration-500 group-hover:scale-[1.02] ${heroIsVideo ? "brightness-75" : ""}`}
             loading="eager"
             onError={() => setErrored((e) => ({ ...e, [photos[heroPhotoIdx]]: true }))}
           />
@@ -181,7 +188,7 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
         {(photos.length > 1 || videoUrl) && (
           <div
             ref={scrollRef}
-            className="flex gap-1.5 overflow-x-auto scroll-smooth gallery-scroll mt-1.5"
+            className="flex gap-1.5 overflow-x-auto scroll-smooth gallery-scroll mt-1.5 mx-auto w-full max-w-[420px]"
             style={{ scrollbarWidth: "none" }}
             data-testid="gallery-scroll-container"
           >

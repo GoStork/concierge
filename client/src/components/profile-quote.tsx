@@ -20,7 +20,10 @@ export function ProfileQuote({ quote, className }: { quote?: string | null; clas
 
   return (
     <figure
-      className={`rounded-[var(--radius)] bg-secondary/70 px-4 py-3.5 flex gap-3 ${className || ""}`}
+      // Prose needs a measure. Unconstrained, one sentence ran the full 1400px
+      // of a desktop page as a single line, which is read as a banner rather
+      // than as something a person wrote.
+      className={`rounded-[var(--radius)] bg-secondary/70 px-4 py-3.5 flex gap-3 max-w-[68ch] ${className || ""}`}
       data-testid="profile-quote"
     >
       <Quote className="w-4 h-4 shrink-0 mt-1 text-accent" aria-hidden />
