@@ -102,19 +102,25 @@ export function CostSheetProgramCard({
                   ) : (
                     <Circle className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground/50" />
                   )}
-                  <span className={cn("text-foreground", !item.isIncluded && "text-muted-foreground")}>
+                  <span className={cn("t-micro-value", !item.isIncluded && "opacity-60")}>
                     {cleanLabel}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span className={cn("tabular-nums text-foreground", !item.isIncluded && "text-muted-foreground")}>
+                  <span className={cn("t-micro-value tabular-nums text-right", !item.isIncluded && "opacity-60")}>
                     {value}
                   </span>
-                  {item.comment && (
-                    <span title={item.comment} className="text-accent/70">
-                      <MessageSquare className="w-3.5 h-3.5" />
-                    </span>
-                  )}
+                  {/* The comment lane is ALWAYS reserved, empty or not, so every
+                      amount ends on the same edge whether or not its row has a
+                      comment. Rendering the icon conditionally inside the row's
+                      flex used to push commented amounts left by its width. */}
+                  <span className="w-3.5 shrink-0 flex justify-center" aria-hidden={!item.comment}>
+                    {item.comment && (
+                      <span title={item.comment} className="text-accent/70">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </span>
                 </div>
               </div>
             );
