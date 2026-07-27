@@ -12,6 +12,8 @@
  * verbatim in what she wrote. Nothing here paraphrases her.
  */
 
+import { Quote } from "lucide-react";
+
 export function ProfileQuote({ quote, className }: { quote?: string | null; className?: string }) {
   const text = (quote || "").trim();
   if (!text) return null;
@@ -21,15 +23,18 @@ export function ProfileQuote({ quote, className }: { quote?: string | null; clas
       // Prose needs a measure. Unconstrained, one sentence ran the full 1400px
       // of a desktop page as a single line, which is read as a banner rather
       // than as something a person wrote.
-      className={`rounded-[var(--radius)] bg-secondary/70 px-4 py-3.5 max-w-[68ch] ${className || ""}`}
+      className={`rounded-[var(--radius)] bg-secondary/70 px-4 py-3.5 flex gap-3 max-w-[68ch] ${className || ""}`}
       data-testid="profile-quote"
     >
-      {/* A real pair, not a lone ornament. This is a verbatim quotation of
+      {/* A matched pair of the same mark. This is a verbatim quotation of
           something a person actually wrote, so it is punctuated as one - an
           opening mark with no closing mark reads as a design flourish, which
-          quietly undersells that these are her words and not our copy. */}
+          quietly undersells that these are her words and not our copy. The
+          closing mark is the same glyph turned 180 degrees. */}
+      <Quote className="w-4 h-4 shrink-0 mt-1 text-accent" aria-hidden />
       <blockquote className="t-prompt-answer italic">
-        <span className="text-accent" aria-hidden>&ldquo;</span>{text}<span className="text-accent" aria-hidden>&rdquo;</span>
+        {text}
+        <Quote className="w-4 h-4 inline-block ml-1 -mb-0.5 text-accent rotate-180" aria-hidden />
       </blockquote>
     </figure>
   );
