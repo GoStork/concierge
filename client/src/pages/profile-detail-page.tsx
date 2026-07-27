@@ -322,6 +322,15 @@ const HIDDEN_PROFILE_KEYS = new Set([
 const AGENCY_COMMENT_PATTERN = /^(agency\s*(comment|recommendation|note)s?|recommendation\s*points?)$/i;
 
 /**
+ * Collapses whitespace and case so two copies of the same prose compare equal.
+ * Scraped profiles often carry the same letter in both a structured field and a
+ * plain one, differing only in CRLF/paragraph breaks.
+ */
+function normalizeProse(text: string): string {
+  return String(text).replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
  * Sections that are a person talking, not a data table. Every entry in these
  * renders as a PromptBlock (small accent eyebrow + large prose answer) no
  * matter how short the answer is - the question is scaffolding, the answer is
@@ -1102,14 +1111,23 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
             letterParts.push(secData.trim());
             consumed.add(secName);
           } else if (typeof secData === "object" && secData !== null && !Array.isArray(secData)) {
-            if (secData._letterText) {
-              letterParts.push(String(secData._letterText));
+            const secLetterText = secData._letterText ? String(secData._letterText) : null;
+            if (secLetterText) {
+              letterParts.push(secLetterText);
               if (secData._letterTitle) letterTitle = String(secData._letterTitle);
             }
+            // Scrapers routinely store the letter TWICE in one section: once as
+            // _letterText/_letterTitle, and once as an ordinary field keyed by
+            // the letter's own title ("Why I'm an Egg Donor": "<same text>").
+            // Stripping only the underscore keys left that copy behind, the
+            // section survived, and the letter rendered a second time as its own
+            // card. Drop any field whose text is the letter we just harvested.
+            const normalizedLetter = secLetterText ? normalizeProse(secLetterText) : null;
             const remaining: Record<string, any> = {};
             let hasRemaining = false;
             for (const [k, v] of Object.entries(secData)) {
               if (k === "_letterText" || k === "_letterTitle") continue;
+              if (normalizedLetter && typeof v === "string" && normalizeProse(v) === normalizedLetter) continue;
               remaining[k] = v;
               hasRemaining = true;
             }
@@ -1192,15 +1210,15 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
           if (sectionName === "__LETTER__" && letterContent) {
             return (
               <ProfileSection key="letter-to-intended-parents" title="Letter to Intended Parents" data-testid="section-letter-to-intended-parents">
-                  {letterTitle && <p className="text-sm font-semibold text-foreground mb-2">{letterTitle}</p>}
-                  <p className="t-prompt-answer whitespace-pre-line">{letterContent}</p>
+                  {letterTitle && <PromptEyebrow>{letterTitle}</PromptEyebrow>}
+                  <PromptAnswer>{letterContent}</PromptAnswer>
               </ProfileSection>
             );
           }
           if (sectionName === "__AGENCY_COMMENTS__" && agencyCommentContent) {
             return (
               <ProfileSection key="agency-comments" title="Agency Comments" data-testid="section-agency-comments">
-                  <p className="t-prompt-answer whitespace-pre-line">{agencyCommentContent}</p>
+                  <PromptAnswer>{agencyCommentContent}</PromptAnswer>
               </ProfileSection>
             );
           }
