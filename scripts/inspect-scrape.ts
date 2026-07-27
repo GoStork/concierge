@@ -16,7 +16,9 @@ async function main() {
   console.log(`\n[inspect] ${scraped.teamMembers.length} members, ${withHints} WITH location hints`);
   console.log(`[inspect] scraped locations: ${(scraped.locations || []).map((l: any) => `${l.city},${l.state}`).join(" | ") || "(none)"}`);
   for (const m of scraped.teamMembers as any[]) {
-    console.log(`  - ${m.name} | title="${m.title || ""}" | locHints=[${(m.locationHints || []).join(", ")}]`);
+    const bio = (m.bio || "").replace(/\s+/g, " ").trim();
+    console.log(`  - ${m.name} | title="${m.title || ""}" | bio=${bio.length}ch | locHints=[${(m.locationHints || []).join(", ")}]`);
+    if (bio) console.log(`      "${bio.slice(0, 160)}${bio.length > 160 ? "…" : ""}"`);
   }
   process.exit(0);
 }
