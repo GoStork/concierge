@@ -289,16 +289,16 @@ export const BRAND_DEFAULTS: BrandSettings = {
   onboardingEggDonorImageUrl: null,
   onboardingSurrogateImageUrl: null,
   onboardingSpermDonorImageUrl: null,
-  fieldLabelSize: 13,
+  fieldLabelSize: 14,
   fieldLabelWeight: "500",
-  fieldLabelColor: null,
+  fieldLabelColor: "#475569",
   fieldLabelCase: "none",
   fieldLabelTracking: 0,
-  fieldValueSize: 16,
-  fieldValueWeight: "500",
+  fieldValueSize: 17,
+  fieldValueWeight: "400",
   fieldValueColor: null,
   fieldLabelGap: 3,
-  fieldPairGap: 20,
+  fieldPairGap: 22,
   promptEyebrowSize: 12,
   promptEyebrowWeight: "600",
   promptEyebrowColor: null,
@@ -603,16 +603,16 @@ export function applyBrandToDocument(settings: BrandSettings) {
   const caseValue = (v: string | null | undefined) =>
     v === "uppercase" || v === "capitalize" || v === "lowercase" ? v : "none";
 
-  root.style.setProperty("--field-label-size", `${settings.fieldLabelSize ?? 13}px`);
+  root.style.setProperty("--field-label-size", `${settings.fieldLabelSize ?? 14}px`);
   root.style.setProperty("--field-label-weight", settings.fieldLabelWeight ?? "500");
-  root.style.setProperty("--field-label-color", contentColor(settings.fieldLabelColor, "--muted-foreground"));
+  root.style.setProperty("--field-label-color", settings.fieldLabelColor && /^#[0-9a-fA-F]{6}$/.test(settings.fieldLabelColor) ? settings.fieldLabelColor : "#475569");
   root.style.setProperty("--field-label-case", caseValue(settings.fieldLabelCase));
   root.style.setProperty("--field-label-tracking", `${settings.fieldLabelTracking ?? 0}em`);
-  root.style.setProperty("--field-value-size", `${settings.fieldValueSize ?? 16}px`);
-  root.style.setProperty("--field-value-weight", settings.fieldValueWeight ?? "500");
+  root.style.setProperty("--field-value-size", `${settings.fieldValueSize ?? 17}px`);
+  root.style.setProperty("--field-value-weight", settings.fieldValueWeight ?? "400");
   root.style.setProperty("--field-value-color", contentColor(settings.fieldValueColor, "--foreground"));
   root.style.setProperty("--field-label-gap", `${settings.fieldLabelGap ?? 3}px`);
-  root.style.setProperty("--field-pair-gap", `${settings.fieldPairGap ?? 20}px`);
+  root.style.setProperty("--field-pair-gap", `${settings.fieldPairGap ?? 22}px`);
 
   root.style.setProperty("--prompt-eyebrow-size", `${settings.promptEyebrowSize ?? 12}px`);
   root.style.setProperty("--prompt-eyebrow-weight", settings.promptEyebrowWeight ?? "600");
