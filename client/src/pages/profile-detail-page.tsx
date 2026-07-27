@@ -5,6 +5,13 @@ import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDo
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatFieldLabel, isPlaceholderValue } from "@/lib/format-label";
 import { formatRelativeTime } from "@/lib/format-relative-time";
+import { ProfileFitLine } from "@/components/profile-fit-line";
+import { useParentPreferences } from "@/hooks/use-parent-preferences";
+import {
+  mapDatabaseDonorToSwipeProfile,
+  mapDatabaseSurrogateToSwipeProfile,
+  mapDatabaseSpermDonorToSwipeProfile,
+} from "@/components/marketplace/swipe-mappers";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { cleanCityState } from "@/lib/country-flag";
 import { useQuery } from "@tanstack/react-query";
@@ -853,6 +860,15 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
   // us initialPhotoUrl, we render the hero instantly and let the body fill in
   // once the (usually already-prefetched) query resolves - no spinner, no blank
   // gap between profiles.
+  // Both hooks must sit above the early returns below - hook order is fixed.
+  const { preferences: parentPreferences } = useParentPreferences();
+  const swipeProfile = useMemo(() => {
+    if (!donor) return null;
+    if (type === "surrogate") return mapDatabaseSurrogateToSwipeProfile(donor);
+    if (type === "sperm-donor") return mapDatabaseSpermDonorToSwipeProfile(donor);
+    return mapDatabaseDonorToSwipeProfile(donor);
+  }, [donor, type]);
+
   if (isLoading && !initialPhotoUrl) {
     return (
       <div className="flex justify-center p-12">
@@ -936,6 +952,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
 
   const freshness = formatRelativeTime((donor as any)?.updatedAt);
 
+
   const headerMeta: string[] = [];
   if (donor.status) headerMeta.push(donor.status);
   if (donor.location) {
@@ -1000,6 +1017,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                   <Badge variant="outline" className="text-xs" data-testid="badge-vial-types-mobile">Available for: {donor.vialTypes.join(", ")}</Badge>
                 )}
               </div>
+              <ProfileFitLine profile={swipeProfile} preferences={parentPreferences} className="mt-2" />
             </div>
           </motion.div>
         </>
@@ -1050,6 +1068,9 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
             <Badge variant="outline" className="text-xs">Available for: {donor.vialTypes.join(", ")}</Badge>
           )}
         </div>
+        {/* Why this person suits THIS parent - previously only rendered when
+            arriving from Eva, so most readers saw an identical page. */}
+        <ProfileFitLine profile={swipeProfile} preferences={parentPreferences} className="mt-3" />
         {donor.profileUrl && user && (
           hasAnyRole(user.roles || [], [...GOSTORK_ROLES]) ||
           (hasProviderRole(user.roles || []) && user.providerId === providerId)
