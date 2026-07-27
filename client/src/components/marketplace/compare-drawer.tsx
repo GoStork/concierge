@@ -6,7 +6,8 @@ import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatRelativeTime } from "@/lib/format-relative-time";
-import type { SwipeDeckProfile } from "@/components/marketplace/swipe-mappers";
+import { formatStatusLabel } from "@/lib/format-label";
+import { buildTitle, type SwipeDeckProfile } from "@/components/marketplace/swipe-mappers";
 
 /**
  * Side-by-side comparison of a shortlist.
@@ -49,7 +50,7 @@ export function rowsFor(kind: CompareKind): { group: string; rows: Row[] }[] {
 
   const decide: Row[] = [
     ...cost,
-    { label: "Availability", get: (p) => text(p.donorStatus) || (p.available === false ? "Not available" : "Available") },
+    { label: "Availability", get: (p) => formatStatusLabel(text(p.donorStatus)) || (p.available === false ? "Not available" : "Available") },
     { label: "Last updated", get: (p) => formatRelativeTime(p.updatedAt) },
     { label: "Age", get: (p) => (p.age ? `${p.age}` : null) },
     { label: "Location", get: (p) => formatLocationDisplay(text(p.location)) || text(p.location) },
@@ -145,7 +146,7 @@ export function CompareDrawer({
               <tr>
                 <th className="w-[132px]" />
                 {profiles.map((p: any) => (
-                  <th key={p.id} className="p-2 align-bottom min-w-[150px]">
+                  <th key={p.id} className="p-2 align-bottom min-w-[150px] text-left font-normal">
                     <button
                       type="button"
                       onClick={() => onOpenProfile(p)}
@@ -156,17 +157,17 @@ export function CompareDrawer({
                         <img
                           src={getPhotoSrc(p.photoUrl || p.photos?.[0])!}
                           alt=""
-                          className="w-full h-[120px] object-cover object-top rounded-[var(--radius)] mb-2"
+                          className="w-full max-w-[150px] aspect-[3/4] object-cover object-top rounded-[var(--radius)] mb-2"
                         />
                       ) : (
-                        <div className="w-full h-[120px] rounded-[var(--radius)] bg-muted mb-2" />
+                        <div className="w-full max-w-[150px] aspect-[3/4] rounded-[var(--radius)] bg-secondary mb-2" />
                       )}
-                      <span className="t-field-value block truncate">{p.displayName || p.name || `#${p.donorNumber ?? ""}`}</span>
+                      <span className="t-field-value block truncate">{buildTitle(p)}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => onToggle(p.id)}
-                      className="t-helper mt-1 hover:underline"
+                      className="t-helper mt-1 block hover:underline"
                       data-testid={`compare-remove-${p.id}`}
                     >
                       Remove
@@ -221,7 +222,7 @@ export function CompareDrawer({
                     {getPhotoSrc(a.photoUrl || a.photos?.[0]) && (
                       <img src={getPhotoSrc(a.photoUrl || a.photos?.[0])!} alt="" className="w-6 h-6 rounded-full object-cover object-top" />
                     )}
-                    <span className="t-micro-value">{a.displayName || a.name || `#${a.donorNumber ?? ""}`}</span>
+                    <span className="t-micro-value">{buildTitle(a)}</span>
                   </button>
                 ))}
             </div>

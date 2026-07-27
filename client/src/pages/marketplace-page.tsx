@@ -2231,7 +2231,7 @@ export default function MarketplacePage() {
             )}
             data-testid={`compare-pick-${p.id}`}
           >
-            <span className="t-micro-value">{p.displayName || p.name || `#${p.donorNumber ?? ""}`}</span>
+            <span className="t-micro-value">{buildTitle(p)}</span>
           </button>
         );
       })}

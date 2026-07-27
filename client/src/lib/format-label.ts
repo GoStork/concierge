@@ -86,3 +86,17 @@ export function isPlaceholderValue(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0;
   return false;
 }
+
+/**
+ * A status enum as prose. Badges can carry AVAILABLE in caps; a table row
+ * reading "Availability: AVAILABLE" reads like a database dump.
+ */
+export function formatStatusLabel(status: string | null | undefined): string | null {
+  const raw = String(status ?? "").trim();
+  if (!raw) return null;
+  return raw
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
