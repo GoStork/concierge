@@ -320,11 +320,26 @@ export function ChipRow({ className, children, ...rest }: React.HTMLAttributes<H
 export function toChipParts(text: string, maxPartLength = 42): string[] | null {
   const raw = (text || "").trim();
   if (!raw) return null;
+  // A formatted number is not a list. "$65,000" split on its thousands
+  // separator and rendered as two chips - "$65" and "000" - on the surrogate
+  // profile. Amounts, ranges and measurements stay one value.
+  if (NUMERIC_VALUE_PATTERN.test(raw)) return null;
   const parts = raw
     .split(/\s*[/,;]\s*|\s{2,}/)
     .map((p) => p.trim())
     .filter(Boolean);
   if (parts.length < 2) return null;
   if (parts.some((p) => p.length > maxPartLength || /\s\w+\s\w+\s\w+\s\w+/.test(p))) return null;
+  // A bare run of digits is a fragment of a split number, never a label worth
+  // its own chip - belt and braces for formats the pattern above doesn't cover.
+  if (parts.some((p) => /^[$€£¥]?\s*\d+(?:\.\d+)?$/.test(p))) return null;
   return parts;
 }
+
+/**
+ * Amounts, ranges and measurements: "$65,000", "1,200 - 1,500",
+ * "$10,400 - $18,400", "3.4", "28%". Currency, separators, ranges and a unit
+ * suffix only - any other word makes it prose rather than a number.
+ */
+const NUMERIC_VALUE_PATTERN =
+  /^[$€£¥]?\s*\d[\d,. ]*(?:\s*(?:[-–—]|to)\s*[$€£¥]?\s*\d[\d,. ]*)*\s*(?:%|k|m|lbs?|kg|cm|in|ft|yrs?|years?)?\.?$/i;
