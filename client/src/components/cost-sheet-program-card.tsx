@@ -2,6 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CheckCircle2, Circle, MessageSquare } from "lucide-react";
 import { getCountryFlag } from "@/lib/country-flag";
 import { formatMoneyDollars } from "@/lib/format-money";
+import { formatFieldLabel } from "@/lib/format-label";
 import { cn } from "@/lib/utils";
 
 /**
@@ -88,7 +89,11 @@ export function CostSheetProgramCard({
         <div className="border-t border-border/60 px-5 py-4 space-y-2 flex-1">
           {program.lineItems.map((item, idx) => {
             const label = `${item.category && item.category !== "Medical" ? "" : "IVF - "}${item.key}`;
-            const cleanLabel = label.replace(/^IVF -\s*/, "").trim();
+            // Cost keys arrive in whatever shape the sheet used. Parents were
+            // being shown raw identifiers ("agency_fee", "gs_miscellaneous")
+            // on a six-figure quote; humanise as a render-time fallback while
+            // the source data gets cleaned.
+            const cleanLabel = formatFieldLabel(label.replace(/^IVF -\s*/, "").trim());
             const value = formatItemValue(item);
             return (
               <div

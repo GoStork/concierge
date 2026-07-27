@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { formatFieldLabel, looksLikeRawKey } from "@/lib/format-label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Accordion,
@@ -2360,6 +2361,19 @@ function SingleCostsTab({
                                   <span className="text-sm font-medium break-words min-w-0" data-testid={`text-key-${item._editIdx}`}>
                                     {item.key}
                                   </span>
+                                  {/* Parents see a humanised fallback, but the stored key is what
+                                      ends up in exports and quotes - flag it here so it gets
+                                      written properly at the source rather than masked forever. */}
+                                  {looksLikeRawKey(item.key) && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30 shrink-0"
+                                      title={`Stored as a raw key. Parents see "${formatFieldLabel(item.key)}". Rename it to a written label.`}
+                                      data-testid={`badge-raw-key-${item._editIdx}`}
+                                    >
+                                      Raw key
+                                    </Badge>
+                                  )}
                                   {item.isCustom && (
                                     <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning))]/30">
                                       Custom

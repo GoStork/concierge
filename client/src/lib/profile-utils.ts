@@ -1,4 +1,5 @@
 import { formatMoneyDollars } from "@/lib/format-money";
+import { safeCompensation } from "@/lib/compensation-sanity";
 import { formatLocationDisplay } from "@/lib/format-location";
 
 export type ProfileType = "egg-donor" | "surrogate" | "sperm-donor";
@@ -352,7 +353,12 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
       );
     } else {
       result.push(
-        { label: "Donor Compensation", value: (r.resolvedCompensation ?? r.donorCompensation) ? fmtDollarsLocal((r.resolvedCompensation ?? r.donorCompensation)!) : "-" },
+        // An implausible figure is withheld rather than published - see
+        // compensation-sanity.ts. It renders as "-" like any missing value.
+        { label: "Donor Compensation", value: (() => {
+          const comp = safeCompensation(r.resolvedCompensation ?? r.donorCompensation, "egg-donor");
+          return comp ? fmtDollarsLocal(comp) : "-";
+        })() },
         { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCost ? fmtDollarsLocal(r.totalCost) : "-") },
       );
     }

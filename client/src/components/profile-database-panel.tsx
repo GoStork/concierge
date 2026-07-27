@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { formatFieldLabel } from "@/lib/format-label";
 import type { EggDonor } from "@shared/schema";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1302,14 +1303,6 @@ export default function ProfileDatabasePanel({
   );
 }
 
-
-function formatFieldLabel(key: string): string {
-  return key
-    .replace(/([A-Z])/g, " $1")
-    .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim();
-}
 
 const HIDDEN_PROFILE_KEYS = new Set([
   "photoUrl", "profileUrl", "externalId", "status",

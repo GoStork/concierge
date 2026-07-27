@@ -6,6 +6,7 @@ import {
   Calendar, FileText, ShieldCheck, Building2, MapPin,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { safeCompensation } from "@/lib/compensation-sanity";
 import { getPhotoSrc, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields } from "@/lib/profile-utils";
 import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-filters";
 import { formatMoneyDollars } from "@/lib/format-money";
@@ -360,7 +361,9 @@ export function mapDatabaseDonorToSwipeProfile(dbDonor: any): SwipeDeckProfile {
     iciCost: null,
     iuiCost: null,
     ivfCost: null,
-    donorCompensation: r.resolvedCompensation ?? r.donorCompensation,
+    // Withheld when implausible, so a card can never advertise a figure the
+    // profile suppresses (see compensation-sanity.ts).
+    donorCompensation: safeCompensation(r.resolvedCompensation ?? r.donorCompensation, "egg-donor"),
     totalCost: r.totalCost,
     eggLotCost: r.eggLotCost,
     numberOfEggs: r.numberOfEggs,
@@ -454,7 +457,7 @@ export function mapDatabaseSurrogateToSwipeProfile(dbSurrogate: any): SwipeDeckP
     agreesToInternationalParents: r.agreesToInternationalParents,
     miscarriages: r.miscarriages,
     occupation: r.occupation,
-    baseCompensation: r.resolvedCompensation ?? r.baseCompensation,
+    baseCompensation: safeCompensation(r.resolvedCompensation ?? r.baseCompensation, "surrogate"),
     totalCostMin: r.totalCostMin,
     totalCostMax: r.totalCostMax,
     isPremium: !!dbSurrogate.isPremium,
@@ -513,7 +516,7 @@ export function mapDatabaseSpermDonorToSwipeProfile(dbSperm: any): SwipeDeckProf
     iciCost: r.iciCost,
     iuiCost: r.iuiCost,
     ivfCost: r.ivfCost,
-    donorCompensation: r.resolvedCompensation ?? r.compensation,
+    donorCompensation: safeCompensation(r.resolvedCompensation ?? r.compensation, "sperm-donor"),
     totalCost: r.totalCost,
     eggLotCost: null,
     numberOfEggs: null,

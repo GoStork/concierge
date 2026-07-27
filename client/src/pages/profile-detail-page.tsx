@@ -3,6 +3,7 @@ import { motion, useAnimation } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields, getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
+import { formatFieldLabel } from "@/lib/format-label";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { cleanCityState } from "@/lib/country-flag";
 import { useQuery } from "@tanstack/react-query";
@@ -290,14 +291,6 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
       )}
     </>
   );
-}
-
-function formatFieldLabel(key: string): string {
-  return key
-    .replace(/([A-Z])/g, " $1")
-    .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim();
 }
 
 const HIDDEN_PROFILE_KEYS = new Set([
