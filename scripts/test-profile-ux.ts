@@ -651,6 +651,18 @@ async function px16() {
   check("the comparison uses the brand radius", /var\(--radius\)/.test(drawer));
   check("the comparison uses the shared type scale", /t-(?:field|micro)-/.test(drawer));
 
+  // A label that changes must not change its button's width - "Save" growing
+  // into "Saved" nudged everything beside it and made the click feel like a
+  // glitch. Both labels are stacked in one grid cell so it sizes to the wider.
+  const toggle = readFileSync("client/src/components/ui/toggle-label.tsx", "utf8");
+  check("both labels occupy the same grid cell, so the width is the wider one",
+    (toggle.match(/col-start-1 row-start-1/g) || []).length === 3, String((toggle.match(/col-start-1 row-start-1/g) || []).length));
+  check("the sizing copies are hidden from assistive tech",
+    (toggle.match(/aria-hidden/g) || []).length === 2, String((toggle.match(/aria-hidden/g) || []).length));
+  const railSrc = readFileSync("client/src/pages/profile-detail-page.tsx", "utf8");
+  check("the Save button uses it rather than a bare ternary",
+    /<ToggleLabel active=\{isSaved\}/.test(railSrc) && !/\{isSaved \? "Saved" : "Save"\}/.test(railSrc));
+
   const quote = readFileSync("client/src/components/profile-quote.tsx", "utf8");
   check("the pull-quote sits on a brand surface, not a grey one",
     /bg-secondary|bg-accent/.test(quote) && !/bg-muted|bg-gray/.test(quote));

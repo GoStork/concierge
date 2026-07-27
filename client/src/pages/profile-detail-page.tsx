@@ -9,6 +9,7 @@ import { ProfileFitLine } from "@/components/profile-fit-line";
 import { ProfileQuote } from "@/components/profile-quote";
 import { sectionBand, BAND_LABEL, orderSectionsIntoBands } from "@/lib/profile-sections";
 import { resolveHeroSelection } from "@/lib/profile-hero";
+import { ToggleLabel } from "@/components/ui/toggle-label";
 import { safeCompensation } from "@/lib/compensation-sanity";
 import { useParentPreferences } from "@/hooks/use-parent-preferences";
 import {
@@ -2063,7 +2064,7 @@ function ProfileDetailDesktopRail({ isSaved, onSave, onMessage, onPass, isPassed
           data-testid="btn-rail-save"
         >
           <Heart className="w-4 h-4 mr-2" fill={isSaved ? "currentColor" : "none"} />
-          {isSaved ? "Saved" : "Save"}
+          <ToggleLabel active={isSaved} activeLabel="Saved" inactiveLabel="Save" />
         </Button>
         <Button
           variant="ghost"

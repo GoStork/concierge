@@ -35,6 +35,11 @@ export interface ProgramCardData {
   lineItems: ProgramCardLineItem[];
 }
 
+const GROUPS = [
+  { included: true, heading: "Included in this price" },
+  { included: false, heading: "Not included" },
+] as const;
+
 function formatItemValue(item: ProgramCardLineItem): string {
   const min = item.minValue ?? 0;
   const max = item.maxValue ?? min;
@@ -80,14 +85,28 @@ export function CostSheetProgramCard({
                 {program.country}
               </span>
             </div>
-            <p className="text-3xl font-heading text-primary shrink-0" data-testid="program-total">
+            <p className="text-2xl font-heading text-primary shrink-0 tabular-nums" data-testid="program-total">
               {formatTotal(program.minTotal, program.maxTotal)}
             </p>
           </div>
         </div>
 
+        {/* Grouped by what the price covers, not by the order the sheet listed
+            them. A parent's two questions are "what am I paying for" and "what
+            will cost me extra later" - and interleaving the two answers, as the
+            sheet does, forces them to read every row twice to separate them.
+            This is the same split the multi-variant card makes; single-program
+            cards were falling through to a flat list and never getting it. */}
         <div className="border-t border-border/60 px-5 py-4 space-y-2 flex-1">
-          {program.lineItems.map((item, idx) => {
+          {GROUPS.map(({ included, heading }) => {
+            const rows = program.lineItems
+              .map((item, idx) => ({ item, idx }))
+              .filter(({ item }) => !!item.isIncluded === included);
+            if (rows.length === 0) return null;
+            return (
+              <div key={heading} className="space-y-2 pt-1 first:pt-0">
+                <p className="t-micro-label">{heading}</p>
+                {rows.map(({ item, idx }) => {
             const label = `${item.category && item.category !== "Medical" ? "" : "IVF - "}${item.key}`;
             // Cost keys arrive in whatever shape the sheet used. Parents were
             // being shown raw identifiers ("agency_fee", "gs_miscellaneous")
@@ -127,6 +146,9 @@ export function CostSheetProgramCard({
                     )}
                   </span>
                 </div>
+              </div>
+            );
+                })}
               </div>
             );
           })}
