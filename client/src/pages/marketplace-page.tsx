@@ -46,12 +46,12 @@ import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, Doct
 
 /**
  * URL params that belong to whichever marketplace tab set them - a search, a
- * location, or a clinic filter. Cleared on every tab change. Deliberately does
- * NOT include the params that describe the view itself (tab, view, filters,
- * clinicView, sortBy), which survive because they aren't filters.
+ * sort, a location, or a clinic filter. All cleared on a tab change: nothing a
+ * user chose for one profile type should describe another. Only the params that
+ * identify the view itself survive (tab, view, filters, clinicView).
  */
 const TAB_SCOPED_PARAMS = [
-  "search", "location", "eggLocation", "surrogateLocation", "spermLocation", "agencyLocation",
+  "search", "sortBy", "location", "eggLocation", "surrogateLocation", "spermLocation", "agencyLocation",
   "eggSource", "ageGroup", "insurance", "lgbtq", "ivfHistory", "specialty",
 ];
 

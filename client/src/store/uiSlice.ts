@@ -36,6 +36,10 @@ const VALID_TABS = ["egg-donors", "surrogates", "ivf-clinics", "surrogacy-agenci
 
 const MARKETPLACE_STORAGE_KEY = "marketplaceFilters:v1";
 
+/** Sort a tab starts on. Tabs whose options don't include it (agencies, IVF)
+ *  fall back to their own default in MarketplaceFilterBar. */
+export const DEFAULT_MARKETPLACE_SORT = "newest";
+
 type PersistedMarketplace = {
   marketplaceSearchQuery: string;
   marketplaceTab: string;
@@ -51,7 +55,7 @@ function loadMarketplaceFilters(): PersistedMarketplace {
     marketplaceSearchQuery: "",
     marketplaceTab: "egg-donors",
     activeFilters: {},
-    marketplaceSortBy: "newest",
+    marketplaceSortBy: DEFAULT_MARKETPLACE_SORT,
     showFavoritesOnly: false,
     showSkippedOnly: false,
     showExperiencedOnly: false,
@@ -154,6 +158,7 @@ const uiSlice = createSlice({
         // across and show "No surrogates found", which reads as an empty
         // marketplace rather than a stale filter.
         state.marketplaceSearchQuery = "";
+        state.marketplaceSortBy = DEFAULT_MARKETPLACE_SORT;
         state.activeFilters = {};
         state.showFavoritesOnly = false;
         state.showSkippedOnly = false;
