@@ -84,7 +84,24 @@ function getEmbedUrl(url: string): string {
   return url;
 }
 
-function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: { photos: string[]; videoUrl?: string | null; showFallback?: boolean }) {
+/**
+ * The desktop photo gallery, in one of two shapes.
+ *
+ * "hero" is the original: one large image with a horizontally-scrolling strip
+ * beneath. "rail" stacks every photo down a narrow column instead.
+ *
+ * The hero shape was a phone pattern stretched onto a 1440px screen. It spent
+ * the whole first screen showing ONE photo, pushed every word she wrote below
+ * the fold, and asked a parent to drag sideways through a filmstrip for the
+ * rest. Dating apps interleave instead - a photo, then something she wrote,
+ * then another photo - and on desktop that reads as two columns: her photos
+ * level with her answers, nothing to drag.
+ *
+ * Both shapes share this component because they share everything that matters:
+ * the lightbox, the video modal, keyboard navigation, and dropping photos whose
+ * URLs 404.
+ */
+function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false, variant = "hero" }: { photos: string[]; videoUrl?: string | null; showFallback?: boolean; variant?: "hero" | "rail" }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const [showVideo, setShowVideo] = useState(false);
@@ -139,6 +156,99 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
   // flag outlived its URL.
   const { isVideo: heroIsVideo, photoIdx: heroPhotoIdx } = resolveHeroSelection(hero, photos.length, videoUrl);
 
+  // The lightbox, the video modal and their keyboard handling are identical
+  // in both shapes, so they are built once and rendered by whichever returns.
+  const galleryOverlays = (
+    <>
+        {showVideo && videoUrl && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            onClick={() => setShowVideo(false)}
+            data-testid="video-overlay"
+          >
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowVideo(false); }}
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
+              data-testid="video-close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="w-[90vw] max-w-[900px] aspect-video" onClick={(e) => e.stopPropagation()}>
+              {isEmbedVideo(videoUrl) ? (
+                <iframe
+                  src={getEmbedUrl(videoUrl)}
+                  className="w-full h-full rounded-[var(--radius)] shadow-2xl"
+                  allow="autoplay; fullscreen; picture-in-picture"
+                  allowFullScreen
+                  data-testid="video-player-iframe"
+                />
+              ) : isIframeVideo(videoUrl) ? (
+                <iframe
+                  src={videoUrl}
+                  className="w-full h-full rounded-[var(--radius)] shadow-2xl"
+                  allow="autoplay; fullscreen; picture-in-picture"
+                  allowFullScreen
+                  data-testid="video-player-iframe"
+                />
+              ) : (
+                <video
+                  src={isDirectVideo(videoUrl) ? videoUrl : `/api/uploads/proxy?url=${encodeURIComponent(videoUrl)}`}
+                  controls
+                  autoPlay
+                  className="w-full h-full rounded-[var(--radius)] shadow-2xl bg-black"
+                  data-testid="video-player"
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {lightboxIdx !== null && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            onClick={() => setLightboxIdx(null)}
+            data-testid="lightbox-overlay"
+          >
+            <button
+              onClick={(e) => { e.stopPropagation(); setLightboxIdx(null); }}
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
+              data-testid="lightbox-close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            {lightboxIdx > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setLightboxIdx(lightboxIdx - 1); }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
+                data-testid="lightbox-prev"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+            {lightboxIdx < photos.length - 1 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setLightboxIdx(lightboxIdx + 1); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
+                data-testid="lightbox-next"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+            <img
+              src={photos[lightboxIdx]}
+              alt={`Photo ${lightboxIdx + 1}`}
+              className="max-h-[85vh] max-w-[90vw] object-contain rounded-[var(--radius)] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+              data-testid="lightbox-image"
+            />
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/70 text-sm" data-testid="lightbox-counter">
+              {lightboxIdx + 1} / {photos.length}
+            </div>
+          </div>
+        )}
+    </>
+  );
+
   if (photos.length === 0 && !videoUrl) {
     if (!showFallback) return null;
     // Anonymous / photo-less donor: branded silhouette instead of an empty hero.
@@ -146,6 +256,51 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
       <div className="w-full max-w-[420px] aspect-[4/5] rounded-[var(--radius)] overflow-hidden" data-testid="photo-gallery-fallback">
         <DonorPhotoFallback />
       </div>
+    );
+  }
+
+  if (variant === "rail") {
+    return (
+      <>
+        <div className="space-y-3" data-testid="profile-photo-rail">
+          {videoUrl && photos.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowVideo(true)}
+              className="block w-full overflow-hidden rounded-[var(--radius)] relative group focus:outline-none focus:ring-2 focus:ring-primary/40"
+              data-testid="photo-rail-video"
+              aria-label="Play video"
+            >
+              <img src={photos[0]} alt="Video thumbnail" className="w-full aspect-[4/5] object-cover object-center brightness-75" />
+              <span className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                <span className="w-14 h-14 rounded-full bg-card/90 flex items-center justify-center shadow-lg">
+                  <Play className="w-7 h-7 text-primary ml-0.5" fill="currentColor" />
+                </span>
+                <span className="t-micro-value drop-shadow-lg">Play video</span>
+              </span>
+            </button>
+          )}
+          {photos.map((src, idx) => (
+            <button
+              key={src}
+              type="button"
+              onClick={() => setLightboxIdx(idx)}
+              className="block w-full overflow-hidden rounded-[var(--radius)] focus:outline-none focus:ring-2 focus:ring-primary/40 group"
+              data-testid={`photo-rail-item-${idx}`}
+              aria-label={`Expand photo ${idx + 1}`}
+            >
+              <img
+                src={src}
+                alt={`Photo ${idx + 1}`}
+                className="w-full aspect-[4/5] object-cover object-center transition-transform duration-500 group-hover:scale-[1.02]"
+                loading={idx < 2 ? "eager" : "lazy"}
+                onError={() => setErrored((e) => ({ ...e, [src]: true }))}
+              />
+            </button>
+          ))}
+        </div>
+        {galleryOverlays}
+      </>
     );
   }
 
@@ -232,92 +387,7 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
         )}
       </div>
 
-      {showVideo && videoUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-          onClick={() => setShowVideo(false)}
-          data-testid="video-overlay"
-        >
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowVideo(false); }}
-            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
-            data-testid="video-close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-          <div className="w-[90vw] max-w-[900px] aspect-video" onClick={(e) => e.stopPropagation()}>
-            {isEmbedVideo(videoUrl) ? (
-              <iframe
-                src={getEmbedUrl(videoUrl)}
-                className="w-full h-full rounded-[var(--radius)] shadow-2xl"
-                allow="autoplay; fullscreen; picture-in-picture"
-                allowFullScreen
-                data-testid="video-player-iframe"
-              />
-            ) : isIframeVideo(videoUrl) ? (
-              <iframe
-                src={videoUrl}
-                className="w-full h-full rounded-[var(--radius)] shadow-2xl"
-                allow="autoplay; fullscreen; picture-in-picture"
-                allowFullScreen
-                data-testid="video-player-iframe"
-              />
-            ) : (
-              <video
-                src={isDirectVideo(videoUrl) ? videoUrl : `/api/uploads/proxy?url=${encodeURIComponent(videoUrl)}`}
-                controls
-                autoPlay
-                className="w-full h-full rounded-[var(--radius)] shadow-2xl bg-black"
-                data-testid="video-player"
-              />
-            )}
-          </div>
-        </div>
-      )}
-
-      {lightboxIdx !== null && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-          onClick={() => setLightboxIdx(null)}
-          data-testid="lightbox-overlay"
-        >
-          <button
-            onClick={(e) => { e.stopPropagation(); setLightboxIdx(null); }}
-            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
-            data-testid="lightbox-close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-          {lightboxIdx > 0 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setLightboxIdx(lightboxIdx - 1); }}
-              className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
-              data-testid="lightbox-prev"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-          )}
-          {lightboxIdx < photos.length - 1 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setLightboxIdx(lightboxIdx + 1); }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors z-10"
-              data-testid="lightbox-next"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
-          )}
-          <img
-            src={photos[lightboxIdx]}
-            alt={`Photo ${lightboxIdx + 1}`}
-            className="max-h-[85vh] max-w-[90vw] object-contain rounded-[var(--radius)] shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-            data-testid="lightbox-image"
-          />
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/70 text-sm" data-testid="lightbox-counter">
-            {lightboxIdx + 1} / {photos.length}
-          </div>
-        </div>
-      )}
+      {galleryOverlays}
     </>
   );
 }
@@ -544,6 +614,7 @@ function getMandatoryFields(donor: any, type: string): { label: string; value: s
     ];
   }
 }
+
 
 function MobilePhotoViewer({ photos: rawPhotos, videoUrl, showFallback = false }: { photos: string[]; videoUrl?: string | null; showFallback?: boolean }) {
   // Drop any photo whose URL 404s so a dead link never renders as a broken image.
@@ -966,7 +1037,10 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
   if (donor.donationTypes) headerMeta.push(`Types of Donation: ${donor.donationTypes}`);
 
   return (
-    <div className="space-y-6 w-full pb-32 md:pb-0">
+    // Desktop: sections on the left, her photos running down the right, level
+    // with them. See ProfilePhotoRail for why the big-hero layout was wrong.
+    <div className="w-full pb-32 md:pb-0 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-8 lg:items-start">
+      <div className="space-y-6 min-w-0">
       {isMobile && (
         <>
           <motion.div
@@ -1031,16 +1105,10 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
           <ProfileQuote quote={donor.highlightQuote} className="mt-3" />
         </motion.div>
       ) : (
-        // Desktop: her photo and who she is, side by side. Bounding the hero to
-        // a portrait fixed the cropping, but left it centred over left-aligned
-        // content - one column of photo floating above another of text. Pairing
-        // them uses the width and puts her face next to her name, which is the
-        // pairing a parent is actually making.
-        <div className="flex items-start gap-8" data-testid="profile-desktop-header">
-          <div className="w-[420px] shrink-0">
-            <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} showFallback />
-          </div>
-          <div className="flex-1 min-w-0">
+        // Desktop: identity only. The photos live in the rail beside the
+        // sections now, so nothing here competes with them for the first screen.
+        <div data-testid="profile-desktop-header">
+          <div className="min-w-0">
           <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-donor-title">
             {typeLabel} #{displayId}
           </h1>
@@ -1911,6 +1979,13 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
             </div>
         </ProfileSection>
       ))}
+      </div>
+
+      {!isMobile && (
+        <div className="hidden lg:block" data-testid="profile-photo-column">
+          <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} variant="rail" showFallback />
+        </div>
+      )}
     </div>
   );
 }

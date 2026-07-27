@@ -28,7 +28,35 @@ const PROSE_SECTION = /(letter|in\s*her\s*own\s*words|own\s*words|personal\s*sta
 const STAFF_SECTION = /(agency\s*comment|staff|coordinator|our\s*thoughts|why\s*we)/i;
 
 const MIN_SOURCE_CHARS = 220;
-const MAX_QUOTE_CHARS = 180;
+// 180 was too tight for real writing. Letters are written in long sentences,
+// and the model was told to return null when nothing revealing fit - so it
+// returned null for 397 of 400 profiles that had plenty of their own prose.
+const MAX_QUOTE_CHARS = 240;
+
+/** Keys that never hold her writing, whatever they contain. */
+const NON_PROSE_KEY = /^(photos?|all\s*photos|images?|videos?|_tables|_sections|url|links?)$/i;
+
+/**
+ * Does this string look like something a person wrote?
+ *
+ * The check that was missing: a photo URL is over 80 characters and contains a
+ * dot, so it passed a naive length-plus-punctuation test. Profiles with a dozen
+ * photos filled the entire 6000-character budget with storage URLs, the model
+ * was handed a wall of links, and it correctly answered that there was no
+ * writing to quote - for 397 of 400 profiles.
+ */
+function looksLikeProse(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 80) return false;
+  if (/https?:\/\/|www\.|\/\//.test(t)) return false;
+  // A sentence ends and then breathes: punctuation followed by a space or the end.
+  if (!/[.!?][\s"'\u201d\u2019)]|[.!?]$/.test(t)) return false;
+  // Real prose, not a delimited data blob.
+  const words = t.split(/\s+/);
+  if (words.length < 12) return false;
+  if (words.some((w) => w.length > 40)) return false;
+  return true;
+}
 
 /** Collect the prose this person wrote, in reading order. */
 export function collectOwnWords(profileData: any): string {
@@ -38,9 +66,7 @@ export function collectOwnWords(profileData: any): string {
   const walk = (obj: any, sectionName: string) => {
     if (!obj) return;
     if (typeof obj === "string") {
-      // Prose, not an attribute value: a real sentence with sentence-ending
-      // punctuation and enough length to be worth quoting from.
-      if (obj.trim().length >= 80 && /[.!?]/.test(obj)) chunks.push(obj.trim());
+      if (looksLikeProse(obj)) chunks.push(obj.trim());
       return;
     }
     if (Array.isArray(obj)) {
@@ -49,7 +75,7 @@ export function collectOwnWords(profileData: any): string {
     }
     if (typeof obj !== "object") return;
     for (const [key, value] of Object.entries(obj)) {
-      if (STAFF_SECTION.test(key)) continue;
+      if (STAFF_SECTION.test(key) || NON_PROSE_KEY.test(key)) continue;
       const name = PROSE_SECTION.test(key) ? key : sectionName;
       if (name) walk(value, name);
       else if (value && typeof value === "object") walk(value, "");
@@ -58,6 +84,26 @@ export function collectOwnWords(profileData: any): string {
 
   walk(profileData, "");
   return chunks.join("\n\n").slice(0, 6000);
+}
+
+/** The first `{...}` whose braces balance, ignoring braces inside strings. */
+export function firstBalancedObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return text.slice(start, i + 1);
+  }
+  return null;
 }
 
 /** Whitespace and smart-quote insensitive containment check. */
@@ -92,20 +138,20 @@ export async function selectHighlightQuote(profileData: any): Promise<string | n
       // Without this, 3.5-flash spends the whole output budget thinking and
       // the response arrives truncated mid-preamble ("Here is the JSON requ").
       thinkingConfig: { thinkingBudget: 0 },
-      maxOutputTokens: 512,
+      maxOutputTokens: 1024,
       responseMimeType: "application/json",
     } as any,
   });
 
   const prompt = `Below is what an egg donor or surrogate wrote about herself on her profile.
 
-Choose the ONE sentence that tells an intended parent the most about who she is - her warmth, her motivation, her humour, what she cares about. Prefer a sentence that could only have been written by her over a generic one ("I love to help people").
+Pick the ONE sentence that tells an intended parent the most about who she is - her warmth, her motivation, her humour, what she cares about. Prefer a sentence that could only have been written by her over a generic one ("I love to help people").
 
 Rules:
-- Copy the sentence EXACTLY as written. Do not fix grammar, shorten, join two sentences, or rephrase. An exact copy is the only acceptable output.
-- It must be at most ${MAX_QUOTE_CHARS} characters. If no single sentence that revealing fits, return null.
-- Do not choose a sentence that is purely factual (age, job title, number of children).
-- Return null if nothing stands out.
+- Copy the sentence EXACTLY as written, character for character. Do not fix grammar or spelling, do not shorten, do not join two sentences, do not rephrase. An exact copy is the only acceptable output.
+- It must be a complete sentence and at most ${MAX_QUOTE_CHARS} characters. If her most revealing sentence is longer than that, pick the best one that fits rather than giving up.
+- Skip purely factual sentences (age, job title, number of children) and skip anything written about her by staff.
+- These are real people writing about something that matters to them. If there is any first-person writing here at all, one sentence of it is worth quoting - only return null when the text contains no such writing.
 
 Return JSON: {"quote": "<the exact sentence>"} or {"quote": null}
 
@@ -123,16 +169,22 @@ ${source}
     return null;
   }
 
-  // JSON mode usually holds, but the model still occasionally wraps the object
-  // in a fence or a sentence, so take the outermost object if a strict parse fails.
+  // JSON mode usually holds, but the model sometimes emits a valid object and
+  // then trails extra closing braces after it. A greedy /\{[\s\S]*\}/ swallows
+  // that junk and fails to parse, throwing away a perfectly good quote - so
+  // take the FIRST BALANCED object instead of the longest span.
   let quote: unknown = null;
   const parseCandidate = (text: string): unknown => {
     try { return JSON.parse(text)?.quote ?? null; } catch { return undefined; }
   };
   quote = parseCandidate(raw.trim());
+  if (quote === undefined) quote = parseCandidate(firstBalancedObject(raw) ?? "");
   if (quote === undefined) {
-    const match = raw.match(/\{[\s\S]*\}/);
-    quote = match ? parseCandidate(match[0]) : undefined;
+    // A truncated response still carries the sentence: {"quote": "..." <cut>.
+    // Safe to lift because validateQuote still has to find it verbatim in her
+    // own writing - a recovered string cannot become a fabricated quote.
+    const field = /"quote"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(raw);
+    if (field) { try { quote = JSON.parse(`"${field[1]}"`); } catch { quote = undefined; } }
   }
   if (quote === undefined) {
     console.error(`[highlight-quote] unparseable response: ${raw.slice(0, 200)}`);
