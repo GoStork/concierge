@@ -1043,9 +1043,24 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
   if (donor.donationTypes) headerMeta.push(`Types of Donation: ${donor.donationTypes}`);
 
   return (
-    // Desktop: sections on the left, her photos running down the right, level
-    // with them. See ProfilePhotoRail for why the big-hero layout was wrong.
-    <div className="w-full pb-32 md:pb-0 lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8 lg:items-start">
+    <div className="w-full pb-32 md:pb-0">
+      <div className={`mb-4 flex items-center justify-between ${isMobile ? "hidden" : ""}`}>
+        <Button variant="ghost" onClick={handleBack} data-testid="link-back-provider">
+          <ArrowLeft className="w-4 h-4 mr-2" /> {fromChat ? "Back to Chat" : !window.location.pathname.startsWith("/admin/") ? "Back to Marketplace" : `Back to ${provider?.name || "Provider"}`}
+        </Button>
+        {user && !user.roles?.includes("PARENT") && (
+          <Button
+            onClick={() => navigate(`/admin/providers/${providerId}/${typeToUrlSlug(type || "egg-donor")}/${donorId}/edit`)}
+            data-testid="button-edit-donor"
+          >
+            <Pencil className="w-4 h-4 mr-2" /> Edit Profile
+          </Button>
+        )}
+      </div>
+
+      {/* Sections on the left, her photos running down the right, level with
+          them - the first one beside her name and her quote. */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8 lg:items-start">
       <div className="space-y-6 min-w-0">
       {isMobile && (
         <>
@@ -1088,19 +1103,6 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
           </motion.div>
         </>
       )}
-      <div className={`flex items-center justify-between ${isMobile ? "hidden" : ""}`}>
-        <Button variant="ghost" onClick={handleBack} data-testid="link-back-provider">
-          <ArrowLeft className="w-4 h-4 mr-2" /> {fromChat ? "Back to Chat" : !window.location.pathname.startsWith("/admin/") ? "Back to Marketplace" : `Back to ${provider?.name || "Provider"}`}
-        </Button>
-        {user && !user.roles?.includes("PARENT") && (
-          <Button
-            onClick={() => navigate(`/admin/providers/${providerId}/${typeToUrlSlug(type || "egg-donor")}/${donorId}/edit`)}
-            data-testid="button-edit-donor"
-          >
-            <Pencil className="w-4 h-4 mr-2" /> Edit Profile
-          </Button>
-        )}
-      </div>
 
       {isMobile ? (
         <motion.div
@@ -1992,6 +1994,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
           <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} variant="rail" showFallback />
         </div>
       )}
+      </div>
     </div>
   );
 }
