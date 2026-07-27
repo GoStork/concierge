@@ -1,0 +1,473 @@
+/**
+ * GoStork - Profile experience guards (PX-xx)
+ *
+ * Twelve changes shipped to the donor / surrogate / clinic profile surfaces in
+ * July 2026. Every one of them is a RENDERING decision, which is exactly the
+ * class of change no other suite in this repo can see: the concierge suites
+ * assert what Eva says, the journey suite asserts what moves, and neither
+ * notices when a profile starts quoting a sentence she never wrote or
+ * publishing a $300,000 compensation figure.
+ *
+ * So each case tests the decision, not the pixels: the pure function that
+ * decides what a parent reads. Where that logic lived inline in JSX it was
+ * extracted first (lib/profile-sections, lib/profile-hero, lib/rate-delta,
+ * lib/cost-program-family, buildCompareTable, validateQuote) - which is also
+ * why these are testable at all without a browser.
+ *
+ * Usage:
+ *   npx tsx scripts/test-profile-ux.ts
+ *   npx tsx scripts/test-profile-ux.ts --id=PX-08
+ */
+
+import { formatFieldLabel, looksLikeRawKey, isPlaceholderValue } from "../client/src/lib/format-label";
+import { safeCompensation, compensationWarning, isPlausibleCompensation } from "../client/src/lib/compensation-sanity";
+import { formatRelativeTime, isStale } from "../client/src/lib/format-relative-time";
+import { splitSharedItems, groupProgramFamilies, variantLabels } from "../client/src/lib/cost-program-family";
+import { sectionBand, orderSectionsIntoBands, BAND_LABEL } from "../client/src/lib/profile-sections";
+import { resolveHeroSelection } from "../client/src/lib/profile-hero";
+import { describeRateDelta, RATE_TONE_CLASS } from "../client/src/lib/rate-delta";
+import { preferencesFromFilters, preferencesFromParentProfile } from "../client/src/hooks/use-parent-preferences";
+import { getMatchedPreferences } from "../client/src/components/marketplace/swipe-mappers";
+import { buildCompareTable, COMPARE_MAX } from "../client/src/components/marketplace/compare-drawer";
+import { collectOwnWords, validateQuote } from "../server/src/modules/providers/highlight-quote";
+import uiReducer, { toggleFavoriteDonor, passDonor } from "../client/src/store/uiSlice";
+
+const BASE = process.env.TEST_BASE_URL || "http://localhost:5001";
+const filterId = process.argv.slice(2).find((a) => a.startsWith("--id="))?.split("=")[1];
+
+let caseFails: string[] = [];
+let totalPass = 0;
+let totalFail = 0;
+function check(label: string, ok: boolean, detail?: string) {
+  console.log(`      ${ok ? "✓" : "✗"} ${label}${detail ? ` :: ${String(detail).replace(/\n/g, " | ").slice(0, 180)}` : ""}`);
+  if (!ok) caseFails.push(`${label}${detail ? ` :: ${String(detail).slice(0, 160)}` : ""}`);
+}
+
+async function reportToDashboard(event: Record<string, unknown>): Promise<void> {
+  try {
+    await fetch(`${BASE}/api/admin/test-runner/event`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(event),
+    });
+  } catch { /* best-effort */ }
+}
+
+const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+
+// ─── PX-01: cost labels read as English, and raw keys are flagged ────────────
+async function px01() {
+  check('snake_case becomes a label ("agency_fee")', formatFieldLabel("agency_fee") === "Agency Fee", formatFieldLabel("agency_fee"));
+  check('camelCase is split ("donorCompensation")', formatFieldLabel("donorCompensation") === "Donor Compensation", formatFieldLabel("donorCompensation"));
+  check('domain initialisms stay upper ("ivf_cycle")', formatFieldLabel("ivf_cycle") === "IVF Cycle", formatFieldLabel("ivf_cycle"));
+  check('"gs_miscellaneous" is not left raw on a $200k quote', formatFieldLabel("gs_miscellaneous") === "GS Miscellaneous", formatFieldLabel("gs_miscellaneous"));
+
+  // The regression that made the naive version unusable: most labels are
+  // ALREADY human, and splitting them mangles the page everywhere at once.
+  check('an already-human label is untouched ("IVF Cycle")', formatFieldLabel("IVF Cycle") === "IVF Cycle", formatFieldLabel("IVF Cycle"));
+  check("parenthesised human labels survive",
+    formatFieldLabel("Embryo Transfer (One Cycle)") === "Embryo Transfer (One Cycle)", formatFieldLabel("Embryo Transfer (One Cycle)"));
+  check("a name keeps its inner capital", formatFieldLabel("McKinney Fee") === "McKinney Fee", formatFieldLabel("McKinney Fee"));
+
+  check("looksLikeRawKey flags underscores", looksLikeRawKey("agency_fee"));
+  check("looksLikeRawKey flags camelCase", looksLikeRawKey("agencyFee"));
+  check("looksLikeRawKey does NOT flag a written label", !looksLikeRawKey("Agency Fee"));
+  check("empty input is neither flagged nor crashes", !looksLikeRawKey("") && formatFieldLabel("") === "");
+}
+
+// ─── PX-02: implausible compensation is suppressed, never rewritten ──────────
+async function px02() {
+  check("a normal egg-donor figure publishes", safeCompensation(12_000, "egg-donor") === 12_000);
+  check("$300,000 for an egg donor is withheld", safeCompensation(300_000, "egg-donor") === null);
+  check("$5 for an egg donor is withheld", safeCompensation(5, "egg-donor") === null);
+  check("a six-figure surrogate fee is legitimate", safeCompensation(120_000, "surrogate") === 120_000);
+  check("the same figure is implausible for a sperm donor", safeCompensation(120_000, "sperm-donor") === null);
+  check("a normal sperm-donor figure publishes", safeCompensation(150, "sperm-donor") === 150);
+
+  // The property that matters: suppression, not correction. A clamped
+  // $60,000 would look like a real published price for that donor.
+  check("an out-of-band figure is NOT clamped to the band edge",
+    safeCompensation(300_000, "egg-donor") !== 60_000);
+  check("null and zero stay null", safeCompensation(null, "egg-donor") === null && safeCompensation(0, "egg-donor") === null);
+  check("a non-finite value is refused", safeCompensation(Number.NaN as any, "egg-donor") === null);
+
+  const warn = compensationWarning(300_000, "egg-donor");
+  check("the provider side is told why it was hidden", !!warn && /outside the plausible range/i.test(warn), String(warn));
+  check("no warning for a plausible figure", compensationWarning(12_000, "egg-donor") === null);
+  check("no warning for a missing figure", compensationWarning(null, "egg-donor") === null);
+  check("isPlausibleCompensation agrees with safeCompensation",
+    isPlausibleCompensation(12_000, "egg-donor") && !isPlausibleCompensation(300_000, "egg-donor"));
+}
+
+// ─── PX-03: placeholders never reach a parent as content ─────────────────────
+async function px03() {
+  for (const v of ["--", "-", "—", "N/A", "n/a", "null", "undefined", "Not specified", "Not provided", "", "   "]) {
+    check(`"${v}" is treated as blank`, isPlaceholderValue(v));
+  }
+  check("null is blank", isPlaceholderValue(null));
+  check("an empty array is blank", isPlaceholderValue([]));
+
+  // The line this feature must not cross: "None" is a real answer. A surrogate
+  // profile saying "Health Conditions: None" is telling the parent something.
+  check('"None" is a real answer, not a placeholder', !isPlaceholderValue("None"));
+  check('"none" lowercase is also a real answer', !isPlaceholderValue("none"));
+  check('"0" is a real answer', !isPlaceholderValue("0"));
+  check('"Never" is a real answer', !isPlaceholderValue("Never"));
+  check("a normal value passes through", !isPlaceholderValue("Blue"));
+}
+
+// ─── PX-04: freshness says "updated", and only what it can prove ─────────────
+async function px04() {
+  check("a few hours ago reads as today", formatRelativeTime(new Date(Date.now() - 3 * 3600_000)) === "today", String(formatRelativeTime(new Date(Date.now() - 3 * 3600_000))));
+  check("one day ago reads as yesterday", formatRelativeTime(daysAgo(1)) === "yesterday", String(formatRelativeTime(daysAgo(1))));
+  check("five days ago counts days", formatRelativeTime(daysAgo(5)) === "5 days ago", String(formatRelativeTime(daysAgo(5))));
+  check("two months ago counts months", formatRelativeTime(daysAgo(62)) === "2 months ago", String(formatRelativeTime(daysAgo(62))));
+  check("a very old record is not dressed up", /year/.test(String(formatRelativeTime(daysAgo(500)))), String(formatRelativeTime(daysAgo(500))));
+
+  check("a missing timestamp says nothing", formatRelativeTime(null) === null && formatRelativeTime(undefined) === null);
+  check("an unparseable timestamp says nothing", formatRelativeTime("not a date") === null);
+  // Clock skew must not produce "in 3 days" on a live profile.
+  check("a future timestamp says nothing rather than guessing",
+    formatRelativeTime(new Date(Date.now() + 86_400_000)) === null, String(formatRelativeTime(new Date(Date.now() + 86_400_000))));
+
+  check("a week-old record is not stale", !isStale(daysAgo(7)));
+  check("a 60-day-old record is stale", isStale(daysAgo(60)));
+  check("the threshold is configurable", isStale(daysAgo(10), 7) && !isStale(daysAgo(10), 30));
+  check("a missing timestamp is not called stale", !isStale(null));
+}
+
+// ─── PX-05: the cost ladder collapses only what is genuinely identical ───────
+function line(key: string, min: number, max = min, isIncluded = true) {
+  return { category: "IVF", key, minValue: min, maxValue: max, isIncluded } as any;
+}
+function program(id: string, name: string, items: any[], over: any = {}) {
+  return {
+    programId: id, programName: name, subTypeLabel: "IVF", subType: "ivf", tab: "ivf",
+    country: "USA", isFixedCost: false, minTotal: 20_000, maxTotal: 20_000, lineItems: items, ...over,
+  } as any;
+}
+async function px05() {
+  const shared = [line("Monitoring", 2_000), line("Anesthesia", 800), line("Storage", 0, 0, false)];
+  const one = program("p1", "IVF Program - One Cycle", [...shared, line("Cycles", 15_000)]);
+  const two = program("p2", "IVF Program - Two Cycles", [...shared, line("Cycles", 28_000)], { minTotal: 28_000, maxTotal: 28_000 });
+  const three = program("p3", "IVF Program - Three Cycles", [...shared, line("Cycles", 39_000)], { minTotal: 39_000, maxTotal: 39_000 });
+
+  const split = splitSharedItems([one, two, three]);
+  check("rows identical in every variant move to the shared block",
+    split.sharedIncluded.map((i: any) => i.key).sort().join(",") === "Anesthesia,Monitoring",
+    JSON.stringify(split.sharedIncluded.map((i: any) => i.key)));
+  check("a shared NOT-included row is kept separate from included ones",
+    split.sharedExtra.length === 1 && split.sharedExtra[0].key === "Storage", JSON.stringify(split.sharedExtra));
+  check("the row that differs stays with its own variant",
+    split.perVariant.every((rows: any[]) => rows.length === 1 && rows[0].key === "Cycles"),
+    JSON.stringify(split.perVariant.map((r: any[]) => r.map((x) => x.key))));
+
+  // The safety property: a row present in only SOME variants must never be
+  // presented as shared, or the parent reads a price they are not being quoted.
+  const withExtra = program("p4", "IVF Program - Unlimited", [...shared, line("Cycles", 50_000), line("Genetic Testing", 4_000)]);
+  const split2 = splitSharedItems([one, withExtra]);
+  check("a row only one variant has is never called shared",
+    !split2.sharedIncluded.some((i: any) => i.key === "Genetic Testing"), JSON.stringify(split2.sharedIncluded.map((i: any) => i.key)));
+  check("that row still renders against the variant that has it",
+    split2.perVariant[1].some((i: any) => i.key === "Genetic Testing"), JSON.stringify(split2.perVariant[1].map((i: any) => i.key)));
+
+  // Same key, different PRICE, is a difference - not a shared row.
+  const cheaper = program("p5", "IVF Program - One Cycle", [line("Monitoring", 1_000), line("Cycles", 15_000)]);
+  const split3 = splitSharedItems([one, cheaper]);
+  check("the same row at a different price is not merged",
+    !split3.sharedIncluded.some((i: any) => i.key === "Monitoring"), JSON.stringify(split3.sharedIncluded.map((i: any) => i.key)));
+
+  // Grouping: only variants of the same product merge.
+  const families = groupProgramFamilies([one, two, three, program("p6", "Fixed Cost Egg Donation", [], { subType: "egg-donation", isFixedCost: true })]);
+  check("three variants of one product form one family", families.some((f: any[]) => f.length === 3), JSON.stringify(families.map((f: any[]) => f.length)));
+  check("a genuinely different product stays its own card", families.some((f: any[]) => f.length === 1), JSON.stringify(families.map((f: any[]) => f.length)));
+
+  check("the ladder is labelled by what differs",
+    JSON.stringify(variantLabels(["IVF Program - One Cycle", "IVF Program - Two Cycles"])) === JSON.stringify(["One Cycle", "Two Cycles"]),
+    JSON.stringify(variantLabels(["IVF Program - One Cycle", "IVF Program - Two Cycles"])));
+  check("unrelated names are kept whole rather than trimmed to nothing",
+    JSON.stringify(variantLabels(["Shared Risk", "Shared Risk"])) === JSON.stringify(["Shared Risk", "Shared Risk"]),
+    JSON.stringify(variantLabels(["Shared Risk", "Shared Risk"])));
+}
+
+// ─── PX-06: the fit line knows what THIS parent asked for ────────────────────
+async function px06() {
+  const fromFilters = preferencesFromFilters({ eyeColor: ["Blue"], age: ["21", "29"], agreesToTwins: ["true"], education: [] });
+  check("a list filter becomes one preference per value",
+    fromFilters.some((p) => p.key === "eyeColor" && p.value === "Blue"), JSON.stringify(fromFilters));
+  check("a two-value range becomes a range preference",
+    fromFilters.some((p) => p.key === "age" && p.rangeMin === 21 && p.rangeMax === 29), JSON.stringify(fromFilters));
+  check("an empty filter contributes nothing", !fromFilters.some((p) => p.key === "education"));
+
+  const fromProfile = preferencesFromParentProfile({
+    donorEyeColor: "Green", donorHairColor: "Blonde, Brown", donorEducation: "Any", donorEthnicity: null,
+  });
+  check("a stored answer becomes a preference", fromProfile.some((p) => p.key === "eyeColor" && p.value === "Green"), JSON.stringify(fromProfile));
+  check("a comma list becomes two preferences",
+    fromProfile.filter((p) => p.key === "hairColor").length === 2, JSON.stringify(fromProfile.filter((p) => p.key === "hairColor")));
+  check('"Any" means the parent is open, not a filter', !fromProfile.some((p) => p.key === "education"), JSON.stringify(fromProfile));
+  check("a null answer contributes nothing", !fromProfile.some((p) => p.key === "ethnicity"));
+  check("no profile at all is survivable", preferencesFromParentProfile(null).length === 0);
+
+  // The fit line itself: matches are found, and a miss is a miss.
+  const profile: any = { id: "d1", age: 27, eyeColor: "Blue", hairColor: "Brown", education: "Bachelor's Degree", location: "California" };
+  const matched = getMatchedPreferences(profile, [
+    { key: "eyeColor", value: "Blue" }, { key: "hairColor", value: "Red" }, { key: "age", value: "range", rangeMin: 21, rangeMax: 29 },
+  ] as any);
+  const keys = matched.map((m: any) => m.key);
+  check("a matching trait is reported", keys.includes("eyeColor"), JSON.stringify(keys));
+  check("an in-range age is reported", keys.includes("age"), JSON.stringify(keys));
+  check("a trait she does not have is NOT reported as a match", !keys.includes("hairColor"), JSON.stringify(keys));
+  check("every match carries a label the page can print",
+    matched.every((m: any) => typeof m.displayLabel === "string" && m.displayLabel.length > 0), JSON.stringify(matched));
+  check("no preferences means no claims", getMatchedPreferences(profile, []).length === 0);
+}
+
+// ─── PX-07: sections read in three bands, in the right order ─────────────────
+async function px07() {
+  check("an attribute section is band 1", sectionBand("Physical Characteristics") === 1, String(sectionBand("Physical Characteristics")));
+  check("her letter is band 2", sectionBand("Letter to Intended Parents") === 2, String(sectionBand("Letter to Intended Parents")));
+  check("interests are band 2", sectionBand("General Interests") === 2, String(sectionBand("General Interests")));
+  check("medical history is band 3", sectionBand("Medical History") === 3, String(sectionBand("Medical History")));
+  check("family history is band 3", sectionBand("Family Health History") === 3, String(sectionBand("Family Health History")));
+  check("a marker name is normalised before matching", sectionBand("__LETTER__") === 2, String(sectionBand("__LETTER__")));
+
+  const ordered = orderSectionsIntoBands([
+    "Medical History", "Letter to Intended Parents", "Physical Characteristics", "Pregnancy History", "Education",
+  ]);
+  const bare = ordered.filter((n) => !n.startsWith("__BAND_"));
+  check("band 1 comes first, band 3 last",
+    bare[0] === "Physical Characteristics" && bare[bare.length - 1] === "Pregnancy History", JSON.stringify(bare));
+  check("her letter sits between them", bare.indexOf("Letter to Intended Parents") === 2, JSON.stringify(bare));
+  check("source order is preserved WITHIN a band",
+    bare.indexOf("Physical Characteristics") < bare.indexOf("Education"), JSON.stringify(bare));
+  check("every band present gets exactly one heading",
+    ordered.filter((n) => n.startsWith("__BAND_")).length === 3, JSON.stringify(ordered.filter((n) => n.startsWith("__BAND_"))));
+
+  // Band 3 is moved down, never hidden - Eran's explicit call.
+  check("nothing is dropped by the reordering", bare.length === 5, JSON.stringify(bare));
+
+  const onlyOne = orderSectionsIntoBands(["Physical Characteristics", "Education"]);
+  check("a band with no sections gets no heading",
+    onlyOne.filter((n) => n.startsWith("__BAND_")).length === 1, JSON.stringify(onlyOne));
+  check("each band has a parent-facing name",
+    BAND_LABEL[1] === "At a glance" && BAND_LABEL[2] === "In her own words" && BAND_LABEL[3] === "Medical & background",
+    JSON.stringify(BAND_LABEL));
+  check("no sections in means no headings out", orderSectionsIntoBands([]).length === 0);
+}
+
+// ─── PX-08: the pull-quote is hers, whole, and not staff copy ────────────────
+async function px08() {
+  const source = "I grew up on a farm with four brothers. My kids call me the pancake queen and I will take it. I want to help another family feel that.";
+
+  check("a verbatim sentence is accepted",
+    validateQuote(source, "My kids call me the pancake queen and I will take it.") === "My kids call me the pancake queen and I will take it.",
+    String(validateQuote(source, "My kids call me the pancake queen and I will take it.")));
+
+  // The guard that protects a real person: a model asked for "the best line"
+  // will improve it, and an improved line is words she never wrote.
+  check("a paraphrase is refused", validateQuote(source, "Her children call her the pancake queen.") === null);
+  check("a rewrite that fixes grammar is refused", validateQuote(source, "My kids call me the Pancake Queen, and I will take it!") === null);
+
+  // The bug this caught in production: asked for "at most 180 characters" the
+  // model returns a real sentence chopped at 180 - verbatim, but trailing off.
+  check("a mid-sentence fragment is refused", validateQuote(source, "My kids call me the pancake queen and I") === null);
+  check("a fragment ending on a comma is refused", validateQuote(source, "I grew up on a farm with four brothers,") === null);
+  check("a sentence ending in ! is accepted",
+    validateQuote("I love it here!", "I love it here!") === "I love it here!", String(validateQuote("I love it here!", "I love it here!")));
+  // Models wrap their answer in quote marks; that wrapper is stripped, but only
+  // as a matched pair - stripping one end would print an unbalanced quote.
+  check("a model-added wrapper quote is stripped",
+    validateQuote('She said "you should do this."', '"you should do this."') === "you should do this.",
+    String(validateQuote('She said "you should do this."', '"you should do this."')));
+  const inner = 'I told myself "this is the year."';
+  check("a quotation inside her own sentence survives intact",
+    validateQuote(inner, inner) === inner, String(validateQuote(inner, inner)));
+
+  check("an over-long quote is refused", validateQuote(source + " " + "x".repeat(400), "x".repeat(200) + ".") === null);
+  check("an empty candidate is refused", validateQuote(source, "") === null && validateQuote(source, "   ") === null);
+
+  // Sourcing: only her own writing is quotable.
+  const profileData = {
+    "Letter to Intended Parents": "I have always loved being a mother. It is the part of my life that matters most to me.",
+    "Agency Comments": "This donor is highly recommended by our staff and has completed two successful cycles with us.",
+    "Eye Color": "Blue",
+  };
+  const own = collectOwnWords(profileData);
+  check("her letter is collected", /always loved being a mother/.test(own), own.slice(0, 90));
+  check("agency copy about her is NOT collected", !/highly recommended/.test(own), own.slice(0, 120));
+  check("short attribute values are not mistaken for prose", !/Blue/.test(own), own.slice(0, 120));
+  check("an empty profile yields nothing to quote", collectOwnWords(null) === "" && collectOwnWords({}) === "");
+}
+
+// ─── PX-09: saving from the action rail keeps her on the grid ────────────────
+async function px09() {
+  // The rail's Save and Hide must stay different actions. They were briefly the
+  // same behaviour: saving a donor removed her from the deck, so the parent
+  // lost the profile they had just chosen to keep.
+  let state: any = uiReducer(undefined, { type: "@@INIT" });
+  state = uiReducer(state, toggleFavoriteDonor("d1"));
+  check("saving records the donor as favorited", state.favoritedDonorIds.includes("d1"), JSON.stringify(state.favoritedDonorIds));
+  check("saving does NOT hide her from the grid", !state.passedDonorIds.includes("d1"), JSON.stringify(state.passedDonorIds));
+
+  state = uiReducer(state, toggleFavoriteDonor("d1"));
+  check("saving again unsaves (the heart toggles)", !state.favoritedDonorIds.includes("d1"), JSON.stringify(state.favoritedDonorIds));
+
+  state = uiReducer(state, passDonor("d2"));
+  check("hiding records the donor as passed", state.passedDonorIds.includes("d2"), JSON.stringify(state.passedDonorIds));
+  check("hiding does not save her", !state.favoritedDonorIds.includes("d2"), JSON.stringify(state.favoritedDonorIds));
+
+  state = uiReducer(state, passDonor("d2"));
+  check("hiding twice does not duplicate the entry",
+    state.passedDonorIds.filter((id: string) => id === "d2").length === 1, JSON.stringify(state.passedDonorIds));
+
+  state = uiReducer(state, toggleFavoriteDonor("d3"));
+  state = uiReducer(state, toggleFavoriteDonor("d4"));
+  check("saves accumulate independently",
+    state.favoritedDonorIds.includes("d3") && state.favoritedDonorIds.includes("d4"), JSON.stringify(state.favoritedDonorIds));
+}
+
+// ─── PX-10: the comparison drops dead rows and keeps real gaps ───────────────
+async function px10() {
+  const a: any = { id: "a", displayName: "Donor 1", age: 27, height: "5'6\"", eyeColor: "Blue", education: "BA", totalCost: 42_000, donorCompensation: 10_000, location: "California" };
+  const b: any = { id: "b", displayName: "Donor 2", age: 29, height: "5'4\"", eyeColor: "Brown", totalCost: 38_000, donorCompensation: 9_000, location: "Texas" };
+
+  const table = buildCompareTable("egg-donor", [a, b]);
+  const groups = table.map((g) => g.group);
+  check("cost and availability lead the table", groups[0] === "Cost & availability", JSON.stringify(groups));
+  check("physical traits follow", groups.includes("Physical traits"), JSON.stringify(groups));
+
+  const rows = table.flatMap((g) => g.rows.map((r) => r.label));
+  check("total cost is compared", rows.includes("Total cost"), JSON.stringify(rows));
+  check("age is compared", rows.includes("Age"), JSON.stringify(rows));
+
+  // A row ONE profile answers is a real difference and must be kept.
+  check("a row only one profile fills is kept", rows.includes("Education"), JSON.stringify(rows));
+  const edu = table.flatMap((g) => g.rows).find((r) => r.label === "Education");
+  check("the profile that left it blank shows blank, not a fabricated value",
+    !!edu && edu.values[0] === "BA" && edu.values[1] === null, JSON.stringify(edu));
+
+  // A row NOBODY answers is four dashes - it reads as broken, so it goes.
+  check("a row no profile fills is dropped", !rows.includes("Occupation"), JSON.stringify(rows));
+  check("an empty group disappears entirely",
+    !table.some((g) => g.rows.length === 0), JSON.stringify(table.map((g) => [g.group, g.rows.length])));
+
+  // Each row carries one value per column, in column order.
+  check("every row has one value per profile",
+    table.every((g) => g.rows.every((r) => r.values.length === 2)), JSON.stringify(rows));
+
+  const surrogateTable = buildCompareTable("surrogate", [
+    { id: "s1", liveBirths: 2, cSections: 0, baseCompensation: 55_000 },
+    { id: "s2", liveBirths: 3, cSections: 1, baseCompensation: 60_000 },
+  ]);
+  const sRows = surrogateTable.flatMap((g) => g.rows.map((r) => r.label));
+  check("surrogates are compared on deliveries, not eggs retrieved",
+    sRows.includes("Live births") && !sRows.includes("Eggs retrieved"), JSON.stringify(sRows));
+  check("surrogate cost uses base compensation", sRows.includes("Base compensation"), JSON.stringify(sRows));
+
+  check("the shortlist is capped at four", COMPARE_MAX === 4, String(COMPARE_MAX));
+  check("a single profile still builds a table", buildCompareTable("egg-donor", [a]).length > 0);
+  check("no profiles builds nothing", buildCompareTable("egg-donor", []).length === 0);
+}
+
+// ─── PX-11: a rate below national is stated, not condemned ───────────────────
+async function px11() {
+  const above = describeRateDelta(58, 47);
+  check("above national is a positive signal", above.tone === "positive", above.tone);
+  check("above national is signed with a +", above.label.startsWith("+11%"), above.label);
+  check("above national needs no caveat", above.context === null, String(above.context));
+
+  const below = describeRateDelta(41, 47);
+  check("below national is NEVER styled as a failure", below.tone === "neutral", below.tone);
+  check("the number itself is unchanged", below.label.startsWith("-6%"), below.label);
+  check("below national explains why CDC rates differ",
+    !!below.context && /not adjusted|aren't adjusted/i.test(below.context), String(below.context));
+
+  // The specific harm: a red minus punishes a clinic for accepting hard cases.
+  check("no tone maps to a destructive colour",
+    Object.values(RATE_TONE_CLASS).every((c) => !/destructive|red-|rose-/.test(c)), JSON.stringify(RATE_TONE_CLASS));
+  check("both tones come from brand tokens",
+    Object.values(RATE_TONE_CLASS).every((c) => /var\(--|text-foreground/.test(c)), JSON.stringify(RATE_TONE_CLASS));
+
+  const equal = describeRateDelta(47, 47);
+  check("exactly national is not a shortfall", equal.tone === "positive" && equal.context === null, JSON.stringify(equal));
+  check("the delta is rounded for display", describeRateDelta(47.4, 47).diff === 0, String(describeRateDelta(47.4, 47).diff));
+}
+
+// ─── PX-12: the desktop hero never renders blank ─────────────────────────────
+async function px12() {
+  check("a normal photo selection is preserved",
+    JSON.stringify(resolveHeroSelection({ video: false, idx: 2 }, 5, null)) === JSON.stringify({ isVideo: false, photoIdx: 2 }),
+    JSON.stringify(resolveHeroSelection({ video: false, idx: 2 }, 5, null)));
+
+  // A photo that 404s is dropped from the array after selection.
+  check("an index past the end is clamped to the last photo",
+    resolveHeroSelection({ video: false, idx: 7 }, 3, null).photoIdx === 2,
+    JSON.stringify(resolveHeroSelection({ video: false, idx: 7 }, 3, null)));
+  check("a negative index is clamped to the first photo",
+    resolveHeroSelection({ video: false, idx: -1 }, 3, null).photoIdx === 0,
+    JSON.stringify(resolveHeroSelection({ video: false, idx: -1 }, 3, null)));
+  check("no photos at all does not produce a negative index",
+    resolveHeroSelection({ video: false, idx: 3 }, 0, null).photoIdx === 0,
+    JSON.stringify(resolveHeroSelection({ video: false, idx: 3 }, 0, null)));
+
+  check("a video hero with a URL plays the video",
+    resolveHeroSelection({ video: true, idx: 0 }, 3, "https://x/v.mp4").isVideo === true);
+  // The failure this prevents: a video flag outliving its URL renders an empty
+  // hero on a profile that has photos, which reads as "she has no pictures".
+  check("a video hero WITHOUT a URL falls back to photos",
+    resolveHeroSelection({ video: true, idx: 1 }, 3, null).isVideo === false,
+    JSON.stringify(resolveHeroSelection({ video: true, idx: 1 }, 3, null)));
+  check("the photo index survives that fallback",
+    resolveHeroSelection({ video: true, idx: 1 }, 3, "").photoIdx === 1,
+    JSON.stringify(resolveHeroSelection({ video: true, idx: 1 }, 3, "")));
+  check("a NaN index does not propagate",
+    resolveHeroSelection({ video: false, idx: Number.NaN }, 3, null).photoIdx === 0,
+    JSON.stringify(resolveHeroSelection({ video: false, idx: Number.NaN }, 3, null)));
+}
+
+const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
+  { id: "PX-01", name: "Cost labels read as English, and raw keys are flagged", run: px01 },
+  { id: "PX-02", name: "Implausible compensation is suppressed, never rewritten", run: px02 },
+  { id: "PX-03", name: "Placeholders never reach a parent as content", run: px03 },
+  { id: "PX-04", name: "Freshness claims only what it can prove", run: px04 },
+  { id: "PX-05", name: "The cost ladder collapses only what is genuinely identical", run: px05 },
+  { id: "PX-06", name: "The fit line knows what THIS parent asked for", run: px06 },
+  { id: "PX-07", name: "Sections read in three bands, in the right order", run: px07 },
+  { id: "PX-08", name: "The pull-quote is hers, whole, and not staff copy", run: px08 },
+  { id: "PX-09", name: "Saving from the action rail keeps her on the grid", run: px09 },
+  { id: "PX-10", name: "The comparison drops dead rows and keeps real gaps", run: px10 },
+  { id: "PX-11", name: "A rate below national is stated, not condemned", run: px11 },
+  { id: "PX-12", name: "The desktop hero never renders blank", run: px12 },
+];
+
+(async () => {
+  const wanted = filterId ? filterId.split(",").map((s) => s.trim().toUpperCase()) : null;
+  const toRun = wanted ? CASES.filter((c) => wanted.includes(c.id)) : CASES;
+  console.log(`🧪 Profile Experience Guards`);
+  console.log(`   Running: ${toRun.length} of ${CASES.length} cases\n`);
+
+  const suiteStart = Date.now();
+  await reportToDashboard({ type: "run_start", testIds: toRun.map((c) => c.id), filter: "profile-ux" });
+  for (const c of toRun) {
+    caseFails = [];
+    console.log(`  ▶ Starting: ${c.id}`);
+    console.log(`    ${c.name}`);
+    await reportToDashboard({ type: "test_start", id: c.id });
+    const t0 = Date.now();
+    // No retry: these are deterministic. A retry here would only hide a real bug.
+    try { await c.run(); } catch (e: any) { caseFails.push(`scenario crashed: ${(e?.message || String(e)).slice(0, 220)}`); }
+    const durationMs = Date.now() - t0;
+    if (caseFails.length === 0) {
+      totalPass++; console.log(`  ✅ ${c.id} PASS (${(durationMs / 1000).toFixed(1)}s)`);
+      await reportToDashboard({ type: "test_pass", id: c.id, durationMs });
+    } else {
+      totalFail++;
+      for (const x of caseFails) console.log(`     [${c.id}] ${x}`);
+      console.log(`  ❌ ${c.id} FAIL (${(durationMs / 1000).toFixed(1)}s)`);
+      await reportToDashboard({ type: "test_fail", id: c.id, durationMs, errors: caseFails });
+    }
+  }
+  console.log(`\n${"─".repeat(50)}`);
+  console.log(`Results: ${totalPass} passed, ${totalFail} failed (${Math.round((Date.now() - suiteStart) / 1000)}s total)`);
+  await reportToDashboard({ type: "run_done", passCount: totalPass, failCount: totalFail, durationMs: Date.now() - suiteStart });
+  process.exit(totalFail ? 1 : 0);
+})();

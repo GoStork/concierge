@@ -7,6 +7,8 @@ import { formatFieldLabel, isPlaceholderValue } from "@/lib/format-label";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { ProfileFitLine } from "@/components/profile-fit-line";
 import { ProfileQuote } from "@/components/profile-quote";
+import { sectionBand, BAND_LABEL, orderSectionsIntoBands } from "@/lib/profile-sections";
+import { resolveHeroSelection } from "@/lib/profile-hero";
 import { useParentPreferences } from "@/hooks/use-parent-preferences";
 import {
   mapDatabaseDonorToSwipeProfile,
@@ -132,9 +134,9 @@ function PhotoGalleryBar({ photos: rawPhotos, videoUrl, showFallback = false }: 
     el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
   }, []);
 
-  // Clamp the hero if a photo dropped out after a load error.
-  const heroIsVideo = hero.video && !!videoUrl;
-  const heroPhotoIdx = Math.min(Math.max(hero.idx, 0), Math.max(photos.length - 1, 0));
+  // Clamp the hero if a photo dropped out after a load error, or if the video
+  // flag outlived its URL.
+  const { isVideo: heroIsVideo, photoIdx: heroPhotoIdx } = resolveHeroSelection(hero, photos.length, videoUrl);
 
   if (photos.length === 0 && !videoUrl) {
     if (!showFallback) return null;
@@ -379,34 +381,6 @@ function collectDuplicateLabels(
   return byLabel;
 }
 
-/**
- * Which of the three reading bands a section belongs to.
- *
- * A profile answers three different questions and used to present all three at
- * one weight, in whatever order the scraper emitted: 31 medical answers carried
- * the same visual authority as her letter. Parents decide in band 1, commit in
- * band 2, and hand band 3 to their doctor - so that is the order.
- *
- * Band 3 stays fully visible (Eran's call) - moved down, not hidden.
- */
-const BAND_PERSONAL_PATTERN =
-  /(letter|things\s*about\s*me|about\s*me|general\s*interests|interests|hobbies|favorites?|personal\s*statement|support\s*system|agency\s*comment|significant\s*other|my\s*story|in\s*her\s*own\s*words|message\s*to)/i;
-const BAND_DILIGENCE_PATTERN =
-  /(medical|health|histor|pregnanc|donation|famil|genetic|screening|surger|medication|diagnos|allerg|infection|vaccin|lab\b)/i;
-
-/** 1 = is this a fit, 2 = who she is, 3 = due diligence. */
-function sectionBand(name: string): 1 | 2 | 3 {
-  const n = (name || "").replace(/^__|__$/g, "").replace(/_/g, " ");
-  if (BAND_PERSONAL_PATTERN.test(n)) return 2;
-  if (BAND_DILIGENCE_PATTERN.test(n)) return 3;
-  return 1;
-}
-
-const BAND_LABEL: Record<1 | 2 | 3, string> = {
-  1: "At a glance",
-  2: "In her own words",
-  3: "Medical & background",
-};
 
 /**
  * Sections that are a person talking, not a data table. Every entry in these
@@ -1302,22 +1276,11 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
 
         // Stable band sort: everything keeps its current relative order inside
         // its own band, so the letter anchoring above still holds.
-        const bandSorted = sectionNames
-          .map((name, i) => ({ name, i, band: sectionBand(name) }))
-          .sort((a, b) => (a.band - b.band) || (a.i - b.i))
-          .map((x) => x.name);
+        // Band order + a `__BAND_n__` marker before each band's first section;
+        // the map below renders the marker as a heading.
+        const banded = orderSectionsIntoBands(sectionNames);
         sectionNames.length = 0;
-        // A marker before the first section of each band; the map renders it as
-        // a heading. Only bands that actually have sections get one.
-        let lastBand: 1 | 2 | 3 | null = null;
-        for (const name of bandSorted) {
-          const band = sectionBand(name);
-          if (band !== lastBand) {
-            sectionNames.push(`__BAND_${band}__`);
-            lastBand = band;
-          }
-          sectionNames.push(name);
-        }
+        sectionNames.push(...banded);
 
         if (agencyCommentContent) {
           const letterIdx = sectionNames.indexOf("__LETTER__");

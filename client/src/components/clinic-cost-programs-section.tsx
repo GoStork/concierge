@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CostSheetProgramCard, ProgramCardData } from "@/components/cost-sheet-program-card";
-import { CostProgramFamilyCard, groupProgramFamilies } from "@/components/cost-program-family-card";
+import { CostProgramFamilyCard } from "@/components/cost-program-family-card";
+import { groupProgramFamilies } from "@/lib/cost-program-family";
 import { CostProgramTailorForm } from "@/components/cost-program-tailor-form";
 import { ProfileSection } from "@/components/ui/profile-section";
 import { Button } from "@/components/ui/button";

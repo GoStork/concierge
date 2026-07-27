@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { describeRateDelta, RATE_TONE_CLASS } from "@/lib/rate-delta";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 
@@ -237,7 +238,7 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
 
   const clinicPct = Number(matchedRate.successRate) * 100;
   const natPct = Number(matchedRate.nationalAverage) * 100;
-  const diff = clinicPct - natPct;
+  const rateDelta = describeRateDelta(clinicPct, natPct);
 
   return (
     <div className="space-y-4" data-testid="personalized-rate-view">
@@ -276,21 +277,17 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
       </div>
 
       {/* Above national stays a positive signal; below it is stated plainly
-          rather than in alarm red. CDC rates are NOT risk-adjusted - a clinic
-          that accepts complex cases scores lower than one that declines them -
-          so a red minus sign both misinforms the parent and punishes the
-          provider for taking hard patients. The number is unchanged; only the
-          verdict attached to it is. */}
+          rather than in alarm red - see describeRateDelta for why. */}
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span
-          className={`text-sm font-heading ${diff >= 0 ? "text-[hsl(var(--brand-success))]" : "text-foreground"}`}
+          className={`text-sm font-heading ${RATE_TONE_CLASS[rateDelta.tone]}`}
           data-testid="text-rate-diff"
         >
-          {diff >= 0 ? "+" : ""}{Math.round(diff)}% vs. national average
+          {rateDelta.label}
         </span>
-        {diff < 0 && (
+        {rateDelta.context && (
           <span className="t-helper" data-testid="text-rate-diff-context">
-            CDC rates aren't adjusted for case complexity - clinics treating harder cases often report lower rates.
+            {rateDelta.context}
           </span>
         )}
       </div>

@@ -140,14 +140,30 @@ ${source}
   }
 
   if (typeof quote !== "string") return null;
-  const cleaned = quote.trim().replace(/^["'“]|["'”]$/g, "").trim();
+  return validateQuote(source, quote);
+}
+
+/**
+ * The gate between "a model said this" and "we print it as her words".
+ *
+ * Separate and exported because these two rules are the whole safety story of
+ * the feature, and they are the part a future change is most likely to relax
+ * by accident.
+ */
+export function validateQuote(source: string, candidate: string): string | null {
+  // Models like to wrap their answer in quote marks. Strip only a MATCHED
+  // pair: stripping one end of `I told myself "this is the year."` would print
+  // an unbalanced quotation mark on her profile.
+  const trimmedCandidate = (candidate || "").trim();
+  const wrapped = /^(["'\u201c\u2018])([\s\S]*)(["'\u201d\u2019])$/.exec(trimmedCandidate);
+  const cleaned = (wrapped ? wrapped[2] : trimmedCandidate).trim();
   if (!cleaned || cleaned.length > MAX_QUOTE_CHARS) return null;
 
   // A whole sentence, not a slice of one. Asked for "at most 180 characters"
   // the model will happily hand back a long sentence chopped at 180 - verbatim,
   // but ending mid-thought ("...I remember how excited I was I want"), which
   // reads on the page as if she trailed off.
-  if (!/[.!?…]["'”’)]?$/.test(cleaned)) {
+  if (!/[.!?\u2026]["'\u201d\u2019)]?$/.test(cleaned)) {
     console.warn(`[highlight-quote] rejected mid-sentence fragment: ${cleaned.slice(-60)}`);
     return null;
   }

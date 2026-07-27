@@ -33,7 +33,7 @@ const text = (v: unknown): string | null => {
   return s && s !== "-" && s !== "--" ? s : null;
 };
 
-function rowsFor(kind: CompareKind): { group: string; rows: Row[] }[] {
+export function rowsFor(kind: CompareKind): { group: string; rows: Row[] }[] {
   const cost: Row[] = kind === "surrogate"
     ? [
         { label: "Total cost", get: (p) => {
@@ -89,6 +89,27 @@ function rowsFor(kind: CompareKind): { group: string; rows: Row[] }[] {
 
 export const COMPARE_MAX = 4;
 
+export type CompareTableGroup = { group: string; rows: { label: string; values: (string | null)[] }[] };
+
+/**
+ * The table a comparison renders, with dead rows removed.
+ *
+ * A row every selected profile leaves blank teaches a parent nothing and makes
+ * the comparison look broken - four dashes reads as "the product failed", not
+ * "nobody listed an occupation". A row ONE profile answers is kept: that gap is
+ * itself a difference between them.
+ */
+export function buildCompareTable(kind: CompareKind, profiles: any[]): CompareTableGroup[] {
+  return rowsFor(kind)
+    .map(({ group, rows }) => ({
+      group,
+      rows: rows
+        .filter((r) => profiles.some((p) => r.get(p)))
+        .map((r) => ({ label: r.label, values: profiles.map((p) => r.get(p)) })),
+    }))
+    .filter((g) => g.rows.length > 0);
+}
+
 export function CompareDrawer({
   kind,
   profiles,
@@ -106,7 +127,7 @@ export function CompareDrawer({
   onOpenProfile: (profile: any) => void;
 }) {
   if (profiles.length === 0) return null;
-  const groups = rowsFor(kind);
+  const groups = buildCompareTable(kind, profiles as any[]);
 
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-auto" data-testid="compare-drawer">
@@ -155,30 +176,25 @@ export function CompareDrawer({
               </tr>
             </thead>
             <tbody>
-              {groups.map(({ group, rows }) => {
-                // A row every profile leaves blank teaches nothing - drop it.
-                const populated = rows.filter((r) => profiles.some((p) => r.get(p)));
-                if (populated.length === 0) return null;
-                return (
-                  <Fragment key={group}>
-                    <tr>
-                      <td colSpan={profiles.length + 1} className="pt-5 pb-1">
-                        <span className="t-micro-label">{group}</span>
-                      </td>
+              {groups.map(({ group, rows }) => (
+                <Fragment key={group}>
+                  <tr>
+                    <td colSpan={profiles.length + 1} className="pt-5 pb-1">
+                      <span className="t-micro-label">{group}</span>
+                    </td>
+                  </tr>
+                  {rows.map((row) => (
+                    <tr key={row.label} className="border-t border-border/60" data-testid={`compare-row-${row.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                      <td className="py-2.5 pr-3 align-top"><span className="t-field-label">{row.label}</span></td>
+                      {row.values.map((value, i) => (
+                        <td key={profiles[i]?.id ?? i} className="py-2.5 pr-3 align-top">
+                          <span className="t-micro-value">{value ?? <span className="opacity-40">-</span>}</span>
+                        </td>
+                      ))}
                     </tr>
-                    {populated.map((row) => (
-                      <tr key={row.label} className="border-t border-border/60" data-testid={`compare-row-${row.label.toLowerCase().replace(/\s+/g, "-")}`}>
-                        <td className="py-2.5 pr-3 align-top"><span className="t-field-label">{row.label}</span></td>
-                        {profiles.map((p: any) => (
-                          <td key={p.id} className="py-2.5 pr-3 align-top">
-                            <span className="t-micro-value">{row.get(p) ?? <span className="opacity-40">-</span>}</span>
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </Fragment>
-                );
-              })}
+                  ))}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>

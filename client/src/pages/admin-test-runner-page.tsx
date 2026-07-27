@@ -70,6 +70,7 @@ const PERSONA_DEFS = [
   { id: "provider", label: "Provider" },
   { id: "journey", label: "Journey" },
   { id: "unit", label: "Unit" },
+  { id: "profile-ux", label: "Profile UX" },
 ];
 
 // ─── Status helpers ───────────────────────────────────────────────────────────

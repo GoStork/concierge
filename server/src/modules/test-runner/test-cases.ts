@@ -862,6 +862,86 @@ export const TEST_CASES: TestCaseDef[] = [
     interestedServices: ["Surrogate"],
     messageCount: 0,
   },
+
+  // ── PROFILE EXPERIENCE (PX-01..) ──────────────────────────────────────────
+  // Runs scripts/test-profile-ux.ts - the twelve July 2026 profile changes.
+  // Every one is a RENDERING decision, the class of change no other suite here
+  // can see: the concierge suites assert what Eva says and the journey suite
+  // asserts what moves, so neither notices a profile quoting a sentence she
+  // never wrote or publishing a $300,000 compensation figure. Pure logic, no
+  // server, no DB.
+  {
+    id: "PX-01", persona: "profile-ux",
+    name: "PX-01: Cost labels read as English, and raw keys are flagged",
+    desc: "'agency_fee' / 'gs_miscellaneous' become readable on a $200k quote, while labels that are ALREADY human ('IVF Cycle', 'Embryo Transfer (One Cycle)') are left untouched - the regression that made the naive formatter unusable",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-02", persona: "profile-ux",
+    name: "PX-02: Implausible compensation is suppressed, never rewritten",
+    desc: "$300,000 for an egg donor is withheld rather than clamped to the band edge; a six-figure surrogate fee is legitimate and publishes; the provider side is told why a figure was hidden",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-03", persona: "profile-ux",
+    name: "PX-03: Placeholders never reach a parent as content",
+    desc: "'--' / 'N/A' / 'Not specified' are blanks, but 'None', '0' and 'Never' are real answers a parent wants to read - the line this feature must not cross",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-04", persona: "profile-ux",
+    name: "PX-04: Freshness claims only what it can prove",
+    desc: "'updated 5 days ago' is derived correctly across hour/day/month/year boundaries, and a future timestamp or an unparseable one says nothing rather than guessing",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-05", persona: "profile-ux",
+    name: "PX-05: The cost ladder collapses only what is genuinely identical",
+    desc: "A row moves to the shared block ONLY when identical in every variant - same key at a different price, or present in only some variants, stays visible against its own variant so collapsing can never hide a real difference",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-06", persona: "profile-ux",
+    name: "PX-06: The fit line knows what THIS parent asked for",
+    desc: "Marketplace filters and the stored parent profile both become preferences, 'Any' is treated as openness rather than a filter, and a trait she does not have is never reported as a match",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-07", persona: "profile-ux",
+    name: "PX-07: Sections read in three bands, in the right order",
+    desc: "At a glance -> In her own words -> Medical & background, source order preserved within a band, one heading per band that has sections, and nothing dropped (band 3 moved down, never hidden)",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-08", persona: "profile-ux",
+    name: "PX-08: The pull-quote is hers, whole, and not staff copy",
+    desc: "A paraphrase or a grammar-fixed rewrite is refused, a sentence chopped at 180 chars is refused, agency comments about her are never collected as her voice",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-09", persona: "profile-ux",
+    name: "PX-09: Saving from the action rail keeps her on the grid",
+    desc: "Save and Hide stay different actions: saving marks her favorited without passing her, so a parent never loses the profile they just chose to keep",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-10", persona: "profile-ux",
+    name: "PX-10: The comparison drops dead rows and keeps real gaps",
+    desc: "A row no profile fills is dropped (four dashes reads as broken); a row ONE profile fills is kept because that gap is itself a difference; surrogates compare on deliveries, donors on eggs retrieved",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-11", persona: "profile-ux",
+    name: "PX-11: A rate below national is stated, not condemned",
+    desc: "CDC rates are not risk-adjusted, so a shortfall is neutral with an explanation rather than alarm red - no tone maps to a destructive colour",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PX-12", persona: "profile-ux",
+    name: "PX-12: The desktop hero never renders blank",
+    desc: "An index past the end of a shrunken photo array is clamped, and a video hero whose URL is gone falls back to photos instead of rendering empty",
+    interestedServices: [], messageCount: 0,
+  },
 ];
 
 export function getTestCaseInfo(): TestCaseInfo[] {

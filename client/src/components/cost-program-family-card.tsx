@@ -5,6 +5,7 @@ import { formatMoneyDollars } from "@/lib/format-money";
 import { formatFieldLabel } from "@/lib/format-label";
 import type { ProgramCardData, ProgramCardLineItem } from "@/components/cost-sheet-program-card";
 import { cn } from "@/lib/utils";
+import { splitSharedItems, variantLabels } from "@/lib/cost-program-family";
 
 /**
  * Several variants of ONE product, as a price ladder plus what they share.
@@ -37,20 +38,6 @@ function total(min: number, max: number): string {
   if (min === max) return formatMoneyDollars(min);
   if (min === 0) return formatMoneyDollars(max);
   return `${formatMoneyDollars(min)} - ${formatMoneyDollars(max)}`;
-}
-
-const itemKey = (i: ProgramCardLineItem) => `${i.category}::${i.key}`;
-const itemSignature = (i: ProgramCardLineItem) => `${itemKey(i)}::${i.minValue ?? ""}::${i.maxValue ?? ""}::${i.isIncluded}`;
-
-/** The part of each program name that differs, e.g. "One Cycle" / "Two Cycles". */
-function variantLabels(names: string[]): string[] {
-  if (names.length < 2) return names;
-  const words = names.map((n) => n.split(/\s+/));
-  let shared = 0;
-  while (words.every((w) => w[shared] && w[shared] === words[0][shared]) && shared < words[0].length - 1) shared++;
-  const trimmed = words.map((w) => w.slice(shared).join(" ").replace(/^[-·:]\s*/, "").trim());
-  // If trimming left anything empty, the names weren't a common family - keep them whole.
-  return trimmed.some((t) => !t) ? names : trimmed;
 }
 
 function LineRow({ item }: { item: ProgramCardLineItem }) {
@@ -86,18 +73,7 @@ export function CostProgramFamilyCard({ programs }: { programs: ProgramCardData[
   const labels = variantLabels(programs.map((p) => p.programName));
 
   // Identical in every variant -> shared. Anything else stays with its variant.
-  const counts = new Map<string, number>();
-  for (const p of programs) {
-    for (const sig of new Set(p.lineItems.map(itemSignature))) {
-      counts.set(sig, (counts.get(sig) || 0) + 1);
-    }
-  }
-  const isShared = (i: ProgramCardLineItem) => counts.get(itemSignature(i)) === programs.length;
-
-  const sharedItems = first.lineItems.filter(isShared);
-  const sharedIncluded = sharedItems.filter((i) => i.isIncluded);
-  const sharedExtra = sharedItems.filter((i) => !i.isIncluded);
-  const perVariantItems = programs.map((p) => p.lineItems.filter((i) => !isShared(i)));
+  const { sharedIncluded, sharedExtra, perVariant: perVariantItems } = splitSharedItems(programs);
 
   return (
     <Card className="border border-[hsl(var(--brand-success))]/40 overflow-hidden" data-testid={`program-family-${first.programId}`}>
@@ -151,18 +127,4 @@ export function CostProgramFamilyCard({ programs }: { programs: ProgramCardData[
       </CardContent>
     </Card>
   );
-}
-
-/**
- * Group programs into families. Same tab + subtype + country + item shape is one
- * product in several sizes; anything else is its own product.
- */
-export function groupProgramFamilies(programs: ProgramCardData[]): ProgramCardData[][] {
-  const groups = new Map<string, ProgramCardData[]>();
-  for (const p of programs) {
-    const key = [p.tab ?? "", p.subType ?? "", p.country ?? "", p.isFixedCost ? "fixed" : "var"].join("::");
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(p);
-  }
-  return Array.from(groups.values());
 }
