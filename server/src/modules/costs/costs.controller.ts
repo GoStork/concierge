@@ -555,6 +555,32 @@ export class CostsController {
   }
 
   /**
+   * Marketplace decks: parent-matched programs for a whole deck in ONE request,
+   * replacing the per-card fetch that fired once per rendered clinic / doctor /
+   * agency card. POST rather than GET because a deck carries up to ~450 provider
+   * ids, which overflows practical URL limits.
+   *
+   * Returns { [providerId]: { programs } } - providers with no matched programs
+   * are omitted, so the client treats a missing key as "no costs to show".
+   */
+  @Post("providers/parent-programs")
+  @UseGuards(SessionOrJwtGuard)
+  async getParentProgramsForProviders(
+    @Body() body: { providerIds?: string[]; parentAccountId?: string },
+    @Req() req: Request,
+  ) {
+    this.assertAuthenticated(req);
+    const user = this.getUserFromRequest(req);
+    const resolvedParentAccountId = body?.parentAccountId || user?.parentAccountId;
+    if (!resolvedParentAccountId) {
+      throw new HttpException("parentAccountId required", HttpStatus.BAD_REQUEST);
+    }
+    const providerIds = Array.isArray(body?.providerIds) ? body.providerIds : [];
+    if (providerIds.length === 0) return {};
+    return this.costsService.getParentProgramsForProviders(providerIds, resolvedParentAccountId);
+  }
+
+  /**
    * Marketplace agencies tab: parent-matched starting cost for every surrogacy
    * agency at once, so the Total Cost filter has all prices upfront. Returns
    * { [agencyId]: startingCost }.

@@ -448,6 +448,15 @@ export class ProvidersController {
       },
     };
 
+    // Fetch specific doctors by slug. The directory is capped at 250 rows for
+    // browsing, so the Saved / Hidden views cannot just filter whatever page
+    // happens to be loaded - a saved doctor outside the cap would be invisible
+    // in their own Saved tab. Those views ask for exactly the slugs they need.
+    if (query.slugs) {
+      const slugs = String(query.slugs).split(",").map((s) => s.trim()).filter(Boolean).slice(0, 300);
+      if (slugs.length) memberWhere.slug = { in: slugs };
+    }
+
     // Provider/clinic users only ever see the doctors at their OWN clinic - never
     // the full cross-clinic directory. Mirrors the marketplace egg-donors /
     // surrogates / sperm-donors self-visibility filtering (multi-tenant isolation).
@@ -522,7 +531,10 @@ export class ProvidersController {
       specialtyFilter: query.specialty,
       searchTerms,
     });
-    return applySponsoredOrdering(enrichedDoctors).slice(0, 250);
+    // An explicit slug request is already bounded by the caller's saved list;
+    // truncating it would re-create the very gap this parameter exists to close.
+    const ordered = applySponsoredOrdering(enrichedDoctors);
+    return query.slugs ? ordered : ordered.slice(0, 250);
   }
 
   // Lean clinic cards for the marketplace deck. Mirrors marketplace/doctors: one

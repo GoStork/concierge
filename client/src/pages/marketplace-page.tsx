@@ -1953,14 +1953,28 @@ export default function MarketplacePage() {
       providerId: providerIdFilter,
     }).filter(([, v]) => v) as [string, string][],
   ).toString();
+  // The directory is capped at 250 rows, so the Saved and Hidden views ask for
+  // their exact slugs instead of filtering whatever page happened to load - a
+  // doctor saved from a search could otherwise be missing from his own Saved
+  // tab, which is what happened to Dr. Sahakian (rank >250 without a search).
+  const savedDoctorSlugs = useAppSelector((s) => s.ui.favoritedDoctorSlugs);
+  const hiddenDoctorSlugs = useAppSelector((s) => s.ui.passedDoctorSlugs);
+  const doctorsShowSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
+  const doctorSlugScope = isSavedView ? savedDoctorSlugs : doctorsShowSkippedOnly ? hiddenDoctorSlugs : null;
+  const doctorSlugParam = doctorSlugScope && doctorSlugScope.length > 0 ? doctorSlugScope.join(",") : "";
+
   const { data: doctors, isLoading: doctorsLoading } = useQuery<any[]>({
-    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation, insuranceFilter, specialtyFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient, providerIdFilter],
+    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation, insuranceFilter, specialtyFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient, providerIdFilter, doctorSlugParam],
     queryFn: async () => {
-      const res = await fetch(`/api/providers/marketplace/doctors${doctorQueryParams ? `?${doctorQueryParams}` : ""}`, { credentials: "include" });
+      const params = new URLSearchParams(doctorQueryParams);
+      if (doctorSlugParam) params.set("slugs", doctorSlugParam);
+      const qs = params.toString();
+      const res = await fetch(`/api/providers/marketplace/doctors${qs ? `?${qs}` : ""}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch doctors");
       return res.json();
     },
-    enabled: isDoctorTab,
+    // A saved/hidden view with an empty list has nothing to ask for.
+    enabled: isDoctorTab && !(doctorSlugScope !== null && doctorSlugScope.length === 0),
   });
 
   const setFilterParam = (key: string, value: string | null) => {

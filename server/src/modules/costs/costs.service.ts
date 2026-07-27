@@ -788,8 +788,35 @@ export class CostsService {
    * Look up the eligible subtypes for a parent. Reads gender from the
    * primary User (the account's first member by createdAt) and journey
    * flags from IntendedParentProfile.
+   *
+   * Memoized for a few seconds because the program matcher calls this once per
+   * PROVIDER: pricing a 450-clinic deck for one parent asked the identical
+   * question 450 times. The TTL is short enough that an onboarding edit shows
+   * up on the parent's next interaction, and the key is the parent account so
+   * no answer can leak across accounts.
    */
+  private subtypeMemo = new Map<string, { at: number; value: Promise<any> }>();
+  private static readonly SUBTYPE_MEMO_TTL_MS = 5_000;
+
   async getMatchingSubtypesForParent(parentAccountId: string) {
+    const hit = this.subtypeMemo.get(parentAccountId);
+    if (hit && Date.now() - hit.at < CostsService.SUBTYPE_MEMO_TTL_MS) return hit.value;
+    const value = this._getMatchingSubtypesForParent(parentAccountId).catch((e) => {
+      // Never cache a failure - drop it so the next caller retries for real.
+      this.subtypeMemo.delete(parentAccountId);
+      throw e;
+    });
+    this.subtypeMemo.set(parentAccountId, { at: Date.now(), value });
+    // Keep the map from growing without bound on a long-lived server.
+    if (this.subtypeMemo.size > 500) {
+      for (const [k, v] of Array.from(this.subtypeMemo.entries())) {
+        if (Date.now() - v.at >= CostsService.SUBTYPE_MEMO_TTL_MS) this.subtypeMemo.delete(k);
+      }
+    }
+    return value;
+  }
+
+  private async _getMatchingSubtypesForParent(parentAccountId: string) {
     const account = await this.prisma.parentAccount.findUnique({
       where: { id: parentAccountId },
       include: {
@@ -924,6 +951,44 @@ export class CostsService {
         } catch { /* skip - an unpriced agency simply has no starting cost */ }
       }),
     );
+    return out;
+  }
+
+  /**
+   * Marketplace decks: parent-matched programs for MANY providers in one call.
+   *
+   * Every clinic / doctor / agency card used to fetch its own programs, so a
+   * 175-card clinic deck fired 175 requests. They saturated the browser's
+   * connection pool and the tail took 13-30s, which then delayed the card data
+   * and the parent's next search behind them. This is the batched form: one
+   * request for the whole deck.
+   *
+   * Reuses getProviderParentPrograms per provider - identical numbers to the
+   * single-provider endpoint and the parent profile, no second matcher to keep
+   * in sync. Providers that throw or have no programs are simply omitted.
+   */
+  async getParentProgramsForProviders(
+    providerIds: string[],
+    parentAccountId: string,
+  ): Promise<Record<string, { programs: any[] }>> {
+    const ids = Array.from(new Set(providerIds.filter(Boolean)));
+    const out: Record<string, { programs: any[] }> = {};
+    // Bounded concurrency: the matcher issues several queries per provider, so
+    // an unbounded Promise.all over a 450-clinic deck would open hundreds of
+    // connections at once and starve the rest of the server.
+    const CONCURRENCY = 12;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < ids.length) {
+        const id = ids[cursor++];
+        try {
+          const res = await this.getProviderParentPrograms(id, parentAccountId);
+          const programs: any[] = (res as any)?.programs || [];
+          if (programs.length) out[id] = { programs };
+        } catch { /* skip - an unpriced provider simply has no programs */ }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ids.length) }, worker));
     return out;
   }
 
