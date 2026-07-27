@@ -1034,9 +1034,13 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
   // marketplace card already settled this: its "Added <date>" chip is
   // provider/admin-only, with parents explicitly excluded. Same rule, same
   // wording, so the two surfaces agree.
-  const addedOn = (!user || user.roles?.includes("PARENT"))
-    ? null
-    : profileAddedLabel(donor as any);
+  // Surrogates show it to everyone: a surrogate is a commitment measured in
+  // months, so how long she has been listed is something a parent should weigh.
+  // Donors stay staff-only, matching the marketplace card's rule.
+  const isStaffViewer = !!user && !user.roles?.includes("PARENT");
+  const addedOn = (type === "surrogate" || isStaffViewer)
+    ? profileAddedLabel(donor as any)
+    : null;
 
 
   const headerMeta: string[] = [];

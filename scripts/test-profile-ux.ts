@@ -158,8 +158,8 @@ async function px04() {
     profileAddedLabel(null) === null && profileAddedLabel({} as any) === null && profileAddedLabel({ createdAt: "nope" }) === null);
 
   const page = readFileSync("client/src/pages/profile-detail-page.tsx", "utf8");
-  check("the date is withheld from parents on the profile page",
-    /roles\?\.includes\("PARENT"\)[\s\S]{0,80}\?\s*null/.test(page));
+  check("surrogates show the date to everyone, donors only to staff",
+    /type === "surrogate" \|\| isStaffViewer/.test(page));
   const drawerSrc = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");
   check("the parent-facing comparison carries no date row at all",
     !/Uploaded|Last updated/.test(drawerSrc));

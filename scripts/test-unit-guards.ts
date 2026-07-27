@@ -6,6 +6,7 @@
  *
  *   - match-card tag recovery (bare id / malformed JSON / truncated results)
  *   - which session counts as the parent's private Eva chat
+ *   - which duplicate photo survives de-duplication (a wrong drop is silent)
  *
  * Both were silent-failure bugs. Recovery code that is only exercised
  * incidentally is exactly the code whose regression looks like "flake" for
@@ -18,6 +19,7 @@
 
 import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, topResultId } from "../server/match-card-parse";
 import { resolveParentEvaSessionId } from "../server/parent-visibility";
+import { planDedupe, hammingDistance, DEDUP_DISTANCE, type Fingerprint } from "../server/src/modules/providers/photo-dedup";
 
 const BASE = process.env.TEST_BASE_URL || "http://localhost:5001";
 const filterId = process.argv.slice(2).find((a) => a.startsWith("--id="))?.split("=")[1];
@@ -180,6 +182,49 @@ async function ut08() {
   check("no account members resolves to null without querying", none === null && queries.length === 0);
 }
 
+// ─── UT-09: photo de-dup keeps the larger copy and never guesses ─────────────
+// Dropping a photo is destructive and invisible (nobody notices a picture that
+// was never rendered), so the planner's two safety properties are pinned here:
+// a photo with no fingerprint is always kept, and when two files ARE the same
+// picture the survivor is the biggest one, in the earliest slot.
+async function ut09() {
+  const fp = (url: string, phash: string, width: number, height: number): [string, Fingerprint] =>
+    [url, { url, phash, width, height, bytes: width * height, failed: false }];
+  const SAME = "2c6f3231613828d1";
+  const OTHER = "ffff0000ffff0000";
+  const map = new Map<string, Fingerprint>([
+    fp("small.jpg", SAME, 768, 512),
+    fp("large.jpg", SAME, 1500, 1000),
+    fp("different.jpg", OTHER, 900, 900),
+  ]);
+
+  const plan = planDedupe(["small.jpg", "large.jpg", "different.jpg"], map);
+  check("the same picture at two sizes collapses to one", plan.keep.length === 2, plan.keep.join(","));
+  check("the survivor is the larger file", plan.keep.includes("large.jpg") && !plan.keep.includes("small.jpg"),
+    plan.keep.join(","));
+  check("it takes the earlier slot, so the gallery order is unchanged", plan.keep[0] === "large.jpg", plan.keep.join(","));
+  check("a genuinely different photo is untouched", plan.keep.includes("different.jpg"));
+  check("the dropped copy points at the one we kept", plan.replacements.get("small.jpg") === "large.jpg",
+    JSON.stringify(Array.from(plan.replacements.entries())));
+
+  // An unreadable/unknown photo must never be dropped - we cannot prove it is a
+  // copy, and a wrong drop deletes a real photo from someone's profile.
+  const withUnknown = planDedupe(["large.jpg", "mystery.jpg", "small.jpg"], map);
+  check("a photo we could not fingerprint is kept", withUnknown.keep.includes("mystery.jpg"), withUnknown.keep.join(","));
+  check("the unknown photo does not stop the real duplicate being dropped", withUnknown.keep.length === 2,
+    withUnknown.keep.join(","));
+
+  // Exact repeats of one URL collapse without needing any fingerprint at all.
+  const repeated = planDedupe(["a.jpg", "a.jpg", "b.jpg"], new Map());
+  check("a repeated URL is counted once", repeated.keep.length === 2 && repeated.exactRepeats === 1,
+    `${repeated.keep.join(",")} repeats=${repeated.exactRepeats}`);
+
+  // Distance is measured, not assumed: two unrelated photos stay apart.
+  check("unrelated hashes are far apart", hammingDistance(SAME, OTHER) > DEDUP_DISTANCE,
+    String(hammingDistance(SAME, OTHER)));
+  check("identical hashes are distance 0", hammingDistance(SAME, SAME) === 0);
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-01", name: "Bare-id [[MATCH_CARD:<uuid>]] form is accepted", run: ut01 },
   { id: "UT-02", name: "Well-formed card JSON parses unchanged", run: ut02 },
@@ -189,6 +234,7 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-06", name: "A truncated tool result still yields the top id", run: ut06 },
   { id: "UT-07", name: "Zero results are distinguishable from a parse failure", run: ut07 },
   { id: "UT-08", name: "The parent's private Eva session resolves (and never a joined thread)", run: ut08 },
+  { id: "UT-09", name: "Photo de-dup keeps the larger copy and never drops an unknown", run: ut09 },
 ];
 
 (async () => {
