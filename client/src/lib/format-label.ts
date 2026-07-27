@@ -59,3 +59,30 @@ export function looksLikeRawKey(key: string): boolean {
   if (raw.includes("_")) return true;
   return !raw.includes(" ") && /[a-z][A-Z]/.test(raw);
 }
+
+/**
+ * Placeholders that scrapers write when a field was left blank at the source.
+ *
+ * These must not reach a parent as content. A surrogate profile stored
+ * "Number of Pregnancies": "--" directly above a table listing five
+ * pregnancies, so the page contradicted itself in view of the reader - and a
+ * dash is not information, it is an invitation to wonder what else is missing.
+ *
+ * Note we omit rather than derive: the five rows are DELIVERIES, and a
+ * pregnancy count could legitimately be higher (miscarriages are not in that
+ * table). Inventing the number would trade a visible gap for an invisible
+ * error.
+ */
+// "None" is deliberately NOT here: "Health Conditions: None" is a real answer a
+// parent wants to read, not a blank. Only true non-answers belong in this list.
+const PLACEHOLDER_VALUE = /^(-{1,3}|—|–|n\/?a|null|undefined|not\s+(specified|provided|available|listed))\.?$/i;
+
+export function isPlaceholderValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string") {
+    const t = value.trim();
+    return t === "" || PLACEHOLDER_VALUE.test(t);
+  }
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}

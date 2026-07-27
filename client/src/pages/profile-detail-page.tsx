@@ -3,7 +3,8 @@ import { motion, useAnimation } from "framer-motion";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { typeToUrlSlug, deriveTypeFromPath, resolveSurrogateFields, resolveEggDonorFields, resolveSpermDonorFields, getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
-import { formatFieldLabel } from "@/lib/format-label";
+import { formatFieldLabel, isPlaceholderValue } from "@/lib/format-label";
+import { formatRelativeTime } from "@/lib/format-relative-time";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { cleanCityState } from "@/lib/country-flag";
 import { useQuery } from "@tanstack/react-query";
@@ -894,6 +895,8 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
       !sectionFieldKeys.has(key),
   );
 
+  const freshness = formatRelativeTime((donor as any)?.updatedAt);
+
   const headerMeta: string[] = [];
   if (donor.status) headerMeta.push(donor.status);
   if (donor.location) {
@@ -945,6 +948,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
               </h1>
               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                 <StatusBadge status={donor.status} />
+                {freshness && <span className="t-helper" data-testid="text-freshness-mobile">Updated {freshness}</span>}
                 {donor.donorType && (
                   <Badge variant="outline" className="text-xs" data-testid="badge-donor-type-mobile">{donor.donorType}</Badge>
                 )}
@@ -992,6 +996,9 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
         </h1>
         <div className="flex flex-wrap items-center gap-2 mt-1">
           <StatusBadge status={donor.status} />
+          {/* Availability is the most perishable fact here; "AVAILABLE" alone
+              reads the same whether it was synced today or months ago. */}
+          {freshness && <span className="t-helper" data-testid="text-freshness">Updated {freshness}</span>}
           {donor.isExperienced && (
             <Badge variant="outline" className="text-xs bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))] border-[hsl(var(--brand-warning)/0.3)]" data-testid="badge-experienced">
               Experienced
@@ -1046,7 +1053,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                 return left.flatMap((item, i) => right[i] !== undefined ? [item, right[i]] : [item]);
               }
               return mandatoryFields;
-            })().map(({ label, value }) => (
+            })().filter(({ value }) => !isPlaceholderValue(value)).map(({ label, value }) => (
               <Field
                 key={label}
                 label={label}
@@ -1691,11 +1698,16 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                     if (typeof v === "object") return Object.entries(v).map(([k2, v2]) => `${k2}: ${renderFlat(v2)}`).join(", ");
                     return String(v);
                   };
-                  const shortEntries = fieldEntries2.filter(([, v]) => {
+                  // A scraper writes "--" for a field left blank at the
+                  // source. Rendering it as content made the page contradict
+                  // itself ("Number of Pregnancies: --" above five rows), so
+                  // these pairs are dropped rather than shown as a dash.
+                  const shownEntries = fieldEntries2.filter(([, v]) => !isPlaceholderValue(v));
+                  const shortEntries = shownEntries.filter(([, v]) => {
                     if (typeof v === "object" && v !== null && !Array.isArray(v)) return true;
                     return renderFlat(v).length < LONG_THRESHOLD;
                   });
-                  const longEntries = fieldEntries2.filter(([, v]) => {
+                  const longEntries = shownEntries.filter(([, v]) => {
                     if (typeof v === "object" && v !== null && !Array.isArray(v)) return false;
                     return renderFlat(v).length >= LONG_THRESHOLD;
                   });
@@ -1706,7 +1718,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                   if (isPersonalitySection) {
                     return (
                       <PromptStack>
-                        {fieldEntries2.map(([question, answer]) => (
+                        {shownEntries.map(([question, answer]) => (
                           <PromptBlock
                             key={question}
                             question={question}

@@ -275,8 +275,24 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
         </div>
       </div>
 
-      <div className={`text-sm font-heading ${diff >= 0 ? "text-[hsl(var(--brand-success))]" : "text-destructive"}`} data-testid="text-rate-diff">
-        {diff >= 0 ? "+" : ""}{Math.round(diff)}% vs. national average
+      {/* Above national stays a positive signal; below it is stated plainly
+          rather than in alarm red. CDC rates are NOT risk-adjusted - a clinic
+          that accepts complex cases scores lower than one that declines them -
+          so a red minus sign both misinforms the parent and punishes the
+          provider for taking hard patients. The number is unchanged; only the
+          verdict attached to it is. */}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span
+          className={`text-sm font-heading ${diff >= 0 ? "text-[hsl(var(--brand-success))]" : "text-foreground"}`}
+          data-testid="text-rate-diff"
+        >
+          {diff >= 0 ? "+" : ""}{Math.round(diff)}% vs. national average
+        </span>
+        {diff < 0 && (
+          <span className="t-helper" data-testid="text-rate-diff-context">
+            CDC rates aren't adjusted for case complexity - clinics treating harder cases often report lower rates.
+          </span>
+        )}
       </div>
 
       {matchedRate.top10pct && (
