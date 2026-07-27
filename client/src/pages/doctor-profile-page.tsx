@@ -14,7 +14,7 @@ import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileCloseButton } from "@/components/mobile-profile-close-header";
 import { useAuth } from "@/hooks/use-auth";
-import { ReviewsSection } from "@/components/reviews/reviews-ui";
+import { ReviewsSection, useHasReviewsContent } from "@/components/reviews/reviews-ui";
 
 // CDC metric codes (mirrors ivf-success-rates-section.tsx) used to pick a headline rate.
 const OWN_METRIC = "pct_intended_retrievals_live_births";
@@ -53,6 +53,11 @@ export default function DoctorProfilePage() {
     },
     enabled: !!slug,
   });
+
+  const isParentViewer = !!(user as any)?.parentAccountId && !(user as any)?.providerId;
+  // Above the early returns below so hook order stays stable. The queries
+  // no-op until the doctor resolves, and share ReviewsSection's cache.
+  const hasReviewsContent = useHasReviewsContent({ memberId: doctor?.id ?? null, isParent: isParentViewer });
 
   // Opening a doctor's full profile is an impression (doctors are keyed by
   // slug in the marketplace/analytics). Idempotent + deduped server-side.
@@ -304,12 +309,17 @@ export default function DoctorProfilePage() {
           })}
       </ProfileSection>
 
-      {/* Reviews - shared Phase 8 component (list + eligible-parent self-serve form). */}
+      {/* Reviews - shared Phase 8 component (list + eligible-parent self-serve
+          form). Hidden when there is nothing to read and nothing to do, same
+          rule as provider profiles. The explainer below therefore only appears
+          for an eligible parent looking at a doctor with no reviews yet, which
+          is exactly when it earns its place. */}
+      {hasReviewsContent && (
       <ProfileSection title="Patient Reviews" data-testid="section-reviews">
           <ReviewsSection
             memberId={doctor.id}
             targetLabel={doctor.name}
-            isParent={!!(user as any)?.parentAccountId && !(user as any)?.providerId}
+            isParent={isParentViewer}
           />
           {!hasReviews && (
             <p className="t-helper max-w-sm mt-2">
@@ -317,6 +327,7 @@ export default function DoctorProfilePage() {
             </p>
           )}
       </ProfileSection>
+      )}
     </div>
   );
 }
