@@ -28,6 +28,11 @@ model Provider {
   // otherwise end with zero doctors (network labs SART can't match by name).
   cdcMedicalDirector                    String?
   email                                 String?
+  /// Where surrogate availability-verification requests are sent. The general
+  /// `email` is usually an ops inbox; these requests need the person who
+  /// actually knows whether a surrogate is still free. Falls back to `email`
+  /// when unset - see docs/surrogate-availability-verification.md.
+  surrogateCoordinatorEmail             String?
   phone                                 String?
   yearFounded                           Int?
   // Doctor/clinic marketplace enrichment (provider self-entry + concepts borrowed from FertilityIQ/ZocDoc)
@@ -338,8 +343,8 @@ model ProfileEvent {
 }
 
 model User {
-  id                     String                 @id @default(uuid())
-  email                  String                 @unique
+  id                     String                  @id @default(uuid())
+  email                  String                  @unique
   password               String?
   name                   String?
   firstName              String?
@@ -355,14 +360,14 @@ model User {
   partnerFirstName       String?
   partnerAge             Int?
   referralSource         String?
-  roles                  String[]               @default(["PARENT"])
+  roles                  String[]                @default(["PARENT"])
   providerId             String?
-  allLocations           Boolean                @default(false)
-  mustCompleteProfile    Boolean                @default(false)
-  createdAt              DateTime               @default(now())
+  allLocations           Boolean                 @default(false)
+  mustCompleteProfile    Boolean                 @default(false)
+  createdAt              DateTime                @default(now())
   dailyRoomUrl           String?
   calendarLink           String?
-  isDisabled             Boolean                @default(false)
+  isDisabled             Boolean                 @default(false)
   parentAccountId        String?
   parentAccountRole      String?
   city                   String?
@@ -377,30 +382,30 @@ model User {
   // Stripe Customer id - lazily created the first time the parent triggers a
   // payment method that requires it (currently: bank-transfer / customer_balance).
   // Card payments still go through guest checkout and do not populate this.
-  stripeCustomerId       String?                @unique
+  stripeCustomerId       String?                 @unique
   availabilityOverrides  AvailabilityOverride[]
-  bookingsAsParent       Booking[]              @relation("ParentBookings")
-  bookingsAsProvider     Booking[]              @relation("ProviderBookings")
+  bookingsAsParent       Booking[]               @relation("ParentBookings")
+  bookingsAsProvider     Booking[]               @relation("ProviderBookings")
   calendarBlocks         CalendarBlock[]
   calendarConnections    CalendarConnection[]
   eventFreeOverrides     EventFreeOverride[]
   notifications          Notification[]
   scheduleConfig         ScheduleConfig?
-  parentAccount          ParentAccount?         @relation(fields: [parentAccountId], references: [id])
-  provider               Provider?              @relation(fields: [providerId], references: [id])
+  parentAccount          ParentAccount?          @relation(fields: [parentAccountId], references: [id])
+  provider               Provider?               @relation(fields: [providerId], references: [id])
   assignedLocations      UserLocation[]
   passwordResetTokens    PasswordResetToken[]
   donorPreferences       UserDonorPreference[]
   profilePreferences     UserProfilePreference[]
-  costSheetQuotes        ProviderCostSheet[]    @relation("CostSheetQuotes")
+  costSheetQuotes        ProviderCostSheet[]     @relation("CostSheetQuotes")
   inAppNotifications     InAppNotification[]
   aiChatSessions         AiChatSession[]
-  silentQueries          SilentQuery[]          @relation("SilentQueryParent")
+  silentQueries          SilentQuery[]           @relation("SilentQueryParent")
   agreements             Agreement[]
   invoices               Invoice[]
-  providerQuotes         ProviderQuote[]        @relation("ProviderQuoteParent")
-  createdProviderQuotes  ProviderQuote[]        @relation("ProviderQuoteCreatedBy")
-  reservedSurrogates     Surrogate[]            @relation("SurrogateReservations")
+  providerQuotes         ProviderQuote[]         @relation("ProviderQuoteParent")
+  createdProviderQuotes  ProviderQuote[]         @relation("ProviderQuoteCreatedBy")
+  reservedSurrogates     Surrogate[]             @relation("SurrogateReservations")
 }
 
 model UserDonorPreference {
@@ -558,50 +563,50 @@ model ConciergeMemory {
 }
 
 model ProviderReview {
-  id                 String          @id @default(uuid())
-  providerId         String // always set (org-level)
-  memberId           String? // set when the review is about a specific doctor
-  authorUserId       String // the IP who booked - verification anchor
+  id                  String          @id @default(uuid())
+  providerId          String // always set (org-level)
+  memberId            String? // set when the review is about a specific doctor
+  authorUserId        String // the IP who booked - verification anchor
   // Phase 8: shared-account reviews - one review per parent account per
   // target (enforced in code; NULL memberId makes a DB unique index moot).
-  parentAccountId    String?
-  source             String          @default("gostork_verified")
+  parentAccountId     String?
+  source              String          @default("gostork_verified")
   // recommend bucket: "STRONGLY_RECOMMEND" | "NEUTRAL" | "DONT_RECOMMEND"
   // (derived from rating in Phase 8: 4-5 / 3 / 1-2)
-  recommendation     String
-  overallScore       Int? // legacy 0-10 (unused by Phase 8)
+  recommendation      String
+  overallScore        Int? // legacy 0-10 (unused by Phase 8)
   // Phase 8 primary rating: 1-5 stars.
-  rating             Int?
+  rating              Int?
   // Category ratings as JSON (1-5 each):
   //   orgs:    { communication, transparency, responsiveness, support }
   //   doctors: { communication, expertise, care }
-  subScores          Json?
-  bodyText           String?
+  subScores           Json?
+  bodyText            String?
   // Phase 8 journey context: which journey + the stage at last update.
-  journeyType        String? // surrogacy | egg_donation | ivf | bank | legal
-  stage              String? // consult_completed | matched | handed_off
-  anonymous          Boolean         @default(false)
-  visibility         String          @default("PUBLIC") // PUBLIC | PRIVATE_FEEDBACK
-  aiScreenNotes      String? // why the AI screen flagged it (PENDING status)
+  journeyType         String? // surrogacy | egg_donation | ivf | bank | legal
+  stage               String? // consult_completed | matched | handed_off
+  anonymous           Boolean         @default(false)
+  visibility          String          @default("PUBLIC") // PUBLIC | PRIVATE_FEEDBACK
+  aiScreenNotes       String? // why the AI screen flagged it (PENDING status)
   flaggedByProviderAt DateTime?
-  flagReason         String?
-  providerReply      String?
-  providerReplyAt    DateTime?
+  flagReason          String?
+  providerReply       String?
+  providerReplyAt     DateTime?
   providerReplyUserId String?
   // structured metadata tags (FertilityIQ pattern)
-  treatmentYearStart Int?
-  treatmentYearEnd   Int?
-  outcome            String? // "SUCCESSFUL" | "UNSUCCESSFUL" | "UNKNOWN"
-  ageRangeLabel      String? // e.g. "32-33"
-  ivfCycles          Int?
-  iuiCycles          Int?
-  diagnoses          String[]        @default([]) // "Endometriosis","PCOS","Male Factor",...
-  isLgbtq            Boolean         @default(false)
-  status             String          @default("PENDING") // moderation: PENDING | PUBLISHED | REJECTED
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
-  provider           Provider        @relation(fields: [providerId], references: [id])
-  member             ProviderMember? @relation(fields: [memberId], references: [id])
+  treatmentYearStart  Int?
+  treatmentYearEnd    Int?
+  outcome             String? // "SUCCESSFUL" | "UNSUCCESSFUL" | "UNKNOWN"
+  ageRangeLabel       String? // e.g. "32-33"
+  ivfCycles           Int?
+  iuiCycles           Int?
+  diagnoses           String[]        @default([]) // "Endometriosis","PCOS","Male Factor",...
+  isLgbtq             Boolean         @default(false)
+  status              String          @default("PENDING") // moderation: PENDING | PUBLISHED | REJECTED
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  provider            Provider        @relation(fields: [providerId], references: [id])
+  member              ProviderMember? @relation(fields: [memberId], references: [id])
 
   @@index([providerId, status])
   @@index([memberId, status])
@@ -1348,64 +1353,64 @@ model SiteSettings {
   // ---------------------------------------------------------------------
 
   // Attribute pair: "Health Status" / "Excellent"
-  fieldLabelSize        Int?
-  fieldLabelWeight      String?
-  fieldLabelColor       String?
-  fieldLabelCase        String?
-  fieldLabelTracking    Float?
-  fieldValueSize        Int?
-  fieldValueWeight      String?
-  fieldValueColor       String?
-  fieldLabelGap         Int?
-  fieldPairGap          Int?
+  fieldLabelSize     Int?
+  fieldLabelWeight   String?
+  fieldLabelColor    String?
+  fieldLabelCase     String?
+  fieldLabelTracking Float?
+  fieldValueSize     Int?
+  fieldValueWeight   String?
+  fieldValueColor    String?
+  fieldLabelGap      Int?
+  fieldPairGap       Int?
 
   // Prompt block: eyebrow question + prose answer ("My worst fear")
-  promptEyebrowSize     Int?
-  promptEyebrowWeight   String?
-  promptEyebrowColor    String?
-  promptEyebrowTracking Float?
-  promptEyebrowCase     String?
-  promptAnswerSize      Int?
-  promptAnswerWeight    String?
-  promptAnswerColor     String?
+  promptEyebrowSize      Int?
+  promptEyebrowWeight    String?
+  promptEyebrowColor     String?
+  promptEyebrowTracking  Float?
+  promptEyebrowCase      String?
+  promptAnswerSize       Int?
+  promptAnswerWeight     String?
+  promptAnswerColor      String?
   promptAnswerLineHeight Float?
-  promptBlockGap        Int?
+  promptBlockGap         Int?
 
   // Compact uppercase key used inside dense cards and tables
-  microLabelSize        Int?
-  microValueSize        Int?
-  microLabelWeight      String?
-  microLabelColor       String?
-  microLabelTracking    Float?
+  microLabelSize     Int?
+  microValueSize     Int?
+  microLabelWeight   String?
+  microLabelColor    String?
+  microLabelTracking Float?
 
   // Attribute chip ("Anxiety disorder", "Master's", "5'7\"")
-  chipFontSize          Int?
-  chipFontWeight        String?
-  chipRadius            Int?
-  chipPaddingX          Int?
-  chipPaddingY          Int?
-  chipBgColor           String?
-  chipTextColor         String?
+  chipFontSize   Int?
+  chipFontWeight String?
+  chipRadius     Int?
+  chipPaddingX   Int?
+  chipPaddingY   Int?
+  chipBgColor    String?
+  chipTextColor  String?
 
   // Section card header ("Family Health History")
-  sectionTitleSize      Int?
-  sectionTitleWeight    String?
+  sectionTitleSize   Int?
+  sectionTitleWeight String?
 
   // Interface typography. Applied through the shared shadcn primitives
   // (ui/label.tsx, ui/card.tsx, ui/table.tsx) so every form, card and table in
   // the product inherits them - do not restyle those per page.
-  formLabelSize         Int?
-  formLabelSmallSize    Int?
-  formLabelWeight       String?
-  formLabelColor        String?
-  formLabelCase         String?
-  formLabelTracking     Float?
-  helperTextSize        Int?
-  helperTextColor       String?
-  cardHeadingSize       Int?
-  cardHeadingWeight     String?
-  pageTitleSize         Int?
-  pageTitleWeight       String?
+  formLabelSize      Int?
+  formLabelSmallSize Int?
+  formLabelWeight    String?
+  formLabelColor     String?
+  formLabelCase      String?
+  formLabelTracking  Float?
+  helperTextSize     Int?
+  helperTextColor    String?
+  cardHeadingSize    Int?
+  cardHeadingWeight  String?
+  pageTitleSize      Int?
+  pageTitleWeight    String?
 }
 
 model Matchmaker {
@@ -1628,28 +1633,28 @@ model ProviderLegalIdentity {
 // ==========================================
 
 model AiChatSession {
-  id                 String    @id @default(uuid())
-  userId             String
-  title              String?
-  status             String    @default("ACTIVE")
-  sessionType        String    @default("PARENT")
-  humanRequested     Boolean   @default(false)
-  humanJoinedAt      DateTime?
-  humanConcludedAt   DateTime?
-  humanAgentId       String?
-  providerId         String?
-  providerJoinedAt   DateTime?
-  providerName       String?
-  profilePhotoUrl    String?
-  subjectProfileId   String?
-  subjectType        String?
-  matchmakerId       String?
-  tier2Active        Boolean   @default(false)
-  isTestData         Boolean   @default(false)
+  id                   String    @id @default(uuid())
+  userId               String
+  title                String?
+  status               String    @default("ACTIVE")
+  sessionType          String    @default("PARENT")
+  humanRequested       Boolean   @default(false)
+  humanJoinedAt        DateTime?
+  humanConcludedAt     DateTime?
+  humanAgentId         String?
+  providerId           String?
+  providerJoinedAt     DateTime?
+  providerName         String?
+  profilePhotoUrl      String?
+  subjectProfileId     String?
+  subjectType          String?
+  matchmakerId         String?
+  tier2Active          Boolean   @default(false)
+  isTestData           Boolean   @default(false)
   // Phase 1 Stage 13: stamped when the parent has paid the deposit AND
   // the agreement is fully signed, signalling GoStork's portion of the
   // workflow is complete and the provider has taken over.
-  handoffCompletedAt DateTime?
+  handoffCompletedAt   DateTime?
   // Most recent image the parent uploaded in this chat. The look-alike face
   // matcher (find_lookalike_matches) searches against this photo; the AI
   // router injects it into the tool args (never trusts a model-supplied URL).
@@ -1659,10 +1664,10 @@ model AiChatSession {
   // background, so a years-long thread keeps its gist without re-sending
   // every message. summarizedThrough = createdAt watermark of the last folded
   // message (nothing is folded twice).
-  historySummary     String?
-  summarizedThrough  DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  historySummary       String?
+  summarizedThrough    DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   messages           AiChatMessage[]
   silentQueries      SilentQuery[]
@@ -1815,8 +1820,8 @@ model IntendedParentProfile {
   isFirstIvf Boolean?
 
   // Lead Status
-  hotLeadProviderId String?
-  hotLeadAt         DateTime?
+  hotLeadProviderId    String?
+  hotLeadAt            DateTime?
   // One-time lawyer-intro gate: stamped the first time Eva offers (or the
   // parent asks for) a legal connection, so the proactive offer after the
   // first surrogacy/egg-donation consultation never repeats.
@@ -2530,51 +2535,51 @@ model JourneyEvent {
 // in the acknowledgment legal text) is applied at PDF render time.
 
 model IpFormSection {
-  id          String  @id @default(uuid())
-  key         String  @unique // stable: "profile" | "clinic" | "embryo" | "personal_info" | "expectations" | "delivery" | "letter" | "photos" | "private" | "acknowledgment"
-  title       String
-  description String? // e.g. private section: "This information will NOT be shared with the surrogate."
-  sortOrder   Int     @default(0)
+  id                      String   @id @default(uuid())
+  key                     String   @unique // stable: "profile" | "clinic" | "embryo" | "personal_info" | "expectations" | "delivery" | "letter" | "photos" | "private" | "acknowledgment"
+  title                   String
+  description             String? // e.g. private section: "This information will NOT be shared with the surrogate."
+  sortOrder               Int      @default(0)
   // Whole section repeats once per parent (personal_info, acknowledgment).
-  perParent   Boolean @default(false)
+  perParent               Boolean  @default(false)
   // Section stripped from the surrogate-facing PDF variant (private section).
-  excludeFromSurrogatePdf Boolean @default(false)
+  excludeFromSurrogatePdf Boolean  @default(false)
   // Program types this section applies to (e.g. ["surrogacy"], ["surrogacy","ivf"]).
   // Empty = core: shown to every parent regardless of their providers' program.
   // A parent sees a section when it is core OR its appliesTo intersects the set
   // of program types across the providers they've consulted.
-  appliesTo   String[] @default([])
-  isActive    Boolean @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  appliesTo               String[] @default([])
+  isActive                Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   questions IpFormQuestion[]
 }
 
 model IpFormQuestion {
-  id       String  @id @default(uuid())
-  sectionId String
-  key      String  @unique // stable, e.g. "ip_full_legal_name", "embryo_count"
-  label    String
-  helpText String?
-  widget   String // "text" | "textarea" | "yes_no" | "dropdown" | "date" | "address" | "phone" | "number" | "photos"
-  options  Json? // dropdown choices: string[]
-  required Boolean @default(false)
+  id                      String   @id @default(uuid())
+  sectionId               String
+  key                     String   @unique // stable, e.g. "ip_full_legal_name", "embryo_count"
+  label                   String
+  helpText                String?
+  widget                  String // "text" | "textarea" | "yes_no" | "dropdown" | "date" | "address" | "phone" | "number" | "photos"
+  options                 Json? // dropdown choices: string[]
+  required                Boolean  @default(false)
   // Question repeats per parent inside a SHARED section (section-1 IP1/IP2
   // profile blocks). Questions inside a perParent SECTION are per-parent
   // implicitly and should leave this false.
-  perParent Boolean @default(false)
+  perParent               Boolean  @default(false)
   // Answer stripped from the surrogate-facing PDF variant (emails, phones,
   // addresses, DOB, ID document fields).
-  excludeFromSurrogatePdf Boolean @default(false)
+  excludeFromSurrogatePdf Boolean  @default(false)
   // Conditional follow-up: shown only when the parent question's answer
   // equals conditionalTriggerValue (covers every "If yes, please explain").
   conditionalOnQuestionId String?
   conditionalTriggerValue String?
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  sortOrder               Int      @default(0)
+  isActive                Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   section IpFormSection  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   answers IpFormAnswer[]
@@ -2584,20 +2589,20 @@ model IpFormQuestion {
 
 // One per parent account (FK-by-convention like JourneyEvent).
 model IpFormResponse {
-  id              String    @id @default(uuid())
-  parentAccountId String    @unique
-  status          String    @default("DRAFT") // "DRAFT" | "SUBMITTED"
+  id                    String    @id @default(uuid())
+  parentAccountId       String    @unique
+  status                String    @default("DRAFT") // "DRAFT" | "SUBMITTED"
   // Whether a second intended parent is on this journey. Derived from IP1's
   // marital status (Partnered/Married => two) so parents skip a redundant
   // upfront question - UNLESS hasSecondParentManual is set, in which case the
   // parent's explicit choice (the escape hatch) wins and derivation stops.
-  hasSecondParent Boolean   @default(true)
-  hasSecondParentManual Boolean @default(false)
-  parent2Mode     String? // "member" | "guest"
-  promptedAt      DateTime? // when Eva's card was posted - anchors the reminder ladder
-  submittedAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  hasSecondParent       Boolean   @default(true)
+  hasSecondParentManual Boolean   @default(false)
+  parent2Mode           String? // "member" | "guest"
+  promptedAt            DateTime? // when Eva's card was posted - anchors the reminder ladder
+  submittedAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   answers     IpFormAnswer[]
   signatures  IpFormSignature[]
@@ -2697,4 +2702,37 @@ model PhotoFingerprint {
   updatedAt DateTime @updatedAt
 
   @@index([phash])
+}
+
+/// One request to an agency to confirm a manually-uploaded surrogate is still
+/// available, and what they said. See
+/// docs/surrogate-availability-verification.md for the whole design.
+///
+/// Only upload-only surrogates are ever asked about (Surrogate.lastFullSyncAt
+/// is null); scraped profiles are corrected by the nightly sync, and asking
+/// about those trains coordinators to ignore the request.
+model SurrogateVerification {
+  id            String    @id @default(uuid())
+  surrogateId   String
+  providerId    String
+  /// PARENT_SAVE (a parent just saved her - answer urgently) or SWEEP (the
+  /// periodic digest backstop).
+  trigger       String
+  requestedAt   DateTime  @default(now())
+  /// Reminders already sent. Two, then a 14-day grace, then auto-PENDING.
+  reminderCount Int       @default(0)
+  respondedAt   DateTime?
+  /// The user id of the coordinator who answered.
+  respondedBy   String?
+  /// The status they chose, from the marketplace filter vocabulary:
+  /// AVAILABLE | ON_HOLD | PENDING | MATCHED | INACTIVE.
+  resultStatus  String?
+  /// Set when nobody answered and the profile was auto-moved to PENDING, so a
+  /// coordinator can tell an automatic change from one they made.
+  autoHiddenAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([surrogateId, requestedAt])
+  @@index([providerId, respondedAt])
 }

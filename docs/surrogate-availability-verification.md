@@ -72,26 +72,42 @@ Branded email (`buildBrandedEmail()`, per the project rule - no SendGrid
 templates) plus a row in the provider home queue beside the existing approvals,
 so it appears where coordinators already action work.
 
-## Open questions
+## Decisions (all three settled, 27 Jul 2026)
 
-1. **Cycle length for the digest.** 7 days is the assumed baseline. The
-   save-triggered whisper covers the urgent case, so the sweep is a backstop -
-   but if reservations really move daily, 3-4 days may be worth the extra email.
-2. **Who at the agency receives it.** Provider contact email, or a per-provider
-   "surrogate coordinator" address? Today there is no such field.
-3. **Does a parent see the confirmation state on the profile?** e.g. "Availability
-   confirmed 2 days ago" once an agency has answered. This is the one case where
-   a date IS information, because a human confirmed it rather than a scraper
-   re-reading a page. Deliberately deferred - it reintroduces the label we just
-   removed, so it needs its own decision.
+1. **Digest cycle: 7 days.** The save-triggered whisper carries the urgency;
+   the sweep is only a backstop for profiles nobody has looked at yet.
+2. **Recipient: `Provider.surrogateCoordinatorEmail`**, falling back to
+   `Provider.email`. Built. Sending to a general ops inbox would mean
+   auto-hiding listings on silence we caused ourselves.
+3. **Parents DO see a confirmation line** - but only where a real confirmation
+   exists, never as a default. A human at the agency saying "yes, she is free"
+   on a given day is genuinely different from a scraper re-reading a page, and
+   it will be absent on most profiles rather than reading the same everywhere.
+   Watch for it re-teaching parents to look for a timestamp, so that its
+   absence starts implying something we do not mean.
 
-## Build notes
+## Build state
 
-- New model, roughly `SurrogateVerification` (surrogateId, providerId,
-  requestedAt, respondedAt, respondedBy, resultStatus, trigger:
-  `PARENT_SAVE | SWEEP`, reminderCount).
-- Scheduler alongside the existing 10-minute sweeps - must be
-  cross-process idempotent via advisory lock, since the iMac and the local Mac
-  both run schedulers against the shared DB.
-- Schema change needs a matching `prisma/migrations/` SQL file in the same
-  commit, per the project rule.
+**Done (27 Jul 2026):**
+- `SurrogateVerification` model + `Provider.surrogateCoordinatorEmail`, with the
+  migration SQL applied to Supabase and the `PrismaService` getter added (a
+  missing getter makes the model silently undefined and every call a 500).
+- Verified reachable from a live client: the table reads, the field resolves.
+
+**Not built - no behaviour exists yet.** In dependency order:
+
+1. `requestVerification(surrogateId, trigger)` - creates a row, sends the
+   branded email, posts the whisper for `PARENT_SAVE`.
+2. Parent-save hook: fire on save, but only for upload-only surrogates.
+3. Provider response endpoint + UI: the digest with one-click-for-all AND
+   per-profile answers, plus the provider home queue row.
+4. Relay the confirmation back to the parent, warmly.
+5. The 7-day sweep and the reminder/auto-PENDING ladder. **Build this last.**
+   It is the only part that changes what parents can see without a human
+   deciding, so it should go in once everything feeding it is proven - a bug
+   here hides available surrogates, which is worse than the stale profiles this
+   feature exists to fix.
+6. The parent-facing confirmation line (decision 3).
+
+The scheduler in step 5 must be cross-process idempotent via an advisory lock:
+the iMac and the local Mac both run schedulers against the shared DB.

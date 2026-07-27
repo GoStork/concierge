@@ -59,6 +59,12 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.surrogateSyncConfig;
   }
 
+  // This wrapper exposes one getter per model - a missing getter makes
+  // this.prisma.<model> silently undefined and every call a 500.
+  get surrogateVerification() {
+    return prisma.surrogateVerification;
+  }
+
   get spermDonor() {
     return prisma.spermDonor;
   }
