@@ -52,6 +52,13 @@ export default function ProviderProfilePage() {
     enabled: !!id,
   });
 
+  // Doctors only for the parent-facing team list. isClinician is computed
+  // server-side (clinician.ts) so this page and the marketplace agree.
+  const doctorMembers: any[] = useMemo(
+    () => ((provider as any)?.members || []).filter((m: any) => m.isClinician !== false),
+    [provider],
+  );
+
   const approvedServices = useMemo(() => {
     if (!provider?.services) return [];
     return provider.services.filter((s: any) => s.status === "APPROVED");
@@ -305,10 +312,14 @@ export default function ProviderProfilePage() {
         );
       })()}
 
-      {provider.members && provider.members.length > 0 && (
-        <ProfileSection title="Team Members" data-testid="section-team">
+      {/* Doctors only, matching the marketplace Doctors directory. The server
+          flags each member via isClinicianMember; practice directors, lab
+          directors and office staff are managed in the admin team editor but
+          are not what a parent is choosing between here. */}
+      {doctorMembers.length > 0 && (
+        <ProfileSection title={doctorMembers.length > 1 ? "Doctors" : "Doctor"} data-testid="section-team">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {provider.members.map((member: any) => {
+              {doctorMembers.map((member: any) => {
                 const memberPhoto = getPhotoSrc(member.photoUrl);
                 const memberLocations = member.locations
                   ?.map((ml: any) => {

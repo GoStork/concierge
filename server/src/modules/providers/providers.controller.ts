@@ -22,6 +22,7 @@ import { deriveIvfParentContext, evaluateIvfRequirements, ivfRequirementsFromPro
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiBody } from "@nestjs/swagger";
 import { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
+import { isClinicianMember } from "./clinician";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { insertProviderSchema } from "@shared/schema";
 import { hasProviderRole, isProviderWriteRestricted } from "@shared/roles";
@@ -496,6 +497,9 @@ export class ProvidersController {
     const insuranceCarrier = query.insurance ? insuranceCarrierOf(query.insurance) : null;
     const wantsLgbtq = query.lgbtq === "true";
     const filtered = members.filter((m) => {
+      // A clinic's team record includes practice directors, lab directors and
+      // office staff. The Doctors directory is doctors only.
+      if (!isClinicianMember(m as any)) return false;
       if (insuranceCarrier && !acceptsInsuranceCarrier(m.provider.acceptedInsurance, insuranceCarrier)) return false;
       if (wantsLgbtq && !(Array.isArray(m.provider.ivfAcceptingPatients) && (m.provider.ivfAcceptingPatients as string[]).includes("gay_couple"))) return false;
       return true;
@@ -1262,7 +1266,13 @@ export class ProvidersController {
     if (isParent && provider.services.length === 0) {
       throw new NotFoundException("Provider not found");
     }
-    return provider;
+    // Annotate rather than filter: this endpoint also backs the admin team
+    // editor, which must keep showing practice directors and lab staff so they
+    // can be managed. Parent-facing surfaces render only members flagged here.
+    return {
+      ...provider,
+      members: provider.members.map((m: any) => ({ ...m, isClinician: isClinicianMember(m) })),
+    };
   }
 
   @Post()

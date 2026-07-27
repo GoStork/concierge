@@ -26,6 +26,7 @@ export const DOCTOR_MEMBER_SELECT = {
   photoUrl: true,
   highResPhotoUrl: true,
   credential: true,
+  npiNumber: true, // strongest "is a doctor" signal - see clinician.ts
   npiTaxonomy: true,
   specialties: true,
   personKey: true,

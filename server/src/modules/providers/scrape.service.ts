@@ -1167,12 +1167,20 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
   console.log(`[scraper] Discovered ${discoveredNames.size} unique team member names for physician page lookup`);
 
   if (physicianBasePath) {
+    // Guess a per-doctor page URL ONLY for strings that actually look like a
+    // person. discoveredNames is harvested from alt text and nearby copy, so it
+    // also collects section words - PFCLA produced "heart", "san francisco" and
+    // "personalized care", each burning a fetch on a guaranteed 404 and pushing
+    // real candidates toward the 50-URL cap. A guessed URL is a guess; it should
+    // at least be a guess about a human.
     const base = new URL(effectiveUrl);
+    let skipped = 0;
     for (const name of discoveredNames) {
+      if (!looksLikePersonName(name)) { skipped++; continue; }
       const slug = name.toLowerCase().replace(/\s+/g, "-");
-      const candidateUrl = `${base.origin}${physicianBasePath}/${slug}`;
-      doctorSubpageUrls.push(candidateUrl);
+      doctorSubpageUrls.push(`${base.origin}${physicianBasePath}/${slug}`);
     }
+    if (skipped > 0) console.log(`[scraper] Skipped ${skipped} non-name candidates for per-doctor URL guessing`);
   }
 
   function extractBioFromHtml(html: string): string {
@@ -1485,7 +1493,7 @@ Extract the following information and return ONLY a valid JSON object (no markdo
     {
       "name": "Full name of the team member",
       "title": "Their professional title (e.g. MD, CEO, Founder, Medical Director, etc.) or null",
-      "bio": "A brief 1-2 sentence professional bio or null",
+      "bio": "Their professional bio, up to ~900 characters. PRESERVE concrete details - languages spoken, medical school, residency, fellowship, board certifications, society memberships, clinical focus. Do not compress these away. null if the page says nothing about them.",
       "photoUrl": "Full absolute URL to their headshot/photo or null"
     }
   ]
@@ -1517,7 +1525,7 @@ Important rules:
   * The INDIVIDUAL DOCTOR/PHYSICIAN PAGES section contains detailed bios from individual doctor pages - use these to populate the "bio" field.
   * The main text content may mention additional team members.
   * For photoUrl: look in the RAW DATA section for img src URLs near each person's name. The URLs are absolute. Do NOT leave photoUrl as null if there is an image near their name.
-  * For bio: use the meta description or text from individual doctor pages. Write a clean 1-2 sentence professional bio. Do NOT leave bio as null if description text is available.
+  * For bio: prefer the person's OWN doctor page over a roster blurb, and keep it substantive - up to ~900 characters. Their page often carries headed sections (Expertise, Languages, Education and Experience, Notable Affiliations); fold those specifics into the bio rather than dropping them. Languages, training institutions and society memberships are extracted downstream from this text, so compressing the bio to a sentence silently loses them. Do NOT leave bio as null if description text is available.
   * Include ALL doctors/physicians/specialists found - do not limit to a subset.
   * If the TEAM MEMBER RAW DATA block is empty or missing photos, explicitly scan the main text content for lists of doctors, embryologists, and nurses. Extract them even if no photo URL is available.
 - Return ONLY the JSON object, nothing else.`;
