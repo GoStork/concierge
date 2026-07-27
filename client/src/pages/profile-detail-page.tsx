@@ -6,6 +6,7 @@ import { formatMoneyDollars } from "@/lib/format-money";
 import { formatFieldLabel, isPlaceholderValue } from "@/lib/format-label";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { ProfileFitLine } from "@/components/profile-fit-line";
+import { ProfileQuote } from "@/components/profile-quote";
 import { useParentPreferences } from "@/hooks/use-parent-preferences";
 import {
   mapDatabaseDonorToSwipeProfile,
@@ -1043,6 +1044,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
             transition={{ duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] }}
           >
             <MobilePhotoViewer photos={allPhotos} videoUrl={donorVideoUrl} showFallback />
+            <ProfileQuote quote={donor.highlightQuote} className="mt-3" />
           </motion.div>
         )
         : <PhotoGalleryBar photos={allPhotos} videoUrl={donorVideoUrl} showFallback />}
@@ -1071,6 +1073,9 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
         {/* Why this person suits THIS parent - previously only rendered when
             arriving from Eva, so most readers saw an identical page. */}
         <ProfileFitLine profile={swipeProfile} preferences={parentPreferences} className="mt-3" />
+        {/* Her own voice, above the attribute tables. The full letter stays
+            below - this is a way in, not a substitute. */}
+        <ProfileQuote quote={donor.highlightQuote} className="mt-3" />
         {donor.profileUrl && user && (
           hasAnyRole(user.roles || [], [...GOSTORK_ROLES]) ||
           (hasProviderRole(user.roles || []) && user.providerId === providerId)

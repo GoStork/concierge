@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { useQuery, useInfiniteQuery, keepPreviousData } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { cn } from "@/lib/utils";
 import { typeToUrlSlug } from "@/lib/profile-utils";
 import { api } from "@shared/routes";
 import { type ProviderWithRelations } from "@shared/schema";
@@ -43,6 +44,7 @@ import {
   mapDatabaseDonorToSwipeProfile, mapDatabaseSurrogateToSwipeProfile, mapDatabaseSpermDonorToSwipeProfile,
   type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
+import { CompareDrawer, COMPARE_MAX } from "@/components/marketplace/compare-drawer";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
 
@@ -2169,6 +2171,34 @@ export default function MarketplacePage() {
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const onFilteredCountChange = useCallback((count: number) => setFilteredCount(count), []);
 
+  // Compare (Saved view). Parents shortlist and then decide by comparison;
+  // without this it means browser tabs.
+  const compareNavigate = useNavigate();
+  const favoritedDonorIdsForCompare = useAppSelector((st) => st.ui.favoritedDonorIds);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const compareKind: "egg-donor" | "surrogate" | "sperm-donor" | null =
+    activeTab === "egg-donors" ? "egg-donor"
+      : activeTab === "surrogates" ? "surrogate"
+        : activeTab === "sperm-donors" ? "sperm-donor" : null;
+  const compareSource: any[] =
+    compareKind === "egg-donor" ? (eggDonors || [])
+      : compareKind === "surrogate" ? (surrogates || [])
+        : compareKind === "sperm-donor" ? (spermDonors || []) : [];
+  const comparableSaved = useMemo(() => {
+    if (!compareKind) return [];
+    const mapOne = (d: any) =>
+      compareKind === "surrogate" ? mapDatabaseSurrogateToSwipeProfile(d)
+        : compareKind === "sperm-donor" ? mapDatabaseSpermDonorToSwipeProfile(d)
+          : mapDatabaseDonorToSwipeProfile(d);
+    return compareSource
+      .filter((d: any) => favoritedDonorIdsForCompare.includes(d.id))
+      .map((d: any) => ({ ...mapOne(d), id: d.id, providerId: d.providerId, updatedAt: d.updatedAt }));
+  }, [compareKind, compareSource, favoritedDonorIdsForCompare]);
+  const toggleCompare = useCallback((id: string) => {
+    setCompareIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : (prev.length >= COMPARE_MAX ? prev : [...prev, id]));
+  }, []);
+
   // What the deck actually renders, not how many the query returned - Discover
   // hides clinics the parent already saved or passed, and a header reading
   // "1 clinics found" above an empty deck looks like the marketplace is broken.
@@ -2181,6 +2211,56 @@ export default function MarketplacePage() {
   // The filters drawer is for everyone who sees the immersive deck (parents,
   // providers, admins) - the sliders button renders for all of them, so the
   // drawer must too (previously parent-only, which left admins' button dead).
+  // Compare, on Saved only. Two saved profiles is the point at which a parent
+  // starts diffing them by hand across browser tabs.
+  const compareSelected = comparableSaved.filter((p: any) => compareIds.includes(p.id));
+  const compareBarEl = isSavedView && compareKind && comparableSaved.length >= 2 ? (
+    <div className="w-full px-3 pt-2 flex flex-wrap items-center gap-2" data-testid="compare-bar">
+      <span className="t-helper">Compare</span>
+      {comparableSaved.map((p: any) => {
+        const on = compareIds.includes(p.id);
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => toggleCompare(p.id)}
+            disabled={!on && compareIds.length >= COMPARE_MAX}
+            className={cn(
+              "rounded-full border px-3 py-1 transition-colors disabled:opacity-40",
+              on ? "border-primary bg-primary/10" : "border-border hover:border-primary/40",
+            )}
+            data-testid={`compare-pick-${p.id}`}
+          >
+            <span className="t-micro-value">{p.displayName || p.name || `#${p.donorNumber ?? ""}`}</span>
+          </button>
+        );
+      })}
+      <Button
+        size="sm"
+        disabled={compareIds.length < 2}
+        onClick={() => setCompareOpen(true)}
+        data-testid="compare-open"
+      >
+        Compare {compareIds.length >= 2 ? compareIds.length : ""}
+      </Button>
+    </div>
+  ) : null;
+
+  const compareDrawerEl = compareOpen && compareKind && compareSelected.length >= 2 ? (
+    <CompareDrawer
+      kind={compareKind}
+      profiles={compareSelected as any}
+      available={comparableSaved as any}
+      onToggle={toggleCompare}
+      onClose={() => setCompareOpen(false)}
+      onOpenProfile={(p: any) => {
+        setCompareOpen(false);
+        const slug = compareKind === "surrogate" ? "surrogate" : compareKind === "sperm-donor" ? "spermdonor" : "eggdonor";
+        compareNavigate(`/${slug}/${p.providerId}/${p.id}`);
+      }}
+    />
+  ) : null;
+
   const filtersDrawerEl = (
     <MarketplaceFiltersDrawer
       providerType={currentProviderType}
@@ -2203,6 +2283,7 @@ export default function MarketplacePage() {
             />
           </div>
         )}
+        {compareBarEl}
 
         <div className="flex-1 min-h-0 relative" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           {!isSavedView && <MobileDeckControls onOpenFilters={openFiltersPage} />}
@@ -2259,6 +2340,7 @@ export default function MarketplacePage() {
           />
         )}
         {filtersDrawerEl}
+        {compareDrawerEl}
       </div>
     );
   }
@@ -2310,6 +2392,8 @@ export default function MarketplacePage() {
           />
         </div>
       )}
+      {compareBarEl}
+      {compareDrawerEl}
 
 
       <div className={isAdmin ? "pt-6" : ""}>

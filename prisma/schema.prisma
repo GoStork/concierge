@@ -902,6 +902,11 @@ model EggDonor {
   // status reflects the fresh-cycle matching state, frozenLotStatus
   // reflects the frozen inventory. The marketplace card renders both.
   frozenLotStatus      String?
+  /// One sentence lifted verbatim from this person's own writing, chosen by the
+  /// enrichment model as the line that says most about who they are. Stored
+  /// rather than picked per render: the choice costs a model call, and the same
+  /// profile must not quote a different sentence on every page load.
+  highlightQuote       String?
   profileData          Json?
   createdAt            DateTime                    @default(now())
   updatedAt            DateTime                    @updatedAt
@@ -979,6 +984,11 @@ model Surrogate {
   photoUrl                     String?
   profileUrl                   String?
   status                       String                      @default("AVAILABLE")
+  /// One sentence lifted verbatim from this person's own writing, chosen by the
+  /// enrichment model as the line that says most about who they are. Stored
+  /// rather than picked per render: the choice costs a model call, and the same
+  /// profile must not quote a different sentence on every page load.
+  highlightQuote               String?
   profileData                  Json?
   createdAt                    DateTime                    @default(now())
   updatedAt                    DateTime                    @updatedAt
@@ -1059,6 +1069,11 @@ model SpermDonor {
   photoUrl             String?
   profileUrl           String?
   status               String                      @default("AVAILABLE")
+  /// One sentence lifted verbatim from this person's own writing, chosen by the
+  /// enrichment model as the line that says most about who they are. Stored
+  /// rather than picked per render: the choice costs a model call, and the same
+  /// profile must not quote a different sentence on every page load.
+  highlightQuote       String?
   profileData          Json?
   createdAt            DateTime                    @default(now())
   updatedAt            DateTime                    @updatedAt

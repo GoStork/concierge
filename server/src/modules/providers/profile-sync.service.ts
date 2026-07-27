@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { refreshHighlightQuote } from "./highlight-quote";
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
@@ -2024,6 +2025,7 @@ async function upsertEggDonor(
   await migrateLocalPhotosToGcs(prisma, "eggDonor", providerId, extId, storageService || null).catch(() => {});
 
   updateProfileEmbedding(prisma, "EggDonor", upsertedDonor.id, mergedProfile).catch(() => {});
+  refreshHighlightQuote(prisma, "eggDonor", upsertedDonor.id, mergedProfile).catch(() => {});
   indexEntityFaces(prisma, "EggDonor", upsertedDonor.id).catch(() => {});
   return { isNew };
 }
@@ -2224,6 +2226,7 @@ async function upsertSurrogate(
     console.error(`[ASRM] gate failed for surrogate ${upsertedSurrogate.id}:`, e?.message || e));
 
   updateProfileEmbedding(prisma, "Surrogate", upsertedSurrogate.id, mergedProfile).catch(() => {});
+  refreshHighlightQuote(prisma, "surrogate", upsertedSurrogate.id, mergedProfile).catch(() => {});
   indexEntityFaces(prisma, "Surrogate", upsertedSurrogate.id).catch(() => {});
   return { isNew };
 }
@@ -2382,6 +2385,7 @@ async function upsertSpermDonor(
   await migrateLocalPhotosToGcs(prisma, "spermDonor", providerId, extId, storageService || null).catch(() => {});
 
   updateProfileEmbedding(prisma, "SpermDonor", upsertedSpermDonor.id, mergedProfile).catch(() => {});
+  refreshHighlightQuote(prisma, "spermDonor", upsertedSpermDonor.id, mergedProfile).catch(() => {});
   indexEntityFaces(prisma, "SpermDonor", upsertedSpermDonor.id).catch(() => {});
   return { isNew };
 }
