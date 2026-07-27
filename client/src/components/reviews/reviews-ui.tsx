@@ -306,15 +306,9 @@ function reviewDateLabel(r: { createdAt: string; updatedAt: string; stage?: stri
 }
 
 /** Aggregates + published list + self-serve form. Works for orgs (providerId) and doctors (memberId). */
-export function ReviewsSection({ providerId, memberId, targetLabel, isParent }: {
-  /** Org id; may be omitted for doctors (resolved via eligibility). */
-  providerId?: string | null;
-  memberId?: string | null;
-  targetLabel: string;
-  isParent: boolean;
-}) {
-  const [writing, setWriting] = useState(false);
-  const listQuery = useQuery<any>({
+/** Published reviews + aggregates for a provider or a doctor. */
+function useReviewsList(providerId?: string | null, memberId?: string | null) {
+  return useQuery<any>({
     queryKey: ["reviews", providerId || "byMember", memberId || "org"],
     queryFn: async () => {
       const url = memberId ? `/api/reviews/member/${memberId}` : `/api/reviews/provider/${providerId}`;
@@ -325,7 +319,11 @@ export function ReviewsSection({ providerId, memberId, targetLabel, isParent }: 
     enabled: !!(providerId || memberId),
     staleTime: 30_000,
   });
-  const eligQuery = useQuery<any>({
+}
+
+/** Whether this parent may write (or update) a review of this target. */
+function useReviewEligibility(providerId?: string | null, memberId?: string | null, isParent?: boolean) {
+  return useQuery<any>({
     queryKey: ["review-eligibility", providerId || "byMember", memberId || "org"],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -335,9 +333,42 @@ export function ReviewsSection({ providerId, memberId, targetLabel, isParent }: 
       if (!res.ok) return null;
       return res.json();
     },
-    enabled: isParent && !!(providerId || memberId),
+    enabled: !!isParent && !!(providerId || memberId),
     staleTime: 30_000,
   });
+}
+
+/**
+ * Whether a reviews card is worth rendering at all.
+ *
+ * False only when there is nothing to read AND nothing to do. An eligible
+ * parent still gets the card even with zero reviews - otherwise the first
+ * review of a provider could never be written from their profile.
+ *
+ * Shares query keys with ReviewsSection, so gating a card on this costs no
+ * extra requests.
+ */
+export function useHasReviewsContent({ providerId, memberId, isParent }: {
+  providerId?: string | null;
+  memberId?: string | null;
+  isParent: boolean;
+}): boolean {
+  const listQuery = useReviewsList(providerId, memberId);
+  const eligQuery = useReviewEligibility(providerId, memberId, isParent);
+  const count = listQuery.data?.aggregates?.count ?? (listQuery.data?.reviews?.length || 0);
+  return count > 0 || !!eligQuery.data?.eligible;
+}
+
+export function ReviewsSection({ providerId, memberId, targetLabel, isParent }: {
+  /** Org id; may be omitted for doctors (resolved via eligibility). */
+  providerId?: string | null;
+  memberId?: string | null;
+  targetLabel: string;
+  isParent: boolean;
+}) {
+  const [writing, setWriting] = useState(false);
+  const listQuery = useReviewsList(providerId, memberId);
+  const eligQuery = useReviewEligibility(providerId, memberId, isParent);
 
   const agg = listQuery.data?.aggregates;
   const reviews: any[] = listQuery.data?.reviews || [];

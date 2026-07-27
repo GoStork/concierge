@@ -17,7 +17,7 @@ import { dedupeProviderLocations } from "@/lib/format-location";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileCloseButton } from "@/components/mobile-profile-close-header";
-import { ReviewsSection, RatingBadge } from "@/components/reviews/reviews-ui";
+import { ReviewsSection, RatingBadge, useHasReviewsContent } from "@/components/reviews/reviews-ui";
 import { Field } from "@/components/ui/field";
 
 function FieldItem({ label, value }: { label: string; value: string | null | undefined }) {
@@ -35,6 +35,9 @@ export default function ProviderProfilePage() {
   const chatState = location.state as { fromChat?: boolean; chatPath?: string } | null;
   const fromChat = chatState?.fromChat === true;
   const chatPath = chatState?.chatPath || "/chat";
+  const isParentViewer = !!(user as any)?.parentAccountId && !(user as any)?.providerId;
+  // Shares ReviewsSection's query keys, so this costs no extra requests.
+  const hasReviewsContent = useHasReviewsContent({ providerId: id, isParent: isParentViewer });
 
   const filterContext = useMemo(() => {
     const eggSource = searchParams.get("eggSource");
@@ -408,14 +411,18 @@ export default function ProviderProfilePage() {
         </ProfileSection>
       )}
 
-      {/* Phase 8: verified-parent reviews (display-only; self-serve write when eligible). */}
-      {!window.location.pathname.startsWith("/admin/") && (
+      {/* Phase 8: verified-parent reviews (display-only; self-serve write when
+          eligible). Hidden entirely when there is nothing to read and nothing
+          to do - an empty "Reviews / No reviews yet" card is noise on a
+          provider's profile. An eligible parent still sees it so the first
+          review can be written. */}
+      {!window.location.pathname.startsWith("/admin/") && hasReviewsContent && (
         <div id="parent-reviews-section" className="scroll-mt-24">
         <ProfileSection title="Parent Reviews" data-testid="section-reviews">
           <ReviewsSection
             providerId={provider.id}
             targetLabel={provider.name}
-            isParent={!!(user as any)?.parentAccountId && !(user as any)?.providerId}
+            isParent={isParentViewer}
           />
         </ProfileSection>
         </div>
