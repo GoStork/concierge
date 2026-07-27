@@ -306,3 +306,28 @@ When you add a new quality signal we should check, add it as a `qualityCheck` in
 *When you solve a NEW scraper problem, add it here* (and to the shared engine) so the next
 agency doesn't rediscover it. Related: the CLAUDE.md "Donor Sync Scraping Rules" bullet
 points here.
+
+## Duplicate field labels are the provider's, not ours
+
+Genesis (`genesiseggdonation.o-jms.com`) labels **two different questions
+`Ethnicity`** on the same donor page:
+
+```html
+<!-- section: Physical Traits -->
+<label class="field">Ethnicity</label><div class="answer">Peruvian 50%, English 25%, Irish 25%</div>
+<!-- section: Additional Information, data-profile-question-id="639" -->
+<label class="field">Ethnicity</label><div class="answer">No</div>
+```
+
+The parser is right to store both - the label really is `Ethnicity` in both
+places. 388 donors carry `Additional Information.Ethnicity = "No"`, a handful
+carry real text ("We are 100% Venezuelan"). Do NOT "fix" this in the scraper by
+renaming or dropping the field: the DB stays faithful to the source. The profile
+page reconciles it at render time (`collectDuplicateLabels` /
+`isSubstantiveAnswer` in `profile-detail-page.tsx`) by hiding a duplicate label
+only when its answer is contentless AND the same label has substance elsewhere.
+
+To inspect real markup before changing any parser:
+`npx tsx -r dotenv/config scripts/dump-donor-profile-html.ts <externalId> /tmp/p.html`
+It reuses the sync engine's own login + fetch, so it authenticates exactly the
+way a real sync does.

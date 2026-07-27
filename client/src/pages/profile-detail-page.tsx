@@ -331,6 +331,43 @@ function normalizeProse(text: string): string {
 }
 
 /**
+ * Answers that decline the question rather than answer it. A field holding one
+ * of these tells a reader nothing on its own.
+ */
+const NON_ANSWER_PATTERN =
+  /^(no|nope|none|n\/?a|nothing|not at (the|this) (moment|time)|not applicable|-{1,2}|—)[.!]?$/i;
+
+/** True when an answer actually carries information. */
+function isSubstantiveAnswer(value: any): boolean {
+  if (typeof value !== "string") return value != null && value !== "";
+  const trimmed = value.trim();
+  return trimmed !== "" && !NON_ANSWER_PATTERN.test(trimmed);
+}
+
+/**
+ * Field labels that appear in more than one section, with where each lives.
+ * Providers reuse a label for two different questions more often than you would
+ * expect, so the profile has to reconcile them at render time.
+ */
+function collectDuplicateLabels(
+  sections: Record<string, any>,
+): Map<string, { section: string; value: any }[]> {
+  const byLabel = new Map<string, { section: string; value: any }[]>();
+  for (const [sectionName, sectionData] of Object.entries(sections)) {
+    if (typeof sectionData !== "object" || sectionData === null || Array.isArray(sectionData)) continue;
+    for (const [label, value] of Object.entries(sectionData)) {
+      if (label.startsWith("_")) continue;
+      if (!byLabel.has(label)) byLabel.set(label, []);
+      byLabel.get(label)!.push({ section: sectionName, value });
+    }
+  }
+  for (const [label, hits] of byLabel) {
+    if (hits.length < 2) byLabel.delete(label);
+  }
+  return byLabel;
+}
+
+/**
  * Sections that are a person talking, not a data table. Every entry in these
  * renders as a PromptBlock (small accent eyebrow + large prose answer) no
  * matter how short the answer is - the question is scaffolding, the answer is
@@ -1098,6 +1135,25 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
                 delete (secData as Record<string, any>)[k];
               }
             }
+          }
+        }
+
+        // A provider's own intake form can label two different questions
+        // identically. Genesis has an "Ethnicity" trait in Physical Traits
+        // ("Peruvian 50%, English 25%, Irish 25%") AND a separate follow-up
+        // question, also labelled "Ethnicity", that most donors answer "No" -
+        // both are on their page and both are scraped faithfully. Rendering
+        // "Ethnicity: No" beside the real one reads as a data error.
+        //
+        // Drop the empty twin ONLY when it carries no information AND the same
+        // label has substance elsewhere on the profile. A follow-up with a real
+        // answer ("We are 100% Venezuelan") is kept - that is content a parent
+        // wants, whatever the agency chose to call the field.
+        for (const [label, hits] of collectDuplicateLabels(pd)) {
+          if (!hits.some((h: { value: any }) => isSubstantiveAnswer(h.value))) continue;
+          for (const hit of hits) {
+            if (isSubstantiveAnswer(hit.value)) continue;
+            delete (pd[hit.section] as Record<string, any>)[label];
           }
         }
 

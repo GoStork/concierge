@@ -433,7 +433,7 @@ async function fetchHtmlOnce(url: string, cookies?: string, timeoutMs = 20000, m
 // entire 560-profile run, zeroing it. We now give transient blips up to 2 short
 // retries so one stalled read no longer fails the whole sync. Hard errors (4xx,
 // bad markup) still fail fast so the real cause stays visible.
-async function fetchHtml(url: string, cookies?: string, timeoutMs = 20000, maxChars = 500000): Promise<string> {
+export async function fetchHtml(url: string, cookies?: string, timeoutMs = 20000, maxChars = 500000): Promise<string> {
   if (!url.startsWith('http')) {
     console.warn(`[donor-sync] fetchHtml caught invalid relative URL: ${url}`);
     return "";
@@ -499,7 +499,7 @@ function snippetAround(html: string, keyword: string, span = 160): string | null
   return html.slice(start, end).replace(/\s+/g, " ").trim();
 }
 
-async function authenticateAndGetCookies(
+export async function authenticateAndGetCookies(
   loginPageUrl: string,
   username: string,
   password: string,
