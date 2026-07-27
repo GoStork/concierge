@@ -31,10 +31,13 @@ export function ProfileQuote({ quote, className }: { quote?: string | null; clas
           opening mark with no closing mark reads as a design flourish, which
           quietly undersells that these are her words and not our copy. The
           closing mark is the same glyph turned 180 degrees. */}
-      <Quote className="w-4 h-4 shrink-0 mt-1 text-accent" aria-hidden />
+      {/* lucide's Quote glyph is a CLOSING mark, so the OPENING one is the
+          rotated copy - not the other way round, which is how it shipped and
+          gave the sentence two closing marks pointing the wrong way. */}
+      <Quote className="w-4 h-4 shrink-0 mt-1 text-accent rotate-180" aria-hidden />
       <blockquote className="t-prompt-answer italic">
         {text}
-        <Quote className="w-4 h-4 inline-block ml-1 -mb-0.5 text-accent rotate-180" aria-hidden />
+        <Quote className="w-4 h-4 inline-block ml-1 -mb-0.5 text-accent" aria-hidden />
       </blockquote>
     </figure>
   );
