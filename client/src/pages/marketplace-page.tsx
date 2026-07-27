@@ -355,12 +355,16 @@ function IvfClinicGrid({ providers, eggSource, ageGroup, isNewPatient, sortBy, o
 // IVF Clinics view: the SAME ClinicSwipeCard the AI matcher uses (cream cover +
 // doctor-face tabs + success bars), as a mobile swipe stack / desktop grid, with
 // persistent save/pass via /api/profile-preferences (clinic, keyed by providerId).
-function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortBy }: {
+function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortBy, onFilteredCountChange }: {
   providers: ProviderWithRelations[] | undefined;
   eggSource: string;
   ageGroup: string;
   isNewPatient: string;
   sortBy: string;
+  /** Reports how many clinics are actually rendered, so the header count can
+   *  match the deck. Discover hides saved and passed clinics, so the raw list
+   *  length is not what the parent sees. */
+  onFilteredCountChange?: (count: number) => void;
 }) {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -407,6 +411,10 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
     });
     return withRates.map((x) => x.provider);
   }, [providers, eggSource, sortBy, showFavoritesOnly, favoritedClinics, showSkippedOnly, passedClinics]);
+
+  useEffect(() => {
+    onFilteredCountChange?.(sorted.length);
+  }, [sorted.length, onFilteredCountChange]);
 
   const goToProfile = (id: string) => {
     const params = new URLSearchParams();
@@ -2018,10 +2026,6 @@ export default function MarketplacePage() {
     ivfSpecialtyOptions: SPECIALTY_OPTIONS,
   };
 
-  const ivfClinicCount = useMemo(() => {
-    if (!clinics || !isIvfTab) return 0;
-    return clinics.length;
-  }, [clinics, isIvfTab]);
 
   const {
     data: eggDonorPages,
@@ -2099,6 +2103,14 @@ export default function MarketplacePage() {
 
   const [filteredCount, setFilteredCount] = useState<number | null>(null);
   const onFilteredCountChange = useCallback((count: number) => setFilteredCount(count), []);
+
+  // What the deck actually renders, not how many the query returned - Discover
+  // hides clinics the parent already saved or passed, and a header reading
+  // "1 clinics found" above an empty deck looks like the marketplace is broken.
+  const ivfClinicCount = useMemo(() => {
+    if (!clinics || !isIvfTab) return 0;
+    return filteredCount ?? clinics.length;
+  }, [clinics, isIvfTab, filteredCount]);
   const hasResults = isLoading || (filteredCount === null ? true : filteredCount > 0);
 
   // The filters drawer is for everyone who sees the immersive deck (parents,
@@ -2153,7 +2165,7 @@ export default function MarketplacePage() {
               {isIvfTab && (
                 showFavoritesOnly
                   ? <MobileSavedGrid kind="clinic" items={(clinics as any) || []} />
-                  : <IvfClinicDeckGrid providers={clinics as any} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} />
+                  : <IvfClinicDeckGrid providers={clinics as any} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} onFilteredCountChange={onFilteredCountChange} />
               )}
               {isDoctorTab && (
                 showFavoritesOnly
@@ -2300,6 +2312,7 @@ export default function MarketplacePage() {
                 ageGroup={ageGroup}
                 isNewPatient={isNewPatient}
                 sortBy={sortBy}
+                onFilteredCountChange={onFilteredCountChange}
               />
             )}
             {isDoctorTab && (
