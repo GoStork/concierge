@@ -20,13 +20,17 @@
  * --bio-only             : skip the NPPES/ABOG network lookups and re-extract
  *                          from text only. Much faster and the right mode when
  *                          only the text-extraction side changed.
+ * --derive-only          : no AI and no network at all. Re-derives medicalSchool
+ *                          from education[] and re-canonicalizes languagesSpoken
+ *                          using the current rules. Instant, idempotent, and the
+ *                          right mode after changing a derivation rule.
  */
 
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { buildDoctorEnrichment, medicalSchoolFromEducation } from "../server/src/modules/providers/doctor-data";
+import { buildDoctorEnrichment, medicalSchoolFromEducation, canonicalizeLanguages } from "../server/src/modules/providers/doctor-data";
 
 const pool = new pg.Pool({ connectionString: process.env.DIRECT_URL || process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -73,14 +77,18 @@ async function main() {
     ];
   }
   if (DERIVE_ONLY) {
-    // Only rows that actually hold an education list to derive from.
-    where.NOT = { education: { isEmpty: true } };
+    // Rows holding something to re-derive from: an education list, or a
+    // language list that may predate the canonicalization rules.
+    where.OR = [
+      { NOT: { education: { isEmpty: true } } },
+      { NOT: { languagesSpoken: { isEmpty: true } } },
+    ];
   }
 
   const members = await prisma.providerMember.findMany({
     where,
     select: {
-      id: true, name: true, bio: true, bioRaw: true, education: true, medicalSchool: true, fieldSources: true,
+      id: true, name: true, bio: true, bioRaw: true, education: true, medicalSchool: true, languagesSpoken: true, fieldSources: true,
       provider: { select: { locations: { orderBy: { sortOrder: "asc" }, take: 1 } } },
     },
     take: limit,
@@ -89,24 +97,40 @@ async function main() {
   console.log(`[doctor-data] ${members.length} members to process`);
 
   if (DERIVE_ONLY) {
-    let set = 0, unchanged = 0, noMatch = 0;
+    let schoolSet = 0, langFixed = 0, unchanged = 0;
     for (const m of members) {
-      const school = medicalSchoolFromEducation(m.education);
-      if (!school) { noMatch++; continue; }
-      if (m.medicalSchool === school) { unchanged++; continue; }
       const sources = { ...((m.fieldSources as any) || {}) };
-      if (sources.medicalSchool === "self") { unchanged++; continue; } // never clobber a human entry
-      sources.medicalSchool = "bio";
-      if (set < 25) console.log(`[doctor-data]   ${m.name}: medicalSchool="${school}"`);
-      if (!DRY_RUN) {
-        await prisma.providerMember.updateMany({
-          where: { id: m.id },
-          data: { medicalSchool: school, fieldSources: sources },
-        });
+      const data: any = {};
+
+      const school = medicalSchoolFromEducation(m.education);
+      if (school && m.medicalSchool !== school && sources.medicalSchool !== "self") {
+        data.medicalSchool = school;
+        sources.medicalSchool = "bio";
+        schoolSet++;
       }
-      set++;
+
+      // Collapse alias duplicates ("Farsi" + "Persian") and strip qualifiers
+      // ("Medical Spanish") left by the pre-canonicalization union.
+      if (m.languagesSpoken.length > 0 && sources.languagesSpoken !== "self") {
+        const canon = canonicalizeLanguages(m.languagesSpoken);
+        const changed =
+          canon.length !== m.languagesSpoken.length ||
+          canon.some((v, i) => v !== m.languagesSpoken[i]);
+        if (changed && canon.length > 0) {
+          data.languagesSpoken = canon;
+          if (langFixed < 20) {
+            console.log(`[doctor-data]   ${m.name}: [${m.languagesSpoken.join(", ")}] -> [${canon.join(", ")}]`);
+          }
+          langFixed++;
+        }
+      }
+
+      if (Object.keys(data).length === 0) { unchanged++; continue; }
+      if (!DRY_RUN) {
+        await prisma.providerMember.updateMany({ where: { id: m.id }, data: { ...data, fieldSources: sources } });
+      }
     }
-    console.log(`[doctor-data] derive-only done. set=${set} unchanged=${unchanged} noEducationMatch=${noMatch} ${DRY_RUN ? "(NO WRITES)" : ""}`);
+    console.log(`[doctor-data] derive-only done. medicalSchool=${schoolSet} languagesCanonicalized=${langFixed} unchanged=${unchanged} ${DRY_RUN ? "(NO WRITES)" : ""}`);
     return;
   }
 

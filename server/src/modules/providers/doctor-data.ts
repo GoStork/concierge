@@ -228,7 +228,7 @@ const KNOWN_LANGUAGES = [
   "Portuguese", "Russian", "Arabic", "Hebrew", "Hindi", "Urdu", "Punjabi", "Gujarati",
   "Bengali", "Tamil", "Telugu", "Marathi", "Malayalam", "Kannada", "Korean", "Japanese",
   "Vietnamese", "Thai", "Tagalog", "Filipino", "Polish", "Ukrainian", "Romanian", "Greek",
-  "Turkish", "Persian", "Farsi", "Armenian", "Georgian", "Dutch", "Swedish", "Norwegian",
+  "Turkish", "Persian", "Armenian", "Georgian", "Dutch", "Swedish", "Norwegian",
   "Danish", "Finnish", "Hungarian", "Czech", "Slovak", "Serbian", "Croatian", "Bosnian",
   "Bulgarian", "Albanian", "Lithuanian", "Latvian", "Estonian", "Amharic", "Somali",
   "Swahili", "Yoruba", "Igbo", "Nepali", "Sinhala", "Burmese", "Khmer", "Lao", "Indonesian",
@@ -241,7 +241,42 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   français: "French", deutsch: "German", italiano: "Italian", portugues: "Portuguese",
   português: "Portuguese", "mandarin chinese": "Mandarin", putonghua: "Mandarin",
   farsi: "Persian", asl: "American Sign Language", filipino: "Tagalog",
+  hokkien: "Fukien", taiwanese: "Taiwanese", "brazilian portuguese": "Portuguese",
+  "simplified chinese": "Mandarin", "traditional chinese": "Cantonese",
 };
+
+// Qualifiers clinics and the model attach to a language ("Medical Spanish",
+// "conversational French"). The qualifier is not part of the language's name.
+const LANGUAGE_QUALIFIER = /^(?:medical|conversational|basic|working|fluent|native|business|some)\s+/i;
+
+/**
+ * Canonicalize and dedupe a language list.
+ *
+ * Applied to BOTH sources. The deterministic extractor already canonicalizes,
+ * but the model returns whatever the page said, so unioning them raw stored
+ * "Farsi" next to "Persian" and "Deutsch" next to "German" - the same language
+ * listed twice on one profile. Unrecognized entries are kept rather than
+ * dropped: "Taiwanese" and "Fukien" are real answers we should not silently
+ * discard just because they are not in the known list.
+ */
+export function canonicalizeLanguages(list: string[] | null | undefined): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of list || []) {
+    if (typeof raw !== "string") continue;
+    let t = raw.trim().replace(/[.,;:]+$/, "").replace(LANGUAGE_QUALIFIER, "").trim();
+    if (t.length < 2 || t.length > 30) continue;
+    const lower = t.toLowerCase();
+    const canonical =
+      LANGUAGE_ALIASES[lower] || KNOWN_LANGUAGES.find((l) => l.toLowerCase() === lower) || null;
+    const value = canonical || t.replace(/\b\w/g, (c) => c.toUpperCase());
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
 
 export function extractLanguagesFromText(text: string): string[] {
   if (!text) return [];
@@ -443,7 +478,9 @@ export async function buildDoctorEnrichment(opts: {
   // prose reading, so neither source alone is sufficient. Runs even when the
   // model returned nothing at all.
   const deterministicLangs = wants("bio") && extractionText ? extractLanguagesFromText(extractionText) : [];
-  const allLanguages = [...new Set([...(bioFields?.languagesSpoken || []), ...deterministicLangs])];
+  // Canonicalize the UNION, not each half - otherwise the model's "Farsi" and
+  // the extractor's "Persian" both survive as separate entries.
+  const allLanguages = canonicalizeLanguages([...(bioFields?.languagesSpoken || []), ...deterministicLangs]);
   set("languagesSpoken", allLanguages, "bio");
 
   if (bioFields) {
