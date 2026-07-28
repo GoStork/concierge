@@ -195,6 +195,14 @@ function renderRichLine(line: string): React.ReactNode[] {
   return out;
 }
 
+// The first chip of a binary quick reply gets the positive styling, but the
+// thumbs-up icon only belongs on chips that actually say yes. "Find me a better
+// match" is the first option yet it declines the profile, so a thumbs-up reads
+// as sarcasm. Only affirmatives get the icon.
+function isAffirmativeReply(text: string): boolean {
+  return /^\s*(yes\b|yeah\b|yep\b|yup\b|sure\b|ok\b|okay\b|absolutely\b|definitely\b|of course\b|sounds good\b|sounds great\b|makes sense\b|got it\b|perfect\b|great\b|i understand\b|i'?m ready\b|i do\b|let'?s\b|please do\b|that works\b|works for me\b|confirm\b)/i.test(text);
+}
+
 function chatDateLabel(dateStr: string): string {
   const d = new Date(dateStr);
   const now = new Date();
@@ -5070,7 +5078,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                                   data-testid={`quick-reply-${qi}`}
 
                                 >
-                                  {isBinary && qi === 0 && <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />}
+                                  {isBinary && qi === 0 && isAffirmativeReply(qr) && <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />}
                                   {isSelected && <Check className="shrink-0" style={{ width: "11px", height: "11px", marginRight: "4px" }} />}
                                   {qr}
                                 </Button>
