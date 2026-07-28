@@ -276,6 +276,13 @@ async function px06() {
   check("a matching trait is reported", keys.includes("eyeColor"), JSON.stringify(keys));
   check("an in-range age is reported", keys.includes("age"), JSON.stringify(keys));
   check("a trait she does not have is NOT reported as a match", !keys.includes("hairColor"), JSON.stringify(keys));
+  // No cap on the chips: the row wraps, and "+1 more" was a dead label - it
+  // announced a match and gave no way to see it. Claiming "5 of your 5" and
+  // then showing four is worse than not counting.
+  const fitSrc = readFileSync("client/src/components/profile-fit-line.tsx", "utf8");
+  check("every matched chip is rendered, none hidden behind a counter",
+    !/more<\/span>|slice\(0,\s*\d/.test(fitSrc));
+
   check("every match carries a label the page can print",
     matched.every((m: any) => typeof m.displayLabel === "string" && m.displayLabel.length > 0), JSON.stringify(matched));
   check("no preferences means no claims", getMatchedPreferences(profile, []).length === 0);

@@ -64,8 +64,11 @@ export function ProfileFitLine({
   // negative on someone's profile.
   if (matched.length === 0) return null;
 
-  const shownMatches = matched.slice(0, 4);
-  const shownMisses = missedKeys.slice(0, 2);
+  // No cap. The row wraps, so there is room for all of them at any width - and
+  // "+1 more" was a dead label: it announced that something matched and gave no
+  // way to see what. Telling a parent she matches five of five and then hiding
+  // one of the five is worse than not counting at all.
+  const shownMisses = missedKeys;
 
   return (
     <div className={className} data-testid="profile-fit-line">
@@ -73,21 +76,17 @@ export function ProfileFitLine({
         Matches {matched.length} of your {keys.length} {keys.length === 1 ? "preference" : "preferences"}
       </p>
       <ChipRow className="mt-1.5">
-        {shownMatches.map((m) => (
+        {matched.map((m) => (
           <AttributeChip key={m.key} icon={Check} data-testid={`fit-match-${m.key}`}>
             {m.displayLabel}
           </AttributeChip>
         ))}
-        {matched.length > shownMatches.length && (
-          <span className="t-helper self-center">+{matched.length - shownMatches.length} more</span>
-        )}
       </ChipRow>
       {shownMisses.length > 0 && (
         <p className="t-helper mt-1.5 flex items-center gap-1.5" data-testid="fit-misses">
           <X className="w-3.5 h-3.5 shrink-0" />
           <span>
-            Doesn't match your {shownMisses.map(prefNoun).join(" or ")}
-            {missedKeys.length > shownMisses.length ? `, +${missedKeys.length - shownMisses.length} more` : ""}
+            Doesn't match your {shownMisses.map(prefNoun).join(", ")}
           </span>
         </p>
       )}
