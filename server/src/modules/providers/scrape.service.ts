@@ -627,7 +627,12 @@ function findDoctorSubpageUrls(html: string, baseUrl: string): string[] {
   const base = new URL(baseUrl);
   const linkRegex = /<a[^>]+href=["']([^"'#]+)["'][^>]*>/gi;
   const candidates: string[] = [];
-  const doctorPathPatterns = /\/(?:physicians?|doctors?|specialists?|providers?|teams?|staff|members?|people|faculty|experts?)[^/]*\/[^/]+\/?$/i;
+  // The keyword may be PREFIXED within its path segment: clinics write
+  // /our-physicians/, /meet-the-team/, /fertility-specialists/ at least as often
+  // as the bare /physicians/. Anchoring the keyword to the start of the segment
+  // missed all of those, and with them every per-doctor page underneath - which
+  // is where education and languages live.
+  const doctorPathPatterns = /\/[^/]*(?:physician|doctor|specialist|provider|team|staff|member|people|faculty|expert)[^/]*\/[^/]+\/?$/i;
 
   let match;
   while ((match = linkRegex.exec(html)) !== null) {
@@ -1120,7 +1125,9 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
   console.log(`[scraper] Mapped ${memberLocationMap.size} members to locations from location pages`);
 
   let doctorSubpageUrls: string[] = [];
-  const doctorPagePattern = /\/(?:physicians?|doctors?|specialists?|providers?|teams?|staff|members?|people|faculty)\//i;
+  // Prefixed segments too - see findDoctorSubpageUrls. /our-team/dr-jane-smith
+  // is a doctor page just as much as /team/dr-jane-smith.
+  const doctorPagePattern = /\/[^/]*(?:physician|doctor|specialist|provider|team|staff|member|people|faculty)[^/]*\//i;
   for (const result of subpageResults) {
     if (result && doctorPagePattern.test(result.url)) {
       const docUrls = findDoctorSubpageUrls(result.html, result.url);
