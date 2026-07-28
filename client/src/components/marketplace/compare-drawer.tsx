@@ -352,11 +352,14 @@ export function CompareDrawer({
                           t-micro-label on white and vanished into the rows they
                           were meant to separate - in a table this long, the
                           group is the only thing telling a parent what they are
-                          looking at. */}
-                      <div className="flex items-center gap-3">
-                        <span className="font-heading text-base text-foreground">{group}</span>
-                        <span className="h-px flex-1 bg-border" />
-                      </div>
+                          looking at.
+
+                          No rule trailing off the title. It was drawn when the
+                          heading needed help separating itself from the rows;
+                          the row above already ends in a border and the row
+                          below starts with one, so it was a third line in the
+                          same inch, running out of the word for no reason. */}
+                      <span className="font-heading text-base text-foreground">{group}</span>
                     </td>
                   </tr>
                   {rows.map((row) => {
