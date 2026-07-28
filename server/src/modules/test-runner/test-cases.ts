@@ -909,8 +909,8 @@ export const TEST_CASES: TestCaseDef[] = [
   },
   {
     id: "PX-07", persona: "profile-ux",
-    name: "PX-07: Sections read in three bands, in the right order",
-    desc: "At a glance -> In her own words -> Medical & background, source order preserved within a band, one heading per band that has sections, and nothing dropped (band 3 moved down, never hidden)",
+    name: "PX-07: Sections are ordered by what actually decides the choice",
+    desc: "Surrogate: pregnancy history -> medical -> support system -> her letter. Egg donor: donation history -> medical -> family history -> her letter -> education. Replaced a three-band model that sorted by KIND of content and so buried the medical history a parent is actually choosing on. Unranked sections keep the agency's order, and 'Family Medical History' must not rank as her own medical history",
     interestedServices: [], messageCount: 0,
   },
   {

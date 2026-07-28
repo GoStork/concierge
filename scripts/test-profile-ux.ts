@@ -1,12 +1,13 @@
 /**
  * GoStork - Profile experience guards (PX-xx)
  *
- * Twelve changes shipped to the donor / surrogate / clinic profile surfaces in
- * July 2026. Every one of them is a RENDERING decision, which is exactly the
- * class of change no other suite in this repo can see: the concierge suites
- * assert what Eva says, the journey suite asserts what moves, and neither
- * notices when a profile starts quoting a sentence she never wrote or
- * publishing a $300,000 compensation figure.
+ * The profile work shipped to the donor / surrogate / clinic surfaces in July
+ * 2026 - twelve changes, plus four cases covering the gaps those twelve left.
+ * Nearly all of it is a RENDERING decision, which is exactly the class of
+ * change no other suite in this repo can see: the concierge suites assert what
+ * the AI says, the journey suite asserts what moves, and neither notices when a
+ * profile starts quoting a sentence she never wrote or publishing a $300,000
+ * compensation figure.
  *
  * So each case tests the decision, not the pixels: the pure function that
  * decides what a parent reads. Where that logic lived inline in JSX it was
@@ -711,7 +712,7 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "PX-04", name: "Freshness claims only what it can prove", run: px04 },
   { id: "PX-05", name: "The cost ladder collapses only what is genuinely identical", run: px05 },
   { id: "PX-06", name: "The fit line knows what THIS parent asked for", run: px06 },
-  { id: "PX-07", name: "Sections read in three bands, in the right order", run: px07 },
+  { id: "PX-07", name: "Sections are ordered by what actually decides the choice", run: px07 },
   { id: "PX-08", name: "The pull-quote is hers, whole, and not staff copy", run: px08 },
   { id: "PX-09", name: "Saving from the action rail keeps her on the grid", run: px09 },
   { id: "PX-10", name: "The comparison drops dead rows and keeps real gaps", run: px10 },
