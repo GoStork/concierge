@@ -11,13 +11,21 @@
  *   - the galleries de-duplicate by URL string.
  *
  * Neither sees two encodings of one photo, because the bytes differ. That is
- * what this module is for: a 64-bit dHash per stored photo, compared inside a
- * single profile, keeping the largest copy and dropping the rest.
+ * what this module is for: a small greyscale thumbnail per stored photo,
+ * correlated inside a single profile, keeping the largest copy of each picture
+ * and dropping the rest.
+ *
+ * Two signals, both required (see isSamePicture): the thumbnails must match
+ * OVERALL and they must match EVERYWHERE. Each rules out a failure the other
+ * misses. A 64-bit perceptual hash was tried first and cannot do either job -
+ * on real profiles it put a re-encoded copy at distance 5 and a completely
+ * different photo of the same donor at 10 - and overall correlation alone calls
+ * two frames of one graduation photo, one with a raised hand, a duplicate.
  *
  * Two deliberate conservatisms, because a false positive deletes a real photo
  * from someone's profile:
  *   - a photo we could not fingerprint is never dropped, and
- *   - the distance threshold is tight (near-identical, not merely similar).
+ *   - the bar is "the same picture", not "a similar picture".
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -26,12 +34,48 @@ import type { PrismaService } from "../prisma/prisma.service";
 import type { StorageService } from "../storage/storage.service";
 
 /**
- * Maximum Hamming distance (out of 64) at which two photos are called the same
- * picture. A resize of one image scores 0-2; genuinely different photos of the
- * same scene sit well above this. Raising it trades missed duplicates for
- * deleted photos, so it stays low.
+ * How alike two photos must be (normalised correlation of their 32x32
+ * thumbnails, 1 = identical) before one is called a copy of the other.
+ *
+ * Measured on real profiles: verified copies - the same picture re-uploaded at
+ * another size or re-compressed - score 0.995 to 1.000, while genuinely
+ * different photos of the same person in the same session top out at 0.812.
+ * 0.95 sits in the empty band between, so the rule has room on both sides.
+ * (The one case in between, 0.857, was a square CROP of another photo; crops
+ * are deliberately NOT dropped - see the note on planDedupe.)
  */
-export const DEDUP_DISTANCE = Number(process.env.PHOTO_DEDUP_DISTANCE ?? 4);
+export const DEDUP_CORRELATION = Number(process.env.PHOTO_DEDUP_CORRELATION ?? 0.95);
+
+/**
+ * The second, local test: the largest per-block difference allowed between two
+ * copies, in globally-normalised units.
+ *
+ * Overall correlation alone is not enough. Two photos taken seconds apart from
+ * the same spot - one graduation shot with a raised hand, one without - can
+ * correlate at 0.959, because everything outside that hand is identical.
+ * Splitting the thumbnail into 8x8 blocks catches exactly that, because the
+ * change is concentrated where the subject moved.
+ *
+ * The cut is drawn from eyeballing every drop near it on real profiles:
+ * confirmed copies deviate 0.000 to 0.196 (the top of that range is the same
+ * photo re-saved with a different sticker over a face), while confirmed
+ * different frames of one moment start at 0.242 (arms raised in one, down in
+ * the other) and run to 0.721. 0.20 keeps the copies and refuses the frames.
+ */
+export const DEDUP_MAX_BLOCK_DEVIATION = Number(process.env.PHOTO_DEDUP_MAX_BLOCK_DEVIATION ?? 0.2);
+
+/** Side of the square blocks the local test compares (THUMB_N must divide by it). */
+const BLOCK_N = 8;
+
+/**
+ * Hamming distance beyond which two photos cannot be copies, used only to skip
+ * the thumbnail comparison. Every verified copy measured scored 11 or less, so
+ * 32 is a wide margin - this is a shortcut, never the decision.
+ */
+const PREFILTER_DISTANCE = 32;
+
+/** Side of the greyscale thumbnail we store and compare. */
+const THUMB_N = 32;
 
 const FINGERPRINT_CONCURRENCY = Number(process.env.PHOTO_FINGERPRINT_CONCURRENCY ?? 6);
 const FAILED_RETRY_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
@@ -41,6 +85,8 @@ const UPLOADS_DIR = path.resolve(process.cwd(), "public/uploads");
 export type Fingerprint = {
   url: string;
   phash: string | null;
+  /** Base64 of a THUMB_N x THUMB_N greyscale thumbnail. */
+  thumb: string | null;
   width: number | null;
   height: number | null;
   bytes: number | null;
@@ -84,11 +130,84 @@ export async function computeDHash(buffer: Buffer): Promise<string | null> {
   }
 }
 
-/** Fingerprint image bytes: perceptual hash plus the dimensions we rank by. */
+/**
+ * The thumbnail the duplicate test compares: THUMB_N x THUMB_N greyscale,
+ * squashed to a square so a resize of the same photo lands on the same grid.
+ */
+export async function computeThumb(buffer: Buffer): Promise<string | null> {
+  try {
+    const raw = await sharp(buffer, { failOn: "none" })
+      .greyscale()
+      .resize(THUMB_N, THUMB_N, { fit: "fill" })
+      .raw()
+      .toBuffer();
+    return raw.length === THUMB_N * THUMB_N ? raw.toString("base64") : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Thumbnail as z-scores (mean 0, unit variance), so brightness and contrast
+ * differences between two encodings of one photo do not weaken the match.
+ */
+function normalisedThumb(b64: string): Float64Array | null {
+  const raw = Buffer.from(b64, "base64");
+  if (raw.length !== THUMB_N * THUMB_N) return null;
+  const a = new Float64Array(raw.length);
+  let sum = 0;
+  for (let i = 0; i < raw.length; i++) sum += (a[i] = raw[i]);
+  const mean = sum / a.length;
+  let variance = 0;
+  for (let i = 0; i < a.length; i++) variance += (a[i] - mean) ** 2;
+  const sd = Math.sqrt(variance / a.length) || 1;
+  for (let i = 0; i < a.length; i++) a[i] = (a[i] - mean) / sd;
+  return a;
+}
+
+/** 1 = the same picture, 0 = unrelated. */
+export function thumbCorrelation(aB64: string, bB64: string): number {
+  const a = normalisedThumb(aB64);
+  const b = normalisedThumb(bB64);
+  if (!a || !b) return 0;
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+  return dot / a.length;
+}
+
+/**
+ * The largest per-block mean difference between two thumbnails. Near zero when
+ * one photo is a re-encoding of the other (every region matches); large when a
+ * subject moved between two otherwise identical frames, because the change is
+ * concentrated in a few blocks that an overall average washes out.
+ */
+export function worstBlockDeviation(aB64: string, bB64: string): number {
+  const a = normalisedThumb(aB64);
+  const b = normalisedThumb(bB64);
+  if (!a || !b) return Infinity;
+  const blocks = THUMB_N / BLOCK_N;
+  let worst = 0;
+  for (let by = 0; by < blocks; by++) {
+    for (let bx = 0; bx < blocks; bx++) {
+      let sum = 0;
+      for (let y = 0; y < BLOCK_N; y++) {
+        for (let x = 0; x < BLOCK_N; x++) {
+          const i = (by * BLOCK_N + y) * THUMB_N + bx * BLOCK_N + x;
+          sum += Math.abs(a[i] - b[i]);
+        }
+      }
+      worst = Math.max(worst, sum / (BLOCK_N * BLOCK_N));
+    }
+  }
+  return worst;
+}
+
+/** Fingerprint image bytes: hash, thumbnail, and the dimensions we rank by. */
 export async function fingerprintBuffer(
   buffer: Buffer,
-): Promise<{ phash: string | null; width: number | null; height: number | null; bytes: number }> {
+): Promise<{ phash: string | null; thumb: string | null; width: number | null; height: number | null; bytes: number }> {
   const phash = await computeDHash(buffer);
+  const thumb = await computeThumb(buffer);
   let width: number | null = null;
   let height: number | null = null;
   try {
@@ -98,7 +217,7 @@ export async function fingerprintBuffer(
   } catch {
     /* dimensions are a ranking hint, not a requirement */
   }
-  return { phash, width, height, bytes: buffer.length };
+  return { phash, thumb, width, height, bytes: buffer.length };
 }
 
 export function hammingDistance(a: string, b: string): number {
@@ -189,9 +308,13 @@ export async function ensureFingerprints(
       // cannot decode), but it can also be a bad minute for storage. Let an old
       // failure be retried rather than blinding dedup to that photo forever.
       if (row.failed && row.updatedAt.getTime() < retryFailedBefore) continue;
+      // A row from before thumbnails existed cannot decide anything, so treat
+      // it as missing and re-fingerprint it.
+      if (!row.failed && !row.thumb) continue;
       out.set(row.url, {
         url: row.url,
         phash: row.phash,
+        thumb: row.thumb,
         width: row.width,
         height: row.height,
         bytes: row.bytes,
@@ -212,15 +335,17 @@ export async function ensureFingerprints(
       const record: Fingerprint = {
         url,
         phash: fp?.phash ?? null,
+        thumb: fp?.thumb ?? null,
         width: fp?.width ?? null,
         height: fp?.height ?? null,
         bytes: fp?.bytes ?? null,
-        failed: !fp?.phash,
+        failed: !fp?.thumb,
       };
       out.set(url, record);
       try {
         const data = {
           phash: record.phash,
+          thumb: record.thumb,
           width: record.width,
           height: record.height,
           bytes: record.bytes,
@@ -251,15 +376,41 @@ const area = (fp: Fingerprint | undefined): number =>
   fp && fp.width && fp.height ? fp.width * fp.height : fp?.bytes ?? 0;
 
 /**
+ * Are these two the same picture, stored twice?
+ *
+ * Both tests must pass: the photos must match overall AND match everywhere.
+ * The second half is what keeps two frames of one moment - where only a hand or
+ * a head moved - from being called copies of each other.
+ */
+export function isSamePicture(
+  a: Fingerprint,
+  b: Fingerprint,
+  minCorrelation = DEDUP_CORRELATION,
+  maxBlockDeviation = DEDUP_MAX_BLOCK_DEVIATION,
+): boolean {
+  if (!a.thumb || !b.thumb) return false;
+  // Cheap reject first; the thumbnails decide.
+  if (a.phash && b.phash && hammingDistance(a.phash, b.phash) > PREFILTER_DISTANCE) return false;
+  if (thumbCorrelation(a.thumb, b.thumb) < minCorrelation) return false;
+  return worstBlockDeviation(a.thumb, b.thumb) <= maxBlockDeviation;
+}
+
+/**
  * Decide which of a profile's photos to keep. Order is preserved and each
  * duplicate group keeps its EARLIEST position, so de-duplicating never
  * reshuffles a gallery - the winner simply takes the loser's place when it is
  * the larger copy of a photo that appeared earlier.
+ *
+ * What counts as a duplicate is narrow on purpose: the same picture re-uploaded
+ * at another size or re-compressed. A CROP of another photo scores below the
+ * threshold and is kept, because at that similarity a burst of frames from one
+ * moment scores just as high, and dropping a photo nobody asked us to drop is
+ * worse than showing one twice.
  */
 export function planDedupe(
   urls: string[],
   fingerprints: Map<string, Fingerprint>,
-  distance: number = DEDUP_DISTANCE,
+  minCorrelation: number = DEDUP_CORRELATION,
 ): DedupePlan {
   const keep: string[] = [];
   const replacements = new Map<string, string>();
@@ -273,14 +424,14 @@ export function planDedupe(
       continue;
     }
     const fp = fingerprints.get(url);
-    if (!fp?.phash) {
+    if (!fp?.thumb) {
       // Unknown or unreadable: keep it. Never drop a photo we cannot compare.
       keep.push(url);
       continue;
     }
     const matchIdx = keep.findIndex((k) => {
       const other = fingerprints.get(k);
-      return !!other?.phash && hammingDistance(fp.phash!, other.phash) <= distance;
+      return !!other && isSamePicture(fp, other, minCorrelation);
     });
     if (matchIdx === -1) {
       keep.push(url);

@@ -2694,6 +2694,12 @@ model IpFormReminder {
 model PhotoFingerprint {
   url       String   @id
   phash     String? // 16 hex chars = 64-bit dHash; null when failed
+  /// Base64 of a 32x32 greyscale thumbnail. Comparing these (normalised
+  /// correlation) is what actually decides "same picture": a 64-bit hash puts a
+  /// re-encoded copy at distance 5 and a genuinely different photo at 10, which
+  /// is too close to separate safely. On the same pairs the thumbnails score
+  /// 0.995+ for copies and below 0.82 for different photos.
+  thumb     String?
   width     Int?
   height    Int?
   bytes     Int?

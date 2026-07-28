@@ -30,7 +30,7 @@ import { safeCompensation, compensationWarning, isPlausibleCompensation } from "
 import { formatRelativeTime, isStale } from "../client/src/lib/format-relative-time";
 import { profileAddedLabel } from "../client/src/lib/profile-freshness";
 import { splitSharedItems, groupProgramFamilies, variantLabels } from "../client/src/lib/cost-program-family";
-import { sectionBand, orderSectionsIntoBands, BAND_LABEL } from "../client/src/lib/profile-sections";
+import { sectionRank, orderProfileSections } from "../client/src/lib/profile-sections";
 import { resolveHeroSelection } from "../client/src/lib/profile-hero";
 import { describeRateDelta, RATE_TONE_CLASS } from "../client/src/lib/rate-delta";
 import { preferencesFromFilters, preferencesFromParentProfile } from "../client/src/hooks/use-parent-preferences";
@@ -280,37 +280,53 @@ async function px06() {
   check("no preferences means no claims", getMatchedPreferences(profile, []).length === 0);
 }
 
-// ─── PX-07: sections read in three bands, in the right order ─────────────────
+// ─── PX-07: sections are ordered by what actually decides the choice ─────────
 async function px07() {
-  check("an attribute section is band 1", sectionBand("Physical Characteristics") === 1, String(sectionBand("Physical Characteristics")));
-  check("her letter is band 2", sectionBand("Letter to Intended Parents") === 2, String(sectionBand("Letter to Intended Parents")));
-  check("interests are band 2", sectionBand("General Interests") === 2, String(sectionBand("General Interests")));
-  check("medical history is band 3", sectionBand("Medical History") === 3, String(sectionBand("Medical History")));
-  check("family history is band 3", sectionBand("Family Health History") === 3, String(sectionBand("Family Health History")));
-  check("a marker name is normalised before matching", sectionBand("__LETTER__") === 2, String(sectionBand("__LETTER__")));
+  // This replaced a three-band model that sorted by the KIND of content and so
+  // pushed "medical" to the bottom as due diligence. For a surrogate, pregnancy
+  // history IS the decision - the tidy version buried it.
+  const surrogateSections = [
+    "Letter to Intended Parents", "General Interests", "Physical Characteristics",
+    "Medical History", "Pregnancy History", "Support System", "Education",
+  ];
+  const s = orderProfileSections(surrogateSections, "surrogate");
+  check("surrogate: pregnancy history leads", s[0] === "Pregnancy History", JSON.stringify(s));
+  check("surrogate: medical history second", s[1] === "Medical History", JSON.stringify(s));
+  check("surrogate: support system third", s[2] === "Support System", JSON.stringify(s));
+  check("surrogate: her letter fourth", s[3] === "Letter to Intended Parents", JSON.stringify(s));
+  check("surrogate: everything else follows", s.slice(4).length === 3, JSON.stringify(s.slice(4)));
 
-  const ordered = orderSectionsIntoBands([
-    "Medical History", "Letter to Intended Parents", "Physical Characteristics", "Pregnancy History", "Education",
-  ]);
-  const bare = ordered.filter((n) => !n.startsWith("__BAND_"));
-  check("band 1 comes first, band 3 last",
-    bare[0] === "Physical Characteristics" && bare[bare.length - 1] === "Pregnancy History", JSON.stringify(bare));
-  check("her letter sits between them", bare.indexOf("Letter to Intended Parents") === 2, JSON.stringify(bare));
-  check("source order is preserved WITHIN a band",
-    bare.indexOf("Physical Characteristics") < bare.indexOf("Education"), JSON.stringify(bare));
-  check("every band present gets exactly one heading",
-    ordered.filter((n) => n.startsWith("__BAND_")).length === 3, JSON.stringify(ordered.filter((n) => n.startsWith("__BAND_"))));
+  const donorSections = [
+    "Education", "Letter to Intended Parents", "Physical Characteristics",
+    "Family Medical History", "Medical History", "Donation History", "Hobbies",
+  ];
+  const d = orderProfileSections(donorSections, "egg-donor");
+  check("donor: donation history leads", d[0] === "Donation History", JSON.stringify(d));
+  check("donor: medical history second", d[1] === "Medical History", JSON.stringify(d));
+  check("donor: family history third", d[2] === "Family Medical History", JSON.stringify(d));
+  check("donor: her letter fourth", d[3] === "Letter to Intended Parents", JSON.stringify(d));
+  check("donor: education fifth", d[4] === "Education", JSON.stringify(d));
 
-  // Band 3 is moved down, never hidden - Eran's explicit call.
-  check("nothing is dropped by the reordering", bare.length === 5, JSON.stringify(bare));
+  // The tail keeps the agency's own order - re-sorting it would scramble
+  // question/answer pairs that read as a sequence.
+  const tail = d.slice(5);
+  check("unranked sections keep their source order",
+    tail.indexOf("Physical Characteristics") < tail.indexOf("Hobbies"), JSON.stringify(tail));
 
-  const onlyOne = orderSectionsIntoBands(["Physical Characteristics", "Education"]);
-  check("a band with no sections gets no heading",
-    onlyOne.filter((n) => n.startsWith("__BAND_")).length === 1, JSON.stringify(onlyOne));
-  check("each band has a parent-facing name",
-    BAND_LABEL[1] === "At a glance" && BAND_LABEL[2] === "In her own words" && BAND_LABEL[3] === "Medical & background",
-    JSON.stringify(BAND_LABEL));
-  check("no sections in means no headings out", orderSectionsIntoBands([]).length === 0);
+  // Loose matching on purpose: scrapers emit several names for one thing.
+  check("scraper variants still rank", sectionRank("Previous Pregnancies", "surrogate") === 0
+    && sectionRank("Birth History", "surrogate") === 0
+    && sectionRank("Health Screening", "surrogate") === 1, "variants");
+  check("a marker name is normalised before matching",
+    sectionRank("__LETTER__", "surrogate") === 3, String(sectionRank("__LETTER__", "surrogate")));
+  check("an unknown section falls to the tail rather than vanishing",
+    sectionRank("Something Novel", "surrogate") === 4, String(sectionRank("Something Novel", "surrogate")));
+  check("nothing is dropped by the reordering", s.length === surrogateSections.length && d.length === donorSections.length);
+  check("no sections in means nothing out", orderProfileSections([], "surrogate").length === 0);
+
+  // Band headings are gone; the section names already say what they are.
+  const page = readFileSync("client/src/pages/profile-detail-page.tsx", "utf8");
+  check("no band headings remain on the page", !/__BAND_|BAND_LABEL/.test(page));
 }
 
 // ─── PX-08: the pull-quote is hers, whole, and not staff copy ────────────────

@@ -7,7 +7,7 @@ import { formatFieldLabel, isPlaceholderValue } from "@/lib/format-label";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { ProfileFitLine } from "@/components/profile-fit-line";
 import { ProfileQuote } from "@/components/profile-quote";
-import { sectionBand, BAND_LABEL, orderSectionsIntoBands } from "@/lib/profile-sections";
+import { orderProfileSections } from "@/lib/profile-sections";
 import { resolveHeroSelection } from "@/lib/profile-hero";
 import { profileAddedLabel } from "@/lib/profile-freshness";
 import { ToggleLabel } from "@/components/ui/toggle-label";
@@ -1396,13 +1396,12 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
           }
         }
 
-        // Stable band sort: everything keeps its current relative order inside
-        // its own band, so the letter anchoring above still holds.
-        // Band order + a `__BAND_n__` marker before each band's first section;
-        // the map below renders the marker as a heading.
-        const banded = orderSectionsIntoBands(sectionNames);
+        // Priority order for this profile type - pregnancy history first for a
+        // surrogate, donation history first for a donor. Stable, so the letter
+        // anchoring above and the agency's own ordering both still hold.
+        const ordered = orderProfileSections(sectionNames, (type || "egg-donor") as any);
         sectionNames.length = 0;
-        sectionNames.push(...banded);
+        sectionNames.push(...ordered);
 
         if (agencyCommentContent) {
           const letterIdx = sectionNames.indexOf("__LETTER__");
@@ -1432,19 +1431,6 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
         }
 
         return sectionNames.filter((n) => !consumed.has(n)).map((sectionName) => {
-          const bandMatch = sectionName.match(/^__BAND_([123])__$/);
-          if (bandMatch) {
-            const band = Number(bandMatch[1]) as 1 | 2 | 3;
-            return (
-              <h2
-                key={sectionName}
-                className="t-micro-label pt-2"
-                data-testid={`band-heading-${band}`}
-              >
-                {BAND_LABEL[band]}
-              </h2>
-            );
-          }
           if (sectionName === "__LETTER__" && letterContent) {
             return (
               <ProfileSection key="letter-to-intended-parents" title="Letter to Intended Parents" data-testid="section-letter-to-intended-parents">

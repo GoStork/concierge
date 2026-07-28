@@ -1,66 +1,82 @@
 /**
- * The three reading bands a donor or surrogate profile is organised into.
+ * The order a donor or surrogate profile's sections are read in.
  *
- * A profile answers three different questions and used to present all three at
- * one weight, in whatever order the scraper emitted: 31 medical answers carried
- * the same visual authority as her letter. Parents decide in band 1, commit in
- * band 2, and hand band 3 to their doctor - so that is the order.
+ * This replaced a three-band model (at a glance / in her own words / medical &
+ * background) that sorted by the KIND of content. That was the wrong axis: it
+ * treated "medical" as due diligence to hand a doctor later, and pushed it to
+ * the bottom - when a surrogate's pregnancy history and an egg donor's donation
+ * history are the first things a parent actually needs. The bands were tidy and
+ * they buried the decision.
  *
- * Band 3 stays fully visible (Eran's call) - moved down, not hidden.
+ * So the order is now an explicit priority list per profile type, in the words
+ * of someone choosing one. Anything unlisted keeps its source order and follows
+ * - the agency chose that order and re-sorting inside the tail would scramble
+ * question/answer pairs that read as a sequence.
  *
- * Extracted from profile-detail-page so the ordering can be tested directly:
- * it is the one part of the band work that a regression could silently undo
- * (a new section name matching the wrong pattern reads as "the scraper changed",
- * not "the page reordered itself").
+ * There are no headings. A priority list does not need labelling: the sections
+ * already carry their own names, and a heading over "Pregnancy History" only
+ * repeats it.
  */
 
-export type Band = 1 | 2 | 3;
+export type ProfileKind = "surrogate" | "egg-donor" | "sperm-donor";
 
-const BAND_PERSONAL_PATTERN =
-  /(letter|things\s*about\s*me|about\s*me|general\s*interests|interests|hobbies|favorites?|personal\s*statement|support\s*system|agency\s*comment|significant\s*other|my\s*story|in\s*her\s*own\s*words|message\s*to)/i;
-const BAND_DILIGENCE_PATTERN =
-  /(medical|health|histor|pregnanc|donation|famil|genetic|screening|surger|medication|diagnos|allerg|infection|vaccin|lab\b)/i;
-
-/** 1 = is this a fit, 2 = who she is, 3 = due diligence. */
-export function sectionBand(name: string): Band {
-  const n = (name || "").replace(/^__|__$/g, "").replace(/_/g, " ");
-  if (BAND_PERSONAL_PATTERN.test(n)) return 2;
-  if (BAND_DILIGENCE_PATTERN.test(n)) return 3;
-  return 1;
-}
-
-export const BAND_LABEL: Record<Band, string> = {
-  1: "At a glance",
-  2: "In her own words",
-  3: "Medical & background",
-};
-
-export const BAND_MARKER = /^__BAND_([123])__$/;
+const MEDICAL = /medical|health|surger|medication|diagnos|allerg|infection|vaccin|screening|lab\b/i;
+const LETTER = /letter|message\s*to|own\s*words|personal\s*statement|my\s*story/i;
 
 /**
- * Sort sections into band order and insert a `__BAND_n__` marker before the
- * first section of each band. Order WITHIN a band is the source order - the
- * agency chose it, and re-sorting inside a band would scramble question/answer
- * pairs that read as a sequence.
+ * Ranked patterns, most important first. The first pattern a section name
+ * matches gives it its rank; unmatched sections rank last.
  *
- * Only bands that actually have sections get a heading; an empty band heading
- * reads to a parent as missing data rather than as an absent category.
+ * Deliberately loose: scrapers emit "Pregnancy History", "Pregnancies",
+ * "Previous Pregnancies" and "Birth History" for the same thing, and a section
+ * that fails to match does not disappear - it just falls to the tail.
  */
-export function orderSectionsIntoBands(sectionNames: string[]): string[] {
-  const sorted = sectionNames
-    .map((name, i) => ({ name, i, band: sectionBand(name) }))
-    .sort((a, b) => (a.band - b.band) || (a.i - b.i))
-    .map((x) => x.name);
+/** A rank is matched by a pattern, optionally excluding names another rank owns. */
+type Rule = { match: RegExp; not?: RegExp };
 
-  const out: string[] = [];
-  let lastBand: Band | null = null;
-  for (const name of sorted) {
-    const band = sectionBand(name);
-    if (band !== lastBand) {
-      out.push(`__BAND_${band}__`);
-      lastBand = band;
-    }
-    out.push(name);
-  }
-  return out;
+const PRIORITY: Record<ProfileKind, Rule[]> = {
+  surrogate: [
+    { match: /pregnan|deliver|birth|c-?section/i },
+    { match: MEDICAL, not: /famil/i },
+    { match: /support\s*system|significant\s*other|spouse|partner/i },
+    { match: LETTER },
+  ],
+  "egg-donor": [
+    { match: /donation|donor\s*histor|previous\s*cycle|retriev/i },
+    // "Family Medical History" is a family section, not a medical one - without
+    // the exclusion it matched MEDICAL first and tied with her own history.
+    { match: MEDICAL, not: /famil/i },
+    { match: /famil/i },
+    { match: LETTER },
+    { match: /education|school|degree|academic/i },
+  ],
+  // Sperm donors are bank profiles: medical screening and family history are
+  // the whole substance, and there is rarely a letter to speak of.
+  "sperm-donor": [
+    { match: MEDICAL, not: /famil/i },
+    { match: /famil/i },
+    { match: /donation|donor\s*histor/i },
+    { match: /education|school|degree|academic/i },
+  ],
+};
+
+/** Lower is earlier. Unranked sections share the last rank and keep source order. */
+export function sectionRank(name: string, kind: ProfileKind): number {
+  const n = (name || "").replace(/^__|__$/g, "").replace(/_/g, " ");
+  const patterns = PRIORITY[kind] || PRIORITY["egg-donor"];
+  const i = patterns.findIndex((r) => r.match.test(n) && !(r.not && r.not.test(n)));
+  return i === -1 ? patterns.length : i;
+}
+
+/**
+ * Order the profile's sections for this kind of profile.
+ *
+ * A stable sort by rank: sections that rank the same - including everything
+ * unranked - stay in the order the agency published them.
+ */
+export function orderProfileSections(sectionNames: string[], kind: ProfileKind): string[] {
+  return sectionNames
+    .map((name, i) => ({ name, i, rank: sectionRank(name, kind) }))
+    .sort((a, b) => (a.rank - b.rank) || (a.i - b.i))
+    .map((x) => x.name);
 }

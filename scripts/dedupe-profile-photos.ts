@@ -32,7 +32,10 @@ import { StorageService } from "../server/src/modules/storage/storage.service";
 import {
   ensureFingerprints,
   planDedupe,
-  DEDUP_DISTANCE,
+  thumbCorrelation,
+  worstBlockDeviation,
+  DEDUP_CORRELATION,
+  DEDUP_MAX_BLOCK_DEVIATION,
   type Fingerprint,
 } from "../server/src/modules/providers/photo-dedup";
 
@@ -65,7 +68,7 @@ const dims = (fp: Fingerprint | undefined) =>
   const storage = app.get(StorageService);
 
   console.log(
-    `${apply ? "APPLYING" : "DRY RUN"} - ${exactOnly ? "exact URL repeats only" : `perceptual distance <= ${DEDUP_DISTANCE}`}`,
+    `${apply ? "APPLYING" : "DRY RUN"} - ${exactOnly ? "exact URL repeats only" : `same picture: correlation >= ${DEDUP_CORRELATION} and every block within ${DEDUP_MAX_BLOCK_DEVIATION}`}`,
   );
   if (!apply) console.log("(re-run with --apply to write these changes)\n");
 
@@ -101,10 +104,15 @@ const dims = (fp: Fingerprint | undefined) =>
       // _sections.Photos is the same gallery in the agency's own (expiring)
       // URLs. Once the photos[] column holds persisted copies, keeping the raw
       // list only re-lists every photo a second time, so point it at photos[].
+      // Only when the column IS persisted, though - a profile whose photos were
+      // never migrated has nothing better to point at, and rewriting the same
+      // URLs would report a change on every run for ever.
+      const persisted = (u: string) => /storage\.googleapis\.com/i.test(u) || u.startsWith("/uploads/");
       const sectionsStale =
         sectionPhotos.length > 0 &&
         photos.length > 0 &&
-        sectionPhotos.some((u) => !/storage\.googleapis\.com/i.test(u));
+        photos.every(persisted) &&
+        sectionPhotos.some((u) => !persisted(u));
 
       const fingerprints = exactOnly
         ? new Map<string, Fingerprint>()
@@ -133,9 +141,11 @@ const dims = (fp: Fingerprint | undefined) =>
       if (verbose || plan.nearDuplicates > 0) {
         for (const d of dropped) {
           const kept = plan.replacements.get(d);
+          const a = fingerprints.get(d)?.thumb, b = kept ? fingerprints.get(kept)?.thumb : null;
+          const score = a && b ? ` corr=${thumbCorrelation(a, b).toFixed(3)} block=${worstBlockDeviation(a, b).toFixed(3)}` : "";
           console.log(
             `    drop ${shortUrl(d)} (${dims(fingerprints.get(d))})` +
-              (kept ? ` -> kept ${shortUrl(kept)} (${dims(fingerprints.get(kept))})` : " (repeat)"),
+              (kept ? ` -> kept ${shortUrl(kept)} (${dims(fingerprints.get(kept))})${score}` : " (repeat)"),
           );
         }
       }

@@ -19,7 +19,7 @@
 
 import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, topResultId } from "../server/match-card-parse";
 import { resolveParentEvaSessionId } from "../server/parent-visibility";
-import { planDedupe, hammingDistance, DEDUP_DISTANCE, type Fingerprint } from "../server/src/modules/providers/photo-dedup";
+import { planDedupe, thumbCorrelation, worstBlockDeviation, DEDUP_CORRELATION, DEDUP_MAX_BLOCK_DEVIATION, type Fingerprint } from "../server/src/modules/providers/photo-dedup";
 
 const BASE = process.env.TEST_BASE_URL || "http://localhost:5001";
 const filterId = process.argv.slice(2).find((a) => a.startsWith("--id="))?.split("=")[1];
@@ -184,19 +184,52 @@ async function ut08() {
 
 // ─── UT-09: photo de-dup keeps the larger copy and never guesses ─────────────
 // Dropping a photo is destructive and invisible (nobody notices a picture that
-// was never rendered), so the planner's two safety properties are pinned here:
-// a photo with no fingerprint is always kept, and when two files ARE the same
+// was never rendered), so the planner's safety properties are pinned here: a
+// photo with no thumbnail is always kept, and when two files ARE the same
 // picture the survivor is the biggest one, in the earliest slot.
+//
+// The thumbnails below are synthetic but the thresholds are not: on real
+// profiles a re-encoded copy correlates at 0.995+ and different photos of the
+// same person in the same session peak at 0.812.
 async function ut09() {
-  const fp = (url: string, phash: string, width: number, height: number): [string, Fingerprint] =>
-    [url, { url, phash, width, height, bytes: width * height, failed: false }];
-  const SAME = "2c6f3231613828d1";
-  const OTHER = "ffff0000ffff0000";
+  // A 32x32 greyscale thumbnail as the planner sees it, from a pixel function.
+  const thumb = (f: (x: number, y: number) => number): string => {
+    const b = Buffer.alloc(32 * 32);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) b[y * 32 + x] = Math.max(0, Math.min(255, Math.round(f(x, y))));
+    return b.toString("base64");
+  };
+  const gradient = thumb((x, y) => x * 6 + y * 2);
+  // Same picture, re-compressed: same structure, small per-pixel noise and a
+  // brightness shift (which the normalisation is supposed to absorb).
+  const reencoded = thumb((x, y) => x * 6 + y * 2 + 12 + ((x * 7 + y * 13) % 5));
+  const different = thumb((x, y) => (x < 16 ? 40 : 200) + ((y * 11) % 7));
+  // Two frames of one moment: identical except for one corner (a raised hand).
+  // Overall correlation stays high, so only the per-block test can refuse it.
+  const movedSubject = thumb((x, y) => (x >= 24 && y >= 24 ? 250 : x * 6 + y * 2));
+
+  const fp = (url: string, t: string | null, w: number, h: number): [string, Fingerprint] =>
+    [url, { url, phash: null, thumb: t, width: w, height: h, bytes: w * h, failed: !t }];
   const map = new Map<string, Fingerprint>([
-    fp("small.jpg", SAME, 768, 512),
-    fp("large.jpg", SAME, 1500, 1000),
-    fp("different.jpg", OTHER, 900, 900),
+    fp("small.jpg", reencoded, 768, 512),
+    fp("large.jpg", gradient, 1500, 1000),
+    fp("different.jpg", different, 900, 900),
+    fp("unreadable.jpg", null, 0, 0),
+    fp("moved.jpg", movedSubject, 1500, 1000),
   ]);
+
+  check("a re-encoded copy scores above the threshold", thumbCorrelation(gradient, reencoded) >= DEDUP_CORRELATION,
+    thumbCorrelation(gradient, reencoded).toFixed(3));
+  check("a different picture scores below it", thumbCorrelation(gradient, different) < DEDUP_CORRELATION,
+    thumbCorrelation(gradient, different).toFixed(3));
+
+  check("a moved subject still correlates highly overall", thumbCorrelation(gradient, movedSubject) >= DEDUP_CORRELATION,
+    thumbCorrelation(gradient, movedSubject).toFixed(3));
+  check("but its worst block gives it away", worstBlockDeviation(gradient, movedSubject) > DEDUP_MAX_BLOCK_DEVIATION,
+    worstBlockDeviation(gradient, movedSubject).toFixed(3));
+  check("a true copy passes the block test", worstBlockDeviation(gradient, reencoded) <= DEDUP_MAX_BLOCK_DEVIATION,
+    worstBlockDeviation(gradient, reencoded).toFixed(3));
+  check("two frames of one moment are NOT merged",
+    planDedupe(["large.jpg", "moved.jpg"], map).keep.length === 2);
 
   const plan = planDedupe(["small.jpg", "large.jpg", "different.jpg"], map);
   check("the same picture at two sizes collapses to one", plan.keep.length === 2, plan.keep.join(","));
@@ -207,10 +240,10 @@ async function ut09() {
   check("the dropped copy points at the one we kept", plan.replacements.get("small.jpg") === "large.jpg",
     JSON.stringify(Array.from(plan.replacements.entries())));
 
-  // An unreadable/unknown photo must never be dropped - we cannot prove it is a
-  // copy, and a wrong drop deletes a real photo from someone's profile.
-  const withUnknown = planDedupe(["large.jpg", "mystery.jpg", "small.jpg"], map);
-  check("a photo we could not fingerprint is kept", withUnknown.keep.includes("mystery.jpg"), withUnknown.keep.join(","));
+  // A photo we could not fingerprint must never be dropped - we cannot prove it
+  // is a copy, and a wrong drop deletes a real photo from someone's profile.
+  const withUnknown = planDedupe(["large.jpg", "unreadable.jpg", "small.jpg"], map);
+  check("a photo we could not fingerprint is kept", withUnknown.keep.includes("unreadable.jpg"), withUnknown.keep.join(","));
   check("the unknown photo does not stop the real duplicate being dropped", withUnknown.keep.length === 2,
     withUnknown.keep.join(","));
 
@@ -218,11 +251,6 @@ async function ut09() {
   const repeated = planDedupe(["a.jpg", "a.jpg", "b.jpg"], new Map());
   check("a repeated URL is counted once", repeated.keep.length === 2 && repeated.exactRepeats === 1,
     `${repeated.keep.join(",")} repeats=${repeated.exactRepeats}`);
-
-  // Distance is measured, not assumed: two unrelated photos stay apart.
-  check("unrelated hashes are far apart", hammingDistance(SAME, OTHER) > DEDUP_DISTANCE,
-    String(hammingDistance(SAME, OTHER)));
-  check("identical hashes are distance 0", hammingDistance(SAME, SAME) === 0);
 }
 
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
