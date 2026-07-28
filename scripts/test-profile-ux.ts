@@ -853,8 +853,12 @@ async function px17() {
 
   // Yes/No are scanned, not read - a shape answers faster than a word down a
   // four-column table. The word stays for anyone who cannot see the shape.
-  check("Yes and No render as marks, in brand tokens",
-    /brand-success/.test(drawer2) && /text-destructive/.test(drawer2) && /value === "Yes"/.test(drawer2));
+  check("Yes and No render as filled marks, in brand tokens",
+    /bg-\[hsl\(var\(--brand-success\)\)\]/.test(drawer2) && /bg-destructive/.test(drawer2) && /value === "Yes"/.test(drawer2));
+  // An outline tick disappears at table-row size; the answer should read as a
+  // solid block of colour from across the table.
+  check("the mark is a filled badge, not a hairline glyph",
+    /rounded-\[6px\]/.test(drawer2) && /text-white/.test(drawer2));
   check("and the word survives for screen readers", /sr-only/.test(drawer2));
 
   check("no clinics or doctors yields no table",

@@ -350,6 +350,15 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
     } catch (err: any) {
       console.error(`[ip-form-reminder] Cron error: ${err.message}`);
     }
+    // Intended Parent Form catch-up: calls that completed before the feature
+    // shipped, or through the backlog path that skips the completion hooks,
+    // leave the parent with no form and no way to ask for one.
+    try {
+      const { runIpFormCatchupSweep } = await import("../../../ip-form-flow");
+      await runIpFormCatchupSweep();
+    } catch (err: any) {
+      console.error(`[ip-form-catchup] Cron error: ${err.message}`);
+    }
   });
 
   console.log("[pending-booking] Scheduler started - runs every 10 minutes (nudges + auto-expiry + readiness re-asks + call outcomes + win-back)");

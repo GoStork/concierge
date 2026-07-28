@@ -77,11 +77,19 @@ function CompareValue({ value, dim }: { value: string | null; dim: boolean }) {
     const yes = value === "Yes";
     const Icon = yes ? Check : X;
     return (
-      <span className={cn("inline-flex items-center", dim && "opacity-55")}>
-        <Icon
-          className={cn("w-4 h-4", yes ? "text-[hsl(var(--brand-success))]" : "text-destructive")}
-          aria-hidden
-        />
+      // A filled badge, not a hairline tick. At a glance down a four-column
+      // table the answer should read as a solid block of colour - an outline
+      // check reads as decoration and disappears at the size a table row gives
+      // it. Identical rows still recede, but only to 75%: a filled badge at the
+      // 55% the text rows use looks broken rather than quiet.
+      <span
+        className={cn(
+          "inline-flex items-center justify-center w-5 h-5 rounded-[6px] shrink-0",
+          yes ? "bg-[hsl(var(--brand-success))]" : "bg-destructive",
+          dim && "opacity-75",
+        )}
+      >
+        <Icon className="w-3.5 h-3.5 text-white" strokeWidth={3.5} aria-hidden />
         <span className="sr-only">{value}</span>
       </span>
     );

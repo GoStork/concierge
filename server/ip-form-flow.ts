@@ -12,6 +12,14 @@
  * promptedAt and delivers the reminder ladder (day3 email+inapp, day7
  * email+SMS+inapp, day14 email+inapp, day28/42/56 email), capped at 60
  * days. Dedupe is the IpFormReminder unique constraint - safe cross-process.
+ *
+ * runIpFormCatchupSweep - every 10 min, prompts accounts whose call already
+ * completed but never got the form. maybePromptIpForm only fires at the
+ * instant a booking is finalized, so two populations are stranded with no
+ * form and no way to ask for one: parents whose call completed before this
+ * feature shipped, and anyone finalized through the call-outcome sweep's
+ * backlog path, which skips the completion hooks by design. Both are
+ * permanent holes without a catch-up, not just a one-time migration.
  */
 import { prisma } from "./db";
 import { resolveParentEvaSessionId } from "./parent-visibility";
@@ -298,5 +306,65 @@ export async function runIpFormReminderSweep(): Promise<void> {
       channels: due.channels,
       providerName: null,
     }).catch((e: any) => console.error(`[ip-form] reminder sweep failed for ${r.id}: ${e?.message}`));
+  }
+}
+
+/** How many accounts one catch-up pass will prompt. The sweep runs every 10
+ *  minutes, so a backlog drains in a few passes rather than firing a hundred
+ *  kickoff emails in the same second. */
+const CATCHUP_BATCH = 20;
+
+/**
+ * Every 10 min: prompt accounts whose consultation is already COMPLETED but
+ * that never got the form. Selection mirrors maybePromptIpForm's own gates
+ * (real provider, collectsIntendedParentForm), and the prompt itself stays
+ * idempotent + advisory-locked there - this only decides who to offer.
+ */
+export async function runIpFormCatchupSweep(): Promise<void> {
+  const bookings = await prisma.booking.findMany({
+    where: {
+      outcome: "COMPLETED",
+      parentUserId: { not: null },
+      providerUser: { provider: { collectsIntendedParentForm: true } },
+    },
+    select: {
+      parentUserId: true,
+      providerUser: { select: { provider: { select: { id: true, name: true } } } },
+    },
+    orderBy: { outcomeAt: "desc" },
+  });
+
+  // One prompt per account, not per booking: a parent with three completed
+  // calls at the same agency is still one form.
+  const seenAccounts = new Set<string>();
+  const claims: { parentUserId: string; providerId: string; accountId: string }[] = [];
+  for (const b of bookings) {
+    const provider = b.providerUser?.provider;
+    if (!provider || !b.parentUserId) continue;
+    if ((provider.name || "").trim().toLowerCase() === "gostork") continue;
+    const { accountId } = await accountIdsFor(b.parentUserId);
+    if (seenAccounts.has(accountId)) continue;
+    seenAccounts.add(accountId);
+    claims.push({ parentUserId: b.parentUserId, providerId: provider.id, accountId });
+  }
+  if (claims.length === 0) return;
+
+  // Drop the accounts that already have a form in flight before spending a
+  // maybePromptIpForm round-trip on each (it re-checks under the lock).
+  const prompted = await prisma.ipFormResponse.findMany({
+    where: { parentAccountId: { in: claims.map((c) => c.accountId) } },
+    select: { parentAccountId: true, promptedAt: true, status: true },
+  });
+  const settled = new Set(
+    prompted.filter((r) => r.promptedAt || r.status === "SUBMITTED").map((r) => r.parentAccountId),
+  );
+  const due = claims.filter((c) => !settled.has(c.accountId)).slice(0, CATCHUP_BATCH);
+  if (due.length === 0) return;
+
+  console.log(`[ip-form] Catch-up: ${due.length} account(s) with a completed call and no form`);
+  for (const c of due) {
+    await maybePromptIpForm({ parentUserId: c.parentUserId, providerId: c.providerId }).catch((e: any) =>
+      console.error(`[ip-form] catch-up failed for account ${c.accountId}: ${e?.message}`),
+    );
   }
 }
