@@ -123,12 +123,12 @@ export function CompareDrawer({
 
       <div className="p-4 max-w-[1200px] mx-auto">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse" data-testid="compare-table">
+          <table className="w-full table-fixed border-collapse" data-testid="compare-table">
             <thead className="sticky top-[57px] z-10 bg-background">
               <tr>
-                <th className="w-[132px]" />
+                <th className="w-[168px]" />
                 {profiles.map((p: any) => (
-                  <th key={p.id} className="p-2 align-bottom min-w-[150px] text-left font-normal">
+                  <th key={p.id} className="p-2 align-bottom text-left font-normal">
                     <button
                       type="button"
                       onClick={() => onOpenProfile(p)}
@@ -188,12 +188,12 @@ export function CompareDrawer({
                         data-testid={`compare-row-${row.label.toLowerCase().replace(/\s+/g, "-")}`}
                         data-identical={identical ? "true" : "false"}
                       >
-                        <td className="py-2.5 pr-4 align-top w-[168px]">
-                          <span className="t-field-label">{row.label}</span>
+                        <td className="py-2.5 pr-4 align-top">
+                          <span className="t-field-label break-words">{row.label}</span>
                         </td>
                         {row.values.map((value, i) => (
                           <td key={profiles[i]?.id ?? i} className="py-2.5 pr-4 align-top">
-                            <span className={cn("t-micro-value", identical && "opacity-55")}>
+                            <span className={cn("t-micro-value break-words", identical && "opacity-55")}>
                               {value ?? <span className="opacity-30">-</span>}
                             </span>
                           </td>
