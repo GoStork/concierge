@@ -836,7 +836,8 @@ async function px17() {
   const docs = [
     { id: "d1", clinicName: "A Fertility", location: "Boston, MA", acceptingNewPatients: true,
       specialties: ["Endometriosis", "PCOS"], languagesSpoken: ["English", "Spanish"],
-      education: ["Harvard Medical School"], graduationYear: 2004, yearsExperience: 20,
+      education: ["Medical School - Harvard", "Residency - Mass General", "Fellowship - UCSF"],
+      professionalMemberships: ["ASRM", "SART"], graduationYear: 2004, yearsExperience: 20,
       boardCertifications: ["ABOG"], npiNumber: "1234567890",
       provider: { ivfSuccessRates: [rate({ ageGroup: "under_35" })] } },
     { id: "d2", clinicName: "B Fertility", location: "Austin, TX", acceptingNewPatients: false, specialties: ["Male factor"] },
@@ -859,9 +860,21 @@ async function px17() {
     dGroups.includes("Education & background"), JSON.stringify(dGroups));
   const bg = doctor.find((g) => g.group === "Education & background")!;
   const bgLabels = bg.rows.map((r) => r.label);
-  for (const label of ["Education", "Graduated", "Board certification", "Years of experience", "NPI"]) {
+  for (const label of ["Education", "Graduated", "Board certification", "Years of experience", "Professional memberships", "NPI"]) {
     check(`"${label}" reads from a real column`, bgLabels.includes(label), JSON.stringify(bgLabels));
   }
+
+  // Three degrees are three facts, not a sentence - they must not arrive as one
+  // comma paragraph a parent has to parse.
+  const eduRow = bg.rows.find((r) => r.label === "Education")!;
+  check("an education history is kept as separate lines, not a comma paragraph",
+    (eduRow.values[0] || "").split("\n").length === 3, JSON.stringify(eduRow.values[0]));
+  check("a comma-stored history is split back out too",
+    (buildDoctorCompare([{ id: "x", education: "Medical School - A, Residency - B" }], [])
+      .find((g) => g.group === "Education & background")?.rows.find((r) => r.label === "Education")?.values[0] || "").includes("\n"));
+  check("the drawer renders multi-line values as a list",
+    /value.split\("\\n"\)/.test(readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8")));
+
   // The notice is the difference between an honest generic rate and a
   // misleading one - the flag alone is not the feature.
   const drawerSrc = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");

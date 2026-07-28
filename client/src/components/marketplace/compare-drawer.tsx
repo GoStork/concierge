@@ -111,6 +111,21 @@ function CompareValue({ value, dim }: { value: string | null; dim: boolean }) {
       </span>
     );
   }
+  // A multi-item value is a list of facts, not a sentence. One per line, each
+  // with its own marker, so three degrees read as three degrees.
+  const lines = value ? value.split("\n").filter(Boolean) : [];
+  if (lines.length > 1) {
+    return (
+      <ul className={cn("t-micro-value break-words space-y-0.5 text-left inline-block", dim && "opacity-55")}>
+        {lines.map((line, i) => (
+          <li key={i} className="flex gap-1.5">
+            <span className="text-accent shrink-0" aria-hidden>&bull;</span>
+            <span>{line}</span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <span className={cn("t-micro-value break-words", dim && "opacity-55")}>
       {value ?? <span className="opacity-30">-</span>}

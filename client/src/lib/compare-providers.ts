@@ -27,10 +27,26 @@ const text = (v: unknown): string | null => {
   return s && s !== "-" && s !== "--" ? s : null;
 };
 const yesNo = (v: unknown): string | null => (v === true ? "Yes" : v === false ? "No" : null);
-/** Arrays and scalars both arrive here depending on the scraper. */
+/**
+ * Arrays and scalars both arrive here depending on the scraper.
+ *
+ * Joined with newlines, not commas: an education history reads as three
+ * separate facts (medical school, residency, fellowship) and running them into
+ * one comma paragraph makes a parent parse a sentence to find them. The cell
+ * renderer splits on the newline and gives each its own line.
+ */
+export const LIST_SEPARATOR = "\n";
 const list = (v: unknown): string | null => {
-  if (Array.isArray(v)) return v.filter(Boolean).length ? v.filter(Boolean).join(", ") : null;
-  return text(v);
+  if (Array.isArray(v)) {
+    const items = v.filter(Boolean).map((x) => String(x).trim()).filter(Boolean);
+    return items.length ? items.join(LIST_SEPARATOR) : null;
+  }
+  // Some scrapers store the whole history as one comma string - split it back
+  // out so it reads the same as the array form does.
+  const t = text(v);
+  if (!t) return null;
+  const parts = t.split(/\s*,\s*(?=[A-Z])/).map((x) => x.trim()).filter(Boolean);
+  return parts.length > 1 ? parts.join(LIST_SEPARATOR) : t;
 };
 
 type Row<T> = { label: string; get: (item: T) => string | null };
@@ -169,6 +185,7 @@ export function buildDoctorCompare(doctors: any[], parentDiagnoses: string[] = [
         { label: "Graduated", get: (d) => text(d?.graduationYear) },
         { label: "Board certification", get: (d) => list(d?.boardCertifications) },
         { label: "Years of experience", get: (d) => text(d?.yearsExperience) },
+        { label: "Professional memberships", get: (d) => list(d?.professionalMemberships) },
         { label: "NPI", get: (d) => text(d?.npiNumber) },
       ],
     },
