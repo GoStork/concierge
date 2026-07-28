@@ -81,6 +81,7 @@ async function main() {
   const messageIds: string[] = [];
   let scratchSessionId: string | null = null;
   let anonSessionId: string | null = null;
+  const bookingIds: string[] = [];
 
   try {
     const typeA = svcTypes[0]?.id || null;
@@ -259,8 +260,90 @@ async function main() {
     const viaLink = await svc.sendForBooking({ ...sendArgs, sessionId: found!.id });
     check("booking again via the provider's link does not re-send", viaLink === false);
 
+    // --- attachDirectBookingToThread: the actual direct-booking entry point ---
+    console.log("\n--- Direct booking attach (end to end) ---");
+
+    const providerStaff = staff
+      || (await prisma.user.findFirst({ where: { providerId: provider.id } }));
+
+    const makeBooking = async (parentUser: any) =>
+      prisma.booking.create({
+        data: {
+          providerUserId: providerStaff!.id,
+          parentUserId: parentUser?.id || null,
+          scheduledAt: new Date(Date.now() + 2 * 86400000),
+          duration: 30,
+          bookerTimezone: "America/New_York",
+          subject: "[scratch] direct-link booking",
+          attendeeName: parentUser?.name || "Walk-in",
+        },
+      });
+
+    // A guest booking (no account) must be a no-op, not a crash.
+    const guestBooking = await makeBooking(null);
+    bookingIds.push(guestBooking.id);
+    const guestResult = await svc.attachDirectBookingToThread({
+      ...guestBooking,
+      parentUser: null,
+      providerUser: { id: providerStaff!.id, name: providerStaff!.name, providerId: provider.id },
+    });
+    check("a guest booking with no account attaches to nothing", guestResult === null, String(guestResult));
+
+    // A booking whose provider user has no org must also no-op.
+    const orphanResult = await svc.attachDirectBookingToThread({
+      ...guestBooking,
+      parentUser: { id: parent.id, name: parent.name },
+      providerUser: { id: providerStaff!.id, name: providerStaff!.name, providerId: null },
+    });
+    check("a booking with no provider org attaches to nothing", orphanResult === null, String(orphanResult));
+
+    // The real case: known parent, existing thread. Clear the send log first so
+    // this exercises a genuine first-contact send rather than the dedupe path.
+    await prisma.providerAutoReplySend.deleteMany({ where: { id: { in: sendIds } } });
+    sendIds.length = 0;
+    const beforeCount = await prisma.aiChatMessage.count({ where: { sessionId: scratchSessionId! } });
+
+    const realBooking = await makeBooking(parent);
+    bookingIds.push(realBooking.id);
+    const attached = await svc.attachDirectBookingToThread({
+      ...realBooking,
+      parentUser: { id: parent.id, name: parent.name },
+      providerUser: { id: providerStaff!.id, name: providerStaff!.name, providerId: provider.id },
+    });
+    check("attaches to the parent's existing thread", attached === scratchSessionId, String(attached));
+
+    const linked = await prisma.booking.findUnique({
+      where: { id: realBooking.id },
+      select: { sessionId: true },
+    });
+    check("Booking.sessionId is set (journey scoping)", linked?.sessionId === scratchSessionId, String(linked?.sessionId));
+
+    const afterCount = await prisma.aiChatMessage.count({ where: { sessionId: scratchSessionId! } });
+    check("the greeting was posted into that thread", afterCount > beforeCount, `${beforeCount} -> ${afterCount}`);
+
+    const newSends = await prisma.providerAutoReplySend.findMany({
+      where: { providerId: provider.id, parentUserId: parent.id },
+    });
+    sendIds.push(...newSends.map((s: any) => s.id));
+    check("the send was logged against this booking", newSends.some((s: any) => s.bookingId === realBooking.id));
+
+    // Booking a second time through the link must link the booking but NOT
+    // re-post - this is the regression that would spam a parent.
+    const secondBooking = await makeBooking(parent);
+    bookingIds.push(secondBooking.id);
+    const countBeforeSecond = await prisma.aiChatMessage.count({ where: { sessionId: scratchSessionId! } });
+    const secondAttach = await svc.attachDirectBookingToThread({
+      ...secondBooking,
+      parentUser: { id: parent.id, name: parent.name },
+      providerUser: { id: providerStaff!.id, name: providerStaff!.name, providerId: provider.id },
+    });
+    const countAfterSecond = await prisma.aiChatMessage.count({ where: { sessionId: scratchSessionId! } });
+    check("a second link booking still links the booking", secondAttach === scratchSessionId, String(secondAttach));
+    check("a second link booking posts no second greeting", countAfterSecond === countBeforeSecond, `${countBeforeSecond} -> ${countAfterSecond}`);
+
   } finally {
     console.log("\nCleaning up scratch rows...");
+    if (bookingIds.length) await prisma.booking.deleteMany({ where: { id: { in: bookingIds } } }).catch(() => {});
     if (sendIds.length) await prisma.providerAutoReplySend.deleteMany({ where: { id: { in: sendIds } } });
     await prisma.providerAutoReplySend.deleteMany({ where: { autoReplyId: { in: createdIds } } });
     for (const sid of [scratchSessionId, anonSessionId].filter(Boolean) as string[]) {

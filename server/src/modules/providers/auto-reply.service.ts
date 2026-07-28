@@ -119,6 +119,68 @@ export class AutoReplyService {
   }
 
   /**
+   * Direct-booking path: link the booking to the thread the parent already has
+   * with this provider, then post the greeting there.
+   *
+   * The provider's shareable /book/:slug link carries no aiSessionId, so it
+   * never reaches createConsultationChatSession and the booking lands unlinked
+   * even when a thread exists. Two things go wrong then: the journey sidebar
+   * counts the call org-level instead of against the thread, and the auto-reply
+   * never fires because there is no session in hand to post into.
+   *
+   * Never creates a session. An unknown booker with no prior relationship has
+   * no thread to belong to, and inventing one would put inbox rows in front of
+   * providers for people who never used the concierge.
+   *
+   * Returns the session id it attached to, or null when it did nothing - the
+   * caller treats this as fire-and-forget, the return value is for tests.
+   */
+  async attachDirectBookingToThread(booking: any): Promise<string | null> {
+    if (!booking?.parentUser?.id) return null;
+    const providerId = booking.providerUser?.providerId;
+    if (!providerId) return null;
+
+    const session = await this.findThreadForDirectBooking({
+      providerId,
+      parentUserId: booking.parentUser.id,
+    });
+    if (!session) return null;
+
+    const parent = await this.prisma.user.findUnique({
+      where: { id: booking.parentUser.id },
+      select: { parentAccountId: true, name: true },
+    });
+
+    await this.prisma.booking.update({
+      where: { id: booking.id },
+      data: { sessionId: session.id },
+    });
+    this.logger.log(`[direct-booking] Linked booking ${booking.id} to existing session ${session.id}`);
+
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      select: { name: true },
+    });
+
+    await this.sendForBooking({
+      providerId,
+      staffUserId: booking.providerUserId || null,
+      sessionId: session.id,
+      parentUserId: booking.parentUser.id,
+      parentAccountId: parent?.parentAccountId || null,
+      parentName: booking.parentUser.name || parent?.name || booking.attendeeName || "Parent",
+      providerName: provider?.name || null,
+      staffName: booking.providerUser?.name || null,
+      subjectType: session.subjectType || null,
+      bookingId: booking.id,
+      scheduledAt: booking.scheduledAt || null,
+      bookerTimezone: booking.bookerTimezone || null,
+      meetingSubtype: booking.meetingSubtype || null,
+    });
+    return session.id;
+  }
+
+  /**
    * Walk the scope chain from most specific to least. Only enabled templates
    * with a non-empty body are eligible.
    */
