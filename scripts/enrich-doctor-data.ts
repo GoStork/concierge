@@ -30,7 +30,9 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { buildDoctorEnrichment, medicalSchoolFromEducation, canonicalizeLanguages } from "../server/src/modules/providers/doctor-data";
+import {
+  buildDoctorEnrichment, medicalSchoolFromEducation, canonicalizeLanguages, extractLanguagesFromText,
+} from "../server/src/modules/providers/doctor-data";
 
 const pool = new pg.Pool({ connectionString: process.env.DIRECT_URL || process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -82,6 +84,7 @@ async function main() {
     where.OR = [
       { NOT: { education: { isEmpty: true } } },
       { NOT: { languagesSpoken: { isEmpty: true } } },
+      { bioRaw: { not: null } },
     ];
   }
 
@@ -109,15 +112,19 @@ async function main() {
         schoolSet++;
       }
 
-      // Collapse alias duplicates ("Farsi" + "Persian") and strip qualifiers
-      // ("Medical Spanish") left by the pre-canonicalization union.
-      if (m.languagesSpoken.length > 0 && sources.languagesSpoken !== "self") {
-        const canon = canonicalizeLanguages(m.languagesSpoken);
+      // Languages: re-run the deterministic extractor over the stored page text
+      // (free - the text is already in the row) and union with what is stored,
+      // then canonicalize. Picks up both parser improvements and alias
+      // duplicates in one pass.
+      if (sources.languagesSpoken !== "self") {
+        const fromText = m.bioRaw ? extractLanguagesFromText(m.bioRaw) : [];
+        const canon = canonicalizeLanguages([...m.languagesSpoken, ...fromText]);
         const changed =
           canon.length !== m.languagesSpoken.length ||
           canon.some((v, i) => v !== m.languagesSpoken[i]);
         if (changed && canon.length > 0) {
           data.languagesSpoken = canon;
+          sources.languagesSpoken = "bio";
           if (langFixed < 20) {
             console.log(`[doctor-data]   ${m.name}: [${m.languagesSpoken.join(", ")}] -> [${canon.join(", ")}]`);
           }

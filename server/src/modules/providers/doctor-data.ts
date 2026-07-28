@@ -289,15 +289,55 @@ export function extractLanguagesFromText(text: string): string[] {
     return hit || null;
   };
 
-  // 1. Headed field: "Languages: English, Spanish" / "Languages Spoken - ..." and
-  //    the newline-list variant ("Languages Spoken\nEnglish\nSpanish").
-  const headed = text.matchAll(
-    /\b(?:languages?(?:\s+spoken)?(?:\s+fluently)?|speaks?|idiomas)\b\s*[:\-–]?\s*((?:[A-Za-zÀ-ÿ' ]{2,30}[,;/&\n]?\s*){1,12})/gi,
-  );
-  for (const m of headed) {
-    for (const part of m[1].split(/[,;/&\n]|\band\b/i)) {
-      const c = canonical(part);
-      if (c) found.add(c);
+  // 1. Headed field: "Languages: English, Spanish", "Languages Spoken - ...",
+  //    the newline-list variant, and the run-on variant where the next label
+  //    follows immediately ("Languages Spoken: English Practice Started: ...").
+  //
+  //    Splitting the captured run on punctuation does NOT handle that last case:
+  //    "English Practice Started" has no separator, so it stays one token and the
+  //    language is lost. Instead take a window, cut it at the next "Label:" or
+  //    blank line, then scan the window for known language names by word
+  //    boundary - order- and separator-independent.
+  //    Do NOT try to cut the window at "the next capitalised label" - language
+  //    names are themselves capitalised, so "English Practice Started:" looks
+  //    exactly like a label and the split swallows the answer. Scan the window
+  //    for known language names instead; word-boundary matching means "Germany"
+  //    does not read as "German".
+  //
+  //    The header must carry either an explicit separator or the word "spoken".
+  //    Bare "Language" with neither is site chrome - "Back Language Search" on a
+  //    page with a language picker - and matching it would attribute the site's
+  //    UI languages to the doctor.
+  const HEADERS = [
+    /\blanguages?\s+spoken(?:\s+fluently)?\b\s*[:\-–]?\s*([\s\S]{0,140})/gi,
+    /\b(?:languages?|speaks?|idiomas)\b\s*[:\-–]\s*([\s\S]{0,140})/gi,
+  ];
+  const LOOKUP = [...KNOWN_LANGUAGES, ...Object.keys(LANGUAGE_ALIASES)];
+  // A site language PICKER also reads as "Languages: ...". Two things give it
+  // away, and both must be rejected or every doctor at the clinic inherits the
+  // site's UI languages (observed: "Languages: 中文 עברית Pусский Español" in a
+  // footer next to the social icons and copyright line).
+  //
+  //  - Non-Latin script in the value. A picker writes each language in its own
+  //    script; a doctor's profile field writes them in English ("Chinese",
+  //    "Hebrew"), and every name we match is Latin-script, so a legitimate value
+  //    never needs these characters.
+  //  - Footer furniture immediately around the value.
+  const PICKER_SCRIPT = /[Ѐ-ӿ֐-׿؀-ۿ　-鿿가-힯]/;
+  const FOOTER_MARKER = /\b(?:copyright|all rights reserved|privacy|terms|phone\s*:|fax\s*:|©)/i;
+
+  for (const header of HEADERS) {
+    for (const m of text.matchAll(header)) {
+      const segment = m[1];
+      if (!segment) continue;
+      if (PICKER_SCRIPT.test(segment) || FOOTER_MARKER.test(segment)) continue;
+      for (const name of LOOKUP) {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        if (new RegExp(`(?:^|[^A-Za-z])${escaped}(?:[^A-Za-z]|$)`, "i").test(segment)) {
+          const c = canonical(name);
+          if (c) found.add(c);
+        }
+      }
     }
   }
 
@@ -312,8 +352,14 @@ export function extractLanguagesFromText(text: string): string[] {
     }
   }
 
-  // 3. "Se habla español" and equivalents.
-  if (/\bse habla espa(ñ|n)ol\b/i.test(text)) found.add("Spanish");
+  // 3. "Se habla español" is deliberately NOT matched. It reads like a language
+  //    signal but it is a CLINIC-level banner that lives in site chrome - it was
+  //    observed in a nav strip ("Recommended Resources Se Habla Espanol
+  //    Locations Our Locations"), which means it appears on every doctor's page
+  //    at that clinic and would tag all of them as Spanish speakers. Same
+  //    attribution failure as harvesting the roster block: a whole-site fact
+  //    silently becomes a per-person claim. Clinic-level language support
+  //    belongs on the clinic, not on the doctor.
 
   // A page that lists every language on earth is a site-wide selector, not a
   // doctor attribute - reject rather than write junk onto the profile.
