@@ -727,6 +727,27 @@ async function px15() {
   // The drawer must never render a table it cannot fill.
   check("a table is only built for the profiles actually passed",
     buildCompareTable("egg-donor", [{ id: "a", age: 27 }]).flatMap((g) => g.rows).every((r) => r.values.length === 1));
+
+  // Sharing the Summary builder with the profile page was only half the job:
+  // the comparison fed it the swipe-CARD shape, which drops fields the card has
+  // no use for. Blood type vanished and Total Cost lost its calculated range,
+  // so the two surfaces disagreed about the same donor while "reusing" one
+  // builder.
+  const rawDonor = { id: "d", age: 27, bloodType: "O+", calculatedTotalCost: { min: 30000, max: 40000 } };
+  const card = { id: "d", age: 27, name: "Donor #1", raw: rawDonor };
+  const summary = buildCompareTable("egg-donor", [card]).find((g) => g.group === "Summary")!;
+  check("the Summary reads the database row, not the card built from it",
+    summary.rows.some((r) => r.label === "Blood Type" && r.values[0] === "O+"),
+    JSON.stringify(summary.rows.map((r) => r.label)));
+  check("so a calculated total cost keeps its range",
+    summary.rows.find((r) => r.label === "Total Cost")?.values[0]?.includes("–"),
+    JSON.stringify(summary.rows.find((r) => r.label === "Total Cost")));
+  check("and the marketplace hands it that row",
+    /profileData: d\.profileData, raw: d/.test(page2));
+  // Order is the profile's own, because it is the profile's own list.
+  const order = summary.rows.map((r) => r.label);
+  check("Summary rows keep the order the profile shows them in",
+    order.indexOf("Age") < order.indexOf("Blood Type"), JSON.stringify(order));
 }
 
 // ─── PX-16: the new surfaces are brand-managed, not hardcoded ────────────────
@@ -843,6 +864,10 @@ async function px17() {
     /y > 140/.test(dr) && /y < 70/.test(dr));
   check("and the page holds its height while the header collapses",
     /ResizeObserver/.test(dr) && /headSlack/.test(dr));
+  // At 140px "Compensation" did not fit on a line of its own, so break-words
+  // did what it is for and split it, leaving a lone "n" on the next line.
+  check("the label column fits its longest word",
+    /w-\[150px\] sm:w-\[200px\]/.test(dr) && /min-w-\[620px\]/.test(dr));
 
   check("and the drawer renders it as the green pill",
     /TOP_10_BADGE/.test(readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8")));

@@ -33,9 +33,15 @@ export type CompareKind = "egg-donor" | "surrogate" | "sperm-donor" | "clinic" |
  * reduction, prior c-sections, vaccination, whether she is open to same-sex or
  * international parents. Reusing the Summary builder means the comparison and
  * the profile can never disagree about what a parent is shown.
+ *
+ * It is handed the DATABASE ROW, not the swipe-card shape the marketplace maps
+ * profiles into. Sharing the builder was only half the job: the card shape
+ * drops fields it has no use for and renames others, so the comparison was
+ * quietly missing blood type and showing a single total cost where the profile
+ * shows the calculated range. Same builder, same input, or they still drift.
  */
 function summaryRows(kind: CompareKind, profiles: any[]): CompareTableGroup[] {
-  const perProfile = profiles.map((p) => getMandatoryFields(p, kind));
+  const perProfile = profiles.map((p) => getMandatoryFields(p.raw ?? p, kind));
   const labels: string[] = [];
   for (const rows of perProfile) for (const r of rows) if (!labels.includes(r.label)) labels.push(r.label);
 
@@ -292,12 +298,16 @@ export function CompareDrawer({
         {/* border-separate, because a sticky cell inside a collapsed table drops
             its borders in Safari - and the row rules ARE borders. They move to
             the cells, which is where a separated table draws them. */}
-        <table className="w-full table-fixed border-separate border-spacing-0 min-w-[560px]" data-testid="compare-table">
+        {/* The label column has to hold the longest single word in it - at 140px
+            "Compensation" did not fit on a line of its own, so break-words did
+            what it is for and split it, leaving a lone "n". Words are the unit
+            here; the column widens instead. */}
+        <table className="w-full table-fixed border-separate border-spacing-0 min-w-[620px]" data-testid="compare-table">
             {/* Sticky on the cells as well as on the thead: browsers vary on
                 whether a sticky thead alone pins its row. */}
             <thead ref={headRef} className="sticky top-0 z-20 bg-background">
               <tr>
-                <th className="w-[140px] sticky top-0 left-0 z-30 bg-background border-b border-border" />
+                <th className="w-[150px] sm:w-[200px] sticky top-0 left-0 z-30 bg-background border-b border-border" />
                 {profiles.map((p: any) => (
                   <th key={p.id} className="p-2 align-bottom text-center font-normal sticky top-0 z-20 bg-background border-b border-border">
                     <button

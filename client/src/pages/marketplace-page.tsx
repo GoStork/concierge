@@ -2219,7 +2219,11 @@ export default function MarketplacePage() {
           : mapDatabaseDonorToSwipeProfile(d);
     return compareSource
       .filter((d: any) => favoritedDonorIdsForCompare.includes(d.id))
-      .map((d: any) => ({ ...mapOne(d), id: d.id, providerId: d.providerId, profileData: d.profileData }));
+      // The card shape for the header and the tray; `raw` for the Summary rows,
+      // which are built by the same function the profile page uses and need the
+      // same input it gets. Mapping first and comparing the map dropped every
+      // field the card has no use for.
+      .map((d: any) => ({ ...mapOne(d), id: d.id, providerId: d.providerId, profileData: d.profileData, raw: d }));
   }, [compareKind, compareSource, favoritedDonorIdsForCompare, favoritedClinicIdsForCompare, favoritedDoctorSlugsForCompare]);
   const toggleCompare = useCallback((id: string) => {
     setCompareIds((prev) => toggleCompareSelection(prev, id));
