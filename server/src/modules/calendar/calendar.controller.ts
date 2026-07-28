@@ -2398,10 +2398,70 @@ I'll check in with you right after the call. You've got this!`;
         .catch((e) => this.logger.error(`Failed to create consultation chat session: ${e.message}`))
         .finally(() => this.fireCostSheetAutoDraft(booking.id));
     } else {
-      this.fireCostSheetAutoDraft(booking.id);
+      this.attachBookingToExistingThread(booking)
+        .catch((e) => this.logger.warn(`[direct-booking] Thread attach failed: ${e.message}`))
+        .finally(() => this.fireCostSheetAutoDraft(booking.id));
     }
 
     return { ...booking, parentAccountMembers };
+  }
+
+  /**
+   * The provider's own shareable /book/:slug link carries no aiSessionId, so it
+   * never reaches createConsultationChatSession - the booking lands unlinked
+   * even when the parent already has a thread with that provider. Two things
+   * then go wrong: the journey sidebar counts the call org-level instead of
+   * against the thread, and the provider's booking auto-reply never fires
+   * because there is no session in hand to post into.
+   *
+   * This covers the case where the thread ALREADY exists (the common one - a
+   * parent who books a follow-up straight from the provider's link). It
+   * deliberately does not create a session: an unknown booker with no prior
+   * relationship has no thread to belong to, and inventing one here would
+   * spawn provider inbox rows for people who never used the concierge.
+   */
+  private async attachBookingToExistingThread(booking: any) {
+    if (!booking?.parentUser?.id) return;
+    const providerId = booking.providerUser?.providerId;
+    if (!providerId) return;
+
+    const session = await this.autoReply.findThreadForDirectBooking({
+      providerId,
+      parentUserId: booking.parentUser.id,
+    });
+    if (!session) return;
+
+    const parent = await this.prisma.user.findUnique({
+      where: { id: booking.parentUser.id },
+      select: { parentAccountId: true, name: true },
+    });
+
+    await this.prisma.booking.update({
+      where: { id: booking.id },
+      data: { sessionId: session.id },
+    });
+    this.logger.log(`[direct-booking] Linked booking ${booking.id} to existing session ${session.id}`);
+
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      select: { name: true },
+    });
+
+    await this.autoReply.sendForBooking({
+      providerId,
+      staffUserId: booking.providerUserId || null,
+      sessionId: session.id,
+      parentUserId: booking.parentUser.id,
+      parentAccountId: parent?.parentAccountId || null,
+      parentName: booking.parentUser.name || parent?.name || booking.attendeeName || "Parent",
+      providerName: provider?.name || null,
+      staffName: booking.providerUser?.name || null,
+      subjectType: session.subjectType || null,
+      bookingId: booking.id,
+      scheduledAt: booking.scheduledAt || null,
+      bookerTimezone: booking.bookerTimezone || null,
+      meetingSubtype: booking.meetingSubtype || null,
+    });
   }
 
   @Get("booking/:token")

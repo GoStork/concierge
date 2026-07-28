@@ -81,6 +81,44 @@ export class AutoReplyService {
   }
 
   /**
+   * The thread a booking made through the provider's own /book/:slug link
+   * belongs to, or null when there is none.
+   *
+   * That path carries no aiSessionId, so it never creates a session - this
+   * finds an EXISTING one to attach to. Anonymous whisper-stage sessions
+   * (status ACTIVE) are deliberately excluded: the parent has not revealed
+   * themselves to the provider there, and posting a named greeting into one
+   * would leak their identity ahead of the consent moment.
+   */
+  async findThreadForDirectBooking(opts: {
+    providerId: string;
+    parentUserId: string;
+  }): Promise<{ id: string; subjectType: string | null } | null> {
+    const parent = await this.prisma.user.findUnique({
+      where: { id: opts.parentUserId },
+      select: { parentAccountId: true },
+    });
+    const accountIds = parent?.parentAccountId
+      ? (
+          await this.prisma.user.findMany({
+            where: { parentAccountId: parent.parentAccountId },
+            select: { id: true },
+          })
+        ).map((u: any) => u.id)
+      : [opts.parentUserId];
+
+    return this.prisma.aiChatSession.findFirst({
+      where: {
+        userId: { in: accountIds },
+        providerId: opts.providerId,
+        status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, subjectType: true },
+    });
+  }
+
+  /**
    * Walk the scope chain from most specific to least. Only enabled templates
    * with a non-empty body are eligible.
    */

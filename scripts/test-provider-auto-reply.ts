@@ -80,6 +80,7 @@ async function main() {
   const sendIds: string[] = [];
   const messageIds: string[] = [];
   let scratchSessionId: string | null = null;
+  let anonSessionId: string | null = null;
 
   try {
     const typeA = svcTypes[0]?.id || null;
@@ -212,16 +213,63 @@ async function main() {
       sendIds.push(sendRow.id);
       check("a different service line is a separate send slot", true);
     }
+    // --- Direct /book/:slug path: attach to an EXISTING thread only ---
+    console.log("\n--- Direct booking-link thread lookup ---");
+
+    // An anonymous whisper-stage thread must never be chosen: the parent has
+    // not revealed themselves to the provider there yet.
+    const anonSession = await prisma.aiChatSession.create({
+      data: {
+        userId: parent.id,
+        providerId: provider.id,
+        providerName: provider.name,
+        status: "ACTIVE",
+        title: "[scratch] anonymous whisper thread",
+      },
+    });
+    anonSessionId = anonSession.id;
+
+    // Park the revealed thread in the past so "most recent" cannot pick it by
+    // accident - if the anonymous one is excluded correctly, we get null.
+    await prisma.aiChatSession.update({
+      where: { id: scratchSessionId! },
+      data: { status: "ACTIVE", updatedAt: new Date(Date.now() - 60_000) },
+    });
+    let found = await svc.findThreadForDirectBooking({ providerId: provider.id, parentUserId: parent.id });
+    check("anonymous (ACTIVE) threads are never attached to", found === null, found?.id);
+
+    // Reveal the original thread again - now it is a legitimate target.
+    await prisma.aiChatSession.update({
+      where: { id: scratchSessionId! },
+      data: { status: "CONSULTATION_BOOKED", updatedAt: new Date() },
+    });
+    found = await svc.findThreadForDirectBooking({ providerId: provider.id, parentUserId: parent.id });
+    check("a revealed thread with this provider is found", found?.id === scratchSessionId, found?.id);
+
+    // A provider the parent has no thread with must yield nothing rather than
+    // borrowing someone else's session.
+    const otherProvider = await prisma.provider.findFirst({ where: { id: { not: provider.id } }, select: { id: true } });
+    if (otherProvider) {
+      const none = await svc.findThreadForDirectBooking({ providerId: otherProvider.id, parentUserId: parent.id });
+      check("no thread with a different provider is invented", none === null || none.id !== scratchSessionId, none?.id);
+    }
+
+    // Send-once must still hold across the two booking paths: this parent
+    // already received the greeting above via the concierge path.
+    const viaLink = await svc.sendForBooking({ ...sendArgs, sessionId: found!.id });
+    check("booking again via the provider's link does not re-send", viaLink === false);
+
   } finally {
     console.log("\nCleaning up scratch rows...");
     if (sendIds.length) await prisma.providerAutoReplySend.deleteMany({ where: { id: { in: sendIds } } });
     await prisma.providerAutoReplySend.deleteMany({ where: { autoReplyId: { in: createdIds } } });
-    if (scratchSessionId) {
-      await prisma.aiChatMessage.deleteMany({ where: { sessionId: scratchSessionId } });
+    for (const sid of [scratchSessionId, anonSessionId].filter(Boolean) as string[]) {
+      await prisma.aiChatMessage.deleteMany({ where: { sessionId: sid } });
+      await prisma.booking.updateMany({ where: { sessionId: sid }, data: { sessionId: null } }).catch(() => {});
       await prisma.inAppNotification.deleteMany({
-        where: { eventType: "PROVIDER_MESSAGE", payload: { path: ["sessionId"], equals: scratchSessionId } },
+        where: { eventType: "PROVIDER_MESSAGE", payload: { path: ["sessionId"], equals: sid } },
       }).catch(() => {});
-      await prisma.aiChatSession.delete({ where: { id: scratchSessionId } }).catch(() => {});
+      await prisma.aiChatSession.delete({ where: { id: sid } }).catch(() => {});
     }
     if (createdIds.length) await prisma.providerAutoReply.deleteMany({ where: { id: { in: createdIds } } });
   }
