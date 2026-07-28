@@ -816,6 +816,11 @@ async function px17() {
   const dr = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");
   check("value columns are centre-aligned", /align-top text-center/.test(dr) && /align-bottom text-center/.test(dr));
   check("row labels stay left-aligned", /align-top text-left/.test(dr));
+  // On a phone the header photos were still eating a third of the screen
+  // twenty rows down. They ease to a thumbnail and the row stays anchored.
+  check("the sticky header shrinks its photos on scroll",
+    /compact \? "max-w-\[44px\]" : "max-w-\[150px\]"/.test(dr) && /transition-all/.test(dr));
+  check("and the label column survives a sideways scroll", /sticky left-0/.test(dr));
 
   check("and the drawer renders it as the green pill",
     /TOP_10_BADGE/.test(readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8")));

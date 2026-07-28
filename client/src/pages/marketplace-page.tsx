@@ -2268,11 +2268,15 @@ export default function MarketplacePage() {
     // instead. The pills also carry their own surface: on the mobile deck's
     // dark background an unstyled outline pill rendered dark-on-dark.
     <div
-      className="w-full px-3 pt-2 flex items-center gap-2 flex-nowrap overflow-x-auto md:flex-wrap md:overflow-visible"
-      style={{ scrollbarWidth: "none" }}
+      className="w-full mx-3 mt-2 px-3 py-1.5 rounded-full bg-secondary flex items-center gap-2 flex-nowrap overflow-x-auto md:flex-wrap md:overflow-visible"
+      style={{ scrollbarWidth: "none", width: "calc(100% - 1.5rem)" }}
       data-testid="compare-bar"
     >
-      <span className="t-helper shrink-0 mr-1">Compare</span>
+      {/* The bar carries its own cream surface. White pills read as the type
+          tabs directly above them - two different controls in the same clothes -
+          and on the mobile deck's dark background they had no readable state at
+          all once selected. */}
+      <span className="t-helper shrink-0 mr-1 text-foreground/70">Compare</span>
       <>
       {comparableSaved.map((p: any) => {
         const on = compareIds.includes(p.id);
@@ -2284,8 +2288,10 @@ export default function MarketplacePage() {
             disabled={!on && compareIds.length >= COMPARE_MAX}
             className={cn(
               "rounded-full border px-3 py-1 transition-colors disabled:opacity-40",
-              "shrink-0 whitespace-nowrap bg-card text-foreground",
-              on ? "border-primary bg-primary/10" : "border-border hover:border-primary/40",
+              "shrink-0 whitespace-nowrap border transition-colors",
+              on
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-transparent text-foreground border-foreground/20 hover:border-primary/50",
             )}
             data-testid={`compare-pick-${p.id}`}
           >

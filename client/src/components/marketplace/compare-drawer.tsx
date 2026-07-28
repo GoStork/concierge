@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Check, TrendingUp, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -206,10 +206,24 @@ export function CompareDrawer({
   onPersonalise?: () => void;
 }) {
   if (profiles.length === 0) return null;
+
+  // The header row is sticky, so once you are twenty rows down the photos are
+  // still occupying a third of the screen for no reason. They ease down to a
+  // thumbnail instead - the column identity is what matters at that point, not
+  // the portrait.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => setCompact(el.scrollTop > 120);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
   const groups = buildCompareTable(kind, profiles as any[], tableOptions);
 
   return (
-    <div className="fixed inset-0 z-50 bg-background overflow-auto" data-testid="compare-drawer">
+    <div ref={scrollRef} className="fixed inset-0 z-50 bg-background overflow-auto" data-testid="compare-drawer">
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center justify-between gap-3">
         <h2 className="font-display text-xl font-heading">Comparing {profiles.length}</h2>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close comparison" data-testid="compare-close">
@@ -243,7 +257,7 @@ export function CompareDrawer({
         )}
         <div className="overflow-x-auto">
           <table className="w-full table-fixed border-collapse min-w-[560px]" data-testid="compare-table">
-            <thead className="sticky top-[57px] z-10 bg-background">
+            <thead className="sticky top-[57px] z-10 bg-background shadow-[0_1px_0_hsl(var(--border))]">
               <tr>
                 <th className="w-[140px] sticky left-0 z-10 bg-background" />
                 {profiles.map((p: any) => (
@@ -258,17 +272,21 @@ export function CompareDrawer({
                         <img
                           src={comparePhoto(p)!}
                           alt=""
-                          className={cn("w-full max-w-[150px] mx-auto rounded-[var(--radius)] mb-2", kind === "clinic" ? "aspect-square object-contain bg-secondary/40 p-2" : "aspect-[3/4] object-cover object-top")}
+                          className={cn(
+                            "w-full mx-auto rounded-[var(--radius)] mb-2 transition-all duration-300 ease-out",
+                            compact ? "max-w-[44px]" : "max-w-[150px]",
+                            kind === "clinic" ? "aspect-square object-contain bg-secondary/40 p-1.5" : "aspect-[3/4] object-cover object-top",
+                          )}
                         />
                       ) : (
-                        <div className="w-full max-w-[150px] mx-auto aspect-[3/4] rounded-[var(--radius)] bg-secondary mb-2" />
+                        <div className={cn("w-full mx-auto aspect-[3/4] rounded-[var(--radius)] bg-secondary mb-2 transition-all duration-300 ease-out", compact ? "max-w-[44px]" : "max-w-[150px]")} />
                       )}
                       <span className="t-field-value block truncate">{compareTitle(p)}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => onToggle(p.id)}
-                      className="t-helper mt-1 mx-auto block hover:underline"
+                      className={cn("t-helper mt-1 mx-auto block hover:underline transition-opacity", compact && "opacity-0 pointer-events-none h-0 overflow-hidden")}
                       data-testid={`compare-remove-${p.id}`}
                     >
                       Remove
