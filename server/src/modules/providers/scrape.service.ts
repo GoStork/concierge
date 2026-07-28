@@ -1244,7 +1244,15 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
     const body = extractMainBodyContent(html) || "";
     const clean = extractCleanText(html) || "";
     const combined = body.length >= clean.length ? body : clean;
-    return combined.replace(/\n{3,}/g, "\n\n").trim().slice(0, 12000);
+    return combined
+      // Postgres rejects NUL in text values, and this field carries raw page
+      // bytes rather than curated prose - a single stray 0x00 anywhere on a
+      // clinic's site would otherwise abort that whole clinic's enrichment.
+      // Strip C0 controls, keeping newline and tab.
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+      .slice(0, 12000);
   }
 
   let doctorProfiles: string[] = [];
