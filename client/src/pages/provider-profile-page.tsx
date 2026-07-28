@@ -6,14 +6,18 @@ import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, Globe, Phone, MapPin, Calendar, Building2, User, CheckCircle2, XCircle,
+  ArrowLeft, Globe, Phone, MapPin, Calendar, Building2, CheckCircle2, XCircle,
   Loader2, Check,
 } from "lucide-react";
 import { ProfileSection } from "@/components/ui/profile-section";
 import { IvfSuccessRatesSection, useIvfFilterContext } from "@/components/ivf-success-rates-section";
 import { InsuranceSection } from "@/components/insurance-section";
 import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-section";
+import {
+  ClinicServicesSection, ClinicExperienceSection, ClinicParentMatchingSection, ClinicPracticeSection,
+} from "@/components/clinic-cdc-sections";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { dedupeProviderLocations } from "@/lib/format-location";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -100,6 +104,8 @@ export default function ProviderProfilePage() {
   }
 
   const logoSrc = getPhotoSrc(provider.logoUrl);
+  const serviceNames: string[] = (provider.services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");
+  const isIvfClinic = serviceNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
 
   return (
     <div className="space-y-6 w-full">
@@ -179,9 +185,18 @@ export default function ProviderProfilePage() {
           )}
       </ProfileSection>
 
+      {/* The clinic facts a parent already sees on the swipe card, in full.
+          Each self-gates on its CDC data, and all of them share lib/clinic-cdc
+          with the card so the two surfaces can never diverge. */}
+      <ClinicServicesSection cdcServices={provider.cdcServices} />
+
       {provider.ivfSuccessRates && provider.ivfSuccessRates.length > 0 && (
         <IvfSuccessRatesSection rates={provider.ivfSuccessRates} filterContext={filterContext} />
       )}
+
+      <ClinicExperienceSection cdcExperience={provider.cdcExperience} />
+
+      <ClinicPracticeSection cdcCycleStats={provider.cdcCycleStats} />
 
       {/* In-network insurance. The field lives on the clinic and already powers
           the marketplace insurance filter and the clinic card, but the clinic's
@@ -193,8 +208,7 @@ export default function ProviderProfilePage() {
         // The cost-programs section now serves every fertility-tier provider
         // (IVF, Surrogacy, Egg Donor, Sperm Bank). Server-side matching
         // filters to whatever applies to this parent's journey state.
-        const svcNames = (provider.services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");
-        const hasFertilityTierService = svcNames.some((n: string) =>
+        const hasFertilityTierService = serviceNames.some((n: string) =>
           n.includes("ivf") ||
           n.includes("clinic") ||
           n.includes("surrogacy") ||
@@ -212,9 +226,9 @@ export default function ProviderProfilePage() {
         );
       })()}
 
+      {isIvfClinic && <ClinicParentMatchingSection provider={provider} />}
+
       {(() => {
-        const svcNames = (provider.services || []).map((s: any) => s.providerType?.name?.toLowerCase() || "");
-        const isIvfClinic = svcNames.some((n: string) => n.includes("ivf") || n.includes("in vitro"));
         if (!isIvfClinic) return null;
 
         const hasData =
@@ -320,7 +334,6 @@ export default function ProviderProfilePage() {
         <ProfileSection title={doctorMembers.length > 1 ? "Doctors" : "Doctor"} data-testid="section-team">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {doctorMembers.map((member: any) => {
-                const memberPhoto = getPhotoSrc(member.photoUrl);
                 const memberLocations = member.locations
                   ?.map((ml: any) => {
                     const l = ml.location;
@@ -330,17 +343,14 @@ export default function ProviderProfilePage() {
 
                 const inner = (
                   <>
-                    {memberPhoto ? (
-                      <img
-                        src={memberPhoto}
-                        alt={member.name}
-                        className="w-14 h-14 rounded-full object-cover border border-border/30 shrink-0"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 rounded-full bg-secondary/40 flex items-center justify-center border border-border/30 shrink-0">
-                        <User className="w-6 h-6 text-muted-foreground/40" />
-                      </div>
-                    )}
+                    {/* Shared avatar: initials when there is no photo, and when a
+                        stored (scraped) photo URL has since gone dead. */}
+                    <DoctorAvatar
+                      name={member.name}
+                      photoUrl={member.photoUrl}
+                      size={56}
+                      className="border border-border/30"
+                    />
                     <div className="min-w-0">
                       <p className="font-ui text-sm text-foreground group-hover:text-primary transition-colors">{member.name}</p>
                       {member.title && (

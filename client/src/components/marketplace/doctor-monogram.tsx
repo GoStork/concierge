@@ -2,7 +2,8 @@
 // person) has no headshot, we render their brand initials on the brand gradient
 // instead of a blank box / generic icon, so they still read as a person. Used by
 // the swipe deck card, booking selectors, match mini-cards, and staff tables.
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 // First letter of the first + last real name tokens (titles + credentials
 // stripped): "Dr. John A. Smith MD" -> "JS", "Donor 1234" -> "D".
@@ -56,5 +57,45 @@ export function DoctorMonogram({
         {initials || "·"}
       </span>
     </div>
+  );
+}
+
+interface DoctorAvatarProps extends DoctorMonogramProps {
+  /** Raw stored photo URL (external or GCS); resolved through getPhotoSrc. */
+  photoUrl?: string | null;
+}
+
+/**
+ * A doctor's headshot with the monogram as its fallback - use this instead of a
+ * bare <img> anywhere a person's photo is shown.
+ *
+ * Photos scraped from clinic sites are hotlinked, and those URLs rot (a clinic
+ * re-uploads the file, the CDN path changes) long after we stored them. A bare
+ * <img> then renders the browser's broken-image icon on an otherwise finished
+ * profile. The swipe deck already falls back on error; this makes every other
+ * surface behave the same way, so a dead URL degrades to initials, never to a
+ * broken image.
+ */
+export function DoctorAvatar({ name, photoUrl, ...monogramProps }: DoctorAvatarProps) {
+  const [failed, setFailed] = useState(false);
+  const src = getPhotoSrc(photoUrl);
+  const { size = 40, rounded = "full", className = "", style } = monogramProps;
+
+  if (!src || failed) return <DoctorMonogram name={name} {...monogramProps} />;
+
+  return (
+    <img
+      src={src}
+      alt={name || ""}
+      className={`shrink-0 object-cover ${className}`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: rounded === "full" ? "9999px" : rounded,
+        ...style,
+      }}
+      onError={() => setFailed(true)}
+      data-testid={monogramProps["data-testid"]}
+    />
   );
 }

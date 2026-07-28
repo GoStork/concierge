@@ -997,9 +997,15 @@ async function px18() {
   // phone is where the old entry point was unreachable.
   check("compare starts from one visible button",
     /data-testid="compare-start"/.test(select) && /CompareLaunchButton/.test(page));
-  check("that button renders on the phone and on the desktop page",
-    (page.match(/compareLaunchEl\("(?:dark|light)"\)/g) || []).length === 2,
-    JSON.stringify(page.match(/compareLaunchEl\("(?:dark|light)"\)/g)));
+  // On a phone it floats over the bottom-right of the deck rather than sitting
+  // under the type tabs: the deck fills the screen, so anything in that header
+  // strip competes with the tabs for the same inch - and as an outline pill on
+  // the dark deck it was nearly invisible.
+  check("the phone gets a floating button, the desktop page an inline one",
+    /compareFabEl/.test(page) && /compareLaunchEl\("light"\)/.test(page));
+  check("it floats bottom-right, over the deck", /absolute right-4 bottom-4/.test(select));
+  check("and it is filled, not an outline on a dark deck",
+    /bg-primary text-primary-foreground px-5 py-3 shadow-lg/.test(select));
 
   // Pressing it turns the page into a selection page rather than adding a
   // second surface: the cards a parent is already looking at become the control.

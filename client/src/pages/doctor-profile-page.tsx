@@ -13,7 +13,7 @@ import {
   Stethoscope, Heart, Video, BadgeCheck, Star,
 } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
+import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileCloseButton } from "@/components/mobile-profile-close-header";
 import { useAuth } from "@/hooks/use-auth";
@@ -91,7 +91,6 @@ export default function DoctorProfilePage() {
     );
   }
 
-  const photo = getPhotoSrc(doctor.photoUrl);
   const affiliations: any[] = doctor.affiliations || [];
   const acceptedInsurance: string[] = Array.from(
     new Set(affiliations.flatMap((a) => a.acceptedInsurance || [])),
@@ -112,16 +111,15 @@ export default function DoctorProfilePage() {
 
       {/* Header */}
       <div className="flex items-start gap-5">
-        {photo ? (
-          <img
-            src={photo}
-            alt={doctor.name}
-            className="w-24 h-24 rounded-full object-cover border border-border/30 shrink-0"
-            data-testid="img-doctor-photo"
-          />
-        ) : (
-          <DoctorMonogram name={doctor.name} size={96} className="border border-border/30" />
-        )}
+        {/* Falls back to the monogram when the stored photo URL is dead - a
+            scraped clinic headshot can 404 long after we saved it. */}
+        <DoctorAvatar
+          name={doctor.name}
+          photoUrl={doctor.photoUrl}
+          size={96}
+          className="border border-border/30"
+          data-testid="img-doctor-photo"
+        />
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-heading text-foreground" data-testid="text-doctor-name">
             {doctor.name}{doctor.credential ? `, ${doctor.credential}` : ""}

@@ -2277,6 +2277,13 @@ export default function MarketplacePage() {
       </div>
     ) : null;
 
+  // The phone gets it as a floating button over the bottom-right of the deck
+  // instead - see CompareLaunchButton. No wrapper: it positions itself against
+  // the deck area it floats over.
+  const compareFabEl = canCompare && !compareMode ? (
+    <CompareLaunchButton fab onClick={() => setCompareMode(true)} />
+  ) : null;
+
   const compareSelectEl = (theme: "light" | "dark", className?: string) =>
     canCompare && compareMode ? (
       <CompareSelectGrid
@@ -2349,7 +2356,6 @@ export default function MarketplacePage() {
               onSelect={(id) => dispatch(setMarketplaceTab(id))}
               theme="dark"
             />
-            {compareLaunchEl("dark")}
           </div>
         )}
 
@@ -2399,6 +2405,8 @@ export default function MarketplacePage() {
               )}
             </>
           )}
+          {/* Floats over the deck, bottom-right, where a thumb already is. */}
+          {compareFabEl}
         </div>
 
         {scheduleProvider && (

@@ -23,14 +23,27 @@ export type CompareCard = SavedCardVisual & { id: string };
 /** Dark on the mobile deck, light on the desktop page. */
 type Theme = "light" | "dark";
 
-/** The entry point: always visible on Saved, so comparing is never hidden behind a scroll. */
+/**
+ * The entry point: always visible on Saved, so comparing is never hidden behind
+ * a scroll.
+ *
+ * On a phone it is a floating action button in the bottom-right corner rather
+ * than a pill under the type tabs. Two reasons: the deck fills the screen, so
+ * anything in that header strip competes with the tabs for the same inch and
+ * loses; and the bottom-right is where a thumb already rests. As an outline
+ * pill on the dark deck it was also nearly invisible - a filled brand pill
+ * reads at a glance.
+ */
 export function CompareLaunchButton({
   onClick,
   theme = "light",
+  fab = false,
   className,
 }: {
   onClick: () => void;
   theme?: Theme;
+  /** Float it over the bottom-right of the deck (phones). */
+  fab?: boolean;
   className?: string;
 }) {
   return (
@@ -38,16 +51,21 @@ export function CompareLaunchButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 transition-colors",
-        theme === "dark"
-          ? "border-white/25 text-white hover:bg-white/10"
-          : "border-primary/30 text-primary hover:bg-secondary",
+        "inline-flex items-center gap-2 rounded-full transition-colors",
+        fab
+          ? "absolute right-4 bottom-4 z-20 bg-primary text-primary-foreground px-5 py-3 shadow-lg active:opacity-90"
+          : cn(
+              "gap-1.5 border px-3.5 py-1.5",
+              theme === "dark"
+                ? "border-white/25 text-white hover:bg-white/10"
+                : "border-primary/30 text-primary hover:bg-secondary",
+            ),
         className,
       )}
       data-testid="compare-start"
     >
-      <Columns3 className="w-4 h-4" aria-hidden />
-      <span className="t-micro-value">Compare</span>
+      <Columns3 className={fab ? "w-5 h-5" : "w-4 h-4"} aria-hidden />
+      <span className={fab ? "font-ui text-base font-medium" : "t-micro-value"}>Compare</span>
     </button>
   );
 }
