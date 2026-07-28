@@ -733,6 +733,7 @@ async function px15() {
 // restyles the brand and half a page ignores it.
 const NEW_SURFACES = [
   "client/src/components/marketplace/compare-drawer.tsx",
+  "client/src/components/marketplace/compare-select.tsx",
   "client/src/components/profile-quote.tsx",
   "client/src/components/profile-fit-line.tsx",
   "client/src/components/cost-program-family-card.tsx",
@@ -911,6 +912,72 @@ async function px17() {
     buildClinicCompare([], ctx).length === 0 && buildDoctorCompare([], []).length === 0);
 }
 
+// ─── PX-18: comparing is entered deliberately, and confirmed on the cards ─────
+// The first build put a permanent bar of name pills above the Saved grid. It
+// asked a parent to find, by ID, profiles whose photos were already on screen -
+// and on a phone the row scrolled sideways and carried its own Compare button
+// off the right edge, where it could not be reached at all.
+async function px18() {
+  const page = readFileSync("client/src/pages/marketplace-page.tsx", "utf8");
+  const select = readFileSync("client/src/components/marketplace/compare-select.tsx", "utf8");
+
+  check("the always-on pill bar is gone",
+    !/compare-bar/.test(page) && !/const compareBarEl/.test(page));
+
+  // One button, before any selection exists - and on BOTH layouts, since the
+  // phone is where the old entry point was unreachable.
+  check("compare starts from one visible button",
+    /data-testid="compare-start"/.test(select) && /CompareLaunchButton/.test(page));
+  check("that button renders on the phone and on the desktop page",
+    (page.match(/compareLaunchEl\("(?:dark|light)"\)/g) || []).length === 2,
+    JSON.stringify(page.match(/compareLaunchEl\("(?:dark|light)"\)/g)));
+
+  // Pressing it turns the page into a selection page rather than adding a
+  // second surface: the cards a parent is already looking at become the control.
+  check("selection is a mode, not another bar", /const \[compareMode, setCompareMode\]/.test(page));
+  check("the mode replaces the grid on both layouts",
+    (page.match(/compareSelectEl\("(?:dark|light)"/g) || []).length === 2,
+    JSON.stringify(page.match(/compareSelectEl\("(?:dark|light)"/g)));
+  check("the pick lands on the card itself", /data-testid={`compare-pick-\$\{card\.id\}`}/.test(select));
+  check("a chosen card is ringed, not just ticked in a corner",
+    /ring-2 ring-primary/.test(select));
+  check("past the cap the rest go unselectable rather than silently inert",
+    /disabled=\{!selected && atMax\}/.test(select) && /cursor-not-allowed/.test(select));
+
+  // The tray exists only once it has something in it - an empty bar pinned to
+  // the bottom of the screen is the same clutter in a new place.
+  check("the tray is absent until something is picked",
+    /if \(picked\.length === 0\) return null;/.test(select));
+  check("the tray shows the faces picked, not their IDs",
+    /compare-tray-item-/.test(select) && /card\.photo/.test(select));
+  check("each one can be lifted back out of the tray", /compare-tray-remove-/.test(select));
+  // One profile compares with nothing. Saying what is missing beats a dead
+  // button that gives no reason.
+  check("below two, the button says what is missing", /Pick 1 more/.test(select));
+  check("at two or more it opens the comparison",
+    /data-testid="compare-open"/.test(select) && /onCompare/.test(select));
+  check("and there is a way out that is not the browser back button",
+    /data-testid="compare-cancel"/.test(select));
+
+  // Modes that outlive their page are how a parent ends up on a screen nobody
+  // can explain - Discover has nothing saved to compare.
+  check("leaving Saved leaves the mode",
+    /if \(!isSavedView\) \{ setCompareMode\(false\)/.test(page));
+  check("closing the comparison ends the errand rather than half of it",
+    /onClose=\{exitCompare\}/.test(page));
+
+  // The selection grid and the Saved grid draw the same profiles. Two
+  // normalisers would eventually disagree, and a parent would see one face in
+  // the grid and a different one in the tray.
+  check("both grids normalise a card through one function",
+    /savedCardVisual/.test(page) && /savedCardVisual/.test(readFileSync("client/src/lib/saved-card-visual.ts", "utf8")));
+  const visual = readFileSync("client/src/lib/saved-card-visual.ts", "utf8");
+  check("a clinic falls back to a doctor's face, then its logo",
+    /members\.map/.test(visual) && /logoUrl/.test(visual));
+  check("a doctor with no headshot gets a monogram, not an empty tile",
+    /monogramName/.test(visual) && /DoctorMonogram/.test(select));
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "PX-01", name: "Cost labels read as English, and raw keys are flagged", run: px01 },
   { id: "PX-02", name: "Implausible compensation is suppressed, never rewritten", run: px02 },
@@ -929,6 +996,7 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "PX-15", name: "The compare shortlist behaves at its edges", run: px15 },
   { id: "PX-16", name: "The new surfaces are brand-managed, not hardcoded", run: px16 },
   { id: "PX-17", name: "Clinics and doctors compare on what decides those choices", run: px17 },
+  { id: "PX-18", name: "Comparing is entered deliberately, and confirmed on the cards", run: px18 },
 ];
 
 (async () => {

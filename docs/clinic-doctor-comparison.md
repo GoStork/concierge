@@ -9,6 +9,24 @@ The donor/surrogate comparison exists (`compare-drawer.tsx`, PX-10, PX-15).
 Clinics and doctors need the same affordance, but not the same rows - nobody
 chooses a clinic on eye colour.
 
+## Getting into a comparison
+
+**Changed 28 Jul 2026 (PX-18).** The first build put a permanent bar of name
+pills above the Saved grid. It was redundant - the profiles were already on
+screen as cards, so it asked a parent to find each one a second time, by ID -
+and on a phone the row scrolled sideways and carried its own Compare button off
+the right edge, where it could not be reached at all.
+
+The flow is now: one always-visible **Compare** button -> the page becomes a
+selection page where the saved cards themselves are the control -> picks collect
+in a bottom tray of thumbnails, each removable -> **Compare n** opens the table.
+The tray does not exist until something is in it, and the mode ends when the
+comparison closes or the parent leaves Saved.
+
+Lives in `components/marketplace/compare-select.tsx`. The card face comes from
+`lib/saved-card-visual.ts`, which the Saved grid also uses - one normaliser, so
+the grid and the tray cannot draw the same person differently.
+
 ## Clinics
 
 All four groups, in this order. Cost and access disqualify fastest; scale is

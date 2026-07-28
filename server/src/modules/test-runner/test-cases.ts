@@ -973,6 +973,12 @@ export const TEST_CASES: TestCaseDef[] = [
     desc: "Nobody picks a clinic on eye colour. Outcomes lead (her CDC rate, from the same lookup the clinic card uses - two lookups for one number is how a card and a comparison start disagreeing), then cost, access, scale. A doctor's rate is his CLINIC's, because CDC reports at clinic level and implying a physician-level statistic would invent a number we do not have. Specialties are matched against her own diagnoses, and a generic fallback rate must be reported as generic so the UI can label it",
     interestedServices: [], messageCount: 0,
   },
+  {
+    id: "PX-18", persona: "profile-ux",
+    name: "PX-18: Comparing is entered deliberately, and confirmed on the cards",
+    desc: "The first build put a permanent bar of name pills above the Saved grid - it asked a parent to find, by ID, profiles whose photos were already on screen, and on a phone it scrolled sideways and carried its own Compare button off the right edge. Now one visible button turns the page into a selection page, the cards themselves are the control, and picks collect in a tray that only exists once something is in it. The mode dies with the page it belongs to",
+    interestedServices: [], messageCount: 0,
+  },
 ];
 
 export function getTestCaseInfo(): TestCaseInfo[] {

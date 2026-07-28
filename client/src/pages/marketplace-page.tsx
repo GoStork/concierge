@@ -45,6 +45,8 @@ import {
   type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
 import { CompareDrawer, COMPARE_MAX, toggleCompareSelection } from "@/components/marketplace/compare-drawer";
+import { CompareLaunchButton, CompareSelectGrid, CompareTray, type CompareCard } from "@/components/marketplace/compare-select";
+import { savedCardVisual } from "@/lib/saved-card-visual";
 
 import { EggDonorIcon, SurrogateIcon, IvfClinicIcon, AgencyIcon, SpermIcon, DoctorIcon } from "@/components/icons/marketplace-icons";
 
@@ -1259,30 +1261,19 @@ function MobileSavedGrid({ kind, items }: {
     if (kind === "clinic") {
       return list
         .filter((p) => favoritedClinicIds.includes(p.id))
-        .map((p) => {
-          const members = Array.isArray(p.members) ? p.members.filter((m: any) => m?.isPublicProfile !== false) : [];
-          const face = members.map((m: any) => getPhotoSrc(m?.photoUrl)).find(Boolean) || null;
-          const loc = dedupeProviderLocations(p.locations || [])[0];
-          return {
-            key: p.id,
-            photo: face,
-            logo: getPhotoSrc(p.logoUrl) || null,
-            title: p.name,
-            subtitle: loc ? [loc.city, loc.state].filter(Boolean).join(", ") : null,
-            onOpen: () => navigate(`/providers/${p.id}`),
-            onRemove: () => dispatch(toggleFavoriteClinic(p.id)),
-          };
-        });
+        .map((p) => ({
+          key: p.id,
+          ...savedCardVisual("clinic", p),
+          onOpen: () => navigate(`/providers/${p.id}`),
+          onRemove: () => dispatch(toggleFavoriteClinic(p.id)),
+        }));
     }
     if (kind === "doctor") {
       return list
         .filter((d) => favoritedDoctorSlugs.includes(d.slug))
         .map((d) => ({
           key: d.slug,
-          photo: getPhotoSrc(d.photoUrl) || null,
-          monogramName: d.name,
-          title: d.name,
-          subtitle: d.providerName || null,
+          ...savedCardVisual("doctor", d),
           onOpen: () => navigate(`/doctors/${d.slug}`),
           onRemove: () => dispatch(toggleFavoriteDoctor(d.slug)),
         }));
@@ -1294,17 +1285,12 @@ function MobileSavedGrid({ kind, items }: {
     const slug = kind === "surrogate" ? "surrogate" : kind === "sperm-donor" ? "spermdonor" : "eggdonor";
     return list
       .filter((d) => favoritedDonorIds.includes(d.id))
-      .map((donor) => {
-        const profile = mapProfile(donor);
-        return {
-          key: donor.id,
-          photo: getPhotoList(profile)[0] || null,
-          title: buildTitle(profile),
-          subtitle: profile.age ? `Age ${profile.age}` : null,
-          onOpen: () => navigate(`/${slug}/${donor.providerId}/${donor.id}`),
-          onRemove: () => dispatch(toggleFavoriteDonor(donor.id)),
-        };
-      });
+      .map((donor) => ({
+        key: donor.id,
+        ...savedCardVisual(kind, mapProfile(donor)),
+        onOpen: () => navigate(`/${slug}/${donor.providerId}/${donor.id}`),
+        onRemove: () => dispatch(toggleFavoriteDonor(donor.id)),
+      }));
   }, [kind, items, favoritedDonorIds, favoritedClinicIds, favoritedDoctorSlugs, navigate, dispatch]);
 
   if (cards.length === 0) {
@@ -2200,6 +2186,9 @@ export default function MarketplacePage() {
   const favoritedDoctorSlugsForCompare = useAppSelector((st) => st.ui.favoritedDoctorSlugs);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
+  // Selecting is a mode the parent enters deliberately, not a bar that is always
+  // occupying the top of the page.
+  const [compareMode, setCompareMode] = useState(false);
   const compareKind: "egg-donor" | "surrogate" | "sperm-donor" | "clinic" | "doctor" | null =
     activeTab === "egg-donors" ? "egg-donor"
       : activeTab === "surrogates" ? "surrogate"
@@ -2242,6 +2231,16 @@ export default function MarketplacePage() {
   // other clinics were disabled by two profiles the parent could no longer see.
   useEffect(() => { setCompareIds([]); setCompareOpen(false); }, [compareKind]);
 
+  // Leaving Saved leaves the mode with it - Discover has nothing to compare, and
+  // coming back to a page still stuck in selection would be unexplainable.
+  useEffect(() => { if (!isSavedView) { setCompareMode(false); setCompareIds([]); setCompareOpen(false); } }, [isSavedView]);
+
+  const exitCompare = useCallback(() => {
+    setCompareMode(false);
+    setCompareIds([]);
+    setCompareOpen(false);
+  }, []);
+
   // What the deck actually renders, not how many the query returned - Discover
   // hides clinics the parent already saved or passed, and a header reading
   // "1 clinics found" above an empty deck looks like the marketplace is broken.
@@ -2257,60 +2256,45 @@ export default function MarketplacePage() {
   // Compare, on Saved only. Two saved profiles is the point at which a parent
   // starts diffing them by hand across browser tabs.
   const compareSelected = comparableSaved.filter((p: any) => compareIds.includes(p.id));
-  const compareBarEl = isSavedView && compareKind && comparableSaved.length >= 2 ? (
-    // One wrapping row: label, the pills, then the button immediately after the
-    // last pill. Pinning it to the far right left it stranded across empty
-    // space from the things it acts on; letting it flow keeps it next to them,
-    // and it follows the last pill onto a second line rather than being
-    // marooned alone on one.
-    // On a phone this wrapped into a nine-row stack that ate half the screen
-    // before a single card, so below md it scrolls sideways in one line
-    // instead. The pills also carry their own surface: on the mobile deck's
-    // dark background an unstyled outline pill rendered dark-on-dark.
-    <div
-      className="w-full mx-3 mt-2 px-3 py-1.5 rounded-full bg-secondary flex items-center gap-2 flex-nowrap overflow-x-auto md:flex-wrap md:overflow-visible"
-      style={{ scrollbarWidth: "none", width: "calc(100% - 1.5rem)" }}
-      data-testid="compare-bar"
-    >
-      {/* The bar carries its own cream surface. White pills read as the type
-          tabs directly above them - two different controls in the same clothes -
-          and on the mobile deck's dark background they had no readable state at
-          all once selected. */}
-      <span className="t-helper shrink-0 mr-1 text-foreground/70">Compare</span>
-      <>
-      {comparableSaved.map((p: any) => {
-        const on = compareIds.includes(p.id);
-        return (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => toggleCompare(p.id)}
-            disabled={!on && compareIds.length >= COMPARE_MAX}
-            className={cn(
-              "rounded-full border px-3 py-1 transition-colors disabled:opacity-40",
-              "shrink-0 whitespace-nowrap border transition-colors",
-              on
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-transparent text-foreground border-foreground/20 hover:border-primary/50",
-            )}
-            data-testid={`compare-pick-${p.id}`}
-          >
-            <span className="t-micro-value truncate max-w-[220px] inline-block align-bottom">{p.name || buildTitle(p)}</span>
-          </button>
-        );
-      })}
-      </>
-      <Button
-        size="sm"
-        className="shrink-0"
-        disabled={compareIds.length < 2}
-        onClick={() => setCompareOpen(true)}
-        data-testid="compare-open"
-      >
-        Compare {compareIds.length >= 2 ? compareIds.length : ""}
-      </Button>
-    </div>
-  ) : null;
+  const canCompare = Boolean(isSavedView && compareKind && comparableSaved.length >= 2);
+
+  // The same faces the parent saved, normalised once so the grid, the tray and
+  // the Saved page cannot draw the same person differently.
+  const compareCards: CompareCard[] = useMemo(
+    () => (compareKind ? comparableSaved.map((p: any) => ({ id: p.id, ...savedCardVisual(compareKind, p) })) : []),
+    [compareKind, comparableSaved],
+  );
+
+  const compareLaunchEl = (theme: "light" | "dark") =>
+    canCompare && !compareMode ? (
+      <div className="w-full flex justify-center pt-1.5" data-testid="compare-launch">
+        <CompareLaunchButton theme={theme} onClick={() => setCompareMode(true)} />
+      </div>
+    ) : null;
+
+  const compareSelectEl = (theme: "light" | "dark", className?: string) =>
+    canCompare && compareMode ? (
+      <CompareSelectGrid
+        cards={compareCards}
+        selectedIds={compareIds}
+        onToggle={toggleCompare}
+        max={COMPARE_MAX}
+        theme={theme}
+        className={className}
+      />
+    ) : null;
+
+  const compareTrayEl = (className?: string) =>
+    canCompare && compareMode ? (
+      <CompareTray
+        cards={compareCards}
+        selectedIds={compareIds}
+        onRemove={toggleCompare}
+        onCompare={() => setCompareOpen(true)}
+        onCancel={exitCompare}
+        className={className}
+      />
+    ) : null;
 
   const compareDrawerEl = compareOpen && compareKind && compareSelected.length >= 2 ? (
     <CompareDrawer
@@ -2322,7 +2306,10 @@ export default function MarketplacePage() {
         parentDiagnoses: (parentProfileForCompare?.diagnoses as string[]) || [],
       }}
       onToggle={toggleCompare}
-      onClose={() => setCompareOpen(false)}
+      // Closing the comparison ends the whole errand, back to Saved. Swapping a
+      // column is done inside the drawer, so returning to the selection page
+      // would only be a second place to do the same thing.
+      onClose={exitCompare}
       // The rates ARE the IVF filters - egg source, age band, first cycle or
       // not. Send her to the control that already sets them rather than to a
       // profile page that would set them at one remove.
@@ -2357,9 +2344,9 @@ export default function MarketplacePage() {
               onSelect={(id) => dispatch(setMarketplaceTab(id))}
               theme="dark"
             />
+            {compareLaunchEl("dark")}
           </div>
         )}
-        {compareBarEl}
 
         <div className="flex-1 min-h-0 relative" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           {!isSavedView && <MobileDeckControls onOpenFilters={openFiltersPage} />}
@@ -2367,6 +2354,8 @@ export default function MarketplacePage() {
             <div className="flex justify-center items-center h-full">
               <Loader2 className="w-8 h-8 animate-spin text-primary" data-testid="loading-spinner" />
             </div>
+          ) : compareMode && canCompare ? (
+            compareSelectEl("dark", "h-full overflow-y-auto")
           ) : (
             <>
               {activeTab === "egg-donors" && (
@@ -2415,6 +2404,9 @@ export default function MarketplacePage() {
             onClose={() => setScheduleProvider(null)}
           />
         )}
+        {/* The tray sits inside the immersive container, so it lands directly
+            above the app's bottom tab bar rather than under it. */}
+        {compareTrayEl("shrink-0")}
         {filtersDrawerEl}
         {compareDrawerEl}
       </div>
@@ -2468,10 +2460,15 @@ export default function MarketplacePage() {
           />
         </div>
       )}
-      {compareBarEl}
+      {compareLaunchEl("light")}
       {compareDrawerEl}
+      {/* Fixed, because the desktop Saved page scrolls for pages: the tray has
+          to stay reachable from wherever the parent stopped scrolling. */}
+      {compareTrayEl("fixed inset-x-0 bottom-0")}
 
-
+      {compareMode && canCompare ? (
+        compareSelectEl("light", "pt-2")
+      ) : (
       <div className={isAdmin ? "pt-6" : ""}>
         {/* Parents get a clean, pills-only view only on the dedicated Saved page
             (?view=saved); admins/providers keep the full filter bar there too
@@ -2565,6 +2562,7 @@ export default function MarketplacePage() {
           </>
         )}
       </div>
+      )}
 
       {scheduleProvider && (
         <ScheduleConsultationDialog
