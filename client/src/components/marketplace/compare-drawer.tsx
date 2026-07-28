@@ -271,7 +271,9 @@ export function CompareDrawer({
         </Button>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-auto p-4 max-w-[1200px] w-full mx-auto">
+      {/* pb-28 clears the compare tray, which is fixed over the bottom of the
+          screen - without it the last thing on the page sits under it. */}
+      <div ref={scrollRef} className="flex-1 overflow-auto p-4 pb-28 max-w-[1200px] w-full mx-auto">
         {/* A rate that does not describe her must never be shown bare. CDC
             publishes per age band and egg source, so without her profile these
             are the under-35 first-cycle figures - a real number about a
@@ -305,11 +307,11 @@ export function CompareDrawer({
         <table className="w-full table-fixed border-separate border-spacing-0 min-w-[620px]" data-testid="compare-table">
             {/* Sticky on the cells as well as on the thead: browsers vary on
                 whether a sticky thead alone pins its row. */}
-            <thead ref={headRef} className="sticky top-0 z-20 bg-background">
+            <thead ref={headRef} className="sticky top-0 z-30 bg-background">
               <tr>
-                <th className="w-[150px] sm:w-[200px] sticky top-0 left-0 z-30 bg-background border-b border-border" />
+                <th className="w-[150px] sm:w-[200px] sticky top-0 left-0 z-40 bg-background border-b border-border" />
                 {profiles.map((p: any) => (
-                  <th key={p.id} className="p-2 align-bottom text-center font-normal sticky top-0 z-20 bg-background border-b border-border">
+                  <th key={p.id} className="p-2 align-bottom text-center font-normal sticky top-0 z-30 bg-background border-b border-border">
                     <button
                       type="button"
                       onClick={() => onOpenProfile(p)}
@@ -347,7 +349,13 @@ export function CompareDrawer({
               {groups.map(({ group, rows }) => (
                 <Fragment key={group}>
                   <tr>
-                    <td colSpan={profiles.length + 1} className="pt-7 pb-2 sticky left-0 bg-background">
+                    {/* z-0, explicitly. Sticking it to the left made it a
+                        positioned element, and with no z-index of its own it
+                        painted over the pinned header - the group title and its
+                        rule cut straight across the photos as they scrolled
+                        past. Everything sticky in the body sits below the
+                        header now, by number rather than by DOM order. */}
+                    <td colSpan={profiles.length + 1} className="pt-7 pb-2 sticky left-0 z-0 bg-background">
                       {/* A real band, not a faint caption. The old headings were
                           t-micro-label on white and vanished into the rows they
                           were meant to separate - in a table this long, the
@@ -392,9 +400,6 @@ export function CompareDrawer({
             </tbody>
         </table>
 
-        {/* Exactly what the header gave up, so the page keeps its height. */}
-        <div style={{ height: headSlack }} aria-hidden />
-
         {available.length > profiles.length && (
           <div className="mt-8" data-testid="compare-swap-strip">
             <p className="t-micro-label mb-2">
@@ -423,6 +428,12 @@ export function CompareDrawer({
             </div>
           </div>
         )}
+
+        {/* Exactly what the header gave up, so the page keeps its height while
+            it collapses. It belongs at the very bottom: sitting between the
+            table and this strip, it pushed the strip down by its own height and
+            straight under the tray, where nobody could reach it. */}
+        <div style={{ height: headSlack }} aria-hidden />
       </div>
     </div>
   );

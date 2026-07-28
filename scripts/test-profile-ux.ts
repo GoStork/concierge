@@ -851,7 +851,7 @@ async function px17() {
   // enough to fit; every longer table scrolled its header away.
   check("the table is not trapped in a second scrollport",
     !/overflow-x-auto/.test(dr) && (dr.match(/overflow-auto/g) || []).length === 1);
-  check("the header sticks to the page's own scrollport", /sticky top-0 z-20 bg-background/.test(dr));
+  check("the header sticks to the page's own scrollport", /<thead[^>]*sticky top-0 z-30 bg-background/.test(dr));
   // A sticky cell inside a collapsed table drops its borders in Safari, and the
   // row rules ARE borders - so they move to the cells.
   check("row rules survive the sticky column",
@@ -868,6 +868,16 @@ async function px17() {
   // did what it is for and split it, leaving a lone "n" on the next line.
   check("the label column fits its longest word",
     /w-\[150px\] sm:w-\[200px\]/.test(dr) && /min-w-\[620px\]/.test(dr));
+  // Sticking the group heading to the left made it a positioned element, and
+  // with no z-index of its own it painted OVER the pinned header - the title
+  // and its rule cut across the photos as they scrolled past.
+  check("everything sticky in the body sits below the header",
+    /sticky left-0 z-0 bg-background/.test(dr) && /sticky top-0 z-30/.test(dr));
+  // The slack spacer belongs at the very bottom. Between the table and the swap
+  // strip it pushed the strip down by its own height, under the fixed tray.
+  check("the slack spacer is the last thing on the page",
+    dr.indexOf("compare-swap-strip") < dr.indexOf("height: headSlack"));
+  check("and the page clears the tray fixed over its bottom", /pb-28/.test(dr));
 
   check("and the drawer renders it as the green pill",
     /TOP_10_BADGE/.test(readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8")));
