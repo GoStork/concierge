@@ -82,7 +82,28 @@ const PROXY_HEADERS: Record<string, string> = {
 };
 const PROXY_TIMEOUT_MS = 10000;
 
-async function probe(url: string): Promise<{ alive: boolean; detail: string }> {
+type Verdict = "alive" | "dead" | "indeterminate";
+
+// 429 and 5xx mean "ask again later", never "this photo is gone". Timeouts and
+// socket resets are the same class. Everything else (404/401/403/400, a soft-404
+// HTML body) is a real verdict.
+function verdictForStatus(status: number): Verdict {
+  if (status === 429 || status >= 500) return "indeterminate";
+  return "dead";
+}
+
+// Stored URLs occasionally contain HTML entities the scraper never decoded
+// ("...?width=600&amp;height=900"), which the origin rejects with a 400. Decode
+// before probing, and mirror/store the decoded form.
+function decodeStoredUrl(url: string): string {
+  return url
+    .replace(/&amp;/g, "&")
+    .replace(/&#0?38;/g, "&")
+    .replace(/&quot;/g, '"')
+    .trim();
+}
+
+async function probeOnce(url: string): Promise<{ verdict: Verdict; detail: string }> {
   for (const method of ["HEAD", "GET"] as const) {
     try {
       const resp = await fetch(url, {
@@ -96,15 +117,59 @@ async function probe(url: string): Promise<{ alive: boolean; detail: string }> {
       if (resp.ok) {
         const ct = resp.headers.get("content-type") || "";
         // An HTML body on an image URL is a soft-404 landing page, not a photo.
-        if (/^text\/html/i.test(ct)) return { alive: false, detail: `soft-404 (${ct})` };
-        return { alive: true, detail: `${method} ${resp.status}` };
+        if (/^text\/html/i.test(ct)) return { verdict: "dead", detail: `soft-404 (${ct})` };
+        return { verdict: "alive", detail: `${method} ${resp.status}` };
       }
-      if (method === "GET") return { alive: false, detail: `HTTP ${resp.status}` };
+      // A HEAD that comes back 429/5xx is already conclusive enough to back off;
+      // repeating it as a GET just spends another request against the limiter.
+      const v = verdictForStatus(resp.status);
+      if (v === "indeterminate" || method === "GET") {
+        const ra = resp.headers.get("retry-after");
+        return { verdict: v, detail: `HTTP ${resp.status}${ra ? ` (retry-after=${ra})` : ""}` };
+      }
     } catch (err: any) {
-      if (method === "GET") return { alive: false, detail: err?.message || String(err) };
+      if (method === "GET") return { verdict: "indeterminate", detail: err?.message || String(err) };
     }
   }
-  return { alive: false, detail: "unreachable" };
+  return { verdict: "indeterminate", detail: "unreachable" };
+}
+
+// Hosts are probed one request at a time with a small gap. Fanning 30 parallel
+// requests at one WordPress site is what produced the 429 wall in the first
+// place - the throttle was self-inflicted.
+const HOST_GAP_MS = 750;
+const hostChain = new Map<string, Promise<unknown>>();
+
+function onHost<T>(url: string, fn: () => Promise<T>): Promise<T> {
+  let host = "";
+  try {
+    host = new URL(url).host;
+  } catch {
+    return fn();
+  }
+  const prev = hostChain.get(host) || Promise.resolve();
+  const next = prev.then(async () => {
+    const out = await fn();
+    await new Promise((r) => setTimeout(r, HOST_GAP_MS));
+    return out;
+  });
+  hostChain.set(host, next.catch(() => undefined));
+  return next as Promise<T>;
+}
+
+const RETRY_BACKOFF_MS = [5000, 20000, 60000];
+
+async function probe(url: string): Promise<{ verdict: Verdict; detail: string }> {
+  let last = { verdict: "indeterminate" as Verdict, detail: "unreachable" };
+  for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+    last = await onHost(url, () => probeOnce(url));
+    if (last.verdict !== "indeterminate") return last;
+    if (attempt === RETRY_BACKOFF_MS.length) break;
+    const ra = last.detail.match(/retry-after=(\d+)/i);
+    const waitMs = Math.max(RETRY_BACKOFF_MS[attempt], ra ? parseInt(ra[1], 10) * 1000 : 0);
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+  return last;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +201,14 @@ const PLACEHOLDER_PATTERNS: RegExp[] = [
   /\bspacer\.(gif|png)$/i,
   /\babog\.(png|jpe?g)$/i,
 ];
+
+// Filenames that announce they are not a headshot. Barry Ripps' row pointed at
+// "LittleCarla-Baby-Railey-Ann2-...jpg" - a live URL, so probing alone would
+// have happily mirrored a photo of somebody's baby onto a doctor's profile.
+const NOT_A_HEADSHOT_TOKENS = new Set([
+  "baby", "babies", "newborn", "logo", "banner", "building", "exterior",
+  "office", "lobby", "clinic", "map", "icon", "award", "badge", "brochure",
+]);
 
 // Tokens from the URL path that could plausibly be a person's name.
 function pathNameTokens(url: string): string[] {
@@ -189,12 +262,15 @@ function classifyBogus(
     return { reason: `shared by ${claimants.size} different people (${[...claimants].join(", ")})` };
   }
 
-  // 4. The file is named after somebody else. Own-name tokens are checked
-  //    FIRST so "Dr-Nasab-Gold-Circle.png" stays with Dr. Nasab even though
-  //    "Gold" is a surname somewhere on the platform.
+  // 4. The file is named after somebody else, or after something that is not a
+  //    person at all. Own-name tokens are checked FIRST so
+  //    "Dr-Nasab-Gold-Circle.png" stays with Dr. Nasab even though "Gold" is a
+  //    surname somewhere on the platform.
   const own = ownNameTokens(row.name);
   const tokens = pathNameTokens(url);
   if (!tokens.some((t) => own.has(t))) {
+    const notPerson = tokens.find((t) => NOT_A_HEADSHOT_TOKENS.has(t));
+    if (notPerson) return { reason: `not a headshot ("${notPerson}" in filename)` };
     for (const t of tokens) {
       const owners = nameTokenOwners.get(t);
       if (owners?.length) {
@@ -267,26 +343,37 @@ async function main() {
     }
   }
 
+  // "Working mirror" is asked of the bucket itself - see objectExists().
   const gcsAliveCache = new Map<string, boolean>();
+  async function gcsIsWorking(url: string): Promise<boolean> {
+    const cached = gcsAliveCache.get(url);
+    if (cached !== undefined) return cached;
+    const objectPath = storage.objectPathFrom(url);
+    let ok = false;
+    if (objectPath) {
+      try {
+        ok = await storage.objectExists(objectPath);
+      } catch (err: any) {
+        console.log(`[warn       ] could not stat ${objectPath}: ${err?.message || err}`);
+      }
+    }
+    gcsAliveCache.set(url, ok);
+    return ok;
+  }
+
   async function findAdoptable(row: Row): Promise<string | null> {
     const keys = [row.personKey ? `k:${row.personKey}` : null, `n:${normalizeName(row.name)}`];
     for (const key of keys) {
       if (!key) continue;
       for (const peer of siblings.get(key) || []) {
         if (peer.id === row.id) continue;
-        const url = peer.photoUrl!;
-        let ok = gcsAliveCache.get(url);
-        if (ok === undefined) {
-          ok = (await probe(url)).alive;
-          gcsAliveCache.set(url, ok);
-        }
-        if (ok) return url;
+        if (await gcsIsWorking(peer.photoUrl!)) return peer.photoUrl!;
       }
     }
     return null;
   }
 
-  const stats = { mirrored: 0, adopted: 0, nulled: 0, bogus: 0, dead: 0, failed: 0 };
+  const stats = { mirrored: 0, adopted: 0, nulled: 0, bogus: 0, dead: 0, skipped: 0, failed: 0 };
   const write = async (id: string, photoUrl: string | null) => {
     if (APPLY) await prisma.providerMember.update({ where: { id }, data: { photoUrl } });
   };
@@ -314,10 +401,20 @@ async function main() {
   }
 
   await mapLimit(survivors, CONCURRENCY, async (row) => {
-    const url = row.photoUrl!;
+    const url = decodeStoredUrl(row.photoUrl!);
     try {
-      const { alive, detail } = await probe(url);
-      if (alive) {
+      const { verdict, detail } = await probe(url);
+
+      if (verdict === "indeterminate") {
+        // Rate-limited or flaking host. Leaving the row exactly as it is means
+        // the next run gets another shot; nulling here would be destroying a
+        // photo on the strength of a 429.
+        stats.skipped++;
+        console.log(`[skip       ] ${row.name}: ${detail} - inconclusive, left untouched`);
+        return;
+      }
+
+      if (verdict === "alive") {
         const gcs = await persistSinglePhoto(url, row.providerId, storage);
         if (gcs && isGcs(gcs)) {
           await write(row.id, gcs);
@@ -355,8 +452,12 @@ async function main() {
       `  ${stats.mirrored} alive -> mirrored to GCS\n` +
       `  ${stats.adopted} adopted a sibling row's working mirror\n` +
       `  ${stats.nulled} nulled -> DoctorAvatar monogram\n` +
-      `  (${stats.bogus} classified bogus, ${stats.dead} probed dead, ${stats.failed} left untouched after an error)`,
+      `  ${stats.skipped + stats.failed} left untouched (${stats.skipped} inconclusive/rate-limited, ${stats.failed} errored)\n` +
+      `  (of the repaired: ${stats.bogus} classified bogus without a fetch, ${stats.dead} probed dead)`,
   );
+  if (stats.skipped) {
+    console.log("[photo-rot] Re-run later to settle the inconclusive rows - the host was throttling us.");
+  }
   if (!APPLY) console.log("[photo-rot] Re-run with --apply to write.");
 }
 

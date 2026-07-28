@@ -871,8 +871,14 @@ async function px17() {
   // Sticking the group heading to the left made it a positioned element, and
   // with no z-index of its own it painted OVER the pinned header - the title
   // and its rule cut across the photos as they scrolled past.
-  check("everything sticky in the body sits below the header",
-    /sticky left-0 z-0 bg-background/.test(dr) && /sticky top-0 z-30/.test(dr));
+  // The group heading cell spans every column, so its left edge IS the table's
+  // left edge and sticky-left has nothing to shift it within - the cell stayed
+  // put and the words slid away, leaving "Outcomes" reading as "nes". The title
+  // sticks instead: an inline-block can slide along a full-width cell.
+  check("the group TITLE sticks, not the cell that cannot move",
+    /<span className="sticky left-0 inline-block pl-4 bg-background font-heading/.test(dr)
+      && !/colSpan=\{profiles\.length \+ 1\} className="[^"]*sticky left-0/.test(dr));
+  check("and it still sits below the pinned header", /sticky top-0 z-30/.test(dr));
   // The slack spacer belongs at the very bottom. Between the table and the swap
   // strip it pushed the strip down by its own height, under the fixed tray.
   check("the slack spacer is the last thing on the page",

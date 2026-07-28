@@ -1,4 +1,4 @@
-import { Award, Baby, Calendar, Heart, HeartHandshake, Snowflake, Syringe, Users } from "lucide-react";
+import { Award, Baby, Calendar, Heart, HeartHandshake, Scale, Scissors, ShieldCheck, Snowflake, Syringe, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -122,6 +122,110 @@ export function buildParentMatchingItems(
     items.push({ label: edt, icon: Heart });
   }
   return items;
+}
+
+export interface ClinicSurrogateMatching {
+  minAge?: number | null;
+  maxAge?: number | null;
+  minBmi?: number | null;
+  maxBmi?: number | null;
+  minDeliveries?: number | null;
+  maxDeliveries?: number | null;
+  maxCSections?: number | null;
+  maxMiscarriages?: number | null;
+  maxAbortions?: number | null;
+  maxYearsFromLastPregnancy?: number | null;
+  monthsPostVaginal?: number | null;
+  covidVaccination?: boolean;
+  gdDiet?: boolean;
+  gdMedication?: boolean;
+  highBloodPressure?: boolean;
+  preeclampsia?: boolean;
+  placentaPrevia?: boolean;
+  healthHistoryNotes?: string | null;
+}
+
+// "Age 20-42" / "Age 20+" / "Age up to 42" - a one-sided threshold is still a
+// real rule, so never drop it just because its pair is missing.
+function rangeLabel(prefix: string, min: number | null | undefined, max: number | null | undefined): string | null {
+  if (min != null && max != null) return `${prefix} ${min}-${max}`;
+  if (min != null) return `${prefix} ${min}+`;
+  if (max != null) return `${prefix} up to ${max}`;
+  return null;
+}
+
+/**
+ * "Surrogate Matching Requirements" - the clinic's thresholds for the surrogate
+ * it will accept, as compact chips. Each threshold is its OWN chip so the
+ * boundaries stay unambiguous (paired "·" rows read as a run-on).
+ */
+export function buildSurrogateRequirementChips(
+  surrogateMatching: ClinicSurrogateMatching | null | undefined,
+): { label: string; icon: LucideIcon }[] {
+  const sm = surrogateMatching;
+  if (!sm) return [];
+  const chips: { label: string; icon: LucideIcon }[] = [];
+  const age = rangeLabel("Age", sm.minAge, sm.maxAge);
+  if (age) chips.push({ label: age, icon: Calendar });
+  const bmi = rangeLabel("BMI", sm.minBmi, sm.maxBmi);
+  if (bmi) chips.push({ label: bmi, icon: Scale });
+  if (sm.minDeliveries != null && sm.maxDeliveries != null) {
+    chips.push({ label: `${sm.minDeliveries}-${sm.maxDeliveries} deliveries`, icon: Baby });
+  } else if (sm.minDeliveries != null) {
+    chips.push({ label: `At least ${sm.minDeliveries} ${sm.minDeliveries === 1 ? "delivery" : "deliveries"}`, icon: Baby });
+  } else if (sm.maxDeliveries != null) {
+    chips.push({ label: `Up to ${sm.maxDeliveries} deliveries`, icon: Baby });
+  }
+  if (sm.maxCSections != null) chips.push({ label: `Up to ${sm.maxCSections} C-sections`, icon: Scissors });
+  if (sm.maxMiscarriages != null) chips.push({ label: `Up to ${sm.maxMiscarriages} miscarriages`, icon: Heart });
+  if (sm.maxAbortions != null) chips.push({ label: `Up to ${sm.maxAbortions} abortions`, icon: Heart });
+  if (sm.maxYearsFromLastPregnancy != null) chips.push({ label: `Within ${sm.maxYearsFromLastPregnancy} yrs of last pregnancy`, icon: Calendar });
+  if (sm.monthsPostVaginal != null) chips.push({ label: `${sm.monthsPostVaginal}mo post-vaginal delivery`, icon: Calendar });
+  return chips;
+}
+
+/**
+ * "Accepted Surrogate History Of" - the prior-health-history conditions this
+ * clinic still accepts. Only the accepted ones are listed (that IS the section);
+ * anything absent is not accepted.
+ */
+export function buildSurrogateAcceptedChips(
+  surrogateMatching: ClinicSurrogateMatching | null | undefined,
+): { label: string; icon: LucideIcon }[] {
+  const sm = surrogateMatching;
+  if (!sm) return [];
+  const chips: { label: string; icon: LucideIcon }[] = [];
+  if (sm.covidVaccination) chips.push({ label: "COVID vaccinated", icon: ShieldCheck });
+  if (sm.gdDiet) chips.push({ label: "Gestational diabetes (diet)", icon: ShieldCheck });
+  if (sm.gdMedication) chips.push({ label: "Gestational diabetes (medication)", icon: ShieldCheck });
+  if (sm.highBloodPressure) chips.push({ label: "High blood pressure", icon: ShieldCheck });
+  if (sm.preeclampsia) chips.push({ label: "Preeclampsia", icon: ShieldCheck });
+  if (sm.placentaPrevia) chips.push({ label: "Placenta previa", icon: ShieldCheck });
+  return chips;
+}
+
+/** Every ivfSurrogate* field on a Provider row -> the shared chip input. */
+export function surrogateMatchingFromProvider(provider: any): ClinicSurrogateMatching {
+  return {
+    minAge: provider.ivfSurrogateMinAge ?? null,
+    maxAge: provider.ivfSurrogateMaxAge ?? null,
+    minBmi: provider.ivfSurrogateMinBmi ?? null,
+    maxBmi: provider.ivfSurrogateMaxBmi ?? null,
+    minDeliveries: provider.ivfSurrogateMinDeliveries ?? null,
+    maxDeliveries: provider.ivfSurrogateMaxDeliveries ?? null,
+    maxCSections: provider.ivfSurrogateMaxCSections ?? null,
+    maxMiscarriages: provider.ivfSurrogateMaxMiscarriages ?? null,
+    maxAbortions: provider.ivfSurrogateMaxAbortions ?? null,
+    maxYearsFromLastPregnancy: provider.ivfSurrogateMaxYearsFromLastPregnancy ?? null,
+    monthsPostVaginal: provider.ivfSurrogateMonthsPostVaginal ?? null,
+    covidVaccination: provider.ivfSurrogateCovidVaccination ?? false,
+    gdDiet: provider.ivfSurrogateGdDiet ?? false,
+    gdMedication: provider.ivfSurrogateGdMedication ?? false,
+    highBloodPressure: provider.ivfSurrogateHighBloodPressure ?? false,
+    preeclampsia: provider.ivfSurrogatePreeclampsia ?? false,
+    placentaPrevia: provider.ivfSurrogatePlacentaPrevia ?? false,
+    healthHistoryNotes: provider.ivfSurrogateMentalHealthHistory ?? null,
+  };
 }
 
 // CDC cycle characteristics -> "How they practice".

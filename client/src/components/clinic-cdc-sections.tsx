@@ -1,8 +1,11 @@
+import type { LucideIcon } from "lucide-react";
 import { ProfileSection } from "@/components/ui/profile-section";
 import { Badge } from "@/components/ui/badge";
 import { useParentProfile } from "@/hooks/use-parent-profile";
 import {
-  buildClinicExperience, buildClinicPracticeItems, buildParentMatchingItems, clinicServiceLabels,
+  buildClinicExperience, buildClinicPracticeItems, buildParentMatchingItems,
+  buildSurrogateAcceptedChips, buildSurrogateRequirementChips, clinicServiceLabels,
+  surrogateMatchingFromProvider,
 } from "@/lib/clinic-cdc";
 
 /**
@@ -15,6 +18,25 @@ import {
  * Each section renders nothing when the clinic has no data for it.
  */
 
+/**
+ * The card's chip, at profile scale: brand-tinted pill, accent icon, wraps.
+ * Every chip list below uses it so the profile reads as the same design system
+ * as the swipe card the parent just came from.
+ */
+function CardChip({ label, icon: Icon, testId }: { label: string; icon?: LucideIcon; testId?: string }) {
+  return (
+    <Badge
+      className="bg-primary/10 text-foreground font-ui text-sm px-3 py-1 inline-flex items-start gap-1.5 border border-primary/20 max-w-full whitespace-normal break-words text-left leading-snug"
+      data-testid={testId}
+    >
+      {Icon && <Icon className="w-3.5 h-3.5 text-[hsl(var(--accent))] shrink-0 mt-0.5" />}
+      <span className="min-w-0">{label}</span>
+    </Badge>
+  );
+}
+
+const chipTestId = (prefix: string, label: string) => `${prefix}-${label.toLowerCase().replace(/\s+/g, "-")}`;
+
 export function ClinicServicesSection({ cdcServices }: { cdcServices: Record<string, boolean> | null | undefined }) {
   const labels = clinicServiceLabels(cdcServices);
   if (labels.length === 0) return null;
@@ -22,17 +44,55 @@ export function ClinicServicesSection({ cdcServices }: { cdcServices: Record<str
     <ProfileSection title="Services" data-testid="section-clinic-services">
       <div className="flex flex-wrap gap-2">
         {labels.map((label) => (
-          <Badge
-            key={label}
-            variant="secondary"
-            className="font-ui px-3 py-1"
-            data-testid={`service-${label.toLowerCase().replace(/\s+/g, "-")}`}
-          >
-            {label}
-          </Badge>
+          <CardChip key={label} label={label} testId={chipTestId("service", label)} />
         ))}
       </div>
     </ProfileSection>
+  );
+}
+
+/**
+ * The clinic's surrogate rules, in the card's two-part shape: the thresholds as
+ * chips, then the prior-health-history it still accepts (plus the clinic's own
+ * notes). "Accepted Surrogate History Of" lists ONLY what is accepted - that is
+ * what the heading claims, and it is how the card reads.
+ */
+export function ClinicSurrogateMatchingSection({ provider }: { provider: any }) {
+  const sm = surrogateMatchingFromProvider(provider);
+  const reqChips = buildSurrogateRequirementChips(sm);
+  const acceptedChips = buildSurrogateAcceptedChips(sm);
+  const notes = (sm.healthHistoryNotes || "").trim();
+
+  return (
+    <>
+      {reqChips.length > 0 && (
+        <ProfileSection title="Surrogate Matching Requirements" contentClassName="p-6" data-testid="section-surrogate-matching-requirements">
+          <div className="flex flex-wrap gap-2">
+            {reqChips.map((c) => (
+              <CardChip key={c.label} label={c.label} icon={c.icon} testId={chipTestId("surrogate-req", c.label)} />
+            ))}
+          </div>
+        </ProfileSection>
+      )}
+
+      {(acceptedChips.length > 0 || notes) && (
+        <ProfileSection title="Accepted Surrogate History Of" contentClassName="p-6 space-y-4" data-testid="section-accepted-surrogate-history">
+          {acceptedChips.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {acceptedChips.map((c) => (
+                <CardChip key={c.label} label={c.label} icon={c.icon} testId={chipTestId("surrogate-accepted", c.label)} />
+              ))}
+            </div>
+          )}
+          {notes && (
+            <div>
+              <p className="t-field-label mb-1">Notes</p>
+              <p className="t-prompt-answer whitespace-pre-wrap">{notes}</p>
+            </div>
+          )}
+        </ProfileSection>
+      )}
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 import {
   DollarSign, Wallet, GraduationCap, Briefcase,
-  Snowflake, HeartHandshake, Baby, Scissors, Users, Award,
+  Baby, Scissors, Users, Award,
   Ruler, Scale, Hash, Globe, Heart, Syringe,
   Video, Stethoscope, UserCheck, ThumbsUp, Star,
   Calendar, FileText, ShieldCheck, Building2, MapPin,
@@ -14,8 +14,9 @@ import { formatLocationDisplay, dedupeProviderLocations } from "@/lib/format-loc
 import { getLocationFlag, cleanCityState, getCountryFlag } from "@/lib/country-flag";
 import { collectLocationCandidates } from "@shared/donor-location";
 import {
-  buildClinicExperience, buildClinicPracticeItems, buildParentMatchingItems, clinicServiceLabels,
-  type ClinicIvfMatching,
+  buildClinicExperience, buildClinicPracticeItems, buildParentMatchingItems,
+  buildSurrogateAcceptedChips, buildSurrogateRequirementChips, clinicServiceLabels,
+  type ClinicIvfMatching, type ClinicSurrogateMatching,
 } from "@/lib/clinic-cdc";
 
 // True while the provider is paying to boost this profile (denormalized sponsoredUntil in the future).
@@ -990,26 +991,7 @@ export function getClinicTabs(opts: {
   // IVF surrogate-matching requirements -> the "Surrogate Matching Requirements"
   // tab, shown ONLY when showSurrogateMatching is true (parent seeks surrogacy).
   showSurrogateMatching?: boolean;
-  surrogateMatching?: {
-    minAge?: number | null;
-    maxAge?: number | null;
-    minBmi?: number | null;
-    maxBmi?: number | null;
-    minDeliveries?: number | null;
-    maxDeliveries?: number | null;
-    maxCSections?: number | null;
-    maxMiscarriages?: number | null;
-    maxAbortions?: number | null;
-    maxYearsFromLastPregnancy?: number | null;
-    monthsPostVaginal?: number | null;
-    covidVaccination?: boolean;
-    gdDiet?: boolean;
-    gdMedication?: boolean;
-    highBloodPressure?: boolean;
-    preeclampsia?: boolean;
-    placentaPrevia?: boolean;
-    healthHistoryNotes?: string | null;
-  } | null;
+  surrogateMatching?: ClinicSurrogateMatching | null;
   // Mobile cards are shorter - cap the Locations/Doctors lists tighter so the
   // bubbles don't overflow up into the header.
   compact?: boolean;
@@ -1095,30 +1077,9 @@ export function getClinicTabs(opts: {
   if (opts.showSurrogateMatching && sm) {
     // Each threshold is its own chip so boundaries are unambiguous (the paired
     // "·" rows read as a run-on). Chips wrap and stay compact.
-    const reqChips: TabItem[] = [];
-    if (sm.minAge != null && sm.maxAge != null) reqChips.push({ label: `Age ${sm.minAge}-${sm.maxAge}`, value: "", icon: Calendar });
-    if (sm.minBmi != null && sm.maxBmi != null) reqChips.push({ label: `BMI ${sm.minBmi}-${sm.maxBmi}`, value: "", icon: Scale });
-    if (sm.minDeliveries != null && sm.maxDeliveries != null) {
-      reqChips.push({ label: `${sm.minDeliveries}-${sm.maxDeliveries} deliveries`, value: "", icon: Baby });
-    } else if (sm.minDeliveries != null) {
-      reqChips.push({ label: `At least ${sm.minDeliveries} ${sm.minDeliveries === 1 ? "delivery" : "deliveries"}`, value: "", icon: Baby });
-    } else if (sm.maxDeliveries != null) {
-      reqChips.push({ label: `Up to ${sm.maxDeliveries} deliveries`, value: "", icon: Baby });
-    }
-    if (sm.maxCSections != null) reqChips.push({ label: `Up to ${sm.maxCSections} C-sections`, value: "", icon: Scissors });
-    if (sm.maxMiscarriages != null) reqChips.push({ label: `Up to ${sm.maxMiscarriages} miscarriages`, value: "", icon: Heart });
-    if (sm.maxAbortions != null) reqChips.push({ label: `Up to ${sm.maxAbortions} abortions`, value: "", icon: Heart });
-    if (sm.maxYearsFromLastPregnancy != null) reqChips.push({ label: `Within ${sm.maxYearsFromLastPregnancy} yrs of last pregnancy`, value: "", icon: Calendar });
-    if (sm.monthsPostVaginal != null) reqChips.push({ label: `${sm.monthsPostVaginal}mo post-vaginal delivery`, value: "", icon: Calendar });
-
+    const reqChips: TabItem[] = buildSurrogateRequirementChips(sm).map((c) => ({ label: c.label, value: "", icon: c.icon }));
     // Accepted prior-health-history conditions as compact wrapping chips.
-    const acceptedChips: TabItem[] = [];
-    if (sm.covidVaccination) acceptedChips.push({ label: "COVID vaccinated", value: "", icon: ShieldCheck });
-    if (sm.gdDiet) acceptedChips.push({ label: "Gestational diabetes (diet)", value: "", icon: ShieldCheck });
-    if (sm.gdMedication) acceptedChips.push({ label: "Gestational diabetes (medication)", value: "", icon: ShieldCheck });
-    if (sm.highBloodPressure) acceptedChips.push({ label: "High blood pressure", value: "", icon: ShieldCheck });
-    if (sm.preeclampsia) acceptedChips.push({ label: "Preeclampsia", value: "", icon: ShieldCheck });
-    if (sm.placentaPrevia) acceptedChips.push({ label: "Placenta previa", value: "", icon: ShieldCheck });
+    const acceptedChips: TabItem[] = buildSurrogateAcceptedChips(sm).map((c) => ({ label: c.label, value: "", icon: c.icon }));
 
     if (reqChips.length > 0) tabs.push({ layoutType: "standard_bubbles", title: "Surrogate Matching Requirements", items: reqChips });
     // Accepted prior-health-history gets its own tab so neither list crowds the card.

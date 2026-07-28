@@ -372,13 +372,14 @@ export function CompareDrawer({
               {groups.map(({ group, rows }) => (
                 <Fragment key={group}>
                   <tr>
-                    {/* z-0, explicitly. Sticking it to the left made it a
-                        positioned element, and with no z-index of its own it
-                        painted over the pinned header - the group title and its
-                        rule cut straight across the photos as they scrolled
-                        past. Everything sticky in the body sits below the
-                        header now, by number rather than by DOM order. */}
-                    <td colSpan={profiles.length + 1} className="pt-7 pb-2 pl-4 sticky left-0 z-0 bg-background">
+                    {/* The CELL cannot be what sticks. It spans every column, so
+                        its left edge is already the table's left edge and
+                        sticky-left has nothing to shift it within - the cell
+                        stayed put and the words inside it slid away, leaving
+                        "Outcomes" reading as "nes". The TITLE sticks instead:
+                        an inline-block inside a full-width cell can slide along
+                        it to stay at the edge of the screen. */}
+                    <td colSpan={profiles.length + 1} className="pt-7 pb-2 bg-background">
                       {/* A real band, not a faint caption. The old headings were
                           t-micro-label on white and vanished into the rows they
                           were meant to separate - in a table this long, the
@@ -390,7 +391,7 @@ export function CompareDrawer({
                           the row above already ends in a border and the row
                           below starts with one, so it was a third line in the
                           same inch, running out of the word for no reason. */}
-                      <span className="font-heading text-base text-foreground">{group}</span>
+                      <span className="sticky left-0 inline-block pl-4 bg-background font-heading text-base text-foreground">{group}</span>
                     </td>
                   </tr>
                   {rows.map((row) => {
