@@ -835,7 +835,9 @@ async function px17() {
   // implying a physician-level statistic would invent a number we do not have.
   const docs = [
     { id: "d1", clinicName: "A Fertility", location: "Boston, MA", acceptingNewPatients: true,
-      specialties: ["Endometriosis", "PCOS"], languages: ["English", "Spanish"],
+      specialties: ["Endometriosis", "PCOS"], languagesSpoken: ["English", "Spanish"],
+      education: ["Harvard Medical School"], graduationYear: 2004, yearsExperience: 20,
+      boardCertifications: ["ABOG"], npiNumber: "1234567890",
       provider: { ivfSuccessRates: [rate({ ageGroup: "under_35" })] } },
     { id: "d2", clinicName: "B Fertility", location: "Austin, TX", acceptingNewPatients: false, specialties: ["Male factor"] },
   ];
@@ -850,7 +852,16 @@ async function px17() {
     match?.values[0] === "PCOS" && match?.values[1] === "None listed", JSON.stringify(match));
   check("with no diagnoses on file that row is absent rather than empty",
     !buildDoctorCompare(docs, []).flatMap((g) => g.rows).some((r) => r.label === "Matches your diagnoses"));
+  // These all read from columns that exist - languages is languagesSpoken, and
+  // "residency"/"yearsInPractice" were guesses that silently dropped every row.
   check("languages are compared", doctor.flatMap((g) => g.rows).some((r) => r.label === "Languages"));
+  check("education & background is a group, not a guess",
+    dGroups.includes("Education & background"), JSON.stringify(dGroups));
+  const bg = doctor.find((g) => g.group === "Education & background")!;
+  const bgLabels = bg.rows.map((r) => r.label);
+  for (const label of ["Education", "Graduated", "Board certification", "Years of experience", "NPI"]) {
+    check(`"${label}" reads from a real column`, bgLabels.includes(label), JSON.stringify(bgLabels));
+  }
   // The notice is the difference between an honest generic rate and a
   // misleading one - the flag alone is not the feature.
   const drawerSrc = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");

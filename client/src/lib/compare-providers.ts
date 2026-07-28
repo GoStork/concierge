@@ -27,6 +27,11 @@ const text = (v: unknown): string | null => {
   return s && s !== "-" && s !== "--" ? s : null;
 };
 const yesNo = (v: unknown): string | null => (v === true ? "Yes" : v === false ? "No" : null);
+/** Arrays and scalars both arrive here depending on the scraper. */
+const list = (v: unknown): string | null => {
+  if (Array.isArray(v)) return v.filter(Boolean).length ? v.filter(Boolean).join(", ") : null;
+  return text(v);
+};
 
 type Row<T> = { label: string; get: (item: T) => string | null };
 
@@ -127,7 +132,7 @@ export function buildDoctorCompare(doctors: any[], parentDiagnoses: string[] = [
       rows: [
         // CDC reports at CLINIC level. Presenting anything here as a
         // physician-level statistic would invent a number we do not have.
-        { label: "Practises at", get: (d) => text(d?.clinicName ?? d?.provider?.name) },
+        { label: "Practises at", get: (d) => text(d?.clinicName ?? d?.providerName ?? d?.provider?.name ?? d?.clinic?.name) },
         { label: "Their clinic's live birth rate", get: (d) => {
           const r = pickClinicRate(d?.provider?.ivfSuccessRates || d?.ivfSuccessRates || [], {}).rate;
           return r ? `${Math.round(Number(r.successRate) * 100)}%` : null;
@@ -143,10 +148,7 @@ export function buildDoctorCompare(doctors: any[], parentDiagnoses: string[] = [
           const hits = parentDiagnoses.filter((diag) => specialties.some((s: string) => s.includes(diag.toLowerCase())));
           return hits.length ? hits.join(", ") : "None listed";
         } },
-        { label: "Specialties", get: (d) => {
-          const s = d?.specialties;
-          return Array.isArray(s) && s.length ? s.join(", ") : null;
-        } },
+        { label: "Specialties", get: (d) => list(d?.specialties) },
       ],
     },
     {
@@ -154,22 +156,20 @@ export function buildDoctorCompare(doctors: any[], parentDiagnoses: string[] = [
       rows: [
         { label: "Location", get: (d) => formatLocationDisplay(text(d?.location)) || text(d?.location) },
         { label: "Accepting new patients", get: (d) => yesNo(d?.acceptingNewPatients) },
-        { label: "Languages", get: (d) => {
-          const l = d?.languages;
-          return Array.isArray(l) && l.length ? l.join(", ") : text(l);
-        } },
+        // The column is languagesSpoken; `languages` was a guess and every row
+        // silently dropped because nothing ever filled it.
+        { label: "Languages", get: (d) => list(d?.languagesSpoken ?? d?.languages) },
       ],
     },
     {
-      group: "Credentials",
+      group: "Education & background",
       rows: [
+        { label: "Education", get: (d) => list(d?.education) },
         { label: "Medical school", get: (d) => text(d?.medicalSchool) },
-        { label: "Residency", get: (d) => text(d?.residency) },
-        { label: "Board certification", get: (d) => {
-          const b = d?.boardCertifications;
-          return Array.isArray(b) && b.length ? b.join(", ") : text(b);
-        } },
-        { label: "Years in practice", get: (d) => text(d?.yearsInPractice) },
+        { label: "Graduated", get: (d) => text(d?.graduationYear) },
+        { label: "Board certification", get: (d) => list(d?.boardCertifications) },
+        { label: "Years of experience", get: (d) => text(d?.yearsExperience) },
+        { label: "NPI", get: (d) => text(d?.npiNumber) },
       ],
     },
   ], doctors);
