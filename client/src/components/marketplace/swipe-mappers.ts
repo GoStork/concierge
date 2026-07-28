@@ -1340,21 +1340,33 @@ export function getDoctorTabs(
   // row, each location a MapPin row, each language a Globe row. Reads in far
   // less vertical space than the old titled-bubble sections. The bio (the tall
   // block) lives on its own "About" tab below.
+  // Each group is CAPPED with a "+N more" row. A doctor who practices at six
+  // clinics used to print six clinic rows + six location rows + languages and
+  // paper over her own face, while a single-clinic doctor beside her showed a
+  // tidy four. The caps keep every doctor's first slide about the same height
+  // (~6 rows) no matter how many affiliations they have; the full list lives on
+  // the profile.
+  const CLINIC_CAP = 2;
+  const LOC_CAP = 2;
+  const LANG_CAP = opts.compact ? 2 : 3;
+  const uniq = (values: (string | null | undefined)[]): string[] => {
+    const seen = new Set<string>();
+    return values
+      .map((v) => (v || "").trim())
+      .filter(Boolean)
+      .filter((v) => { const k = v.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  };
   const overviewItems: TabItem[] = [];
-  const seenClinics = new Set<string>();
-  clinics
-    .map((c) => (c.providerName || "").trim())
-    .filter(Boolean)
-    .filter((n) => { const k = n.toLowerCase(); if (seenClinics.has(k)) return false; seenClinics.add(k); return true; })
-    .forEach((n) => overviewItems.push({ label: n, value: "", icon: Building2 }));
-  const seenLoc = new Set<string>();
-  clinics
-    .map((c) => (c.location || "").trim())
-    .filter(Boolean)
-    .filter((l) => { const k = l.toLowerCase(); if (seenLoc.has(k)) return false; seenLoc.add(k); return true; })
-    .forEach((l) => { const flag = getLocationFlag(l); overviewItems.push({ label: flag ? `${flag} ${l}` : l, value: "", icon: MapPin }); });
-  const langs = (doctor.languagesSpoken || []).filter(Boolean);
-  langs.forEach((l) => overviewItems.push({ label: String(l), value: "", icon: Globe }));
+  const pushCapped = (values: string[], cap: number, icon: LucideIcon, moreLabel: string, format?: (v: string) => string) => {
+    values.slice(0, cap).forEach((v) => overviewItems.push({ label: format ? format(v) : v, value: "", icon }));
+    if (values.length > cap) overviewItems.push({ label: `+${values.length - cap} more ${moreLabel}`, value: "", icon });
+  };
+  pushCapped(uniq(clinics.map((c) => c.providerName)), CLINIC_CAP, Building2, "clinics");
+  pushCapped(uniq(clinics.map((c) => c.location)), LOC_CAP, MapPin, "locations", (l) => {
+    const flag = getLocationFlag(l);
+    return flag ? `${flag} ${l}` : l;
+  });
+  pushCapped(uniq(doctor.languagesSpoken || []), LANG_CAP, Globe, "languages");
   if (overviewItems.length > 0) tabs.push({ layoutType: "icon_list", items: overviewItems });
 
   // 1b) About - the bio on its OWN tab (it's the tall block that would otherwise

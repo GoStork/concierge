@@ -109,6 +109,10 @@ export interface EnrichedDoctorClinic {
 
 export interface EnrichedDoctor {
   slug: string;
+  // Stable identity across a doctor's per-clinic member rows - the key these
+  // rows were merged on. Callers that fetched a SUBSET of a person's rows (the
+  // Saved / Hidden views ask by slug) use it to re-key the merged card.
+  personKey: string;
   name: string;
   title: string | null;
   bio: string | null;
@@ -208,6 +212,7 @@ export function enrichDoctorRows(rows: any[], ctx: DoctorEnrichmentContext): Enr
 
     return {
       slug: m.slug,
+      personKey: key,
       name: m.name,
       title: m.title,
       bio: m.bio ?? null,

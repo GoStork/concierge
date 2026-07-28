@@ -468,9 +468,35 @@ export class ProvidersController {
     // browsing, so the Saved / Hidden views cannot just filter whatever page
     // happens to be loaded - a saved doctor outside the cap would be invisible
     // in their own Saved tab. Those views ask for exactly the slugs they need.
+    //
+    // A doctor who practices at N clinics has N member rows sharing one
+    // personKey, and enrichDoctorRows merges whatever rows this query returns
+    // into ONE card. Asking for only the saved slug therefore built a card with
+    // a single affiliation, while the directory showed the same doctor with all
+    // N - same person, two different cards. Expand the request to the person's
+    // sibling rows, then hand the card back under the slug the parent saved so
+    // the client's saved/hidden matching still lines up.
+    let savedSlugByPerson: Map<string, string> | null = null;
+    let requestedSlugs: string[] = [];
     if (query.slugs) {
-      const slugs = String(query.slugs).split(",").map((s) => s.trim()).filter(Boolean).slice(0, 300);
-      if (slugs.length) memberWhere.slug = { in: slugs };
+      requestedSlugs = String(query.slugs).split(",").map((s) => s.trim()).filter(Boolean).slice(0, 300);
+      if (requestedSlugs.length) {
+        const requestedRows = await this.prisma.providerMember.findMany({
+          where: { slug: { in: requestedSlugs } },
+          select: { slug: true, personKey: true },
+        });
+        savedSlugByPerson = new Map();
+        for (const r of requestedRows) {
+          if (r.personKey && !savedSlugByPerson.has(r.personKey)) savedSlugByPerson.set(r.personKey, r.slug!);
+        }
+        const personKeys = [...savedSlugByPerson.keys()];
+        // AND-composed: `search` sets memberWhere.OR below, and a second OR on
+        // the same object would silently replace this one.
+        memberWhere.AND = [
+          ...(memberWhere.AND || []),
+          { OR: [{ slug: { in: requestedSlugs } }, ...(personKeys.length ? [{ personKey: { in: personKeys } }] : [])] },
+        ];
+      }
     }
 
     // Provider/clinic users only ever see the doctors at their OWN clinic - never
@@ -550,7 +576,16 @@ export class ProvidersController {
     // An explicit slug request is already bounded by the caller's saved list;
     // truncating it would re-create the very gap this parameter exists to close.
     const ordered = applySponsoredOrdering(enrichedDoctors);
-    return query.slugs ? ordered : ordered.slice(0, 250);
+    if (!savedSlugByPerson) return ordered.slice(0, 250);
+    // Re-key each merged card to the slug the caller actually asked for (see the
+    // sibling-row expansion above), and drop anything the expansion pulled in
+    // that the caller never saved.
+    return ordered
+      .map((d: any) => {
+        const saved = d.personKey ? savedSlugByPerson!.get(d.personKey) : null;
+        return saved ? { ...d, slug: saved } : d;
+      })
+      .filter((d: any) => requestedSlugs.includes(d.slug));
   }
 
   // Lean clinic cards for the marketplace deck. Mirrors marketplace/doctors: one
