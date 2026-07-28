@@ -32,6 +32,7 @@ import pg from "pg";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   buildDoctorEnrichment, medicalSchoolFromEducation, canonicalizeLanguages, extractLanguagesFromText,
+  withDefaultEnglish,
 } from "../server/src/modules/providers/doctor-data";
 
 const pool = new pg.Pool({ connectionString: process.env.DIRECT_URL || process.env.DATABASE_URL });
@@ -78,15 +79,10 @@ async function main() {
       { OR: [{ bioRaw: { not: null } }, { bio: { not: null } }] },
     ];
   }
-  if (DERIVE_ONLY) {
-    // Rows holding something to re-derive from: an education list, or a
-    // language list that may predate the canonicalization rules.
-    where.OR = [
-      { NOT: { education: { isEmpty: true } } },
-      { NOT: { languagesSpoken: { isEmpty: true } } },
-      { bioRaw: { not: null } },
-    ];
-  }
+  // DERIVE_ONLY intentionally has no narrowing filter: it does no network or AI
+  // work, and the assumed-English rule applies to every US doctor including the
+  // ones with no education, no languages and no page text at all - which are
+  // precisely the rows that need it most.
 
   const members = await prisma.providerMember.findMany({
     where,
@@ -118,15 +114,20 @@ async function main() {
       // duplicates in one pass.
       if (sources.languagesSpoken !== "self") {
         const fromText = m.bioRaw ? extractLanguagesFromText(m.bioRaw) : [];
-        const canon = canonicalizeLanguages([...m.languagesSpoken, ...fromText]);
+        const observed = canonicalizeLanguages([...m.languagesSpoken, ...fromText]);
+        // Assumed English for US doctors, same rule and same provenance split
+        // as the live pipeline - shared helper, not a second implementation.
+        const state = (m.provider?.locations || [])[0]?.state ?? null;
+        const canon = withDefaultEnglish(observed, state);
         const changed =
           canon.length !== m.languagesSpoken.length ||
           canon.some((v, i) => v !== m.languagesSpoken[i]);
         if (changed && canon.length > 0) {
           data.languagesSpoken = canon;
-          sources.languagesSpoken = "bio";
+          // Only claim "bio" when a page actually told us something.
+          sources.languagesSpoken = observed.length === 0 ? "default" : "bio";
           if (langFixed < 20) {
-            console.log(`[doctor-data]   ${m.name}: [${m.languagesSpoken.join(", ")}] -> [${canon.join(", ")}]`);
+            console.log(`[doctor-data]   ${m.name}: [${m.languagesSpoken.join(", ")}] -> [${canon.join(", ")}]${observed.length === 0 ? " (assumed)" : ""}`);
           }
           langFixed++;
         }

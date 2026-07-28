@@ -16,7 +16,11 @@
 
 import type { GoogleGenerativeAI } from "@google/generative-ai";
 
-export type FieldSource = "nppes" | "abog" | "bio" | "cms" | "self";
+// "default" means assumed, not observed - currently only English on a
+// US-practising doctor. It is a distinct value on purpose: it keeps assumed
+// values countable, so `languagesSpoken` coverage can still be measured against
+// what we actually found on a page rather than what we filled in.
+export type FieldSource = "nppes" | "abog" | "bio" | "cms" | "self" | "default";
 
 const OK_TAXONOMY = /reproductive endocrinology|obstetrics|gynecolog/i;
 
@@ -57,6 +61,32 @@ export function stateCode(state: string | null | undefined): string | null {
   const s = state.trim();
   if (/^[A-Za-z]{2}$/.test(s)) return s.toUpperCase();
   return STATE_TO_CODE[s.toLowerCase()] || null;
+}
+
+// stateCode() accepts ANY two-letter string, so "BC" (British Columbia) and
+// "DF" (Distrito Federal) come back looking like US states. Membership in the
+// real set is what decides whether a doctor practises in the US.
+const US_STATE_CODES = new Set([...Object.values(STATE_TO_CODE), "PR", "VI", "GU", "AS", "MP"]);
+export function isUsState(state: string | null | undefined): boolean {
+  const code = stateCode(state);
+  return !!code && US_STATE_CODES.has(code);
+}
+
+/**
+ * Ensure a US-practising doctor lists English.
+ *
+ * Every physician licensed and practising in the US speaks English, so omitting
+ * it reads as missing data rather than as a fact. This is an ASSUMPTION, not an
+ * observation - callers mark it with the "default" provenance when English is
+ * the only entry, so the genuine coverage gap stays measurable.
+ *
+ * Applied only to US locations: adding English to a Colombian or Mexican partner
+ * clinic's doctors would be inventing a fact, not restating a certainty.
+ */
+export function withDefaultEnglish(languages: string[], state: string | null | undefined): string[] {
+  if (!isUsState(state)) return languages;
+  if (languages.some((l) => l.toLowerCase() === "english")) return languages;
+  return ["English", ...languages];
 }
 
 export interface NppesPick {
@@ -526,8 +556,22 @@ export async function buildDoctorEnrichment(opts: {
   const deterministicLangs = wants("bio") && extractionText ? extractLanguagesFromText(extractionText) : [];
   // Canonicalize the UNION, not each half - otherwise the model's "Farsi" and
   // the extractor's "Persian" both survive as separate entries.
-  const allLanguages = canonicalizeLanguages([...(bioFields?.languagesSpoken || []), ...deterministicLangs]);
-  set("languagesSpoken", allLanguages, "bio");
+  const observedLanguages = canonicalizeLanguages([...(bioFields?.languagesSpoken || []), ...deterministicLangs]);
+  // Every doctor practising in the US speaks English, so a page that never says
+  // so leaves a cell that reads as broken rather than as a fact. Add it.
+  // Provenance records whether anything was OBSERVED: "default" when English is
+  // the only entry and we assumed it, "bio" when a page actually told us
+  // something. Without that split, filling English everywhere would make
+  // coverage read ~100% and erase the ability to see the real gap.
+  const allLanguages = withDefaultEnglish(observedLanguages, opts.state);
+  if (allLanguages.length > 0) {
+    const src: FieldSource = observedLanguages.length === 0 ? "default" : "bio";
+    // Never downgrade a previously OBSERVED list to the assumed default just
+    // because this run found nothing - a moved page or a failed fetch would
+    // otherwise quietly replace ["Spanish","Portuguese"] with ["English"].
+    const wouldDowngrade = src === "default" && sources["languagesSpoken"] === "bio";
+    if (!wouldDowngrade) set("languagesSpoken", allLanguages, src);
+  }
 
   if (bioFields) {
     set("specialties", bioFields.specialties, "bio");
