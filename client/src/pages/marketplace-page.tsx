@@ -2239,22 +2239,13 @@ export default function MarketplacePage() {
   // starts diffing them by hand across browser tabs.
   const compareSelected = comparableSaved.filter((p: any) => compareIds.includes(p.id));
   const compareBarEl = isSavedView && compareKind && comparableSaved.length >= 2 ? (
-    // The Compare button sits with the label on the first row and never moves:
-    // the pills wrap in their own box, so adding a fifth saved clinic cannot
-    // push the action a parent is looking for onto a second line.
+    // Label left, button right, pills wrapping in between. The pills own their
+    // own box so however many are saved they wrap inside it - the button is a
+    // sibling, so it stays pinned to the right of the FIRST row instead of
+    // being pushed to a second one by the names of the things being compared.
     <div className="w-full px-3 pt-2 flex items-start gap-3" data-testid="compare-bar">
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="t-helper">Compare</span>
-        <Button
-          size="sm"
-          disabled={compareIds.length < 2}
-          onClick={() => setCompareOpen(true)}
-          data-testid="compare-open"
-        >
-          Compare {compareIds.length >= 2 ? compareIds.length : ""}
-        </Button>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 min-w-0">
+      <span className="t-helper shrink-0 pt-1.5">Compare</span>
+      <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
       {comparableSaved.map((p: any) => {
         const on = compareIds.includes(p.id);
         return (
@@ -2274,6 +2265,15 @@ export default function MarketplacePage() {
         );
       })}
       </div>
+      <Button
+        size="sm"
+        className="shrink-0"
+        disabled={compareIds.length < 2}
+        onClick={() => setCompareOpen(true)}
+        data-testid="compare-open"
+      >
+        Compare {compareIds.length >= 2 ? compareIds.length : ""}
+      </Button>
     </div>
   ) : null;
 
