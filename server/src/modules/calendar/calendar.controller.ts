@@ -319,9 +319,16 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       data: {
         sessionId: targetSessionId,
         role: "assistant",
-        content: `Great news! ${parentName} has scheduled a consultation. You can chat with them directly here.`,
+        // Dual-audience: BOTH sides read this thread, so each gets addressed
+        // directly. The parent was previously served the provider's copy and
+        // read about themselves in the third person ("Eran Amir has scheduled
+        // a consultation") in their own chat.
+        content: `You're all set - your consultation with ${provider.name} is booked. You can message them directly here any time before the call.`,
         senderType: "system",
         senderName: "GoStork",
+        uiCardData: {
+          providerContent: `Great news! ${parentName} has scheduled a consultation. You can chat with them directly here.`,
+        } as any,
         createdAt: announcementCreatedAt,
       },
     });

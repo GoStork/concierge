@@ -883,6 +883,21 @@ async function pr15(db: Client) {
     check("the briefing is not among the messages the parent is served",
       !parentMsgs.some((m: any) => m.id === briefingId), `${parentMsgs.length} message(s) served`);
     check("the briefing row does exist (so the check above is meaningful)", unreadRow.rows[0].n === 1);
+
+    // The disclosure is the OTHER half: the parent is told a summary was
+    // shared. It must reach them, and must not be written about them in the
+    // third person the way the booking announcement used to be.
+    const notice = "I've shared a short summary of your journey";
+    await db.query(
+      `INSERT INTO "AiChatMessage" (id,"sessionId",role,content,"senderType","senderName","uiCardData","createdAt")
+       VALUES (gen_random_uuid(),$1,'assistant',$2,'system','GoStork',
+               '{"parentBriefingNotice":true,"providerContent":"The parent has been told we shared their background with you."}'::jsonb, now())`,
+      [session, `So you don't have to start from scratch on the call, ${notice} with them.`],
+    );
+    const parentView2: any = await (await jfetch(`${BASE}/api/ai-concierge/session/${session}/messages`, { headers: f.parentAuth })).json();
+    const parentBlob2 = JSON.stringify(parentView2);
+    check("the parent IS told that a summary was shared", parentBlob2.includes(notice));
+    check("telling them does not also expose the briefing itself", !parentBlob2.includes(secret));
   } finally {
     await destroyFixture(db, f);
   }

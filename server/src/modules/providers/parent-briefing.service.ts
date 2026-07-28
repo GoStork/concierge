@@ -146,9 +146,14 @@ export class ParentBriefingService {
       facts.profile ? `Structured profile: ${JSON.stringify(facts.profile)}` : "No structured profile on file.",
       facts.savedProfiles.length ? `Profiles they saved as favourites: ${facts.savedProfiles.length}` : "",
       "",
+      // When there is no conversation, say NOTHING about it. Feeding in "they
+      // have not written anything" made the model report it as a finding
+      // ("has not written any messages in the chat yet") - platform trivia the
+      // provider has no use for, and exactly the absence-narration the rules
+      // above forbid. An omitted fact cannot be narrated.
       facts.conversation.length
         ? `THEIR OWN WORDS (most recent last):\n${facts.conversation.join("\n").slice(0, 12000)}`
-        : "They have not written anything in chat yet.",
+        : "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -288,6 +293,35 @@ export class ParentBriefingService {
       await this.prisma.providerParentBriefing
         .update({ where: { id: row.id }, data: { messageId: message.id } })
         .catch(() => {});
+
+      // Tell the parent, in their own chat, that we did this.
+      //
+      // Posted from HERE rather than from the booking flow on purpose: it is
+      // only true when a briefing actually went out. A blanket "we've shared
+      // your background" on every booking would be a claim we had not kept
+      // whenever generation failed or there was too little to say.
+      //
+      // Dual-audience - both sides read this thread, so each is addressed
+      // directly (see the providerContent convention in chat-message-list).
+      await this.prisma.aiChatMessage.create({
+        data: {
+          sessionId: opts.sessionId,
+          role: "assistant",
+          content:
+            `So you don't have to start from scratch on the call, I've shared a short summary of your journey with ` +
+            `${opts.providerName || "them"} - what you're looking for and where you are so far. ` +
+            `Anything you'd rather they didn't have, just say so here and I'll pass it on.`,
+          senderType: "system",
+          senderName: "GoStork",
+          uiCardData: {
+            parentBriefingNotice: true,
+            providerContent:
+              "The parent has been told we shared their background with you, and can ask us to correct it.",
+          } as any,
+        },
+      }).catch((e: any) =>
+        this.logger.warn(`[parent-briefing] Disclosure notice failed: ${e?.message}`),
+      );
 
       this.logger.log(
         `[parent-briefing] Posted briefing ${row.id} into session ${opts.sessionId} for provider ${opts.providerId}`,
