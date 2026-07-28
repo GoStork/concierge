@@ -2,6 +2,7 @@ import { forwardRef, type ReactNode, Fragment } from "react";
 import { MessageStatus } from "@/components/ui/message-status";
 import { chatDateLabel } from "./chat-utils";
 import { WhisperProfileCard } from "./whisper-profile-card";
+import { renderRichText } from "@/lib/render-rich-text";
 import { SpecialMessageCard } from "./special-message-card";
 import { CostSheetDraftStack } from "./cost-sheet-draft-stack";
 import { CelebrationBurst } from "./celebration-burst";
@@ -71,21 +72,7 @@ function deriveInitials(name: string | null | undefined): string | null {
 }
 
 /** Renders a chat message with **bold** and line break support. */
-function renderMessageContent(text: string): ReactNode {
-  return text.split("\n").map((line, li) => {
-    const parts = line.split(/(\*\*[^*]+\*\*)/g);
-    return (
-      <Fragment key={li}>
-        {li > 0 && <br />}
-        {parts.map((part, pi) =>
-          part.startsWith("**") && part.endsWith("**")
-            ? <strong key={pi}>{part.slice(2, -2)}</strong>
-            : <Fragment key={pi}>{part}</Fragment>
-        )}
-      </Fragment>
-    );
-  });
-}
+const renderMessageContent = renderRichText;
 
 /**
  * Shared chat message list component used by provider chat and admin concierge monitor.

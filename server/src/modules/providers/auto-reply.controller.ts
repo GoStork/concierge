@@ -238,6 +238,19 @@ export class AutoReplyController {
       staffName = staff?.name || staffName;
     }
     const sample = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
+    // Preview with a REAL profile from this provider where one exists, so the
+    // provider sees the actual shape of the reference and link rather than a
+    // made-up id. Falls back to a plausible sample, and the caller can ask for
+    // the no-profile case to see what a general consultation looks like.
+    let profileRef: string | null = null;
+    let profileLink: string | null = null;
+    if (body?.withProfile !== false) {
+      const sampleProfile = await this.autoReply.sampleProfileReference(providerId);
+      profileRef = sampleProfile.profileRef;
+      profileLink = sampleProfile.profileLink;
+    }
+
     return {
       rendered: this.autoReply.renderBody(String(body?.body || ""), {
         parentName: "Alex",
@@ -245,7 +258,11 @@ export class AutoReplyController {
         staffName,
         callType: "consultation",
         callTime: this.autoReply.formatCallTime(sample, body?.timezone || null),
+        profileRef,
+        profileLink,
       }),
+      /** Lets the UI say "this paragraph disappears on a general call". */
+      hadProfile: !!profileRef,
     };
   }
 }

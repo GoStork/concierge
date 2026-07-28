@@ -1,6 +1,7 @@
 import { Injectable, Inject, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { renderAutoReplyBody, type AutoReplyVars } from "../../../../shared/auto-reply-starters";
+import { getBaseUrl } from "../../lib/get-base-url";
 
 /**
  * Provider booking auto-reply.
@@ -94,7 +95,7 @@ export class AutoReplyService {
   async findThreadForDirectBooking(opts: {
     providerId: string;
     parentUserId: string;
-  }): Promise<{ id: string; subjectType: string | null } | null> {
+  }): Promise<{ id: string; subjectType: string | null; subjectProfileId: string | null } | null> {
     const parent = await this.prisma.user.findUnique({
       where: { id: opts.parentUserId },
       select: { parentAccountId: true },
@@ -115,7 +116,7 @@ export class AutoReplyService {
         status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
       },
       orderBy: { updatedAt: "desc" },
-      select: { id: true, subjectType: true },
+      select: { id: true, subjectType: true, subjectProfileId: true },
     });
   }
 
@@ -173,12 +174,85 @@ export class AutoReplyService {
       providerName: provider?.name || null,
       staffName: booking.providerUser?.name || null,
       subjectType: session.subjectType || null,
+      subjectProfileId: session.subjectProfileId || null,
       bookingId: booking.id,
       scheduledAt: booking.scheduledAt || null,
       bookerTimezone: booking.bookerTimezone || null,
       meetingSubtype: booking.meetingSubtype || null,
     });
     return session.id;
+  }
+
+  /**
+   * Resolve the specific donor / surrogate this booking is about, as a display
+   * reference plus a link to their profile.
+   *
+   * Returns nulls when the call is not about one profile (a general agency
+   * consultation), which makes renderAutoReplyBody drop the paragraph that
+   * would have named them.
+   */
+  async resolveProfileReference(opts: {
+    subjectProfileId?: string | null;
+    subjectType?: string | null;
+  }): Promise<{ profileRef: string | null; profileLink: string | null }> {
+    const none = { profileRef: null, profileLink: null };
+    if (!opts.subjectProfileId) return none;
+
+    const t = (opts.subjectType || "").toLowerCase();
+    // Same loose matching the session-title derivation uses - subjectType has
+    // historically been "egg_donor" / "egg" / "surrog" / "surrogate".
+    const kind = t.includes("sperm")
+      ? { model: this.prisma.spermDonor, label: "Sperm Donor", path: "spermdonor" }
+      : t.includes("egg") || t.includes("donor")
+        ? { model: this.prisma.eggDonor, label: "Egg Donor", path: "eggdonor" }
+        : t.includes("surrog")
+          ? { model: this.prisma.surrogate, label: "Surrogate", path: "surrogate" }
+          : null;
+    if (!kind) return none;
+
+    const row = await (kind.model as any)
+      .findUnique({
+        where: { id: opts.subjectProfileId },
+        select: { id: true, externalId: true, providerId: true },
+      })
+      .catch(() => null);
+    // No externalId means there is no number a parent would recognise, so there
+    // is nothing useful to say - drop the reference rather than invent one.
+    if (!row?.externalId) return none;
+
+    const base = getBaseUrl();
+    return {
+      profileRef: `${kind.label} #${row.externalId}`,
+      profileLink: `${base}/${kind.path}/${row.providerId}/${row.id}`,
+    };
+  }
+
+  /**
+   * A real profile from this provider, for the settings preview - so a provider
+   * sees the shape of an actual reference and link rather than a made-up id.
+   * Falls back to a plausible sample when the org has no profiles loaded yet.
+   */
+  async sampleProfileReference(providerId: string): Promise<{ profileRef: string | null; profileLink: string | null }> {
+    const candidates: Array<{ model: any; label: string; path: string }> = [
+      { model: this.prisma.eggDonor, label: "Egg Donor", path: "eggdonor" },
+      { model: this.prisma.surrogate, label: "Surrogate", path: "surrogate" },
+      { model: this.prisma.spermDonor, label: "Sperm Donor", path: "spermdonor" },
+    ];
+    for (const c of candidates) {
+      const row = await c.model
+        .findFirst({
+          where: { providerId, externalId: { not: null } },
+          select: { id: true, externalId: true, providerId: true },
+        })
+        .catch(() => null);
+      if (row?.externalId) {
+        return {
+          profileRef: `${c.label} #${row.externalId}`,
+          profileLink: `${getBaseUrl()}/${c.path}/${row.providerId}/${row.id}`,
+        };
+      }
+    }
+    return { profileRef: "Egg Donor #4821", profileLink: `${getBaseUrl()}/eggdonor/...` };
   }
 
   /**
@@ -261,6 +335,7 @@ export class AutoReplyService {
     providerName?: string | null;
     staffName?: string | null;
     subjectType?: string | null;
+    subjectProfileId?: string | null;
     bookingId?: string | null;
     scheduledAt?: Date | null;
     bookerTimezone?: string | null;
@@ -327,7 +402,14 @@ export class AutoReplyService {
             ? "doctor call"
             : "consultation";
 
+      const { profileRef, profileLink } = await this.resolveProfileReference({
+        subjectProfileId: opts.subjectProfileId,
+        subjectType: opts.subjectType,
+      });
+
       const content = this.renderBody(String(template.body), {
+        profileRef,
+        profileLink,
         parentName: opts.parentName,
         providerName: opts.providerName,
         staffName: opts.staffName,

@@ -340,6 +340,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       providerName: provider.name,
       staffName: booking.providerUser?.name || null,
       subjectType: body.subjectType || null,
+      subjectProfileId: body.subjectProfileId || null,
       bookingId: booking.id,
       scheduledAt: booking.scheduledAt || null,
       bookerTimezone: booking.bookerTimezone || null,

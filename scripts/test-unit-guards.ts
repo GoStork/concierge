@@ -19,7 +19,7 @@
 
 import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, topResultId } from "../server/match-card-parse";
 import { resolveParentEvaSessionId } from "../server/parent-visibility";
-import { AUTO_REPLY_STARTERS, AUTO_REPLY_TOKENS, bodyPromisesAttachment, renderAutoReplyBody } from "../shared/auto-reply-starters";
+import { AUTO_REPLY_STARTERS, AUTO_REPLY_TOKENS, autoReplyStartersFor, bodyPromisesAttachment, renderAutoReplyBody } from "../shared/auto-reply-starters";
 import { planDedupe, thumbCorrelation, worstBlockDeviation, DEDUP_CORRELATION, DEDUP_MAX_BLOCK_DEVIATION, type Fingerprint } from "../server/src/modules/providers/photo-dedup";
 
 const BASE = process.env.TEST_BASE_URL || "http://localhost:5001";
@@ -254,41 +254,62 @@ async function ut09() {
     `${repeated.keep.join(",")} repeats=${repeated.exactRepeats}`);
 }
 
-// ─── UT-10: the auto-reply starter copy stays in sync with its tokens ────────
+// ─── UT-10: the auto-reply starter copy stays in sync with its tokens ───────
 // The starters are REAL default text a provider can save unedited, and they
-// double as the documentation for which tokens exist. If someone rewrites the
-// copy and drops {{call_time}}, nothing at runtime complains - the provider
-// just never discovers the token. Equally, the "message only" variant must not
-// promise a file, or the editor's missing-attachment warning misfires on the
-// default.
+// double as the documentation for which tokens exist. Two silent failures to
+// guard: copy that drops a token (the provider never discovers it), and a
+// profile paragraph that survives a booking with no specific donor - which
+// would ship "I can see you're interested in {{profile_ref}}" to a parent.
 async function ut10() {
-  for (const starter of AUTO_REPLY_STARTERS) {
-    const missing = AUTO_REPLY_TOKENS
-      .map((t) => t.token)
-      .filter((tok) => !starter.body.includes(tok));
-    check(`starter "${starter.key}" uses every available token`, missing.length === 0, missing.join(", "));
+  const CORE = AUTO_REPLY_TOKENS.filter((t) => !(t as any).profileOnly).map((t) => t.token);
+  const FULL_VARS = {
+    parentName: "Alex", providerName: "Bright Futures", staffName: "Dana",
+    profileRef: "Egg Donor #4821", profileLink: "https://example.test/eggdonor/p/d",
+    callTime: "Friday, August 1 at 9:30 AM EDT",
+  };
 
-    const rendered = renderAutoReplyBody(starter.body, {
-      parentName: "Alex", providerName: "Bright Futures", staffName: "Dana",
-      callType: "consultation", callTime: "Friday, August 1 at 9:30 AM EDT",
-    });
-    check(`starter "${starter.key}" renders with nothing left unsubstituted`, !/\{\{|\}\}/.test(rendered),
-      rendered.slice(0, 120));
-    check(`starter "${starter.key}" addresses the parent by name`, rendered.includes("Alex"));
+  // Every service line a provider can pick, plus the neutral default.
+  const SERVICES = [null, "Egg Donor Agency", "Egg Bank", "Surrogacy Agency", "Sperm Bank", "IVF Clinic", "Legal Services"];
 
-    check(`starter "${starter.key}" declares its attachment intent correctly`,
-      bodyPromisesAttachment(starter.body) === starter.expectsAttachment,
-      `copy says ${bodyPromisesAttachment(starter.body)}, flag says ${starter.expectsAttachment}`);
+  for (const svc of SERVICES) {
+    const label = svc || "(neutral)";
+    for (const starter of autoReplyStartersFor(svc)) {
+      const missing = CORE.filter((tok) => !starter.body.includes(tok));
+      check(`${label} / ${starter.key}: uses every core token`, missing.length === 0, missing.join(", "));
+
+      const rendered = renderAutoReplyBody(starter.body, FULL_VARS);
+      check(`${label} / ${starter.key}: renders with nothing unsubstituted`, !/\{\{|\}\}/.test(rendered), rendered.slice(0, 100));
+
+      check(`${label} / ${starter.key}: declares its attachment intent correctly`,
+        bodyPromisesAttachment(starter.body) === starter.expectsAttachment);
+
+      // THE guard: with no specific profile, the reference paragraph must be
+      // gone entirely - not blank, not half a sentence, not a raw token.
+      const noProfile = renderAutoReplyBody(starter.body, { ...FULL_VARS, profileRef: null, profileLink: null });
+      check(`${label} / ${starter.key}: no-profile render drops the reference cleanly`,
+        !/\{\{|interested in\s*$|interested in\s*\n|review (her|him) here/i.test(noProfile) && noProfile.length > 0,
+        noProfile.slice(0, 120));
+      check(`${label} / ${starter.key}: still greets the parent without a profile`,
+        noProfile.includes("Alex") && noProfile.includes("Bright Futures"));
+      check(`${label} / ${starter.key}: no blank paragraph is left behind`,
+        !/\n\s*\n\s*\n/.test(noProfile), JSON.stringify(noProfile.slice(0, 80)));
+    }
   }
 
-  check("exactly one starter is the no-attachment option",
-    AUTO_REPLY_STARTERS.filter((s) => !s.expectsAttachment).length === 1);
-  check("exactly one starter sends an attachment",
-    AUTO_REPLY_STARTERS.filter((s) => s.expectsAttachment).length === 1);
-  check("the default (first) starter promises no file it cannot deliver",
-    !AUTO_REPLY_STARTERS[0].expectsAttachment, AUTO_REPLY_STARTERS[0].key);
-  check("starter keys are unique",
-    new Set(AUTO_REPLY_STARTERS.map((s) => s.key)).size === AUTO_REPLY_STARTERS.length);
+  // Donor/surrogate services must actually reference the profile - that is the
+  // whole point of tailoring them.
+  for (const svc of ["Egg Donor Agency", "Surrogacy Agency", "Sperm Bank", "Egg Bank"]) {
+    const body = autoReplyStartersFor(svc)[0].body;
+    check(`${svc}: references the specific profile`, body.includes("{{profile_ref}}") && body.includes("{{profile_link}}"));
+  }
+  // ...and services with no profile concept must NOT pretend to have one.
+  for (const svc of ["IVF Clinic", "Legal Services", null]) {
+    const body = autoReplyStartersFor(svc)[0].body;
+    check(`${svc || "(neutral)"}: does not reference a profile it never has`,
+      !body.includes("{{profile_ref}}"));
+  }
+
+  check("the default starter promises no file it cannot deliver", !AUTO_REPLY_STARTERS[0].expectsAttachment);
 }
 
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [

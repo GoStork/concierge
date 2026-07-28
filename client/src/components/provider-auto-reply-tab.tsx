@@ -25,7 +25,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getFileTypeMeta, formatFileSize } from "@/lib/file-type-icon";
 import { FileTypeGlyph } from "@/components/chat/file-type-glyph";
-import { AUTO_REPLY_STARTERS, AUTO_REPLY_TOKENS, bodyPromisesAttachment, type AutoReplyStarter } from "@shared/auto-reply-starters";
+import { AUTO_REPLY_STARTERS, AUTO_REPLY_TOKENS, autoReplyStartersFor, bodyPromisesAttachment, type AutoReplyStarter } from "@shared/auto-reply-starters";
 
 /**
  * Provider booking auto-reply settings.
@@ -194,14 +194,30 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
    * is neither empty nor an untouched starter, it is the provider's own text
    * and replacing it needs their say-so.
    */
+  /** True when `text` is an untouched starter for ANY service line - the
+   *  provider has not written anything of their own worth protecting. */
+  function isAnyStarterBody(text: string): boolean {
+    const all = [null, ...serviceTypes.map((t: any) => t.name)];
+    return all.some((svc) => autoReplyStartersFor(svc).some((s) => s.body.trim() === text));
+  }
+
   function applyStarter(starter: AutoReplyStarter) {
     if (!draft) return;
     const current = draft.body.trim();
-    const isUntouched = current === "" || AUTO_REPLY_STARTERS.some((s) => s.body.trim() === current);
+    const isUntouched = current === "" || isAnyStarterBody(current);
     if (!isUntouched && !confirm("Replace your message with this starter? Your current text will be lost.")) return;
     setDraft({ ...draft, body: starter.body });
     setPreview(null);
   }
+
+  // Starters follow the chosen service line, so an egg-donor template opens
+  // with egg-donor copy. Resolved from the picker rather than the saved row so
+  // it updates the moment the provider changes the dropdown.
+  const activeServiceName: string | null =
+    draft && draft.providerTypeId !== ANY_SERVICE
+      ? (serviceTypes.find((t: any) => t.id === draft.providerTypeId)?.name ?? null)
+      : null;
+  const starters = autoReplyStartersFor(activeServiceName);
 
   // The attachment starter promises a file. Saying "I've attached..." with
   // nothing attached is worse than not mentioning it, so flag the mismatch.
@@ -367,7 +383,25 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
               <p className="t-form-label mb-1.5">Service line</p>
               <Select
                 value={draft.providerTypeId}
-                onValueChange={(v) => setDraft({ ...draft, providerTypeId: v })}
+                onValueChange={(v) => {
+                  // Retarget the copy at the new service line, but only while
+                  // the body is still an untouched starter - never overwrite
+                  // something the provider wrote.
+                  const name = v === ANY_SERVICE
+                    ? null
+                    : (serviceTypes.find((t: any) => t.id === v)?.name ?? null);
+                  const keepIndex = Math.max(
+                    0,
+                    starters.findIndex((s) => s.body.trim() === draft.body.trim()),
+                  );
+                  const swap = isAnyStarterBody(draft.body.trim());
+                  setDraft({
+                    ...draft,
+                    providerTypeId: v,
+                    body: swap ? autoReplyStartersFor(name)[keepIndex].body : draft.body,
+                  });
+                  setPreview(null);
+                }}
               >
                 <SelectTrigger data-testid="select-auto-reply-service">
                   <SelectValue />
@@ -392,7 +426,7 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
               <p className="t-form-label">Message</p>
               <div className="flex items-center gap-1.5">
                 <span className="t-helper">Start from:</span>
-                {AUTO_REPLY_STARTERS.map((s) => {
+                {starters.map((s) => {
                   const active = draft.body.trim() === s.body.trim();
                   return (
                     <button

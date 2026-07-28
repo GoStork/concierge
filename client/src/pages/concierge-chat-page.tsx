@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
+import { ivfContextSearch } from "@/components/ivf-success-rates-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { InvoiceHistorySidebarSection } from "@/components/chat/invoice-history-sidebar-section";
 import { CostSheetParentAck } from "@/components/chat/special-message-card";
@@ -22,6 +23,7 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { isVideoInviteExpired } from "@/lib/booking-time";
 import { StagedFileChip } from "@/components/chat/staged-file-chip";
 import { AttachmentMessageCard } from "@/components/chat/attachment-message-card";
+import { renderRichLine } from "@/lib/render-rich-text";
 import { DonorStatusPill, getDonorStatusStyle } from "@/lib/donor-status";
 import { useMarketplaceViewContext, recordProfileView, recordImpression } from "@/lib/profile-views";
 import { formatMoneyCents, formatMoneyDollars } from "@/lib/format-money";
@@ -153,47 +155,6 @@ interface ChatMessage {
 // sometimes emits a join link (a full URL or an in-app /room/<id> path), often
 // wrapped in `backticks` - this makes those clickable and strips the code
 // backticks (the bubble does not support markdown code spans).
-function linkifyTextNode(text: string, keyPrefix: string): React.ReactNode[] {
-  const cleaned = text.replace(/`/g, "");
-  const re = /(https?:\/\/[^\s)]+|\/room\/[A-Za-z0-9-]+)/g;
-  const nodes: React.ReactNode[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  let idx = 0;
-  while ((m = re.exec(cleaned)) !== null) {
-    if (m.index > last) nodes.push(<Fragment key={`${keyPrefix}-t${idx}`}>{cleaned.slice(last, m.index)}</Fragment>);
-    const href = m[0];
-    nodes.push(
-      <a
-        key={`${keyPrefix}-a${idx}`}
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline"
-        style={{ color: "inherit", textUnderlineOffset: "2px" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {href}
-      </a>,
-    );
-    last = m.index + m[0].length;
-    idx++;
-  }
-  if (last < cleaned.length) nodes.push(<Fragment key={`${keyPrefix}-t${idx}`}>{cleaned.slice(last)}</Fragment>);
-  return nodes;
-}
-
-function renderRichLine(line: string): React.ReactNode[] {
-  const out: React.ReactNode[] = [];
-  line.split(/(\*\*[^*]+\*\*)/g).forEach((part, pi) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      out.push(<strong key={`b${pi}`}>{part.slice(2, -2)}</strong>);
-    } else if (part) {
-      out.push(...linkifyTextNode(part, `p${pi}`));
-    }
-  });
-  return out;
-}
 
 // The first chip of a binary quick reply gets the positive styling, but the
 // thumbs-up icon only belongs on chips that actually say yes. "Find me a better
@@ -1875,7 +1836,11 @@ function DoctorMatchCard({ card, brandColor, onAction }: { card: DoctorCard; bra
     compact: isMobile,
   });
 
-  const goToProfile = () => navigate(`/doctors/${card.slug}`, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } });
+  // Forward the same context the badge above was computed from - the clinic card
+  // in this file already does (providerUrl). Without it the card could show
+  // "Top 10%" and the profile it opens could not.
+  const doctorUrl = `/doctors/${card.slug}${ivfContextSearch({ eggSource, ageGroup, isNewPatient: String(isNew) })}`;
+  const goToProfile = () => navigate(doctorUrl, { state: { fromChat: true, chatPath: window.location.pathname + window.location.search } });
   const clinicName = primary?.providerName || "their clinic";
 
   // Eva surfacing a doctor card in chat is an impression (keyed by slug, like
