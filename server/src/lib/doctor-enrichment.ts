@@ -219,7 +219,13 @@ export function enrichDoctorRows(rows: any[], ctx: DoctorEnrichmentContext): Enr
       matchedSpecialties: matchedSpecialtiesOf(m.specialties || []),
       languagesSpoken: m.languagesSpoken || [],
       boardCertifications: m.boardCertifications || [],
-      education: m.education || null,
+      // education is a String[] column; the interface used to declare it as
+      // `string | null`, which typechecked only because the value is passed
+      // straight through untyped.
+      education: m.education || [],
+      professionalMemberships: m.professionalMemberships || [],
+      medicalSchool: m.medicalSchool || null,
+      graduationYear: m.graduationYear ?? null,
       yearsExperience: m.yearsExperience ?? null,
       providerGender: m.providerGender || null,
       offersVideoVisits: !!m.offersVideoVisits,
