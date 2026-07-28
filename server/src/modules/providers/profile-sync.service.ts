@@ -1643,7 +1643,7 @@ async function withPhotoFetchSlot<T>(fn: () => Promise<T>): Promise<T> {
 // null return is load-bearing: callers MUST treat it as "do not store this
 // URL," because the alternative would be writing a transient S3 pre-signed URL
 // into the DB where it expires in 24h and breaks the photo silently.
-async function persistSinglePhoto(
+export async function persistSinglePhoto(
   url: string,
   providerId: string,
   storageService: StorageService | null,

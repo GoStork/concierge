@@ -878,6 +878,17 @@ async function px17() {
   check("the slack spacer is the last thing on the page",
     dr.indexOf("compare-swap-strip") < dr.indexOf("height: headSlack"));
   check("and the page clears the tray fixed over its bottom", /pb-28/.test(dr));
+  // WebKit insets sticky descendants by the SCROLL CONTAINER's padding, so p-4
+  // on the scroller opened a 16px gutter above the pinned header and another to
+  // the left of the pinned label column - and rows scrolled through both, which
+  // is text floating above the column titles and beside the field names.
+  check("the scroller carries no padding of its own",
+    /overflow-auto">\s*$/m.test(dr) || /className="flex-1 overflow-auto"/.test(dr));
+  check("so spacing lives inside it instead",
+    /max-w-\[1200px\] w-full mx-auto pt-4 pb-28/.test(dr));
+  check("and the pinned label column covers from the very edge",
+    /w-\[150px\] sm:w-\[200px\] pl-4 sticky top-0 left-0/.test(dr)
+      && /py-2\.5 pl-4 pr-4 align-top text-left sticky left-0/.test(dr));
   // The page wrapper in layout-shell carries `animate-in slide-in-from-bottom-4`,
   // and an element with an animated transform becomes the containing block for
   // every FIXED descendant - permanently, since the animation fills forwards.

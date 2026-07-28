@@ -204,7 +204,7 @@ interface SartResult {
   members: SartMember[];
 }
 
-function normalizeName(name: string): string {
+export function normalizeName(name: string): string {
   return name
     .replace(/^\s*(?:Dr|Doctor)\b\.?\s*/i, "") // strip leading "Dr."/"Doctor" so "Dr. X" and "X" match
     // Drop punctuation FIRST so dotted credentials collapse ("M.D." -> "MD",

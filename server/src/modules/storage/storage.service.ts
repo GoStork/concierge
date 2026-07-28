@@ -169,6 +169,25 @@ export class StorageService {
     return contents;
   }
 
+  // Does the object exist? The bucket is private, so an anonymous HTTP HEAD on
+  // the storage.googleapis.com URL always answers 403 and tells you nothing -
+  // liveness of a stored GCS URL has to be asked through the authenticated
+  // client like this.
+  async objectExists(objectPath: string): Promise<boolean> {
+    this.ensureConfigured();
+    const [exists] = await this.bucket.file(objectPath).exists();
+    return exists;
+  }
+
+  // Inverse of publicUrlFor: pull the object path back out of a stored GCS URL.
+  // Returns null for anything that isn't a URL into our bucket.
+  objectPathFrom(url: string | null | undefined): string | null {
+    if (!url) return null;
+    const m = url.match(/storage\.googleapis\.com\/([^/]+)\/(.+)$/i);
+    if (!m || m[1] !== this.bucketName) return null;
+    return decodeURIComponent(m[2].split("?")[0]);
+  }
+
   isConfigured(): boolean {
     return !!this.storage;
   }

@@ -284,9 +284,17 @@ export function CompareDrawer({
         </Button>
       </div>
 
+      {/* The scroller carries NO padding of its own. WebKit insets sticky
+          descendants by the scroll container's padding, so `p-4` here opened a
+          16px gutter above the pinned header and another to the left of the
+          pinned label column - and rows scrolled through both of them, which is
+          the text seen floating above the column titles and beside the field
+          names. Spacing moves inside: the inner wrapper for blocks, cell
+          padding for the table, so the sticky edges land flush on 0. */}
+      <div ref={scrollRef} className="flex-1 overflow-auto">
       {/* pb-28 clears the compare tray, which is fixed over the bottom of the
           screen - without it the last thing on the page sits under it. */}
-      <div ref={scrollRef} className="flex-1 overflow-auto p-4 pb-28 max-w-[1200px] w-full mx-auto">
+      <div className="max-w-[1200px] w-full mx-auto pt-4 pb-28">
         {/* A rate that does not describe her must never be shown bare. CDC
             publishes per age band and egg source, so without her profile these
             are the under-35 first-cycle figures - a real number about a
@@ -294,7 +302,7 @@ export function CompareDrawer({
             number she wants fixed. */}
         {kind === "clinic" && clinicRatesAreGeneric(profiles as any[], tableOptions?.rateContext || {}) && (
           <div
-            className="mb-4 rounded-[var(--radius)] bg-accent/10 border border-accent/30 px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1"
+            className="mx-4 mb-4 rounded-[var(--radius)] bg-accent/10 border border-accent/30 px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1"
             data-testid="compare-generic-rate-notice"
           >
             <span className="t-micro-value">
@@ -322,7 +330,9 @@ export function CompareDrawer({
                 whether a sticky thead alone pins its row. */}
             <thead ref={headRef} className="sticky top-0 z-30 bg-background">
               <tr>
-                <th className="w-[150px] sm:w-[200px] sticky top-0 left-0 z-40 bg-background border-b border-border" />
+                {/* pl-4 on the cell, not padding on the scroller: the cell's
+                    background then covers from x=0 when it is pinned. */}
+                <th className="w-[150px] sm:w-[200px] pl-4 sticky top-0 left-0 z-40 bg-background border-b border-border" />
                 {profiles.map((p: any) => (
                   <th key={p.id} className="p-2 align-bottom text-center font-normal sticky top-0 z-30 bg-background border-b border-border">
                     <button
@@ -368,7 +378,7 @@ export function CompareDrawer({
                         rule cut straight across the photos as they scrolled
                         past. Everything sticky in the body sits below the
                         header now, by number rather than by DOM order. */}
-                    <td colSpan={profiles.length + 1} className="pt-7 pb-2 sticky left-0 z-0 bg-background">
+                    <td colSpan={profiles.length + 1} className="pt-7 pb-2 pl-4 sticky left-0 z-0 bg-background">
                       {/* A real band, not a faint caption. The old headings were
                           t-micro-label on white and vanished into the rows they
                           were meant to separate - in a table this long, the
@@ -397,7 +407,7 @@ export function CompareDrawer({
                         data-testid={`compare-row-${row.label.toLowerCase().replace(/\s+/g, "-")}`}
                         data-identical={identical ? "true" : "false"}
                       >
-                        <td className="py-2.5 pr-4 align-top text-left sticky left-0 z-10 bg-background border-t border-border/60">
+                        <td className="py-2.5 pl-4 pr-4 align-top text-left sticky left-0 z-10 bg-background border-t border-border/60">
                           <span className="t-field-label break-words">{row.label}</span>
                         </td>
                         {row.values.map((value, i) => (
@@ -414,7 +424,7 @@ export function CompareDrawer({
         </table>
 
         {available.length > profiles.length && (
-          <div className="mt-8" data-testid="compare-swap-strip">
+          <div className="mt-8 px-4" data-testid="compare-swap-strip">
             <p className="t-micro-label mb-2">
               {profiles.length >= COMPARE_MAX
                 ? `Comparing the maximum of ${COMPARE_MAX} - remove one to swap another in`
@@ -447,6 +457,7 @@ export function CompareDrawer({
             table and this strip, it pushed the strip down by its own height and
             straight under the tray, where nobody could reach it. */}
         <div style={{ height: headSlack }} aria-hidden />
+      </div>
       </div>
     </div>,
     document.body,
