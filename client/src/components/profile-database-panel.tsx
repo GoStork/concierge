@@ -142,7 +142,17 @@ export default function ProfileDatabasePanel({
 
   const filterProviderType = type === "egg-donor" ? "egg-donor" : type === "surrogate" ? "surrogate" : "sperm-donor";
 
+  // Reset when the TYPE changes, not on mount. This panel shares
+  // `activeFilters` with the parent marketplace, so clearing on every mount
+  // meant that opening any Providers page silently wiped the filters a parent
+  // had set on /marketplace - filters should survive navigation and only be
+  // cleared by the person who set them.
+  const lastResetType = useRef<string | null>(null);
   useEffect(() => {
+    if (lastResetType.current === type) return;
+    const isFirstMount = lastResetType.current === null;
+    lastResetType.current = type;
+    if (isFirstMount) return;
     dispatch(clearFilters());
     dispatch(setMarketplaceSearchQuery(""));
     dispatch(setMarketplaceSortBy("newest"));
