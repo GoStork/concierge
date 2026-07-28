@@ -829,6 +829,14 @@ async function px17() {
   check("with no diagnoses on file that row is absent rather than empty",
     !buildDoctorCompare(docs, []).flatMap((g) => g.rows).some((r) => r.label === "Matches your diagnoses"));
   check("languages are compared", doctor.flatMap((g) => g.rows).some((r) => r.label === "Languages"));
+  // The notice is the difference between an honest generic rate and a
+  // misleading one - the flag alone is not the feature.
+  const drawerSrc = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");
+  check("a generic rate is labelled in the UI, not just flagged in code",
+    /clinicRatesAreGeneric\(/.test(drawerSrc) && /compare-generic-rate-notice/.test(drawerSrc));
+  check("and the notice offers the fix, not just the caveat",
+    /compare-personalise/.test(drawerSrc) && /onPersonalise/.test(drawerSrc));
+
   check("no clinics or doctors yields no table",
     buildClinicCompare([], ctx).length === 0 && buildDoctorCompare([], []).length === 0);
 }

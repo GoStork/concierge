@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getMandatoryFields } from "@/lib/profile-summary";
-import { buildClinicCompare, buildDoctorCompare } from "@/lib/compare-providers";
+import { buildClinicCompare, buildDoctorCompare, clinicRatesAreGeneric } from "@/lib/compare-providers";
 import type { ClinicRateContext } from "@/lib/clinic-rate";
 import { compareCellsFromProfile, mergeCompareCells } from "@/lib/compare-sections";
 import { buildTitle, type SwipeDeckProfile } from "@/components/marketplace/swipe-mappers";
@@ -113,6 +113,7 @@ export function CompareDrawer({
   onToggle,
   onClose,
   onOpenProfile,
+  onPersonalise,
 }: {
   kind: CompareKind;
   profiles: SwipeDeckProfile[];
@@ -123,6 +124,8 @@ export function CompareDrawer({
   onToggle: (id: string) => void;
   onClose: () => void;
   onOpenProfile: (profile: any) => void;
+  /** Sends her to the profile questions that make the rates hers. */
+  onPersonalise?: () => void;
 }) {
   if (profiles.length === 0) return null;
   const groups = buildCompareTable(kind, profiles as any[], tableOptions);
@@ -137,6 +140,29 @@ export function CompareDrawer({
       </div>
 
       <div className="p-4 max-w-[1200px] mx-auto">
+        {/* A rate that does not describe her must never be shown bare. CDC
+            publishes per age band and egg source, so without her profile these
+            are the under-35 first-cycle figures - a real number about a
+            population she may not be in. Say so, and put the fix next to the
+            number she wants fixed. */}
+        {kind === "clinic" && clinicRatesAreGeneric(profiles as any[], tableOptions?.rateContext || {}) && (
+          <div
+            className="mb-4 rounded-[var(--radius)] bg-accent/10 border border-accent/30 px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1"
+            data-testid="compare-generic-rate-notice"
+          >
+            <span className="t-micro-value">
+              These are all-patient rates, not yours - CDC reports separately by age and egg source.
+            </span>
+            <button
+              type="button"
+              onClick={onPersonalise}
+              className="t-micro-value text-accent underline underline-offset-2 hover:opacity-80"
+              data-testid="compare-personalise"
+            >
+              Add your age and egg source
+            </button>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full table-fixed border-collapse" data-testid="compare-table">
             <thead className="sticky top-[57px] z-10 bg-background">

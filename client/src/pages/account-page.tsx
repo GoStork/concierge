@@ -1384,6 +1384,7 @@ function AccountTab() {
         <ProfileSection
           title="Current Providers"
           editing={editingSection === "providers"}
+          forceShow
           data={parentProfileQuery.data}
           onEdit={() => startEditingSection("providers")}
           onSave={saveSectionProviders}

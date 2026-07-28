@@ -76,10 +76,11 @@ she is looking at the number she wants personalised.
 - Compare turns on for the clinic and doctor tabs in the Saved view, keyed off
   `favoritedClinicIds` / `favoritedDoctorSlugs`.
 
-Still open: the "add your age and egg source" prompt when
-`clinicRatesAreGeneric` is true. The flag exists and PX-17 asserts it; the
-banner is not drawn yet, so a parent without a profile currently sees the
-generic rate WITHOUT the label - fix before this ships to parents.
+The generic-rate notice is drawn: when `clinicRatesAreGeneric` is true the
+table carries a line saying these are all-patient rates, with a link that opens
+the IVF filters - egg source, age band, first cycle - since those ARE what makes
+the rates hers. PX-17 asserts both the label and the link, because the flag
+alone was never the feature.
 
 ## Build notes
 

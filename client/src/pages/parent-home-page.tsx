@@ -151,8 +151,9 @@ export default function ParentHomePage() {
 
       {/* Top row: the action queue and the upcoming meetings sit side by side
           on desktop (both are short, glanceable lists) and stack on mobile.
-          items-start so the shorter card doesn't stretch to match the taller. */}
-      <div className="grid gap-6 lg:grid-cols-2 items-start">
+          Frames stretch to a shared height so every row on this page ends on
+          one line, same as the billing row below. */}
+      <div className="grid gap-6 lg:grid-cols-2">
       {/* Action queue - always first so pending items are never below the fold */}
       <Card className="p-5 space-y-3">
         <SectionHeader
@@ -337,10 +338,12 @@ export default function ParentHomePage() {
       })()}
 
       {/* Billing row: cost sheets and invoices sit side by side on desktop (both
-          are short 3-row lists) and stack on mobile. items-start so the shorter
-          card doesn't stretch to match the taller. */}
+          are short 3-row lists) and stack on mobile. No items-start here - the
+          invoices card carries two stat tiles the cost sheets card doesn't, so
+          the frames are let stretch to a shared height rather than ending on
+          two different lines. */}
       {!isViewer && (
-        <div className="grid gap-6 lg:grid-cols-2 items-start">
+        <div className="grid gap-6 lg:grid-cols-2">
         {/* Cost sheets */}
         <Card className="p-5 space-y-3">
           <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Cost Sheets" viewAllTo="/my/cost-sheets" />

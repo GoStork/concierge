@@ -2281,6 +2281,10 @@ export default function MarketplacePage() {
       }}
       onToggle={toggleCompare}
       onClose={() => setCompareOpen(false)}
+      // The rates ARE the IVF filters - egg source, age band, first cycle or
+      // not. Send her to the control that already sets them rather than to a
+      // profile page that would set them at one remove.
+      onPersonalise={() => { setCompareOpen(false); openFiltersPage(); }}
       onOpenProfile={(p: any) => {
         setCompareOpen(false);
         if (compareKind === "clinic") { compareNavigate(`/providers/${p.id}`); return; }
