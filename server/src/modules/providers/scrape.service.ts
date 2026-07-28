@@ -1348,6 +1348,20 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
       .replace(/[^a-z]/g, "");
   }
 
+  // First + last name only, dropping honorifics, middle names and initials.
+  // The full-string key treats "Michael P. Diamond" and "Michael Diamond" as
+  // different people, and a roster caption almost never spells the name the same
+  // way the profile page does - that mismatch alone silently drops matches.
+  function firstLastKey(name: string): string {
+    const cleaned = name
+      .replace(/,?\s*(MD|DO|PhD|MBA|FACOG|MSc|RN|NP|PA|FACS|Jr\.?|Sr\.?|III|II|IV)\b/gi, "")
+      .replace(/^\s*Dr\.?\s+/i, "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const words = cleaned.split(/[^A-Za-z]+/).filter((w) => w.length > 1);
+    if (words.length < 2) return "";
+    return (words[0] + words[words.length - 1]).toLowerCase();
+  }
+
   const doctorBioMap = new Map<string, string>();
   const doctorTitleMap = new Map<string, string>();
   const doctorPhotoMap = new Map<string, string>();
@@ -1382,7 +1396,10 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
       try { return decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() || ""); }
       catch { return ""; }
     })().replace(/[-_]+/g, " ");
-    const keys = [normalizeNameKey(name), normalizeNameKey(slug)].filter((k) => k && k.length >= 4);
+    const keys = [
+      normalizeNameKey(name), normalizeNameKey(slug),
+      firstLastKey(name), firstLastKey(slug),
+    ].filter((k) => k && k.length >= 4);
     for (const key of new Set(keys)) {
       const prev = doctorRawTextMap.get(key);
       if (!prev || raw.length > prev.length) doctorRawTextMap.set(key, raw.trim());
@@ -1460,12 +1477,39 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
           !/Our team|every step|here for you|Learn more|Read more|Schedule|Book|Contact us/i.test(s)
         );
         if (sentences.length > 0) {
-          doctorBioMap.set(nameKey, sentences.slice(0, 2).join(" "));
+          doctorBioMap.set(nameKey, sentences.slice(0, 4).join(" "));
+        }
+      }
+
+      // Roster-block text as a bioRaw fallback for clinics with no per-doctor
+      // page (the majority - they list everyone on one page). The block is the
+      // ~2000 chars around this person's photo, which on most rosters is their
+      // whole bio including training.
+      //
+      // GUARDED: on a dense roster grid that window can spill into the NEXT
+      // doctor, and attributing another physician's medical school to this one
+      // is worse than leaving the field blank. So only accept a block that
+      // mentions exactly one real person - if two names appear, we cannot tell
+      // whose training is whose, and we take nothing.
+      if (!doctorRawTextMap.has(nameKey) && nearbyText.length >= 300) {
+        const peopleInBlock = new Set(
+          namePatterns
+            .map((n) => n.replace(/^Dr\.?\s+/i, "").trim())
+            .filter((n) => looksLikePersonName(n))
+            .map((n) => normalizeNameKey(n))
+            .filter((k) => k.length >= 4),
+        );
+        if (peopleInBlock.size === 1 && peopleInBlock.has(nameKey)) {
+          const text = nearbyText.trim().slice(0, 12000);
+          doctorRawTextMap.set(nameKey, text);
+          const fl = firstLastKey(candidate);
+          if (fl.length >= 4 && !doctorRawTextMap.has(fl)) doctorRawTextMap.set(fl, text);
         }
       }
     }
   }
-  console.log(`[scraper] After team HTML parsing: ${doctorBioMap.size} bios, ${doctorTitleMap.size} titles, ${doctorPhotoMap.size} photos`);
+  console.log(`[scraper] After team HTML parsing: ${doctorBioMap.size} bios, ${doctorTitleMap.size} titles, ${doctorPhotoMap.size} photos, ${doctorRawTextMap.size} raw texts`);
+  console.log(`[scraper] DEBUG rawkeys: ${[...doctorRawTextMap.keys()].join(", ")}`);
 
   if (locationAddresses.length > 0) {
     combinedText += `\n=== INDIVIDUAL LOCATION PAGES (${locationAddresses.length} locations found) ===\n`;
@@ -1682,7 +1726,11 @@ Important rules:
     if (!member.bioRaw) {
       const stripDr = (k: string) => k.replace(/^dr(?=[a-z]{4})/, "");
       const target = stripDr(nameKey);
-      let raw = doctorRawTextMap.get(nameKey) || doctorRawTextMap.get(target);
+      const fl = firstLastKey(member.name);
+      let raw =
+        doctorRawTextMap.get(nameKey) ||
+        doctorRawTextMap.get(target) ||
+        (fl.length >= 4 ? doctorRawTextMap.get(fl) : undefined);
       if (!raw) {
         for (const [mapKey, mapValue] of doctorRawTextMap) {
           const k = stripDr(mapKey);

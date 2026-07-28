@@ -801,8 +801,10 @@ async function px17() {
     JSON.stringify(outcomes.find((r) => r.label === "Live birth rate")));
   // CDC rates are not risk-adjusted, so below national is stated, never condemned.
   const delta = outcomes.find((r) => r.label === "vs. national average");
+  // Just the signed number - the row label already says "vs. national
+  // average", and repeating it per cell wrapped one word per line on a phone.
   check("below national is stated plainly, not as a failure",
-    delta?.values[1] === "-6% vs. national average", JSON.stringify(delta));
+    delta?.values[1] === "-6%", JSON.stringify(delta));
   // The same green pill the card carries - a parent has already learned that
   // signal there, and "Yes" would make them learn it twice.
   check("Top 10% carries the card's badge text, not a bare Yes",

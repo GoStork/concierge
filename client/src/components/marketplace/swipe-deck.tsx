@@ -31,12 +31,15 @@ export interface SwipeDeckProps<T> {
   onPass: (key: string) => void;
   /** Undo a previously-acted card (caller reverses Redux + server sync). */
   onUndo: (key: string) => void;
-  /** Keys of the items the parent has SAVED. On mobile a saved profile leaves
-   *  the swipe stack for good - it lives in the Saved page from then on and
-   *  must not resurface on the next swipe or after a refresh - while desktop
-   *  keeps it in the grid with a filled heart. Omit (or pass undefined) in the
-   *  Saved / Skipped views, where those items ARE the list. */
+  /** Keys of the items the parent has SAVED. Drives the mobile drop-out below,
+   *  and tells the deck when a tap on the heart is really an UN-save (which
+   *  removes the card from the Saved view and so must not bump the index). */
   savedKeys?: readonly string[];
+  /** Mobile only: a saved profile leaves the swipe stack for good - it lives in
+   *  the Saved page from then on and must not resurface on the next swipe or
+   *  after a refresh - while desktop keeps it in the grid with a filled heart.
+   *  Off in the Saved / Skipped views, where those items ARE the list. */
+  hideSavedOnMobile?: boolean;
   /** When any of these change, reset the deck to the top (e.g. tab/filter switch). */
   resetDeps?: ReadonlyArray<unknown>;
   /** Grayscale the stack/grid (skipped-only view). */
@@ -89,6 +92,7 @@ export function SwipeDeck<T>({
   onPass,
   onUndo,
   savedKeys,
+  hideSavedOnMobile = false,
   resetDeps = [],
   dim = false,
   emptyTitle,
@@ -123,7 +127,7 @@ export function SwipeDeck<T>({
 
   // Mobile only: saved profiles leave the swipe stack. Desktop keeps them in
   // the grid, so `items` passes through untouched there.
-  const hidesSaved = isMobile && !!savedKeys;
+  const hidesSaved = isMobile && hideSavedOnMobile;
   const deckItems = useMemo(() => {
     if (!hidesSaved || !savedKeys?.length) return items;
     const hidden = new Set(savedKeys);
@@ -155,17 +159,19 @@ export function SwipeDeck<T>({
     if (active) onActiveChange(active, currentIndex);
   }, [isMobile, currentIndex, ordered, onActiveChange]);
 
-  // Passing removes the card from `items` upstream, which auto-advances the
-  // deck - so doPass must NOT bump the index (that would skip the previewed
-  // card). Saving behaves the same way on mobile, where the saved card drops
-  // out of `deckItems`. On desktop a saved profile stays in the grid with a
-  // filled heart, so there saving has to advance the index itself or the same
-  // card would sit under the parent's thumb.
+  // Whenever an action takes the card OUT of the list, the list shrinking
+  // auto-advances the deck, so bumping the index on top of that would skip the
+  // card previewed underneath. That covers every pass, a save on mobile (the
+  // profile moves to Saved), and an un-save inside the Saved view. Only a save
+  // that leaves the card in place - desktop, where a saved profile keeps its
+  // spot in the grid with a filled heart - has to advance the index itself, or
+  // the same card would sit under the parent's thumb.
   const doSave = (key: string) => {
+    const leavesDeck = hidesSaved || !!savedKeys?.includes(key);
     onSave(key);
     setHistory((h) => [...h, key]);
     setPinFrontId(null);
-    if (!hidesSaved) setCurrentIndex((i) => i + 1);
+    if (!leavesDeck) setCurrentIndex((i) => i + 1);
   };
   const doPass = (key: string) => { onPass(key); setHistory((h) => [...h, key]); setPinFrontId(null); };
   const goBack = () => {

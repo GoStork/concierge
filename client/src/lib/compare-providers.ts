@@ -83,7 +83,11 @@ export function buildClinicCompare(clinics: any[], ctx: ClinicRateContext): Comp
           if (!r || r.nationalAverage == null) return null;
           // Below national is stated plainly, never as a failure - CDC rates are
           // not risk-adjusted, so a clinic taking hard cases scores lower.
-          return describeRateDelta(Number(r.successRate) * 100, Number(r.nationalAverage) * 100).label;
+          // Just the number: the row label already reads "vs. national
+          // average", and repeating it per cell wrapped to one word per line
+          // on a phone.
+          const d = describeRateDelta(Number(r.successRate) * 100, Number(r.nationalAverage) * 100);
+          return `${d.diff >= 0 ? "+" : ""}${d.diff}%`;
         } },
         { label: "Cycles in this group", get: (c) => {
           const r = rateOf(c);

@@ -80,7 +80,7 @@ function CompareValue({ value, dim }: { value: string | null; dim: boolean }) {
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-1 rounded-full bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2 py-0.5",
+          "inline-flex items-center gap-1 rounded-full bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2 py-0.5 whitespace-nowrap",
           dim && "opacity-75",
         )}
         style={{ fontSize: "var(--badge-text-size, 11px)" }}
@@ -242,10 +242,10 @@ export function CompareDrawer({
           </div>
         )}
         <div className="overflow-x-auto">
-          <table className="w-full table-fixed border-collapse" data-testid="compare-table">
+          <table className="w-full table-fixed border-collapse min-w-[560px]" data-testid="compare-table">
             <thead className="sticky top-[57px] z-10 bg-background">
               <tr>
-                <th className="w-[168px]" />
+                <th className="w-[140px] sticky left-0 z-10 bg-background" />
                 {profiles.map((p: any) => (
                   <th key={p.id} className="p-2 align-bottom text-center font-normal">
                     <button
@@ -281,7 +281,7 @@ export function CompareDrawer({
               {groups.map(({ group, rows }) => (
                 <Fragment key={group}>
                   <tr>
-                    <td colSpan={profiles.length + 1} className="pt-7 pb-2">
+                    <td colSpan={profiles.length + 1} className="pt-7 pb-2 sticky left-0 bg-background">
                       {/* A real band, not a faint caption. The old headings were
                           t-micro-label on white and vanished into the rows they
                           were meant to separate - in a table this long, the
@@ -307,7 +307,7 @@ export function CompareDrawer({
                         data-testid={`compare-row-${row.label.toLowerCase().replace(/\s+/g, "-")}`}
                         data-identical={identical ? "true" : "false"}
                       >
-                        <td className="py-2.5 pr-4 align-top text-left">
+                        <td className="py-2.5 pr-4 align-top text-left sticky left-0 z-10 bg-background">
                           <span className="t-field-label break-words">{row.label}</span>
                         </td>
                         {row.values.map((value, i) => (

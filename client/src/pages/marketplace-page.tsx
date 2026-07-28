@@ -470,7 +470,8 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
         onSave={onSave}
         onPass={onPass}
         onUndo={onUndo}
-        savedKeys={showFavoritesOnly || showSkippedOnly ? undefined : favoritedClinics}
+        savedKeys={favoritedClinics}
+        hideSavedOnMobile={!showFavoritesOnly && !showSkippedOnly}
         onActiveChange={(p) => recordImpression(p.id, "clinic")}
         renderGridItem={(item, card, key) => (
           <GridDwellItem profileId={key} profileType="clinic" testId={`clinic-card-container-${key}`}>{card}</GridDwellItem>
@@ -577,7 +578,8 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
         onSave={onSave}
         onPass={onPass}
         onUndo={onUndo}
-        savedKeys={showFavoritesOnly || showSkippedOnly ? undefined : favoritedSlugs}
+        savedKeys={favoritedSlugs}
+        hideSavedOnMobile={!showFavoritesOnly && !showSkippedOnly}
         onActiveChange={(d) => recordImpression(d.slug, "doctor")}
         renderGridItem={(item, card, key) => (
           <GridDwellItem profileId={key} profileType="doctor" testId={`doctor-card-container-${key}`}>{card}</GridDwellItem>
@@ -713,7 +715,8 @@ function AgencyDeck({ providers, searchQuery }: {
         onSave={onSave}
         onPass={onPass}
         onUndo={onUndo}
-        savedKeys={showFavoritesOnly || showSkippedOnly ? undefined : favoritedAgencies}
+        savedKeys={favoritedAgencies}
+        hideSavedOnMobile={!showFavoritesOnly && !showSkippedOnly}
         resetDeps={[showFavoritesOnly, showSkippedOnly, providers, q, activeFilters]}
         dim={showSkippedOnly}
         emptyTitle="No surrogacy agencies found"
@@ -1095,7 +1098,8 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
       onSave={onSave}
       onPass={onPass}
       onUndo={onUndo}
-      savedKeys={showFavoritesOnly || showSkippedOnly ? undefined : favoritedIds}
+      savedKeys={favoritedIds}
+      hideSavedOnMobile={!showFavoritesOnly && !showSkippedOnly}
       resetDeps={[searchQuery, activeFilters, sortBy, showFavoritesOnly, showSkippedOnly, showExperiencedOnly]}
       dim={showSkippedOnly}
       onActiveChange={handleActiveChange}
@@ -2259,7 +2263,15 @@ export default function MarketplacePage() {
     // space from the things it acts on; letting it flow keeps it next to them,
     // and it follows the last pill onto a second line rather than being
     // marooned alone on one.
-    <div className="w-full px-3 pt-2 flex flex-wrap items-center gap-2" data-testid="compare-bar">
+    // On a phone this wrapped into a nine-row stack that ate half the screen
+    // before a single card, so below md it scrolls sideways in one line
+    // instead. The pills also carry their own surface: on the mobile deck's
+    // dark background an unstyled outline pill rendered dark-on-dark.
+    <div
+      className="w-full px-3 pt-2 flex items-center gap-2 flex-nowrap overflow-x-auto md:flex-wrap md:overflow-visible"
+      style={{ scrollbarWidth: "none" }}
+      data-testid="compare-bar"
+    >
       <span className="t-helper shrink-0 mr-1">Compare</span>
       <>
       {comparableSaved.map((p: any) => {
@@ -2272,6 +2284,7 @@ export default function MarketplacePage() {
             disabled={!on && compareIds.length >= COMPARE_MAX}
             className={cn(
               "rounded-full border px-3 py-1 transition-colors disabled:opacity-40",
+              "shrink-0 whitespace-nowrap bg-card text-foreground",
               on ? "border-primary bg-primary/10" : "border-border hover:border-primary/40",
             )}
             data-testid={`compare-pick-${p.id}`}
