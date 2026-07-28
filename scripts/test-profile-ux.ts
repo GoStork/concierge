@@ -716,6 +716,13 @@ async function px15() {
     JSON.stringify(toggleCompareSelection(sel, "b")) === '["a","c","d"]', JSON.stringify(toggleCompareSelection(sel, "b")));
   check("the cap is the shared constant", COMPARE_MAX === 4, String(COMPARE_MAX));
 
+  // A shortlist belongs to its tab. Donor ids left over from Eggs counted
+  // against the cap on Clinics, so two clinics filled it and the rest went
+  // disabled - "Compare 4" with two pills lit.
+  const page2 = readFileSync("client/src/pages/marketplace-page.tsx", "utf8");
+  check("switching profile type clears the shortlist",
+    /useEffect\(\(\) => \{ setCompareIds\(\[\]\);[\s\S]{0,60}\}, \[compareKind\]\)/.test(page2));
+
   // The drawer must never render a table it cannot fill.
   check("a table is only built for the profiles actually passed",
     buildCompareTable("egg-donor", [{ id: "a", age: 27 }]).flatMap((g) => g.rows).every((r) => r.values.length === 1));

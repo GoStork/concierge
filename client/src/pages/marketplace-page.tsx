@@ -2223,6 +2223,12 @@ export default function MarketplacePage() {
     setCompareIds((prev) => toggleCompareSelection(prev, id));
   }, []);
 
+  // A shortlist belongs to the tab it was built on. Without this the donor ids
+  // picked on Eggs stayed in the selection after switching to Clinics: the
+  // counter read "Compare 4" while only two clinic pills were lit, and the
+  // other clinics were disabled by two profiles the parent could no longer see.
+  useEffect(() => { setCompareIds([]); setCompareOpen(false); }, [compareKind]);
+
   // What the deck actually renders, not how many the query returned - Discover
   // hides clinics the parent already saved or passed, and a header reading
   // "1 clinics found" above an empty deck looks like the marketplace is broken.
@@ -2239,13 +2245,14 @@ export default function MarketplacePage() {
   // starts diffing them by hand across browser tabs.
   const compareSelected = comparableSaved.filter((p: any) => compareIds.includes(p.id));
   const compareBarEl = isSavedView && compareKind && comparableSaved.length >= 2 ? (
-    // Label left, button right, pills wrapping in between. The pills own their
-    // own box so however many are saved they wrap inside it - the button is a
-    // sibling, so it stays pinned to the right of the FIRST row instead of
-    // being pushed to a second one by the names of the things being compared.
-    <div className="w-full px-3 pt-2 flex items-start gap-3" data-testid="compare-bar">
-      <span className="t-helper shrink-0 pt-1.5">Compare</span>
-      <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+    // One wrapping row: label, the pills, then the button immediately after the
+    // last pill. Pinning it to the far right left it stranded across empty
+    // space from the things it acts on; letting it flow keeps it next to them,
+    // and it follows the last pill onto a second line rather than being
+    // marooned alone on one.
+    <div className="w-full px-3 pt-2 flex flex-wrap items-center gap-2" data-testid="compare-bar">
+      <span className="t-helper shrink-0 mr-1">Compare</span>
+      <>
       {comparableSaved.map((p: any) => {
         const on = compareIds.includes(p.id);
         return (
@@ -2264,7 +2271,7 @@ export default function MarketplacePage() {
           </button>
         );
       })}
-      </div>
+      </>
       <Button
         size="sm"
         className="shrink-0"
