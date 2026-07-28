@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SwipeDeckCardModeContext, type SwipeDeckCardMode } from "./swipe-deck-context";
@@ -31,6 +31,12 @@ export interface SwipeDeckProps<T> {
   onPass: (key: string) => void;
   /** Undo a previously-acted card (caller reverses Redux + server sync). */
   onUndo: (key: string) => void;
+  /** Keys of the items the parent has SAVED. On mobile a saved profile leaves
+   *  the swipe stack for good - it lives in the Saved page from then on and
+   *  must not resurface on the next swipe or after a refresh - while desktop
+   *  keeps it in the grid with a filled heart. Omit (or pass undefined) in the
+   *  Saved / Skipped views, where those items ARE the list. */
+  savedKeys?: readonly string[];
   /** When any of these change, reset the deck to the top (e.g. tab/filter switch). */
   resetDeps?: ReadonlyArray<unknown>;
   /** Grayscale the stack/grid (skipped-only view). */
@@ -82,6 +88,7 @@ export function SwipeDeck<T>({
   onSave,
   onPass,
   onUndo,
+  savedKeys,
   resetDeps = [],
   dim = false,
   emptyTitle,
@@ -108,16 +115,31 @@ export function SwipeDeck<T>({
   const [history, setHistory] = useState<string[]>([]);
   const [pinFrontId, setPinFrontId] = useState<string | null>(null);
 
+  // Read through a ref so an inline `getKey={(d) => d.id}` at the call site does
+  // not give `deckItems` a new identity on every render (that would re-fire
+  // onActiveChange, and with it every impression it records).
+  const getKeyRef = useRef(getKey);
+  getKeyRef.current = getKey;
+
+  // Mobile only: saved profiles leave the swipe stack. Desktop keeps them in
+  // the grid, so `items` passes through untouched there.
+  const hidesSaved = isMobile && !!savedKeys;
+  const deckItems = useMemo(() => {
+    if (!hidesSaved || !savedKeys?.length) return items;
+    const hidden = new Set(savedKeys);
+    return items.filter((it) => !hidden.has(getKeyRef.current(it)));
+  }, [items, savedKeys, hidesSaved]);
+
   // After an undo, surface the restored card as the current one.
   const ordered = useMemo(() => {
-    if (!pinFrontId) return items;
-    const i = items.findIndex((it) => getKey(it) === pinFrontId);
-    if (i <= 0) return items;
-    const arr = [...items];
+    if (!pinFrontId) return deckItems;
+    const i = deckItems.findIndex((it) => getKey(it) === pinFrontId);
+    if (i <= 0) return deckItems;
+    const arr = [...deckItems];
     const [item] = arr.splice(i, 1);
     arr.unshift(item);
     return arr;
-  }, [items, pinFrontId, getKey]);
+  }, [deckItems, pinFrontId, getKey]);
 
   useEffect(() => {
     setCurrentIndex(0);
@@ -135,14 +157,15 @@ export function SwipeDeck<T>({
 
   // Passing removes the card from `items` upstream, which auto-advances the
   // deck - so doPass must NOT bump the index (that would skip the previewed
-  // card). Saving no longer removes anything: a saved profile stays in the deck
-  // with a filled heart, so saving has to advance the index itself or the same
+  // card). Saving behaves the same way on mobile, where the saved card drops
+  // out of `deckItems`. On desktop a saved profile stays in the grid with a
+  // filled heart, so there saving has to advance the index itself or the same
   // card would sit under the parent's thumb.
   const doSave = (key: string) => {
     onSave(key);
     setHistory((h) => [...h, key]);
     setPinFrontId(null);
-    setCurrentIndex((i) => i + 1);
+    if (!hidesSaved) setCurrentIndex((i) => i + 1);
   };
   const doPass = (key: string) => { onPass(key); setHistory((h) => [...h, key]); setPinFrontId(null); };
   const goBack = () => {
@@ -151,10 +174,27 @@ export function SwipeDeck<T>({
     onUndo(lastId);
     setHistory((h) => h.slice(0, -1));
     setPinFrontId(lastId);
-    // A passed card returns to `items` on undo and lands back in front on its
-    // own; a saved one never left, so step the index back to reach it.
+    // A card that LEFT the deck (any pass, plus a save on mobile) returns to it
+    // on undo and lands back in front on its own; one that never left - a save
+    // on desktop - needs the index stepped back to reach it.
     setCurrentIndex((i) => (ordered.some((o) => getKey(o) === lastId) ? Math.max(0, i - 1) : i));
   };
+
+  const seenAll = (canRestart: boolean) => (
+    <div className="py-16 text-center text-muted-foreground" data-testid={seenAllTestId}>
+      <p className="text-lg font-ui">{seenAllTitle}</p>
+      {seenAllSubtitle && <p className="text-sm mt-2">{seenAllSubtitle}</p>}
+      {canRestart && (
+        <Button variant="outline" className="mt-4" onClick={() => setCurrentIndex(0)} data-testid={restartTestId}>
+          Start Over
+        </Button>
+      )}
+    </div>
+  );
+
+  // A stack emptied by saving every remaining profile is "you've seen them all",
+  // not "nothing matches your filters" - and there is nothing to start over on.
+  if (ordered.length === 0 && hidesSaved && items.length > 0) return seenAll(false);
 
   if (ordered.length === 0) {
     return (
@@ -166,17 +206,7 @@ export function SwipeDeck<T>({
   }
 
   if (isMobile) {
-    if (currentIndex >= ordered.length) {
-      return (
-        <div className="py-16 text-center text-muted-foreground" data-testid={seenAllTestId}>
-          <p className="text-lg font-ui">{seenAllTitle}</p>
-          {seenAllSubtitle && <p className="text-sm mt-2">{seenAllSubtitle}</p>}
-          <Button variant="outline" className="mt-4" onClick={() => setCurrentIndex(0)} data-testid={restartTestId}>
-            Start Over
-          </Button>
-        </div>
-      );
-    }
+    if (currentIndex >= ordered.length) return seenAll(true);
 
     if (onNearEnd && ordered.length - currentIndex <= nearEndWithin) onNearEnd();
 

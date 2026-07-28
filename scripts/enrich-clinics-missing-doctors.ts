@@ -39,6 +39,11 @@ const THIN = process.argv.includes("--thin"); // enrich clinics with <=1 doctor 
 // the single biggest cause of blank Specialties / Education / Languages: with no
 // text there is nothing for extraction to read.
 const NO_BIOS = process.argv.includes("--no-bios");
+// Clinics with a roster but no verbatim page text on any member. These are the
+// clinics that predate bioRaw: they may already show a bio, but that bio is an
+// AI summary, so Education and Languages were never recoverable from it. A
+// re-scrape captures the doctor's own page and makes both extractable.
+const NEEDS_RAW = process.argv.includes("--needs-raw");
 
 const prisma = new PrismaService();
 const storage = new StorageService();
@@ -158,6 +163,18 @@ async function main() {
       orderBy: { name: "asc" },
       ...(LIMIT ? { take: LIMIT } : {}),
     });
+  } else if (NEEDS_RAW) {
+    clinics = await prisma.provider.findMany({
+      where: {
+        services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
+        ...(ONLY ? { name: { contains: ONLY, mode: "insensitive" } } : {}),
+        members: { some: { isPublicProfile: { not: false } } },
+        NOT: { members: { some: { isPublicProfile: { not: false }, bioRaw: { not: null } } } },
+      },
+      select: { id: true, name: true, websiteUrl: true },
+      orderBy: { name: "asc" },
+      ...(LIMIT ? { take: LIMIT } : {}),
+    });
   } else {
     clinics = await prisma.provider.findMany({
       where: {
@@ -170,27 +187,31 @@ async function main() {
     });
   }
 
-  const mode = THIN ? "thin (<=1 doctor)" : NO_BIOS ? "zero-bio" : "doctor-less";
+  const mode = THIN ? "thin (<=1 doctor)" : NO_BIOS ? "zero-bio" : NEEDS_RAW ? "no verbatim page text" : "doctor-less";
   console.log(`[enrich-missing] ${clinics.length} ${mode} IVF clinics to re-enrich (concurrency=${CONCURRENCY})`);
   let recovered = 0, stillEmpty = 0, failed = 0, totalNewDoctors = 0;
 
   const processOne = async (c: { id: string; name: string }) => {
     try {
       const before = await shownDoctorCount(c.id);
-      const bioBefore = NO_BIOS ? await bioCount(c.id) : 0;
+      const textMode = NO_BIOS || NEEDS_RAW;
+      const bioBefore = textMode ? await bioCount(c.id) : 0;
       await svc.enrichClinicProfile(c.id);
       const after = await shownDoctorCount(c.id);
-      if (NO_BIOS) {
-        // Doctor count is not the success metric here - bio text is.
+      if (textMode) {
+        // Doctor count is not the success metric here - text is. For --needs-raw
+        // specifically, verbatim page text is the whole point: a clinic that
+        // gains only summarized bios has not actually become extractable.
         const bioAfter = await bioCount(c.id);
         const rawAfter = await rawCount(c.id);
-        if (bioAfter > bioBefore) {
+        const won = NEEDS_RAW ? rawAfter > 0 : bioAfter > bioBefore;
+        if (won) {
           recovered++;
-          totalNewDoctors += bioAfter - bioBefore;
+          totalNewDoctors += NEEDS_RAW ? rawAfter : bioAfter - bioBefore;
           console.log(`[enrich-missing]  [gained]    ${c.name}: bios ${bioBefore} -> ${bioAfter}, page texts ${rawAfter}/${after}`);
         } else {
           stillEmpty++;
-          console.log(`[enrich-missing]  [empty]     ${c.name}: still 0 bios across ${after} doctors`);
+          console.log(`[enrich-missing]  [empty]     ${c.name}: ${bioAfter} bios, 0 page texts across ${after} doctors`);
         }
         return;
       }

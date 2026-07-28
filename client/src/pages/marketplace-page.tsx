@@ -470,6 +470,7 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
         onSave={onSave}
         onPass={onPass}
         onUndo={onUndo}
+        savedKeys={showFavoritesOnly || showSkippedOnly ? undefined : favoritedClinics}
         onActiveChange={(p) => recordImpression(p.id, "clinic")}
         renderGridItem={(item, card, key) => (
           <GridDwellItem profileId={key} profileType="clinic" testId={`clinic-card-container-${key}`}>{card}</GridDwellItem>
@@ -576,6 +577,7 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
         onSave={onSave}
         onPass={onPass}
         onUndo={onUndo}
+        savedKeys={showFavoritesOnly || showSkippedOnly ? undefined : favoritedSlugs}
         onActiveChange={(d) => recordImpression(d.slug, "doctor")}
         renderGridItem={(item, card, key) => (
           <GridDwellItem profileId={key} profileType="doctor" testId={`doctor-card-container-${key}`}>{card}</GridDwellItem>
@@ -711,6 +713,7 @@ function AgencyDeck({ providers, searchQuery }: {
         onSave={onSave}
         onPass={onPass}
         onUndo={onUndo}
+        savedKeys={showFavoritesOnly || showSkippedOnly ? undefined : favoritedAgencies}
         resetDeps={[showFavoritesOnly, showSkippedOnly, providers, q, activeFilters]}
         dim={showSkippedOnly}
         emptyTitle="No surrogacy agencies found"
@@ -882,10 +885,12 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
     let result = donors?.filter((d) => {
       if (showFavoritesOnly && !favoritedIds.includes(d.id)) return false;
       if (showSkippedOnly && !passedIds.includes(d.id)) return false;
-      // Passing removes a profile from Discover; SAVING does not. A saved
-      // profile stays in the grid with a filled heart and also appears in the
-      // Saved tab, so a parent can keep browsing without their shortlist
-      // vanishing from under them.
+      // Passing removes a profile from Discover; SAVING does not - on desktop.
+      // A saved profile stays in the grid with a filled heart and also appears
+      // in the Saved tab, so a parent can keep browsing without their shortlist
+      // vanishing from under them. On mobile a save DOES take the profile out
+      // of the swipe stack (see SwipeDeck's `savedKeys`) - re-dealing an
+      // already-shortlisted card to a swiping thumb is just noise.
       if (!showSkippedOnly && passedIds.includes(d.id)) return false;
       if (showExperiencedOnly && !((d as any).isExperienced || (d as any).isPremium)) return false;
       if (!omniSearch(d, searchQuery)) return false;
@@ -1090,6 +1095,7 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
       onSave={onSave}
       onPass={onPass}
       onUndo={onUndo}
+      savedKeys={showFavoritesOnly || showSkippedOnly ? undefined : favoritedIds}
       resetDeps={[searchQuery, activeFilters, sortBy, showFavoritesOnly, showSkippedOnly, showExperiencedOnly]}
       dim={showSkippedOnly}
       onActiveChange={handleActiveChange}
@@ -1637,7 +1643,10 @@ function MarketplaceFiltersDrawer({ providerType, open, onOpenChange, barFilterP
 // bar - the provider type switcher now lives in the Explore explode picker, not
 // here. Notch-safe via the top safe-area inset.
 function MobileDeckControls({ onOpenFilters }: { onOpenFilters: () => void }) {
-  const chip = "pointer-events-auto shrink-0 w-9 h-9 rounded-full bg-black/35 backdrop-blur-md flex items-center justify-center text-white";
+  // Same treatment as the card's over-photo expand arrow (swipe-deck-card.tsx):
+  // a white chip with a dark icon reads on both dark and light photos, whereas a
+  // translucent dark chip with a white icon disappears into a dark photo.
+  const chip = "pointer-events-auto shrink-0 w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md backdrop-blur-md flex items-center justify-center text-foreground transition-colors";
 
   return (
     <div
@@ -1645,13 +1654,13 @@ function MobileDeckControls({ onOpenFilters }: { onOpenFilters: () => void }) {
       style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}
       data-testid="mobile-deck-controls"
     >
-      {/* Top scrim so the white chrome reads over light photos */}
+      {/* Top scrim so the white progress segments read over light photos */}
       <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/55 to-transparent" />
       {/* px-4 + top offset align the filter chip with the card's top-right expand
           arrow (top-4 right-4), both sitting just below the progress segments. */}
       <div className="relative flex items-center gap-2 px-4">
         <button onClick={onOpenFilters} className={chip} aria-label="Open filters" data-testid="button-open-filters">
-          <SlidersHorizontal className="w-5 h-5" />
+          <SlidersHorizontal className="w-5 h-5" strokeWidth={2.5} />
         </button>
       </div>
     </div>
