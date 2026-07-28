@@ -55,6 +55,15 @@ function summaryRows(kind: CompareKind, profiles: any[]): CompareTableGroup[] {
   return rows.length ? [{ group: "Summary", rows }] : [];
 }
 
+
+/** Clinics and doctors have real names and logos; donors have numbers and photos. */
+function compareTitle(p: any): string {
+  return p?.name || buildTitle(p);
+}
+function comparePhoto(p: any): string | null {
+  return getPhotoSrc(p?.photoUrl || p?.highResPhotoUrl || p?.photos?.[0] || p?.logoUrl) || null;
+}
+
 export const COMPARE_MAX = 4;
 
 /**
@@ -176,16 +185,16 @@ export function CompareDrawer({
                       className="block w-full text-left focus:outline-none focus:ring-2 focus:ring-primary/40 rounded-[var(--radius)]"
                       data-testid={`compare-open-${p.id}`}
                     >
-                      {getPhotoSrc(p.photoUrl || p.photos?.[0]) ? (
+                      {comparePhoto(p) ? (
                         <img
-                          src={getPhotoSrc(p.photoUrl || p.photos?.[0])!}
+                          src={comparePhoto(p)!}
                           alt=""
-                          className="w-full max-w-[150px] aspect-[3/4] object-cover object-top rounded-[var(--radius)] mb-2"
+                          className={cn("w-full max-w-[150px] rounded-[var(--radius)] mb-2", kind === "clinic" ? "aspect-square object-contain bg-secondary/40 p-2" : "aspect-[3/4] object-cover object-top")}
                         />
                       ) : (
                         <div className="w-full max-w-[150px] aspect-[3/4] rounded-[var(--radius)] bg-secondary mb-2" />
                       )}
-                      <span className="t-field-value block truncate">{buildTitle(p)}</span>
+                      <span className="t-field-value block truncate">{compareTitle(p)}</span>
                     </button>
                     <button
                       type="button"
@@ -267,10 +276,10 @@ export function CompareDrawer({
                     className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5 disabled:opacity-40 hover:border-primary/40"
                     data-testid={`compare-add-${a.id}`}
                   >
-                    {getPhotoSrc(a.photoUrl || a.photos?.[0]) && (
-                      <img src={getPhotoSrc(a.photoUrl || a.photos?.[0])!} alt="" className="w-6 h-6 rounded-full object-cover object-top" />
+                    {comparePhoto(a) && (
+                      <img src={comparePhoto(a)!} alt="" className="w-6 h-6 rounded-full object-cover object-top" />
                     )}
-                    <span className="t-micro-value">{buildTitle(a)}</span>
+                    <span className="t-micro-value">{compareTitle(a)}</span>
                   </button>
                 ))}
             </div>

@@ -837,6 +837,13 @@ async function px17() {
   check("and the notice offers the fix, not just the caveat",
     /compare-personalise/.test(drawerSrc) && /onPersonalise/.test(drawerSrc));
 
+  // A clinic is not a donor: it has a name and a logo, and buildTitle would
+  // mint "Donor #f9f6ab90" for it - which is what shipped.
+  const drawer2 = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");
+  check("columns use the provider's real name, not a donor number",
+    /compareTitle\(p\)/.test(drawer2) && !/\{buildTitle\(p\)\}/.test(drawer2));
+  check("a clinic logo is found where clinics keep it", /logoUrl/.test(drawer2));
+
   check("no clinics or doctors yields no table",
     buildClinicCompare([], ctx).length === 0 && buildDoctorCompare([], []).length === 0);
 }

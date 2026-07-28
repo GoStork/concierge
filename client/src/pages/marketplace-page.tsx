@@ -2239,8 +2239,22 @@ export default function MarketplacePage() {
   // starts diffing them by hand across browser tabs.
   const compareSelected = comparableSaved.filter((p: any) => compareIds.includes(p.id));
   const compareBarEl = isSavedView && compareKind && comparableSaved.length >= 2 ? (
-    <div className="w-full px-3 pt-2 flex flex-wrap items-center gap-2" data-testid="compare-bar">
-      <span className="t-helper">Compare</span>
+    // The Compare button sits with the label on the first row and never moves:
+    // the pills wrap in their own box, so adding a fifth saved clinic cannot
+    // push the action a parent is looking for onto a second line.
+    <div className="w-full px-3 pt-2 flex items-start gap-3" data-testid="compare-bar">
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="t-helper">Compare</span>
+        <Button
+          size="sm"
+          disabled={compareIds.length < 2}
+          onClick={() => setCompareOpen(true)}
+          data-testid="compare-open"
+        >
+          Compare {compareIds.length >= 2 ? compareIds.length : ""}
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 min-w-0">
       {comparableSaved.map((p: any) => {
         const on = compareIds.includes(p.id);
         return (
@@ -2255,18 +2269,11 @@ export default function MarketplacePage() {
             )}
             data-testid={`compare-pick-${p.id}`}
           >
-            <span className="t-micro-value">{p.name || buildTitle(p)}</span>
+            <span className="t-micro-value truncate max-w-[220px] inline-block align-bottom">{p.name || buildTitle(p)}</span>
           </button>
         );
       })}
-      <Button
-        size="sm"
-        disabled={compareIds.length < 2}
-        onClick={() => setCompareOpen(true)}
-        data-testid="compare-open"
-      >
-        Compare {compareIds.length >= 2 ? compareIds.length : ""}
-      </Button>
+      </div>
     </div>
   ) : null;
 
