@@ -19,6 +19,8 @@ type IpFormStatus = {
   status: string; // NOT_STARTED | DRAFT | SUBMITTED
   submittedAt: string | null;
   promptedAt: string | null;
+  // Surrogacy agencies only - the safe variant exists to forward to candidates.
+  surrogateAvailable?: boolean;
 };
 
 export default function ParentDetailPage() {
@@ -107,7 +109,7 @@ export default function ParentDetailPage() {
                   {parent.ipForm.status === "SUBMITTED" && parent.ipForm.responseId ? (
                     <div className="space-y-2">
                       <p className="t-helper">
-                        Submitted{parent.ipForm.submittedAt ? ` on ${new Date(parent.ipForm.submittedAt).toLocaleDateString()}` : ""} - download it with your agency branding.
+                        Submitted{parent.ipForm.submittedAt ? ` on ${new Date(parent.ipForm.submittedAt).toLocaleDateString()}` : ""} - download it with your branding.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -118,18 +120,23 @@ export default function ParentDetailPage() {
                         >
                           <Download className="w-3.5 h-3.5 mr-1.5" /> Full PDF
                         </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => window.open(`/api/provider/ip-forms/${parent.ipForm!.responseId}/pdf?variant=surrogate`, "_blank", "noopener,noreferrer")}
-                          data-testid="parent-detail-ipform-surrogate"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Surrogate Version
-                        </Button>
+                        {parent.ipForm.surrogateAvailable && (
+                          <Button
+                            size="sm"
+                            onClick={() => window.open(`/api/provider/ip-forms/${parent.ipForm!.responseId}/pdf?variant=surrogate`, "_blank", "noopener,noreferrer")}
+                            data-testid="parent-detail-ipform-surrogate"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Surrogate Version
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ) : (
                     <p className="t-helper">
-                      Not submitted yet - a match call cannot be scheduled until the family completes and signs their form.
+                      Not submitted yet
+                      {parent.ipForm.surrogateAvailable
+                        ? " - a match call cannot be scheduled until the family completes and signs their form."
+                        : " - it becomes available to download here once the family completes and signs it."}
                       {parent.ipForm.promptedAt ? " They have been asked and receive reminders." : ""}
                     </p>
                   )}

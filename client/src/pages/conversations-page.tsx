@@ -3130,13 +3130,15 @@ const sendMessageMutation = useMutation({
                           >
                             <Download className="w-3.5 h-3.5 text-primary shrink-0" /> Download full PDF
                           </a>
-                          <a
-                            href={`/api/provider/ip-forms/${detail.ipForm.responseId}/pdf?variant=surrogate`}
-                            className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border border-border bg-background hover:bg-secondary/40 text-xs font-medium"
-                            data-testid="ip-form-download-surrogate"
-                          >
-                            <Download className="w-3.5 h-3.5 text-primary shrink-0" /> Surrogate version (safe to share)
-                          </a>
+                          {detail.ipForm.surrogateAvailable && (
+                            <a
+                              href={`/api/provider/ip-forms/${detail.ipForm.responseId}/pdf?variant=surrogate`}
+                              className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius)] border border-border bg-background hover:bg-secondary/40 text-xs font-medium"
+                              data-testid="ip-form-download-surrogate"
+                            >
+                              <Download className="w-3.5 h-3.5 text-primary shrink-0" /> Surrogate version (safe to share)
+                            </a>
+                          )}
                         </div>
                       ) : (
                         <p className="t-helper">

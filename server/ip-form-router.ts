@@ -22,6 +22,7 @@ import crypto from "crypto";
 import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
 import { maritalImpliesTwoParents } from "./ip-form-defaults";
+import { providerProgramTypes, providerOffersSurrogacy } from "./ip-form-flow";
 
 export const ipFormRouter = Router();
 
@@ -229,26 +230,6 @@ async function providerHasSurrogacyService(providerId: string): Promise<boolean>
     include: { providerType: { select: { name: true } } },
   });
   return services.some((s) => (s.providerType?.name || "").toLowerCase().includes("surrogacy"));
-}
-
-/**
- * Program types a provider represents for the IP form, from its APPROVED
- * service types: "surrogacy" (surrogacy agency) and/or "ivf" (IVF/fertility
- * clinic). Drives which template sections apply. A form-collecting provider
- * with no recognized program type still gets the core sections.
- */
-async function providerProgramTypes(providerId: string): Promise<string[]> {
-  const services = await prisma.providerService.findMany({
-    where: { providerId, status: "APPROVED" },
-    include: { providerType: { select: { name: true } } },
-  });
-  const types = new Set<string>();
-  for (const s of services) {
-    const name = (s.providerType?.name || "").toLowerCase();
-    if (name.includes("surrogacy")) types.add("surrogacy");
-    if (name.includes("ivf") || name.includes("clinic")) types.add("ivf");
-  }
-  return [...types];
 }
 
 /**
@@ -848,18 +829,20 @@ ipFormRouter.get("/api/provider/ip-forms", requireAuth, async (req, res) => {
   if (!isProviderUser(user) && !isAdmin(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const providerId = user.providerId;
+    // Only surrogacy agencies have a surrogate to forward the safe variant to.
+    const surrogateAvailable = providerId ? await providerOffersSurrogacy(providerId) : isAdmin(user);
     let responses: any[];
     if (isAdmin(user) && !providerId) {
       responses = await prisma.ipFormResponse.findMany({ where: { status: "SUBMITTED" }, orderBy: { submittedAt: "desc" } });
     } else {
       const accounts = await connectedAccountIds(providerId);
-      if (!accounts.size) return res.json({ forms: [] });
+      if (!accounts.size) return res.json({ forms: [], surrogateAvailable });
       responses = await prisma.ipFormResponse.findMany({
         where: { parentAccountId: { in: [...accounts.keys()] }, status: "SUBMITTED" },
         orderBy: { submittedAt: "desc" },
       });
     }
-    if (!responses.length) return res.json({ forms: [] });
+    if (!responses.length) return res.json({ forms: [], surrogateAvailable });
 
     const sections = await loadIpFormTemplate(true);
     const allQuestions = sections.flatMap((s) => s.questions);
@@ -880,7 +863,7 @@ ipFormRouter.get("/api/provider/ip-forms", requireAuth, async (req, res) => {
         };
       }),
     );
-    res.json({ forms });
+    res.json({ forms, surrogateAvailable });
   } catch (e: any) {
     console.error(`[ip-form] provider list failed: ${e?.message}`);
     res.status(500).json({ message: "Failed to load forms" });
@@ -910,10 +893,9 @@ ipFormRouter.get("/api/provider/ip-forms/:responseId/pdf", requireAuth, async (r
       ).map((u) => u.id);
       const connected = await providerConnectedToAccount(providerId, memberIds);
       if (!connected) return res.status(403).json({ message: "Forbidden" });
-      const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { collectsIntendedParentForm: true } });
-      if (!provider?.collectsIntendedParentForm) {
-        return res.status(403).json({ message: "This provider does not collect the Intended Parent Form" });
-      }
+      // Connection is the only gate on the full PDF. `collectsIntendedParentForm`
+      // decides who ASKS the parent to fill the form - once it exists, every
+      // provider the family reached out to can read it.
       programTypes = await providerProgramTypes(providerId);
       // The surrogate-safe variant only makes sense for surrogacy agencies.
       if (variant === "surrogate" && !programTypes.includes("surrogacy")) {

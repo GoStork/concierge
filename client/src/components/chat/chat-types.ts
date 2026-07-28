@@ -110,6 +110,8 @@ export interface SessionDetail {
     submittedAt?: string | null;
     promptedAt?: string | null;
     hasSecondParent?: boolean;
+    /** Surrogacy agencies only - nobody else has a surrogate to share it with. */
+    surrogateAvailable?: boolean;
   } | null;
 }
 

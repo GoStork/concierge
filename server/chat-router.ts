@@ -1558,16 +1558,23 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     (responseSession as any).profileStatus = provDetailEntry ? provDetailEntry.status : null;
     await applyMatchedLabelForInCycle([responseSession as any]);
 
-    // Intended Parent Form status for the right rail (identity-revealed only -
-    // it's a surrogacy artifact the provider needs for the match call).
+    // Intended Parent Form status for the right rail (identity-revealed only).
+    // Every connected provider can download the full PDF once it exists, even
+    // one that doesn't collect the form itself; only surrogacy agencies get the
+    // surrogate-safe variant.
     if (showIdentity) {
       const ipAcct = session.user?.parentAccountId || session.userId;
       const ipRow = await prisma.ipFormResponse.findUnique({
         where: { parentAccountId: ipAcct },
         select: { id: true, status: true, submittedAt: true, promptedAt: true, hasSecondParent: true },
       }).catch(() => null);
+      const { providerOffersSurrogacy } = await import("./ip-form-flow");
       (responseSession as any).ipForm = ipRow
-        ? { responseId: ipRow.id, status: ipRow.status, submittedAt: ipRow.submittedAt, promptedAt: ipRow.promptedAt, hasSecondParent: ipRow.hasSecondParent }
+        ? {
+            responseId: ipRow.id, status: ipRow.status, submittedAt: ipRow.submittedAt,
+            promptedAt: ipRow.promptedAt, hasSecondParent: ipRow.hasSecondParent,
+            surrogateAvailable: await providerOffersSurrogacy(user.providerId),
+          }
         : null;
     } else {
       (responseSession as any).ipForm = null;
@@ -1912,16 +1919,22 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
         })).sort((a, b) => (a.id === parentId ? -1 : b.id === parentId ? 1 : 0))
       : [];
 
-    // Intended Parent Form status for the account - surrogacy agencies see
-    // download buttons (submitted) or a "match call blocked" notice (not).
+    // Intended Parent Form status for the account. Any connected provider can
+    // download the full PDF once it's submitted - collecting the form is about
+    // who asks for it, not who may read it. The surrogate-safe variant is
+    // surrogacy-agency only (nobody else has a surrogate to share it with).
     const ipFormAccountId = targetUser?.parentAccountId || parentId;
     const ipFormRow = await prisma.ipFormResponse.findUnique({
       where: { parentAccountId: ipFormAccountId },
       select: { id: true, status: true, submittedAt: true, promptedAt: true },
     }).catch(() => null);
+    const { providerOffersSurrogacy } = await import("./ip-form-flow");
+    const surrogateAvailable = user.providerId
+      ? await providerOffersSurrogacy(user.providerId)
+      : isAdminOrConcierge(user);
     const ipForm = ipFormRow
-      ? { responseId: ipFormRow.id, status: ipFormRow.status, submittedAt: ipFormRow.submittedAt, promptedAt: ipFormRow.promptedAt }
-      : { responseId: null, status: "NOT_STARTED", submittedAt: null, promptedAt: null };
+      ? { responseId: ipFormRow.id, status: ipFormRow.status, submittedAt: ipFormRow.submittedAt, promptedAt: ipFormRow.promptedAt, surrogateAvailable }
+      : { responseId: null, status: "NOT_STARTED", submittedAt: null, promptedAt: null, surrogateAvailable };
 
     res.json({ ...parent, accountMembers, ipForm });
   } catch (e: any) {

@@ -1,10 +1,11 @@
 /**
  * Provider - Intended Parent Forms (/provider/parent-forms).
  *
- * Surrogacy agencies see every submitted form from parents connected to
- * them and download the PDF branded with their own logo, in two variants:
- * Full (agency records) and Surrogate Version (private section + contact
- * details stripped - safe to forward to surrogate candidates).
+ * Every provider sees the submitted forms of the families connected to them -
+ * collecting the form decides who ASKS for it, not who may read it - and
+ * downloads the PDF branded with their own logo. Surrogacy agencies get a
+ * second variant, Surrogate Version (private section + contact details
+ * stripped - safe to forward to surrogate candidates).
  */
 import { useQuery } from "@tanstack/react-query";
 import { ClipboardList, Download, FileText, Loader2, ShieldCheck } from "lucide-react";
@@ -20,11 +21,12 @@ interface IpFormRow {
 }
 
 export default function ProviderParentFormsPage() {
-  const { data, isLoading } = useQuery<{ forms: IpFormRow[] }>({
+  const { data, isLoading } = useQuery<{ forms: IpFormRow[]; surrogateAvailable?: boolean }>({
     queryKey: ["/api/provider/ip-forms"],
     refetchOnWindowFocus: true,
   });
   const forms = data?.forms || [];
+  const surrogateAvailable = !!data?.surrogateAvailable;
 
   const download = (responseId: string, variant: "full" | "surrogate") => {
     window.open(`/api/provider/ip-forms/${responseId}/pdf?variant=${variant}`, "_blank", "noopener,noreferrer");
@@ -39,8 +41,10 @@ export default function ProviderParentFormsPage() {
         <div>
           <h1 className="text-2xl font-heading font-bold">Intended Parent Forms</h1>
           <p className="t-helper">
-            Signed profile forms from your connected families, branded with your agency's logo. Share the Surrogate Version with
-            candidates - it excludes the parents' private information and contact details.
+            Signed profile forms from your connected families, branded with your logo.
+            {surrogateAvailable
+              ? " Share the Surrogate Version with candidates - it excludes the parents' private information and contact details."
+              : ""}
           </p>
         </div>
       </div>
@@ -72,9 +76,11 @@ export default function ProviderParentFormsPage() {
                 <Button variant="outline" size="sm" onClick={() => download(f.responseId, "full")} data-testid={`ipform-dl-full-${f.responseId}`}>
                   <Download className="w-3.5 h-3.5 mr-1.5" /> Full PDF
                 </Button>
-                <Button size="sm" onClick={() => download(f.responseId, "surrogate")} data-testid={`ipform-dl-surrogate-${f.responseId}`}>
-                  <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Surrogate Version
-                </Button>
+                {surrogateAvailable && (
+                  <Button size="sm" onClick={() => download(f.responseId, "surrogate")} data-testid={`ipform-dl-surrogate-${f.responseId}`}>
+                    <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Surrogate Version
+                  </Button>
+                )}
               </div>
             </div>
           ))}

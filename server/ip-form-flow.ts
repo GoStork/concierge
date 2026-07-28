@@ -131,6 +131,34 @@ async function maybeRequestPhotocopy(
 }
 
 /**
+ * Program types a provider represents, from its APPROVED services. Drives which
+ * IP-form sections a provider's PDF contains and whether the surrogate-safe
+ * variant is offered at all. Shared by the PDF endpoints and the provider UIs.
+ */
+export async function providerProgramTypes(providerId: string): Promise<string[]> {
+  const services = await prisma.providerService.findMany({
+    where: { providerId, status: "APPROVED" },
+    include: { providerType: { select: { name: true } } },
+  });
+  const types = new Set<string>();
+  for (const s of services) {
+    const name = (s.providerType?.name || "").toLowerCase();
+    if (name.includes("surrogacy")) types.add("surrogacy");
+    if (name.includes("ivf") || name.includes("clinic")) types.add("ivf");
+  }
+  return [...types];
+}
+
+/**
+ * Only surrogacy agencies get the surrogate-safe variant - everyone else has no
+ * surrogate to forward it to. Used to hide the button, not just block the route.
+ */
+export async function providerOffersSurrogacy(providerId: string | null | undefined): Promise<boolean> {
+  if (!providerId) return false;
+  return (await providerProgramTypes(providerId)).includes("surrogacy");
+}
+
+/**
  * Post the "please fill your Intended Parent Form" prompt once per account.
  * Fire-and-forget safe. Gated to providers with an APPROVED surrogacy
  * service; the GoStork house provider never triggers it.
