@@ -708,6 +708,8 @@ interface ProfileCardProps {
   initialPhotoUrl?: string;
   /** Back button handler, owned by the wrapper so it knows the deck context. */
   onBack?: () => void;
+  /** Fires once the profile body has arrived, so the action rail can wait for it. */
+  onReady?: () => void;
 }
 
 /**
@@ -716,7 +718,7 @@ interface ProfileCardProps {
  * The mobile action bar lives in the wrapper (DonorProfilePage) so it stays put
  * while this card is thrown off-screen.
  */
-function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: ProfileCardProps) {
+function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack, onReady }: ProfileCardProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
@@ -844,9 +846,14 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
     return mapDatabaseDonorToSwipeProfile(donor);
   }, [donor, type]);
 
+  // The action rail is a sibling of this card, so while the body was loading it
+  // had nothing above it and rendered alone at the top of an empty page - "Ask
+  // Ariel about her" arriving before there was a "her" on screen.
+  useEffect(() => { if (donor) onReady?.(); }, [donor, onReady]);
+
   if (isLoading && !initialPhotoUrl) {
     return (
-      <div className="flex justify-center p-12">
+      <div className="flex justify-center items-center min-h-[60vh]">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
@@ -857,7 +864,7 @@ function ProfileCard({ providerId, donorId, type, initialPhotoUrl, onBack }: Pro
     // show the photo full-bleed (no spinner) so a thrown-to card reveals cleanly.
     if (initialPhotoUrl) {
       return (
-        <div className="space-y-6 w-full pb-32 md:pb-0" data-testid="profile-card-hero-pending">
+        <div className="space-y-6 w-full pb-32 md:pb-0 min-h-[60vh]" data-testid="profile-card-hero-pending">
           {isMobile
             ? <MobilePhotoViewer photos={[initialPhotoUrl]} />
             : <PhotoGalleryBar photos={[initialPhotoUrl]} />}
@@ -2168,14 +2175,27 @@ export default function DonorProfilePage() {
     navigate(`/concierge?donorId=${current.id}&donorType=${type}&providerId=${current.providerId}`);
   }, [type, current, navigate]);
 
+  // The rail waits for the card. Keyed by profile id so a throw to the next one
+  // makes it wait again rather than hovering over a blank page.
+  const [readyId, setReadyId] = useState<string | null>(null);
+  const cardReady = readyId === current.id;
+  const handleCardReady = useCallback(() => setReadyId(current.id), [current.id]);
+
   const isSaved = favoritedIds.includes(current.id);
 
   // Non-mobile, or no deck context: single card (original layout + behavior).
   if (!useDeck) {
     return (
       <>
-        <ProfileCard providerId={current.providerId} donorId={current.id} type={type} initialPhotoUrl={current.photoUrl || undefined} onBack={goBack} />
-        {isMobile ? (
+        <ProfileCard
+          providerId={current.providerId}
+          donorId={current.id}
+          type={type}
+          initialPhotoUrl={current.photoUrl || undefined}
+          onBack={goBack}
+          onReady={handleCardReady}
+        />
+        {cardReady && (isMobile ? (
           <>
             <ProfileDetailCloseButton onBack={goBack} />
             <ProfileDetailActionBar isSaved={isSaved} busy={busy} onPass={() => handleAction("pass")} onLike={() => handleAction("like")} onMessage={handleMessage} />
@@ -2189,7 +2209,7 @@ export default function DonorProfilePage() {
             onMessage={handleMessage}
             subjectLabel={type === "surrogate" ? "her" : type === "sperm-donor" ? "him" : "her"}
           />
-        )}
+        ))}
       </>
     );
   }
