@@ -791,6 +791,28 @@ export const TEST_CASES: TestCaseDef[] = [
     messageCount: 0,
   },
 
+  {
+    id: "PR-12", persona: "provider",
+    name: "PR-12: Auto-reply templates are the provider's own, and only theirs",
+    desc: "A provider creates a booking auto-reply through the settings API; a second template for the same staff+service scope is refused while a different service line is allowed, and another provider can neither list nor edit this org's templates",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "PR-13", persona: "provider",
+    name: "PR-13: Booking auto-reply lands without faking the provider's presence",
+    desc: "Booking through the real public endpoint posts the greeting and its attachment as a PROVIDER message with tokens substituted - and does NOT flip the session to PROVIDER_CONNECTED or stamp providerJoinedAt, so an automated reply never claims the provider showed up",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "PR-14", persona: "provider",
+    name: "PR-14: Auto-reply covers the provider's own booking link, once per parent",
+    desc: "A booking made through /book/<slug> with no aiSessionId still greets the parent in the thread they already have and links Booking.sessionId for journey scoping; a second booking links but never greets twice",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+
   // ── UNIT GUARDS (UT-01..) ─────────────────────────────────────────────────
   // Runs scripts/test-unit-guards.ts - pure logic, no server, no DB. Covers
   // the RECOVERY paths that only fire when something else already went wrong,
@@ -841,6 +863,18 @@ export const TEST_CASES: TestCaseDef[] = [
     id: "UT-08", persona: "unit",
     name: "UT-08: The parent's private Eva session resolves, never a joined thread",
     desc: "A session with a NULL matchmakerId is still found (the silently-dropped review_prompt/ip_form_prompt bug) and neither query can ever select a thread the provider has joined",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-09", persona: "unit",
+    name: "UT-09: Photo de-dup keeps the larger copy and never drops an unknown",
+    desc: "De-duplication keeps the higher-resolution copy of a duplicated photo and leaves anything it cannot confidently match in place - a wrong drop is silent",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-10", persona: "unit",
+    name: "UT-10: Auto-reply starter copy stays in sync with its tokens",
+    desc: "Both default booking auto-reply templates use every available token and render with nothing left unsubstituted; exactly one promises an attachment, and the default promises no file it cannot deliver",
     interestedServices: [], messageCount: 0,
   },
 

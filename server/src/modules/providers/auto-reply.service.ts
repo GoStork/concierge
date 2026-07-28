@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { renderAutoReplyBody, type AutoReplyVars } from "../../../../shared/auto-reply-starters";
 
 /**
  * Provider booking auto-reply.
@@ -212,31 +213,12 @@ export class AutoReplyService {
   }
 
   /**
-   * Fill the personalization tokens. Unknown tokens are left untouched rather
-   * than blanked, so a typo is visible to the provider instead of silently
-   * producing a hole in the sentence.
+   * Fill the personalization tokens. The implementation lives in
+   * shared/auto-reply-starters next to the token list it substitutes, so the
+   * two cannot drift and it stays testable without a database.
    */
-  renderBody(
-    body: string,
-    vars: {
-      parentName?: string | null;
-      providerName?: string | null;
-      staffName?: string | null;
-      callType?: string | null;
-      callTime?: string | null;
-    },
-  ): string {
-    const map: Record<string, string> = {
-      parent_name: vars.parentName || "there",
-      provider_name: vars.providerName || "our team",
-      staff_name: vars.staffName || vars.providerName || "our team",
-      call_type: vars.callType || "call",
-      call_time: vars.callTime || "the scheduled time",
-    };
-    return body.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (whole, key: string) => {
-      const v = map[String(key).toLowerCase()];
-      return v === undefined ? whole : v;
-    });
+  renderBody(body: string, vars: AutoReplyVars): string {
+    return renderAutoReplyBody(body, vars);
   }
 
   /** Human-readable call time in the booker's own timezone. */

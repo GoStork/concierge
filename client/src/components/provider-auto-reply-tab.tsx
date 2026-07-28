@@ -25,6 +25,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getFileTypeMeta, formatFileSize } from "@/lib/file-type-icon";
 import { FileTypeGlyph } from "@/components/chat/file-type-glyph";
+import { AUTO_REPLY_STARTERS, AUTO_REPLY_TOKENS, bodyPromisesAttachment, type AutoReplyStarter } from "@shared/auto-reply-starters";
 
 /**
  * Provider booking auto-reply settings.
@@ -39,13 +40,7 @@ import { FileTypeGlyph } from "@/components/chat/file-type-glyph";
 const ANY_STAFF = "__org__";
 const ANY_SERVICE = "__any__";
 
-const TOKENS = [
-  { token: "{{parent_name}}", hint: "The parent's first name" },
-  { token: "{{staff_name}}", hint: "Whoever the call is booked with" },
-  { token: "{{provider_name}}", hint: "Your organization's name" },
-  { token: "{{call_type}}", hint: "consultation / match call / doctor call" },
-  { token: "{{call_time}}", hint: "The scheduled time, in the parent's timezone" },
-];
+const TOKENS = AUTO_REPLY_TOKENS;
 
 type AutoReply = {
   id: string;
@@ -71,7 +66,9 @@ const EMPTY_DRAFT: DraftState = {
   id: null,
   staffUserId: ANY_STAFF,
   providerTypeId: ANY_SERVICE,
-  body: "",
+  // Prefilled with real, editable text. Defaults to the no-attachment variant
+  // because that one is true the moment it is saved.
+  body: AUTO_REPLY_STARTERS[0].body,
   attachments: [],
   isEnabled: true,
 };
@@ -191,6 +188,24 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
+
+  /**
+   * Swap the body to a starter. Never silently discards writing: if the body
+   * is neither empty nor an untouched starter, it is the provider's own text
+   * and replacing it needs their say-so.
+   */
+  function applyStarter(starter: AutoReplyStarter) {
+    if (!draft) return;
+    const current = draft.body.trim();
+    const isUntouched = current === "" || AUTO_REPLY_STARTERS.some((s) => s.body.trim() === current);
+    if (!isUntouched && !confirm("Replace your message with this starter? Your current text will be lost.")) return;
+    setDraft({ ...draft, body: starter.body });
+    setPreview(null);
+  }
+
+  // The attachment starter promises a file. Saying "I've attached..." with
+  // nothing attached is worse than not mentioning it, so flag the mismatch.
+  const promisesAttachment = !!draft && draft.attachments.length === 0 && bodyPromisesAttachment(draft.body);
 
   function insertToken(token: string) {
     if (!draft) return;
@@ -371,14 +386,43 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
           </div>
 
           <div>
-            <p className="t-form-label mb-1.5">Message</p>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+              <p className="t-form-label">Message</p>
+              <div className="flex items-center gap-1.5">
+                <span className="t-helper">Start from:</span>
+                {AUTO_REPLY_STARTERS.map((s) => {
+                  const active = draft.body.trim() === s.body.trim();
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      title={s.hint}
+                      onClick={() => applyStarter(s)}
+                      className={`text-xs px-2 py-1 rounded-[var(--radius)] transition-colors ${
+                        active
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground"
+                      }`}
+                      data-testid={`button-starter-${s.key}`}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <Textarea
               value={draft.body}
               onChange={(e) => { setDraft({ ...draft, body: e.target.value }); setPreview(null); }}
-              rows={7}
-              placeholder={"Hi {{parent_name}}, thanks for booking - I'm looking forward to our {{call_type}} on {{call_time}}.\n\nI've attached a short intro to how we work so you can skim it beforehand. If anything comes up before then, just reply here."}
+              rows={9}
+              placeholder="Write the message the parent should get the moment they book."
               data-testid="input-auto-reply-body"
             />
+            {promisesAttachment && (
+              <p className="t-helper mt-1.5 text-[var(--brand-warning,inherit)]" data-testid="auto-reply-attachment-warning">
+                This message mentions an attachment but none is added yet - add a file below, or switch to "Message only".
+              </p>
+            )}
             <div className="flex flex-wrap gap-1.5 mt-2">
               {TOKENS.map((t) => (
                 <button

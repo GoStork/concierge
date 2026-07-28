@@ -11,6 +11,9 @@
  *  PR-02 Parent identity stays masked before a consultation is booked, and is
  *        revealed once it is.
  *  PR-03 Provider-only messages never leak into the parent's transcript.
+ *  PR-12 Booking auto-reply templates are scoped to one org and one scope.
+ *  PR-13 The greeting posts on booking without marking the provider present.
+ *  PR-14 The provider's own /book/<slug> link is covered, once per parent.
  *
  * Usage:
  *   TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-provider-flows.ts
@@ -149,6 +152,12 @@ async function createFixture(db: Client, tag: string): Promise<Fixture> {
 
 async function destroyFixture(db: Client, f: Fixture) {
   await db.query(`DELETE FROM "SilentQuery" WHERE "providerId" = $1`, [f.providerId]);
+  // Auto-reply rows: the send log holds the "once per parent" key, so leaving
+  // one behind would silently suppress the greeting in a later run.
+  await db.query(`DELETE FROM "ProviderAutoReplySend" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
+  await db.query(`DELETE FROM "ProviderAutoReply" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
+  await db.query(`DELETE FROM "Booking" WHERE "providerUserId" = $1 OR "parentUserId" = $2`, [f.providerUserId, f.parentUserId]).catch(() => {});
+  await db.query(`DELETE FROM "ScheduleConfig" WHERE "userId" = $1`, [f.providerUserId]).catch(() => {});
   await db.query(`DELETE FROM "AiChatMessage" WHERE "sessionId" IN (SELECT id FROM "AiChatSession" WHERE "userId" = $1)`, [f.parentUserId]);
   // Invoice/ProviderQuote hold an FK to AiChatSession, so they must go first.
   await db.query(`DELETE FROM "Invoice" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
@@ -596,6 +605,240 @@ async function pr11(db: Client) {
   }
 }
 
+// ─── Booking auto-reply helpers ───────────────────────────────────────────────
+/** Give the provider user a public booking page so /book/:slug is reachable. */
+async function mkBookingPage(db: Client, f: Fixture, tag: string): Promise<string> {
+  const slug = `zz-test-${tag}-${Date.now()}`;
+  await db.query(
+    `INSERT INTO "ScheduleConfig" (id, "userId", timezone, "meetingDuration", "minBookingNotice", "bookingPageSlug")
+     VALUES (gen_random_uuid(), $1, 'America/New_York', 30, 0, $2)
+     ON CONFLICT ("userId") DO UPDATE SET "bookingPageSlug" = $2`,
+    [f.providerUserId, slug],
+  );
+  return slug;
+}
+
+/** The session-creation + auto-reply work is fire-and-forget off the booking
+ *  response, so asserting immediately races it. Poll instead of sleeping a
+ *  fixed amount, so a slow run does not read as a failure. */
+async function waitFor<T>(label: string, fn: () => Promise<T | null>, timeoutMs = 15000): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const got = await fn();
+    if (got) return got;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  console.log(`      (timed out waiting for ${label})`);
+  return null;
+}
+
+/** Book a slot through the real public endpoint, exactly as the UI does.
+ *  Passing aiSessionId mimics Eva's inline widget; omitting it mimics the
+ *  provider's own shareable /book/<slug> link. */
+async function bookViaHttp(
+  slug: string,
+  f: Fixture,
+  opts: { aiSessionId?: string; providerId?: string; hoursOut: number },
+) {
+  const when = new Date(Date.now() + opts.hoursOut * 3600_000);
+  const body: any = {
+    // The endpoint parses this in the booker's timezone, so send a local-style
+    // stamp rather than a UTC one.
+    scheduledAt: when.toISOString().replace(/\.\d{3}Z$/, ""),
+    name: `Test Parent ${f.parentEmail.split("@")[0]}`,
+    email: f.parentEmail,
+    timezone: "America/New_York",
+  };
+  if (opts.aiSessionId) {
+    body.aiSessionId = opts.aiSessionId;
+    body.consultationProviderId = opts.providerId;
+    body.matchmakerId = MATCHMAKER_ID;
+    body.profileLabel = "Surrogate #ZZTEST";
+    body.subjectType = "surrogate";
+  }
+  const res = await jfetch(`${BASE}/api/calendar/book/${slug}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<any>;
+}
+
+// ─── PR-12: auto-reply templates are the provider's own, and only theirs ──────
+// The settings CRUD is the surface a provider actually touches. It is also the
+// place a scoping mistake becomes silent: two templates for the same scope, or
+// one org editing another's greeting.
+async function pr12(db: Client) {
+  const f = await createFixture(db, "pr12");
+  const other = await createFixture(db, "pr12b");
+  try {
+    const svcType = await db.query(`SELECT id FROM "ProviderType" WHERE name = 'Surrogacy Agency' LIMIT 1`);
+    const typeId = svcType.rows[0]?.id || null;
+
+    const created: any = await (await jfetch(`${BASE}/api/provider-auto-replies`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...f.providerAuth },
+      body: JSON.stringify({ body: "Hi {{parent_name}}, looking forward to it." }),
+    })).json();
+    check("provider can create an org-wide auto-reply", !!created?.autoReply?.id, JSON.stringify(created).slice(0, 120));
+
+    const dup = await fetch(`${BASE}/api/provider-auto-replies`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...f.providerAuth } as any,
+      body: JSON.stringify({ body: "Second org-wide one" }),
+    });
+    check("a second template for the SAME scope is rejected", dup.status === 400, `HTTP ${dup.status}`);
+
+    if (typeId) {
+      const scoped: any = await (await jfetch(`${BASE}/api/provider-auto-replies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...f.providerAuth },
+        body: JSON.stringify({ body: "Surrogacy-specific greeting", providerTypeId: typeId }),
+      })).json();
+      check("the same staff scope with a DIFFERENT service line is allowed", !!scoped?.autoReply?.id);
+    }
+
+    const listed: any = await (await jfetch(`${BASE}/api/provider-auto-replies`, { headers: f.providerAuth })).json();
+    check("list returns only this provider's templates",
+      Array.isArray(listed?.autoReplies) && listed.autoReplies.every((a: any) => a.providerId === f.providerId),
+      String(listed?.autoReplies?.length));
+
+    // A different provider org must not be able to read or edit these.
+    const foreignList: any = await (await jfetch(`${BASE}/api/provider-auto-replies`, { headers: other.providerAuth })).json();
+    check("another provider's list does not include this org's templates",
+      (foreignList?.autoReplies || []).every((a: any) => a.providerId !== f.providerId));
+
+    const foreignEdit = await fetch(`${BASE}/api/provider-auto-replies/${created.autoReply.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...other.providerAuth } as any,
+      body: JSON.stringify({ body: "hijacked" }),
+    });
+    check("another provider cannot edit this org's template", foreignEdit.status === 403, `HTTP ${foreignEdit.status}`);
+
+    const still = await db.query(`SELECT body FROM "ProviderAutoReply" WHERE id = $1`, [created.autoReply.id]);
+    check("the template body is unchanged after the rejected edit", !/hijacked/.test(still.rows[0]?.body || ""), still.rows[0]?.body);
+
+    const del = await fetch(`${BASE}/api/provider-auto-replies/${created.autoReply.id}`, {
+      method: "DELETE", headers: f.providerAuth as any,
+    });
+    check("provider can delete their own template", del.status === 200 || del.status === 201, `HTTP ${del.status}`);
+  } finally {
+    await destroyFixture(db, f);
+    await destroyFixture(db, other);
+  }
+}
+
+// ─── PR-13: the greeting lands on booking without faking the provider's presence ─
+// Booked through the REAL public endpoint, so a change to the booking payload
+// or the session-creation wiring breaks this test rather than silently
+// disabling the feature.
+async function pr13(db: Client) {
+  const f = await createFixture(db, "pr13");
+  try {
+    await db.query(
+      `INSERT INTO "ProviderAutoReply" (id, "providerId", body, attachments, "isEnabled", "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), $1, $2, $3::jsonb, true, now(), now())`,
+      [
+        f.providerId,
+        "Hi {{parent_name}} - thanks for booking. Here is our intro packet.",
+        JSON.stringify([{ originalName: "Intro Packet.pdf", url: "/uploads/zz-test-intro.pdf", mimeType: "application/pdf", size: 1024 }]),
+      ],
+    );
+
+    const slug = await mkBookingPage(db, f, "pr13");
+    const evaSession = await mkSession(db, f, { status: "ACTIVE", title: "AI Concierge Chat" });
+    const booked = await bookViaHttp(slug, f, { aiSessionId: evaSession, providerId: f.providerId, hoursOut: 48 });
+    check("the booking was accepted", !!booked?.id, JSON.stringify(booked).slice(0, 140));
+
+    const msgs = await waitFor("the auto-reply message", async () => {
+      const r = await db.query(
+        `SELECT m.id, m."senderType", m."senderName", m.content, m."uiCardType", m."uiCardData", m."sessionId"
+           FROM "AiChatMessage" m JOIN "AiChatSession" s ON s.id = m."sessionId"
+          WHERE s."userId" = $1 AND m."uiCardData"->>'isAutoReply' = 'true'`,
+        [f.parentUserId],
+      );
+      return r.rows.length >= 2 ? r.rows : null;
+    });
+    check("the greeting and its attachment were both posted", !!msgs && msgs.length === 2, `${msgs?.length ?? 0} message(s)`);
+
+    if (msgs) {
+      const text = msgs.find((m: any) => m.uiCardType !== "attachment");
+      const file = msgs.find((m: any) => m.uiCardType === "attachment");
+      check("it is stored as a PROVIDER message, not a system one", text?.senderType === "provider", text?.senderType);
+      check("the parent's name was substituted into the body",
+        !!text && !/\{\{/.test(text.content) && /Test Parent/.test(text.content), text?.content?.slice(0, 90));
+      check("the attachment carries a usable file card",
+        !!file && !!file.uiCardData?.url && !!file.uiCardData?.originalName, JSON.stringify(file?.uiCardData || {}).slice(0, 100));
+
+      // THE invariant: an automated greeting must never look like the provider
+      // showed up. If this flips, the parent is told someone joined who did not.
+      const sess = await db.query(`SELECT status, "providerJoinedAt" FROM "AiChatSession" WHERE id = $1`, [text?.sessionId || file?.sessionId]);
+      check("the session was NOT flipped to PROVIDER_CONNECTED", sess.rows[0]?.status !== "PROVIDER_CONNECTED", sess.rows[0]?.status);
+      check("providerJoinedAt was NOT stamped", !sess.rows[0]?.providerJoinedAt, String(sess.rows[0]?.providerJoinedAt));
+    }
+  } finally {
+    await destroyFixture(db, f);
+  }
+}
+
+// ─── PR-14: once per parent, and the provider's own booking link is covered ───
+// More than half of real bookings arrive through /book/<slug> with no
+// aiSessionId. Those must attach to the thread the parent already has - and
+// must not greet a parent who was already greeted.
+async function pr14(db: Client) {
+  const f = await createFixture(db, "pr14");
+  try {
+    await db.query(
+      `INSERT INTO "ProviderAutoReply" (id, "providerId", body, "isEnabled", "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), $1, 'Hi {{parent_name}}, welcome.', true, now(), now())`,
+      [f.providerId],
+    );
+    const slug = await mkBookingPage(db, f, "pr14");
+
+    // A thread that already exists with this provider, as if from an earlier call.
+    const existing = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation" });
+
+    // Booking through the provider's own link - no aiSessionId at all.
+    const direct = await bookViaHttp(slug, f, { hoursOut: 72 });
+    check("the direct-link booking was accepted", !!direct?.id, JSON.stringify(direct).slice(0, 140));
+
+    const greeted = await waitFor("the greeting on the existing thread", async () => {
+      const r = await db.query(
+        `SELECT id FROM "AiChatMessage" WHERE "sessionId" = $1 AND "uiCardData"->>'isAutoReply' = 'true'`,
+        [existing],
+      );
+      return r.rows.length ? r.rows : null;
+    });
+    check("a link booking greets the parent in their EXISTING thread", !!greeted, greeted ? undefined : "nothing was posted");
+
+    const linked = await waitFor("the booking->thread link", async () => {
+      const r = await db.query(`SELECT "sessionId" FROM "Booking" WHERE id = $1`, [direct.id]);
+      return r.rows[0]?.sessionId ? r.rows[0] : null;
+    });
+    check("the booking is linked to that thread (journey scoping)", linked?.sessionId === existing, String(linked?.sessionId));
+
+    // Second booking through the link: still links, must not greet again.
+    const second = await bookViaHttp(slug, f, { hoursOut: 96 });
+    await waitFor("the second booking to be processed", async () => {
+      const r = await db.query(`SELECT "sessionId" FROM "Booking" WHERE id = $1`, [second.id]);
+      return r.rows[0]?.sessionId ? r.rows[0] : null;
+    });
+
+    const totals = await db.query(
+      `SELECT count(*)::int AS n FROM "AiChatMessage" m JOIN "AiChatSession" s ON s.id = m."sessionId"
+        WHERE s."userId" = $1 AND m."uiCardData"->>'isAutoReply' = 'true'`,
+      [f.parentUserId],
+    );
+    check("a second booking does NOT greet the parent again", totals.rows[0].n === 1, `${totals.rows[0].n} greeting(s)`);
+
+    const sends = await db.query(
+      `SELECT count(*)::int AS n FROM "ProviderAutoReplySend" WHERE "providerId" = $1`, [f.providerId]);
+    check("exactly one send is on record for this parent+provider", sends.rows[0].n === 1, `${sends.rows[0].n}`);
+  } finally {
+    await destroyFixture(db, f);
+  }
+}
+
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "PR-01", name: "Whisper answer relays into the parent's own chat (consolidated threads)", run: pr01 },
   { id: "PR-02", name: "Parent identity masked before booking, revealed after", run: pr02 },
@@ -608,6 +851,9 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "PR-09", name: "Agreement draft: parent-invisible, rejectable, not re-actionable", run: pr09 },
   { id: "PR-10", name: "Unread badge counts only what the parent can actually see", run: pr10 },
   { id: "PR-11", name: "Merged provider view never marks the parent's private chat delivered", run: pr11 },
+  { id: "PR-12", name: "Auto-reply templates are the provider's own, and only theirs", run: pr12 },
+  { id: "PR-13", name: "Booking auto-reply lands without faking the provider's presence", run: pr13 },
+  { id: "PR-14", name: "Auto-reply covers the provider's own booking link, once per parent", run: pr14 },
 ];
 
 (async () => {

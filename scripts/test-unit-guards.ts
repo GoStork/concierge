@@ -19,6 +19,7 @@
 
 import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, topResultId } from "../server/match-card-parse";
 import { resolveParentEvaSessionId } from "../server/parent-visibility";
+import { AUTO_REPLY_STARTERS, AUTO_REPLY_TOKENS, bodyPromisesAttachment, renderAutoReplyBody } from "../shared/auto-reply-starters";
 import { planDedupe, thumbCorrelation, worstBlockDeviation, DEDUP_CORRELATION, DEDUP_MAX_BLOCK_DEVIATION, type Fingerprint } from "../server/src/modules/providers/photo-dedup";
 
 const BASE = process.env.TEST_BASE_URL || "http://localhost:5001";
@@ -253,6 +254,43 @@ async function ut09() {
     `${repeated.keep.join(",")} repeats=${repeated.exactRepeats}`);
 }
 
+// ─── UT-10: the auto-reply starter copy stays in sync with its tokens ────────
+// The starters are REAL default text a provider can save unedited, and they
+// double as the documentation for which tokens exist. If someone rewrites the
+// copy and drops {{call_time}}, nothing at runtime complains - the provider
+// just never discovers the token. Equally, the "message only" variant must not
+// promise a file, or the editor's missing-attachment warning misfires on the
+// default.
+async function ut10() {
+  for (const starter of AUTO_REPLY_STARTERS) {
+    const missing = AUTO_REPLY_TOKENS
+      .map((t) => t.token)
+      .filter((tok) => !starter.body.includes(tok));
+    check(`starter "${starter.key}" uses every available token`, missing.length === 0, missing.join(", "));
+
+    const rendered = renderAutoReplyBody(starter.body, {
+      parentName: "Alex", providerName: "Bright Futures", staffName: "Dana",
+      callType: "consultation", callTime: "Friday, August 1 at 9:30 AM EDT",
+    });
+    check(`starter "${starter.key}" renders with nothing left unsubstituted`, !/\{\{|\}\}/.test(rendered),
+      rendered.slice(0, 120));
+    check(`starter "${starter.key}" addresses the parent by name`, rendered.includes("Alex"));
+
+    check(`starter "${starter.key}" declares its attachment intent correctly`,
+      bodyPromisesAttachment(starter.body) === starter.expectsAttachment,
+      `copy says ${bodyPromisesAttachment(starter.body)}, flag says ${starter.expectsAttachment}`);
+  }
+
+  check("exactly one starter is the no-attachment option",
+    AUTO_REPLY_STARTERS.filter((s) => !s.expectsAttachment).length === 1);
+  check("exactly one starter sends an attachment",
+    AUTO_REPLY_STARTERS.filter((s) => s.expectsAttachment).length === 1);
+  check("the default (first) starter promises no file it cannot deliver",
+    !AUTO_REPLY_STARTERS[0].expectsAttachment, AUTO_REPLY_STARTERS[0].key);
+  check("starter keys are unique",
+    new Set(AUTO_REPLY_STARTERS.map((s) => s.key)).size === AUTO_REPLY_STARTERS.length);
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-01", name: "Bare-id [[MATCH_CARD:<uuid>]] form is accepted", run: ut01 },
   { id: "UT-02", name: "Well-formed card JSON parses unchanged", run: ut02 },
@@ -263,6 +301,7 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-07", name: "Zero results are distinguishable from a parse failure", run: ut07 },
   { id: "UT-08", name: "The parent's private Eva session resolves (and never a joined thread)", run: ut08 },
   { id: "UT-09", name: "Photo de-dup keeps the larger copy and never drops an unknown", run: ut09 },
+  { id: "UT-10", name: "Auto-reply starter copy stays in sync with its tokens", run: ut10 },
 ];
 
 (async () => {
