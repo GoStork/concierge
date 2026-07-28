@@ -38,6 +38,7 @@ import { encryptPassword } from "./caldav-crypto";
 import { BookingEventsService, BookingEvent } from "./booking-events.service";
 import { CostSheetAutoDraftService } from "../billing/cost-sheet-auto-draft.service";
 import { AutoReplyService } from "../providers/auto-reply.service";
+import { ParentBriefingService } from "../providers/parent-briefing.service";
 import { Observable } from "rxjs";
 
 function isValidTimezone(tz: string): boolean {
@@ -74,6 +75,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     @Inject(BookingEventsService) private readonly bookingEvents: BookingEventsService,
     @Inject(CostSheetAutoDraftService) private readonly costSheetAutoDraft: CostSheetAutoDraftService,
     @Inject(AutoReplyService) private readonly autoReply: AutoReplyService,
+    @Inject(ParentBriefingService) private readonly parentBriefing: ParentBriefingService,
   ) {}
 
   // Phase 2: fire-and-forget cost-sheet auto-draft on every booking_created
@@ -345,6 +347,22 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       scheduledAt: booking.scheduledAt || null,
       bookerTimezone: booking.bookerTimezone || null,
       meetingSubtype: booking.meetingSubtype || null,
+    });
+
+    // The private parent briefing. INDEPENDENT of the auto-reply on purpose: a
+    // provider who never wrote a greeting still gets told who is about to walk
+    // into their call. Same once-per-parent-per-service rule, its own log.
+    await this.parentBriefing.sendForBooking({
+      providerId: consultProviderId,
+      providerName: provider.name,
+      providerTypeId: await this.autoReply.resolveProviderTypeId({
+        providerId: consultProviderId,
+        subjectType: body.subjectType || null,
+      }),
+      sessionId: targetSessionId,
+      parentUserId,
+      parentAccountId: parentAccount?.parentAccountId || null,
+      bookingId: booking.id,
     });
 
     // Notify provider users
@@ -2404,6 +2422,31 @@ I'll check in with you right after the call. You've got this!`;
       // parent already has with this provider (the service explains why it
       // never creates one).
       this.autoReply.attachDirectBookingToThread(booking)
+        .then(async (sessionId) => {
+          if (!sessionId || !booking.parentUser) return;
+          const providerId = booking.providerUser?.providerId;
+          if (!providerId) return;
+          const parent = await this.prisma.user.findUnique({
+            where: { id: booking.parentUser.id },
+            select: { parentAccountId: true },
+          });
+          const session = await this.prisma.aiChatSession.findUnique({
+            where: { id: sessionId },
+            select: { subjectType: true },
+          });
+          await this.parentBriefing.sendForBooking({
+            providerId,
+            providerName: booking.providerUser?.provider?.name || null,
+            providerTypeId: await this.autoReply.resolveProviderTypeId({
+              providerId,
+              subjectType: session?.subjectType || null,
+            }),
+            sessionId,
+            parentUserId: booking.parentUser.id,
+            parentAccountId: parent?.parentAccountId || null,
+            bookingId: booking.id,
+          });
+        })
         .catch((e) => this.logger.warn(`[direct-booking] Thread attach failed: ${e.message}`))
         .finally(() => this.fireCostSheetAutoDraft(booking.id));
     }

@@ -866,6 +866,14 @@ export const TEST_CASES: TestCaseDef[] = [
     interestedServices: [], messageCount: 0,
   },
   {
+    id: "PR-15", persona: "provider",
+    name: "PR-15: The private parent briefing reaches the provider, never the parent",
+    desc: "The AI-written summary of the family posted on first booking is readable by the provider, is absent from the parent's own message feed and message list, and does not inflate their unread badge - a parent must never read an assessment of themselves",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+
+  {
     id: "UT-09", persona: "unit",
     name: "UT-09: Photo de-dup keeps the larger copy and never drops an unknown",
     desc: "De-duplication keeps the higher-resolution copy of a duplicated photo and leaves anything it cannot confidently match in place - a wrong drop is silent",

@@ -161,6 +161,28 @@ model Provider {
   sponsorStripeCustomerId               String?
   autoReplies                           ProviderAutoReply[]
   autoReplySends                        ProviderAutoReplySend[]
+  parentBriefings                       ProviderParentBriefing[]
+}
+
+/// Send log for the AI-written private parent briefing. Same "once per parent
+/// + provider + service line" rule as the auto-reply, and the same COALESCE
+/// unique index (see the migration) - a plain unique would not dedupe because
+/// NULL <> NULL in Postgres.
+model ProviderParentBriefing {
+  id              String   @id @default(uuid())
+  providerId      String
+  parentAccountId String?
+  parentUserId    String
+  providerTypeId  String?
+  sessionId       String
+  bookingId       String?
+  /// The posted AiChatMessage, so the briefing can be found from the log.
+  messageId       String?
+  sentAt          DateTime @default(now())
+  provider        Provider @relation(fields: [providerId], references: [id])
+
+  @@index([providerId, parentAccountId])
+  @@index([providerId, parentUserId])
 }
 
 /// A provider-authored first message that is posted into the parent's 3-way

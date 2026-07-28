@@ -233,6 +233,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.providerAutoReplySend;
   }
 
+  get providerParentBriefing() {
+    return prisma.providerParentBriefing;
+  }
+
   get journeyPreferences() {
     return prisma.journeyPreferences;
   }

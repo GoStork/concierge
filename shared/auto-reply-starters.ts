@@ -75,41 +75,39 @@ const CLOSER = "If anything comes up before then, just reply here and I'll get b
  *
  * The profile sentence is always its own paragraph so it can be dropped whole
  * when the booking is not about a specific profile (a general agency call).
+ *
+ * Donor and surrogate services have NO `general` paragraph on purpose. Asking
+ * "tell me what you're looking for" is redundant now that the provider gets a
+ * private briefing on the parent the moment a call is booked - they already
+ * know. Clinics and law firms keep theirs because those ask for something the
+ * briefing cannot supply (bring your records; which state are you in).
  */
-type ServiceCopy = { profile: string | null; general: string };
+type ServiceCopy = { profile: string | null; general: string | null };
 
 const SERVICE_COPY: Record<string, ServiceCopy> = {
   "Egg Donor Agency": {
     profile:
       "I can see you're interested in [{{profile_ref}}]({{profile_link}}) - I'll have her full profile, " +
       "her medical and family history and her current availability ready for our call.",
-    general:
-      "Before we talk it helps to know what you're looking for in a donor - background, physical traits, " +
-      "education, openness to contact - so we can narrow things down quickly.",
+    general: null,
   },
   "Egg Bank": {
     profile:
       "I can see you're interested in [{{profile_ref}}]({{profile_link}}) - I'll have her full profile, " +
       "her cohort details and current availability ready for our call.",
-    general:
-      "Before we talk it helps to know what you're looking for in a donor and how many eggs you're " +
-      "hoping to secure, so we can point you to the right cohorts.",
+    general: null,
   },
   "Surrogacy Agency": {
     profile:
       "I can see you're interested in [{{profile_ref}}]({{profile_link}}) - I'll have her full profile, " +
       "her pregnancy history and where she is in our screening process ready for our call.",
-    general:
-      "Before we talk it helps to know your timeline, where you are with embryos, and what matters most " +
-      "to you in a surrogate match.",
+    general: null,
   },
   "Sperm Bank": {
     profile:
       "I can see you're interested in [{{profile_ref}}]({{profile_link}}) - I'll have his full profile, " +
       "his medical and family history and current vial availability ready for our call.",
-    general:
-      "Before we talk it helps to know what you're looking for in a donor and whether you'll need vials " +
-      "shipped to a clinic, so we can check availability ahead of time.",
+    general: null,
   },
   "IVF Clinic": {
     profile: null,

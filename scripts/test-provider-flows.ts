@@ -14,6 +14,7 @@
  *  PR-12 Booking auto-reply templates are scoped to one org and one scope.
  *  PR-13 The greeting posts on booking without marking the provider present.
  *  PR-14 The provider's own /book/<slug> link is covered, once per parent.
+ *  PR-15 The private parent briefing is provider-only - never the parent.
  *
  * Usage:
  *   TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-provider-flows.ts
@@ -155,6 +156,7 @@ async function destroyFixture(db: Client, f: Fixture) {
   // Auto-reply rows: the send log holds the "once per parent" key, so leaving
   // one behind would silently suppress the greeting in a later run.
   await db.query(`DELETE FROM "ProviderAutoReplySend" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
+  await db.query(`DELETE FROM "ProviderParentBriefing" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
   await db.query(`DELETE FROM "ProviderAutoReply" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
   await db.query(`DELETE FROM "Booking" WHERE "providerUserId" = $1 OR "parentUserId" = $2`, [f.providerUserId, f.parentUserId]).catch(() => {});
   await db.query(`DELETE FROM "ScheduleConfig" WHERE "userId" = $1`, [f.providerUserId]).catch(() => {});
@@ -839,6 +841,53 @@ async function pr14(db: Client) {
   }
 }
 
+// ─── PR-15: the private parent briefing reaches the provider, never the parent ─
+// An AI summary of the family is posted into the shared thread when the first
+// consultation is booked. The whole feature rests on ONE property: the parent
+// must never read an assessment of themselves. That is what this asserts,
+// through both sides' real read endpoints rather than by inspecting the row.
+async function pr15(db: Client) {
+  const f = await createFixture(db, "pr15");
+  try {
+    const session = await mkSession(db, f, { status: "CONSULTATION_BOOKED", title: "Consultation" });
+
+    // Stand in for a generated briefing - this case is about VISIBILITY, not
+    // the model's wording (a live Gemini call would make it flaky).
+    const secret = "PRIVATE-BRIEFING-CANARY-two-tested-embryos";
+    const msg = await db.query(
+      `INSERT INTO "AiChatMessage" (id,"sessionId",role,content,"senderType","senderName","uiCardType","uiCardData","createdAt")
+       VALUES (gen_random_uuid(),$1,'assistant',$2,'system','GoStork','provider_assessment','{"parentBriefing":true}'::jsonb,now())
+       RETURNING id`,
+      [session, `**Private briefing - only you can see this**\n\n${secret}`],
+    );
+    const briefingId = msg.rows[0].id;
+
+    const provView: any = await (await jfetch(`${BASE}/api/provider/concierge-sessions/${session}`, { headers: f.providerAuth })).json();
+    check("the provider can read the briefing", JSON.stringify(provView).includes(secret));
+
+    // The parent side - the one that matters.
+    const parentView: any = await (await jfetch(`${BASE}/api/ai-concierge/session/${session}/messages`, { headers: f.parentAuth })).json();
+    const parentBlob = JSON.stringify(parentView);
+    check("the PARENT cannot read the briefing", !parentBlob.includes(secret),
+      parentBlob.includes(secret) ? "LEAKED to the parent" : undefined);
+    check("the briefing message id is absent from the parent's feed", !parentBlob.includes(briefingId));
+
+    // A hidden card must not inflate the parent's unread badge either - that
+    // is a count they could never clear by reading.
+    const unreadRow = await db.query(
+      `SELECT count(*)::int AS n FROM "AiChatMessage"
+        WHERE "sessionId" = $1 AND "uiCardType" = 'provider_assessment' AND "readAt" IS NULL`,
+      [session],
+    );
+    const parentMsgs: any[] = Array.isArray(parentView) ? parentView : (parentView?.messages || []);
+    check("the briefing is not among the messages the parent is served",
+      !parentMsgs.some((m: any) => m.id === briefingId), `${parentMsgs.length} message(s) served`);
+    check("the briefing row does exist (so the check above is meaningful)", unreadRow.rows[0].n === 1);
+  } finally {
+    await destroyFixture(db, f);
+  }
+}
+
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "PR-01", name: "Whisper answer relays into the parent's own chat (consolidated threads)", run: pr01 },
   { id: "PR-02", name: "Parent identity masked before booking, revealed after", run: pr02 },
@@ -854,6 +903,7 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "PR-12", name: "Auto-reply templates are the provider's own, and only theirs", run: pr12 },
   { id: "PR-13", name: "Booking auto-reply lands without faking the provider's presence", run: pr13 },
   { id: "PR-14", name: "Auto-reply covers the provider's own booking link, once per parent", run: pr14 },
+  { id: "PR-15", name: "The private parent briefing reaches the provider, never the parent", run: pr15 },
 ];
 
 (async () => {

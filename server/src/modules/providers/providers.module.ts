@@ -9,12 +9,13 @@ import { ScrapersController } from "./scrapers.controller";
 import { DocumentsController } from "./documents.controller";
 import { AutoReplyController } from "./auto-reply.controller";
 import { AutoReplyService } from "./auto-reply.service";
+import { ParentBriefingService } from "./parent-briefing.service";
 import { StorageModule } from "../storage/storage.module";
 
 @Module({
   imports: [StorageModule],
-  providers: [AutoReplyService],
-  exports: [AutoReplyService],
+  providers: [AutoReplyService, ParentBriefingService],
+  exports: [AutoReplyService, ParentBriefingService],
   controllers: [
     ProvidersController,
     ProviderTypesController,
