@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { isUsableCardId, parseMatchCardTag, topResultId, UUID_RE } from "./match-card-parse";
 import { PARENT_VISIBLE_SYSTEM_CARDS } from "./parent-visibility";
+import { blockContactInfo, isSharedWithProvider, logContactBlock, scanForContactInfo } from "./contact-guard";
 import Anthropic from "@anthropic-ai/sdk";
 import { getBaseUrl } from "./src/lib/get-base-url";
 import { buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
@@ -2404,6 +2405,21 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       if (!hasAccess) {
         return res.status(403).json({ error: "Session does not belong to this user" });
       }
+      // THE EVA EXCEPTION. This endpoint serves two destinations: the parent's
+      // PRIVATE thread with Eva (where she legitimately asks for their email and
+      // phone during intake) and a thread the provider reads. Only the second is
+      // guarded, or intake breaks outright.
+      //
+      // isSharedWithProvider keys on status + providerJoinedAt, never providerId:
+      // a whisper stamps providerId onto the PRIVATE Eva session, so keying on it
+      // would block a parent from answering "what is your number?" the moment
+      // they had ever asked a question about an agency. See parent-visibility.ts.
+      //
+      // The else-branch below never reaches here: it only ever selects a session
+      // with providerJoinedAt: null and a non-booked status, which is private by
+      // construction.
+      if (isSharedWithProvider(session)
+        && blockContactInfo(res, req.body.message, "parent.shared-thread", { sessionId: currentSessionId, userId })) return;
       if (req.body.matchmakerId && session.matchmakerId !== req.body.matchmakerId) {
         await prisma.aiChatSession.update({
           where: { id: currentSessionId },
@@ -8573,24 +8589,44 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     }
     if (whisperMatch) {
       const whisperProviderId = whisperMatch[1].trim();
+
+      // If the user's message is a short affirmative ("yes", "sure", etc.), the actual question
+      // is earlier in the conversation history - find the last real parent question
+      const SHORT_AFFIRMATIVES = /^(yes|yeah|yep|sure|ok|okay|please|go ahead|do it|yup|absolutely|sounds good|great|perfect|yes please)[\s!.]*$/i;
+      let questionText: string;
+      if (userMessage && SHORT_AFFIRMATIVES.test(userMessage.trim())) {
+        // Walk back through messages to find the last user question (before the current "yes")
+        const parentMessages = messages.filter((m: any) => m.role === "user");
+        const prevQuestion = parentMessages.length >= 2
+          ? parentMessages[parentMessages.length - 2]?.content
+          : null;
+        questionText = (typeof prevQuestion === "string" ? prevQuestion : null)
+          || userMessage
+          || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
+      } else {
+        questionText = userMessage || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
+      }
+
+      // Guard the OUTBOUND question, not the parent's message.
+      //
+      // The parent is in their private thread and cannot see that Eva decided to
+      // whisper, so 422-ing them for a routing decision the model made mid-turn
+      // is unexplainable. And questionText is not always the current message -
+      // the affirmative branch above walks back to an earlier one, or falls back
+      // to a slice of Eva's own text - so the egress value is the only correct
+      // place to check. One check covers the SilentQuery row, the provider card,
+      // the provider EMAIL and the provider SMS below.
+      //
+      // Suppress rather than redact: a question reading "her number is [removed]"
+      // tells the provider a number was offered, which is worse than not asking.
+      const outboundWhisper = scanForContactInfo(questionText);
+      const whisperSuppressed = outboundWhisper.blocked;
+      if (whisperSuppressed) {
+        logContactBlock("whisper.question", outboundWhisper, { sessionId: currentSessionId, providerId: whisperProviderId, userId });
+      }
+
       try {
-        if (whisperProviderId && userId && currentSessionId) {
-          // If the user's message is a short affirmative ("yes", "sure", etc.), the actual question
-          // is earlier in the conversation history - find the last real parent question
-          const SHORT_AFFIRMATIVES = /^(yes|yeah|yep|sure|ok|okay|please|go ahead|do it|yup|absolutely|sounds good|great|perfect|yes please)[\s!.]*$/i;
-          let questionText: string;
-          if (userMessage && SHORT_AFFIRMATIVES.test(userMessage.trim())) {
-            // Walk back through messages to find the last user question (before the current "yes")
-            const parentMessages = messages.filter((m: any) => m.role === "user");
-            const prevQuestion = parentMessages.length >= 2
-              ? parentMessages[parentMessages.length - 2]?.content
-              : null;
-            questionText = (typeof prevQuestion === "string" ? prevQuestion : null)
-              || userMessage
-              || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
-          } else {
-            questionText = userMessage || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
-          }
+        if (whisperProviderId && userId && currentSessionId && !whisperSuppressed) {
           const providerResult = await mcpClient!.callTool({
             name: "resolve_provider",
             arguments: { providerId: whisperProviderId },
@@ -8696,6 +8732,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         console.error("Failed to create WHISPER:", e);
       }
       finalContent = finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim();
+      if (whisperSuppressed) {
+        // Eva promised to go ask the agency; she must not now say nothing while
+        // silently dropping the question. Replace the deferral with the reason.
+        finalContent = "I am not able to pass contact details along to an agency, but I can ask them anything else "
+          + "and bring the answer straight back to you here. What would you like me to ask?";
+      }
     }
 
     let quickReplies: string[] = [];

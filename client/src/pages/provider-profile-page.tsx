@@ -10,7 +10,7 @@ import {
   Loader2, Check,
 } from "lucide-react";
 import { ProfileSection } from "@/components/ui/profile-section";
-import { IvfSuccessRatesSection, useIvfFilterContext } from "@/components/ivf-success-rates-section";
+import { IvfSuccessRatesSection, useIvfFilterContext, ivfContextSearch } from "@/components/ivf-success-rates-section";
 import { InsuranceSection } from "@/components/insurance-section";
 import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-section";
 import {
@@ -295,7 +295,7 @@ export default function ProviderProfilePage() {
                 return member.slug ? (
                   <Link
                     key={member.id}
-                    to={`/doctors/${member.slug}`}
+                    to={`/doctors/${member.slug}${ivfContextSearch(filterContext)}`}
                     className="group no-underline flex gap-3 p-3 rounded-[var(--radius)] border border-transparent hover:border-border/50 hover:bg-secondary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                     data-testid={`member-${member.id}`}
                   >

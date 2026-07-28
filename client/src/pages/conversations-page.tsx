@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { hasProviderRole } from "@shared/roles";
+import { detectContactInfo } from "@shared/contact-guard";
 import { useAppDispatch } from "@/store";
 import { setHideBottomNav } from "@/store/uiSlice";
 import { deriveChatPalette } from "@/lib/chat-palette";
@@ -939,8 +940,18 @@ const sendMessageMutation = useMutation({
         credentials: "include",
         body: JSON.stringify({ content, uiCardType, uiCardData }),
       });
-      if (!res.ok) throw new Error("Failed to send");
+      if (!res.ok) {
+        // Was: `throw new Error("Failed to send")`, which discarded the body and
+        // left the failure invisible (this mutation has no onError). The contact
+        // guard returns a 422 whose `message` explains what to fix, so the body
+        // has to survive.
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to send");
+      }
       return res.json();
+    },
+    onError: (e: any) => {
+      toast({ title: "Message not sent", description: e?.message || "Please try again.", variant: "destructive" });
     },
     onSuccess: (_data, variables) => {
       setReplyText("");
@@ -2927,6 +2938,10 @@ const sendMessageMutation = useMutation({
                 isLoading={sendMessageMutation.isPending}
                 isUploading={providerUploading}
                 brandColor={brandColor}
+                // Guarded because everything typed here reaches the parent -
+                // either directly or relayed by Eva as a whisper answer. The
+                // provider's PRIVATE Eva assistant composer below is not.
+                validate={(t) => detectContactInfo(t)}
                 placeholder={(hasJoined || isConsultationBooked) ? "Type a message to the parent..." : "Type your answer..."}
                 senderLabel={!hasJoined && !isConsultationBooked ? <WhisperDisclaimer /> : undefined}
                 enableFileUpload

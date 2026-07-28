@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useInfiniteQuery, keepPreviousData } from "@tanstack/react-query";
+import { ivfContextSearch, parentIvfContext } from "@/components/ivf-success-rates-section";
+import { useParentProfile } from "@/hooks/use-parent-profile";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { typeToUrlSlug } from "@/lib/profile-utils";
@@ -517,6 +519,9 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
   const showSkippedOnly = useAppSelector((s) => s.ui.showSkippedOnly);
   const ageLabel = ageGroup === "under_35" ? "Under 35" : ageGroup === "35_37" ? "35-37" : ageGroup === "38_40" ? "38-40" : "Over 40";
   const contextLabel = eggSource === "donor" ? "Donor eggs" : ["Own eggs", ageLabel, isNewPatient === "true" ? "First-time IVF" : "Prior cycles"].join(" · ");
+  // Carry "Your IVF" onto the profile, exactly as the clinic deck does - opening
+  // a card must not silently re-base the reader onto a different CDC row.
+  const doctorContextSearch = ivfContextSearch({ eggSource, ageGroup, isNewPatient });
 
   const syncPref = (prefType: "favorite" | "skip", slug: string, action: "add" | "remove") => {
     const method = action === "add" ? "POST" : "DELETE";
@@ -559,7 +564,7 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
       onSave={api.onSave}
       onPass={api.onPass}
       onUndo={mode === "active" ? api.onUndo : (passedSlugs.includes(doctor.slug) ? () => onUndo(doctor.slug) : undefined)}
-      onViewProfile={() => { recordProfileView(doctor.slug, "doctor" as any); navigate(`/doctors/${doctor.slug}`); }}
+      onViewProfile={() => { recordProfileView(doctor.slug, "doctor" as any); navigate(`/doctors/${doctor.slug}${doctorContextSearch}`); }}
       onMessage={() => { recordProfileView(doctor.slug, "doctor" as any); navigate(`/concierge?donorId=${doctor.slug}&donorType=doctor`, { state: { doctorCard: doctor } }); }}
     />
   );
@@ -1247,9 +1252,13 @@ type SavedCard = {
   onRemove: () => void;
 };
 
-function MobileSavedGrid({ kind, items }: {
+function MobileSavedGrid({ kind, items, ivfContext = "" }: {
   kind: "egg-donor" | "surrogate" | "sperm-donor" | "clinic" | "doctor";
   items: any[];
+  /** Serialised "Your IVF" context, forwarded onto clinic and doctor profiles so
+   *  opening a saved card does not re-base the reader onto a different CDC row.
+   *  Empty for donor/surrogate kinds, which have no success-rate context. */
+  ivfContext?: string;
 }) {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -1265,7 +1274,7 @@ function MobileSavedGrid({ kind, items }: {
         .map((p) => ({
           key: p.id,
           ...savedCardVisual("clinic", p),
-          onOpen: () => navigate(`/providers/${p.id}`),
+          onOpen: () => navigate(`/providers/${p.id}${ivfContext}`),
           onRemove: () => dispatch(toggleFavoriteClinic(p.id)),
         }));
     }
@@ -1275,7 +1284,7 @@ function MobileSavedGrid({ kind, items }: {
         .map((d) => ({
           key: d.slug,
           ...savedCardVisual("doctor", d),
-          onOpen: () => navigate(`/doctors/${d.slug}`),
+          onOpen: () => navigate(`/doctors/${d.slug}${ivfContext}`),
           onRemove: () => dispatch(toggleFavoriteDoctor(d.slug)),
         }));
     }
@@ -1292,7 +1301,7 @@ function MobileSavedGrid({ kind, items }: {
         onOpen: () => navigate(`/${slug}/${donor.providerId}/${donor.id}`),
         onRemove: () => dispatch(toggleFavoriteDonor(donor.id)),
       }));
-  }, [kind, items, favoritedDonorIds, favoritedClinicIds, favoritedDoctorSlugs, navigate, dispatch]);
+  }, [kind, items, ivfContext, favoritedDonorIds, favoritedClinicIds, favoritedDoctorSlugs, navigate, dispatch]);
 
   if (cards.length === 0) {
     return (
@@ -1845,9 +1854,23 @@ export default function MarketplacePage() {
 
   const ivfLocation = searchParams.get("location") || "";
   const ivfSearch = searchParams.get("search") || "";
-  const eggSource = searchParams.get("eggSource") || "own_eggs";
-  const ageGroup = searchParams.get("ageGroup") || "under_35";
-  const isNewPatient = searchParams.get("ivfHistory") || "true";
+  // "Your IVF" starts on what the parent told us in their account, not on a
+  // hardcoded own-eggs/under-35 guess. Anything they pick here still wins (the
+  // URL is read first) - this only decides where the filter OPENS. Seeding it
+  // from the profile is also what keeps a card and its profile agreeing: the
+  // card's "Top 10%" badge is computed from these same three values server-side,
+  // so a filter that defaulted to one context while the profile page fell back
+  // to another made the badge appear on the card and vanish inside.
+  const { parentProfile: ivfContextProfile } = useParentProfile();
+  const profileIvf = parentIvfContext(ivfContextProfile);
+  const eggSource = searchParams.get("eggSource") || profileIvf?.eggSource || "own_eggs";
+  const ageGroup = searchParams.get("ageGroup") || profileIvf?.ageGroup || "under_35";
+  const isNewPatient = searchParams.get("ivfHistory") || profileIvf?.isNewPatient || "true";
+  // The active context as a query string, for every link out of the marketplace
+  // into a clinic or doctor profile. Note the marketplace URL spells the history
+  // flag "ivfHistory" while profile pages read "isNewPatient" - going through
+  // this one serialiser is what keeps that rename from silently dropping it.
+  const ivfLinkSearch = ivfContextSearch({ eggSource, ageGroup, isNewPatient });
   const sortBy = searchParams.get("sortBy") || "highest_success";
   const insuranceFilter = searchParams.get("insurance") || "";
   const specialtyFilter = searchParams.get("specialty") || "";
@@ -1898,9 +1921,13 @@ export default function MarketplacePage() {
     clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => updateParam("search", v), 350);
   };
-  const setEggSource = (v: string) => updateParam("eggSource", v, "own_eggs");
-  const setAgeGroup = (v: string) => updateParam("ageGroup", v, "under_35");
-  const setIsNewPatient = (v: string) => updateParam("ivfHistory", v, "true");
+  // Drop the param only when it matches the EFFECTIVE default (profile-derived),
+  // never the old hardcoded one. Otherwise a donor-eggs parent who deliberately
+  // picks "Own eggs" would have that param stripped as "same as default" and
+  // land straight back on donor eggs.
+  const setEggSource = (v: string) => updateParam("eggSource", v, profileIvf?.eggSource || "own_eggs");
+  const setAgeGroup = (v: string) => updateParam("ageGroup", v, profileIvf?.ageGroup || "under_35");
+  const setIsNewPatient = (v: string) => updateParam("ivfHistory", v, profileIvf?.isNewPatient || "true");
   const setSortBy = (v: string) => updateParam("sortBy", v, "highest_success");
 
   const isProviderTab = activeTab === "ivf-clinics" || activeTab === "surrogacy-agencies";
@@ -1985,6 +2012,11 @@ export default function MarketplacePage() {
       ageGroup,
       ivfHistory: isNewPatient === "false" ? "false" : "",
       providerId: providerIdFilter,
+      // The filter bar's sort dropdown. Doctors are ranked SERVER-side (on their
+      // lead clinic's success rate) because the ranking has to happen before the
+      // 250-row cap - sorting here would only reorder the page that loaded, so
+      // the true top of the directory could never reach the client.
+      sortBy,
     }).filter(([, v]) => v) as [string, string][],
   ).toString();
   // The directory is capped at 250 rows, so the Saved and Hidden views ask for
@@ -2003,7 +2035,7 @@ export default function MarketplacePage() {
   const doctorSlugParam = doctorSlugScope && doctorSlugScope.length > 0 ? doctorSlugScope.join(",") : "";
 
   const { data: doctors, isLoading: doctorsLoading } = useQuery<any[]>({
-    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation, insuranceFilter, specialtyFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient, providerIdFilter, doctorSlugParam],
+    queryKey: ["/api/providers/marketplace/doctors", ivfSearch, ivfLocation, insuranceFilter, specialtyFilter, lgbtqFilter, eggSource, ageGroup, isNewPatient, providerIdFilter, doctorSlugParam, sortBy],
     queryFn: async () => {
       const params = new URLSearchParams(doctorQueryParams);
       if (doctorSlugParam) params.set("slugs", doctorSlugParam);
@@ -2328,8 +2360,11 @@ export default function MarketplacePage() {
       onPersonalise={() => { setCompareOpen(false); openFiltersPage(); }}
       onOpenProfile={(p: any) => {
         setCompareOpen(false);
-        if (compareKind === "clinic") { compareNavigate(`/providers/${p.id}`); return; }
-        if (compareKind === "doctor") { compareNavigate(`/doctors/${p.slug || p.id}`); return; }
+        // Same context forwarding as every other marketplace exit - the compare
+        // table ranks on the parent's CDC row, so the profile it opens must not
+        // land on a different one.
+        if (compareKind === "clinic") { compareNavigate(`/providers/${p.id}${ivfLinkSearch}`); return; }
+        if (compareKind === "doctor") { compareNavigate(`/doctors/${p.slug || p.id}${ivfLinkSearch}`); return; }
         const slug = compareKind === "surrogate" ? "surrogate" : compareKind === "sperm-donor" ? "spermdonor" : "eggdonor";
         compareNavigate(`/${slug}/${p.providerId}/${p.id}`);
       }}
@@ -2386,12 +2421,12 @@ export default function MarketplacePage() {
               )}
               {isIvfTab && (
                 isSavedView
-                  ? <MobileSavedGrid kind="clinic" items={(clinics as any) || []} />
+                  ? <MobileSavedGrid kind="clinic" items={(clinics as any) || []} ivfContext={ivfLinkSearch} />
                   : <IvfClinicDeckGrid providers={clinics as any} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} sortBy={sortBy} onFilteredCountChange={onFilteredCountChange} />
               )}
               {isDoctorTab && (
                 isSavedView
-                  ? <MobileSavedGrid kind="doctor" items={(doctors as any) || []} />
+                  ? <MobileSavedGrid kind="doctor" items={(doctors as any) || []} ivfContext={ivfLinkSearch} />
                   : <DoctorDeckGrid doctors={doctors} loading={doctorsLoading} eggSource={eggSource} ageGroup={ageGroup} isNewPatient={isNewPatient} />
               )}
               {activeTab === "surrogacy-agencies" && (

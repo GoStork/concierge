@@ -20,6 +20,8 @@
 import { isUsableCardId, parseFirstJsonArray, parseMatchCardTag, topResultId } from "../server/match-card-parse";
 import { resolveParentEvaSessionId } from "../server/parent-visibility";
 import { AUTO_REPLY_STARTERS, AUTO_REPLY_TOKENS, autoReplyStartersFor, bodyPromisesAttachment, renderAutoReplyBody } from "../shared/auto-reply-starters";
+import { detectContactInfo } from "../shared/contact-guard";
+import { MUST_BLOCK, MUST_NOT_BLOCK } from "../shared/contact-guard-corpus";
 import { planDedupe, thumbCorrelation, worstBlockDeviation, DEDUP_CORRELATION, DEDUP_MAX_BLOCK_DEVIATION, type Fingerprint } from "../server/src/modules/providers/photo-dedup";
 
 const BASE = process.env.TEST_BASE_URL || "http://localhost:5001";
@@ -312,6 +314,71 @@ async function ut10() {
   check("the default starter promises no file it cannot deliver", !AUTO_REPLY_STARTERS[0].expectsAttachment);
 }
 
+// ─── UT-11: the contact guard blocks contact details and nothing else ───────
+// The false-positive half is the acceptance bar. This is a fertility platform:
+// "$145,000", "AMH 1.2", "donor #1234" and "born 03/14/1994" are ordinary
+// sentences, and a blocked cost discussion is worse than a missed phone number
+// because the parent cannot work around it and cannot tell why.
+async function ut11() {
+  for (const c of MUST_BLOCK) {
+    const r = detectContactInfo(c.text);
+    check(`blocks (${c.why}): ${c.text.slice(0, 52)}`, r.blocked && r.kinds.includes(c.kind),
+      r.blocked ? `got kinds=${r.kinds.join(",")} want ${c.kind}` : "not blocked");
+  }
+
+  for (const c of MUST_NOT_BLOCK) {
+    const r = detectContactInfo(c.text);
+    check(`allows (${c.why}): ${c.text.slice(0, 52)}`, !r.blocked,
+      r.blocked ? r.findings.map((f) => `${f.rule}="${f.sample}"`).join(" ") : undefined);
+  }
+
+  // Spans must point back into the ORIGINAL string. The normalizer rewrites
+  // length as it folds, strips and collapses, so an index-map regression is
+  // silent everywhere except here - and it would make the client highlight the
+  // wrong half of the message.
+  for (const c of MUST_BLOCK) {
+    const r = detectContactInfo(c.text);
+    if (!r.blocked) continue;
+    const bad = r.spans.filter(([s, e]) => !(s >= 0 && e > s && e <= c.text.length && c.text.slice(s, e).trim().length > 0));
+    check(`span maps back to the original text: ${c.text.slice(0, 40)}`, bad.length === 0, JSON.stringify(bad));
+  }
+
+  check("empty input is not blocked", !detectContactInfo("").blocked);
+  check("whitespace-only input is not blocked", !detectContactInfo("   \n  ").blocked);
+  check("a normal booked-call message is not blocked",
+    !detectContactInfo("Thanks so much, Friday at 9:30 works. We have 3 embryos and our budget is around 145,000.").blocked);
+}
+
+// ─── UT-12: every obfuscation of one address and one number still blocks ────
+// Each transform below defeats a different normalizer stage. Testing them
+// against a single canonical value is what proves the pipeline composes rather
+// than each rule happening to catch its own favorite spelling.
+async function ut12() {
+  const EMAILS = [
+    "eran@gostork.com",
+    "e r a n @ g o s t o r k . c o m",
+    "eran (at) gostork dot com",
+    "eran[at]gostork[dot]com",
+    "eran{at}gostork{dot}com",
+    "eran＠gostork.com",
+    `er${"​"}an@gost${"​"}ork.com`,
+    "ERAN (AT) GOSTORK (DOT) COM",
+  ];
+  for (const e of EMAILS) {
+    const r = detectContactInfo(`you can reach me at ${e} any time`);
+    check(`email obfuscation blocks: ${JSON.stringify(e)}`, r.blocked && r.kinds.includes("email"), r.kinds.join(","));
+  }
+
+  const PHONES = [
+    "917-224-7761", "917.224.7761", "(917) 224-7761", "+1 917 224 7761",
+    "9172247761", "9 1 7 2 2 4 7 7 6 1", "1-917-224-7761", "+1(917)224.7761",
+  ];
+  for (const p of PHONES) {
+    const r = detectContactInfo(`here is my cell ${p}`);
+    check(`phone obfuscation blocks: ${JSON.stringify(p)}`, r.blocked && r.kinds.includes("phone"), r.kinds.join(","));
+  }
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-01", name: "Bare-id [[MATCH_CARD:<uuid>]] form is accepted", run: ut01 },
   { id: "UT-02", name: "Well-formed card JSON parses unchanged", run: ut02 },
@@ -323,6 +390,8 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-08", name: "The parent's private Eva session resolves (and never a joined thread)", run: ut08 },
   { id: "UT-09", name: "Photo de-dup keeps the larger copy and never drops an unknown", run: ut09 },
   { id: "UT-10", name: "Auto-reply starter copy stays in sync with its tokens", run: ut10 },
+  { id: "UT-11", name: "Contact guard blocks contact details and leaves ordinary text alone", run: ut11 },
+  { id: "UT-12", name: "Every obfuscation of one address and one number still blocks", run: ut12 },
 ];
 
 (async () => {

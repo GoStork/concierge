@@ -19,6 +19,7 @@ import { Request } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { PrismaService } from "../prisma/prisma.service";
 import { AutoReplyService } from "./auto-reply.service";
+import { assertNoContactInfo } from "../../../contact-guard";
 
 /**
  * CRUD for the provider booking auto-reply templates.
@@ -115,6 +116,7 @@ export class AutoReplyController {
     const providerId = this.resolveProviderId(req, body?.providerId);
     const text = String(body?.body || "").trim();
     if (!text) throw new BadRequestException("Message body is required");
+    assertNoContactInfo(text, "auto-reply.create", { providerId });
 
     const staffUserId = body?.staffUserId || null;
     const providerTypeId = body?.providerTypeId || null;
@@ -166,6 +168,7 @@ export class AutoReplyController {
     if (body?.body !== undefined) {
       const text = String(body.body || "").trim();
       if (!text) throw new BadRequestException("Message body is required");
+      assertNoContactInfo(text, "auto-reply.update", { providerId: existing.providerId, templateId: id });
       data.body = text;
     }
     if (body?.attachments !== undefined) data.attachments = this.sanitizeAttachments(body.attachments);

@@ -885,6 +885,18 @@ export const TEST_CASES: TestCaseDef[] = [
     desc: "Both default booking auto-reply templates use every available token and render with nothing left unsubstituted; exactly one promises an attachment, and the default promises no file it cannot deliver",
     interestedServices: [], messageCount: 0,
   },
+  {
+    id: "UT-11", persona: "unit",
+    name: "UT-11: Contact guard blocks contact details and leaves ordinary text alone",
+    desc: "Emails, phone numbers, off-platform meeting links and messaging handles are blocked in every obfuscated form, while the money, clinical and record numbers that fill real fertility conversations ($145,000, AMH 1.2, donor #1234, born 03/14/1994) all pass. The false-positive half is the acceptance bar",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-12", persona: "unit",
+    name: "UT-12: Every obfuscation of one address and one number still blocks",
+    desc: "One canonical email and one canonical phone number, put through spacing, bracketed and spelled separators, fullwidth characters, zero-width injection and case changes - proving the normalizer pipeline composes rather than each rule catching only its favorite spelling",
+    interestedServices: [], messageCount: 0,
+  },
 
   // ── TRANSACTIONAL JOURNEY (JR-01..) ───────────────────────────────────────
   // Runs scripts/test-journey-flows.ts - what MOVES rather than what Eva says:

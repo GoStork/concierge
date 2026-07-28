@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { describeRateDelta, RATE_TONE_CLASS } from "@/lib/rate-delta";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
+import { useParentProfile } from "@/hooks/use-parent-profile";
+import { pickClinicRate } from "@/lib/clinic-rate";
 
 export interface IvfSuccessRate {
   successRate: number | null;
@@ -20,26 +22,96 @@ export interface IvfFilterContext {
   isNewPatient?: string;
 }
 
+/** The account page stores these as display strings; CDC uses keyed values. */
+const PROFILE_AGE_GROUP: Record<string, string> = {
+  "under 35": "under_35",
+  "35-37": "35_37",
+  "38-40": "38_40",
+  "over 40": "over_40",
+};
+
+/** Where "Your IVF" lands when the parent has told us nothing at all. */
+const CONTEXT_DEFAULTS = { eggSource: "own_eggs", ageGroup: "under_35", isNewPatient: "true" };
+
 /**
- * The parent's IVF context ("Your IVF" in the marketplace), read from the URL.
- * Success rates are personalised against it, so every surface that shows a
- * clinic's rates - the clinic profile, a doctor's profile, the deck cards -
- * must read it the same way. Returns undefined when the parent hasn't picked
- * one, which makes IvfSuccessRatesSection fall back to its overview.
+ * The parent's account profile expressed as an IVF context.
+ *
+ * The single mapping from IntendedParentProfile's display strings to CDC keys.
+ * Used both to seed the marketplace's "Your IVF" filter and to personalise a
+ * profile page reached without a filter - if these two ever disagreed, a clinic
+ * would show one rate on its card and another inside, which is the whole class
+ * of bug this exists to prevent.
+ *
+ * "Egg donor" is the only donor-bank answer. "Partner eggs" (reciprocal IVF) is
+ * not a CDC donor cycle, so it resolves to own eggs.
+ */
+export function parentIvfContext(parentProfile: any | null | undefined): IvfFilterContext | undefined {
+  if (!parentProfile) return undefined;
+  const src = String(parentProfile.eggSource || "");
+  // clinicAgeGroup is optional on the account page and often blank, so an
+  // unanswered age falls back rather than producing a context that matches no
+  // CDC row at all.
+  const age = PROFILE_AGE_GROUP[String(parentProfile.clinicAgeGroup || "").trim().toLowerCase()];
+  return {
+    eggSource: /donor/i.test(src) ? "donor" : CONTEXT_DEFAULTS.eggSource,
+    ageGroup: age || CONTEXT_DEFAULTS.ageGroup,
+    isNewPatient: parentProfile.isFirstIvf === false ? "false" : CONTEXT_DEFAULTS.isNewPatient,
+  };
+}
+
+/**
+ * The parent's IVF context ("Your IVF" in the marketplace).
+ *
+ * Read from the URL first: the clinic deck appends eggSource/ageGroup/
+ * isNewPatient when it opens a profile, and that selection must win.
+ *
+ * When the URL carries nothing, fall back to the signed-in parent's own
+ * account profile. Without this fallback the personalised view - headline rate,
+ * national-average bars, "Top 10%" badge - only ever appeared when the parent
+ * arrived via the clinic deck. Any other route in (a doctor profile, an AI-chat
+ * link, a bookmark, a shared URL) silently dropped to the generic all-patients
+ * overview, so the same clinic reported two different numbers depending on how
+ * you got there.
+ *
+ * Providers and admins have no parentAccountId, so useParentProfile stays null
+ * for them and they keep the full toggle explorer - "personalised to YOUR
+ * profile" means nothing when you are not the patient.
  */
 export function useIvfFilterContext(): IvfFilterContext | undefined {
   const [searchParams] = useSearchParams();
+  const { parentProfile } = useParentProfile();
   return useMemo(() => {
     const eggSource = searchParams.get("eggSource");
     const ageGroup = searchParams.get("ageGroup");
     const isNewPatient = searchParams.get("isNewPatient");
-    if (!eggSource && !ageGroup) return undefined;
-    return {
-      ...(eggSource ? { eggSource } : {}),
-      ...(ageGroup ? { ageGroup } : {}),
-      ...(isNewPatient ? { isNewPatient } : {}),
-    };
-  }, [searchParams]);
+    if (eggSource || ageGroup) {
+      return {
+        ...(eggSource ? { eggSource } : {}),
+        ...(ageGroup ? { ageGroup } : {}),
+        ...(isNewPatient ? { isNewPatient } : {}),
+      };
+    }
+    return parentIvfContext(parentProfile);
+  }, [searchParams, parentProfile]);
+}
+
+/**
+ * Serialise the active IVF context onto a link.
+ *
+ * The parent's journey has to survive every hop between the surfaces that quote
+ * a clinic's rates - marketplace -> clinic -> one of its doctors -> back to a
+ * clinic. Any link that drops it restarts the reader on a different CDC row, so
+ * the same clinic appears to change its number (and lose its "Top 10%" badge)
+ * purely because of how you navigated there.
+ */
+export function ivfContextSearch(ctx: IvfFilterContext | undefined): string {
+  if (!ctx) return "";
+  const params = new URLSearchParams();
+  if (ctx.eggSource) params.set("eggSource", ctx.eggSource);
+  if (ctx.ageGroup) params.set("ageGroup", ctx.ageGroup);
+  if (ctx.isNewPatient) params.set("isNewPatient", ctx.isNewPatient);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
 }
 
 const AGE_GROUPS = ["under_35", "35_37", "38_40", "over_40"] as const;
@@ -195,13 +267,11 @@ function PersonalizedView({ rates, filterContext }: { rates: IvfSuccessRate[]; f
 
   const matchedRate = useMemo(() => {
     if (isDonor) {
-      const submetric = filterContext.eggSource === "donated_embryos" ? "donated_embryos" : undefined;
-      const candidates = rates.filter(
-        (r) => r.profileType === "donor" && r.metricCode === DONOR_METRIC &&
-          (submetric ? r.submetric === submetric : true) && r.successRate != null
-      );
-      if (candidates.length === 0) return null;
-      return candidates.reduce((a, b) => Number(b.successRate) > Number(a.successRate) ? b : a);
+      // Delegate to the shared resolver so this headline, the clinic card's
+      // "Top 10%" badge and a doctor's affiliation chip all name the SAME CDC
+      // submetric. Picking the highest one here instead disagreed with the
+      // server's choice on 150 clinics and flipped the badge on 33 of them.
+      return pickClinicRate(rates, { eggSource: filterContext.eggSource, ageGroup: filterContext.ageGroup }).rate;
     }
 
     const metric = isNew ? OWN_NEW_METRIC : OWN_METRIC;

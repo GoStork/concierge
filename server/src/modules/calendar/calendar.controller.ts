@@ -39,6 +39,7 @@ import { BookingEventsService, BookingEvent } from "./booking-events.service";
 import { CostSheetAutoDraftService } from "../billing/cost-sheet-auto-draft.service";
 import { AutoReplyService } from "../providers/auto-reply.service";
 import { ParentBriefingService } from "../providers/parent-briefing.service";
+import { assertNoContactInfo } from "../../../contact-guard";
 import { Observable } from "rxjs";
 
 function isValidTimezone(tz: string): boolean {
@@ -1006,6 +1007,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     const emails = body.attendeeEmails?.filter((e: string) => e?.trim()) || [];
     const hasName = body.attendeeName?.trim();
     if (emails.length === 0 && !hasName) throw new BadRequestException("At least one attendee is required");
+    assertNoContactInfo(body.notes, "booking.notes.create", { userId: user.id });
 
     const config = await this.prisma.scheduleConfig.findUnique({ where: { userId: user.id } });
 
@@ -1160,6 +1162,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     const user = req.user as any;
     const booking = await this.prisma.booking.findUnique({ where: { id } });
     if (!booking) throw new NotFoundException("Booking not found");
+    if (body.notes !== undefined) assertNoContactInfo(body.notes, "booking.notes.update", { bookingId: id, userId: user.id });
     const isAccountMember = await this.isParentAccountMember(user.id, booking.parentUserId);
     // Phase 4: any member of the HOST's provider team (e.g. a SCHEDULER who
     // booked the call on a coordinator's behalf) can manage the booking too,
@@ -2285,6 +2288,12 @@ I'll check in with you right after the call. You've got this!`;
     if (!body.scheduledAt || !body.name || !body.email) {
       throw new BadRequestException("scheduledAt, name, and email are required");
     }
+    // Booking notes are parent-typed free text that leaves the platform: they
+    // are printed verbatim in the provider's notification EMAIL and copied into
+    // the external calendar event description. Guarding at the source covers
+    // all five of those egress points. `name` and `email` are the booker's own
+    // and are the point of the endpoint.
+    assertNoContactInfo(body.notes, "booking.notes.public", { slug });
 
     const bookerTz = body.timezone || config.timezone;
     const parsedDT = DateTime.fromISO(body.scheduledAt, { zone: bookerTz });

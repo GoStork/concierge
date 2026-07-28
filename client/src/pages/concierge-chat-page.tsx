@@ -4,6 +4,8 @@ import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-se
 import { InvoiceHistorySidebarSection } from "@/components/chat/invoice-history-sidebar-section";
 import { CostSheetParentAck } from "@/components/chat/special-message-card";
 import { ChatPlusDrawer, type ChatPlusAction } from "@/components/chat/chat-plus-drawer";
+import { ContactGuardNotice } from "@/components/chat/contact-guard-notice";
+import { CONTACT_GUARD_CODE, contactGuardMessage, detectContactInfo } from "@shared/contact-guard";
 import { InvoicePaymentPanel } from "@/components/chat/invoice-payment-panel";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { ComparisonCard } from "@/components/chat/comparison-card";
@@ -112,6 +114,15 @@ export interface ComparisonCardData {
 
 export interface ConsultationCardData {
   providerId: string;
+  /**
+   * Set INSTEAD of providerId on an admin-sent calendar card - an admin sharing
+   * their own calendar into a session has no provider to key on. The field was
+   * always present in the data (server/chat-router.ts scans stored cards for it
+   * when collecting a session's bookings); only this interface was missing it,
+   * so the three client reads that match a booking to its card were type errors
+   * that never surfaced, because the build strips types without checking them.
+   */
+  providerUserId?: string;
   providerName: string;
   providerLogo?: string;
   bookingUrl?: string;
@@ -2435,7 +2446,11 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
     return <BankCheckoutCard data={data} brandColor={brandColor} />;
   }
 
-  if (msg.uiCardType === "partner_info_request" && sessionId) {
+  // msg.id is optional (a message has none until it is persisted) and the card
+  // posts to /partner-info/${messageId} - without an id that submit would go to
+  // ".../partner-info/undefined" and fail with nothing shown to the parent. Gate
+  // on it the same way sessionId is already gated.
+  if (msg.uiCardType === "partner_info_request" && sessionId && msg.id) {
     return <PartnerInfoRequestCard data={data} messageId={msg.id} sessionId={String(sessionId)} brandColor={brandColor} />;
   }
 
@@ -2740,6 +2755,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // Deep-link support: ?msg=<id> / ?msg=quote:<quoteId> scrolls to the card
   useScrollToMessage(messages.length);
   const [input, setInput] = useState("");
+  /** Contact-guard copy, set client-side before sending or from the server's 422. */
+  const [contactNotice, setContactNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [multiSelectChoices, setMultiSelectChoices] = useState<Set<string>>(new Set());
@@ -3850,6 +3867,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
       }).catch(() => {});
       return;
     }
+    // Contact guard. Runs before ANY of the state clearing below, so a blocked
+    // message stays in the box for the parent to edit.
+    //
+    // Gated on providerInChat, matching the server's isSharedWithProvider: in
+    // the parent's private thread Eva legitimately asks for their email and
+    // phone during intake, and blocking that would break onboarding outright.
+    // Retries skip it - the first pass already cleared the text.
+    if (retryCount === 0 && providerInChat) {
+      const scan = detectContactInfo(text.trim());
+      if (scan.blocked) {
+        setContactNotice(contactGuardMessage(scan.kinds));
+        return;
+      }
+      setContactNotice(null);
+    }
     // Deduplicate: block the same message if sent within 3 seconds (double-tap / fast-click protection)
     const sendNow = Date.now();
     if (retryCount === 0 && lastSentRef.current && lastSentRef.current.text === text.trim() && sendNow - lastSentRef.current.time < 3000) return;
@@ -3933,7 +3965,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         }),
       });
 
-      if (!res.ok) throw new Error("Chat request failed");
+      if (!res.ok) {
+        // The contact guard's 422 is a decision, not a transient failure: it
+        // must skip the retry ladder below (which would fire two more blocked
+        // requests) and put the parent's text back so they can edit it.
+        if (res.status === 422) {
+          const body = await res.json().catch(() => ({} as any));
+          if (body?.code === CONTACT_GUARD_CODE) {
+            stopTypingAnimation(false);
+            setMessages((prev) => prev.filter((m) => m.id !== streamingId && m.content !== userMessage));
+            setContactNotice(body.message || contactGuardMessage(body.kinds || []));
+            setInput(userMessage);
+            setSending(false);
+            sendingRef.current = false;
+            return;
+          }
+        }
+        throw new Error("Chat request failed");
+      }
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -5455,6 +5504,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             onChange={handleParentFileSelect}
             data-testid="input-parent-camera"
           />
+          {contactNotice && <ContactGuardNotice message={contactNotice} className="mb-2" />}
           <div className="flex items-end gap-1.5">
             <Button
               variant="ghost"
@@ -5492,7 +5542,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               rows={1}
               placeholder={`Message ${providerInChat && providerChatName ? providerChatName : (aiName || "AI Concierge")}...`}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => { setInput(e.target.value); if (contactNotice) setContactNotice(null); }}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               disabled={sending || parentUploading || !isOnline}

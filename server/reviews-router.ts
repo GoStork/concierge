@@ -15,6 +15,7 @@ import jwt from "jsonwebtoken";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
+import { blockContactInfo } from "./contact-guard";
 
 export const reviewsRouter = Router();
 
@@ -415,6 +416,16 @@ reviewsRouter.post("/api/reviews/:id/reply", requireAuth, async (req, res) => {
     const text = (req.body?.text || "").trim();
     if (!user.providerId) return res.status(403).json({ message: "Providers only" });
     if (!text) return res.status(400).json({ message: "text required" });
+    // The review BODY has been screened for contact info since Phase 8
+    // (aiScreenReview above); the provider's public reply never was. Run the
+    // deterministic guard first - it is free and it catches the obfuscated
+    // forms the model tends to wave through - then fall through to the same
+    // AI screen the body gets.
+    if (blockContactInfo(res, text, "review.provider-reply", { reviewId: req.params.id, providerId: user.providerId })) return;
+    const replyScreen = await aiScreenReview(text);
+    if (!replyScreen.ok) {
+      return res.status(422).json({ message: "This reply cannot be posted publicly. Please remove any contact details or personal information and try again." });
+    }
     const review = await prisma.providerReview.findUnique({ where: { id: req.params.id } });
     if (!review || review.providerId !== user.providerId) return res.status(404).json({ message: "Review not found" });
     if (review.visibility !== "PUBLIC") return res.status(403).json({ message: "Not repliable" });

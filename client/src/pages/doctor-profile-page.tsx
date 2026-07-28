@@ -5,7 +5,8 @@ import { recordProfileView, recordProfileOpen } from "@/lib/profile-views";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProfileSection } from "@/components/ui/profile-section";
-import { IvfSuccessRatesSection, useIvfFilterContext } from "@/components/ivf-success-rates-section";
+import { IvfSuccessRatesSection, useIvfFilterContext, ivfContextSearch, type IvfFilterContext } from "@/components/ivf-success-rates-section";
+import { pickClinicRate } from "@/lib/clinic-rate";
 import { ClinicCostProgramsSection } from "@/components/clinic-cost-programs-section";
 import { InsuranceSection } from "@/components/insurance-section";
 import {
@@ -19,22 +20,45 @@ import { MobileCloseButton } from "@/components/mobile-profile-close-header";
 import { useAuth } from "@/hooks/use-auth";
 import { ReviewsSection, useHasReviewsContent } from "@/components/reviews/reviews-ui";
 
-// CDC metric codes (mirrors ivf-success-rates-section.tsx) used to pick a headline rate.
-const OWN_METRIC = "pct_intended_retrievals_live_births";
-const OWN_NEW_METRIC = "pct_new_patients_live_birth_after_1_retrieval";
+const AGE_LABELS: Record<string, string> = {
+  under_35: "under 35",
+  "35_37": "35-37",
+  "38_40": "38-40",
+  over_40: "over 40",
+};
 
-// Pick a single "headline" success rate for a clinic affiliation: own-eggs, under-35 live birth.
-function headlineRate(rates: any[] | undefined): { value: number; label: string } | null {
-  if (!rates || rates.length === 0) return null;
-  const own = rates.filter((r) => r.profileType === "own_eggs" && r.ageGroup === "under_35");
-  const pick =
-    own.find((r) => r.metricCode === OWN_METRIC) ||
-    own.find((r) => r.metricCode === OWN_NEW_METRIC) ||
-    own[0];
-  if (!pick || pick.successRate == null) return null;
-  const value = Math.round(Number(pick.successRate));
+/**
+ * The headline rate for one clinic affiliation.
+ *
+ * Delegates to pickClinicRate - the same resolver the clinic card and the
+ * comparison table use - so a doctor's affiliation chip and that clinic's own
+ * profile quote the same figure. This was previously a local re-implementation
+ * that picked the all-patients row regardless of the parent's context AND
+ * rounded the raw value without scaling it: successRate is stored as a fraction,
+ * so a 78% clinic rendered "1%" and anything under 50% rounded to 0 and was
+ * dropped by the guard below. That chip could never show a correct number.
+ */
+function headlineRate(
+  rates: any[] | undefined,
+  ctx: IvfFilterContext | undefined,
+): { value: number; label: string } | null {
+  const { rate, isFallback } = pickClinicRate(rates || [], {
+    eggSource: ctx?.eggSource,
+    ageGroup: ctx?.ageGroup,
+    isNewPatient: ctx?.isNewPatient !== undefined ? ctx.isNewPatient !== "false" : undefined,
+  });
+  if (!rate || rate.successRate == null) return null;
+  const value = Math.round(Number(rate.successRate) * 100);
   if (!Number.isFinite(value) || value <= 0) return null;
-  return { value, label: "Live birth · under 35, own eggs" };
+
+  const isDonor = rate.profileType === "donor";
+  const age = AGE_LABELS[rate.ageGroup] || rate.ageGroup;
+  // pickClinicRate's contract: a fallback row describes a population this parent
+  // may not be in, so it must never be presented bare.
+  const label = isDonor
+    ? "Live birth · donor eggs"
+    : `Live birth · ${age}, own eggs${isFallback ? " (not your profile)" : ""}`;
+  return { value, label };
 }
 
 function formatLocation(l: { address?: string | null; city?: string | null; state?: string | null; zip?: string | null }) {
@@ -263,12 +287,12 @@ export default function DoctorProfilePage() {
       <ProfileSection title={affiliations.length > 1 ? `Practices At ${affiliations.length} Clinics` : "Practices At"} contentClassName="p-6 grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-affiliations">
           {affiliations.map((a) => {
             const logo = getPhotoSrc(a.logoUrl);
-            const rate = headlineRate(a.successRates);
+            const rate = headlineRate(a.successRates, filterContext);
             const locs = (a.memberLocations?.length ? a.memberLocations : a.clinicLocations) || [];
             return (
               <Link
                 key={a.memberId}
-                to={`/providers/${a.providerId}`}
+                to={`/providers/${a.providerId}${ivfContextSearch(filterContext)}`}
                 className="group no-underline border border-border/40 rounded-[var(--radius)] p-4 flex flex-col gap-3 hover:border-primary hover:bg-secondary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                 data-testid={`affiliation-${a.providerId}`}
               >

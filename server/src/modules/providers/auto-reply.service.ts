@@ -1,6 +1,7 @@
 import { Injectable, Inject, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { renderAutoReplyBody, type AutoReplyVars } from "../../../../shared/auto-reply-starters";
+import { logContactBlock, scanForContactInfo } from "../../../contact-guard";
 import { getBaseUrl } from "../../lib/get-base-url";
 
 /**
@@ -416,6 +417,23 @@ export class AutoReplyService {
         callType,
         callTime: opts.scheduledAt ? this.formatCallTime(opts.scheduledAt, opts.bookerTimezone) : null,
       });
+
+      // Contact guard. This path deliberately bypasses the provider send
+      // endpoint (see the note below), so it would otherwise be the one way a
+      // provider could put a phone number in front of every parent who books.
+      // The controller rejects a bad body at save time; this is the backstop for
+      // templates saved before that shipped.
+      //
+      // Never throws - the contract of this method is that a failure here does
+      // not take down a booking that already succeeded. The send row stays
+      // claimed so we do not retry a message we will only reject again.
+      const bodyScan = scanForContactInfo(content);
+      if (bodyScan.blocked) {
+        logContactBlock("auto-reply.send", bodyScan, {
+          providerId: opts.providerId, sessionId: opts.sessionId, templateId: (template as any).id,
+        });
+        return false;
+      }
 
       // senderType "provider" is what makes this render with the provider's
       // name and avatar on the parent's side. Note this writes the message

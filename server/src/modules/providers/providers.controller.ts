@@ -66,7 +66,7 @@ import { US_STATES, STATE_NAME_TO_ABBR } from "./us-states";
 import { searchSartForClinic, mergeTeamMembers, verifyClinicUrl } from "./clinic-enrichment.service";
 import { Prisma } from "@prisma/client";
 import { type EggSource, type AgeGroup } from "../../lib/ivf-success-rate";
-import { DOCTOR_MEMBER_SELECT, enrichDoctorRows } from "../../lib/doctor-enrichment";
+import { DOCTOR_MEMBER_SELECT, enrichDoctorRows, sortEnrichedDoctors } from "../../lib/doctor-enrichment";
 import { applySponsoredOrdering, SPONSORED_FIRST_ORDER } from "./sponsorship-sort";
 import { buildDonorSearchWhere } from "@shared/donor-search";
 
@@ -537,9 +537,16 @@ export class ProvidersController {
       memberWhere.specialties = { has: query.specialty };
     }
 
+    // Fetch the WHOLE eligible pool, not a page of it. The sort key (the lead
+    // clinic's success rate) is computed per request from the parent's egg
+    // source / age group, so it cannot be a DB ordering - the ranking happens in
+    // memory below. Taking a name-ordered slice first would mean "highest
+    // success rate" only ever ranked the doctors whose names sort early, which
+    // is exactly the bug this replaces. ~2k rows today; the response is still
+    // capped at 250.
     const members = await this.prisma.providerMember.findMany({
       where: memberWhere,
-      take: 600,
+      take: 3000,
       orderBy: [SPONSORED_FIRST_ORDER, { isMedicalDirector: "desc" }, { name: "asc" }],
       select: DOCTOR_MEMBER_SELECT,
     });
@@ -573,9 +580,13 @@ export class ProvidersController {
       specialtyFilter: query.specialty,
       searchTerms,
     });
+    // Marketplace sort (the filter bar's "Highest success rate" dropdown). Runs
+    // BEFORE the 250 cap so the top of the list is the top of the directory, not
+    // the top of whatever page loaded. Sponsored stays pinned above it.
+    const sortedDoctors = sortEnrichedDoctors(enrichedDoctors, query.sortBy);
     // An explicit slug request is already bounded by the caller's saved list;
     // truncating it would re-create the very gap this parameter exists to close.
-    const ordered = applySponsoredOrdering(enrichedDoctors);
+    const ordered = applySponsoredOrdering(sortedDoctors);
     if (!savedSlugByPerson) return ordered.slice(0, 250);
     // Re-key each merged card to the slug the caller actually asked for (see the
     // sibling-row expansion above), and drop anything the expansion pulled in

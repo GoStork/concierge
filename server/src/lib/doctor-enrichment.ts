@@ -256,3 +256,46 @@ export function enrichDoctorRows(rows: any[], ctx: DoctorEnrichmentContext): Enr
     };
   });
 }
+
+/**
+ * Marketplace sort for the Doctors directory.
+ *
+ * A doctor has no success rate of their own - they inherit their clinics'.
+ * `clinics[]` is already ordered best-rate-first by enrichDoctorRows, so
+ * `clinics[0]` is the LEAD clinic, which is also the one whose rate the card
+ * badge shows. Ranking on the lead clinic keeps the list order consistent with
+ * the number the parent is actually reading off the card - a doctor at six
+ * clinics sorts by their strongest one.
+ *
+ * Doctors with no rate at all sink to the bottom in BOTH directions: "lowest
+ * success rate" means the lowest KNOWN rate, not "no data reported".
+ *
+ * Ties keep their incoming order (sponsored, then medical director, then name),
+ * because Array.prototype.sort is stable - so equal-rate doctors still read
+ * alphabetically instead of shuffling per request.
+ */
+export function sortEnrichedDoctors<T extends EnrichedDoctor>(doctors: T[], sortBy?: string): T[] {
+  const leadRate = (d: T) => d.clinics?.[0]?.successPct ?? null;
+  const leadCycles = (d: T) => d.clinics?.[0]?.cycleCount ?? null;
+
+  // Nulls last in both directions - see the note above.
+  const by = (get: (d: T) => number | null, dir: "desc" | "asc") => (a: T, b: T) => {
+    const av = get(a);
+    const bv = get(b);
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return dir === "desc" ? bv - av : av - bv;
+  };
+
+  switch (sortBy) {
+    case "highest_success": return [...doctors].sort(by(leadRate, "desc"));
+    case "lowest_success": return [...doctors].sort(by(leadRate, "asc"));
+    case "highest_cycles": return [...doctors].sort(by(leadCycles, "desc"));
+    case "lowest_cycles": return [...doctors].sort(by(leadCycles, "asc"));
+    case "alphabetical": return [...doctors].sort((a, b) => a.name.localeCompare(b.name));
+    // Absent or not-yet-implemented (the distance options need geocoding that
+    // does not exist yet): keep the query's own ordering.
+    default: return doctors;
+  }
+}

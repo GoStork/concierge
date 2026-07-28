@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { ChatPlusDrawer, type ChatPlusAction } from "./chat-plus-drawer";
 import { StagedFileChip } from "./staged-file-chip";
+import { ContactGuardNotice } from "./contact-guard-notice";
+import type { ContactScanResult } from "@shared/contact-guard";
 
 export type PlusBuiltinTile =
   | "photo"
@@ -64,6 +66,15 @@ interface ChatInputBarProps {
   inlinePanel?: ReactNode;
   /** Extra custom plus-drawer actions appended after the built-ins. */
   extraPlusActions?: ChatPlusAction[];
+  /**
+   * Contact guard. When supplied, runs BEFORE onSend and before the textarea is
+   * cleared: a blocked message keeps the user's text so they can edit it, which
+   * a server-only 422 could not do (handleSubmit clears on hand-off).
+   *
+   * Omitted by the admin monitor - GoStork staff sharing a support line is
+   * legitimate.
+   */
+  validate?: (text: string) => ContactScanResult | null;
 }
 
 const PLUS_TILE_LABELS: Record<PlusBuiltinTile, string> = {
@@ -104,8 +115,10 @@ export function ChatInputBar({
   onAgreementClick,
   inlinePanel,
   extraPlusActions,
+  validate,
 }: ChatInputBarProps) {
   const [text, setText] = useState("");
+  const [guardScan, setGuardScan] = useState<ContactScanResult | null>(null);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [plusOpen, setPlusOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -119,6 +132,14 @@ export function ChatInputBar({
 
   const handleSubmit = () => {
     if ((!text.trim() && stagedFiles.length === 0) || isLoading || isUploading) return;
+    // Must run before onSend AND before setText(""), or a blocked message is
+    // gone from the box by the time the user is told why it was blocked.
+    const blocked = validate?.(text.trim());
+    if (blocked?.blocked) {
+      setGuardScan(blocked);
+      return;
+    }
+    setGuardScan(null);
     onSend(text.trim(), stagedFiles);
     setText("");
     setStagedFiles([]);
@@ -268,6 +289,8 @@ export function ChatInputBar({
 
       {senderLabel}
 
+      {guardScan && <ContactGuardNotice scan={guardScan} className="mb-2" />}
+
       {inlinePanel && (
         <div
           className="mb-2 rounded-[var(--radius)] border bg-card p-3 min-h-0 overflow-y-auto overscroll-contain"
@@ -358,7 +381,7 @@ export function ChatInputBar({
         <Input
           placeholder={placeholder}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => { setText(e.target.value); if (guardScan) setGuardScan(null); }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

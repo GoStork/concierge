@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { PARENT_HIDDEN_MESSAGE_FILTER } from "./parent-visibility";
+import { blockContactInfo } from "./contact-guard";
 import { emitJourneyEvent } from "./journey-events";
 import multer from "multer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -1075,6 +1076,10 @@ chatRouter.post("/api/consultation/request-callback", requireAuth, async (req, r
     if (!providerId || !name || !email) {
       return res.status(400).json({ message: "Missing required fields" });
     }
+    // Guard the free-text message only. `name` and `email` are the parent's own
+    // details and handing them to the provider is this endpoint's entire
+    // purpose - which is also why it writes a contact release below.
+    if (blockContactInfo(res, message, "consultation.callback-message", { providerId, userId: user?.id })) return;
 
     const provider = await prisma.provider.findUnique({
       where: { id: providerId },
@@ -1964,6 +1969,12 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     if (!canSendProviderMessage(user.roles || [], (session as any).subjectType)) {
       return res.status(403).json({ message: "Your role cannot send messages in this conversation" });
     }
+
+    // One insertion covers all three egress paths below: the persisted whisper
+    // answerText, the Eva relay that quotes it verbatim to the parent, and the
+    // direct provider message. Guarding here rather than at each create is why
+    // there is no path where a provider's number reaches the parent.
+    if (blockContactInfo(res, content, "provider.message", { sessionId: session.id, providerId: user.providerId })) return;
 
     const isConnected = session.status === "PROVIDER_CONNECTED";
     const isConsultationBooked = session.status === "CONSULTATION_BOOKED";
@@ -3040,6 +3051,10 @@ chatRouter.post("/api/chat-session/:id/message", requireAuth, async (req, res) =
   if (!content || typeof content !== "string" || !content.trim()) {
     return res.status(400).json({ message: "Content is required" });
   }
+  // This endpoint only ever posts into a thread the provider reads, so the
+  // guard applies unconditionally here (unlike the Eva path, where the parent
+  // is often just answering an intake question about their own contact info).
+  if (blockContactInfo(res, content, "parent.direct-message", { sessionId: req.params.id, userId: user.id })) return;
   try {
     const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
     if (!session) return res.status(404).json({ message: "Session not found" });
