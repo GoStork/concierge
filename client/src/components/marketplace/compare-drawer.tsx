@@ -1,11 +1,11 @@
 import { Fragment } from "react";
 import { X } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+
 import { Button } from "@/components/ui/button";
-import { formatMoneyDollars } from "@/lib/format-money";
-import { formatLocationDisplay } from "@/lib/format-location";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { formatStatusLabel } from "@/lib/format-label";
+import { getMandatoryFields } from "@/lib/profile-summary";
 import { compareCellsFromProfile, mergeCompareCells } from "@/lib/compare-sections";
 import { buildTitle, type SwipeDeckProfile } from "@/components/marketplace/swipe-mappers";
 
@@ -23,68 +23,34 @@ import { buildTitle, type SwipeDeckProfile } from "@/components/marketplace/swip
 
 export type CompareKind = "egg-donor" | "surrogate" | "sperm-donor";
 
-type Row = { label: string; get: (p: any) => string | null };
+/**
+ * The comparison's first group: everything the Summary block shows.
+ *
+ * This used to be a hand-picked subset - cost, age, location, a few traits -
+ * which left out the answers people actually choose on: twins, selective
+ * reduction, prior c-sections, vaccination, whether she is open to same-sex or
+ * international parents. Reusing the Summary builder means the comparison and
+ * the profile can never disagree about what a parent is shown.
+ */
+function summaryRows(kind: CompareKind, profiles: any[]): CompareTableGroup[] {
+  const perProfile = profiles.map((p) => getMandatoryFields(p, kind));
+  const labels: string[] = [];
+  for (const rows of perProfile) for (const r of rows) if (!labels.includes(r.label)) labels.push(r.label);
 
-const money = (v: unknown): string | null => {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? formatMoneyDollars(n) : null;
-};
-const text = (v: unknown): string | null => {
-  const s = v == null ? "" : String(v).trim();
-  return s && s !== "-" && s !== "--" ? s : null;
-};
+  const rows = labels
+    .map((label) => ({
+      label,
+      values: perProfile.map((rs) => {
+        const hit = rs.find((r) => r.label === label);
+        const v = hit?.value;
+        return v && v !== "-" && v !== "--" ? v : null;
+      }),
+    }))
+    // A row nobody answered teaches nothing; a row ONE of them answered is a
+    // difference and stays.
+    .filter((r) => r.values.some(Boolean));
 
-export function rowsFor(kind: CompareKind): { group: string; rows: Row[] }[] {
-  const cost: Row[] = kind === "surrogate"
-    ? [
-        { label: "Total cost", get: (p) => {
-          const min = money(p.totalCostMin), max = money(p.totalCostMax);
-          return min && max && min !== max ? `${min} - ${max}` : (min || max || money(p.totalCost));
-        } },
-        { label: "Base compensation", get: (p) => money(p.baseCompensation) },
-      ]
-    : [
-        { label: "Total cost", get: (p) => money(p.totalCost) },
-        { label: "Compensation", get: (p) => money(p.donorCompensation) },
-      ];
-
-  const decide: Row[] = [
-    ...cost,
-    { label: "Availability", get: (p) => formatStatusLabel(text(p.donorStatus)) || (p.available === false ? "Not available" : "Available") },
-    { label: "Age", get: (p) => (p.age ? `${p.age}` : null) },
-    { label: "Location", get: (p) => formatLocationDisplay(text(p.location)) || text(p.location) },
-  ];
-
-  const traits: Row[] = [
-    { label: "Height", get: (p) => text(p.height) },
-    { label: "Eye colour", get: (p) => text(p.eyeColor) },
-    { label: "Hair colour", get: (p) => text(p.hairColor) },
-    { label: "Race", get: (p) => text(p.race) },
-    { label: "Ethnicity", get: (p) => text(p.ethnicity) },
-  ];
-
-  const proven: Row[] = kind === "surrogate"
-    ? [
-        { label: "Live births", get: (p) => (p.liveBirths != null ? String(p.liveBirths) : null) },
-        { label: "C-sections", get: (p) => (p.cSections != null ? String(p.cSections) : null) },
-        { label: "BMI", get: (p) => (p.bmi != null ? String(p.bmi) : null) },
-      ]
-    : [
-        { label: "Previously donated", get: (p) => (p.statusBadge === "Experienced" ? "Yes" : null) },
-        { label: "Eggs retrieved", get: (p) => (p.numberOfEggs != null ? String(p.numberOfEggs) : null) },
-      ];
-
-  const background: Row[] = [
-    { label: "Education", get: (p) => text(p.education) },
-    { label: "Occupation", get: (p) => text(p.occupation) },
-  ];
-
-  return [
-    { group: "Cost & availability", rows: decide },
-    { group: "Physical traits", rows: traits },
-    { group: "Proven history", rows: proven },
-    { group: "Background", rows: background },
-  ];
+  return rows.length ? [{ group: "Summary", rows }] : [];
 }
 
 export const COMPARE_MAX = 4;
@@ -114,14 +80,7 @@ export type CompareTableGroup = { group: string; rows: { label: string; values: 
  * itself a difference between them.
  */
 export function buildCompareTable(kind: CompareKind, profiles: any[]): CompareTableGroup[] {
-  const scalar = rowsFor(kind)
-    .map(({ group, rows }) => ({
-      group,
-      rows: rows
-        .filter((r) => profiles.some((p) => r.get(p)))
-        .map((r) => ({ label: r.label, values: profiles.map((p) => r.get(p)) })),
-    }))
-    .filter((g) => g.rows.length > 0);
+  const scalar = summaryRows(kind, profiles);
 
   // Then the substance: her own sections, in the same priority order the
   // profile page uses. Cost and availability still lead - they disqualify
@@ -165,7 +124,7 @@ export function CompareDrawer({
       <div className="p-4 max-w-[1200px] mx-auto">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse" data-testid="compare-table">
-            <thead>
+            <thead className="sticky top-[57px] z-10 bg-background">
               <tr>
                 <th className="w-[132px]" />
                 {profiles.map((p: any) => (
@@ -203,20 +162,45 @@ export function CompareDrawer({
               {groups.map(({ group, rows }) => (
                 <Fragment key={group}>
                   <tr>
-                    <td colSpan={profiles.length + 1} className="pt-5 pb-1">
-                      <span className="t-micro-label">{group}</span>
+                    <td colSpan={profiles.length + 1} className="pt-7 pb-2">
+                      {/* A real band, not a faint caption. The old headings were
+                          t-micro-label on white and vanished into the rows they
+                          were meant to separate - in a table this long, the
+                          group is the only thing telling a parent what they are
+                          looking at. */}
+                      <div className="flex items-center gap-3">
+                        <span className="font-heading text-base text-foreground">{group}</span>
+                        <span className="h-px flex-1 bg-border" />
+                      </div>
                     </td>
                   </tr>
-                  {rows.map((row) => (
-                    <tr key={row.label} className="border-t border-border/60" data-testid={`compare-row-${row.label.toLowerCase().replace(/\s+/g, "-")}`}>
-                      <td className="py-2.5 pr-3 align-top"><span className="t-field-label">{row.label}</span></td>
-                      {row.values.map((value, i) => (
-                        <td key={profiles[i]?.id ?? i} className="py-2.5 pr-3 align-top">
-                          <span className="t-micro-value">{value ?? <span className="opacity-40">-</span>}</span>
+                  {rows.map((row) => {
+                    // Rows where everyone answered the same are not a decision.
+                    // Dimming them lets the eye land on what actually differs,
+                    // which is the whole reason the table exists.
+                    const filled = row.values.filter((v) => v != null);
+                    const identical = filled.length === row.values.length
+                      && filled.every((v) => v === filled[0]);
+                    return (
+                      <tr
+                        key={row.label}
+                        className="border-t border-border/60 hover:bg-secondary/40 transition-colors"
+                        data-testid={`compare-row-${row.label.toLowerCase().replace(/\s+/g, "-")}`}
+                        data-identical={identical ? "true" : "false"}
+                      >
+                        <td className="py-2.5 pr-4 align-top w-[168px]">
+                          <span className="t-field-label">{row.label}</span>
                         </td>
-                      ))}
-                    </tr>
-                  ))}
+                        {row.values.map((value, i) => (
+                          <td key={profiles[i]?.id ?? i} className="py-2.5 pr-4 align-top">
+                            <span className={cn("t-micro-value", identical && "opacity-55")}>
+                              {value ?? <span className="opacity-30">-</span>}
+                            </span>
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </Fragment>
               ))}
             </tbody>

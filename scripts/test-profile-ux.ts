@@ -421,36 +421,42 @@ async function px10() {
 
   const table = buildCompareTable("egg-donor", [a, b]);
   const groups = table.map((g) => g.group);
-  check("cost and availability lead the table", groups[0] === "Cost & availability", JSON.stringify(groups));
-  check("physical traits follow", groups.includes("Physical traits"), JSON.stringify(groups));
+  // The Summary block leads: the comparison shows every fact the profile shows,
+  // rather than the hand-picked subset it shipped with (which omitted twins,
+  // selective reduction, prior c-sections and vaccination - the answers people
+  // actually choose on).
+  check("the Summary leads the table", groups[0] === "Summary", JSON.stringify(groups));
 
   const rows = table.flatMap((g) => g.rows.map((r) => r.label));
-  check("total cost is compared", rows.includes("Total cost"), JSON.stringify(rows));
+  check("total cost is compared", rows.includes("Total Cost"), JSON.stringify(rows));
   check("age is compared", rows.includes("Age"), JSON.stringify(rows));
 
   // A row ONE profile answers is a real difference and must be kept.
-  check("a row only one profile fills is kept", rows.includes("Education"), JSON.stringify(rows));
-  const edu = table.flatMap((g) => g.rows).find((r) => r.label === "Education");
+  check("a row only one profile fills is kept", rows.includes("Education Level"), JSON.stringify(rows));
+  const edu = table.flatMap((g) => g.rows).find((r) => r.label === "Education Level");
   check("the profile that left it blank shows blank, not a fabricated value",
     !!edu && edu.values[0] === "BA" && edu.values[1] === null, JSON.stringify(edu));
 
-  // A row NOBODY answers is four dashes - it reads as broken, so it goes.
-  check("a row no profile fills is dropped", !rows.includes("Occupation"), JSON.stringify(rows));
+  // A row NOBODY answers is a line of dashes - it reads as broken, so it goes.
+  check("a row no profile fills is dropped", !rows.includes("Blood Type"), JSON.stringify(rows));
   check("an empty group disappears entirely",
     !table.some((g) => g.rows.length === 0), JSON.stringify(table.map((g) => [g.group, g.rows.length])));
-
-  // Each row carries one value per column, in column order.
   check("every row has one value per profile",
     table.every((g) => g.rows.every((r) => r.values.length === 2)), JSON.stringify(rows));
 
   const surrogateTable = buildCompareTable("surrogate", [
-    { id: "s1", liveBirths: 2, cSections: 0, baseCompensation: 55_000 },
-    { id: "s2", liveBirths: 3, cSections: 1, baseCompensation: 60_000 },
+    { id: "s1", liveBirths: 2, cSections: 0, baseCompensation: 55_000, agreesToTwins: true, agreesToSelectiveReduction: false, covidVaccinated: true },
+    { id: "s2", liveBirths: 3, cSections: 1, baseCompensation: 60_000, agreesToTwins: false, agreesToSelectiveReduction: true, covidVaccinated: true },
   ]);
   const sRows = surrogateTable.flatMap((g) => g.rows.map((r) => r.label));
   check("surrogates are compared on deliveries, not eggs retrieved",
-    sRows.includes("Live births") && !sRows.includes("Eggs retrieved"), JSON.stringify(sRows));
-  check("surrogate cost uses base compensation", sRows.includes("Base compensation"), JSON.stringify(sRows));
+    sRows.includes("Live Births") && !sRows.includes("Eggs retrieved"), JSON.stringify(sRows));
+  check("surrogate cost uses base compensation", sRows.includes("Base Compensation"), JSON.stringify(sRows));
+  // The whole point of pulling in the Summary: these decide real choices and
+  // the hand-picked subset left every one of them out.
+  for (const label of ["Twins", "Selective Reduction", "C-Sections", "COVID Vaccinated"]) {
+    check(`the Summary's "${label}" is now compared`, sRows.includes(label), JSON.stringify(sRows));
+  }
 
   // The comparison used to read only scalar columns - cost, age, height - which
   // is everything already on the card. What decides between two surrogates is in
@@ -473,7 +479,7 @@ async function px10() {
   };
   const withSections = buildCompareTable("surrogate", [carriedTwice, carriedOnce]);
   const groupNames = withSections.map((g) => g.group);
-  check("cost and availability still lead", groupNames[0] === "Cost & availability", JSON.stringify(groupNames));
+  check("the Summary still leads", groupNames[0] === "Summary", JSON.stringify(groupNames));
   check("pregnancy history is compared, and comes before medical",
     groupNames.indexOf("Pregnancy History") > 0 && groupNames.indexOf("Pregnancy History") < groupNames.indexOf("Medical History"),
     JSON.stringify(groupNames));
