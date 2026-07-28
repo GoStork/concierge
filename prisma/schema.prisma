@@ -485,6 +485,11 @@ model ProviderMember {
   name                    String
   title                   String?
   bio                     String?
+  // Full text of the doctor's own profile page, stored verbatim. `bio` is the
+  // short display summary; structured extraction (education / languages /
+  // specialties) reads THIS instead, because summarizing the page is exactly
+  // what drops the "Education and Experience" and "Languages" sections.
+  bioRaw                  String?
   photoUrl                String?
   highResPhotoUrl         String? // AI-upscaled crisp variant of photoUrl (GCS). Preferred when present; original kept for lineage.
   isMedicalDirector       Boolean                  @default(false)

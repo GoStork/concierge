@@ -234,6 +234,10 @@ export interface ScrapedTeamMember {
   name: string;
   title: string | null;
   bio: string | null;
+  // Verbatim text of this person's own profile page, when one was found. Never
+  // AI-summarized - structured extraction reads this so headed sections
+  // (Education, Languages, Certifications) survive to the parser.
+  bioRaw: string | null;
   photoUrl: string | null;
   isMedicalDirector: boolean;
   locationHints: string[];
@@ -1183,37 +1187,64 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
     if (skipped > 0) console.log(`[scraper] Skipped ${skipped} non-name candidates for per-doctor URL guessing`);
   }
 
+  // The doctor's display bio. The <meta name="description"> tag is an SEO blurb
+  // (typically 150-300 chars) that reads like a bio but carries none of the
+  // page's real substance, so it must NEVER win just by clearing a length floor:
+  // every candidate is computed and the richest one wins. `extractDoctorPageText`
+  // below is what structured extraction actually reads.
   function extractBioFromHtml(html: string): string {
-    let bio = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)?.[1] || "";
-    const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)?.[1] || "";
-    if (ogDesc.length > bio.length && !/✓|telehealth|consult.*available/i.test(ogDesc)) {
-      bio = ogDesc;
-    }
-    const shouldFallbackToBody = !bio || bio.length < 50 || /^✓|telehealth|consult.*available/i.test(bio);
-    if (shouldFallbackToBody) {
-      if (/^✓/.test(bio)) bio = bio.replace(/^(?:✓[^.]*\.?\s*)+/g, "").trim();
-      const bodyText = extractCleanText(html);
-      const bioSection = bodyText.match(/(?:biograf[íiy]a?|about|bio|background|profile|experience|trayectoria)\s*[:\-]?\s*([\s\S]{50,2000}?)(?=\n\n|\b(?:education|publicat|awards?|contact|schedule|book|certificat|formaci[oó]n|estudios)\b)/i);
-      if (bioSection) {
-        const cleaned = bioSection[1].replace(/\s+/g, " ").trim();
-        if (cleaned.length > bio.length) bio = cleaned;
-      }
-      if (!bio || bio.length < 50) {
-        const cleanBody = bodyText.replace(/^[\s\S]*?(?=Dr[a.]?\.|Board|Specializ|is a |graduated|has more than|[Ee]s un|[Ee]specialista|[Mm][eé]dic[oa])/i, "").slice(0, 3000);
-        const sentences = cleanBody.split(/(?<=[.!?])\s+/).filter(s => s.length > 20 && s.length < 500);
-        const bioSentences = sentences
-          .filter(s => /board.certified|reproductive|endocrinolog|specializ|fellowship|medical school|residency|professor|clinical|university|graduated|surgeon|gynecolog|obstet|fertility|experience|ginec[oó]log|reproducci[oó]n|universidad|especialista|subespecialidad/i.test(s))
-          .slice(0, 4);
-        if (bioSentences.length > 0 && bioSentences.join(" ").length > bio.length) {
-          bio = bioSentences.join(" ");
-        }
-      }
-    }
-    return bio;
+    const candidates: string[] = [];
+    const isBoilerplate = (s: string) => /^✓|telehealth|consult.*available/i.test(s);
+    const push = (s: string | undefined | null) => {
+      const v = (s || "").replace(/^(?:✓[^.]*\.?\s*)+/g, "").replace(/\s+/g, " ").trim();
+      if (v.length >= 50 && !isBoilerplate(v)) candidates.push(v);
+    };
+
+    push(html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)?.[1]);
+    push(html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i)?.[1]);
+
+    const bodyText = extractCleanText(html);
+    push(
+      bodyText.match(
+        /(?:biograf[íiy]a?|about|bio|background|profile|experience|trayectoria)\s*[:\-]?\s*([\s\S]{50,2000}?)(?=\n\n|\b(?:publicat|awards?|contact|schedule|book|formaci[oó]n|estudios)\b)/i,
+      )?.[1],
+    );
+
+    // Substantive sentences from the body - the fallback that actually carries
+    // training and focus-area detail when the page has no clean bio section.
+    const cleanBody = bodyText
+      .replace(/^[\s\S]*?(?=Dr[a.]?\.|Board|Specializ|is a |graduated|has more than|[Ee]s un|[Ee]specialista|[Mm][eé]dic[oa])/i, "")
+      .slice(0, 8000);
+    const bioSentences = cleanBody
+      .split(/(?<=[.!?])\s+/)
+      .filter((s) => s.length > 20 && s.length < 500)
+      .filter((s) =>
+        /board.certified|reproductive|endocrinolog|specializ|fellowship|medical school|residency|professor|clinical|university|graduated|surgeon|gynecolog|obstet|fertility|experience|ginec[oó]log|reproducci[oó]n|universidad|especialista|subespecialidad/i.test(s),
+      )
+      .slice(0, 12);
+    push(bioSentences.join(" "));
+
+    if (candidates.length === 0) return "";
+    // Richest = longest. A real profile bio always beats the SEO blurb on length.
+    return candidates.sort((a, b) => b.length - a.length)[0].slice(0, 4000);
+  }
+
+  // The verbatim page text handed to structured extraction. Deliberately NOT
+  // summarized and not filtered down to "bio-looking" sentences: the headed
+  // sections we need (Education and Experience, Languages, Board Certification,
+  // Memberships) are usually terse lists that every prose heuristic throws away.
+  function extractDoctorPageText(html: string): string {
+    const body = extractMainBodyContent(html) || "";
+    const clean = extractCleanText(html) || "";
+    const combined = body.length >= clean.length ? body : clean;
+    return combined.replace(/\n{3,}/g, "\n\n").trim().slice(0, 12000);
   }
 
   let doctorProfiles: string[] = [];
   let doctorTeamHtmlParts: string[] = [];
+  // Verbatim per-doctor page text, kept separate from `doctorProfiles` (which is
+  // flattened into the AI prompt). This is what gets persisted as bioRaw.
+  const doctorRawProfiles: Array<{ name: string; raw: string }> = [];
 
   // URLs already fetched (main + subpages + attributed location pages), so the
   // per-doctor sub-page crawl below doesn't re-fetch them.
@@ -1230,6 +1261,7 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
       const bodyContent = extractMainBodyContent(result.html);
       console.log(`[scraper] Doctor page (subpage): ${doctorName} | bio: ${bio ? bio.slice(0, 80) : 'not found'}`);
       doctorProfiles.push(`Doctor: ${doctorName}\nBio: ${bio}\nBody: ${bodyContent}\n${text}`);
+      doctorRawProfiles.push({ name: doctorName, raw: extractDoctorPageText(result.html) });
       alreadyFetched.add(result.url);
     }
   }
@@ -1254,7 +1286,7 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
         const text = extractCleanText(html).slice(0, 4000);
         const bodyContent = extractMainBodyContent(html);
         console.log(`[scraper] Doctor page: ${doctorName} | bio: ${bio ? bio.slice(0, 80) : 'not found'}`);
-        return { url, doctorName, bio, text, bodyContent, teamHtml };
+        return { url, doctorName, bio, text, bodyContent, teamHtml, rawText: extractDoctorPageText(html) };
       } catch (err: any) {
         console.log(`[scraper] Failed to fetch doctor page ${url}: ${err.message}`);
         return null;
@@ -1264,6 +1296,7 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
     for (const doc of docResults) {
       if (doc) {
         doctorProfiles.push(`Doctor: ${doc.doctorName}\nBio: ${doc.bio}\nBody: ${doc.bodyContent}\n${doc.text}`);
+        doctorRawProfiles.push({ name: doc.doctorName, raw: doc.rawText });
         if (doc.teamHtml) {
           doctorTeamHtmlParts.push(`\n=== TEAM DATA FROM: ${doc.url} ===\n${doc.teamHtml}\n`);
         }
@@ -1333,7 +1366,18 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
     }
   }
 
-  console.log(`[scraper] Built maps from doctor profiles: ${doctorBioMap.size} bios, ${doctorTitleMap.size} titles`);
+  // Verbatim page text per doctor, keyed the same way as doctorBioMap. Keep the
+  // longest when a doctor has more than one page (roster stub + real profile).
+  const doctorRawTextMap = new Map<string, string>();
+  for (const { name, raw } of doctorRawProfiles) {
+    if (!raw || raw.trim().length < 120) continue;
+    const nameKey = normalizeNameKey(name);
+    if (!nameKey) continue;
+    const prev = doctorRawTextMap.get(nameKey);
+    if (!prev || raw.length > prev.length) doctorRawTextMap.set(nameKey, raw.trim());
+  }
+
+  console.log(`[scraper] Built maps from doctor profiles: ${doctorBioMap.size} bios, ${doctorTitleMap.size} titles, ${doctorRawTextMap.size} raw page texts`);
 
   let combinedText = "";
   let combinedTeamHtml = "";
@@ -1493,7 +1537,7 @@ Extract the following information and return ONLY a valid JSON object (no markdo
     {
       "name": "Full name of the team member",
       "title": "Their professional title (e.g. MD, CEO, Founder, Medical Director, etc.) or null",
-      "bio": "Their professional bio, up to ~900 characters. PRESERVE concrete details - languages spoken, medical school, residency, fellowship, board certifications, society memberships, clinical focus. Do not compress these away. null if the page says nothing about them.",
+      "bio": "Their professional bio for display, up to ~1200 characters. Copy the page's own wording rather than rewriting it, and keep concrete details - medical school, residency, fellowship, board certifications, languages, clinical focus. null if the page says nothing about them.",
       "photoUrl": "Full absolute URL to their headshot/photo or null"
     }
   ]
@@ -1525,7 +1569,7 @@ Important rules:
   * The INDIVIDUAL DOCTOR/PHYSICIAN PAGES section contains detailed bios from individual doctor pages - use these to populate the "bio" field.
   * The main text content may mention additional team members.
   * For photoUrl: look in the RAW DATA section for img src URLs near each person's name. The URLs are absolute. Do NOT leave photoUrl as null if there is an image near their name.
-  * For bio: prefer the person's OWN doctor page over a roster blurb, and keep it substantive - up to ~900 characters. Their page often carries headed sections (Expertise, Languages, Education and Experience, Notable Affiliations); fold those specifics into the bio rather than dropping them. Languages, training institutions and society memberships are extracted downstream from this text, so compressing the bio to a sentence silently loses them. Do NOT leave bio as null if description text is available.
+  * For bio: prefer the person's OWN doctor page over a roster blurb, and keep it substantive - up to ~1200 characters. Their page often carries headed sections (Expertise, Languages, Education and Experience, Notable Affiliations); fold those specifics into the bio rather than dropping them. Never use the page's SEO meta description as the bio when real profile text exists - the meta tag is a marketing blurb, not a biography. Do NOT leave bio as null if description text is available.
   * Include ALL doctors/physicians/specialists found - do not limit to a subset.
   * If the TEAM MEMBER RAW DATA block is empty or missing photos, explicitly scan the main text content for lists of doctors, embryologists, and nurses. Extract them even if no photo URL is available.
 - Return ONLY the JSON object, nothing else.`;
@@ -1593,6 +1637,7 @@ Important rules:
           name: cleanDoctorName(m.name || "Unknown"),
           title: m.title || null,
           bio: m.bio || null,
+          bioRaw: null, // filled from doctorRawTextMap below
           photoUrl: m.photoUrl || null,
           isMedicalDirector: isMedicalDirectorTitle(m.title, m.bio),
           locationHints: [],
@@ -1608,6 +1653,7 @@ Important rules:
     } else {
       if (!existing.photoUrl && m.photoUrl) existing.photoUrl = m.photoUrl;
       if (!existing.bio && m.bio) existing.bio = m.bio;
+      if (!existing.bioRaw && m.bioRaw) existing.bioRaw = m.bioRaw;
       if (!existing.title && m.title) existing.title = m.title;
       if (m.isMedicalDirector) existing.isMedicalDirector = true;
       if (m.name.length < existing.name.length) existing.name = m.name;
@@ -1618,6 +1664,17 @@ Important rules:
     if (!member.bio) {
       const bio = doctorBioMap.get(nameKey);
       if (bio) member.bio = bio;
+    }
+    // Attach the verbatim page text unconditionally - unlike `bio` this is never
+    // a display field, so a longer AI bio is no reason to withhold the source.
+    if (!member.bioRaw) {
+      let raw = doctorRawTextMap.get(nameKey);
+      if (!raw) {
+        for (const [mapKey, mapValue] of doctorRawTextMap) {
+          if (nameKey.startsWith(mapKey) || mapKey.startsWith(nameKey)) { raw = mapValue; break; }
+        }
+      }
+      if (raw) member.bioRaw = raw;
     }
     const isTitleEmpty = !member.title || /^Dr\.?$/i.test(member.title.trim());
     if (isTitleEmpty) {

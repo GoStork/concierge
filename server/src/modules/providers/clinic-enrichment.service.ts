@@ -252,6 +252,7 @@ async function createMemberWithSlug(
     name: string;
     title: string | null;
     bio: string | null;
+    bioRaw?: string | null;
     photoUrl: string | null;
     isMedicalDirector: boolean;
     sortOrder: number;
@@ -767,12 +768,12 @@ function nameSortKey(name: string): string {
 
 export function mergeTeamMembers(
   sartMembers: SartMember[],
-  scrapedMembers: Array<{ name: string; title: string | null; bio: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[] }>,
+  scrapedMembers: MergeableMember[],
   providerName: string,
-): Array<{ name: string; title: string | null; bio: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[] }> {
+): MergeableMember[] {
   const normalizeKey = normalizeMemberKey;
 
-  const mergedMap = new Map<string, { name: string; title: string | null; bio: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[]; fromSart: boolean }>();
+  const mergedMap = new Map<string, MergeableMember & { fromSart: boolean }>();
 
   for (const sm of sartMembers) {
     const key = normalizeKey(sm.name);
@@ -781,6 +782,7 @@ export function mergeTeamMembers(
       name: sm.name,
       title: sm.title,
       bio: sm.bio,
+      bioRaw: null, // SART supplies a blurb only, never a source page
       photoUrl: null,
       isMedicalDirector: sm.isMedicalDirector,
       locationHints: [],
@@ -799,6 +801,7 @@ export function mergeTeamMembers(
     if (existing) {
       if (scraped.photoUrl) existing.photoUrl = scraped.photoUrl;
       if (scraped.bio && (!existing.bio || scraped.bio.length > existing.bio.length)) existing.bio = scraped.bio;
+      if (scraped.bioRaw && (!existing.bioRaw || scraped.bioRaw.length > existing.bioRaw.length)) existing.bioRaw = scraped.bioRaw;
       if (scraped.title && (!existing.title || scraped.title.length > existing.title.length)) existing.title = scraped.title;
       if (scraped.isMedicalDirector) existing.isMedicalDirector = true;
       if (scraped.locationHints.length > 0) existing.locationHints = scraped.locationHints;
@@ -832,7 +835,7 @@ export function mergeTeamMembers(
   return finalMembers;
 }
 
-type MergeableMember = { name: string; title: string | null; bio: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[] };
+type MergeableMember = { name: string; title: string | null; bio: string | null; bioRaw: string | null; photoUrl: string | null; isMedicalDirector: boolean; locationHints: string[] };
 
 // Collapse same-person NAME VARIANTS in a merged team list. Clusters by fuzzy
 // last-name + compatible first-name, then keeps ONE row per person: the fullest
@@ -854,6 +857,7 @@ function collapseTeamNameVariants(members: MergeableMember[]): MergeableMember[]
       name: bestName,
       title: longest(group.map(m => m.title)),
       bio: longest(group.map(m => m.bio)),
+      bioRaw: longest(group.map(m => m.bioRaw)),
       photoUrl: group.map(m => m.photoUrl).find(Boolean) || null,
       isMedicalDirector: group.some(m => m.isMedicalDirector),
       locationHints: Array.from(new Set(group.flatMap(m => m.locationHints))),
@@ -1080,6 +1084,7 @@ export class ClinicEnrichmentService {
           name: tm.name,
           title: tm.title,
           bio: tm.bio,
+          bioRaw: tm.bioRaw,
           photoUrl: persistedPhoto,
           isMedicalDirector: tm.isMedicalDirector,
           sortOrder: i,
@@ -1653,6 +1658,7 @@ export class ClinicEnrichmentService {
           name: tm.name,
           title: tm.title,
           bio: tm.bio,
+          bioRaw: tm.bioRaw,
           photoUrl: persistedPhoto,
           isMedicalDirector: tm.isMedicalDirector,
           sortOrder: i,
@@ -1712,7 +1718,7 @@ export class ClinicEnrichmentService {
     });
     const members = await this.prisma.providerMember.findMany({
       where: { providerId },
-      select: { id: true, name: true, bio: true, personKey: true, fieldSources: true },
+      select: { id: true, name: true, bio: true, bioRaw: true, personKey: true, fieldSources: true },
     });
 
     // Pass 1: carry forward prior enrichment for known people (cheap, no lookups).
@@ -1740,6 +1746,7 @@ export class ClinicEnrichmentService {
             const { data } = await buildDoctorEnrichment({
               name: m.name,
               bio: m.bio,
+              bioRaw: m.bioRaw,
               city: loc?.city ?? null,
               state: loc?.state ?? null,
               existingSources: (m.fieldSources as any) || null,
@@ -1767,7 +1774,7 @@ export class ClinicEnrichmentService {
     });
     const members = await this.prisma.providerMember.findMany({
       where: { providerId },
-      select: { id: true, name: true, bio: true, fieldSources: true },
+      select: { id: true, name: true, bio: true, bioRaw: true, fieldSources: true },
     });
     const CONCURRENCY = 4;
     for (let i = 0; i < members.length; i += CONCURRENCY) {
@@ -1777,6 +1784,7 @@ export class ClinicEnrichmentService {
             const { data } = await buildDoctorEnrichment({
               name: m.name,
               bio: m.bio,
+              bioRaw: m.bioRaw,
               city: loc?.city ?? null,
               state: loc?.state ?? null,
               existingSources: (m.fieldSources as any) || null,

@@ -170,20 +170,39 @@ export interface BioFields {
 // pulls generic patient-population phrases ("Social Infertility", "Advanced
 // Maternal Age") that aren't useful specialties. Map what's extracted to a
 // curated set of meaningful fertility specialties and drop everything else.
+// Order matters only for readability - every matching rule contributes.
+// IMPORTANT: this list is a filter, not a suggestion. Anything a doctor lists
+// that has no rule here is DELETED (see scripts/curate-specialties.ts), so a
+// missing rule silently blanks a real specialty. Add a rule before assuming an
+// extracted value is noise.
 const SPECIALTY_RULES: { canonical: string; match: RegExp }[] = [
-  { canonical: "LGBTQ+ Family Building", match: /lgbtq|same[\s-]?sex|\bgay\b|lesbian/i },
-  { canonical: "Male Factor Infertility", match: /male (factor|fertility|infertility)|men'?s (health|sexual|reproductive)|andrology|azoospermia|vasectomy|sperm retrieval/i },
+  { canonical: "LGBTQ+ Family Building", match: /lgbtq|same[\s-]?sex|\bgay\b|lesbian|two mom|family building/i },
+  { canonical: "Male Factor Infertility", match: /male (factor|fertility|infertility)|men'?s (health|sexual|reproductive)|andrology|azoospermia|vasectomy|sperm retrieval|\bteseE?\b|microtese/i },
   { canonical: "PCOS", match: /pcos|polycystic/i },
-  { canonical: "Recurrent Pregnancy Loss", match: /recurrent (pregnancy )?(loss|miscarriage)|recurrent implantation/i },
+  { canonical: "Recurrent Pregnancy Loss", match: /recurrent (pregnancy )?(loss|miscarriage)|recurrent implantation|repeated (miscarriage|implantation)|pregnancy loss/i },
   { canonical: "Endometriosis", match: /endometriosis/i },
-  { canonical: "Diminished Ovarian Reserve", match: /diminished ovarian reserve|low ovarian reserve|\bdor\b/i },
-  { canonical: "Egg Freezing", match: /egg freezing|oocyte (cryopreservation|freezing)/i },
-  { canonical: "Fertility Preservation", match: /fertility preservation|oncofertility/i },
-  { canonical: "Egg & Embryo Donation", match: /egg donation|donor egg|oocyte donation|embryo donation|third[\s-]?party reproduction/i },
-  { canonical: "Surrogacy & Gestational Carriers", match: /surrogacy|gestational carrier/i },
-  { canonical: "Reproductive Surgery", match: /reproductive surg|surgical procedure|hysteroscop|laparoscop|fibroid|myomectomy/i },
-  { canonical: "Genetic Testing (PGT)", match: /\bpgt\b|preimplantation|genetic (testing|screening|counseling)/i },
-  { canonical: "Tubal Factor", match: /tubal factor|tubal (disease|blockage|reanastomosis)/i },
+  { canonical: "Diminished Ovarian Reserve", match: /diminished ovarian reserve|low ovarian reserve|\bdor\b|poor responder|ovarian aging/i },
+  { canonical: "Egg Freezing", match: /egg freezing|oocyte (cryopreservation|freezing)|elective (egg|oocyte)/i },
+  { canonical: "Fertility Preservation", match: /fertility preservation|oncofertility|cancer (and )?fertility/i },
+  { canonical: "Egg & Embryo Donation", match: /egg donation|donor egg|oocyte donation|embryo donation|donor embryo|third[\s-]?party reproduction/i },
+  { canonical: "Surrogacy & Gestational Carriers", match: /surrogacy|gestational carrier|gestational surrogate/i },
+  { canonical: "Reproductive Surgery", match: /reproductive surg|surgical procedure|hysteroscop|laparoscop|fibroid|myomectomy|robotic surg|minimally invasive|adhesio|septum/i },
+  { canonical: "Genetic Testing (PGT)", match: /\bpgt(-[am])?\b|preimplantation|genetic (testing|screening|counseling)|carrier screening|chromosom/i },
+  { canonical: "Tubal Factor", match: /tubal factor|tubal (disease|blockage|reanastomosis|ligation)|hydrosalpin/i },
+  // --- Added after the curation pass blanked 102 doctors whose real, correctly
+  // extracted specialties simply had no rule. These are the most common ones.
+  { canonical: "IVF", match: /\bivf\b|in[\s-]?vitro fertili|embryo transfer|blastocyst|ovarian stimulation|\bicsi\b|frozen embryo/i },
+  { canonical: "Reproductive Endocrinology", match: /reproductive endocrinolog|\brei\b|reproductive medicine|endocrine disorder/i },
+  { canonical: "Infertility Evaluation & Treatment", match: /infertility (evaluation|treatment|care|diagnos|management)|unexplained infertility|fertility (evaluation|testing|treatment|workup)|\biui\b|intrauterine insemination|ovulation induction/i },
+  { canonical: "Ovulation Disorders", match: /ovulat(ory|ion) (disorder|dysfunction)|anovulat|amenorrhea|irregular (cycle|period)/i },
+  { canonical: "Uterine & Fibroid Conditions", match: /uterine (fibroid|anomal|factor|abnormal)|\basherman|adenomyosis|endometrial (receptiv|lining|polyp)|polyp/i },
+  { canonical: "Secondary Infertility", match: /secondary infertility/i },
+  { canonical: "Advanced Maternal Age", match: /advanced (maternal|reproductive) age|age[\s-]related (fertility|infertility)|fertility over 40/i },
+  { canonical: "Reproductive Immunology", match: /reproductive immunolog|immunolog(ic|y) (factor|cause)|autoimmun/i },
+  { canonical: "Menopause & Hormone Health", match: /menopaus|perimenopaus|hormone (replacement|therapy|imbalance)|\bhrt\b|thyroid/i },
+  { canonical: "Single Parents by Choice", match: /single (parent|mother|father|woman|women) by choice|solo (parent|mother)/i },
+  { canonical: "Transgender Family Building", match: /transgender|gender[\s-]affirming|non[\s-]?binary/i },
+  { canonical: "Obstetrics & Gynecology", match: /obstetric|\bob[\s\/-]?gyn\b|gynecolog|general women'?s health|well[\s-]woman/i },
 ];
 
 export function curateSpecialties(raw: string[]): string[] {
@@ -195,6 +214,75 @@ export function curateSpecialties(raw: string[]): string[] {
   return out;
 }
 
+// Languages are the one profile field no registry carries - NPPES and ABOG have
+// nothing, so prose extraction was the only source and it found 16 doctors in
+// 1,453. Clinic pages almost always DO state languages, just as a headed field
+// ("Languages Spoken: English, Spanish") that reads as a list, not a sentence -
+// exactly the shape a bio summariser drops and an LLM prose-reader overlooks.
+// This runs deterministically over the raw page text and costs nothing.
+const KNOWN_LANGUAGES = [
+  "English", "Spanish", "Mandarin", "Cantonese", "Chinese", "French", "German", "Italian",
+  "Portuguese", "Russian", "Arabic", "Hebrew", "Hindi", "Urdu", "Punjabi", "Gujarati",
+  "Bengali", "Tamil", "Telugu", "Marathi", "Malayalam", "Kannada", "Korean", "Japanese",
+  "Vietnamese", "Thai", "Tagalog", "Filipino", "Polish", "Ukrainian", "Romanian", "Greek",
+  "Turkish", "Persian", "Farsi", "Armenian", "Georgian", "Dutch", "Swedish", "Norwegian",
+  "Danish", "Finnish", "Hungarian", "Czech", "Slovak", "Serbian", "Croatian", "Bosnian",
+  "Bulgarian", "Albanian", "Lithuanian", "Latvian", "Estonian", "Amharic", "Somali",
+  "Swahili", "Yoruba", "Igbo", "Nepali", "Sinhala", "Burmese", "Khmer", "Lao", "Indonesian",
+  "Malay", "Creole", "Haitian Creole", "Yiddish", "Ladino", "Afrikaans", "Catalan", "Basque",
+  "Sign Language", "American Sign Language",
+];
+// Native-name and adjective spellings that appear on clinic pages.
+const LANGUAGE_ALIASES: Record<string, string> = {
+  espanol: "Spanish", español: "Spanish", castellano: "Spanish", francais: "French",
+  français: "French", deutsch: "German", italiano: "Italian", portugues: "Portuguese",
+  português: "Portuguese", "mandarin chinese": "Mandarin", putonghua: "Mandarin",
+  farsi: "Persian", asl: "American Sign Language", filipino: "Tagalog",
+};
+
+export function extractLanguagesFromText(text: string): string[] {
+  if (!text) return [];
+  const found = new Set<string>();
+  const canonical = (raw: string): string | null => {
+    const t = raw.trim().toLowerCase().replace(/[.,;:)\]]+$/, "");
+    if (!t) return null;
+    if (LANGUAGE_ALIASES[t]) return LANGUAGE_ALIASES[t];
+    const hit = KNOWN_LANGUAGES.find((l) => l.toLowerCase() === t);
+    return hit || null;
+  };
+
+  // 1. Headed field: "Languages: English, Spanish" / "Languages Spoken - ..." and
+  //    the newline-list variant ("Languages Spoken\nEnglish\nSpanish").
+  const headed = text.matchAll(
+    /\b(?:languages?(?:\s+spoken)?(?:\s+fluently)?|speaks?|idiomas)\b\s*[:\-–]?\s*((?:[A-Za-zÀ-ÿ' ]{2,30}[,;/&\n]?\s*){1,12})/gi,
+  );
+  for (const m of headed) {
+    for (const part of m[1].split(/[,;/&\n]|\band\b/i)) {
+      const c = canonical(part);
+      if (c) found.add(c);
+    }
+  }
+
+  // 2. Prose: "fluent in Spanish and Portuguese", "bilingual in English and Hebrew".
+  const prose = text.matchAll(
+    /\b(?:fluent|fluency|bilingual|trilingual|conversant|proficient|native speaker)\b[^.]{0,80}/gi,
+  );
+  for (const m of prose) {
+    for (const part of m[0].split(/[,;/&]|\band\b|\bin\b/i)) {
+      const c = canonical(part);
+      if (c) found.add(c);
+    }
+  }
+
+  // 3. "Se habla español" and equivalents.
+  if (/\bse habla espa(ñ|n)ol\b/i.test(text)) found.add("Spanish");
+
+  // A page that lists every language on earth is a site-wide selector, not a
+  // doctor attribute - reject rather than write junk onto the profile.
+  if (found.size > 8) return [];
+  return [...found];
+}
+
 export async function extractDoctorFieldsFromBio(
   genAI: GoogleGenerativeAI,
   name: string,
@@ -203,12 +291,14 @@ export async function extractDoctorFieldsFromBio(
   if (!bio || bio.trim().length < 60) return null;
   const model = genAI.getGenerativeModel({
     model: "gemini-3.5-flash",
-    generationConfig: { temperature: 0, maxOutputTokens: 4096, responseMimeType: "application/json" } as any,
+    generationConfig: { temperature: 0, maxOutputTokens: 8192, responseMimeType: "application/json" } as any,
   });
-  const prompt = `You are extracting structured facts from a fertility doctor's professional bio. Extract ONLY facts explicitly stated. Do NOT infer, guess, or add anything not literally present. Empty array / null if not stated.
+  const prompt = `You are extracting structured facts about a fertility doctor from the text of their professional profile. Extract ONLY facts explicitly stated. Do NOT infer, guess, or add anything not literally present. Empty array / null if not stated.
+
+The text may be a short bio OR the raw text of the doctor's profile page. Raw pages carry headed sections - "Education", "Education and Experience", "Training", "Languages", "Board Certification", "Memberships", "Areas of Expertise" - often as terse lists rather than sentences. Read those sections: they are usually where education and languages actually live. Raw pages also carry site navigation, appointment CTAs, address blocks and cookie notices; ignore those, and never attribute another person's details to this doctor.
 
 Doctor name: ${name}
-Bio:
+Profile text:
 """${bio}"""
 
 Return STRICT JSON: {
@@ -256,6 +346,9 @@ Return ONLY the JSON object.`;
 export async function buildDoctorEnrichment(opts: {
   name: string;
   bio: string | null;
+  // Verbatim profile-page text. Preferred over `bio` for extraction: `bio` is a
+  // display summary, and summarising is what drops education and languages.
+  bioRaw?: string | null;
   city: string | null;
   state: string | null;
   existingSources: Record<string, string> | null | undefined;
@@ -298,11 +391,23 @@ export async function buildDoctorEnrichment(opts: {
     }
   }
 
-  // Bio (supplement: focus areas, languages, education, + fallbacks)
-  const bioFields = wants("bio") && opts.bio ? await extractDoctorFieldsFromBio(opts.genAI, opts.name, opts.bio) : null;
+  // Bio (supplement: focus areas, languages, education, + fallbacks).
+  // Read the verbatim page text when we captured one - it carries the headed
+  // Education / Languages sections that a display bio has already thrown away.
+  const extractionText = (opts.bioRaw && opts.bioRaw.trim().length >= 200 ? opts.bioRaw : opts.bio) || null;
+  const bioFields =
+    wants("bio") && extractionText ? await extractDoctorFieldsFromBio(opts.genAI, opts.name, extractionText) : null;
+
+  // Deterministic language pass over the same text, unioned with the model's.
+  // Headed "Languages: ..." lists are reliably parseable and reliably missed by
+  // prose reading, so neither source alone is sufficient. Runs even when the
+  // model returned nothing at all.
+  const deterministicLangs = wants("bio") && extractionText ? extractLanguagesFromText(extractionText) : [];
+  const allLanguages = [...new Set([...(bioFields?.languagesSpoken || []), ...deterministicLangs])];
+  set("languagesSpoken", allLanguages, "bio");
+
   if (bioFields) {
     set("specialties", bioFields.specialties, "bio");
-    set("languagesSpoken", bioFields.languagesSpoken, "bio");
     set("education", bioFields.education, "bio");
     set("professionalMemberships", bioFields.professionalMemberships, "bio");
     // fill these only if a higher-confidence source didn't already
