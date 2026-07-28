@@ -1,12 +1,12 @@
 import { Fragment } from "react";
-import { Check, X } from "lucide-react";
+import { Check, TrendingUp, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getMandatoryFields } from "@/lib/profile-summary";
-import { buildClinicCompare, buildDoctorCompare, clinicRatesAreGeneric } from "@/lib/compare-providers";
+import { buildClinicCompare, buildDoctorCompare, clinicRatesAreGeneric, TOP_10_BADGE } from "@/lib/compare-providers";
 import type { ClinicRateContext } from "@/lib/clinic-rate";
 import { compareCellsFromProfile, mergeCompareCells } from "@/lib/compare-sections";
 import { buildTitle, type SwipeDeckProfile } from "@/components/marketplace/swipe-mappers";
@@ -73,6 +73,23 @@ function comparePhoto(p: any): string | null {
  * stays available to screen readers, which cannot see the shape.
  */
 function CompareValue({ value, dim }: { value: string | null; dim: boolean }) {
+  // The same green pill the marketplace card carries. A parent has already
+  // learned what it means there; re-rendering it as the word "Yes" would make
+  // them re-learn the same signal in a second place.
+  if (value === TOP_10_BADGE) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full bg-[hsl(var(--brand-success))]/90 text-white font-ui px-2 py-0.5",
+          dim && "opacity-75",
+        )}
+        style={{ fontSize: "var(--badge-text-size, 11px)" }}
+      >
+        <TrendingUp className="w-3 h-3" aria-hidden />
+        {value}
+      </span>
+    );
+  }
   if (value === "Yes" || value === "No") {
     const yes = value === "Yes";
     const Icon = yes ? Check : X;

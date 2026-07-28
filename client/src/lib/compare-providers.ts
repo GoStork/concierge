@@ -19,6 +19,9 @@ import { parseInsuranceValue } from "@shared/insurance-data";
 
 export type CompareGroup = { group: string; rows: { label: string; values: (string | null)[] }[] };
 
+/** Rendered as the green pill the marketplace card uses, not as plain text. */
+export const TOP_10_BADGE = "Top 10%";
+
 const text = (v: unknown): string | null => {
   const s = v == null ? "" : String(v).trim();
   return s && s !== "-" && s !== "--" ? s : null;
@@ -65,7 +68,9 @@ export function buildClinicCompare(clinics: any[], ctx: ClinicRateContext): Comp
           const r = rateOf(c);
           return r && Number(r.cycleCount) > 0 ? String(r.cycleCount) : null;
         } },
-        { label: "Top 10% nationally", get: (c) => (rateOf(c)?.top10pct === true ? "Yes" : null) },
+        // The card's own badge text, so the comparison shows the same pill a
+        // parent already recognises rather than a bare "Yes".
+        { label: "Top 10% nationally", get: (c) => (rateOf(c)?.top10pct === true ? TOP_10_BADGE : null) },
       ],
     },
     {

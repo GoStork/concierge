@@ -41,7 +41,7 @@ import {
 } from "../client/src/components/marketplace/swipe-mappers";
 import { buildCompareTable, COMPARE_MAX, toggleCompareSelection } from "../client/src/components/marketplace/compare-drawer";
 import { compareCellsFromProfile, mergeCompareCells } from "../client/src/lib/compare-sections";
-import { buildClinicCompare, buildDoctorCompare, clinicRatesAreGeneric } from "../client/src/lib/compare-providers";
+import { buildClinicCompare, buildDoctorCompare, clinicRatesAreGeneric, TOP_10_BADGE } from "../client/src/lib/compare-providers";
 import { pickClinicRate } from "../client/src/lib/clinic-rate";
 import { collectOwnWords, validateQuote } from "../server/src/modules/providers/highlight-quote";
 import { profileDataToText } from "../server/src/modules/providers/profile-sync.service";
@@ -784,7 +784,7 @@ async function px17() {
     metricCode: "pct_new_patients_live_birth_after_1_retrieval", successRate: 0.52, nationalAverage: 0.47, cycleCount: 210, ...over });
 
   const clinicA = { id: "c1", name: "A", location: "Boston, MA", yearFounded: 2001,
-    ivfSuccessRates: [rate({})], acceptedInsurance: ["Aetna|PPO"], ivfAcceptingPatients: ["Self-pay"],
+    ivfSuccessRates: [rate({ top10pct: true })], acceptedInsurance: ["Aetna|PPO"], ivfAcceptingPatients: ["Self-pay"],
     cdcServices: { donorEgg: true, gestationalCarrier: false }, cdcCycleStats: { totalCycles: 900 } };
   const clinicB = { id: "c2", name: "B", location: "Austin, TX",
     ivfSuccessRates: [rate({ successRate: 0.41 })], cdcServices: { donorEgg: true, gestationalCarrier: true } };
@@ -803,6 +803,14 @@ async function px17() {
   const delta = outcomes.find((r) => r.label === "vs. national average");
   check("below national is stated plainly, not as a failure",
     delta?.values[1] === "-6% vs. national average", JSON.stringify(delta));
+  // The same green pill the card carries - a parent has already learned that
+  // signal there, and "Yes" would make them learn it twice.
+  check("Top 10% carries the card's badge text, not a bare Yes",
+    outcomes.find((r) => r.label === "Top 10% nationally")?.values[0] === TOP_10_BADGE,
+    JSON.stringify(outcomes.find((r) => r.label === "Top 10% nationally")));
+  check("and the drawer renders it as the green pill",
+    /TOP_10_BADGE/.test(readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8")));
+
   check("a row only one clinic fills is kept",
     clinic.flatMap((g) => g.rows).some((r) => r.label === "Insurance accepted"), JSON.stringify(groups));
   check("a row no clinic fills is dropped",
