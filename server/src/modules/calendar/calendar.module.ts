@@ -6,11 +6,12 @@ import { GoogleCalendarService } from "./google-calendar.service";
 import { MicrosoftCalendarService } from "./microsoft-calendar.service";
 import { CaldavCalendarService } from "./caldav-calendar.service";
 import { BookingEventsService } from "./booking-events.service";
+import { AutoReplyService } from "../providers/auto-reply.service";
 
 @Module({
   imports: [NotificationModule, BillingModule],
   controllers: [CalendarController],
-  providers: [GoogleCalendarService, MicrosoftCalendarService, CaldavCalendarService, BookingEventsService, CalendarController],
+  providers: [GoogleCalendarService, MicrosoftCalendarService, CaldavCalendarService, BookingEventsService, AutoReplyService, CalendarController],
   exports: [BookingEventsService, CalendarController],
 })
 export class CalendarModule {}

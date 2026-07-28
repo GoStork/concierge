@@ -37,6 +37,7 @@ import { CaldavCalendarService } from "./caldav-calendar.service";
 import { encryptPassword } from "./caldav-crypto";
 import { BookingEventsService, BookingEvent } from "./booking-events.service";
 import { CostSheetAutoDraftService } from "../billing/cost-sheet-auto-draft.service";
+import { AutoReplyService } from "../providers/auto-reply.service";
 import { Observable } from "rxjs";
 
 function isValidTimezone(tz: string): boolean {
@@ -72,6 +73,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     @Inject(CaldavCalendarService) private readonly caldavCalendar: CaldavCalendarService,
     @Inject(BookingEventsService) private readonly bookingEvents: BookingEventsService,
     @Inject(CostSheetAutoDraftService) private readonly costSheetAutoDraft: CostSheetAutoDraftService,
+    @Inject(AutoReplyService) private readonly autoReply: AutoReplyService,
   ) {}
 
   // Phase 2: fire-and-forget cost-sheet auto-draft on every booking_created
@@ -320,6 +322,28 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         senderName: "GoStork",
         createdAt: announcementCreatedAt,
       },
+    });
+
+    // The provider's own auto-reply, if they configured one. Posted after the
+    // announcement (default createdAt = now, which is later than the backdated
+    // announcement) so the parent reads context first, then the greeting.
+    // Deliberately NOT routed through the provider send endpoint - that flips
+    // the session to PROVIDER_CONNECTED, and an automated message must not
+    // claim the provider has actually joined. Never blocks the booking.
+    await this.autoReply.sendForBooking({
+      providerId: consultProviderId,
+      staffUserId: booking.providerUserId || null,
+      sessionId: targetSessionId,
+      parentUserId,
+      parentAccountId: parentAccount?.parentAccountId || null,
+      parentName,
+      providerName: provider.name,
+      staffName: booking.providerUser?.name || null,
+      subjectType: body.subjectType || null,
+      bookingId: booking.id,
+      scheduledAt: booking.scheduledAt || null,
+      bookerTimezone: booking.bookerTimezone || null,
+      meetingSubtype: booking.meetingSubtype || null,
     });
 
     // Notify provider users

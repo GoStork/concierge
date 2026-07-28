@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
-import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, Stethoscope, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet, FileSignature, ClipboardList } from "lucide-react";
+import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, Stethoscope, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet, FileSignature, ClipboardList, MessageSquarePlus } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -35,6 +35,7 @@ import AdminIpFormTemplatePage from "@/pages/admin-ip-form-template-page";
 import ProviderKnowledgeTab from "@/components/provider-knowledge-tab";
 import ConciergeSettingsTab from "@/components/concierge-settings-tab";
 import DocumentsTab from "@/components/documents-tab";
+import ProviderAutoReplyTab from "@/components/provider-auto-reply-tab";
 import ScrapersSummaryPage from "@/pages/scrapers-summary-page";
 import AdminTestRunnerPage from "@/pages/admin-test-runner-page";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
@@ -75,6 +76,7 @@ const allTabs = [
   { to: '/account', label: 'My Account', icon: User, end: true, roles: null },
   { to: '/account/company', label: 'Company', icon: Building2, roles: 'provider' as const },
   { to: '/account/documents', label: 'Documents', icon: FileText, roles: 'provider' as const },
+  { to: '/account/auto-replies', label: 'Auto-Reply', icon: MessageSquarePlus, roles: 'autoreply' as const },
   { to: '/account/team', label: 'Team', icon: Users, roles: 'provider' as const },
   { to: '/account/members', label: 'Members', icon: Users, roles: 'parent' as const },
   { to: '/account/calendar', label: 'Calendar', icon: Calendar, roles: null },
@@ -1739,7 +1741,7 @@ export default function AccountPage() {
 
   const providerTabOrder = [
     '/account', '/account/company', '/account/team', '/account/members',
-    '/account/calendar', '/account/costs', '/account/documents',
+    '/account/calendar', '/account/costs', '/account/documents', '/account/auto-replies',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors', '/account/doctors',
     '/account/knowledge', '/account/concierge', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers', '/account/test-runner',
   ];
@@ -1755,6 +1757,7 @@ export default function AccountPage() {
     // GoStork admins manage global sponsorship programs; providers buy (needs a providerId).
     if (tab.roles === 'sponsorship') return isAdmin || (isProvider && !!providerId);
     if (tab.roles === 'branding') return showBranding;
+    if (tab.roles === 'autoreply') return isProvider && !!providerId;
     if (tab.roles === 'knowledge') return isProvider && !isAdmin;
     if (tab.roles === 'concierge') return isAdmin || isParent || isProvider;
     if (tab.roles === 'admin') return isAdmin;
@@ -1835,6 +1838,9 @@ export default function AccountPage() {
         <Route index element={<AccountTab />} />
         <Route path="company" element={<CompanyTab />} />
         <Route path="documents" element={<DocumentsTab />} />
+        {isProvider && providerId && (
+          <Route path="auto-replies" element={<ProviderAutoReplyTab />} />
+        )}
         <Route path="team" element={<TeamTab />} />
         <Route path="members" element={<ParentMembersTab />} />
         {/* Memory merged into the AI Concierge tab - keep old links working. */}

@@ -225,6 +225,14 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.providerQuote;
   }
 
+  get providerAutoReply() {
+    return prisma.providerAutoReply;
+  }
+
+  get providerAutoReplySend() {
+    return prisma.providerAutoReplySend;
+  }
+
   get journeyPreferences() {
     return prisma.journeyPreferences;
   }

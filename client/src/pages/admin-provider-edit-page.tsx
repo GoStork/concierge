@@ -14,12 +14,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, Plus, GripVertical, Eye, Palette, DollarSign } from "lucide-react";
+import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles, MapPin, Check, X, Upload, User, Plus, GripVertical, Eye, Palette, DollarSign, MessageSquarePlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { CountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
 import { ProviderAutoFeaturesCard } from "@/components/provider-auto-features-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ProviderAutoReplyTab from "@/components/provider-auto-reply-tab";
 import MembersTable from "@/components/members-table";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
@@ -777,6 +778,10 @@ export default function AdminProviderEditPage() {
           <TabsTrigger value="branding" className={tabTriggerClass} data-testid="tab-edit-branding">
             <Palette className="w-4 h-4 mr-1.5 inline" />
             Branding
+          </TabsTrigger>
+          <TabsTrigger value="auto-replies" className={tabTriggerClass} data-testid="tab-edit-auto-replies">
+            <MessageSquarePlus className="w-4 h-4 mr-1.5 inline" />
+            Auto-Reply
           </TabsTrigger>
         </TabsList>
         </div>
@@ -1622,6 +1627,10 @@ export default function AdminProviderEditPage() {
 
         <TabsContent value="branding">
           <ProviderBrandingTab providerId={provider.id} brandingEnabled={provider.brandingEnabled ?? false} provider={provider} />
+        </TabsContent>
+
+        <TabsContent value="auto-replies">
+          <ProviderAutoReplyTab providerId={provider.id} />
         </TabsContent>
 
         <TabsContent value="billing">

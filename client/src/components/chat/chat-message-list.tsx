@@ -257,6 +257,13 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
           ? String((msg.uiCardData as any).providerContent)
           : msg.content;
 
+        // The provider's booking auto-reply is posted under their own name, so
+        // on THEIR side of the chat it needs a marker - otherwise they see a
+        // message they never typed and assume someone else sent it. The parent
+        // is meant to read it as a normal message from the provider, so the
+        // marker is provider-only.
+        const isAutoReply = viewerRole === "provider" && !!(msg.uiCardData as any)?.isAutoReply;
+
         // For attachment messages, strip auto-generated placeholder text so only the card shows
         const isAttachmentMsg = msg.uiCardType === "attachment";
         const displayContent = isAttachmentMsg
@@ -372,6 +379,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                           style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}
                         >
                           {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                          {isAutoReply && <span className="ml-1">- Auto-reply</span>}
                           {own && (
                             <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />
                           )}
@@ -401,6 +409,7 @@ export const ChatMessageList = forwardRef<HTMLDivElement, ChatMessageListProps>(
                     {(!showBubble || isAttachmentMsg) && msg.createdAt && (
                       <span className="flex items-center gap-0.5 mt-0.5 px-1" style={{ fontSize: "10px", lineHeight: "16px", opacity: 0.55 }}>
                         {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                        {isAutoReply && <span className="ml-1">- Auto-reply</span>}
                         {own && <MessageStatus deliveredAt={msg.deliveredAt} readAt={msg.readAt} brandColor={brandColor} className="ml-0.5" />}
                       </span>
                     )}

@@ -7,10 +7,14 @@ import { MembersController } from "./members.controller";
 import { ProfileSyncController } from "./profile-sync.controller";
 import { ScrapersController } from "./scrapers.controller";
 import { DocumentsController } from "./documents.controller";
+import { AutoReplyController } from "./auto-reply.controller";
+import { AutoReplyService } from "./auto-reply.service";
 import { StorageModule } from "../storage/storage.module";
 
 @Module({
   imports: [StorageModule],
+  providers: [AutoReplyService],
+  exports: [AutoReplyService],
   controllers: [
     ProvidersController,
     ProviderTypesController,
@@ -20,6 +24,7 @@ import { StorageModule } from "../storage/storage.module";
     ProfileSyncController,
     ScrapersController,
     DocumentsController,
+    AutoReplyController,
   ],
 })
 export class ProvidersModule {}

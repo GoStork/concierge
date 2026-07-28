@@ -159,6 +159,57 @@ model Provider {
   // provider's billing users so a saved card entered once is reused for every
   // future sponsorship charge (Option B: enter payment method once, auto-charge).
   sponsorStripeCustomerId               String?
+  autoReplies                           ProviderAutoReply[]
+  autoReplySends                        ProviderAutoReplySend[]
+}
+
+/// A provider-authored first message that is posted into the parent's 3-way
+/// chat automatically the moment that parent books a call with them. Scope is
+/// resolved from most-specific to least: staff+service -> staff-any ->
+/// org+service -> org-any. A null staffUserId means "organization default";
+/// a null providerTypeId means "any service line this org runs".
+model ProviderAutoReply {
+  id              String        @id @default(uuid())
+  providerId      String
+  staffUserId     String?
+  providerTypeId  String?
+  body            String
+  /// [{ originalName, url, mimeType, size }] - same shape the chat
+  /// attachment card already renders, produced by /api/chat-upload.
+  attachments     Json          @default("[]")
+  isEnabled       Boolean       @default(true)
+  createdByUserId String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  provider        Provider      @relation(fields: [providerId], references: [id])
+  staffUser       User?         @relation("AutoReplyStaff", fields: [staffUserId], references: [id])
+  providerType    ProviderType? @relation(fields: [providerTypeId], references: [id])
+  sends           ProviderAutoReplySend[]
+
+  @@index([providerId])
+  @@index([providerId, staffUserId])
+}
+
+/// Send log for the "once per parent + provider + service type" rule. Also the
+/// cross-process idempotency guard: both Macs run the schedulers against the
+/// same DB, and a double-booking POST must not double-post the greeting.
+model ProviderAutoReplySend {
+  id              String             @id @default(uuid())
+  autoReplyId     String?
+  providerId      String
+  /// Account-scoped so a second member of the same parent account does not
+  /// re-trigger the greeting. Falls back to parentUserId for solo parents.
+  parentAccountId String?
+  parentUserId    String
+  providerTypeId  String?
+  sessionId       String
+  bookingId       String?
+  sentAt          DateTime           @default(now())
+  autoReply       ProviderAutoReply? @relation(fields: [autoReplyId], references: [id])
+  provider        Provider           @relation(fields: [providerId], references: [id])
+
+  @@index([providerId, parentAccountId])
+  @@index([providerId, parentUserId])
 }
 
 model ProviderType {
@@ -167,6 +218,7 @@ model ProviderType {
   costTemplates CostTemplate[]
   services      ProviderService[]
   costSheets    ProviderCostSheet[]
+  autoReplies   ProviderAutoReply[]
 }
 
 model ProviderService {
@@ -406,6 +458,7 @@ model User {
   providerQuotes         ProviderQuote[]         @relation("ProviderQuoteParent")
   createdProviderQuotes  ProviderQuote[]         @relation("ProviderQuoteCreatedBy")
   reservedSurrogates     Surrogate[]             @relation("SurrogateReservations")
+  autoReplies            ProviderAutoReply[]     @relation("AutoReplyStaff")
 }
 
 model UserDonorPreference {
