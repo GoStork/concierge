@@ -1244,7 +1244,11 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
   let doctorTeamHtmlParts: string[] = [];
   // Verbatim per-doctor page text, kept separate from `doctorProfiles` (which is
   // flattened into the AI prompt). This is what gets persisted as bioRaw.
-  const doctorRawProfiles: Array<{ name: string; raw: string }> = [];
+  // `url` matters as much as `name`: page <title>s are decorated marketing
+  // strings ("Dr. Sahakian, Reproductive Endocrinology/Infertility Physician")
+  // that never normalize to a member's name, whereas the URL slug
+  // (/doctors/vicken-sahakian) is the person's name almost verbatim.
+  const doctorRawProfiles: Array<{ name: string; url: string; raw: string }> = [];
 
   // URLs already fetched (main + subpages + attributed location pages), so the
   // per-doctor sub-page crawl below doesn't re-fetch them.
@@ -1261,7 +1265,7 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
       const bodyContent = extractMainBodyContent(result.html);
       console.log(`[scraper] Doctor page (subpage): ${doctorName} | bio: ${bio ? bio.slice(0, 80) : 'not found'}`);
       doctorProfiles.push(`Doctor: ${doctorName}\nBio: ${bio}\nBody: ${bodyContent}\n${text}`);
-      doctorRawProfiles.push({ name: doctorName, raw: extractDoctorPageText(result.html) });
+      doctorRawProfiles.push({ name: doctorName, url: result.url, raw: extractDoctorPageText(result.html) });
       alreadyFetched.add(result.url);
     }
   }
@@ -1296,7 +1300,7 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
     for (const doc of docResults) {
       if (doc) {
         doctorProfiles.push(`Doctor: ${doc.doctorName}\nBio: ${doc.bio}\nBody: ${doc.bodyContent}\n${doc.text}`);
-        doctorRawProfiles.push({ name: doc.doctorName, raw: doc.rawText });
+        doctorRawProfiles.push({ name: doc.doctorName, url: doc.url, raw: doc.rawText });
         if (doc.teamHtml) {
           doctorTeamHtmlParts.push(`\n=== TEAM DATA FROM: ${doc.url} ===\n${doc.teamHtml}\n`);
         }
@@ -1366,15 +1370,23 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
     }
   }
 
-  // Verbatim page text per doctor, keyed the same way as doctorBioMap. Keep the
-  // longest when a doctor has more than one page (roster stub + real profile).
+  // Verbatim page text per doctor, indexed under EVERY key that could identify
+  // the person: the normalized page title and the normalized URL slug. The slug
+  // is the reliable one - titles carry role text that defeats name matching.
+  // Keep the longest when a doctor has more than one page (roster stub + real
+  // profile).
   const doctorRawTextMap = new Map<string, string>();
-  for (const { name, raw } of doctorRawProfiles) {
+  for (const { name, url, raw } of doctorRawProfiles) {
     if (!raw || raw.trim().length < 120) continue;
-    const nameKey = normalizeNameKey(name);
-    if (!nameKey) continue;
-    const prev = doctorRawTextMap.get(nameKey);
-    if (!prev || raw.length > prev.length) doctorRawTextMap.set(nameKey, raw.trim());
+    const slug = (() => {
+      try { return decodeURIComponent(new URL(url).pathname.split("/").filter(Boolean).pop() || ""); }
+      catch { return ""; }
+    })().replace(/[-_]+/g, " ");
+    const keys = [normalizeNameKey(name), normalizeNameKey(slug)].filter((k) => k && k.length >= 4);
+    for (const key of new Set(keys)) {
+      const prev = doctorRawTextMap.get(key);
+      if (!prev || raw.length > prev.length) doctorRawTextMap.set(key, raw.trim());
+    }
   }
 
   console.log(`[scraper] Built maps from doctor profiles: ${doctorBioMap.size} bios, ${doctorTitleMap.size} titles, ${doctorRawTextMap.size} raw page texts`);
@@ -1668,10 +1680,15 @@ Important rules:
     // Attach the verbatim page text unconditionally - unlike `bio` this is never
     // a display field, so a longer AI bio is no reason to withhold the source.
     if (!member.bioRaw) {
-      let raw = doctorRawTextMap.get(nameKey);
+      const stripDr = (k: string) => k.replace(/^dr(?=[a-z]{4})/, "");
+      const target = stripDr(nameKey);
+      let raw = doctorRawTextMap.get(nameKey) || doctorRawTextMap.get(target);
       if (!raw) {
         for (const [mapKey, mapValue] of doctorRawTextMap) {
-          if (nameKey.startsWith(mapKey) || mapKey.startsWith(nameKey)) { raw = mapValue; break; }
+          const k = stripDr(mapKey);
+          // Containment both ways: a slug may carry only the surname
+          // ("/doctors/sahakian") or extra given names the roster omits.
+          if (k === target || k.includes(target) || target.includes(k)) { raw = mapValue; break; }
         }
       }
       if (raw) member.bioRaw = raw;

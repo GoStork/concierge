@@ -14,6 +14,7 @@ import { formatLocationDisplay } from "@/lib/format-location";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { DoctorMonogram, initialsFromName } from "./doctor-monogram";
 import { DonorPhotoFallback } from "./donor-photo-fallback";
+import { useSwipeDeckCardMode } from "./swipe-deck-context";
 
 export type { TabSection } from "./swipe-mappers";
 
@@ -146,6 +147,10 @@ export function SwipeDeckCard({
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const photoContainerRef = useRef<HTMLDivElement | null>(null);
+  // "preview" = the inert card pre-mounted under the active one in the mobile
+  // deck. It has swipe disabled but is one swipe away from BEING the active
+  // card, so its action row must already match the active row.
+  const isDeckPreview = useSwipeDeckCardMode() === "preview";
 
   const triggerExpand = useCallback(() => {
     if (isExpanding) return;
@@ -1130,7 +1135,7 @@ export function SwipeDeckCard({
           </div>
 
           <div className={`absolute bottom-6 left-0 right-0 px-4 z-[39] flex items-center justify-center gap-3 ${readOnly ? "hidden" : ""} transition-opacity duration-200 ${isExpanding ? "opacity-0 pointer-events-none" : "opacity-100"}`} data-testid={`action-row-${id}`}>
-            {!chatMode && !disableSwipe && (
+            {!chatMode && (!disableSwipe || isDeckPreview) && (
               <motion.div style={{ opacity: otherBtnOpacity }} className="pointer-events-auto">
                 <Button
                   variant="ghost"

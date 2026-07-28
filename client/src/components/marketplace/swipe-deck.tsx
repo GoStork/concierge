@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { SwipeDeckCardModeContext, type SwipeDeckCardMode } from "./swipe-deck-context";
+
+export type { SwipeDeckCardMode };
 
 /**
  * Handlers the deck hands to `renderCard` so the card's save/pass/undo buttons
@@ -14,11 +17,6 @@ export interface SwipeDeckCardApi {
    *  there is nothing to undo. */
   onUndo?: () => void;
 }
-
-/** Where a card is being rendered: the active (draggable, top) mobile card, the
- *  inert preview underneath it, or a static desktop grid cell. Lets the caller
- *  wire undo correctly (mobile back vs. per-card undo) the way each deck did. */
-export type SwipeDeckCardMode = "active" | "preview" | "grid";
 
 export interface SwipeDeckProps<T> {
   /** Already filtered + sorted by the caller (favorites/skipped/ordering are
@@ -195,15 +193,19 @@ export function SwipeDeck<T>({
         <div className="relative h-full w-full">
           {next && nextKey && (
             <div key={`next-${nextKey}`} className="absolute inset-0 z-0" data-testid={`${cardTestIdPrefix}-next-${nextKey}`}>
-              {renderCard(next, "preview", { onSave: () => {}, onPass: () => {} })}
+              <SwipeDeckCardModeContext.Provider value="preview">
+                {renderCard(next, "preview", { onSave: () => {}, onPass: () => {} })}
+              </SwipeDeckCardModeContext.Provider>
             </div>
           )}
           <div key={`cur-${curKey}`} className="absolute inset-0 z-10" data-testid={`${cardTestIdPrefix}-container-${curKey}`}>
-            {renderCard(current, "active", {
-              onSave: () => doSave(curKey),
-              onPass: () => doPass(curKey),
-              onUndo: history.length > 0 ? goBack : undefined,
-            })}
+            <SwipeDeckCardModeContext.Provider value="active">
+              {renderCard(current, "active", {
+                onSave: () => doSave(curKey),
+                onPass: () => doPass(curKey),
+                onUndo: history.length > 0 ? goBack : undefined,
+              })}
+            </SwipeDeckCardModeContext.Provider>
           </div>
         </div>
       </div>

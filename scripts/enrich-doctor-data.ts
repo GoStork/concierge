@@ -11,8 +11,15 @@
  *   npx tsx -r dotenv/config scripts/enrich-doctor-data.ts --limit 500
  *   npx tsx -r dotenv/config scripts/enrich-doctor-data.ts --missing-only
  *   npx tsx -r dotenv/config scripts/enrich-doctor-data.ts --dry-run --provider-name "CCRM"
+ *   npx tsx -r dotenv/config scripts/enrich-doctor-data.ts --bio-only --needs-profile-fields
  *
- * --missing-only : only members with no NPI yet (skip already-resolved).
+ * --missing-only         : only members with no NPI yet (skip already-resolved).
+ * --needs-profile-fields : only members missing specialties/languages/education
+ *                          who have text to extract from. This is the re-run
+ *                          after a vocabulary or extractor change.
+ * --bio-only             : skip the NPPES/ABOG network lookups and re-extract
+ *                          from text only. Much faster and the right mode when
+ *                          only the text-extraction side changed.
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -29,6 +36,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
 const MISSING_ONLY = args.includes("--missing-only");
+const NEEDS_PROFILE_FIELDS = args.includes("--needs-profile-fields");
+const BIO_ONLY = args.includes("--bio-only");
 function argVal(flag: string): string | undefined {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : undefined;
@@ -45,11 +54,26 @@ async function main() {
   if (MISSING_ONLY) where.npiNumber = null;
   if (providerId) where.providerId = providerId;
   if (providerName) where.provider = { name: { contains: providerName, mode: "insensitive" } };
+  if (NEEDS_PROFILE_FIELDS) {
+    // Missing at least one text-derived field, AND has text to derive it from.
+    // Without the second half this would burn lookups on members that have
+    // nothing to read, which is the 35% with no bio at all.
+    where.AND = [
+      {
+        OR: [
+          { specialties: { isEmpty: true } },
+          { languagesSpoken: { isEmpty: true } },
+          { education: { isEmpty: true } },
+        ],
+      },
+      { OR: [{ bioRaw: { not: null } }, { bio: { not: null } }] },
+    ];
+  }
 
   const members = await prisma.providerMember.findMany({
     where,
     select: {
-      id: true, name: true, bio: true, fieldSources: true,
+      id: true, name: true, bio: true, bioRaw: true, fieldSources: true,
       provider: { select: { locations: { orderBy: { sortOrder: "asc" }, take: 1 } } },
     },
     take: limit,
@@ -61,8 +85,9 @@ async function main() {
   async function one(m: any) {
     const loc = (m.provider?.locations || [])[0] || {};
     const { data } = await buildDoctorEnrichment({
-      name: m.name, bio: m.bio, city: loc.city ?? null, state: loc.state ?? null,
+      name: m.name, bio: m.bio, bioRaw: m.bioRaw, city: loc.city ?? null, state: loc.state ?? null,
       existingSources: (m.fieldSources as any) || null, genAI,
+      only: BIO_ONLY ? ["bio"] : undefined,
     });
     if (Object.keys(data).length === 0) { stats.empty++; return; }
     const src = data.fieldSources || {};

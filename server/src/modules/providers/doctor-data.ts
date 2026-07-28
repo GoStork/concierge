@@ -193,7 +193,9 @@ const SPECIALTY_RULES: { canonical: string; match: RegExp }[] = [
   // extracted specialties simply had no rule. These are the most common ones.
   { canonical: "IVF", match: /\bivf\b|in[\s-]?vitro fertili|embryo transfer|blastocyst|ovarian stimulation|\bicsi\b|frozen embryo/i },
   { canonical: "Reproductive Endocrinology", match: /reproductive endocrinolog|\brei\b|reproductive medicine|endocrine disorder/i },
-  { canonical: "Infertility Evaluation & Treatment", match: /infertility (evaluation|treatment|care|diagnos|management)|unexplained infertility|fertility (evaluation|testing|treatment|workup)|\biui\b|intrauterine insemination|ovulation induction/i },
+  // The bare-word alternative is anchored: an unanchored /infertility/ would
+  // also fire on "Male Factor Infertility" and tag every such doctor twice.
+  { canonical: "Infertility Evaluation & Treatment", match: /infertility (evaluation|treatment|care|diagnos|management)|unexplained infertility|fertility (evaluation|testing|treatment|workup)|\biui\b|intrauterine insemination|ovulation induction|^\s*(?:in)?fertility\s*$/i },
   { canonical: "Ovulation Disorders", match: /ovulat(ory|ion) (disorder|dysfunction)|anovulat|amenorrhea|irregular (cycle|period)/i },
   { canonical: "Uterine & Fibroid Conditions", match: /uterine (fibroid|anomal|factor|abnormal)|\basherman|adenomyosis|endometrial (receptiv|lining|polyp)|polyp/i },
   { canonical: "Secondary Infertility", match: /secondary infertility/i },

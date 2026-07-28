@@ -34,6 +34,11 @@ const DIAGNOSE = process.argv.includes("--diagnose");
 const INSPECT = arg("inspect"); // clinic name substring: scrape + dump per-doctor data
 const ONLY = arg("only"); // clinic name substring: enrich ONLY matching clinics
 const THIN = process.argv.includes("--thin"); // enrich clinics with <=1 doctor (just the CDC director)
+// Clinics that HAVE a roster but no bio on a single member. These aren't
+// doctor-less, so --thin and the default selector both skip them, yet they are
+// the single biggest cause of blank Specialties / Education / Languages: with no
+// text there is nothing for extraction to read.
+const NO_BIOS = process.argv.includes("--no-bios");
 
 const prisma = new PrismaService();
 const storage = new StorageService();
@@ -42,6 +47,19 @@ const svc = new ClinicEnrichmentService(prisma, storage);
 async function shownDoctorCount(providerId: string): Promise<number> {
   return prisma.providerMember.count({
     where: { providerId, isPublicProfile: { not: false } },
+  });
+}
+
+// Members carrying display bio text, and members carrying verbatim page text.
+// bioRaw is the one that matters for structured extraction.
+async function bioCount(providerId: string): Promise<number> {
+  return prisma.providerMember.count({
+    where: { providerId, isPublicProfile: { not: false }, bio: { not: null } },
+  });
+}
+async function rawCount(providerId: string): Promise<number> {
+  return prisma.providerMember.count({
+    where: { providerId, isPublicProfile: { not: false }, bioRaw: { not: null } },
   });
 }
 
@@ -127,6 +145,19 @@ async function main() {
     });
     clinics = rows.filter(r => r._count.members <= 1).map(({ _count, ...c }) => c);
     if (LIMIT) clinics = clinics.slice(0, LIMIT);
+  } else if (NO_BIOS) {
+    // Has at least one public member, and NOT ONE of them has usable bio text.
+    clinics = await prisma.provider.findMany({
+      where: {
+        services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
+        ...(ONLY ? { name: { contains: ONLY, mode: "insensitive" } } : {}),
+        members: { some: { isPublicProfile: { not: false } } },
+        NOT: { members: { some: { isPublicProfile: { not: false }, bio: { not: null } } } },
+      },
+      select: { id: true, name: true, websiteUrl: true },
+      orderBy: { name: "asc" },
+      ...(LIMIT ? { take: LIMIT } : {}),
+    });
   } else {
     clinics = await prisma.provider.findMany({
       where: {
@@ -139,14 +170,30 @@ async function main() {
     });
   }
 
-  console.log(`[enrich-missing] ${clinics.length} ${THIN ? "thin (<=1 doctor)" : "doctor-less"} IVF clinics to re-enrich (concurrency=${CONCURRENCY})`);
+  const mode = THIN ? "thin (<=1 doctor)" : NO_BIOS ? "zero-bio" : "doctor-less";
+  console.log(`[enrich-missing] ${clinics.length} ${mode} IVF clinics to re-enrich (concurrency=${CONCURRENCY})`);
   let recovered = 0, stillEmpty = 0, failed = 0, totalNewDoctors = 0;
 
   const processOne = async (c: { id: string; name: string }) => {
     try {
       const before = await shownDoctorCount(c.id);
+      const bioBefore = NO_BIOS ? await bioCount(c.id) : 0;
       await svc.enrichClinicProfile(c.id);
       const after = await shownDoctorCount(c.id);
+      if (NO_BIOS) {
+        // Doctor count is not the success metric here - bio text is.
+        const bioAfter = await bioCount(c.id);
+        const rawAfter = await rawCount(c.id);
+        if (bioAfter > bioBefore) {
+          recovered++;
+          totalNewDoctors += bioAfter - bioBefore;
+          console.log(`[enrich-missing]  [gained]    ${c.name}: bios ${bioBefore} -> ${bioAfter}, page texts ${rawAfter}/${after}`);
+        } else {
+          stillEmpty++;
+          console.log(`[enrich-missing]  [empty]     ${c.name}: still 0 bios across ${after} doctors`);
+        }
+        return;
+      }
       if (after > before) {
         recovered++;
         totalNewDoctors += after - before;
