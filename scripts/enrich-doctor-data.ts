@@ -26,7 +26,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { buildDoctorEnrichment } from "../server/src/modules/providers/doctor-data";
+import { buildDoctorEnrichment, medicalSchoolFromEducation } from "../server/src/modules/providers/doctor-data";
 
 const pool = new pg.Pool({ connectionString: process.env.DIRECT_URL || process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -38,6 +38,9 @@ const DRY_RUN = args.includes("--dry-run");
 const MISSING_ONLY = args.includes("--missing-only");
 const NEEDS_PROFILE_FIELDS = args.includes("--needs-profile-fields");
 const BIO_ONLY = args.includes("--bio-only");
+// Pure re-derivation from data already in the row. No AI, no network - so it is
+// safe and instant to re-run whenever the derivation rules change.
+const DERIVE_ONLY = args.includes("--derive-only");
 function argVal(flag: string): string | undefined {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : undefined;
@@ -69,11 +72,15 @@ async function main() {
       { OR: [{ bioRaw: { not: null } }, { bio: { not: null } }] },
     ];
   }
+  if (DERIVE_ONLY) {
+    // Only rows that actually hold an education list to derive from.
+    where.NOT = { education: { isEmpty: true } };
+  }
 
   const members = await prisma.providerMember.findMany({
     where,
     select: {
-      id: true, name: true, bio: true, bioRaw: true, fieldSources: true,
+      id: true, name: true, bio: true, bioRaw: true, education: true, medicalSchool: true, fieldSources: true,
       provider: { select: { locations: { orderBy: { sortOrder: "asc" }, take: 1 } } },
     },
     take: limit,
@@ -81,11 +88,34 @@ async function main() {
   });
   console.log(`[doctor-data] ${members.length} members to process`);
 
+  if (DERIVE_ONLY) {
+    let set = 0, unchanged = 0, noMatch = 0;
+    for (const m of members) {
+      const school = medicalSchoolFromEducation(m.education);
+      if (!school) { noMatch++; continue; }
+      if (m.medicalSchool === school) { unchanged++; continue; }
+      const sources = { ...((m.fieldSources as any) || {}) };
+      if (sources.medicalSchool === "self") { unchanged++; continue; } // never clobber a human entry
+      sources.medicalSchool = "bio";
+      if (set < 25) console.log(`[doctor-data]   ${m.name}: medicalSchool="${school}"`);
+      if (!DRY_RUN) {
+        await prisma.providerMember.updateMany({
+          where: { id: m.id },
+          data: { medicalSchool: school, fieldSources: sources },
+        });
+      }
+      set++;
+    }
+    console.log(`[doctor-data] derive-only done. set=${set} unchanged=${unchanged} noEducationMatch=${noMatch} ${DRY_RUN ? "(NO WRITES)" : ""}`);
+    return;
+  }
+
   const stats = { updated: 0, empty: 0 };
   async function one(m: any) {
     const loc = (m.provider?.locations || [])[0] || {};
     const { data } = await buildDoctorEnrichment({
-      name: m.name, bio: m.bio, bioRaw: m.bioRaw, city: loc.city ?? null, state: loc.state ?? null,
+      name: m.name, bio: m.bio, bioRaw: m.bioRaw, existingEducation: m.education,
+      city: loc.city ?? null, state: loc.state ?? null,
       existingSources: (m.fieldSources as any) || null, genAI,
       only: BIO_ONLY ? ["bio"] : undefined,
     });

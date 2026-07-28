@@ -163,6 +163,7 @@ export interface BioFields {
   education: string[];
   professionalMemberships: string[];
   yearsExperience: number | null;
+  graduationYear: number | null;
   providerGender: "Male" | "Female" | null;
 }
 
@@ -285,6 +286,32 @@ export function extractLanguagesFromText(text: string): string[] {
   return [...found];
 }
 
+/**
+ * Pull the medical school out of an already-extracted education[] list.
+ * Entries are written as "Medical School - <institution>" by the bio extractor,
+ * so this is a parse of data we hold, not a new lookup - which is why it is
+ * preferred over CMS: the CMS National Downloadable File covers only Medicare-
+ * billing clinicians (~12% of our doctors, since REIs rarely bill Medicare) and
+ * codes most schools as the literal string "OTHER".
+ *
+ * Residency and fellowship lines are deliberately NOT accepted as a fallback:
+ * showing a fellowship hospital under "Medical school" is wrong, not partial.
+ */
+export function medicalSchoolFromEducation(education: string[] | null | undefined): string | null {
+  for (const entry of education || []) {
+    if (typeof entry !== "string") continue;
+    const m = entry.match(/^\s*(?:medical|med)\s*school\s*[-–—:]\s*(.+)$/i);
+    if (!m) continue;
+    const school = m[1]
+      .replace(/\s*\(\s*\d{4}\s*\)\s*$/, "") // trailing "(2003)"
+      .replace(/[.,;\s]+$/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (school.length >= 4) return school;
+  }
+  return null;
+}
+
 export async function extractDoctorFieldsFromBio(
   genAI: GoogleGenerativeAI,
   name: string,
@@ -310,6 +337,7 @@ Return STRICT JSON: {
   "education": string[],            // "Medical School - <inst>","Residency - <inst>","Fellowship - <inst>"
   "professionalMemberships": string[],
   "yearsExperience": number,        // integer only if explicitly stated, else null
+  "graduationYear": number,         // 4-digit year they graduated MEDICAL SCHOOL (not residency, fellowship, college or any other degree). Only if the text ties a year to medical school / the MD; else null
   "providerGender": string          // "Male"/"Female" only if clear he/him or she/her pronouns, else null
 }
 Return ONLY the JSON object.`;
@@ -326,6 +354,12 @@ Return ONLY the JSON object.`;
     const arr = (v: any): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()) : []);
     const gender = o.providerGender === "Male" || o.providerGender === "Female" ? o.providerGender : null;
     const yrs = typeof o.yearsExperience === "number" && Number.isFinite(o.yearsExperience) ? Math.round(o.yearsExperience) : null;
+    // Range-check hard: bios are full of stray 4-digit numbers (founding years,
+    // publication dates, addresses) and a wrong graduation year silently ages a
+    // doctor by decades wherever it is shown.
+    const gradRaw = typeof o.graduationYear === "number" ? Math.round(o.graduationYear) : null;
+    const thisYear = new Date().getUTCFullYear();
+    const grad = gradRaw != null && gradRaw >= 1940 && gradRaw <= thisYear ? gradRaw : null;
     return {
       specialties: curateSpecialties(arr(o.specialties)),
       languagesSpoken: arr(o.languagesSpoken),
@@ -333,6 +367,7 @@ Return ONLY the JSON object.`;
       education: arr(o.education),
       professionalMemberships: arr(o.professionalMemberships),
       yearsExperience: yrs,
+      graduationYear: grad,
       providerGender: gender,
     };
   } catch {
@@ -351,6 +386,9 @@ export async function buildDoctorEnrichment(opts: {
   // Verbatim profile-page text. Preferred over `bio` for extraction: `bio` is a
   // display summary, and summarising is what drops education and languages.
   bioRaw?: string | null;
+  // Education already stored for this member. Lets medicalSchool be derived on a
+  // re-run that resolves no new bio fields (the backfill case).
+  existingEducation?: string[] | null;
   city: string | null;
   state: string | null;
   existingSources: Record<string, string> | null | undefined;
@@ -416,7 +454,16 @@ export async function buildDoctorEnrichment(opts: {
     if (sources["boardCertifications"] !== "abog") set("boardCertifications", bioFields.boardCertifications, "bio");
     if (sources["providerGender"] !== "nppes") set("providerGender", bioFields.providerGender, "bio");
     set("yearsExperience", bioFields.yearsExperience, "bio");
+    set("graduationYear", bioFields.graduationYear, "bio");
   }
+
+  // medicalSchool is a scalar view of a fact education[] already holds. Deriving
+  // it costs nothing and keeps the two consistent by construction; the doctor
+  // profile page and the comparison table both read the scalar, so without this
+  // they render blank for doctors whose school we are already displaying in the
+  // education list two rows below.
+  const educationForSchool = bioFields?.education ?? opts.existingEducation ?? [];
+  set("medicalSchool", medicalSchoolFromEducation(educationForSchool), "bio");
 
   // Derive yearsExperience from ABOG cert year if nothing better set it.
   if (certYear && sources["yearsExperience"] !== "self" && data["yearsExperience"] == null) {

@@ -1718,7 +1718,7 @@ export class ClinicEnrichmentService {
     });
     const members = await this.prisma.providerMember.findMany({
       where: { providerId },
-      select: { id: true, name: true, bio: true, bioRaw: true, personKey: true, fieldSources: true },
+      select: { id: true, name: true, bio: true, bioRaw: true, education: true, personKey: true, fieldSources: true },
     });
 
     // Pass 1: carry forward prior enrichment for known people (cheap, no lookups).
@@ -1747,6 +1747,7 @@ export class ClinicEnrichmentService {
               name: m.name,
               bio: m.bio,
               bioRaw: m.bioRaw,
+              existingEducation: m.education,
               city: loc?.city ?? null,
               state: loc?.state ?? null,
               existingSources: (m.fieldSources as any) || null,
@@ -1774,7 +1775,7 @@ export class ClinicEnrichmentService {
     });
     const members = await this.prisma.providerMember.findMany({
       where: { providerId },
-      select: { id: true, name: true, bio: true, bioRaw: true, fieldSources: true },
+      select: { id: true, name: true, bio: true, bioRaw: true, education: true, fieldSources: true },
     });
     const CONCURRENCY = 4;
     for (let i = 0; i < members.length; i += CONCURRENCY) {
@@ -1785,6 +1786,7 @@ export class ClinicEnrichmentService {
               name: m.name,
               bio: m.bio,
               bioRaw: m.bioRaw,
+              existingEducation: m.education,
               city: loc?.city ?? null,
               state: loc?.state ?? null,
               existingSources: (m.fieldSources as any) || null,
