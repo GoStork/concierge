@@ -1,4 +1,5 @@
 import { resolveEthnicityTerms } from "@shared/donor-search";
+import { donorLocationHaystack, locationTermMatches } from "@shared/donor-location";
 const STATE_ABBREV_MAP: Record<string, string> = {
   AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",
   CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",
@@ -92,29 +93,11 @@ function countriesMatch(c1: string | null | undefined, c2: string | null | undef
   return normalize(c1) === normalize(c2);
 }
 
-function extractFromSections(profileData: any, fieldName: string): string | null {
-  if (!profileData) return null;
-  const sections = profileData?._sections;
-  if (!sections || typeof sections !== "object") return null;
-  for (const section of Object.values(sections)) {
-    if (typeof section === "object" && section && !Array.isArray(section) && (section as any)[fieldName]) {
-      return String((section as any)[fieldName]);
-    }
-  }
-  return null;
-}
 
-function resolveLocationValue(donor: any): string {
-  if (donor.location) return donor.location;
-  const pd = donor.profileData || {};
-  return (
-    pd["Location"] ||
-    pd["Place of Birth"] ||
-    extractFromSections(pd, "Location") ||
-    extractFromSections(pd, "Place of Birth") ||
-    ""
-  );
-}
+// Location matching runs against the UNION of the stored scalar and every
+// profileData candidate (@shared/donor-location). Reading only `donor.location`
+// meant a donor whose scalar held just "FL" - while her card, her profile and
+// profileData all read "Ocala, FL" - was dropped by her own city filter.
 
 export function matchesFilter(donor: any, key: string, values: string[]): boolean {
   if (!values || values.length === 0) return true;
@@ -201,11 +184,11 @@ export function matchesFilter(donor: any, key: string, values: string[]): boolea
   }
 
   if (key === "location") {
-    const locationVal = resolveLocationValue(donor).toLowerCase();
-    if (!locationVal) return false;
+    const haystacks = donorLocationHaystack(donor);
+    if (haystacks.length === 0) return false;
     return values.some(v => {
       const terms = resolveLocationTerms(v);
-      return terms.some(t => locationVal.includes(t.toLowerCase()));
+      return terms.some(t => haystacks.some(h => locationTermMatches(h, t)));
     });
   }
 
@@ -295,7 +278,7 @@ export function agencyMatchesFilters(
         .filter(Boolean);
       const ok = values.some((v) => {
         const terms = resolveLocationTerms(v);
-        return locs.some((loc) => terms.some((t) => loc.includes(t.toLowerCase())));
+        return locs.some((loc) => terms.some((t) => locationTermMatches(loc, t)));
       });
       if (!ok) return false;
       continue;
@@ -356,7 +339,7 @@ export function omniSearch(donor: any, query: string): boolean {
   if (!query) return true;
   const q = query.toLowerCase().trim();
   const searchableFields = [
-    donor.firstName, donor.lastName, resolveLocationValue(donor), donor.ethnicity, donor.race,
+    donor.firstName, donor.lastName, ...donorLocationHaystack(donor), donor.ethnicity, donor.race,
     donor.education, donor.occupation, donor.religion, donor.externalId,
     donor.bloodType, donor.eyeColor, donor.hairColor, donor.relationshipStatus,
     donor.donorType, donor.eggType,

@@ -16,6 +16,7 @@ import {
 import { encryptNullable, decryptNullable } from "../../lib/encrypt";
 import { applyAsrmGate } from "./asrm";
 import { dedupeEntityPhotos } from "./photo-dedup";
+import { resolveDonorLocation } from "@shared/donor-location";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -1967,6 +1968,11 @@ async function upsertEggDonor(
   const frozenAvailRaw = (mergedProfile as any)?.["Frozen Egg Availability"]
     ?? (donor.profileData as any)?.["Frozen Egg Availability"]
     ?? null;
+  // Persist the RICHEST location the profile carries. Extraction routinely
+  // returns only the state ("FL") while the raw profile keeps "Ocala, FL" - and
+  // a state-only scalar makes the donor unfindable by her own city filter.
+  const resolvedLocation = resolveDonorLocation(donor.location, mergedProfile);
+
   const donorTypeStr = (donor.donorType || "").toLowerCase();
   const hasFrozenOffering = donorTypeStr.includes("frozen");
   const computedFrozenLotStatus = hasFrozenOffering
@@ -1988,7 +1994,7 @@ async function upsertEggDonor(
       eyeColor: skipIfManual("eyeColor", donor.eyeColor || null, mf),
       hairColor: skipIfManual("hairColor", donor.hairColor || null, mf),
       education: skipIfManual("education", donor.education || null, mf),
-      location: skipIfManual("location", donor.location || null, mf),
+      location: skipIfManual("location", resolvedLocation, mf),
       bloodType: skipIfManual("bloodType", donor.bloodType || null, mf),
       donationTypes: skipIfManual("donationTypes", donor.donationTypes || null, mf),
       relationshipStatus: skipIfManual("relationshipStatus", normalizeRelationshipStatus(donor.relationshipStatus) || null, mf),
@@ -2023,7 +2029,7 @@ async function upsertEggDonor(
       eyeColor: donor.eyeColor || null,
       hairColor: donor.hairColor || null,
       education: donor.education || null,
-      location: donor.location || null,
+      location: resolvedLocation,
       bloodType: donor.bloodType || null,
       donationTypes: donor.donationTypes || null,
       relationshipStatus: normalizeRelationshipStatus(donor.relationshipStatus) || null,
@@ -2156,6 +2162,9 @@ async function upsertSurrogate(
     ? { ...(normalizedProfile as any), ...(existing?.profileData as any || {}) }
     : normalizedProfile;
 
+  // See the egg-donor upsert: keep the city the extraction dropped.
+  const resolvedLocation = resolveDonorLocation(surrogate.location, mergedProfile);
+
   const phStats = calcPregnancyHistoryStats(mergedProfile);
   const resolvedLiveBirths = surrogate.liveBirths != null ? parseInt(String(surrogate.liveBirths)) || 0 : (phStats?.liveBirths ?? 0);
   const resolvedCSections = surrogate.cSections != null ? parseInt(String(surrogate.cSections)) || 0 : (phStats?.cSections ?? 0);
@@ -2173,7 +2182,7 @@ async function upsertSurrogate(
       baseCompensation: skipIfManual("baseCompensation", surrogate.baseCompensation ? parseFloat(String(surrogate.baseCompensation)) : undefined, mf),
       totalCostMin: skipIfManual("totalCostMin", surrogate.totalCostMin ? parseFloat(String(surrogate.totalCostMin)) : undefined, mf),
       totalCostMax: skipIfManual("totalCostMax", surrogate.totalCostMax ? parseFloat(String(surrogate.totalCostMax)) : undefined, mf),
-      location: skipIfManual("location", surrogate.location || undefined, mf),
+      location: skipIfManual("location", resolvedLocation || undefined, mf),
       agreesToAbortion: skipIfManual("agreesToAbortion", surrogate.agreesToAbortion ?? undefined, mf),
       agreesToTwins: skipIfManual("agreesToTwins", surrogate.agreesToTwins ?? undefined, mf),
       covidVaccinated: skipIfManual("covidVaccinated", surrogate.covidVaccinated ?? undefined, mf),
@@ -2214,7 +2223,7 @@ async function upsertSurrogate(
       baseCompensation: surrogate.baseCompensation ? parseFloat(String(surrogate.baseCompensation)) : null,
       totalCostMin: surrogate.totalCostMin ? parseFloat(String(surrogate.totalCostMin)) : null,
       totalCostMax: surrogate.totalCostMax ? parseFloat(String(surrogate.totalCostMax)) : null,
-      location: surrogate.location || null,
+      location: resolvedLocation,
       agreesToAbortion: surrogate.agreesToAbortion ?? null,
       agreesToTwins: surrogate.agreesToTwins ?? null,
       covidVaccinated: surrogate.covidVaccinated ?? null,
@@ -2333,7 +2342,11 @@ async function upsertSpermDonor(
   const sdHairColor = donor.hairColor || secGc["Hair Color"] || flatSections["Hair Color"] || undefined;
   const sdEducation = donor.education || secEd["Major/Area of Study"] || secEd["Education"] || flatSections["Major/Area of Study"] || flatSections["Education"] || undefined;
   const sdOccupation = donor.occupation || secEd["What is your current or most recent occupation?"] || secEd["Occupation"] || flatSections["Occupation"] || undefined;
-  const sdLocation = donor.location || secGc["Place of Birth"] || flatSections["Place of Birth"] || secGc["Location"] || flatSections["Location"] || undefined;
+  // Current location first (see the egg-donor upsert - a state-only scalar makes
+  // the donor unfindable by city); "Place of Birth" only when nothing else exists.
+  const sdLocation = resolveDonorLocation(donor.location, mergedProfile)
+    || secGc["Place of Birth"] || flatSections["Place of Birth"]
+    || secGc["Location"] || flatSections["Location"] || undefined;
   const sdReligion = donor.religion || secRel["Religion Practiced"] || secRel["Religion Born Into"] || secRel["Religion"] || flatSections["Religion"] || undefined;
   const sdVialTypes: string[] = (() => {
     if (Array.isArray(donor.vialTypes) && donor.vialTypes.length > 0) return (donor.vialTypes as string[]).filter((v: string) => ["ICI", "IUI", "IVF"].includes(v));

@@ -3,6 +3,8 @@
  * Uses Intl.DisplayNames to build a reverse map from country name -> ISO 3166-1 alpha-2 code.
  */
 
+import { US_STATE_ABBR, isUsState, normalizeCityState } from "@shared/donor-location";
+
 let nameToCode: Map<string, string> | null = null;
 
 function buildNameToCode(): Map<string, string> {
@@ -68,28 +70,8 @@ export function getCountryFlag(name: string): string {
 
 // US states -> the US flag. Both 2-letter abbreviations (a token like "MD" is a
 // US state in this product, not Moldova) and full names (cards store either
-// "CA" or "California" / "Dayton, Nevada").
-const US_STATE_ABBR = new Set([
-  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN",
-  "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV",
-  "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN",
-  "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC", "PR",
-]);
-const US_STATE_NAMES = new Set([
-  "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut",
-  "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
-  "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan",
-  "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada",
-  "new hampshire", "new jersey", "new mexico", "new york", "north carolina",
-  "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island",
-  "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont",
-  "virginia", "washington", "west virginia", "wisconsin", "wyoming",
-  "district of columbia", "washington dc", "washington, d.c.", "puerto rico",
-]);
-
-function isUsState(region: string): boolean {
-  return US_STATE_ABBR.has(region.trim().toUpperCase()) || US_STATE_NAMES.has(region.trim().toLowerCase());
-}
+// "CA" or "California" / "Dayton, Nevada"). The tables live in
+// @shared/donor-location so the server's sync writer matches this exactly.
 
 // Full US state name -> 2-letter abbreviation, so locations render consistently
 // as "City, ST" (the standard form) regardless of how the source stored them.
@@ -142,32 +124,13 @@ export function getLocationFlag(location?: string | null): string {
 
 /**
  * Build a clean "City, State" label, recovering the city the scraper dropped into
- * the raw profile field. `raw` is the richer source value (e.g. profileData
- * "Location" = "Hemet CA | $70,000" or "Bakersfield, CA"); `fallbackState` is the
- * sparse stored value (e.g. "CA"). Strips the "| $comp" suffix, inserts a missing
- * comma before a trailing state abbreviation ("Hemet CA" -> "Hemet, CA"), and
- * appends the known state to a city-only value ("South Lyon" + "MI" -> "South
- * Lyon, MI"). Falls back to the stored value when nothing richer is available.
+ * the raw profile field. The implementation is @shared/donor-location's
+ * `normalizeCityState` (the sync writer and the backfill run the same code); this
+ * wrapper only supplies the browser's country table so a country name never gets
+ * a US state appended to it.
  */
 export function cleanCityState(raw: string | null | undefined, fallbackState?: string | null): string | null {
-  const fallback = (fallbackState || "").trim();
-  if (!raw || typeof raw !== "string") return fallback || null;
-  let s = raw.split("|")[0].trim();
-  if (!s) return fallback || null;
-  if (!s.includes(",")) {
-    const words = s.split(/\s+/);
-    const last = words[words.length - 1];
-    if (words.length > 1 && US_STATE_ABBR.has(last.toUpperCase())) {
-      s = `${words.slice(0, -1).join(" ")}, ${last.toUpperCase()}`;
-    } else if (
-      !isUsState(s) && !getCountryFlag(s) &&
-      fallback && s.toLowerCase() !== fallback.toLowerCase()
-    ) {
-      // City-only value plus a known state -> "City, State".
-      s = `${s}, ${fallback}`;
-    }
-  }
-  return s;
+  return normalizeCityState(raw, fallbackState, (v) => !!getCountryFlag(v));
 }
 
 /** Converts a country name (e.g. "United States") to an ISO 3166-1 alpha-2 code (e.g. "US"). */

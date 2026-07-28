@@ -12,6 +12,7 @@ import { parseHeightToInches, resolveEthnicityTerms } from "@/lib/marketplace-fi
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay, dedupeProviderLocations } from "@/lib/format-location";
 import { getLocationFlag, cleanCityState, getCountryFlag } from "@/lib/country-flag";
+import { collectLocationCandidates } from "@shared/donor-location";
 
 // True while the provider is paying to boost this profile (denormalized sponsoredUntil in the future).
 export function isSponsored(row: any): boolean {
@@ -28,11 +29,14 @@ function flaggedLocation(location: string | null | undefined): string {
 
 // Recover the city the scraper dropped: the raw profile keeps "City, State" in
 // profileData.Location / "Current City" while the stored `location` scalar often
-// has only the state. Used for the card's display label (NOT for filtering).
+// has only the state. The filter matches the same candidates
+// (@shared/donor-location), so display and filtering can no longer disagree.
 function deriveDisplayLocation(rawLocation: string | null | undefined, profileData: any): string | null {
-  const pd = profileData && typeof profileData === "object" ? profileData : null;
-  const richer = pd ? (pd["Location"] ?? pd["Current City"] ?? null) : null;
-  return cleanCityState(typeof richer === "string" ? richer : null, rawLocation ?? null) ?? (rawLocation ?? null);
+  for (const candidate of collectLocationCandidates(profileData)) {
+    const cleaned = cleanCityState(candidate, rawLocation ?? null);
+    if (cleaned) return cleaned;
+  }
+  return rawLocation ?? null;
 }
 
 // Build the shared "Costs" tab. When the card components supply structured
@@ -628,7 +632,11 @@ export function getMatchedPreferences(profile: SwipeDeckProfile, prefs: UserPref
   const matched: MatchedPref[] = [];
   const attrMap: Record<string, any> = {
     age: profile.age,
-    location: profile.location,
+    // displayLocation first: it carries the city recovered from profileData,
+    // which is what the location FILTER matches on (@shared/donor-location).
+    // Using the bare scalar here showed "FL" on a bubble the parent had
+    // matched by searching "Ocala".
+    location: profile.displayLocation || profile.location,
     ethnicity: profile.ethnicity,
     race: profile.race,
     religion: profile.religion,
