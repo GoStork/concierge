@@ -30,6 +30,7 @@ import { formatFieldLabel, looksLikeRawKey, isPlaceholderValue, formatStatusLabe
 import { safeCompensation, compensationWarning, isPlausibleCompensation } from "../client/src/lib/compensation-sanity";
 import { formatRelativeTime, isStale } from "../client/src/lib/format-relative-time";
 import { profileAddedLabel } from "../client/src/lib/profile-freshness";
+import { savedCardVisual } from "../client/src/lib/saved-card-visual";
 import { splitSharedItems, groupProgramFamilies, variantLabels } from "../client/src/lib/cost-program-family";
 import { sectionRank, orderProfileSections } from "../client/src/lib/profile-sections";
 import { resolveHeroSelection } from "../client/src/lib/profile-hero";
@@ -822,6 +823,26 @@ async function px17() {
   check("the sticky header shrinks its photos on scroll",
     /compact \? "max-w-\[44px\]" : "max-w-\[150px\]"/.test(dr) && /transition-all/.test(dr));
   check("and the label column survives a sideways scroll", /sticky left-0/.test(dr));
+  // The table used to sit in its own overflow-x container. An element that
+  // scrolls in one axis scrolls in both, so THAT - not the page - was what the
+  // sticky header measured itself against, and it never scrolled vertically.
+  // The header only appeared to stick on egg donors, whose table is short
+  // enough to fit; every longer table scrolled its header away.
+  check("the table is not trapped in a second scrollport",
+    !/overflow-x-auto/.test(dr) && (dr.match(/overflow-auto/g) || []).length === 1);
+  check("the header sticks to the page's own scrollport", /sticky top-0 z-20 bg-background/.test(dr));
+  // A sticky cell inside a collapsed table drops its borders in Safari, and the
+  // row rules ARE borders - so they move to the cells.
+  check("row rules survive the sticky column",
+    /border-separate border-spacing-0/.test(dr) && !/className="border-t border-border\/60 hover/.test(dr));
+  // Shrinking the header shortens the page; at the bottom the browser answers
+  // by pulling the scroll position up with it, straight back across a single
+  // threshold - which expanded the header, lengthened the page, and started
+  // again. That was the stutter.
+  check("the shrink has hysteresis, not one threshold",
+    /y > 140/.test(dr) && /y < 70/.test(dr));
+  check("and the page holds its height while the header collapses",
+    /ResizeObserver/.test(dr) && /headSlack/.test(dr));
 
   check("and the drawer renders it as the green pill",
     /TOP_10_BADGE/.test(readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8")));
@@ -971,9 +992,18 @@ async function px18() {
   // the grid and a different one in the tray.
   check("both grids normalise a card through one function",
     /savedCardVisual/.test(page) && /savedCardVisual/.test(readFileSync("client/src/lib/saved-card-visual.ts", "utf8")));
+  // A clinic is its logo. Leading with a physician's headshot made the same
+  // clinic unrecognisable between two screens - the Saved deck showed the
+  // Pacific Fertility mark, the compare grid showed one of its doctors.
   const visual = readFileSync("client/src/lib/saved-card-visual.ts", "utf8");
-  check("a clinic falls back to a doctor's face, then its logo",
-    /members\.map/.test(visual) && /logoUrl/.test(visual));
+  check("a clinic is drawn as its logo, with a face only as a last resort",
+    /if \(logo\) return \{ photo: null, logo/.test(visual) && /members\.map/.test(visual));
+  const cLogo = savedCardVisual("clinic", { name: "X", logoUrl: "/l.png", members: [{ photoUrl: "/face.jpg" }] });
+  check("a clinic with both shows the logo, not the doctor",
+    cLogo.logo === "/l.png" && cLogo.photo === null, JSON.stringify(cLogo));
+  const cFace = savedCardVisual("clinic", { name: "X", members: [{ photoUrl: "/face.jpg" }] });
+  check("a clinic with no mark on file still shows something",
+    cFace.photo === "/face.jpg", JSON.stringify(cFace));
   check("a doctor with no headshot gets a monogram, not an empty tile",
     /monogramName/.test(visual) && /DoctorMonogram/.test(select));
 }

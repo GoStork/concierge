@@ -213,25 +213,59 @@ export function CompareDrawer({
   // the portrait.
   const scrollRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
+  const compactRef = useRef(false);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const onScroll = () => setCompact(el.scrollTop > 120);
+    // Hysteresis, not one threshold. Shrinking the header shortens the page, and
+    // at the bottom the browser answers by pulling the scroll position up with
+    // it - straight back across a single threshold, which expanded the header,
+    // lengthened the page, and started again. That was the stutter.
+    const onScroll = () => {
+      const y = el.scrollTop;
+      if (!compactRef.current && y > 140) { compactRef.current = true; setCompact(true); }
+      else if (compactRef.current && y < 70) { compactRef.current = false; setCompact(false); }
+    };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
+
+  // And the belt to that pair of braces: hold the page's total height constant
+  // while the header collapses, by growing a spacer by exactly what the header
+  // gives up. Measured rather than hardcoded, and continuously, so it tracks
+  // the 300ms transition frame by frame instead of only its endpoints.
+  const headRef = useRef<HTMLTableSectionElement>(null);
+  const tallRef = useRef(0);
+  const [headSlack, setHeadSlack] = useState(0);
+  useEffect(() => {
+    const el = headRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight;
+      if (!compactRef.current) { tallRef.current = h; setHeadSlack(0); return; }
+      setHeadSlack(Math.max(0, tallRef.current - h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const groups = buildCompareTable(kind, profiles as any[], tableOptions);
 
   return (
-    <div ref={scrollRef} className="fixed inset-0 z-50 bg-background overflow-auto" data-testid="compare-drawer">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center justify-between gap-3">
+    // ONE scrollport. The table used to sit in its own overflow-x container,
+    // and because an element that scrolls in one axis scrolls in both, that
+    // container - not the page - was what the sticky header measured itself
+    // against. It never scrolled vertically, so the header never stuck. It only
+    // looked like it did on egg donors, whose table is short enough to fit.
+    <div className="fixed inset-0 z-50 bg-background flex flex-col" data-testid="compare-drawer">
+      <div className="shrink-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between gap-3">
         <h2 className="font-display text-xl font-heading">Comparing {profiles.length}</h2>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close comparison" data-testid="compare-close">
           <X className="w-5 h-5" />
         </Button>
       </div>
 
-      <div className="p-4 max-w-[1200px] mx-auto">
+      <div ref={scrollRef} className="flex-1 overflow-auto p-4 max-w-[1200px] w-full mx-auto">
         {/* A rate that does not describe her must never be shown bare. CDC
             publishes per age band and egg source, so without her profile these
             are the under-35 first-cycle figures - a real number about a
@@ -255,13 +289,17 @@ export function CompareDrawer({
             </button>
           </div>
         )}
-        <div className="overflow-x-auto">
-          <table className="w-full table-fixed border-collapse min-w-[560px]" data-testid="compare-table">
-            <thead className="sticky top-[57px] z-10 bg-background shadow-[0_1px_0_hsl(var(--border))]">
+        {/* border-separate, because a sticky cell inside a collapsed table drops
+            its borders in Safari - and the row rules ARE borders. They move to
+            the cells, which is where a separated table draws them. */}
+        <table className="w-full table-fixed border-separate border-spacing-0 min-w-[560px]" data-testid="compare-table">
+            {/* Sticky on the cells as well as on the thead: browsers vary on
+                whether a sticky thead alone pins its row. */}
+            <thead ref={headRef} className="sticky top-0 z-20 bg-background">
               <tr>
-                <th className="w-[140px] sticky left-0 z-10 bg-background" />
+                <th className="w-[140px] sticky top-0 left-0 z-30 bg-background border-b border-border" />
                 {profiles.map((p: any) => (
-                  <th key={p.id} className="p-2 align-bottom text-center font-normal">
+                  <th key={p.id} className="p-2 align-bottom text-center font-normal sticky top-0 z-20 bg-background border-b border-border">
                     <button
                       type="button"
                       onClick={() => onOpenProfile(p)}
@@ -321,15 +359,15 @@ export function CompareDrawer({
                     return (
                       <tr
                         key={row.label}
-                        className="border-t border-border/60 hover:bg-secondary/40 transition-colors"
+                        className="hover:bg-secondary/40 transition-colors"
                         data-testid={`compare-row-${row.label.toLowerCase().replace(/\s+/g, "-")}`}
                         data-identical={identical ? "true" : "false"}
                       >
-                        <td className="py-2.5 pr-4 align-top text-left sticky left-0 z-10 bg-background">
+                        <td className="py-2.5 pr-4 align-top text-left sticky left-0 z-10 bg-background border-t border-border/60">
                           <span className="t-field-label break-words">{row.label}</span>
                         </td>
                         {row.values.map((value, i) => (
-                          <td key={profiles[i]?.id ?? i} className="py-2.5 px-3 align-top text-center">
+                          <td key={profiles[i]?.id ?? i} className="py-2.5 px-3 align-top text-center border-t border-border/60">
                             <CompareValue value={value} dim={identical} />
                           </td>
                         ))}
@@ -339,8 +377,10 @@ export function CompareDrawer({
                 </Fragment>
               ))}
             </tbody>
-          </table>
-        </div>
+        </table>
+
+        {/* Exactly what the header gave up, so the page keeps its height. */}
+        <div style={{ height: headSlack }} aria-hidden />
 
         {available.length > profiles.length && (
           <div className="mt-8" data-testid="compare-swap-strip">

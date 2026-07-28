@@ -33,16 +33,23 @@ export type SavedCardVisual = {
  */
 export function savedCardVisual(kind: SavedCardKind, item: any): SavedCardVisual {
   if (kind === "clinic") {
+    const loc = dedupeProviderLocations(item?.locations || [])[0];
+    const subtitle = loc ? [loc.city, loc.state].filter(Boolean).join(", ") : null;
+    // A clinic is its logo. Leading with a physician's headshot made the same
+    // clinic unrecognisable between two screens - the Saved deck showed the
+    // Pacific Fertility mark and the compare grid showed one of its doctors,
+    // and a parent has no way to know those are the same place. The face is
+    // only a last resort for a clinic with no mark on file.
+    const logo = getPhotoSrc(item?.logoUrl) || null;
+    if (logo) return { photo: null, logo, title: item?.name || "", subtitle };
     const members = Array.isArray(item?.members)
       ? item.members.filter((m: any) => m?.isPublicProfile !== false)
       : [];
-    const face = members.map((m: any) => getPhotoSrc(m?.photoUrl)).find(Boolean) || null;
-    const loc = dedupeProviderLocations(item?.locations || [])[0];
     return {
-      photo: face,
-      logo: getPhotoSrc(item?.logoUrl) || null,
+      photo: members.map((m: any) => getPhotoSrc(m?.photoUrl)).find(Boolean) || null,
+      logo: null,
       title: item?.name || "",
-      subtitle: loc ? [loc.city, loc.state].filter(Boolean).join(", ") : null,
+      subtitle,
     };
   }
   if (kind === "doctor") {
