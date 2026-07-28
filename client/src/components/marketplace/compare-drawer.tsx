@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { X } from "lucide-react";
+import { Check, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -62,6 +62,35 @@ function compareTitle(p: any): string {
 }
 function comparePhoto(p: any): string | null {
   return getPhotoSrc(p?.photoUrl || p?.highResPhotoUrl || p?.photos?.[0] || p?.logoUrl) || null;
+}
+
+/**
+ * Yes / No as a mark rather than a word.
+ *
+ * In a four-column table these are the rows a parent scans rather than reads -
+ * "does this one do gestational carrier" is answered faster by a shape than by
+ * a word, and the eye can run down a column without parsing anything. The word
+ * stays available to screen readers, which cannot see the shape.
+ */
+function CompareValue({ value, dim }: { value: string | null; dim: boolean }) {
+  if (value === "Yes" || value === "No") {
+    const yes = value === "Yes";
+    const Icon = yes ? Check : X;
+    return (
+      <span className={cn("inline-flex items-center", dim && "opacity-55")}>
+        <Icon
+          className={cn("w-4 h-4", yes ? "text-[hsl(var(--brand-success))]" : "text-destructive")}
+          aria-hidden
+        />
+        <span className="sr-only">{value}</span>
+      </span>
+    );
+  }
+  return (
+    <span className={cn("t-micro-value break-words", dim && "opacity-55")}>
+      {value ?? <span className="opacity-30">-</span>}
+    </span>
+  );
 }
 
 export const COMPARE_MAX = 4;
@@ -243,9 +272,7 @@ export function CompareDrawer({
                         </td>
                         {row.values.map((value, i) => (
                           <td key={profiles[i]?.id ?? i} className="py-2.5 pr-4 align-top">
-                            <span className={cn("t-micro-value break-words", identical && "opacity-55")}>
-                              {value ?? <span className="opacity-30">-</span>}
-                            </span>
+                            <CompareValue value={value} dim={identical} />
                           </td>
                         ))}
                       </tr>

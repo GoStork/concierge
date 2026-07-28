@@ -851,6 +851,12 @@ async function px17() {
     /compareTitle\(p\)/.test(drawer2) && !/\{buildTitle\(p\)\}/.test(drawer2));
   check("a clinic logo is found where clinics keep it", /logoUrl/.test(drawer2));
 
+  // Yes/No are scanned, not read - a shape answers faster than a word down a
+  // four-column table. The word stays for anyone who cannot see the shape.
+  check("Yes and No render as marks, in brand tokens",
+    /brand-success/.test(drawer2) && /text-destructive/.test(drawer2) && /value === "Yes"/.test(drawer2));
+  check("and the word survives for screen readers", /sr-only/.test(drawer2));
+
   check("no clinics or doctors yields no table",
     buildClinicCompare([], ctx).length === 0 && buildDoctorCompare([], []).length === 0);
 }
