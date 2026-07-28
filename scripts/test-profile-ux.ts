@@ -41,6 +41,8 @@ import {
 } from "../client/src/components/marketplace/swipe-mappers";
 import { buildCompareTable, COMPARE_MAX, toggleCompareSelection } from "../client/src/components/marketplace/compare-drawer";
 import { compareCellsFromProfile, mergeCompareCells } from "../client/src/lib/compare-sections";
+import { buildClinicCompare, buildDoctorCompare, clinicRatesAreGeneric } from "../client/src/lib/compare-providers";
+import { pickClinicRate } from "../client/src/lib/clinic-rate";
 import { collectOwnWords, validateQuote } from "../server/src/modules/providers/highlight-quote";
 import { profileDataToText } from "../server/src/modules/providers/profile-sync.service";
 import { programDisplayName } from "../server/src/modules/costs/program-name";
@@ -768,6 +770,69 @@ async function px16() {
     /bg-secondary|bg-accent/.test(quote) && !/bg-muted|bg-gray/.test(quote));
 }
 
+
+// ─── PX-17: clinics and doctors compare on what decides THOSE choices ────────
+async function px17() {
+  const rate = (over: any) => ({ profileType: "own_eggs", ageGroup: "35_37", isNewPatient: true,
+    metricCode: "pct_new_patients_live_birth_after_1_retrieval", successRate: 0.52, nationalAverage: 0.47, cycleCount: 210, ...over });
+
+  const clinicA = { id: "c1", name: "A", location: "Boston, MA", yearFounded: 2001,
+    ivfSuccessRates: [rate({})], acceptedInsurance: ["Aetna|PPO"], ivfAcceptingPatients: ["Self-pay"],
+    cdcServices: { donorEgg: true, gestationalCarrier: false }, cdcCycleStats: { totalCycles: 900 } };
+  const clinicB = { id: "c2", name: "B", location: "Austin, TX",
+    ivfSuccessRates: [rate({ successRate: 0.41 })], cdcServices: { donorEgg: true, gestationalCarrier: true } };
+
+  const ctx = { eggSource: "own_eggs", ageGroup: "35_37", isNewPatient: true };
+  const clinic = buildClinicCompare([clinicA, clinicB], ctx);
+  const groups = clinic.map((g) => g.group);
+  check("outcomes lead a clinic comparison - it is the question", groups[0] === "Outcomes", JSON.stringify(groups));
+  check("access is compared", groups.includes("Access"), JSON.stringify(groups));
+
+  const outcomes = clinic[0].rows;
+  check("her rate is used, not the headline",
+    outcomes.find((r) => r.label === "Live birth rate")?.values.join("|") === "52%|41%",
+    JSON.stringify(outcomes.find((r) => r.label === "Live birth rate")));
+  // CDC rates are not risk-adjusted, so below national is stated, never condemned.
+  const delta = outcomes.find((r) => r.label === "vs. national average");
+  check("below national is stated plainly, not as a failure",
+    delta?.values[1] === "-6% vs. national average", JSON.stringify(delta));
+  check("a row only one clinic fills is kept",
+    clinic.flatMap((g) => g.rows).some((r) => r.label === "Insurance accepted"), JSON.stringify(groups));
+  check("a row no clinic fills is dropped",
+    !clinic.flatMap((g) => g.rows).some((r) => r.label === "Years in practice"));
+
+  // The rate must come from the same lookup the clinic card uses.
+  check("the comparison and the card pick the same rate",
+    pickClinicRate(clinicA.ivfSuccessRates, ctx).rate?.successRate === 0.52);
+  check("a parent with no profile gets the generic row, flagged as generic",
+    clinicRatesAreGeneric([{ ivfSuccessRates: [rate({ ageGroup: "under_35" })] }], { ageGroup: "over_40" }),
+    "fallback must be reported so the UI can label it");
+  check("a matched profile is NOT flagged generic", !clinicRatesAreGeneric([clinicA], ctx));
+
+  // Doctors: outcomes are their CLINIC's - CDC reports at clinic level, and
+  // implying a physician-level statistic would invent a number we do not have.
+  const docs = [
+    { id: "d1", clinicName: "A Fertility", location: "Boston, MA", acceptingNewPatients: true,
+      specialties: ["Endometriosis", "PCOS"], languages: ["English", "Spanish"],
+      provider: { ivfSuccessRates: [rate({ ageGroup: "under_35" })] } },
+    { id: "d2", clinicName: "B Fertility", location: "Austin, TX", acceptingNewPatients: false, specialties: ["Male factor"] },
+  ];
+  const doctor = buildDoctorCompare(docs, ["PCOS"]);
+  const dGroups = doctor.map((g) => g.group);
+  check("a doctor comparison leads with their clinic", dGroups[0] === "Clinic & outcomes", JSON.stringify(dGroups));
+  const clinicRow = doctor[0].rows.find((r) => r.label === "Their clinic's live birth rate");
+  check("the rate is labelled as the clinic's, not the doctor's", !!clinicRow, JSON.stringify(doctor[0].rows.map((r) => r.label)));
+
+  const match = doctor.flatMap((g) => g.rows).find((r) => r.label === "Matches your diagnoses");
+  check("specialties are matched against her own diagnoses",
+    match?.values[0] === "PCOS" && match?.values[1] === "None listed", JSON.stringify(match));
+  check("with no diagnoses on file that row is absent rather than empty",
+    !buildDoctorCompare(docs, []).flatMap((g) => g.rows).some((r) => r.label === "Matches your diagnoses"));
+  check("languages are compared", doctor.flatMap((g) => g.rows).some((r) => r.label === "Languages"));
+  check("no clinics or doctors yields no table",
+    buildClinicCompare([], ctx).length === 0 && buildDoctorCompare([], []).length === 0);
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "PX-01", name: "Cost labels read as English, and raw keys are flagged", run: px01 },
   { id: "PX-02", name: "Implausible compensation is suppressed, never rewritten", run: px02 },
@@ -785,6 +850,7 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "PX-14", name: "The guards are applied where profiles are actually built", run: px14 },
   { id: "PX-15", name: "The compare shortlist behaves at its edges", run: px15 },
   { id: "PX-16", name: "The new surfaces are brand-managed, not hardcoded", run: px16 },
+  { id: "PX-17", name: "Clinics and doctors compare on what decides those choices", run: px17 },
 ];
 
 (async () => {

@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { getMandatoryFields } from "@/lib/profile-summary";
+import { buildClinicCompare, buildDoctorCompare } from "@/lib/compare-providers";
+import type { ClinicRateContext } from "@/lib/clinic-rate";
 import { compareCellsFromProfile, mergeCompareCells } from "@/lib/compare-sections";
 import { buildTitle, type SwipeDeckProfile } from "@/components/marketplace/swipe-mappers";
 
@@ -21,7 +23,7 @@ import { buildTitle, type SwipeDeckProfile } from "@/components/marketplace/swip
  * nothing and makes the table look broken.
  */
 
-export type CompareKind = "egg-donor" | "surrogate" | "sperm-donor";
+export type CompareKind = "egg-donor" | "surrogate" | "sperm-donor" | "clinic" | "doctor";
 
 /**
  * The comparison's first group: everything the Summary block shows.
@@ -79,7 +81,17 @@ export type CompareTableGroup = { group: string; rows: { label: string; values: 
  * "nobody listed an occupation". A row ONE profile answers is kept: that gap is
  * itself a difference between them.
  */
-export function buildCompareTable(kind: CompareKind, profiles: any[]): CompareTableGroup[] {
+export function buildCompareTable(
+  kind: CompareKind,
+  profiles: any[],
+  opts: { rateContext?: ClinicRateContext; parentDiagnoses?: string[] } = {},
+): CompareTableGroup[] {
+  // Clinics and doctors compare on entirely different things - outcomes, cost,
+  // access - so they get their own builders rather than a donor Summary that
+  // does not apply to them.
+  if (kind === "clinic") return buildClinicCompare(profiles, opts.rateContext || {});
+  if (kind === "doctor") return buildDoctorCompare(profiles, opts.parentDiagnoses || []);
+
   const scalar = summaryRows(kind, profiles);
 
   // Then the substance: her own sections, in the same priority order the
@@ -96,6 +108,7 @@ export function buildCompareTable(kind: CompareKind, profiles: any[]): CompareTa
 export function CompareDrawer({
   kind,
   profiles,
+  tableOptions,
   available,
   onToggle,
   onClose,
@@ -103,6 +116,8 @@ export function CompareDrawer({
 }: {
   kind: CompareKind;
   profiles: SwipeDeckProfile[];
+  /** Clinic rate context and the parent's diagnoses, for the provider kinds. */
+  tableOptions?: { rateContext?: ClinicRateContext; parentDiagnoses?: string[] };
   /** Everything saved in this tab, so columns can be swapped without leaving. */
   available: SwipeDeckProfile[];
   onToggle: (id: string) => void;
@@ -110,7 +125,7 @@ export function CompareDrawer({
   onOpenProfile: (profile: any) => void;
 }) {
   if (profiles.length === 0) return null;
-  const groups = buildCompareTable(kind, profiles as any[]);
+  const groups = buildCompareTable(kind, profiles as any[], tableOptions);
 
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-auto" data-testid="compare-drawer">

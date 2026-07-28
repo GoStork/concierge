@@ -1,6 +1,9 @@
 # Comparing clinics and doctors
 
-**Status: specified, not built.** Decisions are Eran's, 28 Jul 2026.
+**Status: BUILT, 28 Jul 2026** (PX-17). Decisions are Eran's.
+
+Not yet verified in a browser - the rows and rules are covered by PX-17, but
+nobody has opened a clinic comparison and looked at it.
 
 The donor/surrogate comparison exists (`compare-drawer.tsx`, PX-10, PX-15).
 Clinics and doctors need the same affordance, but not the same rows - nobody
@@ -61,6 +64,22 @@ Not hidden: a comparison missing its most important row looks broken. Not shown
 bare either: a parent must never compare two clinics on figures describing a
 population she is not in. The prompt sits where the motivation actually is -
 she is looking at the number she wants personalised.
+
+## What landed
+
+- `lib/clinic-rate.ts` - `pickClinicRate`, extracted FROM the clinic card so
+  the card and the comparison share one lookup. It also reports `isFallback`,
+  which is what lets the UI label a generic rate as generic.
+- `lib/compare-providers.ts` - `buildClinicCompare` / `buildDoctorCompare`.
+- `CompareKind` grew `"clinic" | "doctor"`; `buildCompareTable` routes to the
+  provider builders and keeps empty-row dropping and identical-row dimming.
+- Compare turns on for the clinic and doctor tabs in the Saved view, keyed off
+  `favoritedClinicIds` / `favoritedDoctorSlugs`.
+
+Still open: the "add your age and egg source" prompt when
+`clinicRatesAreGeneric` is true. The flag exists and PX-17 asserts it; the
+banner is not drawn yet, so a parent without a profile currently sees the
+generic rate WITHOUT the label - fix before this ships to parents.
 
 ## Build notes
 

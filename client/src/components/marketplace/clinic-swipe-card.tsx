@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { parseInsuranceValue } from "@shared/insurance-data";
+import { pickClinicRate } from "@/lib/clinic-rate";
 import { SwipeDeckCard } from "./swipe-deck-card";
 import { getClinicTabs, buildClinicDoctorTab } from "./swipe-mappers";
 import { useParentCostItems } from "@/lib/parent-programs";
@@ -133,19 +134,9 @@ export function ClinicSwipeCard({
   const cardIsNew = isNewPatient !== undefined ? isNewPatient : true;
   const allRates = provider.ivfSuccessRates || [];
 
-  // Same rate selection as the matcher / providers.controller.ts.
-  let rates: any = null;
-  if (cardEggSource === "donor") {
-    rates = allRates.find((r: any) => r.profileType === "donor" && r.metricCode === "pct_transfers_live_births_donor");
-  } else if (cardIsNew) {
-    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval")
-      || allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && r.metricCode === "pct_intended_retrievals_live_births");
-  } else {
-    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === cardAgeGroup && !r.isNewPatient && r.metricCode === "pct_intended_retrievals_live_births");
-  }
-  if (!rates) {
-    rates = allRates.find((r: any) => r.profileType === "own_eggs" && r.ageGroup === "under_35" && r.isNewPatient === true && r.metricCode === "pct_new_patients_live_birth_after_1_retrieval") || null;
-  }
+  // Same rate selection as the matcher / providers.controller.ts - see
+  // lib/clinic-rate, which the comparison uses too so the two cannot disagree.
+  const { rate: rates } = pickClinicRate(allRates, { eggSource: cardEggSource, ageGroup: cardAgeGroup, isNewPatient: cardIsNew });
   const pct = rates ? Math.round(Number(rates.successRate) * 100) : null;
   const natAvg = rates ? Math.round(Number(rates.nationalAverage) * 100) : null;
   const isTop10 = rates?.top10pct === true;

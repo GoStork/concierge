@@ -2174,19 +2174,43 @@ export default function MarketplacePage() {
   // Compare (Saved view). Parents shortlist and then decide by comparison;
   // without this it means browser tabs.
   const compareNavigate = useNavigate();
+  const { data: parentProfileForCompare } = useQuery<any>({
+    queryKey: ["/api/parent-profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/parent-profile", { credentials: "include" });
+      return res.ok ? res.json() : null;
+    },
+    staleTime: 5 * 60_000,
+  });
   const favoritedDonorIdsForCompare = useAppSelector((st) => st.ui.favoritedDonorIds);
+  const favoritedClinicIdsForCompare = useAppSelector((st) => st.ui.favoritedClinicIds);
+  const favoritedDoctorSlugsForCompare = useAppSelector((st) => st.ui.favoritedDoctorSlugs);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
-  const compareKind: "egg-donor" | "surrogate" | "sperm-donor" | null =
+  const compareKind: "egg-donor" | "surrogate" | "sperm-donor" | "clinic" | "doctor" | null =
     activeTab === "egg-donors" ? "egg-donor"
       : activeTab === "surrogates" ? "surrogate"
-        : activeTab === "sperm-donors" ? "sperm-donor" : null;
+        : activeTab === "sperm-donors" ? "sperm-donor"
+          : isIvfTab ? "clinic"
+            : isDoctorTab ? "doctor" : null;
   const compareSource: any[] =
     compareKind === "egg-donor" ? (eggDonors || [])
       : compareKind === "surrogate" ? (surrogates || [])
-        : compareKind === "sperm-donor" ? (spermDonors || []) : [];
+        : compareKind === "sperm-donor" ? (spermDonors || [])
+          : compareKind === "clinic" ? ((clinics as any) || [])
+            : compareKind === "doctor" ? ((doctors as any) || []) : [];
   const comparableSaved = useMemo(() => {
     if (!compareKind) return [];
+    // Clinics and doctors are compared as they arrive from the API - their
+    // builders read provider fields directly, not the swipe-card shape.
+    if (compareKind === "clinic") {
+      return compareSource.filter((c: any) => favoritedClinicIdsForCompare.includes(c.id));
+    }
+    if (compareKind === "doctor") {
+      return compareSource
+        .filter((d: any) => favoritedDoctorSlugsForCompare.includes(d.slug))
+        .map((d: any) => ({ ...d, id: d.slug }));
+    }
     const mapOne = (d: any) =>
       compareKind === "surrogate" ? mapDatabaseSurrogateToSwipeProfile(d)
         : compareKind === "sperm-donor" ? mapDatabaseSpermDonorToSwipeProfile(d)
@@ -2194,7 +2218,7 @@ export default function MarketplacePage() {
     return compareSource
       .filter((d: any) => favoritedDonorIdsForCompare.includes(d.id))
       .map((d: any) => ({ ...mapOne(d), id: d.id, providerId: d.providerId, profileData: d.profileData }));
-  }, [compareKind, compareSource, favoritedDonorIdsForCompare]);
+  }, [compareKind, compareSource, favoritedDonorIdsForCompare, favoritedClinicIdsForCompare, favoritedDoctorSlugsForCompare]);
   const toggleCompare = useCallback((id: string) => {
     setCompareIds((prev) => toggleCompareSelection(prev, id));
   }, []);
@@ -2231,7 +2255,7 @@ export default function MarketplacePage() {
             )}
             data-testid={`compare-pick-${p.id}`}
           >
-            <span className="t-micro-value">{buildTitle(p)}</span>
+            <span className="t-micro-value">{p.name || buildTitle(p)}</span>
           </button>
         );
       })}
@@ -2251,10 +2275,16 @@ export default function MarketplacePage() {
       kind={compareKind}
       profiles={compareSelected as any}
       available={comparableSaved as any}
+      tableOptions={{
+        rateContext: { eggSource, ageGroup, isNewPatient: isNewPatient !== "false" },
+        parentDiagnoses: (parentProfileForCompare?.diagnoses as string[]) || [],
+      }}
       onToggle={toggleCompare}
       onClose={() => setCompareOpen(false)}
       onOpenProfile={(p: any) => {
         setCompareOpen(false);
+        if (compareKind === "clinic") { compareNavigate(`/providers/${p.id}`); return; }
+        if (compareKind === "doctor") { compareNavigate(`/doctors/${p.slug || p.id}`); return; }
         const slug = compareKind === "surrogate" ? "surrogate" : compareKind === "sperm-donor" ? "spermdonor" : "eggdonor";
         compareNavigate(`/${slug}/${p.providerId}/${p.id}`);
       }}

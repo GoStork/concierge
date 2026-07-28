@@ -967,6 +967,12 @@ export const TEST_CASES: TestCaseDef[] = [
     desc: "No Tailwind palette utilities, hex colours or font-family in the new profile components - the standing CLAUDE.md rule, invisible until someone restyles the brand and half a page ignores it",
     interestedServices: [], messageCount: 0,
   },
+  {
+    id: "PX-17", persona: "profile-ux",
+    name: "PX-17: Clinics and doctors compare on what decides those choices",
+    desc: "Nobody picks a clinic on eye colour. Outcomes lead (her CDC rate, from the same lookup the clinic card uses - two lookups for one number is how a card and a comparison start disagreeing), then cost, access, scale. A doctor's rate is his CLINIC's, because CDC reports at clinic level and implying a physician-level statistic would invent a number we do not have. Specialties are matched against her own diagnoses, and a generic fallback rate must be reported as generic so the UI can label it",
+    interestedServices: [], messageCount: 0,
+  },
 ];
 
 export function getTestCaseInfo(): TestCaseInfo[] {

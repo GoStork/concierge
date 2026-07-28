@@ -336,8 +336,12 @@ export default function ParentHomePage() {
         );
       })()}
 
-      {/* Cost sheets */}
+      {/* Billing row: cost sheets and invoices sit side by side on desktop (both
+          are short 3-row lists) and stack on mobile. items-start so the shorter
+          card doesn't stretch to match the taller. */}
       {!isViewer && (
+        <div className="grid gap-6 lg:grid-cols-2 items-start">
+        {/* Cost sheets */}
         <Card className="p-5 space-y-3">
           <SectionHeader icon={<FileText className="w-5 h-5 text-primary" />} title="Cost Sheets" viewAllTo="/my/cost-sheets" />
           {costSheets.length === 0 ? (
@@ -362,10 +366,8 @@ export default function ParentHomePage() {
             </div>
           )}
         </Card>
-      )}
 
-      {/* Invoices summary */}
-      {!isViewer && (
+        {/* Invoices summary */}
         <Card className="p-5 space-y-3">
           <SectionHeader icon={<ReceiptIcon className="w-5 h-5 text-primary" />} title="Invoices" viewAllTo="/my/invoices" />
           <div className="grid grid-cols-2 gap-3">
@@ -389,6 +391,7 @@ export default function ParentHomePage() {
             </div>
           ))}
         </Card>
+        </div>
       )}
 
       {/* Agreements */}
