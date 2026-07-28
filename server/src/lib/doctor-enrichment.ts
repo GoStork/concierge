@@ -33,6 +33,13 @@ export const DOCTOR_MEMBER_SELECT = {
   languagesSpoken: true,
   boardCertifications: true,
   education: true,
+  // These three are read by the comparison table (compare-providers.ts). Leaving
+  // them out of the select does not fail loudly - the row just renders empty for
+  // every doctor, which looks identical to "we have no data" even when the
+  // column is populated. Keep this select in sync with that row list.
+  professionalMemberships: true,
+  medicalSchool: true,
+  graduationYear: true,
   yearsExperience: true,
   providerGender: true,
   offersVideoVisits: true,
@@ -112,7 +119,10 @@ export interface EnrichedDoctor {
   matchedSpecialties: string[];
   languagesSpoken: string[];
   boardCertifications: string[];
-  education: string | null;
+  education: string[];
+  professionalMemberships: string[];
+  medicalSchool: string | null;
+  graduationYear: number | null;
   yearsExperience: number | null;
   providerGender: string | null;
   offersVideoVisits: boolean;

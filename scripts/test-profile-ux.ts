@@ -878,6 +878,19 @@ async function px17() {
   check("the slack spacer is the last thing on the page",
     dr.indexOf("compare-swap-strip") < dr.indexOf("height: headSlack"));
   check("and the page clears the tray fixed over its bottom", /pb-28/.test(dr));
+  // The page wrapper in layout-shell carries `animate-in slide-in-from-bottom-4`,
+  // and an element with an animated transform becomes the containing block for
+  // every FIXED descendant - permanently, since the animation fills forwards.
+  // So `fixed inset-0` was that wrapper's box, not the viewport: it started
+  // below the site header (the Saved page showed above the drawer) and ran the
+  // full height of the page's content, so the drawer was taller than the screen
+  // and everything anchored to its bottom sat below the fold.
+  check("the drawer is an overlay on the viewport, not on its wrapper",
+    /createPortal\(/.test(dr) && /document\.body/.test(dr));
+  check("the tray escapes the same wrapper",
+    /createPortal\(compareTrayEl/.test(readFileSync("client/src/pages/marketplace-page.tsx", "utf8")));
+  check("and the tray stays above the drawer it opens",
+    /z-\[70\]/.test(dr) && /z-\[80\]/.test(readFileSync("client/src/components/marketplace/compare-select.tsx", "utf8")));
 
   check("and the drawer renders it as the green pill",
     /TOP_10_BADGE/.test(readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8")));

@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, TrendingUp, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -257,13 +258,25 @@ export function CompareDrawer({
 
   const groups = buildCompareTable(kind, profiles as any[], tableOptions);
 
-  return (
+  // Rendered into <body>, not where it sits in the tree. The page wrapper in
+  // layout-shell carries `animate-in slide-in-from-bottom-4`, and an element
+  // with an animated transform becomes the containing block for every FIXED
+  // descendant - permanently, because the animation fills forwards. So
+  // `fixed inset-0` was not the viewport at all: it was that wrapper's box,
+  // which starts below the site header (the Saved page showing above the
+  // drawer) and runs the full height of the page's content (so the drawer was
+  // far taller than the screen, its scrollport never matched the viewport, and
+  // everything anchored to its bottom sat below the fold). An overlay must not
+  // depend on where in the tree it happens to be mounted.
+  return createPortal(
     // ONE scrollport. The table used to sit in its own overflow-x container,
     // and because an element that scrolls in one axis scrolls in both, that
     // container - not the page - was what the sticky header measured itself
     // against. It never scrolled vertically, so the header never stuck. It only
     // looked like it did on egg donors, whose table is short enough to fit.
-    <div className="fixed inset-0 z-50 bg-background flex flex-col" data-testid="compare-drawer">
+    // z-[70]: above the mobile deck's own z-[60] container, which the drawer
+    // used to be nested inside and is now a sibling of.
+    <div className="fixed inset-0 z-[70] bg-background flex flex-col" data-testid="compare-drawer">
       <div className="shrink-0 bg-background border-b border-border px-4 py-3 flex items-center justify-between gap-3">
         <h2 className="font-display text-xl font-heading">Comparing {profiles.length}</h2>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close comparison" data-testid="compare-close">
@@ -435,6 +448,7 @@ export function CompareDrawer({
             straight under the tray, where nobody could reach it. */}
         <div style={{ height: headSlack }} aria-hidden />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

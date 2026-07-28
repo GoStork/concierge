@@ -194,7 +194,9 @@ export function CompareTray({
   return (
     <div
       className={cn(
-        "z-50 border-t border-border bg-card px-3 py-2.5 shadow-[0_-6px_24px_-12px_rgba(0,0,0,0.35)]",
+        // Above the comparison drawer (z-70), which opens from this tray and
+        // must never bury the control that opened it.
+        "z-[80] border-t border-border bg-card px-3 py-2.5 shadow-[0_-6px_24px_-12px_rgba(0,0,0,0.35)]",
         className,
       )}
       style={{ paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom, 0px))" }}

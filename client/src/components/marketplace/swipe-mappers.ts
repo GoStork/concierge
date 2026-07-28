@@ -13,6 +13,10 @@ import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay, dedupeProviderLocations } from "@/lib/format-location";
 import { getLocationFlag, cleanCityState, getCountryFlag } from "@/lib/country-flag";
 import { collectLocationCandidates } from "@shared/donor-location";
+import {
+  buildClinicExperience, buildClinicPracticeItems, buildParentMatchingItems, clinicServiceLabels,
+  type ClinicIvfMatching,
+} from "@/lib/clinic-cdc";
 
 // True while the provider is paying to boost this profile (denormalized sponsoredUntil in the future).
 export function isSponsored(row: any): boolean {
@@ -982,19 +986,7 @@ export function getClinicTabs(opts: {
   // Accepted insurances (carrier names) -> the Insurance tab.
   insurances?: string[];
   // IVF parent-matching requirements -> the "Parents Matching Requirements" tab.
-  matching?: {
-    twinsAllowed?: boolean | null;
-    genderSelectionAllowed?: boolean | null;
-    transferFromOtherClinics?: boolean | null;
-    maxAgeIp1?: number | null;
-    maxAgeIp2?: number | null;
-    biologicalConnection?: string | null;
-    acceptingPatients?: string[] | null;
-    // Informational only (NOT a matching rule): what donor type this
-    // clinic's egg donor program offers - so a parent wanting a KNOWN
-    // donor learns upfront that a clinic only has anonymous donors.
-    eggDonorType?: string | null;
-  } | null;
+  matching?: ClinicIvfMatching | null;
   // IVF surrogate-matching requirements -> the "Surrogate Matching Requirements"
   // tab, shown ONLY when showSurrogateMatching is true (parent seeks surrogacy).
   showSurrogateMatching?: boolean;
@@ -1035,17 +1027,6 @@ export function getClinicTabs(opts: {
 }): TabSection[] {
   const tabs: TabSection[] = [];
 
-  // Services this clinic offers (CDC Services & Profiles) - chips.
-  const SERVICE_CHIPS: { key: string; label: string }[] = [
-    { key: "donorEgg", label: "Donor Eggs" },
-    { key: "donatedEmbryo", label: "Donated Embryos" },
-    { key: "eggCryo", label: "Egg Freezing" },
-    { key: "embryoCryo", label: "Embryo Freezing" },
-    { key: "gestationalCarrier", label: "Gestational Carrier" },
-    { key: "singleWomen", label: "Single Women" },
-    { key: "femaleCouple", label: "Female Couples" },
-  ];
-
   // Tab 1 (Overview) - Founded year + the About description (plain text) below it.
   const overviewStats: TabItem[] = [];
   if ((opts.reviewCount || 0) > 0 && opts.avgOverallScore != null) {
@@ -1061,9 +1042,7 @@ export function getClinicTabs(opts: {
   if (tab1Groups.length > 0) tabs.push({ layoutType: "sections", title: undefined, items: [], groups: tab1Groups });
 
   // Tab 2 - Services + Locations (each location chip carries its country flag).
-  const serviceChipItems: TabItem[] = opts.cdcServices
-    ? SERVICE_CHIPS.filter((s) => opts.cdcServices![s.key] === true).map((s) => ({ label: s.label, value: "" }))
-    : [];
+  const serviceChipItems: TabItem[] = clinicServiceLabels(opts.cdcServices).map((label) => ({ label, value: "" }));
   const allClinicLocationLabels = dedupeProviderLocations(opts.locations || [])
     .map((l) => [l.city, l.state].filter(Boolean).join(", "))
     .filter((s) => s.trim() !== "");
@@ -1091,28 +1070,15 @@ export function getClinicTabs(opts: {
   // to the top and shown in the clinic color (isClinic:true), so they see the
   // clinic's experience in exactly what they're looking for; the clinic's next
   // strongest areas follow in the accent color.
-  const exp = opts.cdcExperience;
-  if (exp && Object.keys(exp).length > 0) {
-    const patientDx = (opts.patientDiagnoses || []).filter((d) => d in exp);
-    const matched = patientDx
-      .map((d) => ({ label: d, value: Math.round(exp[d]), isClinic: true }))
-      .sort((a, b) => b.value - a.value);
-    const others = Object.entries(exp)
-      .filter(([d, v]) => !patientDx.includes(d) && v >= 5 && !/other factor|unexplained/i.test(d))
-      .map(([d, v]) => ({ label: d, value: Math.round(v), isClinic: false }))
-      .sort((a, b) => b.value - a.value);
-    const expBars = [...matched, ...others].slice(0, matched.length > 0 ? 5 : 4);
-    if (expBars.length > 0) {
-      tabs.push({
-        layoutType: "success_bars",
-        title: patientDx.length > 0 ? "Experience with your needs" : "Clinic Experience",
-        subtitle: patientDx.length > 0
-          ? "Share of this clinic's IVF patients with your diagnosis"
-          : "What this clinic's patients most need help with",
-        items: [],
-        bars: expBars,
-      });
-    }
+  const experience = buildClinicExperience(opts.cdcExperience, opts.patientDiagnoses || []);
+  if (experience) {
+    tabs.push({
+      layoutType: "success_bars",
+      title: experience.title,
+      subtitle: experience.subtitle,
+      items: [],
+      bars: experience.bars,
+    });
   }
 
   // Costs tab - mini program cards (flag, Program N, name, total) like the profile.
@@ -1120,33 +1086,7 @@ export function getClinicTabs(opts: {
 
   // Parents Matching Requirements - the clinic's IVF program rules (mirrors the
   // agency card's matching tab).
-  const m = opts.matching || {};
-  const matchItems: TabItem[] = [];
-  if (m.twinsAllowed != null) matchItems.push({ label: m.twinsAllowed ? "Twin pregnancies allowed" : "Singleton pregnancies only", value: "", icon: Baby });
-  if (m.genderSelectionAllowed != null) matchItems.push({ label: m.genderSelectionAllowed ? "Gender selection allowed" : "No gender selection", value: "", icon: Users });
-  if (m.transferFromOtherClinics != null) matchItems.push({ label: m.transferFromOtherClinics ? "Accepts embryo transfers from other clinics" : "No outside embryo transfers", value: "", icon: Snowflake });
-  if (m.maxAgeIp1 != null) matchItems.push({ label: `Max age (IP1): ${m.maxAgeIp1}`, value: "", icon: Calendar });
-  if (m.maxAgeIp2 != null) matchItems.push({ label: `Max age (IP2): ${m.maxAgeIp2}`, value: "", icon: Calendar });
-  if (m.biologicalConnection) {
-    const bc = m.biologicalConnection === "at_least_one" ? "At least one biological parent required"
-      : m.biologicalConnection === "at_least_two" ? "Both parents must be biologically connected"
-      : m.biologicalConnection === "none" ? "No biological connection to embryos needed"
-      : m.biologicalConnection;
-    matchItems.push({ label: bc, value: "", icon: HeartHandshake });
-  }
-  const ACCEPT_LABELS: Record<string, string> = {
-    single_woman: "Single women", single_man: "Single men", straight_couple: "Straight couples",
-    straight_married_couple: "Married straight couples", gay_couple: "Gay couples", lesbian_couple: "Lesbian couples",
-  };
-  const accepting = (m.acceptingPatients || []).map((a) => ACCEPT_LABELS[a] || a).filter(Boolean);
-  if (accepting.length > 0) matchItems.push({ label: `Accepts: ${accepting.join(", ")}`, value: "", icon: Users });
-  if (m.eggDonorType) {
-    const edt = m.eggDonorType === "anonymous" ? "Anonymous egg donors only"
-      : m.eggDonorType === "known" ? "Known egg donors only"
-      : m.eggDonorType === "both" ? "Anonymous & known egg donors"
-      : m.eggDonorType;
-    matchItems.push({ label: edt, value: "", icon: Heart });
-  }
+  const matchItems: TabItem[] = buildParentMatchingItems(opts.matching).map((i) => ({ label: i.label, value: "", icon: i.icon }));
   if (matchItems.length > 0) tabs.push({ layoutType: "icon_list", title: "Parents Matching Requirements", items: matchItems });
 
   // Surrogate Matching Requirements - the clinic's rules for the surrogate they
@@ -1202,20 +1142,8 @@ export function getClinicTabs(opts: {
   }
 
   // How they practice (CDC cycle characteristics) - stats with a leading icon.
-  const PRACTICE_ROWS: { key: string; label: string; icon: LucideIcon }[] = [
-    { key: "pgtPct", label: "Genetic testing (PGT)", icon: Award },
-    { key: "icsiPct", label: "ICSI", icon: Syringe },
-    { key: "singleEmbryoPct", label: "Single-embryo transfers", icon: Baby },
-    { key: "frozenPct", label: "Frozen-embryo transfers", icon: Snowflake },
-    { key: "gestationalCarrierPct", label: "Gestational carrier", icon: HeartHandshake },
-  ];
-  const cyc = opts.cdcCycleStats;
-  if (cyc) {
-    const practiceItems: TabItem[] = PRACTICE_ROWS
-      .filter((r) => typeof cyc[r.key] === "number")
-      .map((r) => ({ label: r.label, value: `${Math.round(cyc[r.key])}%`, icon: r.icon }));
-    if (practiceItems.length > 0) tabs.push({ layoutType: "icon_list", title: "How they practice", items: practiceItems });
-  }
+  const practiceItems: TabItem[] = buildClinicPracticeItems(opts.cdcCycleStats);
+  if (practiceItems.length > 0) tabs.push({ layoutType: "icon_list", title: "How they practice", items: practiceItems });
 
   // Each doctor now gets their own face tab (built in clinic-swipe-card), so the
   // old "Doctors at this clinic" list tab is gone.

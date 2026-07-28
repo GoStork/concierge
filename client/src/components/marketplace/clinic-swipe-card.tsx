@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { deriveIvfParentContext, evaluateIvfRequirements, ivfRequirementsFromProvider } from "@shared/ivf-requirements";
-import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
+import { useParentProfile } from "@/hooks/use-parent-profile";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { parseInsuranceValue } from "@shared/insurance-data";
@@ -67,30 +66,10 @@ export function ClinicSwipeCard({
   const isMobile = useIsMobile();
   const parentAccountId = (user as any)?.parentAccountId as string | undefined;
 
-  // This parent's structured diagnoses (CDC labels) - shared react-query cache
-  // (same key the marketplace already uses), so all clinic cards dedupe to one
-  // fetch. Drives the personalized "Experience with your needs" tab.
-  const { data: parentProfile } = useQuery<any>({
-    queryKey: ["/api/parent-profile"],
-    queryFn: async () => {
-      const r = await fetch("/api/parent-profile", { credentials: "include" });
-      return r.ok ? r.json() : null;
-    },
-    enabled: !!parentAccountId,
-    staleTime: 60000,
-  });
-  const patientDiagnoses: string[] = useMemo(() => {
-    const dx: string[] = Array.isArray(parentProfile?.diagnoses) ? [...parentProfile.diagnoses] : [];
-    // Map existing needs/carrier signals to CDC experience labels so a parent who
-    // hasn't stated a diagnosis but needs a surrogate / donor still gets a match.
-    if (parentProfile?.needsSurrogate === true || /surrogate/i.test(parentProfile?.carrier || "")) {
-      if (!dx.includes("Gestational carrier")) dx.push("Gestational carrier");
-    }
-    if (parentProfile?.needsEggDonor === true || /donor/i.test(parentProfile?.eggSource || "")) {
-      if (!dx.includes("Egg or embryo banking")) dx.push("Egg or embryo banking");
-    }
-    return dx;
-  }, [parentProfile]);
+  // This parent's profile + structured diagnoses (CDC labels) - shared hook and
+  // react-query cache (the key the marketplace already uses), so all clinic
+  // cards dedupe to one fetch. Drives the "Experience with your needs" tab.
+  const { parentProfile, diagnoses: patientDiagnoses } = useParentProfile();
 
   useEffect(() => {
     if (providerProp) return; // marketplace supplies the row; skip the per-card fetch

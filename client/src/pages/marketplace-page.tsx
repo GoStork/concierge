@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useInfiniteQuery, keepPreviousData } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -2467,8 +2468,12 @@ export default function MarketplacePage() {
       {compareLaunchEl("light")}
       {compareDrawerEl}
       {/* Fixed, because the desktop Saved page scrolls for pages: the tray has
-          to stay reachable from wherever the parent stopped scrolling. */}
-      {compareTrayEl("fixed inset-x-0 bottom-0")}
+          to stay reachable from wherever the parent stopped scrolling - and
+          portalled, because the page wrapper's slide-in animation leaves a
+          transform behind, which makes it the containing block for anything
+          fixed inside it. `bottom-0` would be the bottom of the page's content,
+          not of the screen. */}
+      {createPortal(compareTrayEl("fixed inset-x-0 bottom-0"), document.body)}
 
       {compareMode && canCompare ? (
         compareSelectEl("light", "pt-2")
