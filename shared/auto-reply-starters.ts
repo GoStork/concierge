@@ -15,11 +15,20 @@
  * UT-10 enforces that.
  */
 
+/**
+ * Note there is no {{call_type}} token, deliberately.
+ *
+ * This message fires only on a parent's FIRST booking with a provider (see the
+ * send-once rule), and a first booking is a consultation - match calls and
+ * doctor calls happen later in the relationship, by which point the greeting
+ * has already gone out and will not fire again. A call-type token would render
+ * "consultation" forever: a confusing way to type a word. renderAutoReplyBody
+ * still substitutes it if an old template contains one, so nothing breaks.
+ */
 export const AUTO_REPLY_TOKENS = [
   { token: "{{parent_name}}", hint: "The parent's first name" },
   { token: "{{staff_name}}", hint: "Whoever the call is booked with" },
   { token: "{{provider_name}}", hint: "Your organization's name" },
-  { token: "{{call_type}}", hint: "consultation / match call / doctor call" },
   { token: "{{call_time}}", hint: "The scheduled time, in the parent's timezone" },
 ] as const;
 
@@ -33,8 +42,8 @@ export type AutoReplyStarter = {
 };
 
 const OPENER =
-  "Hi {{parent_name}}, thanks for booking - this is {{staff_name}} from {{provider_name}}. " +
-  "I'm looking forward to our {{call_type}} on {{call_time}}.";
+  "Hi {{parent_name}}, thanks for booking your consultation - this is {{staff_name}} from " +
+  "{{provider_name}}. I'm looking forward to speaking with you on {{call_time}}.";
 
 const CLOSER = "If anything comes up before then, just reply here and I'll get back to you.";
 

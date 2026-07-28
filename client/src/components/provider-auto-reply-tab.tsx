@@ -231,9 +231,10 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
       <div>
         <h2 className="t-section-title font-heading">Booking auto-reply</h2>
         <p className="t-helper mt-1 max-w-2xl">
-          When a parent books a call with you, this message is posted into your chat with
-          them right away, under your name. Write it addressed to the parent. Each parent
-          receives it once per service line, so a second booking in the same thread stays quiet.
+          Your introduction. When a parent books their <strong>first consultation</strong> with
+          you, this message is posted into your chat with them right away, under your name -
+          so they hear from you immediately instead of waiting. Write it addressed to the parent.
+          It is sent once per parent, so later calls with the same family stay quiet.
         </p>
       </div>
 
@@ -243,8 +244,9 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
           <MessageSquarePlus className="h-8 w-8 mx-auto text-primary/70" />
           <p className="t-card-heading font-heading mt-3">No auto-reply yet</p>
           <p className="t-helper mt-1 max-w-md mx-auto">
-            Parents currently hear nothing from you until you open the chat yourself.
-            A short greeting closes that gap.
+            A parent who books a consultation currently hears nothing from you until you
+            open the chat yourself. A short introduction closes that gap. One is ready to
+            use - open it, adjust the wording, save.
           </p>
           <Button className="mt-4" onClick={() => setDraft({ ...EMPTY_DRAFT })} data-testid="button-create-auto-reply">
             <Plus className="h-4 w-4 mr-1.5" />
