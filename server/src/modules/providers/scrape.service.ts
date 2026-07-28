@@ -1481,35 +1481,18 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
         }
       }
 
-      // Roster-block text as a bioRaw fallback for clinics with no per-doctor
-      // page (the majority - they list everyone on one page). The block is the
-      // ~2000 chars around this person's photo, which on most rosters is their
-      // whole bio including training.
-      //
-      // GUARDED: on a dense roster grid that window can spill into the NEXT
-      // doctor, and attributing another physician's medical school to this one
-      // is worse than leaving the field blank. So only accept a block that
-      // mentions exactly one real person - if two names appear, we cannot tell
-      // whose training is whose, and we take nothing.
-      if (!doctorRawTextMap.has(nameKey) && nearbyText.length >= 300) {
-        const peopleInBlock = new Set(
-          namePatterns
-            .map((n) => n.replace(/^Dr\.?\s+/i, "").trim())
-            .filter((n) => looksLikePersonName(n))
-            .map((n) => normalizeNameKey(n))
-            .filter((k) => k.length >= 4),
-        );
-        if (peopleInBlock.size === 1 && peopleInBlock.has(nameKey)) {
-          const text = nearbyText.trim().slice(0, 12000);
-          doctorRawTextMap.set(nameKey, text);
-          const fl = firstLastKey(candidate);
-          if (fl.length >= 4 && !doctorRawTextMap.has(fl)) doctorRawTextMap.set(fl, text);
-        }
-      }
+      // NOTE: deliberately NOT harvesting bioRaw from this roster block. The
+      // block is the ~2000 chars around a person's photo, which on a dense
+      // roster grid spills into the NEXT doctor - attributing another
+      // physician's medical school to this one is worse than a blank field.
+      // Guarding on "block mentions exactly one person" was tried and rejected:
+      // it discarded every real doctor (their blocks all name several people)
+      // while admitting two-word page furniture like "Care Navigators" that
+      // reads as a person name. bioRaw comes only from a doctor's OWN page,
+      // where attribution is unambiguous.
     }
   }
   console.log(`[scraper] After team HTML parsing: ${doctorBioMap.size} bios, ${doctorTitleMap.size} titles, ${doctorPhotoMap.size} photos, ${doctorRawTextMap.size} raw texts`);
-  console.log(`[scraper] DEBUG rawkeys: ${[...doctorRawTextMap.keys()].join(", ")}`);
 
   if (locationAddresses.length > 0) {
     combinedText += `\n=== INDIVIDUAL LOCATION PAGES (${locationAddresses.length} locations found) ===\n`;
