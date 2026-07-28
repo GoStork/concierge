@@ -20,6 +20,9 @@ const ACRONYMS = new Set([
   "vip", "icsi", "pgs", "pgd", "tese", "hsg", "amh", "fsh", "sart", "eta",
 ]);
 
+/** Words that stay lowercase inside a label, never at its start. */
+const SMALL_WORDS = new Set(["of", "and", "or", "the", "to", "in", "for", "a", "an", "at", "by", "on", "with", "from"]);
+
 export function formatFieldLabel(key: string): string {
   const raw = String(key ?? "").trim();
   if (!raw) return "";
@@ -37,12 +40,17 @@ export function formatFieldLabel(key: string): string {
 
   return spaced
     .split(/\s+/)
-    .map((word) => {
+    .map((word, i) => {
       const lower = word.toLowerCase();
       if (ACRONYMS.has(lower)) return lower.toUpperCase();
       // Leave any word the source already capitalised alone - that includes
       // acronyms we don't know about and names like "McKinney".
       if (/[A-Z]/.test(word)) return word;
+      // Small words stay lowercase inside a label. "Number of Pregnancies" is
+      // how a person wrote it, and title-casing it to "Number Of Pregnancies"
+      // makes a human label look machine-generated - the exact thing this
+      // function exists to avoid.
+      if (i > 0 && SMALL_WORDS.has(lower)) return lower;
       return word.charAt(0).toUpperCase() + word.slice(1);
     })
     .join(" ");

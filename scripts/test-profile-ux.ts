@@ -40,6 +40,7 @@ import {
   mapDatabaseSpermDonorToSwipeProfile, buildTitle,
 } from "../client/src/components/marketplace/swipe-mappers";
 import { buildCompareTable, COMPARE_MAX, toggleCompareSelection } from "../client/src/components/marketplace/compare-drawer";
+import { compareCellsFromProfile, mergeCompareCells } from "../client/src/lib/compare-sections";
 import { collectOwnWords, validateQuote } from "../server/src/modules/providers/highlight-quote";
 import { profileDataToText } from "../server/src/modules/providers/profile-sync.service";
 import { programDisplayName } from "../server/src/modules/costs/program-name";
@@ -79,6 +80,11 @@ async function px01() {
   check("parenthesised human labels survive",
     formatFieldLabel("Embryo Transfer (One Cycle)") === "Embryo Transfer (One Cycle)", formatFieldLabel("Embryo Transfer (One Cycle)"));
   check("a name keeps its inner capital", formatFieldLabel("McKinney Fee") === "McKinney Fee", formatFieldLabel("McKinney Fee"));
+  // Title-casing "of" made a human label look machine-generated.
+  check("small words stay lowercase inside a label",
+    formatFieldLabel("Number of Pregnancies") === "Number of Pregnancies", formatFieldLabel("Number of Pregnancies"));
+  check("but not at the start of one",
+    formatFieldLabel("to_intended_parents") === "To Intended Parents", formatFieldLabel("to_intended_parents"));
 
   check("looksLikeRawKey flags underscores", looksLikeRawKey("agency_fee"));
   check("looksLikeRawKey flags camelCase", looksLikeRawKey("agencyFee"));
@@ -445,6 +451,50 @@ async function px10() {
   check("surrogates are compared on deliveries, not eggs retrieved",
     sRows.includes("Live births") && !sRows.includes("Eggs retrieved"), JSON.stringify(sRows));
   check("surrogate cost uses base compensation", sRows.includes("Base compensation"), JSON.stringify(sRows));
+
+  // The comparison used to read only scalar columns - cost, age, height - which
+  // is everything already on the card. What decides between two surrogates is in
+  // her sections, and they were absent entirely.
+  const carriedTwice = {
+    id: "s1", liveBirths: 2,
+    profileData: {
+      "Pregnancy History": { "Number of Pregnancies": "2", "Complications": "None" },
+      "Medical History": { "Health Conditions": "None", "Medications": "Prenatal vitamins" },
+      "Support System": { "Who supports you": "Husband and my mother" },
+      "Physical Characteristics": { "Shoe Size": "8" },
+    },
+  };
+  const carriedOnce = {
+    id: "s2", liveBirths: 1,
+    profileData: {
+      "Pregnancy History": { "Number of Pregnancies": "1" },
+      "Medical History": { "Health Conditions": "Hypothyroidism" },
+    },
+  };
+  const withSections = buildCompareTable("surrogate", [carriedTwice, carriedOnce]);
+  const groupNames = withSections.map((g) => g.group);
+  check("cost and availability still lead", groupNames[0] === "Cost & availability", JSON.stringify(groupNames));
+  check("pregnancy history is compared, and comes before medical",
+    groupNames.indexOf("Pregnancy History") > 0 && groupNames.indexOf("Pregnancy History") < groupNames.indexOf("Medical History"),
+    JSON.stringify(groupNames));
+  check("support system is compared", groupNames.includes("Support System"), JSON.stringify(groupNames));
+  check("an unranked section is not dragged in", !groupNames.includes("Physical Characteristics"), JSON.stringify(groupNames));
+
+  const preg = withSections.find((g) => g.group === "Pregnancy History")!;
+  check("a row one profile leaves blank is kept, showing the gap",
+    preg.rows.some((r) => r.label === "Complications" && r.values[0] === "None" && r.values[1] === null),
+    JSON.stringify(preg.rows));
+  check("answers land under the right profile",
+    preg.rows.find((r) => r.label === "Number of Pregnancies")?.values.join("|") === "2|1",
+    JSON.stringify(preg.rows.find((r) => r.label === "Number of Pregnancies")));
+
+  // A letter is read, not scanned across four columns.
+  const longform = compareCellsFromProfile({ "Letter to Intended Parents": { Letter: "x".repeat(400) } }, "surrogate");
+  check("a full letter is not forced into a table cell", longform.length === 0, JSON.stringify(longform));
+  check("placeholders never become a compared value",
+    compareCellsFromProfile({ "Medical History": { Allergies: "--" } }, "surrogate").length === 0);
+  check("no profileData at all is survivable", compareCellsFromProfile(null, "surrogate").length === 0);
+  check("merging with nothing to merge yields nothing", mergeCompareCells([[], []]).length === 0);
 
   check("the shortlist is capped at four", COMPARE_MAX === 4, String(COMPARE_MAX));
   check("a single profile still builds a table", buildCompareTable("egg-donor", [a]).length > 0);

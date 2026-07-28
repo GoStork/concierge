@@ -6,6 +6,7 @@ import { formatMoneyDollars } from "@/lib/format-money";
 import { formatLocationDisplay } from "@/lib/format-location";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatStatusLabel } from "@/lib/format-label";
+import { compareCellsFromProfile, mergeCompareCells } from "@/lib/compare-sections";
 import { buildTitle, type SwipeDeckProfile } from "@/components/marketplace/swipe-mappers";
 
 /**
@@ -113,7 +114,7 @@ export type CompareTableGroup = { group: string; rows: { label: string; values: 
  * itself a difference between them.
  */
 export function buildCompareTable(kind: CompareKind, profiles: any[]): CompareTableGroup[] {
-  return rowsFor(kind)
+  const scalar = rowsFor(kind)
     .map(({ group, rows }) => ({
       group,
       rows: rows
@@ -121,6 +122,16 @@ export function buildCompareTable(kind: CompareKind, profiles: any[]): CompareTa
         .map((r) => ({ label: r.label, values: profiles.map((p) => r.get(p)) })),
     }))
     .filter((g) => g.rows.length > 0);
+
+  // Then the substance: her own sections, in the same priority order the
+  // profile page uses. Cost and availability still lead - they disqualify
+  // fastest - but everything after them is what actually decides between two
+  // people, and the comparison used to omit it entirely.
+  const fromSections = mergeCompareCells(
+    profiles.map((p) => compareCellsFromProfile(p.profileData, kind as any)),
+  );
+
+  return [...scalar, ...fromSections];
 }
 
 export function CompareDrawer({

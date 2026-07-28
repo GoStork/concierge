@@ -68,6 +68,11 @@ export function sectionRank(name: string, kind: ProfileKind): number {
   return i === -1 ? patterns.length : i;
 }
 
+/** True when the priority list actually names this section, rather than it just falling to the tail. */
+export function isRankedSection(name: string, kind: ProfileKind): boolean {
+  return sectionRank(name, kind) < (PRIORITY[kind] || PRIORITY["egg-donor"]).length;
+}
+
 /**
  * Order the profile's sections for this kind of profile.
  *

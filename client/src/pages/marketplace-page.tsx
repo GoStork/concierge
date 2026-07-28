@@ -2193,7 +2193,7 @@ export default function MarketplacePage() {
           : mapDatabaseDonorToSwipeProfile(d);
     return compareSource
       .filter((d: any) => favoritedDonorIdsForCompare.includes(d.id))
-      .map((d: any) => ({ ...mapOne(d), id: d.id, providerId: d.providerId }));
+      .map((d: any) => ({ ...mapOne(d), id: d.id, providerId: d.providerId, profileData: d.profileData }));
   }, [compareKind, compareSource, favoritedDonorIdsForCompare]);
   const toggleCompare = useCallback((id: string) => {
     setCompareIds((prev) => toggleCompareSelection(prev, id));
