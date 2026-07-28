@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-bar";
 import { getFileTypeMeta, formatFileSize } from "@/lib/file-type-icon";
 import { FileTypeGlyph } from "@/components/chat/file-type-glyph";
 import { AUTO_REPLY_STARTERS, AUTO_REPLY_TOKENS, autoReplyStartersFor, bodyPromisesAttachment, type AutoReplyStarter } from "@shared/auto-reply-starters";
@@ -75,6 +76,7 @@ const EMPTY_DRAFT: DraftState = {
 
 export default function ProviderAutoReplyTab({ providerId }: { providerId?: string }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -189,11 +191,6 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
     }
   }
 
-  /**
-   * Swap the body to a starter. Never silently discards writing: if the body
-   * is neither empty nor an untouched starter, it is the provider's own text
-   * and replacing it needs their say-so.
-   */
   /** True when `text` is an untouched starter for ANY service line - the
    *  provider has not written anything of their own worth protecting. */
   function isAnyStarterBody(text: string): boolean {
@@ -201,11 +198,24 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
     return all.some((svc) => autoReplyStartersFor(svc).some((s) => s.body.trim() === text));
   }
 
-  function applyStarter(starter: AutoReplyStarter) {
+  /**
+   * Swap the body to a starter. Never silently discards writing: if the body
+   * is neither empty nor an untouched starter, it is the provider's own text
+   * and replacing it needs their say-so.
+   */
+  async function applyStarter(starter: AutoReplyStarter) {
     if (!draft) return;
     const current = draft.body.trim();
     const isUntouched = current === "" || isAnyStarterBody(current);
-    if (!isUntouched && !confirm("Replace your message with this starter? Your current text will be lost.")) return;
+    if (!isUntouched) {
+      const ok = await confirm({
+        title: "Replace your message?",
+        message: "You have written your own message. Starting from this template will discard it.",
+        confirmLabel: "Replace",
+        tone: "warning",
+      });
+      if (!ok) return;
+    }
     setDraft({ ...draft, body: starter.body });
     setPreview(null);
   }
@@ -319,10 +329,14 @@ export default function ProviderAutoReplyTab({ providerId }: { providerId?: stri
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        if (confirm("Delete this auto-reply? Parents who book will stop receiving it.")) {
-                          deleteMutation.mutate(r.id);
-                        }
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Delete this auto-reply?",
+                          message: `Parents booking their first consultation will stop receiving this introduction (${who} - ${what}). Your other templates are unaffected.`,
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        });
+                        if (ok) deleteMutation.mutate(r.id);
                       }}
                       data-testid={`button-delete-auto-reply-${r.id}`}
                     >
