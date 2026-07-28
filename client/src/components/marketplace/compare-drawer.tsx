@@ -232,28 +232,28 @@ export function CompareDrawer({
               <tr>
                 <th className="w-[168px]" />
                 {profiles.map((p: any) => (
-                  <th key={p.id} className="p-2 align-bottom text-left font-normal">
+                  <th key={p.id} className="p-2 align-bottom text-center font-normal">
                     <button
                       type="button"
                       onClick={() => onOpenProfile(p)}
-                      className="block w-full text-left focus:outline-none focus:ring-2 focus:ring-primary/40 rounded-[var(--radius)]"
+                      className="block w-full text-center focus:outline-none focus:ring-2 focus:ring-primary/40 rounded-[var(--radius)]"
                       data-testid={`compare-open-${p.id}`}
                     >
                       {comparePhoto(p) ? (
                         <img
                           src={comparePhoto(p)!}
                           alt=""
-                          className={cn("w-full max-w-[150px] rounded-[var(--radius)] mb-2", kind === "clinic" ? "aspect-square object-contain bg-secondary/40 p-2" : "aspect-[3/4] object-cover object-top")}
+                          className={cn("w-full max-w-[150px] mx-auto rounded-[var(--radius)] mb-2", kind === "clinic" ? "aspect-square object-contain bg-secondary/40 p-2" : "aspect-[3/4] object-cover object-top")}
                         />
                       ) : (
-                        <div className="w-full max-w-[150px] aspect-[3/4] rounded-[var(--radius)] bg-secondary mb-2" />
+                        <div className="w-full max-w-[150px] mx-auto aspect-[3/4] rounded-[var(--radius)] bg-secondary mb-2" />
                       )}
                       <span className="t-field-value block truncate">{compareTitle(p)}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => onToggle(p.id)}
-                      className="t-helper mt-1 block hover:underline"
+                      className="t-helper mt-1 mx-auto block hover:underline"
                       data-testid={`compare-remove-${p.id}`}
                     >
                       Remove
@@ -292,11 +292,11 @@ export function CompareDrawer({
                         data-testid={`compare-row-${row.label.toLowerCase().replace(/\s+/g, "-")}`}
                         data-identical={identical ? "true" : "false"}
                       >
-                        <td className="py-2.5 pr-4 align-top">
+                        <td className="py-2.5 pr-4 align-top text-left">
                           <span className="t-field-label break-words">{row.label}</span>
                         </td>
                         {row.values.map((value, i) => (
-                          <td key={profiles[i]?.id ?? i} className="py-2.5 pr-4 align-top">
+                          <td key={profiles[i]?.id ?? i} className="py-2.5 px-3 align-top text-center">
                             <CompareValue value={value} dim={identical} />
                           </td>
                         ))}

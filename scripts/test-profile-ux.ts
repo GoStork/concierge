@@ -581,7 +581,7 @@ async function px12() {
 
   const drawer = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");
   check("the comparison columns follow the same framing rule",
-    /max-w-\[\d+px\] aspect-\[\d+\/\d+\]/.test(drawer));
+    /max-w-\[\d+px\]/.test(drawer) && /aspect-\[\d+\/\d+\]/.test(drawer));
 
   // The profile's photo rail crops NOTHING. A fixed portrait frame cut the two
   // children out of the sides of a surrogate's family photo, and on these
@@ -808,6 +808,13 @@ async function px17() {
   check("Top 10% carries the card's badge text, not a bare Yes",
     outcomes.find((r) => r.label === "Top 10% nationally")?.values[0] === TOP_10_BADGE,
     JSON.stringify(outcomes.find((r) => r.label === "Top 10% nationally")));
+  // Values centre under their column so the eye can run a row without
+  // re-finding where each one starts; row labels stay left, since they read as
+  // a list rather than as data.
+  const dr = readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8");
+  check("value columns are centre-aligned", /align-top text-center/.test(dr) && /align-bottom text-center/.test(dr));
+  check("row labels stay left-aligned", /align-top text-left/.test(dr));
+
   check("and the drawer renders it as the green pill",
     /TOP_10_BADGE/.test(readFileSync("client/src/components/marketplace/compare-drawer.tsx", "utf8")));
 
