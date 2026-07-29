@@ -204,6 +204,50 @@ export async function notifyPartnerSigned(params: {
 }
 
 /**
+ * The provider orgs an IP-form submission is shared with.
+ *
+ * ONE definition, used by both the notifier below and the contact-release
+ * writer in ip-form-router.ts. They must not drift: the set that gets the
+ * "X submitted their form" email carrying the parents' full legal names is
+ * exactly the set that gets Gate B opened, because the form itself contains the
+ * email, phone, date of birth and home address.
+ *
+ * The status filter is the point. The IpFormResponse is ONE global row per
+ * parent account (parentAccountId is @unique) with no provider column, so the
+ * fan-out has to be computed - and it used to have no status filter at all,
+ * meaning an agency that answered a single anonymous whisper received the
+ * parents' legal names. Now a provider has to have actually met them: a booked
+ * or connected session, or a booking.
+ */
+export async function ipFormProviderIds(memberIds: string[]): Promise<string[]> {
+  if (!memberIds.length) return [];
+  const [sessions, bookings] = await Promise.all([
+    prisma.aiChatSession.findMany({
+      where: {
+        userId: { in: memberIds },
+        providerId: { not: null },
+        status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
+      },
+      select: { providerId: true },
+    }),
+    prisma.booking.findMany({
+      where: { parentUserId: { in: memberIds } },
+      select: { providerUser: { select: { providerId: true } } },
+    }),
+  ]);
+  const providerIds = new Set<string>();
+  for (const s of sessions) if (s.providerId) providerIds.add(s.providerId);
+  for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
+  if (!providerIds.size) return [];
+
+  const formProviders = await prisma.provider.findMany({
+    where: { id: { in: [...providerIds] }, collectsIntendedParentForm: true },
+    select: { id: true },
+  });
+  return formProviders.map((p) => p.id);
+}
+
+/**
  * On submission: in-app + email every connected provider org that has an
  * APPROVED surrogacy service, linking to their forms page.
  */
@@ -230,23 +274,12 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
   if (!names.length) names = memberUsers.map((m) => m.name).filter(Boolean) as string[];
   const parentNames = names.join(" & ") || "An intended parent";
 
-  // Connected provider orgs (session or booking) that collect the IP form.
-  const [sessions, bookings] = await Promise.all([
-    prisma.aiChatSession.findMany({ where: { userId: { in: memberIds }, providerId: { not: null } }, select: { providerId: true } }),
-    prisma.booking.findMany({
-      where: { parentUserId: { in: memberIds } },
-      select: { providerUser: { select: { providerId: true } } },
-    }),
-  ]);
-  const providerIds = new Set<string>();
-  for (const s of sessions) if (s.providerId) providerIds.add(s.providerId);
-  for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
+  const providerIds = new Set<string>(await ipFormProviderIds(memberIds));
   if (!providerIds.size) return;
 
   const formProviders = await prisma.provider.findMany({
     where: {
       id: { in: [...providerIds] },
-      collectsIntendedParentForm: true,
     },
     select: {
       id: true,

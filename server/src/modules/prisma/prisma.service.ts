@@ -237,6 +237,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.providerParentBriefing;
   }
 
+  get parentContactRelease() {
+    return prisma.parentContactRelease;
+  }
+
   get journeyPreferences() {
     return prisma.journeyPreferences;
   }

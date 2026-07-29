@@ -13,6 +13,10 @@
 import { prisma } from "./db";
 
 export type JourneyEventType =
+  // Gate B of the two-tier privacy model opened for a (provider, parent) pair.
+  // Carries `metadata.reason` (IP_FORM | INVOICE | AGREEMENT | CALLBACK | ADMIN)
+  // so the timeline shows WHY a provider gained the parent's contact details.
+  | "CONTACT_RELEASED"
   // Consultation lifecycle
   | "CONSULTATION_SCHEDULED"
   | "CONSULTATION_CONFIRMED"

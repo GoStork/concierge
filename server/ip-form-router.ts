@@ -21,6 +21,8 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
+import { hasContactRelease, parentAccountKey, releaseParentContact, releasedAccountIds } from "./parent-privacy";
+import { ipFormProviderIds } from "./notify-ip-form";
 import { maritalImpliesTwoParents } from "./ip-form-defaults";
 import { providerProgramTypes, providerOffersSurrogacy } from "./ip-form-flow";
 
@@ -209,18 +211,44 @@ export function findMissingRequired(
   return missing;
 }
 
-/** Provider is connected to this parent account via a chat session or booking. */
+/**
+ * May this provider read this parent's Intended Parent Form?
+ *
+ * The form is the single richest PII payload on the platform: legal names, date
+ * of birth, home address, emergency contacts, email and phone. So the answer is
+ * Gate B, not "do we know each other".
+ *
+ * This used to be `findFirst({ userId: {in}, providerId })` with NO status
+ * filter, which was a live leak: a whisper stamps providerId onto the parent's
+ * PRIVATE Eva session (see parent-visibility.ts), so a provider who answered one
+ * anonymous question could download the parent's home address. A booking opens
+ * Gate A - it does not open the PDF.
+ */
 async function providerConnectedToAccount(providerId: string, memberIds: string[]): Promise<boolean> {
-  const session = await prisma.aiChatSession.findFirst({
-    where: { userId: { in: memberIds }, providerId },
-    select: { id: true },
+  const accountKeys = await accountKeysFor(memberIds);
+  for (const key of accountKeys) {
+    if (await hasContactRelease(providerId, key)) return true;
+  }
+  return false;
+}
+
+/**
+ * Every account key a set of member ids could have been released under.
+ *
+ * `parentAccountId` is nullable, so a release written while a user was solo is
+ * keyed on their userId. Checking both forms is what stops a release from
+ * silently orphaning when they later join a ParentAccount.
+ */
+async function accountKeysFor(memberIds: string[]): Promise<string[]> {
+  if (!memberIds.length) return [];
+  const users = await prisma.user.findMany({
+    where: { id: { in: memberIds } },
+    select: { id: true, parentAccountId: true },
   });
-  if (session) return true;
-  const booking = await prisma.booking.findFirst({
-    where: { parentUserId: { in: memberIds }, providerUser: { providerId } },
-    select: { id: true },
-  });
-  return !!booking;
+  const keys = new Set<string>();
+  for (const u of users) keys.add(parentAccountKey(u));
+  for (const id of memberIds) keys.add(id);
+  return [...keys];
 }
 
 /** Provider has an APPROVED surrogacy service (same heuristic as classifyJourneyType). */
@@ -622,6 +650,27 @@ ipFormRouter.post("/api/ip-form/submit", requireAuth, async (req, res) => {
       actorRole: "parent",
       metadata: { responseId: response.id },
     });
+    // Open Gate B for the providers this form is shared with, BEFORE notifying
+    // them. The notify email prints the parents' full legal names and the
+    // in-chat card carries a PDF handle, so both have to sit behind a release
+    // that is already written - otherwise there is a window where the provider
+    // holds the address while the app still says it is hidden.
+    const memberIdsForRelease = (await prisma.user.findMany({
+      where: { OR: [{ parentAccountId: accountId }, { id: accountId }] },
+      select: { id: true },
+    })).map((u) => u.id);
+    const releaseProviderIds = await ipFormProviderIds(memberIdsForRelease);
+    for (const pid of releaseProviderIds) {
+      await releaseParentContact({ providerId: pid, parentAccountId: accountId, reason: "IP_FORM" });
+      void emitJourneyEvent({
+        eventType: "CONTACT_RELEASED",
+        parentAccountId: accountId,
+        providerId: pid,
+        actorRole: "parent",
+        metadata: { reason: "IP_FORM", responseId: response.id },
+      });
+    }
+
     const { notifyProvidersIpFormSubmitted } = await import("./notify-ip-form");
     void notifyProvidersIpFormSubmitted(response.id).catch((e: any) =>
       console.error(`[ip-form] provider notify failed: ${e?.message}`),
@@ -803,22 +852,25 @@ ipFormRouter.post("/api/ip-form/guest/:token/sign", guestThrottle, async (req, r
 // ─── Provider endpoints ──────────────────────────────────────────────────────
 
 /** Resolve parent accounts connected to this provider (sessions + bookings). */
+/**
+ * Accounts whose IP form this provider may list.
+ *
+ * Sourced from the contact releases rather than from "any session or booking":
+ * one indexed query instead of three, and correct by construction, since a
+ * release is exactly the event that makes the form shareable with them.
+ */
 async function connectedAccountIds(providerId: string): Promise<Map<string, string[]>> {
-  const [sessions, bookings] = await Promise.all([
-    prisma.aiChatSession.findMany({ where: { providerId, userId: { not: undefined } }, select: { userId: true } }),
-    prisma.booking.findMany({ where: { providerUser: { providerId }, parentUserId: { not: null } }, select: { parentUserId: true } }),
-  ]);
-  const userIds = new Set<string>();
-  for (const s of sessions) if (s.userId) userIds.add(s.userId);
-  for (const b of bookings) if (b.parentUserId) userIds.add(b.parentUserId);
+  const accountIds = await releasedAccountIds(providerId);
+  if (!accountIds.length) return new Map();
   const users = await prisma.user.findMany({
-    where: { id: { in: [...userIds] } },
+    where: { OR: [{ parentAccountId: { in: accountIds } }, { id: { in: accountIds } }] },
     select: { id: true, parentAccountId: true },
   });
   // accountId -> memberIds seen
   const map = new Map<string, string[]>();
   for (const u of users) {
-    const acct = u.parentAccountId || u.id;
+    const acct = parentAccountKey(u);
+    if (!accountIds.includes(acct)) continue;
     map.set(acct, [...(map.get(acct) || []), u.id]);
   }
   return map;

@@ -40,6 +40,10 @@ import { CostSheetAutoDraftService } from "../billing/cost-sheet-auto-draft.serv
 import { AutoReplyService } from "../providers/auto-reply.service";
 import { ParentBriefingService } from "../providers/parent-briefing.service";
 import { assertNoContactInfo } from "../../../contact-guard";
+import {
+  GATES_CLOSED, calendarAttendeesFor, parentAccountKey, parentDisplayName,
+  redactBookingForProvider, releasedAccountIds, resolveParentGates, resolveParentGatesBatch,
+} from "../../../parent-privacy";
 import { Observable } from "rxjs";
 
 function isValidTimezone(tz: string): boolean {
@@ -827,13 +831,20 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       accountMembersMap[accountId] = members;
     }
 
-    let results = bookings.map(b => {
-      const accountId = (b as any).parentUser?.parentAccountId;
-      return {
-        ...b,
-        parentAccountMembers: accountId ? (accountMembersMap[accountId] || []) : [],
-      };
-    });
+    // Redact BEFORE filtering, not after. Searching over parentUser.email and
+    // attendeeEmails on the raw rows would leave a working oracle: a provider
+    // types a guessed address and learns from the match whether it is right,
+    // even though the payload no longer contains it.
+    let results = await this.serializeBookingsForViewer(
+      bookings.map(b => {
+        const accountId = (b as any).parentUser?.parentAccountId;
+        return {
+          ...b,
+          parentAccountMembers: accountId ? (accountMembersMap[accountId] || []) : [],
+        };
+      }),
+      req.user as any,
+    );
 
     if (q && q.trim()) {
       const terms = q.toLowerCase().trim().split(/\s+/);
@@ -903,7 +914,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       },
       orderBy: { scheduledAt: "asc" },
     });
-    return bookings;
+    return this.serializeBookingsForViewer(bookings as any[], user);
   }
 
   @Get("bookings")
@@ -953,29 +964,123 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       accountMembersMap[accountId] = members;
     }
 
-    return bookings.map(b => {
-      const accountId = (b as any).parentUser?.parentAccountId;
-      return {
-        ...b,
-        parentAccountMembers: accountId ? (accountMembersMap[accountId] || []) : [],
-      };
-    });
+    return this.serializeBookingsForViewer(
+      bookings.map(b => {
+        const accountId = (b as any).parentUser?.parentAccountId;
+        return {
+          ...b,
+          parentAccountMembers: accountId ? (accountMembersMap[accountId] || []) : [],
+        };
+      }),
+      req.user as any,
+    );
   }
 
+  /**
+   * Gate-aware view of a booking list, for whoever is asking.
+   *
+   * MUST be viewer-aware, not simply "redact for providers": listBookings,
+   * listPendingBookings and the search endpoint are SHARED parent/provider
+   * endpoints (their where clause is an OR over providerUserId and
+   * parentUserId), so a blanket redaction would hide a parent's own email from
+   * themselves. Staff pass through untouched.
+   *
+   * Redacting parentUser.email alone would accomplish nothing here:
+   * attendeeEmails is auto-populated from the parent account, returned raw by
+   * the `...b` spread, and read by the notification service at nine sites.
+   * redactBookingForProvider clears all of it together.
+   */
+  private async serializeBookingsForViewer<T extends Record<string, any>>(bookings: T[], viewer: any): Promise<T[]> {
+    if (!Array.isArray(bookings) || bookings.length === 0) return bookings;
+    const isStaff = (viewer?.roles || []).some((r: string) => r === "GOSTORK_ADMIN" || r === "GOSTORK_CONCIERGE");
+    const providerId = viewer?.providerId;
+    if (isStaff || !providerId) return bookings; // staff, or a parent reading their own
+    const keyOf = (b: any) => (b?.parentUser ? parentAccountKey(b.parentUser) : "");
+    const gates = await resolveParentGatesBatch(
+      providerId,
+      bookings.map((b) => ({ accountKey: keyOf(b), hasBooking: true })),
+      this.prisma,
+    );
+    return bookings.map((b) => redactBookingForProvider(b, gates.get(keyOf(b)) || GATES_CLOSED) as T);
+  }
+
+  /**
+   * Attendee autocomplete for the provider calendar.
+   *
+   * This used to be `findMany({ roles: { hasSome: ["PARENT"] } })` with no role
+   * check and no provider scoping: every parent on the platform, name and email,
+   * to anyone with a session - including other parents. It was the single
+   * largest contact leak in the app.
+   *
+   * Now: staff see everyone, a provider sees only the parents they have a
+   * relationship with, and the email is present only when Gate B is open. With
+   * it closed the client gets `email: null` plus the parentUserId, writes the id
+   * into attendeeParentUserIds, and the server resolves the address at send
+   * time - so a provider can still invite a parent to a meeting without ever
+   * being handed the address.
+   */
   @Get("contacts")
   @UseGuards(SessionOrJwtGuard)
   async getContacts(@Req() req: Request) {
+    const user = req.user as any;
+    const isStaff = (user?.roles || []).some((r: string) => r === "GOSTORK_ADMIN" || r === "GOSTORK_CONCIERGE");
+    if (!isStaff && !user?.providerId) throw new ForbiddenException("Providers only");
+
+    if (isStaff) {
+      const all = await this.prisma.user.findMany({
+        where: { roles: { hasSome: ["PARENT"] } },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: "asc" },
+      });
+      return all.map((u) => ({ parentUserId: u.id, name: u.name || "", displayName: u.name || "", email: u.email }));
+    }
+
+    const providerId = user.providerId as string;
+    const staff = await this.prisma.user.findMany({ where: { providerId }, select: { id: true } });
+    const staffIds = staff.map((s) => s.id);
+    const [sessions, bookings] = await Promise.all([
+      this.prisma.aiChatSession.findMany({
+        where: { providerId, status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] } },
+        select: { userId: true },
+      }),
+      staffIds.length
+        ? this.prisma.booking.findMany({
+            where: { providerUserId: { in: staffIds }, parentUserId: { not: null } },
+            select: { parentUserId: true },
+          })
+        : Promise.resolve([] as { parentUserId: string | null }[]),
+    ]);
+    const released = await releasedAccountIds(providerId, this.prisma);
+    const userIds = new Set<string>();
+    for (const s of sessions) if (s.userId) userIds.add(s.userId);
+    for (const b of bookings) if (b.parentUserId) userIds.add(b.parentUserId);
+
     const parentUsers = await this.prisma.user.findMany({
-      where: { roles: { hasSome: ["PARENT"] } },
-      select: { id: true, name: true, email: true },
+      where: {
+        roles: { hasSome: ["PARENT"] },
+        OR: [
+          { id: { in: Array.from(userIds) } },
+          ...(released.length ? [{ parentAccountId: { in: released } }, { id: { in: released } }] : []),
+        ],
+      },
+      select: { id: true, name: true, email: true, parentAccountId: true },
       orderBy: { name: "asc" },
     });
-
-    return parentUsers.map((u) => ({
-      name: u.name || "",
-      email: u.email,
-      parentUserId: u.id,
-    }));
+    const gates = await resolveParentGatesBatch(
+      providerId,
+      parentUsers.map((u) => ({ accountKey: parentAccountKey(u), hasBooking: true })),
+      this.prisma,
+    );
+    return parentUsers.map((u) => {
+      const g = gates.get(parentAccountKey(u)) || GATES_CLOSED;
+      return {
+        parentUserId: u.id,
+        name: parentDisplayName(u, g),
+        displayName: parentDisplayName(u, g),
+        email: g.showContact ? u.email : null,
+        contactReleased: g.showContact,
+      };
+    });
   }
 
   /**
@@ -3668,6 +3773,20 @@ I'll check in with you right after the call. You've got this!`;
     return conn;
   }
 
+  /**
+   * Gates for the provider org that hosts this booking, used by the external
+   * calendar syncs. Falls back to closed when the host has no provider org.
+   */
+  private async gatesForBooking(booking: any, parentUser: { id: string; parentAccountId?: string | null } | null) {
+    if (!parentUser) return GATES_CLOSED;
+    const host = await this.prisma.user.findUnique({
+      where: { id: booking.providerUserId },
+      select: { providerId: true },
+    });
+    if (!host?.providerId) return GATES_CLOSED;
+    return resolveParentGates(host.providerId, parentAccountKey(parentUser), { hasBooking: true }, this.prisma);
+  }
+
   private async syncBookingToGoogleCalendar(booking: any) {
     try {
       const googleConn = await this.getBookingCalendarConnection(booking.providerUserId);
@@ -3677,20 +3796,30 @@ I'll check in with you right after the call. You've got this!`;
       const startTime = new Date(booking.scheduledAt);
       const endTime = new Date(startTime.getTime() + booking.duration * 60 * 1000);
 
+      // Attendee addresses are Gate B. With contact closed this list is empty,
+      // so the provider's own calendar carries the parent's NAME in the summary
+      // and the GoStork join link, and never an address they could mail.
+      //
+      // Verified nothing breaks: Google is already called with
+      // sendUpdates "none" (so this list has never sent mail), the parent's own
+      // copy is written by syncBookingToParentGoogleCalendar independently, no
+      // code reads RSVP status, and the external-deletion sweep looks events up
+      // by stored event id as the calendar owner rather than through attendees.
+      // Microsoft Graph does send an invite, so this also stops the address
+      // landing in the provider's Sent Items.
       const attendees: { email: string; displayName?: string }[] = [];
       const parentUser = booking.parentUserId ? await this.prisma.user.findUnique({
         where: { id: booking.parentUserId },
-        select: { parentAccountId: true },
+        select: { id: true, parentAccountId: true },
       }) : null;
+      const syncGates = await this.gatesForBooking(booking, parentUser);
       if (parentUser?.parentAccountId) {
         const members = await this.prisma.user.findMany({
           where: { parentAccountId: parentUser.parentAccountId, isDisabled: false },
           select: { email: true, name: true },
         });
-        for (const m of members) {
-          attendees.push({ email: m.email, displayName: m.name || undefined });
-        }
-      } else if (booking.attendeeEmails) {
+        attendees.push(...calendarAttendeesFor(members, syncGates));
+      } else if (booking.attendeeEmails && syncGates.showContact) {
         for (const email of booking.attendeeEmails) {
           attendees.push({ email, displayName: booking.attendeeName || undefined });
         }
@@ -3891,20 +4020,30 @@ I'll check in with you right after the call. You've got this!`;
       const startTime = new Date(booking.scheduledAt);
       const endTime = new Date(startTime.getTime() + booking.duration * 60 * 1000);
 
+      // Attendee addresses are Gate B. With contact closed this list is empty,
+      // so the provider's own calendar carries the parent's NAME in the summary
+      // and the GoStork join link, and never an address they could mail.
+      //
+      // Verified nothing breaks: Google is already called with
+      // sendUpdates "none" (so this list has never sent mail), the parent's own
+      // copy is written by syncBookingToParentGoogleCalendar independently, no
+      // code reads RSVP status, and the external-deletion sweep looks events up
+      // by stored event id as the calendar owner rather than through attendees.
+      // Microsoft Graph does send an invite, so this also stops the address
+      // landing in the provider's Sent Items.
       const attendees: { email: string; displayName?: string }[] = [];
       const parentUser = booking.parentUserId ? await this.prisma.user.findUnique({
         where: { id: booking.parentUserId },
-        select: { parentAccountId: true },
+        select: { id: true, parentAccountId: true },
       }) : null;
+      const syncGates = await this.gatesForBooking(booking, parentUser);
       if (parentUser?.parentAccountId) {
         const members = await this.prisma.user.findMany({
           where: { parentAccountId: parentUser.parentAccountId, isDisabled: false },
           select: { email: true, name: true },
         });
-        for (const m of members) {
-          attendees.push({ email: m.email, displayName: m.name || undefined });
-        }
-      } else if (booking.attendeeEmails) {
+        attendees.push(...calendarAttendeesFor(members, syncGates));
+      } else if (booking.attendeeEmails && syncGates.showContact) {
         for (const email of booking.attendeeEmails) {
           attendees.push({ email, displayName: booking.attendeeName || undefined });
         }

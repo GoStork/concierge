@@ -121,7 +121,10 @@ function CreateAppointmentDialog({ open, onClose, config }: { open: boolean; onC
   const [activeAttendeeIdx, setActiveAttendeeIdx] = useState(0);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  const { data: contacts } = useQuery<{ name: string; email: string; parentUserId?: string }[]>({
+  // `email` is nullable now: the endpoint returns a parent whose contact has not
+  // been released with `email: null`. It also no longer returns every parent on
+  // the platform - only the ones this provider actually has a relationship with.
+  const { data: contacts } = useQuery<{ name: string; email: string | null; parentUserId?: string; contactReleased?: boolean }[]>({
     queryKey: ["/api/calendar/contacts"],
     queryFn: async () => {
       const res = await fetch("/api/calendar/contacts", { credentials: "include" });
@@ -134,10 +137,14 @@ function CreateAppointmentDialog({ open, onClose, config }: { open: boolean; onC
   const filteredContacts = useMemo(() => {
     if (!contacts) return [];
     const q = contactSearch.toLowerCase();
-    const currentEmails = new Set(attendees.map((a) => a.email.toLowerCase()).filter(Boolean));
-    return contacts.filter(
-      (c) => !currentEmails.has(c.email.toLowerCase()) && (c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q))
-    );
+    const currentEmails = new Set(attendees.map((a) => (a.email || "").toLowerCase()).filter(Boolean));
+    return contacts.filter((c) => {
+      // An attendee with no address cannot be invited, so offering them here
+      // would be a dead end. They reappear the moment contact is released.
+      if (!c.email) return false;
+      const email = c.email.toLowerCase();
+      return !currentEmails.has(email) && ((c.name || "").toLowerCase().includes(q) || email.includes(q));
+    });
   }, [contacts, contactSearch, attendees]);
 
   const createMutation = useMutation({
@@ -167,10 +174,12 @@ function CreateAppointmentDialog({ open, onClose, config }: { open: boolean; onC
     },
   });
 
-  function selectContact(contact: { name: string; email: string }, idx: number) {
+  // email is non-null by construction: filteredContacts drops contacts whose
+  // address has not been released, so this is only ever called with a usable one.
+  function selectContact(contact: { name: string; email: string | null }, idx: number) {
     setAttendees((prev) => {
       const next = [...prev];
-      next[idx] = { ...next[idx], name: contact.name, email: contact.email };
+      next[idx] = { ...next[idx], name: contact.name, email: contact.email || "" };
       return next;
     });
     setShowContacts(false);

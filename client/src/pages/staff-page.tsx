@@ -10,7 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
-import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, CheckCircle2, Ban, UserCheck, Users } from "lucide-react";
+import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, CheckCircle2, Ban, UserCheck, Users, Lock } from "lucide-react";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -575,6 +575,27 @@ const JOURNEY_STATUS_LABELS: Record<string, string> = {
   HANDED_OFF: "Handed Off",
 };
 
+/**
+ * Stands in for the email and mobile columns until the parent has released
+ * their contact details to this provider.
+ *
+ * Says WHY and says WHAT UNLOCKS IT. A blank cell reads as missing data and
+ * generates a support ticket; this reads as a policy, and it tells the provider
+ * the thing they can actually act on.
+ */
+function ContactHiddenChip({ testId }: { testId: string }) {
+  return (
+    <span
+      data-testid={testId}
+      title="GoStork keeps parent contact details private until they share them. Sending an intake form, an invoice or an agreement unlocks them. Message them any time right here in chat."
+      className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs font-ui text-foreground/70 whitespace-nowrap"
+    >
+      <Lock className="w-3 h-3 shrink-0" />
+      Shared after intake or invoice
+    </span>
+  );
+}
+
 function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const searchQuery = searchParams.get("q") || "";
@@ -774,6 +795,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                 </TableCell>
                 <TableCell className="hidden sm:table-cell whitespace-nowrap" data-testid={`text-parent-email-${row.id}`}>
                   {/* Couples: one line per login so the provider can reach either partner */}
+                  {!row.contactReleased ? <ContactHiddenChip testId={`chip-email-hidden-${row.rowId}`} /> : (
                   <div className="flex flex-col gap-0.5">
                     {((row.members?.length > 1 ? row.members : [{ id: row.id, email: row.email }]) as any[]).map(m => (
                       <div key={m.id} className="flex items-center gap-1.5">
@@ -782,9 +804,10 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                       </div>
                     ))}
                   </div>
+                  )}
                 </TableCell>
                 <TableCell className="hidden md:table-cell whitespace-nowrap" data-testid={`text-parent-mobile-${row.id}`}>
-                  {(() => {
+                  {!row.contactReleased ? <ContactHiddenChip testId={`chip-mobile-hidden-${row.rowId}`} /> : (() => {
                     // Distinct numbers across the household - partners often
                     // share one phone, so dedupe by value.
                     const source: any[] = row.members?.length > 1 ? row.members : [{ id: row.id, mobileNumber: row.mobileNumber }];

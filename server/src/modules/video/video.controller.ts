@@ -336,7 +336,11 @@ export class VideoController {
     const token = await this.videoService.generateToken({
       roomName,
       userId: user.id,
-      userName: user.name || user.email,
+      // Was `user.name || user.email`, which made a parent with no name set
+      // join the call with their EMAIL ADDRESS as the visible tile label - at
+      // every stage, anonymous whisper phase included.
+      userName: user.name || [user.firstName, user.lastName].filter(Boolean).join(" ").trim()
+        || (isParent ? "Parent" : "Guest"),
       isOwner,
       consentGiven: booking.consentGiven,
     });

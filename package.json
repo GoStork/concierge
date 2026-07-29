@@ -18,6 +18,7 @@
     "test:journey": "tsx scripts/test-journey-flows.ts",
     "test:units": "tsx scripts/test-unit-guards.ts",
     "test:contact-guard": "tsx scripts/test-contact-guard.ts",
+    "test:parent-privacy": "tsx scripts/test-parent-privacy.ts",
     "test:reviews": "tsx --env-file=.env scripts/test-reviews-e2e.ts",
     "test:memory": "tsx --env-file=.env scripts/test-chat-memory.ts",
     "test:drafts": "tsx --env-file=.env scripts/test-auto-draft-matrix.ts",

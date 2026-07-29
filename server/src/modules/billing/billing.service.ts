@@ -1,5 +1,8 @@
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { emitJourneyEvent, emitInvoiceJourneyEvent } from "../../../journey-events";
+import {
+  GATES_CLOSED, parentAccountKey, redactParentContact, releaseParentContact, resolveParentGatesBatch,
+} from "../../../parent-privacy";
 import { NotificationService } from "../notifications/notification.service";
 import { ConnectService } from "./connect.service";
 import { prisma as prismaClient } from "../../../db";
@@ -959,6 +962,21 @@ export class BillingService {
     if (!invoice) throw new NotFoundException("Invoice not found");
 
     void emitInvoiceJourneyEvent(invoiceId, "INVOICE_SENT");
+
+    // Sending an invoice opens Gate B for this pair: the parent is now
+    // transacting with this provider, GoStork has earned the relationship, and
+    // the invoice itself carries their name. Idempotent, so replays are free.
+    void (async () => {
+      const accountKey = parentAccountKey(invoice.parentUser as any);
+      await releaseParentContact({ providerId: invoice.providerId, parentAccountId: accountKey, reason: "INVOICE" });
+      void emitJourneyEvent({
+        eventType: "CONTACT_RELEASED",
+        parentAccountId: accountKey,
+        providerId: invoice.providerId,
+        actorRole: "provider",
+        metadata: { reason: "INVOICE", invoiceId },
+      });
+    })();
 
     const base = getBaseUrl();
     // Include the chat session in returnTo so post-payment redirects the
@@ -3304,13 +3322,11 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
   }
 
   async getInvoicesForProvider(providerId: string) {
-    return this.prisma.invoice.findMany({
+    const invoices = await this.prisma.invoice.findMany({
       where: { providerId },
       include: {
         // Same contact card the admin dashboard gets - the provider uses
-        // it to recognize the parent and chase unpaid invoices. Identity
-        // is already revealed at this stage (invoices only exist after a
-        // consultation is booked).
+        // it to recognize the parent and chase unpaid invoices.
         parentUser: {
           select: {
             id: true,
@@ -3321,6 +3337,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
             mobileNumberDisplay: true,
             mobileNumber: true,
             createdAt: true,
+            parentAccountId: true,
             parentAccount: {
               select: {
                 members: { select: { id: true, name: true, email: true } },
@@ -3331,6 +3348,21 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
       },
       orderBy: { createdAt: "desc" },
     });
+
+    // Every row here has an Invoice, which by definition opened Gate B - so in
+    // practice nothing is redacted. It still runs through the helper rather than
+    // relying on that, because the invariant is invisible from this file and a
+    // future draft-invoice row would silently start leaking. Note BOTH phone
+    // fields are selected: nulling one and not the other would change nothing.
+    const gates = await resolveParentGatesBatch(
+      providerId,
+      invoices.map((i: any) => ({ accountKey: parentAccountKey(i.parentUser) })),
+      this.prisma,
+    );
+    return invoices.map((i: any) => ({
+      ...i,
+      parentUser: redactParentContact(i.parentUser, gates.get(parentAccountKey(i.parentUser)) || GATES_CLOSED),
+    }));
   }
 
   // ─── On-demand invoice document (provider view) ────────────────────────────

@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
+import { parentAccountKey, releaseParentContact } from "./parent-privacy";
 import { decryptNullable } from "./src/lib/encrypt";
 import { Storage } from "@google-cloud/storage";
 import * as path from "path";
@@ -235,6 +236,39 @@ export async function fetchDocumentViewUrl(apiKey: string, documentId: string, r
     console.error("[PandaDoc] Session create exception:", e?.message);
   }
   return null;
+}
+
+/**
+ * Sending an agreement opens Gate B for the pair.
+ *
+ * Must run in the SAME handler as the status flip to SENT, not after it:
+ * PandaDoc shows recipient emails in the provider's own workspace the instant
+ * the document goes out, and Agreement.signerStatus is keyed BY parent email
+ * and is returned to providers. Any window where GoStork's UI says "hidden"
+ * while PandaDoc already shows the address is a lie we would be telling the
+ * parent. Idempotent, which matters because there are two send paths and
+ * PandaDoc webhooks replay.
+ */
+async function releaseContactOnAgreementSent(agreement: { id: string; providerId: string; parentUserId: string; sessionId?: string | null }): Promise<void> {
+  try {
+    const parent = await prisma.user.findUnique({
+      where: { id: agreement.parentUserId },
+      select: { id: true, parentAccountId: true },
+    });
+    if (!parent) return;
+    const accountKey = parentAccountKey(parent);
+    await releaseParentContact({ providerId: agreement.providerId, parentAccountId: accountKey, reason: "AGREEMENT" });
+    void emitJourneyEvent({
+      eventType: "CONTACT_RELEASED",
+      parentAccountId: accountKey,
+      providerId: agreement.providerId,
+      sessionId: agreement.sessionId || null,
+      actorRole: "provider",
+      metadata: { reason: "AGREEMENT", agreementId: agreement.id },
+    });
+  } catch (e: any) {
+    console.error("[PandaDoc] contact release on send failed:", e?.message || e);
+  }
 }
 
 export async function generateAgreement({ providerId, parentUserId, sessionId }: GenerateAgreementParams) {
@@ -497,6 +531,7 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
       data: { status: "SENT", ...(pandaDocViewUrl ? { pandaDocViewUrl } : {}) },
     });
     void emitJourneyEvent({ eventType: "AGREEMENT_SENT", parentUserId: agreement.parentUserId, providerId: agreement.providerId, sessionId: agreement.sessionId, metadata: { agreementId: agreement.id } });
+    void releaseContactOnAgreementSent(agreement);
 
     return await prisma.agreement.findUnique({ where: { id: agreement.id } });
   } catch (error) {
@@ -1127,6 +1162,7 @@ export async function generateAgreementFromTemplate({ providerId, parentUserId, 
       data: { status: "SENT", ...(pandaDocViewUrl ? { pandaDocViewUrl } : {}) },
     });
     void emitJourneyEvent({ eventType: "AGREEMENT_SENT", parentUserId: agreement.parentUserId, providerId: agreement.providerId, sessionId: agreement.sessionId, metadata: { agreementId: agreement.id } });
+    void releaseContactOnAgreementSent(agreement);
 
     const dbAgreement = await prisma.agreement.findUnique({ where: { id: agreement.id } });
 

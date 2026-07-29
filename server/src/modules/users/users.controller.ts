@@ -31,6 +31,9 @@ import { z } from "zod";
 import { CreateUserDto, UserResponseDto } from "../../dto/user.dto";
 import { ErrorResponseDto } from "../../dto/auth.dto";
 import { encryptNullable, decryptNullable } from "../../lib/encrypt";
+import {
+  GATES_CLOSED, redactParentContact, redactParentMembers, releasedAccountIds, resolveParentGatesBatch,
+} from "../../../parent-privacy";
 
 // EVERY provider-side role and all GoStork staff get a personal video room -
 // derived from the shared role registry so newly added roles (Lawyer, Legal
@@ -1222,10 +1225,20 @@ export class UsersController {
     // contacts the parent hasn't agreed to share. So we filter to
     // CONSULTATION_BOOKED (call scheduled, identity revealed) and
     // PROVIDER_CONNECTED (agency has chatted directly post-call).
+    //
+    // Widened for contact releases: an IP-form-only or invoice-only pair has
+    // legitimately shared their details with this provider and must appear here
+    // even if their session never left ACTIVE.
+    const releasedAccounts = await releasedAccountIds(providerId, this.prisma);
     const chatSessions = await this.prisma.aiChatSession.findMany({
       where: {
         providerId,
-        status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
+        OR: [
+          { status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] } },
+          ...(releasedAccounts.length
+            ? [{ user: { OR: [{ parentAccountId: { in: releasedAccounts } }, { id: { in: releasedAccounts } }] } }]
+            : []),
+        ],
       },
       select: {
         id: true,
@@ -1527,7 +1540,42 @@ export class UsersController {
       });
     }
 
-    return rows;
+    // ── The two gates, applied once over every row ──────────────────────────
+    //
+    // One pass rather than two, because the chat-session rows and the
+    // meeting-only rows both build their contact fields by spreading a raw
+    // `user` (`...cs.user` / `...agg.parentUser`) and would otherwise need
+    // identical treatment in two places.
+    //
+    // The meeting-only half had NO gate at all: a parent who booked through a
+    // public booking page handed over name, email and mobile with nothing in
+    // between. A booking now opens Gate A (they chose to meet) and never Gate B.
+    const rowGates = await resolveParentGatesBatch(
+      providerId,
+      rows.map((r: any) => ({
+        accountKey: accountIdByUser.get(r.id) || r.id,
+        sessionStatus: r.matchStatus || null,
+        hasBooking: !!r.lastMeetingAt || r.source === "meeting",
+      })),
+      this.prisma,
+    );
+    return rows
+      .map((r: any) => {
+        const g = rowGates.get(accountIdByUser.get(r.id) || r.id) || GATES_CLOSED;
+        return {
+          ...redactParentContact(r, g),
+          // combineParentNames built this from the raw member names, so it has
+          // to be re-derived rather than trusted.
+          name: g.showIdentity ? r.name : "Prospective Parent",
+          members: redactParentMembers(r.members || [], g),
+          contactReleased: g.showContact,
+          contactReleaseReason: g.contactReason,
+        };
+      })
+      // A row whose identity is still closed has nothing to show on a contacts
+      // page: no name, no email, no phone. Drop it rather than render a row of
+      // blanks that looks like a bug.
+      .filter((r: any) => rowGates.get(accountIdByUser.get(r.id) || r.id)?.showIdentity !== false);
   }
 
   @Get("providers/:providerId/users")

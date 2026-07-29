@@ -1,6 +1,11 @@
 import { Router, Request, Response } from "express";
 import { PARENT_HIDDEN_MESSAGE_FILTER } from "./parent-visibility";
 import { blockContactInfo } from "./contact-guard";
+import {
+  GATES_CLOSED, GATES_OPEN, hasContactRelease, parentAccountKey, parentDisplayName, redactParentContact,
+  redactParentMembers, releaseParentContact, resolveParentGates, resolveParentGatesBatch,
+  type ParentGates,
+} from "./parent-privacy";
 import { emitJourneyEvent } from "./journey-events";
 import multer from "multer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -621,6 +626,85 @@ chatRouter.patch("/api/my/chat-session/matchmaker", requireAuth, async (req, res
   }
 });
 
+// ── Admin contact-release control (Gate B override) ─────────────────────────
+//
+// The escape hatch for the two-tier privacy model: real coordination sometimes
+// needs a phone number before an invoice or a form exists (a nurse who has to
+// reach a patient, a legal deadline). This lets GoStork open Gate B for one
+// specific pair, on the record, rather than making the default looser.
+
+chatRouter.get("/api/admin/contact-releases", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const { providerId, parentAccountId } = req.query as Record<string, string | undefined>;
+    const rows = await prisma.parentContactRelease.findMany({
+      where: {
+        ...(providerId ? { providerId } : {}),
+        ...(parentAccountId ? { parentAccountId } : {}),
+      },
+      orderBy: { releasedAt: "desc" },
+      take: 200,
+    });
+    res.json(rows);
+  } catch (e: any) {
+    console.error("List contact releases error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.post("/api/admin/contact-releases", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
+  const { providerId, parentAccountId, note } = req.body || {};
+  if (!providerId || !parentAccountId) {
+    return res.status(400).json({ message: "providerId and parentAccountId are required" });
+  }
+  try {
+    await releaseParentContact({
+      providerId, parentAccountId, reason: "ADMIN",
+      releasedByUserId: user.id, note: note || null,
+    });
+    void emitJourneyEvent({
+      eventType: "CONTACT_RELEASED",
+      parentAccountId,
+      providerId,
+      actorRole: "admin",
+      metadata: { reason: "ADMIN", note: note || null, releasedByUserId: user.id },
+    });
+    const row = await prisma.parentContactRelease.findUnique({
+      where: { providerId_parentAccountId: { providerId, parentAccountId } },
+    });
+    res.json(row);
+  } catch (e: any) {
+    console.error("Create contact release error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+chatRouter.delete("/api/admin/contact-releases/:id", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const row = await prisma.parentContactRelease.findUnique({ where: { id: req.params.id } });
+    if (!row) return res.status(404).json({ message: "Release not found" });
+    // A system release records a FACT: the provider already holds an invoice, a
+    // sent agreement or a downloaded PDF with the address printed on it.
+    // Deleting the row would not take the address back, it would only make the
+    // UI lie about who has it.
+    if (row.reason !== "ADMIN") {
+      return res.status(409).json({
+        message: "Only a manual admin release can be revoked. This one was earned by an invoice, agreement or form the provider already has.",
+      });
+    }
+    await prisma.parentContactRelease.delete({ where: { id: row.id } });
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error("Delete contact release error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
 chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
@@ -1128,6 +1212,20 @@ chatRouter.post("/api/consultation/request-callback", requireAuth, async (req, r
       }).catch(() => {});
     }
 
+    // The parent just typed their own name and email and asked this provider to
+    // call them back, and the email above delivers exactly that. Record the
+    // release so the app's UI agrees with what is already in the provider's
+    // inbox, instead of insisting the address is hidden.
+    const callbackAccountKey = parentAccountKey(user);
+    void releaseParentContact({ providerId, parentAccountId: callbackAccountKey, reason: "CALLBACK" });
+    void emitJourneyEvent({
+      eventType: "CONTACT_RELEASED",
+      parentAccountId: callbackAccountKey,
+      providerId,
+      actorRole: "parent",
+      metadata: { reason: "CALLBACK" },
+    });
+
     // Inject AI confirmation message into chat so parent sees it inline
     const { aiSessionId } = req.body;
     if (aiSessionId) {
@@ -1201,8 +1299,29 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
     // inbox may hide the session itself, so counting them would badge the
     // provider with unreads they can never see or clear. Provider-actionable
     // items in that phase are counted separately via pendingQuestions.
+    //
+    // Resolved through the gate helper (ONE indexed query for all 50 rows), not
+    // by re-deriving the status test: a pair whose contact has been released is
+    // identity-revealed even while a given sibling session is still ACTIVE, and
+    // counting from the old test would badge zero on a transcript the provider
+    // can actually read.
+    const inboxGates = await resolveParentGatesBatch(
+      user.providerId,
+      sessions.map(s => ({
+        accountKey: parentAccountKey(s.user as any),
+        sessionStatus: s.status,
+        // Sibling statuses for the same account are folded together inside the
+        // helper, so one booked thread reveals the name on all of them.
+        siblingStatuses: sessions
+          .filter(o => parentAccountKey(o.user as any) === parentAccountKey(s.user as any))
+          .map(o => o.status),
+      })),
+    );
+    const gatesFor = (s: any): ParentGates =>
+      inboxGates.get(parentAccountKey(s.user)) || { showIdentity: false, showContact: false, contactReason: null };
+
     const identityRevealedIds = sessions
-      .filter(s => s.status === "CONSULTATION_BOOKED" || s.status === "PROVIDER_CONNECTED")
+      .filter(s => gatesFor(s).showIdentity)
       .map(s => s.id);
     const unreadCounts = identityRevealedIds.length > 0
       ? await prisma.aiChatMessage.groupBy({
@@ -1245,17 +1364,19 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
     const providerMatchmakerMap = Object.fromEntries(providerMatchmakers.map(m => [m.id, m]));
 
     const result = sessions.map(s => {
-      const isJoined = s.status === "PROVIDER_CONNECTED";
-      const isConsultationBooked = s.status === "CONSULTATION_BOOKED";
+      const g = gatesFor(s);
       return {
         id: s.id,
         userId: s.userId,
         // Account id (not identity): lets the client fold a family's duplicate
         // threads about the same profile across account members.
         parentAccountId: (s.user as any).parentAccountId || null,
-        userName: isJoined || isConsultationBooked ? s.user.name : "Prospective Parent",
-        userEmail: isJoined || isConsultationBooked ? s.user.email : null,
-        userAvatar: isJoined || isConsultationBooked ? (s.user as any).photoUrl : null,
+        // parentDisplayName never falls back to the email address, which the
+        // old `s.user.name` did not guarantee for a parent with no name set.
+        userName: parentDisplayName(s.user as any, g),
+        userEmail: g.showContact ? s.user.email : null,
+        userAvatar: g.showIdentity ? (s.user as any).photoUrl : null,
+        contactReleased: g.showContact,
         status: s.status,
         sessionType: (s as any).sessionType || "PARENT",
         matchmakerId: s.matchmakerId,
@@ -1386,6 +1507,27 @@ const isEvaTitledSession = (title: string | null | undefined) => /ai concierge/i
 // - profile session: Eva Q&A twins about the SAME profile, plus - when this is
 //   the account's PRIMARY direct profile thread - orphan Eva Q&A threads whose
 //   profile has no direct thread of its own.
+/**
+ * Does this parent have a booking with this provider org?
+ *
+ * A confirmed booking opens Gate A: the parent chose to meet them, so showing
+ * "Prospective Parent" for someone who is on the calendar tomorrow reads as a
+ * bug. It does NOT open Gate B - a booking is not a reason to hand over the
+ * email, and the public booking page was previously a way to harvest one.
+ */
+async function hasBookingWithProvider(parentUserId: string, providerId?: string | null): Promise<boolean> {
+  if (!providerId || !parentUserId) return false;
+  const parent = await prisma.user.findUnique({ where: { id: parentUserId }, select: { id: true, parentAccountId: true } });
+  const memberIds = parent?.parentAccountId
+    ? (await prisma.user.findMany({ where: { parentAccountId: parent.parentAccountId }, select: { id: true } })).map(u => u.id)
+    : [parentUserId];
+  const booking = await prisma.booking.findFirst({
+    where: { parentUserId: { in: memberIds }, providerUser: { providerId }, status: { notIn: ["CANCELLED", "EXPIRED"] } },
+    select: { id: true },
+  });
+  return !!booking;
+}
+
 async function findMergeableSiblingSessions(
   session: { id: string; userId: string; subjectProfileId?: string | null; subjectType?: string | null; title?: string | null },
   providerId: string,
@@ -1452,9 +1594,15 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
     if (!canProviderAccessSession(user.roles || [], (session as any).subjectType)) return res.status(403).json({ message: "Forbidden" });
 
-    const isJoined = session.status === "PROVIDER_CONNECTED";
-    const isConsultationBooked = session.status === "CONSULTATION_BOOKED";
-    const showIdentity = isJoined || isConsultationBooked;
+    // Two gates now, not one. showIdentity is what it always was (plus a
+    // booking and plus contact release); showContact is new and is what keeps
+    // the email, mobile and date of birth selected above from riding along with
+    // the name. See server/parent-privacy.ts.
+    const gates = await resolveParentGates(user.providerId, parentAccountKey(session.user as any), {
+      sessionStatus: session.status,
+      hasBooking: await hasBookingWithProvider(session.userId, user.providerId),
+    });
+    const showIdentity = gates.showIdentity;
 
     const providerMessages = session.messages.filter(m =>
       (m.senderType === "system" || m.senderType === "provider")
@@ -1522,15 +1670,13 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     const responseSession = {
       ...session,
       title: cleanSessionTitle(session.title),
-      user: showIdentity ? session.user : {
-        id: session.user.id,
-        name: "Prospective Parent",
-        email: null,
-        photoUrl: null,
-        city: null,
-        state: null,
-        parentAccount: null,
-      },
+      // redactParentContact replaces the hand-written stub this used to build,
+      // and adds the Gate B pass: with identity open but contact closed the
+      // provider gets the name, photo and city and NOT the email, mobile or
+      // date of birth that the select above still fetches.
+      user: redactParentContact(session.user as any, gates),
+      contactReleased: gates.showContact,
+      contactReleaseReason: gates.contactReason,
       // Once the consultation is booked, the parent's identity is already
       // revealed - show all messages (parent + provider + system). Before that
       // (whisper Q&A phase), only show system + provider messages to keep the
@@ -1863,7 +2009,11 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
         select: { id: true },
       });
 
-      let hasRelationship = !!sharedSession;
+      // A contact release is itself a relationship: an IP-form-only or
+      // invoice-only pair must not 403 out of the page that shows what they
+      // were released.
+      let hasRelationship = !!sharedSession
+        || await hasContactRelease(providerId, targetUser?.parentAccountId || parentId);
       if (!hasRelationship) {
         const staff = await prisma.user.findMany({
           where: { providerId },
@@ -1941,7 +2091,27 @@ chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
       ? { responseId: ipFormRow.id, status: ipFormRow.status, submittedAt: ipFormRow.submittedAt, promptedAt: ipFormRow.promptedAt, surrogateAvailable }
       : { responseId: null, status: "NOT_STARTED", submittedAt: null, promptedAt: null, surrogateAvailable };
 
-    res.json({ ...parent, accountMembers, ipForm });
+    // Admins and GoStork staff see everything; a provider sees the parent
+    // through the two gates. Note accountMembers selects email AND mobileNumber
+    // for both partners, so it needs the same treatment as the primary user -
+    // redacting one and not the other would just move the leak next door.
+    const detailGates: ParentGates = isAdminOrConcierge(user)
+      ? GATES_OPEN
+      : await resolveParentGates(user.providerId, targetUser?.parentAccountId || parentId, {
+          sessionStatus: null,
+          hasBooking: true, // the access check above already proved a relationship
+        });
+
+    res.json({
+      ...redactParentContact(parent as any, detailGates),
+      accountMembers: redactParentMembers(accountMembers as any, detailGates),
+      // The IP form is the richest PII payload we hold - legal names, date of
+      // birth, home address, emergency contacts. Withhold the responseId (the
+      // PDF handle) unless contact has actually been released.
+      ipForm: detailGates.showContact ? ipForm : { ...ipForm, responseId: null },
+      contactReleased: detailGates.showContact,
+      contactReleaseReason: detailGates.contactReason,
+    });
   } catch (e: any) {
     console.error("Provider parent detail error:", e);
     res.status(500).json({ message: e.message });
@@ -4321,13 +4491,23 @@ chatRouter.get("/api/provider/dashboard-queue", requireAuth, async (req, res) =>
   try {
     const sessions = await prisma.aiChatSession.findMany({
       where: { providerId: user.providerId },
-      select: { id: true, user: { select: { name: true, firstName: true, lastName: true, email: true } } },
+      select: {
+        id: true, status: true,
+        user: { select: { id: true, name: true, firstName: true, lastName: true, email: true, parentAccountId: true } },
+      },
     });
     const sessionIds = sessions.map(s => s.id);
-    const parentNameBySession = new Map(sessions.map(s => [
-      s.id,
-      s.user?.firstName || s.user?.name || s.user?.email || "Parent",
-    ]));
+    // This query has no status filter (it is the whole queue), so the names had
+    // to be gated here: the old map fell back to `s.user?.email` and printed
+    // the parent's address on approval cards at every stage, anonymous included.
+    const queueGates = await resolveParentGatesBatch(
+      user.providerId,
+      sessions.map(s => ({ accountKey: parentAccountKey(s.user as any), sessionStatus: s.status })),
+    );
+    const parentNameBySession = new Map(sessions.map(s => {
+      const g = queueGates.get(parentAccountKey(s.user as any)) || GATES_CLOSED;
+      return [s.id, g.showIdentity ? (s.user?.firstName || parentDisplayName(s.user as any, g)) : "Prospective Parent"];
+    }));
 
     const APPROVAL_TYPES = ["cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt"];
     const cards = sessionIds.length
@@ -4557,21 +4737,33 @@ chatRouter.get("/api/agreements", requireAuth, async (req, res) => {
         rejectedAt: true,
         createdAt: true,
         parentUser: {
-          select: { name: true, firstName: true, lastName: true, email: true },
+          select: { id: true, name: true, firstName: true, lastName: true, email: true, parentAccountId: true },
         },
       },
     });
-    const formatted = agreements.map(a => ({
-      id: a.id,
-      status: a.status,
-      documentType: a.documentType,
-      pandaDocViewUrl: a.pandaDocViewUrl,
-      signedAt: a.signedAt,
-      rejectedAt: a.rejectedAt,
-      createdAt: a.createdAt,
-      parentName: a.parentUser.name || `${a.parentUser.firstName || ""} ${a.parentUser.lastName || ""}`.trim() || a.parentUser.email,
-      parentEmail: a.parentUser.email,
-    }));
+    // A row here does NOT imply contact release: agreements sit in DRAFT and
+    // CREATED before anything reaches the parent, and only a SENT one opens
+    // Gate B. Resolve rather than assume.
+    const agreementGates = await resolveParentGatesBatch(
+      user.providerId,
+      agreements.map(a => ({ accountKey: parentAccountKey(a.parentUser as any) })),
+    );
+    const formatted = agreements.map(a => {
+      const g = agreementGates.get(parentAccountKey(a.parentUser as any)) || GATES_CLOSED;
+      return {
+        id: a.id,
+        status: a.status,
+        documentType: a.documentType,
+        pandaDocViewUrl: a.pandaDocViewUrl,
+        signedAt: a.signedAt,
+        rejectedAt: a.rejectedAt,
+        createdAt: a.createdAt,
+        // Was `... || a.parentUser.email`, which printed the address as the
+        // display name for any parent with no name set.
+        parentName: parentDisplayName(a.parentUser as any, g),
+        parentEmail: g.showContact ? a.parentUser.email : null,
+      };
+    });
     res.json(formatted);
   } catch (e: any) {
     console.error("List agreements error:", e);

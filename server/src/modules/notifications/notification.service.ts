@@ -5,6 +5,7 @@ import { formatPhoneDisplay } from "../../lib/format-phone";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { isExternalMeetingUrl } from "../../lib/daily-room";
 import { esc, buildBrandedEmail, fetchEmailBrandData } from "./email-builder";
+import { parentAccountKey, resolveParentGates } from "../../../parent-privacy";
 import { type NightlySyncResult } from "../providers/profile-sync.service";
 
 export type NotificationChannel =
@@ -93,6 +94,51 @@ function getFirstName(fullName?: string | null): string {
 @Injectable()
 export class NotificationService implements OnModuleInit {
   private readonly logger = new Logger(NotificationService.name);
+
+  /**
+   * The Email / Phone rows in a PROVIDER-facing booking email, or nothing.
+   *
+   * Seven emails printed this same block, and nulling `parentUser.email` alone
+   * would not have stopped any of them: `attendeeEmail` is computed as
+   * `attendeeEmails?.[0] || parentUser?.email` at nine call sites, so the
+   * address arrives through the booking's own attendee list.
+   *
+   * The parent-facing branches of these same methods never call this - the
+   * parent's own address is theirs, and the provider's is not private.
+   */
+  private async providerContactRows(
+    booking: any,
+    attendeeEmail?: string | null,
+  ): Promise<{ label: string; value: string }[]> {
+    try {
+      const parentUserId = booking?.parentUserId || booking?.parentUser?.id;
+      const host = booking?.providerUserId
+        ? await this.prisma.user.findUnique({ where: { id: booking.providerUserId }, select: { providerId: true } })
+        : null;
+      // A guest booking with no parent account has no gate to apply: the person
+      // typed their own address into a public booking page for this provider.
+      if (!parentUserId || !host?.providerId) {
+        return attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : [];
+      }
+      const parent = booking?.parentUser?.parentAccountId !== undefined
+        ? booking.parentUser
+        : await this.prisma.user.findUnique({ where: { id: parentUserId }, select: { id: true, parentAccountId: true } });
+      const gates = await resolveParentGates(host.providerId, parentAccountKey(parent), { hasBooking: true });
+      if (!gates.showContact) return [];
+      return [
+        ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
+        ...(booking.parentUser?.mobileNumber
+          ? [{ label: "Phone", value: esc(formatPhoneDisplay(booking.parentUser.mobileNumber)) }]
+          : []),
+      ];
+    } catch (e: any) {
+      // Fail CLOSED: a lookup failure must not print an address we were unsure
+      // about. The provider still gets the meeting, just without the contact row.
+      this.logger.error(`providerContactRows failed: ${e?.message || e}`);
+      return [];
+    }
+  }
+
   private reminderInterval: ReturnType<typeof setInterval> | null = null;
   private cachedCompanyName: string | null = null;
   private companyNameCacheTime: number = 0;
@@ -271,8 +317,7 @@ export class NotificationService implements OnModuleInit {
           { label: "Duration", value: `${booking.duration} minutes` },
           { label: "Location", value: location },
           { label: "Client", value: esc(attendeeName) },
-          ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
-          ...(booking.parentUser?.mobileNumber ? [{ label: "Phone", value: esc(formatPhoneDisplay(booking.parentUser.mobileNumber)) }] : []),
+          ...(await this.providerContactRows(booking, attendeeEmail)),
           ...(booking.notes ? [{ label: "Notes", value: esc(booking.notes) }] : []),
         ],
         alertBox: { text: "This meeting requires your confirmation. Please confirm, decline, or suggest a new time.", type: "warning" },
@@ -333,7 +378,7 @@ export class NotificationService implements OnModuleInit {
         { label: "Duration", value: `${booking.duration} minutes` },
         { label: "Location", value: location },
         { label: "Client", value: esc(attendeeName) },
-        ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
+        ...(await this.providerContactRows(booking, attendeeEmail)),
       ],
       alertBox: { text: alertText, type: opts.urgent ? "error" : "warning" },
       buttons: [
@@ -581,7 +626,7 @@ export class NotificationService implements OnModuleInit {
           { label: "Requested Date", value: provDateStr },
           { label: "Requested Time", value: provTimeStr },
           { label: "Client", value: esc(attendeeName) },
-          ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
+          ...(await this.providerContactRows(booking, attendeeEmail)),
         ],
         alertBox: { text: "No action is needed. The request has been removed from your pending list.", type: "info" },
       });
@@ -718,7 +763,7 @@ export class NotificationService implements OnModuleInit {
           { label: "Duration", value: `${booking.duration} minutes` },
           { label: "Location", value: location },
           { label: "Client", value: esc(attendeeName) },
-          ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
+          ...(await this.providerContactRows(booking, attendeeEmail)),
         ],
         buttons: [
           ...(location === "Video Call" ? [{ label: "Start Meeting", url: videoRoomLink }] : []),
@@ -836,7 +881,7 @@ export class NotificationService implements OnModuleInit {
           { label: "Date", value: provDateStr },
           { label: "Time", value: provTimeStr },
           { label: "Client", value: esc(attendeeName) },
-          ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
+          ...(await this.providerContactRows(booking, attendeeEmail)),
         ],
       });
       await this.dispatchNotification({ userId: booking.providerUserId, bookingId: booking.id, type: "EMAIL", channel: "booking_cancellation", recipient: providerEmail,
@@ -967,7 +1012,7 @@ export class NotificationService implements OnModuleInit {
           { label: "New Time", value: provNewTimeStr },
           { label: "Duration", value: `${newBooking.duration} minutes` },
           { label: "Client", value: esc(attendeeName) },
-          ...(attendeeEmail ? [{ label: "Email", value: esc(attendeeEmail) }] : []),
+          ...(await this.providerContactRows(newBooking, attendeeEmail)),
         ],
         buttons: [
           { label: "Start Meeting", url: videoRoomLink },
@@ -1706,7 +1751,7 @@ export class NotificationService implements OnModuleInit {
                 { label: "Time", value: timeStr },
                 { label: "Duration", value: `${booking.duration} minutes` },
                 { label: "Client", value: esc(attendeeName) },
-                ...(booking.attendeeEmails?.[0] ? [{ label: "Email", value: esc(booking.attendeeEmails[0]) }] : []),
+                ...(await this.providerContactRows(booking, booking.attendeeEmails?.[0])),
               ],
               buttons: [
                 ...(location === "Video Call" ? [{ label: "Start Meeting", url: joinLink }] : []),

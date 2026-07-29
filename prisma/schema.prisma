@@ -162,6 +162,7 @@ model Provider {
   autoReplies                           ProviderAutoReply[]
   autoReplySends                        ProviderAutoReplySend[]
   parentBriefings                       ProviderParentBriefing[]
+  parentContactReleases                 ParentContactRelease[]
 }
 
 /// Send log for the AI-written private parent briefing. Same "once per parent
@@ -2577,6 +2578,41 @@ model AdminTaskDismissal {
   taskKey     String   @unique
   dismissedBy String?
   dismissedAt DateTime @default(now())
+}
+
+/// Gate B (CONTACT) of the two-tier parent privacy model.
+///
+/// One row per (provider org, parent account) pair, written the moment the
+/// parent takes a contact-releasing action WITH THAT PROVIDER: submitting the
+/// Intended Parent Form to them, receiving an invoice or a sent agreement from
+/// them, requesting a callback, or a GoStork admin unlocking the pair by hand.
+/// Until a row exists the provider sees a name and never an email, phone,
+/// date of birth, address or IP-form PDF.
+///
+/// Pair-scoped, NOT session-scoped: one parent has several sibling sessions
+/// with the same provider (see findMergeableSiblingSessions in chat-router),
+/// so a per-session flag would need N columns kept in sync and would drift.
+///
+/// Monotonic - written once, never rewritten. `reason` records the FIRST
+/// trigger; every writer upserts with an empty update so replays (PandaDoc
+/// webhooks, two send paths) are idempotent for free. The JourneyEvent ledger
+/// carries the full history.
+model ParentContactRelease {
+  id               String   @id @default(uuid())
+  providerId       String
+  /// Follows the codebase convention `user.parentAccountId ?? user.id`.
+  parentAccountId  String
+  /// IP_FORM | INVOICE | AGREEMENT | CALLBACK | ADMIN
+  reason           String
+  releasedAt       DateTime @default(now())
+  /// Admin user id when reason = ADMIN; null for system-triggered releases.
+  releasedByUserId String?
+  note             String?
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, parentAccountId])
+  @@index([parentAccountId])
 }
 
 // Phase 7A: append-only journey event log. Every notable event in a parent's

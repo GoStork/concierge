@@ -170,7 +170,12 @@ export function ParentProfileCard({ user, isOnline, testId = "parent-profile-car
         </div>
       </div>
       <div className="space-y-1.5 mb-3">
-        <div className="t-micro-value truncate"><span className="t-micro-label">Email</span> {user.email}</div>
+        {/* Email and phone are Gate B: the server sends null until the parent
+            releases them, and a bare "Email -" reads as broken data. Say what
+            is actually true instead. */}
+        {user.email
+          ? <div className="t-micro-value truncate"><span className="t-micro-label">Email</span> {user.email}</div>
+          : <div className="t-micro-value"><span className="t-micro-label">Contact</span> Shared after intake or invoice</div>}
         {(user.city || user.state) && (
           <div className="t-micro-value"><span className="t-micro-label">Location</span> {[user.city, user.state].filter(Boolean).join(", ")}</div>
         )}
