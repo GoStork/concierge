@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "fp=$(jq -r '.tool_input.file_path // empty'); echo \"$fp\" | grep -q 'ai-prompt-defaults.ts' && node scripts/generate-decision-tree.mjs && git add decision-tree.html || true",
+            "statusMessage": "Regenerating decision tree..."
+          }
+        ]
+      }
+    ]
+  }
+}
