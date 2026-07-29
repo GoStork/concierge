@@ -180,14 +180,19 @@ export class TestRunnerService {
     const isJrCase = (id: string) => /^JR-/i.test(id);
     const isUtCase = (id: string) => /^UT-/i.test(id);
     const isPxCase = (id: string) => /^PX-/i.test(id);
+    const isCgCase = (id: string) => /^CG-/i.test(id);
+    const isPpCase = (id: string) => /^PP-/i.test(id);
     const wantsFt = !filter || filter === "free-text" || isFtCase(filter);
     const wantsPr = !filter || filter === "provider" || isPrCase(filter);
     const wantsJr = !filter || filter === "journey" || isJrCase(filter);
     const wantsUt = !filter || filter === "unit" || isUtCase(filter);
     const wantsPx = !filter || filter === "profile-ux" || isPxCase(filter);
+    const wantsCg = !filter || filter === "contact-guard" || isCgCase(filter);
+    const wantsPp = !filter || filter === "parent-privacy" || isPpCase(filter);
     const wantsMain = !filter || (filter !== "free-text" && filter !== "provider" && filter !== "journey"
-      && filter !== "unit" && filter !== "profile-ux"
-      && !isFtCase(filter) && !isPrCase(filter) && !isJrCase(filter) && !isUtCase(filter) && !isPxCase(filter));
+      && filter !== "unit" && filter !== "profile-ux" && filter !== "contact-guard" && filter !== "parent-privacy"
+      && !isFtCase(filter) && !isPrCase(filter) && !isJrCase(filter) && !isUtCase(filter) && !isPxCase(filter)
+      && !isCgCase(filter) && !isPpCase(filter));
 
     const launch = (procKey: string, scriptFile: string, extraArgs: string[]) => {
     const scriptPath = path.resolve(process.cwd(), "scripts", scriptFile);
@@ -357,6 +362,12 @@ export class TestRunnerService {
     }
     if (wantsPx) {
       launch(`${runId}:px`, "test-profile-ux.ts", filter && isPxCase(filter) ? [`--id=${filter}`] : []);
+    }
+    if (wantsCg) {
+      launch(`${runId}:cg`, "test-contact-guard.ts", filter && isCgCase(filter) ? [`--id=${filter}`] : []);
+    }
+    if (wantsPp) {
+      launch(`${runId}:pp`, "test-parent-privacy.ts", filter && isPpCase(filter) ? [`--id=${filter}`] : []);
     }
 
     return { started: true, message: `Started run ${runId} with ${matchingTests.length} tests` };

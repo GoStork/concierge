@@ -898,6 +898,100 @@ export const TEST_CASES: TestCaseDef[] = [
     interestedServices: [], messageCount: 0,
   },
 
+  // ── CONTACT GUARD (CG-01..) ───────────────────────────────────────────────
+  // Runs scripts/test-contact-guard.ts. UT-11/UT-12 prove the detection RULES;
+  // these prove the PLUMBING - that each of the six enforcement points really
+  // rejects, that nothing is persisted when they do, and that the Eva exception
+  // still lets a parent give Eva their own number during intake.
+  {
+    id: "CG-01", persona: "contact-guard",
+    name: "CG-01: Parent to provider - every obfuscated form blocked, ordinary text is not",
+    desc: "Phone, spaced email, bracketed at/dot, fullwidth @, Zoom, Calendly, WhatsApp and Telegram are all refused on a shared thread, while \"$145,000 and her AMH was 1.2\" sends normally - and nothing blocked is ever written to the database",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "CG-02", persona: "contact-guard",
+    name: "CG-02: The rejection explains itself and echoes nothing back",
+    desc: "The 422 carries brand copy naming what it found and saying GoStork is free, with no em dash, and never returns the matched text or the rule internals - echoing them would hand a determined sender an oracle to tune obfuscations against",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "CG-03", persona: "contact-guard",
+    name: "CG-03: THE EVA EXCEPTION - private thread accepts, shared thread blocks",
+    desc: "The same phone number is accepted in the parent's private Eva thread (where she legitimately collects it during intake) and blocked on a shared one. The private session is deliberately providerId-stamped, as a whisper leaves it, proving the discriminator keys on status and providerJoinedAt rather than providerId",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "CG-04", persona: "contact-guard",
+    name: "CG-04: Provider to parent is guarded the same way",
+    desc: "A provider cannot send their own direct line, office email or Zoom room to a parent; an ordinary cost message still goes through",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "CG-05", persona: "contact-guard",
+    name: "CG-05: A whisper answer cannot smuggle a number through Eva's relay",
+    desc: "One guard covers three writes - the persisted answerText, the relay Eva quotes verbatim to the parent, and the provider's confirmation. A blocked answer leaves the whisper PENDING rather than half-answered",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "CG-06", persona: "contact-guard",
+    name: "CG-06: A provider auto-reply is rejected when saved, not silently at send",
+    desc: "The booking auto-reply deliberately bypasses the send endpoint, so a template carrying a number or a Calendly link would otherwise reach every parent who books. It is refused at configuration time instead",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "CG-07", persona: "contact-guard",
+    name: "CG-07: Booking notes and public review replies are guarded too",
+    desc: "Parent-typed booking notes are printed verbatim in the provider's email and copied into the external calendar event; the provider's public review reply was never screened while the review body always was",
+    interestedServices: [], messageCount: 0,
+  },
+
+  // ── PARENT PRIVACY / TWO GATES (PP-01..) ──────────────────────────────────
+  // Runs scripts/test-parent-privacy.ts. Gate A is identity, Gate B is contact,
+  // and Gate B opens only when the parent commits to that specific provider.
+  {
+    id: "PP-01", persona: "parent-privacy",
+    name: "PP-01: Booked consultation - the name is shown, the email and phone are not",
+    desc: "Across the session detail, the provider inbox, the /parents list and the parent profile: real name and city, but email null, mobile null, and no IP-form PDF handle. This is the change GoStork 1.0 needed - a provider who cannot see the address cannot start an off-platform thread",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PP-02", persona: "parent-privacy",
+    name: "PP-02: Contact enumeration is closed",
+    desc: "/api/calendar/contacts used to return name and email for EVERY parent on the platform to any authenticated user, including other parents. Now a provider sees only their own released contacts and a parent gets 403",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PP-03", persona: "parent-privacy",
+    name: "PP-03: A release opens Gate B across every provider surface at once",
+    desc: "One release row makes the email and phone appear in the session detail, the /parents list and the calendar autocomplete together, with the triggering reason reported - no surface lags behind",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PP-04", persona: "parent-privacy",
+    name: "PP-04: The anonymous whisper stage stays anonymous",
+    desc: "Back at ACTIVE with no release the parent is \"Prospective Parent\" again, the email is gone, and the row disappears from /parents entirely rather than rendering as a line of blanks",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PP-05", persona: "parent-privacy",
+    name: "PP-05: IP-form fan-out reaches booked providers, never whisper-only ones",
+    desc: "The Intended Parent Form is ONE global row per account with no provider column, so who it is shared with is computed - and it used to be computed with no status filter, meaning a clinic that answered a single anonymous whisper received the parents' legal names and could download their home address",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PP-06", persona: "parent-privacy",
+    name: "PP-06: The invoice list redacts rather than trusting the invariant",
+    desc: "Every row in that endpoint has an Invoice, which by definition released contact, so in practice nothing is redacted - but the invariant is invisible from that file, so the redaction runs anyway. This proves it actually would, including BOTH phone fields",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PP-07", persona: "parent-privacy",
+    name: "PP-07: Admin override - unlock, revoke manual, refuse to revoke earned, stay monotonic",
+    desc: "A provider cannot unlock themselves; an admin can, and it takes effect with no cache to wait out. A manual unlock is revocable, an earned one returns 409 because the provider already holds a document with the address on it. Repeat releases keep the first reason and never duplicate, which is what PandaDoc webhook replays depend on",
+    interestedServices: [], messageCount: 0,
+  },
+
   // ── TRANSACTIONAL JOURNEY (JR-01..) ───────────────────────────────────────
   // Runs scripts/test-journey-flows.ts - what MOVES rather than what Eva says:
   // cost sheet -> acknowledgement -> invoice -> payment -> agreement -> handoff,

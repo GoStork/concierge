@@ -23,6 +23,7 @@
  *   auto-reply.*    the provider's stored auto-reply body
  */
 
+import { HttpException } from "@nestjs/common";
 import { detectContactInfo, contactGuardMessage, CONTACT_GUARD_CODE, type ContactScanResult } from "../shared/contact-guard";
 
 export { CONTACT_GUARD_CODE };
@@ -89,8 +90,12 @@ export function blockContactInfo(
  * Nest variant. Throws an HttpException carrying the same body shape as the
  * Express guard, so a client cannot tell which framework rejected it.
  *
- * Imported lazily so this module stays usable from the plain Express routers
- * and from scripts that have no Nest runtime.
+ * HttpException is imported at the top, NOT lazily. A `require()` here looked
+ * like a way to keep Nest out of the Express-only routers, but the server runs
+ * as ESM: `require` is not defined, so every Nest-side guard threw a
+ * ReferenceError and the caller got a generic 500 instead of the friendly 422.
+ * The guard still detected and still refused - it just could not explain itself.
+ * A static import costs nothing; @nestjs/common is already in the graph.
  */
 export function assertNoContactInfo(
   text: string | null | undefined,
@@ -100,9 +105,6 @@ export function assertNoContactInfo(
   const scan = detectContactInfo(text || "");
   if (!scan.blocked) return;
   logContactBlock(where, scan, meta);
-  // Required inline: a top-level @nestjs/common import would pull Nest into the
-  // Express-only routers that also import this file.
-  const { HttpException } = require("@nestjs/common");
   throw new HttpException(contactBlockedBody(scan) as any, CONTACT_GUARD_STATUS);
 }
 
