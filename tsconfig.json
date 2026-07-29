@@ -5,6 +5,13 @@
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
     "noEmit": true,
+    // Must match what actually ships, or tsc reports errors the runtime never
+    // has. The build is esbuild with platform:"node" and no target (= esnext)
+    // for the server and Vite's modern-browser default for the client, so
+    // `[...someSet]` and Map iteration are emitted untouched and run natively.
+    // Without this line tsc falls back to ES5 and flagged 177 such phantom
+    // errors, which is most of what made the type backlog too noisy to read.
+    "target": "ES2022",
     "module": "ESNext",
     "strict": true,
     "lib": ["esnext", "dom", "dom.iterable"],

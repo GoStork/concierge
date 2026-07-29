@@ -476,6 +476,8 @@ function IvfClinicDeckGrid({ providers, eggSource, ageGroup, isNewPatient, sortB
         onPass={onPass}
         onUndo={onUndo}
         savedKeys={favoritedClinics}
+        onReviewPassed={showSkippedOnly ? undefined : () => dispatch(setShowSkippedOnly(true))}
+        passedCount={passedClinics.length}
         hideSavedOnMobile={!showFavoritesOnly && !showSkippedOnly}
         onActiveChange={(p) => recordImpression(p.id, "clinic")}
         renderGridItem={(item, card, key) => (
@@ -587,6 +589,8 @@ function DoctorDeckGrid({ doctors, loading, eggSource, ageGroup, isNewPatient }:
         onPass={onPass}
         onUndo={onUndo}
         savedKeys={favoritedSlugs}
+        onReviewPassed={showSkippedOnly ? undefined : () => dispatch(setShowSkippedOnly(true))}
+        passedCount={passedSlugs.length}
         hideSavedOnMobile={!showFavoritesOnly && !showSkippedOnly}
         onActiveChange={(d) => recordImpression(d.slug, "doctor")}
         renderGridItem={(item, card, key) => (
@@ -724,6 +728,8 @@ function AgencyDeck({ providers, searchQuery }: {
         onPass={onPass}
         onUndo={onUndo}
         savedKeys={favoritedAgencies}
+        onReviewPassed={showSkippedOnly ? undefined : () => dispatch(setShowSkippedOnly(true))}
+        passedCount={passedAgencies.length}
         hideSavedOnMobile={!showFavoritesOnly && !showSkippedOnly}
         resetDeps={[showFavoritesOnly, showSkippedOnly, providers, q, activeFilters]}
         dim={showSkippedOnly}
@@ -1107,6 +1113,8 @@ function DonorGrid({ donors, searchQuery, type, onFilteredCountChange, fetchMore
       onPass={onPass}
       onUndo={onUndo}
       savedKeys={favoritedIds}
+      onReviewPassed={showSkippedOnly ? undefined : () => dispatch(setShowSkippedOnly(true))}
+      passedCount={passedIds.length}
       hideSavedOnMobile={!showFavoritesOnly && !showSkippedOnly}
       resetDeps={[searchQuery, activeFilters, sortBy, showFavoritesOnly, showSkippedOnly, showExperiencedOnly]}
       dim={showSkippedOnly}

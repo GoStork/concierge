@@ -182,6 +182,7 @@ export class TestRunnerService {
     const isPxCase = (id: string) => /^PX-/i.test(id);
     const isCgCase = (id: string) => /^CG-/i.test(id);
     const isPpCase = (id: string) => /^PP-/i.test(id);
+    const isPdCase = (id: string) => /^PD-/i.test(id);
     const wantsFt = !filter || filter === "free-text" || isFtCase(filter);
     const wantsPr = !filter || filter === "provider" || isPrCase(filter);
     const wantsJr = !filter || filter === "journey" || isJrCase(filter);
@@ -189,10 +190,11 @@ export class TestRunnerService {
     const wantsPx = !filter || filter === "profile-ux" || isPxCase(filter);
     const wantsCg = !filter || filter === "contact-guard" || isCgCase(filter);
     const wantsPp = !filter || filter === "parent-privacy" || isPpCase(filter);
+    const wantsPd = !filter || filter === "pandadoc" || isPdCase(filter);
     const wantsMain = !filter || (filter !== "free-text" && filter !== "provider" && filter !== "journey"
-      && filter !== "unit" && filter !== "profile-ux" && filter !== "contact-guard" && filter !== "parent-privacy"
+      && filter !== "unit" && filter !== "profile-ux" && filter !== "contact-guard" && filter !== "parent-privacy" && filter !== "pandadoc"
       && !isFtCase(filter) && !isPrCase(filter) && !isJrCase(filter) && !isUtCase(filter) && !isPxCase(filter)
-      && !isCgCase(filter) && !isPpCase(filter));
+      && !isCgCase(filter) && !isPpCase(filter) && !isPdCase(filter));
 
     const launch = (procKey: string, scriptFile: string, extraArgs: string[]) => {
     const scriptPath = path.resolve(process.cwd(), "scripts", scriptFile);
@@ -368,6 +370,9 @@ export class TestRunnerService {
     }
     if (wantsPp) {
       launch(`${runId}:pp`, "test-parent-privacy.ts", filter && isPpCase(filter) ? [`--id=${filter}`] : []);
+    }
+    if (wantsPd) {
+      launch(`${runId}:pd`, "test-pandadoc-contract.ts", filter && isPdCase(filter) ? [`--id=${filter}`] : []);
     }
 
     return { started: true, message: `Started run ${runId} with ${matchingTests.length} tests` };

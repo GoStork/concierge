@@ -1004,6 +1004,30 @@ export const TEST_CASES: TestCaseDef[] = [
     interestedServices: [], messageCount: 0,
   },
 
+  // ── PANDADOC API CONTRACT (PD-01..) ───────────────────────────────────────
+  // Runs scripts/test-pandadoc-contract.ts. PP-09 proves OUR side of agreement
+  // sending; this proves PandaDoc still answers the way we parse. READ-ONLY:
+  // creates no documents, sends no email, consumes no quota, so it is safe on
+  // every run. Skips cleanly when PANDADOC_API_KEY is absent.
+  {
+    id: "PD-01", persona: "pandadoc",
+    name: "PD-01: PandaDoc still accepts our API key",
+    desc: "The quiet failure this catches is a rotated or expired key - it breaks agreement sending for every provider at once, and today nothing tells anyone until someone tries to send one",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PD-02", persona: "pandadoc",
+    name: "PD-02: Template details still parse into the shape the send path needs",
+    desc: "fetchTemplateDetails reads exactly roles[].id, roles[].name, roles[].signing_order and fields[].assigned_to.{type,id}. If PandaDoc renames or nests any of them, agreement generation silently builds a document with no recipients or no fields - so this asserts those exact names and then runs our own parser over the live response",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PD-03", persona: "pandadoc",
+    name: "PD-03: Every provider's configured template still exists",
+    desc: "A template deleted in PandaDoc (404) or living in a workspace our key cannot reach (403) turns agreement generation into a failure at the worst possible moment. Cheap to notice here instead of in front of a parent",
+    interestedServices: [], messageCount: 0,
+  },
+
   // ── TRANSACTIONAL JOURNEY (JR-01..) ───────────────────────────────────────
   // Runs scripts/test-journey-flows.ts - what MOVES rather than what Eva says:
   // cost sheet -> acknowledgement -> invoice -> payment -> agreement -> handoff,

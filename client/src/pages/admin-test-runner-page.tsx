@@ -73,6 +73,7 @@ const PERSONA_DEFS = [
   { id: "profile-ux", label: "Profile UX" },
   { id: "contact-guard", label: "Contact Guard" },
   { id: "parent-privacy", label: "Parent Privacy" },
+  { id: "pandadoc", label: "PandaDoc API" },
 ];
 
 // ─── Status helpers ───────────────────────────────────────────────────────────

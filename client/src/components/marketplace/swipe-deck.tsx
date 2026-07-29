@@ -40,6 +40,13 @@ export interface SwipeDeckProps<T> {
    *  after a refresh - while desktop keeps it in the grid with a filled heart.
    *  Off in the Saved / Skipped views, where those items ARE the list. */
   hideSavedOnMobile?: boolean;
+  /** Switches the marketplace to the Skipped view. An emptied deck offers it as
+   *  the way back: the cards that are "missing" were usually passed. Omit in
+   *  the Skipped view itself. */
+  onReviewPassed?: () => void;
+  /** How many profiles the parent has passed - the offer above is hidden when
+   *  there are none to review. */
+  passedCount?: number;
   /** When any of these change, reset the deck to the top (e.g. tab/filter switch). */
   resetDeps?: ReadonlyArray<unknown>;
   /** Grayscale the stack/grid (skipped-only view). */
@@ -93,6 +100,8 @@ export function SwipeDeck<T>({
   onUndo,
   savedKeys,
   hideSavedOnMobile = false,
+  onReviewPassed,
+  passedCount = 0,
   resetDeps = [],
   dim = false,
   emptyTitle,
@@ -186,15 +195,27 @@ export function SwipeDeck<T>({
     setCurrentIndex((i) => (ordered.some((o) => getKey(o) === lastId) ? Math.max(0, i - 1) : i));
   };
 
+  // Every dead end offers the same way out: the cards that are "missing" from
+  // an emptied deck were usually passed, and the copy above already points at
+  // the filters.
+  const reviewPassed = onReviewPassed && passedCount > 0 ? (
+    <Button variant="outline" className="mt-4" onClick={onReviewPassed} data-testid="button-review-passed">
+      Review passed profiles
+    </Button>
+  ) : null;
+
   const seenAll = (canRestart: boolean) => (
     <div className="py-16 text-center text-muted-foreground" data-testid={seenAllTestId}>
       <p className="text-lg font-ui">{seenAllTitle}</p>
       {seenAllSubtitle && <p className="text-sm mt-2">{seenAllSubtitle}</p>}
-      {canRestart && (
-        <Button variant="outline" className="mt-4" onClick={() => setCurrentIndex(0)} data-testid={restartTestId}>
-          Start Over
-        </Button>
-      )}
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        {canRestart && (
+          <Button variant="outline" className="mt-4" onClick={() => setCurrentIndex(0)} data-testid={restartTestId}>
+            Start Over
+          </Button>
+        )}
+        {reviewPassed}
+      </div>
     </div>
   );
 
@@ -207,6 +228,7 @@ export function SwipeDeck<T>({
       <div className="py-16 text-center text-muted-foreground" data-testid={emptyTestId}>
         <p className="text-lg font-ui">{emptyTitle}</p>
         {emptySubtitle && <p className="text-sm">{emptySubtitle}</p>}
+        {reviewPassed}
       </div>
     );
   }
