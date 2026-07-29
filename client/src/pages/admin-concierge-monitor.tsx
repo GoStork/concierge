@@ -36,6 +36,7 @@ import { useOnlineStatus } from "@/hooks/use-online-status";
 import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { InvoiceSidebarSection } from "@/components/chat/invoice-sidebar-section";
+import { ContactReleaseSection } from "@/components/chat/contact-release-section";
 
 interface SessionSummary {
   id: string;
@@ -1035,6 +1036,13 @@ export default function AdminConciergeMonitor() {
               }
               extraSections={
                 <>
+                  {/* Gate B control. Lives here because this is the only admin
+                      surface with a (provider, parent) PAIR in context - the
+                      billing page is org-scoped and has no parent. */}
+                  <ContactReleaseSection
+                    providerId={monitorProviderId}
+                    parentAccountId={detail.user.parentAccountId || detail.user.id}
+                  />
                   {/* What Eva knows: the session's rolling summary (exactly what is
                       injected into Eva's prompt) + the account's durable memory,
                       editable in place so a bad extraction can be fixed mid-monitor.
