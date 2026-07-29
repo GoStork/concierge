@@ -248,8 +248,14 @@ export async function fetchDocumentViewUrl(apiKey: string, documentId: string, r
  * while PandaDoc already shows the address is a lie we would be telling the
  * parent. Idempotent, which matters because there are two send paths and
  * PandaDoc webhooks replay.
+ *
+ * Exported for PP-09. Driving the real send path from a test would create live
+ * documents in the provider's PandaDoc account on every run, so the test invokes
+ * this at the same seam the send paths use, and separately asserts both that
+ * every `status: "SENT"` write calls it and that no already-sent Agreement in
+ * the database lacks a release.
  */
-async function releaseContactOnAgreementSent(agreement: { id: string; providerId: string; parentUserId: string; sessionId?: string | null }): Promise<void> {
+export async function releaseContactOnAgreementSent(agreement: { id: string; providerId: string; parentUserId: string; sessionId?: string | null }): Promise<void> {
   try {
     const parent = await prisma.user.findUnique({
       where: { id: agreement.parentUserId },

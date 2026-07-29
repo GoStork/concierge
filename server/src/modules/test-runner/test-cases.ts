@@ -991,6 +991,18 @@ export const TEST_CASES: TestCaseDef[] = [
     desc: "A provider cannot unlock themselves; an admin can, and it takes effect with no cache to wait out. A manual unlock is revocable, an earned one returns 409 because the provider already holds a document with the address on it. Repeat releases keep the first reason and never duplicate, which is what PandaDoc webhook replays depend on",
     interestedServices: [], messageCount: 0,
   },
+  {
+    id: "PP-08", persona: "parent-privacy",
+    name: "PP-08: Approving an invoice draft really does release contact, whole chain",
+    desc: "Drives the path a provider actually walks with nothing stubbed - seed the referral fee config, legal identity and W-9, post the draft approval card, approve it - and asserts the chain reaches the end: createInvoice, sendPaymentNotificationsToParent, a release row with reason INVOICE, the parent's email now visible, and a CONTACT_RELEASED event on the journey timeline",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "PP-09", persona: "parent-privacy",
+    name: "PP-09: Sending an agreement releases contact, and no sent agreement is missing one",
+    desc: "The real send path talks to PandaDoc and would create live documents in the provider's account on every run, so this covers it three ways: the writer at the seam both send paths use, a source check that EVERY agreement SENT write calls it (a third send path added without one is the realistic regression), and a standing invariant over real data that no already-sent agreement lacks a release",
+    interestedServices: [], messageCount: 0,
+  },
 
   // ── TRANSACTIONAL JOURNEY (JR-01..) ───────────────────────────────────────
   // Runs scripts/test-journey-flows.ts - what MOVES rather than what Eva says:

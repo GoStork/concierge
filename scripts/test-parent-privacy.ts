@@ -343,6 +343,149 @@ async function pp07() {
   await clearReleases();
 }
 
+// ─── PP-08: the invoice trigger, driven for real ───────────────────────────
+// Everything createInvoice demands is a seedable row - an active referral fee
+// config, a complete legal identity, a signed W-9 - so this drives the whole
+// chain the provider actually walks: approve the draft card -> createInvoice ->
+// sendPaymentNotificationsToParent -> release. No stubbing anywhere.
+async function pp08() {
+  const f = await getFixture();
+  const p = await db();
+  await clearReleases();
+
+  // Snapshot the provider's real billing setup so the test can restore it.
+  const before = {
+    legal: await p.providerLegalIdentity.findUnique({ where: { providerId: f.providerId } }),
+    w9: await p.providerW9.findUnique({ where: { providerId: f.providerId } }),
+    fee: await p.referralFeeConfig.findFirst({ where: { providerId: f.providerId, serviceType: "EGG_DONATION" } }),
+  };
+  const madeFee = !before.fee;
+
+  await p.providerLegalIdentity.upsert({
+    where: { providerId: f.providerId },
+    create: { providerId: f.providerId, legalName: "PP Test Legal Name", taxId: "00-0000000" },
+    update: { legalName: before.legal?.legalName || "PP Test Legal Name", taxId: before.legal?.taxId || "00-0000000" },
+  });
+  await p.providerW9.upsert({
+    where: { providerId: f.providerId },
+    create: { providerId: f.providerId, status: "COMPLETED" },
+    update: { status: "COMPLETED" },
+  });
+  if (madeFee) {
+    await p.referralFeeConfig.create({
+      data: { providerId: f.providerId, serviceType: "EGG_DONATION", feeType: "PERCENTAGE", feeValue: 10, isActive: true },
+    }).catch(() => {});
+  } else {
+    await p.referralFeeConfig.update({ where: { id: before.fee.id }, data: { isActive: true } }).catch(() => {});
+  }
+
+  // The provider approval card the real flow posts.
+  const card = await p.aiChatMessage.create({
+    data: {
+      sessionId: f.sessionId, role: "assistant", senderType: "system",
+      uiCardType: "invoice_draft_approval", content: "Invoice ready for your approval",
+      uiCardData: {
+        lineItems: [{ serviceType: "EGG_DONATION", description: "Agency fee", amountCents: 500000 }],
+        totalCents: 500000,
+      },
+    },
+  });
+
+  const res = await send("POST", `/api/sessions/${f.sessionId}/invoice-draft/${card.id}/approve`, f.provAuth, {});
+  check("the provider can approve the invoice draft", res.status === 200 || res.status === 201,
+    `status=${res.status} ${JSON.stringify(res.body).slice(0, 200)}`);
+
+  if (res.status === 200 || res.status === 201) {
+    const rel = await p.parentContactRelease.findFirst({ where: { providerId: f.providerId, parentAccountId: f.accountKey } });
+    check("sending the invoice wrote a contact release", !!rel, "no release row");
+    check("...with reason INVOICE", rel?.reason === "INVOICE", String(rel?.reason));
+
+    const detail = await get(`/api/provider/concierge-sessions/${f.sessionId}`, f.provAuth);
+    check("and the parent's email is now visible to that provider", detail.body?.user?.email === f.parentEmail, String(detail.body?.user?.email));
+
+    const ev = await p.journeyEvent.findFirst({
+      where: { parentAccountId: f.accountKey, providerId: f.providerId, eventType: "CONTACT_RELEASED" },
+    });
+    check("and the release is on the journey timeline", !!ev, "no CONTACT_RELEASED event");
+  }
+
+  // Restore
+  await p.invoice.deleteMany({ where: { parentUserId: f.parentId } }).catch(() => {});
+  if (madeFee) await p.referralFeeConfig.deleteMany({ where: { providerId: f.providerId, serviceType: "EGG_DONATION" } }).catch(() => {});
+  else if (before.fee) await p.referralFeeConfig.update({ where: { id: before.fee.id }, data: { isActive: before.fee.isActive } }).catch(() => {});
+  if (!before.legal) await p.providerLegalIdentity.deleteMany({ where: { providerId: f.providerId } }).catch(() => {});
+  if (!before.w9) await p.providerW9.deleteMany({ where: { providerId: f.providerId } }).catch(() => {});
+  else await p.providerW9.update({ where: { providerId: f.providerId }, data: { status: before.w9.status } }).catch(() => {});
+  await clearReleases();
+}
+
+// ─── PP-09: the agreement trigger ──────────────────────────────────────────
+// The real send path talks to PandaDoc and would create live documents in the
+// provider's account on every run, so this covers it three ways instead: the
+// writer at the seam the send paths use, a source check that BOTH send paths
+// call it (the regression is someone adding a third), and a standing invariant
+// over real data that catches a missed wire-up in production.
+async function pp09() {
+  const f = await getFixture();
+  const p = await db();
+  await clearReleases();
+
+  const { releaseContactOnAgreementSent } = await import("../server/pandadoc-service.js");
+  const agreement = await p.agreement.create({
+    data: {
+      providerId: f.providerId, parentUserId: f.parentId, sessionId: f.sessionId,
+      status: "SENT", documentType: "AGENCY_AGREEMENT",
+    },
+  }).catch(() => null);
+  check("the agreement fixture was created", !!agreement, "create failed");
+
+  if (agreement) {
+    await releaseContactOnAgreementSent(agreement as any);
+    const rel = await p.parentContactRelease.findFirst({ where: { providerId: f.providerId, parentAccountId: f.accountKey } });
+    check("sending an agreement writes a contact release", !!rel, "no release row");
+    check("...with reason AGREEMENT", rel?.reason === "AGREEMENT", String(rel?.reason));
+    check("...resolved to the ACCOUNT key, not the raw user id", rel?.parentAccountId === f.accountKey,
+      `${rel?.parentAccountId} vs ${f.accountKey}`);
+
+    const detail = await get(`/api/provider/concierge-sessions/${f.sessionId}`, f.provAuth);
+    check("and the parent's email is now visible to that provider", detail.body?.user?.email === f.parentEmail, String(detail.body?.user?.email));
+    await p.agreement.delete({ where: { id: agreement.id } }).catch(() => {});
+  }
+
+  // Every place the Agreement flips to SENT must call the writer in the same
+  // handler. A third send path added without one is the realistic regression,
+  // and it would be invisible until a provider noticed a missing address.
+  const fs = await import("fs");
+  const src = fs.readFileSync("server/pandadoc-service.ts", "utf8");
+  const lines = src.split("\n");
+  const sentAgreementWrites = lines
+    .map((l, i) => ({ l, i }))
+    .filter(({ l }) => /data:\s*\{\s*status:\s*"SENT"/.test(l));
+  const wired = sentAgreementWrites.filter(({ i }) =>
+    lines.slice(i, i + 6).some((l) => l.includes("releaseContactOnAgreementSent")));
+  check(`every agreement SENT write calls the release writer (${wired.length}/${sentAgreementWrites.length})`,
+    sentAgreementWrites.length > 0 && wired.length === sentAgreementWrites.length,
+    `unwired at lines ${sentAgreementWrites.filter(({ i }) => !wired.some((w) => w.i === i)).map(({ i }) => i + 1).join(", ")}`);
+
+  // Standing invariant over REAL data. Stronger than any mock: it fails the
+  // moment a genuinely sent agreement exists without a release.
+  const sent = await p.agreement.findMany({
+    where: { status: { notIn: ["DRAFT", "CREATED", "ERROR"] } },
+    select: { id: true, providerId: true, parentUser: { select: { id: true, parentAccountId: true } } },
+  });
+  const orphans: string[] = [];
+  for (const a of sent) {
+    const key = a.parentUser?.parentAccountId || a.parentUser?.id;
+    if (!key) continue;
+    const has = await p.parentContactRelease.findFirst({ where: { providerId: a.providerId, parentAccountId: key } });
+    if (!has) orphans.push(a.id);
+  }
+  check(`no already-sent agreement lacks a contact release (checked ${sent.length})`, orphans.length === 0,
+    `orphans: ${orphans.slice(0, 5).join(", ")}`);
+
+  await clearReleases();
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "PP-01", name: "Booked consultation: the name is shown, the email and phone are not", run: pp01 },
   { id: "PP-02", name: "Contact enumeration is closed (every parent, to anyone, with email)", run: pp02 },
@@ -351,6 +494,8 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "PP-05", name: "IP-form fan-out reaches booked providers, never whisper-only ones", run: pp05 },
   { id: "PP-06", name: "The invoice list redacts an unreleased pair rather than trusting the invariant", run: pp06 },
   { id: "PP-07", name: "Admin override: unlock, revoke manual, refuse to revoke earned, stay monotonic", run: pp07 },
+  { id: "PP-08", name: "Approving an invoice draft really does release contact, whole chain", run: pp08 },
+  { id: "PP-09", name: "Sending an agreement releases contact, and no sent agreement is missing one", run: pp09 },
 ];
 
 async function cleanup() {
