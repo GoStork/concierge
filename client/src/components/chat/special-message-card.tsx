@@ -15,6 +15,7 @@ import { InvoiceCard } from "@/components/invoice-card";
 import { ClearanceTrackerCard } from "@/components/clearance-tracker-card";
 import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
+import { PaymentScheduleTimeline } from "@/components/costs/payment-schedule-timeline";
 
 // Egg-donor hold decision (provider-only card): the deposit is overdue and
 // the donor has been sitting ON_HOLD - the provider chooses to keep holding
@@ -696,6 +697,14 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
                 </a>
               )}
               {notes && <p className="t-helper italic whitespace-pre-line">{notes}</p>}
+            </div>
+          )}
+          {/* Installment plan as it stood when this sheet was sent. A frozen
+              snapshot on the quote, so a later edit to the provider's cost
+              sheet never rewrites what the parent was actually shown. */}
+          {!isCancelled && data.paymentSchedule?.tranches?.length > 0 && (
+            <div className="border-t px-4 py-3">
+              <PaymentScheduleTimeline schedule={data.paymentSchedule} compact />
             </div>
           )}
           {/* Phase 2 ack footer: parent-only, only while not yet acknowledged

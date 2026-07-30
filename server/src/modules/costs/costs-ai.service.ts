@@ -11,6 +11,38 @@ import {
   TAB_OF,
   TRANSFERS_INCLUDED,
 } from "./cost-templates-config";
+import {
+  CostItemRecurrence,
+  CostSheetPaymentTerms,
+  PAYMENT_TRIGGER_IDS,
+  isAmountBasis,
+  isPayTo,
+  isPaymentTrigger,
+} from "../../../../shared/payment-schedule";
+
+/**
+ * One payment stage extracted from a cost sheet's installment plan.
+ *
+ * Amounts are in DOLLARS here (matching how the AI reads them off the page);
+ * the persistence layer converts to cents. `itemKeys` are "<category>::<key>"
+ * references into the same parse's items array.
+ */
+export interface ParsedTranche {
+  name: string;
+  triggerType: string;
+  triggerLabel: string | null;
+  offsetDays: number | null;
+  offsetBasis: "CALENDAR" | "BUSINESS" | null;
+  offsetDirection: "AFTER" | "BEFORE" | null;
+  minValue: number | null;
+  maxValue: number | null;
+  amountBasis: string;
+  payTo: string;
+  isRefundable: boolean | null;
+  refundNote: string | null;
+  itemKeys: string[];
+  notes: string | null;
+}
 
 export interface ClassificationResult {
   tab: Tab;
@@ -361,8 +393,11 @@ Return ONLY a valid JSON array with objects having these exact fields:
       isIncluded: boolean;
       isTier: boolean;
       comment: string | null;
+      recurrence?: CostItemRecurrence | null;
     }>;
     classification: ClassificationResult | null;
+    tranches: ParsedTranche[];
+    paymentTerms: CostSheetPaymentTerms | null;
   }> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
@@ -556,12 +591,13 @@ CRITICAL - what counts as "included" vs "excluded":
 - Required medical services with stated prices (e.g. "Medication $1,000-$1,800", "Surrogate Screening $2,300", "Coordination Fee", "Anesthesia $X") that are NOT under an explicit Optional/Contingency header are STANDARD REQUIRED COSTS -> isIncluded=true with their stated price. The fact that they have a per-line price does NOT make them optional.
 - "Excluded" is ONLY for: items under a section explicitly titled "Additional Services" / "Other Services" / "Optional Services" / "Not Included" / "Contingency" / "If Needed" / "May Apply", OR items with explicit "optional" language ("if requested", "if applicable", "only if X").
 
-PAYMENT INSTALLMENTS - SKIP ENTIRELY:
-- A "payment schedule" / "installment plan" describes HOW the parent pays the program fee, NOT additional line items. Common patterns: "1st Installment $X", "2nd Installment $Y", "3rd Installment $Z", "Due at Signing $X", "Due at Match $Y", "Due at Embryo Transfer $Z".
-- These installments collectively ADD UP to a single program fee (the headline tier price). If you extract them as line items they will DOUBLE-COUNT the program cost and the parent will see a wildly inflated total.
-- DO NOT extract installments. Skip the entire payment-schedule section. The program fee is already captured by the tier/headline price.
-- ONLY extract items that are TRULY separate fees beyond the program price - e.g. "International Parents Fees", "Travel Expenses", contingency add-ons. If you cannot find such an item, that section just has nothing extractable.
-- Smell test: if Installment 1 + Installment 2 + Installment 3 ~= the tier/headline price, they're a payment schedule. Skip them.
+PAYMENT INSTALLMENTS - NEVER a line item, but DO capture them in "tranches":
+- A "payment schedule" / "installment plan" describes WHEN the parent pays, NOT additional services. Common patterns: "1st Installment $X", "2nd Installment $Y", "Due at Signing $X", "Due at Match $Y", "First deposit: due at matching", "FIRST INSTALLMENT TOTAL (Due upon 5 business days after pre-approval)".
+- These restate money that is ALREADY captured by the line items. If you emit them in "items" they DOUBLE-COUNT the program and the parent sees a wildly inflated total.
+- So: NEVER put an installment / deposit / payment-stage row in "items". Put it in the separate "tranches" array described in PART C instead.
+- Smell test: a row whose label is about TIMING or SEQUENCE ("1st/2nd/3rd installment", "opening deposit", "due at X", "payment 1") rather than about a SERVICE is a tranche, not an item.
+- Careful with TRAILING TOTALS: some sheets list the services first and then close the group with a row like "FIRST INSTALLMENT TOTAL ... $32,500". That closing row is a tranche; the rows above it are the items it pays for. Emit the services as items and the closing row as a tranche - never both as items.
+- A section header that states an amount and a trigger ("$62,300 Opening Installment to Escrow Due upon signing agency agreement") is a tranche header. The lines beneath it are its items.
 
 TIERED PACKAGE PRICING (critical for FET / Surrogacy / Egg Donation sheets):
 - When the document offers multiple package tiers for the same service (e.g. "Single Cycle $6,500" / "Two Cycles $10,500" / "Three Cycles $13,500" / "Unlimited Package $20,000"), these are ALTERNATIVES the parent picks ONE of. Emit EACH tier as its own item with:
@@ -572,6 +608,52 @@ TIERED PACKAGE PRICING (critical for FET / Surrogacy / Egg Donation sheets):
 - This rule applies to: cycle bundles, retrieval bundles, unlimited packages, multi-month storage discounts, group deals - anywhere the parent chooses one option among similar-but-different-priced alternatives for the same underlying service.
 - DO NOT mark tiers as isCustom or excluded. They are the program's primary pricing.
 - For regular (non-tier) items that have prices and aren't under an Optional section: isIncluded=true, isTier=false (the default).
+
+== PART C: PAYMENT SCHEDULE (the "tranches" array) ==
+
+Many cost sheets state WHEN the parent pays, in stages. Capture that here. Emit an EMPTY array when the document says nothing about payment timing - never invent a schedule.
+
+Each tranche:
+- "name": the document's own label ("First Deposit", "Opening Installment to Escrow", "2nd deposit", "Second Payment", "Step 1").
+- "triggerType": ONE of: ${PAYMENT_TRIGGER_IDS.join(" | ")}
+    AT_SIGNING (retainer / agency agreement signed / program sign-on / intake),
+    AT_MATCH (matched with a surrogate or donor / donor reserved),
+    AT_MEDICAL_CLEARANCE (medically cleared / clinic approval / pre-approved by clinic / in-person clearance),
+    AT_LEGAL_CLEARANCE (GSA or contract executed / legal clearance issued),
+    AT_MEDICATION_START (injectable medications commence),
+    AT_TRANSFER (embryo transfer), AT_RETRIEVAL (egg retrieval - donor cycles),
+    AT_HEARTBEAT (fetal heartbeat confirmed, ~week 6),
+    AT_GESTATIONAL_WEEK (a stated pregnancy week), AT_BIRTH, POST_BIRTH,
+    BEFORE_CYCLE_START (time-relative to a cycle, e.g. "two weeks before the cycle commences"),
+    OTHER (anything that doesn't map cleanly - do NOT force a wrong match).
+- "triggerLabel": the trigger EXACTLY as written ("within 5 days of legal sign off, before legal clearance issue"). ALWAYS include this. It is shown to parents verbatim.
+- "offsetDays" / "offsetBasis" ("CALENDAR"|"BUSINESS") / "offsetDirection" ("AFTER"|"BEFORE"): parse "within 5 business days after..." -> 5 / BUSINESS / AFTER. "two weeks prior to cycle start" -> 14 / CALENDAR / BEFORE. Omit when no window is stated.
+- "minValue" / "maxValue": the stated amount in DOLLARS. Range "35,200-50,200" -> min 35200, max 50200. Single amount -> both equal. Omit BOTH when the amount is not a stated figure.
+- "amountBasis": "STATED" (a figure is printed - the usual case) | "REMAINDER" ("the remaining balance is due...") | "PERCENT_OF" (e.g. "80% of fixed surrogate compensation") | "SUM_OF_ITEMS" (a header with no figure, whose items are listed beneath) | "TBD".
+- "payTo": who RECEIVES this payment: "ESCROW" (funds an escrow/trust account - very common in surrogacy) | "PROVIDER" (the agency/clinic itself) | "ATTORNEY" | "CLINIC" | "PHARMACY" | "BROKER" | "SURROGATE" | "OTHER". Read the document: "deposit to the escrow account", "paid to escrow", "(Charged by escrow company)" -> ESCROW. "(Charged by agency)" -> PROVIDER. "paid directly to the clinic" -> CLINIC. Default to PROVIDER only when nothing indicates otherwise.
+- "isRefundable" / "refundNote": when the document says a deposit is refundable ("fully refundable if a match is not made") or explicitly non-refundable.
+- "itemKeys": the line items this tranche pays for, as "<category>::<key>" EXACTLY matching entries in the items array. Use this when the document groups items under a payment stage (a header with items beneath it, or items followed by a closing "INSTALLMENT TOTAL" row). Omit or leave empty when the document doesn't say which services a payment covers.
+- "notes": anything else material about this payment.
+
+SPLITS OF A SINGLE FEE: sometimes only ONE fee is split across dates, rather than the whole program. Examples: "Agency Fee $30,000 / $5,000 Retainer w/TSS, $15,000 when matched w/GC, $10,000 legal contract w/GC" or a header "Agency Fees- $18,000" with four dated rows beneath summing to 18,000.
+- Emit the fee ONCE in "items" at its FULL value ($30,000 / $18,000).
+- Emit each dated portion as a tranche whose "itemKeys" points at that one item, and set the tranche's amount to the PORTION.
+- Never emit the portions as separate items - that double-counts the fee.
+
+== PART D: SHEET-LEVEL PAYMENT TERMS ("paymentTerms" object, omit when absent) ==
+- "escrowFloorCents": a required minimum escrow balance, in CENTS ("shall not fall under $10k at any given moment" -> 1000000).
+- "replenishDays": days given to top up when the balance drops ("5 business days to deposit more funds" -> 5).
+- "refundPolicy": what happens to leftover funds ("all remaining funds except $2,000 refunded six months after birth").
+- "quoteValidDays": quote validity ("valid for 90 days from date of receipt" -> 90).
+- "acceptedMethods": e.g. ["Wire", "Check", "Visa", "Mastercard", "Amex"].
+- "cardFeePercent": card surcharge ("a 3% convenience fee will be assessed to card payments" -> 3).
+- "notes": any other payment-terms language worth showing.
+
+== PART E: RECURRING ITEMS ==
+Some line items are paid as a STREAM, not at one moment: "Main Compensation (Paid in 10 monthly installments after fetal heartbeat detection)", "Monthly Allowance $300 once legally cleared", "Housekeeping $80/week starting from 32w".
+- Keep the item in "items" with its usual TOTAL value.
+- ALSO set "recurrence" on that item: { "amountCents": <per-payment amount in cents>, "period": "MONTHLY"|"WEEKLY", "count": <number of payments or null>, "startTrigger": <trigger id or null>, "startWeek": <gestational week or null> }.
+- Do NOT create tranches for the individual drip payments - that would produce a 40-row schedule.
 
 ${classificationSection}
 
@@ -601,9 +683,17 @@ Always emit at least one tag. If multiple service categories are clearly represe
 Output STRICT JSON only, no commentary, no markdown fence. Lead with the items array - it's the primary payload:
 {
   "items": [
-    { "category": string, "key": string, "minValue": number|null, "maxValue": number|null, "isCustom": boolean, "isIncluded": boolean, "isTier": boolean, "comment": string|null },
+    { "category": string, "key": string, "minValue": number|null, "maxValue": number|null, "isCustom": boolean, "isIncluded": boolean, "isTier": boolean, "comment": string|null,
+      "recurrence": { "amountCents": number, "period": "MONTHLY"|"WEEKLY", "count": number|null, "startTrigger": string|null, "startWeek": number|null } | null },
     ... (typically 10-30 items - extract them all)
   ],
+  "tranches": [
+    { "name": string, "triggerType": string, "triggerLabel": string, "offsetDays": number|null, "offsetBasis": "CALENDAR"|"BUSINESS"|null, "offsetDirection": "AFTER"|"BEFORE"|null,
+      "minValue": number|null, "maxValue": number|null, "amountBasis": string, "payTo": string, "isRefundable": boolean|null, "refundNote": string|null,
+      "itemKeys": ["<category>::<key>", ...], "notes": string|null },
+    ... (EMPTY ARRAY when the document states no payment timing)
+  ],
+  "paymentTerms": { "escrowFloorCents": number|null, "replenishDays": number|null, "refundPolicy": string|null, "quoteValidDays": number|null, "acceptedMethods": [string], "cardFeePercent": number|null, "notes": string|null } | null,
   "classification": {
 ${subtypeOutputSchema}
     "isFixedCost": <true|false>,
@@ -791,8 +881,21 @@ ${subtypeTrailingNote}`;
         isIncluded: item.isIncluded !== false,
         isTier: item.isTier === true,
         comment: item.comment ? String(item.comment) : null,
+        recurrence: this.normalizeRecurrence(item.recurrence),
       })),
     );
+
+    // Payment schedule branch. Emitted alongside items but kept strictly
+    // separate - a tranche never reaches any total (see the CostTranche
+    // model comment). Malformed entries are dropped rather than guessed at.
+    const tranches = this.normalizeTranches(parsed.tranches, items);
+    const paymentTerms = this.normalizePaymentTerms(parsed.paymentTerms);
+    if (tranches.length > 0) {
+      this.logger.log(
+        `parseAndClassify: extracted ${tranches.length} payment tranche(s): ` +
+          tranches.map((t) => `"${t.name}"@${t.triggerType}`).join(", "),
+      );
+    }
 
     // Classification branch. Three paths depending on provider type:
     //   - IVF: tab + subType are required from the 14-subtype taxonomy.
@@ -945,7 +1048,122 @@ ${subtypeTrailingNote}`;
       );
     }
 
-    return { items, classification };
+    return { items, classification, tranches, paymentTerms };
+  }
+
+  /**
+   * Normalize one item's recurrence block (pattern F - drip payments).
+   * Returns null unless the shape is genuinely usable: a per-payment amount
+   * and a period. A half-parsed recurrence is worse than none, because it
+   * renders as a confident but wrong sentence about how someone gets paid.
+   */
+  private normalizeRecurrence(raw: any): CostItemRecurrence | null {
+    if (!raw || typeof raw !== "object") return null;
+    const period = String(raw.period || "").toUpperCase();
+    if (period !== "MONTHLY" && period !== "WEEKLY") return null;
+    const amountCents = Number(raw.amountCents);
+    if (!Number.isFinite(amountCents) || amountCents <= 0) return null;
+    const count = Number(raw.count);
+    const startWeek = Number(raw.startWeek);
+    const startTrigger = isPaymentTrigger(raw.startTrigger) ? raw.startTrigger : null;
+    return {
+      amountCents: Math.round(amountCents),
+      period,
+      count: Number.isFinite(count) && count > 0 ? Math.round(count) : null,
+      startTrigger,
+      startWeek: Number.isFinite(startWeek) && startWeek > 0 ? Math.round(startWeek) : null,
+      note: raw.note ? String(raw.note).slice(0, 200) : null,
+    };
+  }
+
+  /**
+   * Normalize + validate the AI's tranche array.
+   *
+   * Every enum is validated against the shared vocabulary rather than
+   * trusted: an unrecognized trigger collapses to OTHER (where the verbatim
+   * triggerLabel still carries the full meaning) instead of being coerced
+   * into a neighbouring milestone, because a wrong milestone would tell a
+   * parent to have money ready at the wrong moment.
+   */
+  private normalizeTranches(
+    raw: any,
+    items: Array<{ category: string; key: string }>,
+  ): ParsedTranche[] {
+    if (!Array.isArray(raw)) return [];
+    const validKeys = new Set(items.map((i) => `${i.category}::${i.key}`));
+
+    return raw
+      .map((t: any): ParsedTranche | null => {
+        if (!t || typeof t !== "object") return null;
+        const name = String(t.name || "").trim().slice(0, 120);
+        if (!name) return null;
+
+        const minValue = t.minValue != null && Number.isFinite(Number(t.minValue)) ? Number(t.minValue) : null;
+        const maxValue = t.maxValue != null && Number.isFinite(Number(t.maxValue)) ? Number(t.maxValue) : null;
+        const offsetDaysRaw = Number(t.offsetDays);
+        const basis = String(t.amountBasis || "").toUpperCase();
+        const payTo = String(t.payTo || "").toUpperCase();
+
+        // Only keep itemKeys that actually resolve to an emitted item -
+        // a dangling reference would silently drop money out of the
+        // schedule's coverage maths.
+        const itemKeys = (Array.isArray(t.itemKeys) ? t.itemKeys : [])
+          .map((k: any) => String(k))
+          .filter((k: string) => validKeys.has(k));
+
+        return {
+          name,
+          triggerType: isPaymentTrigger(t.triggerType) ? t.triggerType : "OTHER",
+          triggerLabel: t.triggerLabel ? String(t.triggerLabel).trim().slice(0, 400) : null,
+          offsetDays: Number.isFinite(offsetDaysRaw) && offsetDaysRaw > 0 ? Math.round(offsetDaysRaw) : null,
+          offsetBasis: String(t.offsetBasis || "").toUpperCase() === "BUSINESS" ? "BUSINESS" : "CALENDAR",
+          offsetDirection: String(t.offsetDirection || "").toUpperCase() === "BEFORE" ? "BEFORE" : "AFTER",
+          minValue,
+          maxValue,
+          // A tranche with no stated figure but with assigned items is a
+          // header row - derive it from what it contains rather than
+          // recording a zero the provider would have to correct.
+          amountBasis: isAmountBasis(basis)
+            ? basis
+            : minValue == null && maxValue == null
+              ? itemKeys.length > 0
+                ? "SUM_OF_ITEMS"
+                : "TBD"
+              : "STATED",
+          payTo: isPayTo(payTo) ? payTo : "PROVIDER",
+          isRefundable: typeof t.isRefundable === "boolean" ? t.isRefundable : null,
+          refundNote: t.refundNote ? String(t.refundNote).slice(0, 400) : null,
+          itemKeys,
+          notes: t.notes ? String(t.notes).slice(0, 600) : null,
+        };
+      })
+      .filter((t): t is ParsedTranche => t !== null);
+  }
+
+  /** Normalize the sheet-level payment terms block. */
+  private normalizePaymentTerms(raw: any): CostSheetPaymentTerms | null {
+    if (!raw || typeof raw !== "object") return null;
+    const num = (v: any): number | null => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const terms: CostSheetPaymentTerms = {
+      escrowFloorCents: num(raw.escrowFloorCents) != null ? Math.round(Number(raw.escrowFloorCents)) : null,
+      replenishDays: num(raw.replenishDays) != null ? Math.round(Number(raw.replenishDays)) : null,
+      refundPolicy: raw.refundPolicy ? String(raw.refundPolicy).slice(0, 800) : null,
+      quoteValidDays: num(raw.quoteValidDays) != null ? Math.round(Number(raw.quoteValidDays)) : null,
+      acceptedMethods: Array.isArray(raw.acceptedMethods)
+        ? raw.acceptedMethods.map((m: any) => String(m).slice(0, 40)).filter(Boolean).slice(0, 10)
+        : null,
+      cardFeePercent: num(raw.cardFeePercent),
+      notes: raw.notes ? String(raw.notes).slice(0, 800) : null,
+    };
+    // Drop the block entirely when nothing meaningful came back, so the UI
+    // can distinguish "no terms stated" from "terms stated but empty".
+    const hasAny = Object.values(terms).some(
+      (v) => v != null && (!Array.isArray(v) || v.length > 0),
+    );
+    return hasAny ? terms : null;
   }
 
   /**

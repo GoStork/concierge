@@ -101,6 +101,14 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.costItem;
   }
 
+  get costTranche() {
+    return prisma.costTranche;
+  }
+
+  get costItemPayment() {
+    return prisma.costItemPayment;
+  }
+
   get scheduleConfig() {
     return prisma.scheduleConfig;
   }

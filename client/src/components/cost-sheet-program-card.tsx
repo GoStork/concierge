@@ -4,6 +4,7 @@ import { getCountryFlag } from "@/lib/country-flag";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatFieldLabel } from "@/lib/format-label";
 import { cn } from "@/lib/utils";
+import { PaymentScheduleTimeline, type PaymentScheduleData } from "@/components/costs/payment-schedule-timeline";
 
 /**
  * Parent-facing card representing one of a clinic's cost-sheet programs.
@@ -33,6 +34,12 @@ export interface ProgramCardData {
   minTotal: number;
   maxTotal: number;
   lineItems: ProgramCardLineItem[];
+  /**
+   * Installment plan, when the provider has published one. Absent for the
+   * majority of programs, and always absent while a parsed schedule is still
+   * awaiting the provider's confirmation.
+   */
+  paymentSchedule?: PaymentScheduleData | null;
 }
 
 const GROUPS = [
@@ -153,6 +160,15 @@ export function CostSheetProgramCard({
             );
           })}
         </div>
+
+        {/* When the provider has published one, the schedule closes the card:
+            the parent's question shifts from "what does it cost" to "when do
+            I need the money", and that's the order they ask it in. */}
+        {program.paymentSchedule && program.paymentSchedule.tranches.length > 0 && (
+          <div className="border-t border-border/60 px-5 py-4">
+            <PaymentScheduleTimeline schedule={program.paymentSchedule} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -773,9 +773,24 @@ model ProviderCostSheet {
   parseStage       String?
   parseProgress    Int?          @default(0)
   parseItemsCount  Int?          @default(0)
+  // Sheet-level payment terms that aren't tied to a single tranche:
+  //   { escrowFloorCents, replenishDays, refundPolicy, quoteValidDays,
+  //     acceptedMethods: string[], cardFeePercent, notes }
+  // Escrow floors ("balance shall not fall under $10k at any given moment"),
+  // refund tails ("remainder refunded 6 months after birth") and quote
+  // validity windows appear across the corpus but belong to the sheet, not
+  // to any one payment.
+  paymentTerms     Json?
+  // Trust gate for the payment schedule, mirroring isFixedCostSource.
+  // "ai_proposed" = parsed but unconfirmed (provider-only visibility).
+  // "provider_confirmed" = the provider has reviewed/corrected it and it
+  // may be shown to parents. "provider_authored" = built from scratch in
+  // the editor with no AI involvement (also parent-visible).
+  scheduleSource   String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   items            CostItem[]
+  tranches         CostTranche[]
   provider         Provider      @relation(fields: [providerId], references: [id])
   providerType     ProviderType? @relation(fields: [providerTypeId], references: [id])
   parentClient     User?         @relation("CostSheetQuotes", fields: [parentClientId], references: [id])
@@ -800,8 +815,104 @@ model CostItem {
   // one. Provider editor groups them in a dedicated Pricing Tiers section;
   // parent grid emits one card per tier.
   isTier              Boolean           @default(false)
+  // Recurring / drip payments (pattern F in the payment-schedule taxonomy).
+  // A stream, not a tranche - modelling "10 monthly installments after
+  // fetal heartbeat" or "$300/month commencing the 26th week" as tranches
+  // would produce a 40-row timeline. Shape:
+  //   { amountCents, period: "WEEKLY"|"MONTHLY", count?, startTrigger?,
+  //     startWeek?, note? }
+  // Purely descriptive - never affects the item's min/maxValue or any total.
+  recurrence          Json?
   providerCostSheet   ProviderCostSheet @relation(fields: [providerCostSheetId], references: [id], onDelete: Cascade)
   templateField       CostTemplate?     @relation(fields: [templateFieldId], references: [id], onDelete: SetNull)
+  payments            CostItemPayment[]
+}
+
+/// One payment in a cost sheet's installment plan.
+///
+/// CORE INVARIANT: a tranche NEVER contributes to any total. The program
+/// total stays derived from CostItem rows exactly as it always has - a
+/// tranche is a *view over money already counted*, holding a stated amount
+/// for display and references to the items it covers. Every total-cost
+/// path, matcher and invoice is therefore unaffected by schedules, and the
+/// double-count class of bug (installment rows summed as if they were
+/// extra line items) is structurally impossible rather than prompt-enforced.
+model CostTranche {
+  id                  String            @id @default(uuid())
+  providerCostSheetId String
+  sortOrder           Int               @default(0)
+  // Provider's own label: "First Deposit", "Opening Installment to Escrow",
+  // "2nd deposit", "Second Payment".
+  name                String
+  // Canonical milestone from PAYMENT_TRIGGERS (payment-schedule-config.ts).
+  // "OTHER" whenever the document's trigger doesn't map cleanly - the
+  // verbatim triggerLabel then carries the whole meaning.
+  triggerType         String            @default("OTHER")
+  // The provider's exact words: "within 5 days of legal sign off, before
+  // legal clearance issue". Always retained and always displayed - no enum
+  // holds this much nuance, and parents are making financial plans off it.
+  triggerLabel        String?
+  // "within 5 business days AFTER", "two weeks BEFORE cycle start".
+  offsetDays          Int?
+  offsetBasis         String?           @default("CALENDAR") // "CALENDAR" | "BUSINESS"
+  offsetDirection     String?           @default("AFTER") // "AFTER" | "BEFORE"
+  // Stated amount, as a range - Genesis and Love & Kindness state tranches
+  // as ranges up to $41k wide. Null when amountBasis derives the figure.
+  minValueCents       Int?
+  maxValueCents       Int?
+  // How the amount is arrived at:
+  //   STATED       - the document prints a figure (most common)
+  //   SUM_OF_ITEMS - derive by summing the assigned items
+  //   REMAINDER    - "the remaining balance" (NEFI deposit-plus-remainder)
+  //   PERCENT_OF   - a percentage of assigned items (Genesis 80/20 split)
+  //   TBD          - stated as variable/unknown
+  amountBasis         String            @default("STATED")
+  // Who the money actually goes to. Not cosmetic: most surrogacy tranches
+  // fund an ESCROW account that then disburses, and OneWorld tags every
+  // line with a distinct payee (agency / escrow / attorney / broker / GC).
+  // Rendering "Payment 1: $62,300" against the provider's name would
+  // misstate who holds the money on the largest financial decision these
+  // parents make.
+  payTo               String            @default("PROVIDER")
+  payToLabel          String?
+  isRefundable        Boolean?
+  refundNote          String?
+  notes               String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  providerCostSheet   ProviderCostSheet @relation(fields: [providerCostSheetId], references: [id], onDelete: Cascade)
+  itemPayments        CostItemPayment[]
+
+  @@index([providerCostSheetId, sortOrder])
+}
+
+/// Join between a line item and the tranche(s) that pay for it.
+///
+/// Many-to-many with amounts, because the corpus demands it: one fee is
+/// routinely split across several tranches (NESA's $18,000 agency fee across
+/// four due-dates; Genesis paying 80% of surrogate compensation in deposit 2
+/// and 20% in deposit 3), and one tranche holds parts of several items. A
+/// nullable trancheId on CostItem could not express either case.
+model CostItemPayment {
+  id            String      @id @default(uuid())
+  costItemId    String
+  trancheId     String
+  // Portion of the item due in this tranche. Both null = the whole item.
+  minValueCents Int?
+  maxValueCents Int?
+  // For PERCENT_OF splits: 80 in tranche 2, 20 in tranche 3. Resolved
+  // against the item's own value at render time rather than flattened to a
+  // literal, so a per-match personalised schedule stays computable.
+  percent       Float?
+  // The fragment's own caption from the document: "Retainer w/TSS",
+  // "due upon starting medication".
+  label         String?
+  sortOrder     Int         @default(0)
+  costItem      CostItem    @relation(fields: [costItemId], references: [id], onDelete: Cascade)
+  tranche       CostTranche @relation(fields: [trancheId], references: [id], onDelete: Cascade)
+
+  @@unique([costItemId, trancheId])
+  @@index([trancheId])
 }
 
 model ScheduleConfig {
@@ -2312,6 +2423,12 @@ model ProviderQuote {
   // fees scale by this multiplier so a 2-vial quote also doubles GoStork's
   // flat fee. PERCENTAGE fees ignore it - they already scale with the total.
   quantity             Int       @default(1)
+  // Installment plan as it stood when this quote was SENT - a snapshot, not
+  // a live reference to the source sheet's CostTranche rows. A parent has
+  // acted on the schedule they were shown, so a later edit to the provider's
+  // sheet must not silently rewrite a quote already in someone's hands.
+  // Shape matches buildParentPaymentSchedule()'s return value.
+  paymentSchedule      Json?
   createdAt            DateTime  @default(now())
 
   session       AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)

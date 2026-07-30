@@ -4,12 +4,13 @@ import { NotificationModule } from "../notifications/notification.module";
 import { CostsController } from "./costs.controller";
 import { CostsService } from "./costs.service";
 import { CostsAiService } from "./costs-ai.service";
+import { PaymentScheduleService } from "./payment-schedule.service";
 
 @Module({
   imports: [PrismaModule, NotificationModule],
   controllers: [CostsController],
-  providers: [CostsService, CostsAiService],
-  exports: [CostsService],
+  providers: [CostsService, CostsAiService, PaymentScheduleService],
+  exports: [CostsService, PaymentScheduleService],
 })
 export class CostsModule implements OnModuleInit {
   private readonly logger = new Logger(CostsModule.name);

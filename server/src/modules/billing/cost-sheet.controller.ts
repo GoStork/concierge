@@ -25,6 +25,7 @@ import { NotificationService } from "../notifications/notification.service";
 import { StorageService } from "../storage/storage.service";
 import { prisma } from "../../../db";
 import { formatMoneyCents } from "../../lib/format-money";
+import { buildParentPaymentSchedule } from "../costs/payment-schedule.service";
 
 /**
  * Endpoints for the cost-sheet + invoice flow that sits between the AI chat and Stripe billing.
@@ -67,6 +68,50 @@ export class CostSheetController {
     }
 
     return { session, isAdmin, isProviderMember, roles };
+  }
+
+  // ─── Payment schedule snapshot ─────────────────────────────────────────────
+
+  /**
+   * The provider's published installment plan, shaped for the parent, to be
+   * frozen onto the quote being sent.
+   *
+   * Uses the provider's most recently updated APPROVED master sheet that
+   * actually carries a confirmed schedule. Returns null when they have none,
+   * which is the common case and renders as no timeline at all - never as an
+   * invented one.
+   */
+  private async resolvePaymentScheduleSnapshot(providerId: string) {
+    try {
+      const sheet = await this.db.providerCostSheet.findFirst({
+        where: {
+          providerId,
+          status: "APPROVED",
+          parentClientId: null,
+          scheduleSource: { in: ["provider_confirmed", "provider_authored"] },
+        },
+        orderBy: { updatedAt: "desc" },
+        include: {
+          items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] },
+          tranches: {
+            orderBy: { sortOrder: "asc" },
+            include: {
+              itemPayments: {
+                orderBy: { sortOrder: "asc" },
+                include: { costItem: { select: { key: true, category: true } } },
+              },
+            },
+          },
+        },
+      });
+      if (!sheet) return null;
+      return buildParentPaymentSchedule(sheet as any);
+    } catch (err: any) {
+      // A schedule is additive information on the quote. Never let a failure
+      // here block a provider from sending a cost sheet.
+      this.logger.warn(`Payment schedule snapshot failed for provider ${providerId}: ${err.message}`);
+      return null;
+    }
   }
 
   // ─── Send a cost sheet ─────────────────────────────────────────────────────
@@ -150,6 +195,13 @@ export class CostSheetController {
       costSheetFileName = file.originalname;
     }
 
+    // Snapshot the provider's installment plan onto the quote. Taken at send
+    // time and frozen: a parent plans around the schedule they were shown, so
+    // a later edit to the source sheet must not rewrite a quote already in
+    // their hands. Falls back to the provider's most recent approved sheet
+    // when the send isn't tied to a specific one.
+    const paymentScheduleSnapshot = await this.resolvePaymentScheduleSnapshot(session.providerId!);
+
     // Supersede prior active quotes for this session, then create the new one.
     const quote = await this.db.$transaction(async tx => {
       await tx.providerQuote.updateMany({
@@ -167,6 +219,7 @@ export class CostSheetController {
           costSheetFileName,
           notes: body.notes?.trim() || null,
           lineItems: parsedLineItems ?? undefined,
+          paymentSchedule: paymentScheduleSnapshot ?? undefined,
           source: isAdmin ? "ADMIN_OVERRIDE" : "PROVIDER",
           createdByUserId: user.id || null,
         },
@@ -180,7 +233,11 @@ export class CostSheetController {
       data: {
         sessionId,
         role: "assistant",
-        content: `${session.provider?.name || "Your provider"} sent a cost sheet. Total: ${formatMoneyCents(totalCostCents)}`,
+        content: `${session.provider?.name || "Your provider"} sent you a cost sheet. Total: ${formatMoneyCents(totalCostCents)}${
+          paymentScheduleSnapshot
+            ? `. It includes a payment schedule so you can see what is due and when.`
+            : ""
+        }`,
         senderType: "system",
         senderName: session.provider?.name || "Provider",
         uiCardType: "cost_sheet",
@@ -193,6 +250,15 @@ export class CostSheetController {
           notes: quote.notes,
           parentAcknowledgedAt: null,
           sentAt: quote.createdAt.toISOString(),
+          paymentSchedule: paymentScheduleSnapshot ?? null,
+          // The provider reads their own copy of this card, so the sentence
+          // above it has to make sense from their side too - a parent must
+          // never read about themselves in the third person in their own chat.
+          providerContent: `You sent a cost sheet. Total: ${formatMoneyCents(totalCostCents)}${
+            paymentScheduleSnapshot
+              ? `, with a ${paymentScheduleSnapshot.tranches.length}-payment schedule attached.`
+              : "."
+          }`,
         },
       },
     });

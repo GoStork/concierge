@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PaymentScheduleEditor } from "@/components/costs/payment-schedule-editor";
 import {
   Upload,
   Download,
@@ -2283,6 +2284,19 @@ function SingleCostsTab({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Payment schedule (installment plan). Sits below the line items
+          because it is a view over them - a tranche never contributes to any
+          total. Hidden while the AI parse is still running so the provider
+          isn't shown an empty-state CTA for a schedule that may be seconds
+          from arriving. */}
+      {displaySheet?.id && displaySheet.status !== "PARSING" && (
+        <PaymentScheduleEditor
+          sheetId={displaySheet.id}
+          providerId={providerId}
+          canEdit={effectiveEditing}
+        />
       )}
 
       {displayItems.length > 0 && (

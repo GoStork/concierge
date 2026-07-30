@@ -3,6 +3,7 @@ import { programDisplayName } from "./program-name";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { CostsAiService } from "./costs-ai.service";
+import { PaymentScheduleService, buildParentPaymentSchedule } from "./payment-schedule.service";
 import * as crypto from "crypto";
 import { recalcAndPersistTotalCostsForProvider } from "./total-cost.utils";
 import {
@@ -96,6 +97,7 @@ export class CostsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(StorageService) private readonly storage: StorageService,
     @Inject(CostsAiService) private readonly costsAi: CostsAiService,
+    @Inject(PaymentScheduleService) private readonly paymentSchedule: PaymentScheduleService,
   ) {}
 
   /**
@@ -210,7 +212,7 @@ export class CostsService {
         this.logger.log(`Background AI parse+classify started for sheet ${sheetId}`);
         await this.updateParseProgress(sheetId, "Reading document with AI", 10, 0);
 
-        const { items, classification } = await this.costsAi.parseAndClassifyDocument(
+        const { items, classification, tranches, paymentTerms } = await this.costsAi.parseAndClassifyDocument(
           buffer, contentType, providerType, filename, subType,
           async ({ itemsCount }) => {
             const streamProgress = Math.min(85, 15 + Math.round(itemsCount * 3.5));
@@ -247,6 +249,20 @@ export class CostsService {
         }
         if (allSheetIds.length === 1) {
           await this.saveParseResults(sheetId, items);
+        }
+
+        // Payment schedule. Runs AFTER items are persisted because tranches
+        // reference line items by id. Best-effort by design: a schedule is
+        // additive information, so a failure here must never fail an
+        // otherwise-good parse or leave the sheet stuck in PARSING. Only the
+        // single-program path gets one - a split fee schedule spans several
+        // programs and its tranches can't be attributed to any single sheet.
+        if (allSheetIds.length === 1 && (tranches.length > 0 || paymentTerms)) {
+          try {
+            await this.paymentSchedule.saveParsedSchedule(sheetId, tranches, paymentTerms);
+          } catch (err: any) {
+            this.logger.warn(`Payment schedule save failed for sheet ${sheetId}: ${err.message}`);
+          }
         }
 
         // Admin uploads skip the review queue: once parsing succeeds the
@@ -1371,6 +1387,18 @@ export class CostsService {
           take: 1,
           include: {
             items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] },
+            // Payment schedule. Loaded here so the card can render it without
+            // an extra round trip; gated below on the provider having
+            // confirmed it, so an unreviewed AI parse never reaches a parent.
+            tranches: {
+              orderBy: { sortOrder: "asc" },
+              include: {
+                itemPayments: {
+                  orderBy: { sortOrder: "asc" },
+                  include: { costItem: { select: { key: true, category: true } } },
+                },
+              },
+            },
           },
         },
       },
@@ -1476,6 +1504,10 @@ export class CostsService {
           isFixedCost: sheet.isFixedCost,
           updatedAt: sheet.updatedAt,
           serviceTypes: Array.isArray(p.serviceTypes) ? p.serviceTypes : [],
+          // Installment plan, only once the provider has confirmed or
+          // authored it. Payment terms are higher-stakes than a subtype
+          // label, so an unreviewed parse stays provider-only.
+          paymentSchedule: buildParentPaymentSchedule(sheet),
         };
 
         // Render the compensation row at the donor's / surrogate's actual
@@ -2052,11 +2084,29 @@ export class CostsService {
       isIncluded?: boolean;
       sortOrder?: number;
       templateFieldId?: string | null;
+      recurrence?: any;
     }>,
   ) {
     const sheet = await this.prisma.providerCostSheet.findUnique({ where: { id: sheetId } });
     if (sheet && (sheet.status === "APPROVED" || sheet.status === "ARCHIVED")) {
       throw new Error(`Cannot modify a cost sheet with status ${sheet.status}`);
+    }
+
+    // This method rewrites items by delete + recreate, which cascade-deletes
+    // their CostItemPayment rows. Snapshot the payment-schedule assignments
+    // first (keyed by category::key, the only identity that survives a
+    // rewrite) and restore them afterwards - otherwise every routine line-item
+    // edit would silently empty the provider's installment plan.
+    const priorAssignments = await this.prisma.costItemPayment.findMany({
+      where: { costItem: { providerCostSheetId: sheetId } },
+      include: { costItem: { select: { category: true, key: true } } },
+    });
+    const assignmentsByItemKey = new Map<string, typeof priorAssignments>();
+    for (const a of priorAssignments) {
+      const k = `${a.costItem.category}::${a.costItem.key}`;
+      const list = assignmentsByItemKey.get(k) ?? [];
+      list.push(a);
+      assignmentsByItemKey.set(k, list);
     }
 
     await this.prisma.costItem.deleteMany({
@@ -2078,8 +2128,46 @@ export class CostsService {
           isIncluded: item.isIncluded !== undefined ? item.isIncluded : true,
           isTier: item.isTier === true,
           sortOrder: item.sortOrder ?? idx,
+          recurrence: item.recurrence ?? undefined,
         })),
       });
+    }
+
+    // Re-link surviving items to their tranches. Items the provider renamed
+    // or removed simply don't match and their assignment is dropped, which
+    // is the correct outcome - the tranche keeps its own stated amount.
+    if (assignmentsByItemKey.size > 0) {
+      const newItems = await this.prisma.costItem.findMany({
+        where: { providerCostSheetId: sheetId },
+        select: { id: true, category: true, key: true },
+      });
+      const restore: any[] = [];
+      for (const ni of newItems) {
+        const prior = assignmentsByItemKey.get(`${ni.category}::${ni.key}`);
+        if (!prior) continue;
+        for (const a of prior) {
+          restore.push({
+            costItemId: ni.id,
+            trancheId: a.trancheId,
+            minValueCents: a.minValueCents,
+            maxValueCents: a.maxValueCents,
+            percent: a.percent,
+            label: a.label,
+            sortOrder: a.sortOrder,
+          });
+        }
+      }
+      if (restore.length > 0) {
+        // skipDuplicates guards the (costItemId, trancheId) unique index in
+        // the rare case a rewrite collapses two items onto one key.
+        await this.prisma.costItemPayment.createMany({ data: restore, skipDuplicates: true });
+      }
+      const lost = priorAssignments.length - restore.length;
+      if (lost > 0) {
+        this.logger.log(
+          `updateSheetItems(${sheetId}): ${lost} payment-schedule assignment(s) dropped - their line items were renamed or removed`,
+        );
+      }
     }
 
     return this.getSheet(sheetId);

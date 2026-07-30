@@ -4,6 +4,7 @@ import {
   Post,
   Delete,
   Patch,
+  Put,
   Param,
   Query,
   Body,
@@ -21,6 +22,7 @@ import { Request, Response } from "express";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { CostsService } from "./costs.service";
 import { CostsAiService } from "./costs-ai.service";
+import { PaymentScheduleService } from "./payment-schedule.service";
 import { NotificationService } from "../notifications/notification.service";
 import { AppEventsService } from "../notifications/app-events.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -108,6 +110,7 @@ export class CostsController {
     @Inject(NotificationService) private readonly notifications: NotificationService,
     @Inject(AppEventsService) private readonly appEvents: AppEventsService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(PaymentScheduleService) private readonly paymentSchedule: PaymentScheduleService,
   ) {}
 
   // backgroundParseAndSave moved to CostsService.runBackgroundParse so the
@@ -495,6 +498,91 @@ export class CostsController {
     if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
     this.assertProviderOrAdmin(req, sheet.providerId);
     return this.costsService.saveClinicClassification(sheetId, body as any);
+  }
+
+  // ---------------------------------------------------------------------
+  // Payment schedule (installment plan) on a cost sheet
+  //
+  // A schedule is a view over money already captured as line items - it
+  // never contributes to any total. See the CostTranche model comment.
+  // ---------------------------------------------------------------------
+
+  /**
+   * The sheet's schedule: tranches in order with their assigned line items,
+   * sheet-level payment terms, every item on the sheet (so the editor can
+   * offer assignment targets), and a live reconciliation verdict.
+   */
+  @Get("sheet/:sheetId/payment-schedule")
+  @UseGuards(SessionOrJwtGuard)
+  async getPaymentSchedule(@Param("sheetId") sheetId: string, @Req() req: Request) {
+    const sheet = await this.costsService.getSheet(sheetId);
+    if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
+    this.assertProviderOrAdmin(req, sheet.providerId);
+    return this.paymentSchedule.getSchedule(sheetId);
+  }
+
+  /**
+   * Replace the sheet's schedule with what the provider has in the editor.
+   *
+   * One atomic save covers correcting a parsed schedule, reordering it, and
+   * authoring one from scratch - the provider's edits are always the
+   * authoritative version, and saving marks the schedule parent-visible.
+   */
+  @Put("sheet/:sheetId/payment-schedule")
+  @UseGuards(SessionOrJwtGuard)
+  async savePaymentSchedule(
+    @Param("sheetId") sheetId: string,
+    @Body() body: { tranches?: any[]; paymentTerms?: any; source?: "provider_confirmed" | "provider_authored" },
+    @Req() req: Request,
+  ) {
+    const sheet = await this.costsService.getSheet(sheetId);
+    if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
+    this.assertProviderOrAdmin(req, sheet.providerId);
+    return this.paymentSchedule.replaceSchedule(sheetId, {
+      tranches: Array.isArray(body?.tranches) ? body.tranches : [],
+      paymentTerms: body?.paymentTerms,
+      source: body?.source,
+    });
+  }
+
+  /** Accept an AI-parsed schedule unchanged, making it visible to parents. */
+  @Post("sheet/:sheetId/payment-schedule/confirm")
+  @UseGuards(SessionOrJwtGuard)
+  async confirmPaymentSchedule(@Param("sheetId") sheetId: string, @Req() req: Request) {
+    const sheet = await this.costsService.getSheet(sheetId);
+    if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
+    this.assertProviderOrAdmin(req, sheet.providerId);
+    return this.paymentSchedule.confirmSchedule(sheetId);
+  }
+
+  /** Remove the schedule entirely. */
+  @Delete("sheet/:sheetId/payment-schedule")
+  @UseGuards(SessionOrJwtGuard)
+  async deletePaymentSchedule(@Param("sheetId") sheetId: string, @Req() req: Request) {
+    const sheet = await this.costsService.getSheet(sheetId);
+    if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
+    this.assertProviderOrAdmin(req, sheet.providerId);
+    return this.paymentSchedule.clearSchedule(sheetId);
+  }
+
+  /**
+   * Starter stages for a provider building a schedule from scratch, shaped
+   * by the program's service type. Amounts are deliberately blank - the
+   * stages are a scaffold, the money is the provider's to enter.
+   */
+  @Get("sheet/:sheetId/payment-schedule/starter")
+  @UseGuards(SessionOrJwtGuard)
+  async getPaymentScheduleStarter(@Param("sheetId") sheetId: string, @Req() req: Request) {
+    const sheet = await this.costsService.getSheet(sheetId);
+    if (!sheet) throw new HttpException("Sheet not found", HttpStatus.NOT_FOUND);
+    this.assertProviderOrAdmin(req, sheet.providerId);
+    const program = sheet.programId
+      ? await this.prisma.costProgram.findUnique({
+          where: { id: sheet.programId },
+          select: { serviceTypes: true },
+        })
+      : null;
+    return { tranches: this.paymentSchedule.suggestStarterTranches(program?.serviceTypes ?? []) };
   }
 
   /**
