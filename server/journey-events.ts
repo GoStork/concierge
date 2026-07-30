@@ -95,7 +95,17 @@ export type JourneyEventType =
   | "MATCH_CALL_DECISION_ACKNOWLEDGED"
   // A subject thread opened with an agency the parent was already connected
   // to, with no new consultation call (server/connected-agency-shortcut.ts).
-  | "SUBJECT_THREAD_OPENED";
+  | "SUBJECT_THREAD_OPENED"
+  // Parent CRM (server/parent-record-router.ts). Staff actions on the record
+  // page, not parent-visible milestones. metadata carries ids, scopes and
+  // lengths ONLY - never note or next-step body text, because
+  // GET /api/journey/events returns metadata verbatim to providers.
+  | "CRM_NOTE_ADDED"
+  | "CRM_NOTE_SHARED_WITH_PROVIDER"
+  | "CRM_FOLLOWUP_SET"
+  | "CRM_FOLLOWUP_COMPLETED"
+  | "CRM_OWNER_ASSIGNED"
+  | "CRM_TAG_ADDED";
 
 export type JourneyActor = "parent" | "provider" | "system" | "admin";
 

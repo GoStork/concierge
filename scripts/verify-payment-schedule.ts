@@ -17,6 +17,7 @@ import {
   reconcileSchedule,
   triggerLabel,
   triggerOrder,
+  trancheMidpointCents,
   type ReconciliationVerdict,
 } from "../shared/payment-schedule";
 
@@ -238,6 +239,11 @@ const displayChecks: Array<{ label: string; got: string; want: string }> = [
     want: "$62,300",
   },
   {
+    label: "An upper bound below the lower one is treated as absent, not a range",
+    got: formatTrancheAmount({ minValueCents: $(17500), maxValueCents: 0, amountBasis: "STATED" }, money),
+    want: "$17,500",
+  },
+  {
     label: "Remainder is never given a fake figure",
     got: formatTrancheAmount({ minValueCents: null, maxValueCents: null, amountBasis: "REMAINDER" }, money),
     want: "Remaining balance",
@@ -295,6 +301,16 @@ let monotonic = true;
 for (let i = 1; i < journey.length; i++) {
   if (triggerOrder(journey[i]) < triggerOrder(journey[i - 1])) monotonic = false;
 }
+// A stale or malformed upper bound must not halve the payment in the maths
+// layer either - reconciliation reads the same normalized bounds as display.
+if (trancheMidpointCents({ minValueCents: $(17500), maxValueCents: 0, amountBasis: "STATED" }) === $(17500)) {
+  passes++;
+  console.log("  PASS  A bad upper bound does not halve the reconciliation amount");
+} else {
+  failures++;
+  console.log("  FAIL  A bad upper bound halves the reconciliation amount");
+}
+
 if (monotonic) {
   passes++;
   console.log("  PASS  Trigger ordering follows the journey");

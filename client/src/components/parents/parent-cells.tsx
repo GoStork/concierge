@@ -13,7 +13,8 @@
  * two contexts, per the no-fork rule in CLAUDE.md.
  */
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, Lock, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Lock, Users } from "lucide-react";
+import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 
 export const SERVICE_LABELS: Record<string, string> = {
   SURROGACY: "Surrogacy",
@@ -212,6 +213,89 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
       <CheckCircle2 className="w-3 h-3" />
       {entry.label}
     </span>
+  );
+}
+
+// ─── CRM columns ────────────────────────────────────────────────────────────
+//
+// One implementation each, rendered by BOTH parents tables. Adding these as
+// inline JSX twice would have re-created the fork this module exists to close.
+
+export function OwnerCell({ owner, testId }: { owner?: { name: string | null } | null; testId?: string }) {
+  if (!owner?.name) {
+    return (
+      <span
+        className="text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
+        style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
+        data-testid={testId}
+      >
+        Unassigned
+      </span>
+    );
+  }
+  const first = owner.name.split(" ")[0];
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap" title={owner.name} data-testid={testId}>
+      <DoctorMonogram name={owner.name} size={20} rounded="999px" />
+      {first}
+    </span>
+  );
+}
+
+export function NextStepCell({
+  nextStep, testId,
+}: { nextStep?: { body: string; dueAt: string; overdue: boolean } | null; testId?: string }) {
+  if (!nextStep) return <span className="t-helper">-</span>;
+  const due = new Date(nextStep.dueAt);
+  const today = new Date();
+  const isToday = due.toDateString() === today.toDateString();
+  const label = nextStep.overdue ? "Overdue" : isToday ? "Today" : due.toLocaleDateString();
+  const warn = nextStep.overdue || isToday;
+  const short = nextStep.body.length > 24 ? `${nextStep.body.slice(0, 24)}...` : nextStep.body;
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={`${nextStep.body} - due ${due.toLocaleDateString()}`} data-testid={testId}>
+      <span className="text-sm">{short}</span>
+      <span
+        className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
+        style={warn
+          ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
+          : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
+      >
+        {nextStep.overdue && <AlertTriangle className="w-3 h-3 shrink-0" />}
+        {label}
+      </span>
+    </span>
+  );
+}
+
+export function TagsCell({
+  tags, limit = 2, testId,
+}: { tags?: { tagId: string; label: string; colorToken?: string }[] | null; limit?: number; testId?: string }) {
+  const list = tags || [];
+  if (list.length === 0) return <span className="t-helper">-</span>;
+  const shown = limit > 0 ? list.slice(0, limit) : list;
+  const extra = list.length - shown.length;
+  return (
+    <div className="flex flex-wrap gap-1 items-center max-w-[170px]" data-testid={testId}>
+      {shown.map((t) => (
+        <span
+          key={t.tagId}
+          className="text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
+          style={{ background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}
+        >
+          {t.label}
+        </span>
+      ))}
+      {extra > 0 && (
+        <span
+          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
+          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
+          title={list.slice(shown.length).map((t) => t.label).join(", ")}
+        >
+          +{extra}
+        </span>
+      )}
+    </div>
   );
 }
 

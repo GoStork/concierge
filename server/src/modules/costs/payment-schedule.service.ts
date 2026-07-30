@@ -647,6 +647,11 @@ export class PaymentScheduleService {
   }
 
   private intOrNull(v: unknown): number | null {
+    // Guard the empty cases BEFORE coercing: Number(null) and Number("") are
+    // both 0, which would turn "no upper bound given" into a real $0 and make
+    // a single-amount payment render as the range "$17,500 - $0" and
+    // reconcile at half its value.
+    if (v === null || v === undefined || v === "") return null;
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
   }

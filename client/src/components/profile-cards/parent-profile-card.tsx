@@ -7,6 +7,13 @@ interface ParentProfileCardProps {
   user: SessionUser;
   /** When true, renders an "Online" pill + green dot on the avatar. */
   isOnline?: boolean;
+  /**
+   * "rail" (default) is the 288px chat sidebar this card was written for.
+   * "wide" is the ~1100px parent record page, where a single column of
+   * attribute rows reads as a ragged list and the email truncation is
+   * pointless. Same component, two contexts - do not fork it.
+   */
+  layout?: "rail" | "wide";
   testId?: string;
 }
 
@@ -130,10 +137,11 @@ function buildSections(user: SessionUser): ProfileSection[] {
  * Single source of truth - any new parent profile field should be added here
  * (and to the SessionUser type / API payload).
  */
-export function ParentProfileCard({ user, isOnline, testId = "parent-profile-card" }: ParentProfileCardProps) {
+export function ParentProfileCard({ user, isOnline, layout = "rail", testId = "parent-profile-card" }: ParentProfileCardProps) {
   const sections = buildSections(user);
   const basics = buildBasics(user);
   const photoSrc = user.photoUrl ? getPhotoSrc(user.photoUrl) : null;
+  const wide = layout === "wide";
 
   return (
     <div data-testid={testId}>
@@ -174,7 +182,7 @@ export function ParentProfileCard({ user, isOnline, testId = "parent-profile-car
             releases them, and a bare "Email -" reads as broken data. Say what
             is actually true instead. */}
         {user.email
-          ? <div className="t-micro-value truncate"><span className="t-micro-label">Email</span> {user.email}</div>
+          ? <div className={`t-micro-value${wide ? "" : " truncate"}`}><span className="t-micro-label">Email</span> {user.email}</div>
           : <div className="t-micro-value"><span className="t-micro-label">Contact</span> Shared after intake or invoice</div>}
         {(user.city || user.state) && (
           <div className="t-micro-value"><span className="t-micro-label">Location</span> {[user.city, user.state].filter(Boolean).join(", ")}</div>
@@ -188,19 +196,21 @@ export function ParentProfileCard({ user, isOnline, testId = "parent-profile-car
         {basics.partnerAge && <div className="t-micro-value"><span className="t-micro-label">Partner's age</span> {basics.partnerAge}</div>}
       </div>
 
-      {sections.map((section) => (
-        <div key={section.title} className="border-t pt-3 mt-3">
-          <p className="t-micro-label mb-2">{section.title}</p>
-          <div className="space-y-1.5">
-            {section.rows.map((row) => (
-              <div key={row.label} className="t-micro-value">
-                <span className="t-micro-label">{row.label}</span>{" "}
-                <span>{row.value}</span>
-              </div>
-            ))}
+      <div className={wide ? "columns-1 md:columns-2 lg:columns-3 gap-x-8 [&>div]:break-inside-avoid" : undefined}>
+        {sections.map((section) => (
+          <div key={section.title} className="border-t pt-3 mt-3">
+            <p className="t-micro-label mb-2">{section.title}</p>
+            <div className="space-y-1.5">
+              {section.rows.map((row) => (
+                <div key={row.label} className="t-micro-value">
+                  <span className="t-micro-label">{row.label}</span>{" "}
+                  <span>{row.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

@@ -1108,9 +1108,58 @@ export class UsersController {
       chatServicesByUser.set(r.userId, list);
     }
 
+    // CRM state (owner / next step / tags), three indexed reads.
+    //
+    // NOTE the separate key array. `accountIds` above is deliberately non-null
+    // only, because it feeds IntendedParentProfile whose parentAccountId is a
+    // real FK - a solo parent has no row there. The CRM tables carry NO FK and
+    // key on parentAccountKey (parentAccountId ?? userId), so widening that
+    // array would have queried garbage while narrowing this one would silently
+    // render every solo parent as unassigned.
+    const crmKeys = Array.from(new Set(parents.map(p => p.parentAccountId || p.id)));
+    const [crmOwners, crmFollowUps, crmTags] = crmKeys.length
+      ? await Promise.all([
+          this.prisma.parentOwner.findMany({
+            where: { parentAccountId: { in: crmKeys } },
+            select: { parentAccountId: true, scope: true, ownerUserId: true, ownerName: true },
+          }),
+          this.prisma.parentFollowUp.findMany({
+            where: { parentAccountId: { in: crmKeys }, status: "OPEN" },
+            select: { parentAccountId: true, id: true, scope: true, providerId: true, body: true, dueAt: true },
+            orderBy: { dueAt: "asc" },
+          }),
+          this.prisma.parentTagAssignment.findMany({
+            where: { parentAccountId: { in: crmKeys } },
+            select: {
+              parentAccountId: true, tagId: true,
+              tag: { select: { label: true, colorToken: true } },
+            },
+          }),
+        ])
+      : [[], [], []];
+
+    const ownerByKey = new Map<string, any>();
+    for (const o of crmOwners) if (o.scope === "GOSTORK") ownerByKey.set(o.parentAccountId, o);
+    const nextStepByKey = new Map<string, any>();
+    for (const f of crmFollowUps) {
+      // The GoStork step is the one the admin table sorts on; an org's step is
+      // that org's business. Earliest due wins, and the query is already sorted.
+      if (f.scope === "GOSTORK" && !nextStepByKey.has(f.parentAccountId)) nextStepByKey.set(f.parentAccountId, f);
+    }
+    const tagsByKey = new Map<string, any[]>();
+    for (const t of crmTags) {
+      const list = tagsByKey.get(t.parentAccountId) || [];
+      list.push({ tagId: t.tagId, label: t.tag?.label ?? "", colorToken: t.tag?.colorToken ?? "accent" });
+      tagsByKey.set(t.parentAccountId, list);
+    }
+    const nowMs = Date.now();
+
     const overview: Record<string, any> = {};
     for (const parent of parents) {
       const profileServices = parent.parentAccountId ? (servicesByAccount.get(parent.parentAccountId) || []) : [];
+      const crmKey = parent.parentAccountId || parent.id;
+      const owner = ownerByKey.get(crmKey);
+      const step = nextStepByKey.get(crmKey);
       overview[parent.id] = {
         services: profileServices.length ? profileServices : (chatServicesByUser.get(parent.id) || []),
         costSheets: [],
@@ -1118,6 +1167,11 @@ export class UsersController {
         agreements: [],
         updatedAt: lastActivityByUser.get(parent.id) || null,
         matchStatus: statusByUser.get(parent.id) || null,
+        owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName } : null,
+        nextStep: step
+          ? { id: step.id, body: step.body, dueAt: step.dueAt, overdue: new Date(step.dueAt).getTime() < nowMs }
+          : null,
+        tags: tagsByKey.get(crmKey) || [],
       };
     }
     for (const q of quotes) overview[q.parentUserId]?.costSheets.push(q);
@@ -1590,9 +1644,45 @@ export class UsersController {
       })),
       this.prisma,
     );
+    // CRM state for this org only. Scoped in the WHERE clause, and read AFTER
+    // the gate batch so it is keyed on exactly the same gateKeys - a row the
+    // drop-filter below removes never gets its tags built at all.
+    const [crmOwners, crmFollowUps, crmTags] = gateKeys.length
+      ? await Promise.all([
+          this.prisma.parentOwner.findMany({
+            where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId },
+            select: { parentAccountId: true, ownerUserId: true, ownerName: true },
+          }),
+          this.prisma.parentFollowUp.findMany({
+            where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId, status: "OPEN" },
+            select: { parentAccountId: true, id: true, body: true, dueAt: true },
+            orderBy: { dueAt: "asc" },
+          }),
+          this.prisma.parentTagAssignment.findMany({
+            where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId },
+            select: { parentAccountId: true, tagId: true, tag: { select: { label: true, colorToken: true } } },
+          }),
+        ])
+      : [[], [], []];
+    // The partial unique indexes guarantee at most one owner and one OPEN
+    // follow-up per key, so these are plain Maps with no dedup pass.
+    const ownerByKey = new Map(crmOwners.map((o: any) => [o.parentAccountId, o]));
+    const stepByKey = new Map<string, any>();
+    for (const f of crmFollowUps) if (!stepByKey.has(f.parentAccountId)) stepByKey.set(f.parentAccountId, f);
+    const tagsByKey = new Map<string, any[]>();
+    for (const t of crmTags as any[]) {
+      const list = tagsByKey.get(t.parentAccountId) || [];
+      list.push({ tagId: t.tagId, label: t.tag?.label ?? "", colorToken: t.tag?.colorToken ?? "accent" });
+      tagsByKey.set(t.parentAccountId, list);
+    }
+    const nowMs = Date.now();
+
     return rows
       .map((r: any) => {
         const g = rowGates.get(gateKeyFor(r.id)) || GATES_CLOSED;
+        const crmKey = gateKeyFor(r.id);
+        const owner = ownerByKey.get(crmKey) as any;
+        const step = stepByKey.get(crmKey);
         return {
           ...redactParentContact(r, g),
           // combineParentNames built this from the raw member names, so it has
@@ -1601,6 +1691,13 @@ export class UsersController {
           members: redactParentMembers(r.members || [], g),
           contactReleased: g.showContact,
           contactReleaseReason: g.contactReason,
+          // Staff data about the parent, not parent PII, so it sits outside
+          // redactParentContact - but still only on rows that survive Gate A.
+          owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName } : null,
+          nextStep: step
+            ? { id: step.id, body: step.body, dueAt: step.dueAt, overdue: new Date(step.dueAt).getTime() < nowMs }
+            : null,
+          tags: tagsByKey.get(crmKey) || [],
         };
       })
       // A row whose identity is still closed has nothing to show on a contacts

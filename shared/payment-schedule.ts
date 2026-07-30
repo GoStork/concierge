@@ -422,10 +422,27 @@ export interface TrancheLike {
   amountBasis?: string | null;
 }
 
+/**
+ * Normalize a tranche's stated bounds.
+ *
+ * An upper bound below the lower one is not a range, it is missing data - so
+ * treat it as absent rather than rendering "$17,500 - $0" or halving the
+ * payment in reconciliation. Guards the display and maths layers against bad
+ * rows whatever their origin, including any written before the write path
+ * stopped coercing a blank field to zero.
+ */
+function bounds(t: TrancheLike): { min: number | null; max: number | null } {
+  const rawMin = t.minValueCents ?? null;
+  const rawMax = t.maxValueCents ?? null;
+  if (rawMin != null && rawMax != null && rawMax < rawMin) return { min: rawMin, max: null };
+  return { min: rawMin, max: rawMax };
+}
+
 /** Midpoint in cents, used for reconciliation maths only - never for display. */
 export function trancheMidpointCents(t: TrancheLike): number {
-  const min = t.minValueCents ?? t.maxValueCents ?? 0;
-  const max = t.maxValueCents ?? t.minValueCents ?? 0;
+  const { min: lo, max: hi } = bounds(t);
+  const min = lo ?? hi ?? 0;
+  const max = hi ?? lo ?? 0;
   return Math.round((min + max) / 2);
 }
 
@@ -437,8 +454,7 @@ export function trancheMidpointCents(t: TrancheLike): number {
 export function formatTrancheAmount(t: TrancheLike, money: (cents: number) => string): string {
   if (t.amountBasis === "REMAINDER") return "Remaining balance";
   if (t.amountBasis === "TBD") return "Varies";
-  const min = t.minValueCents;
-  const max = t.maxValueCents;
+  const { min, max } = bounds(t);
   if (min == null && max == null) return "Varies";
   if (min != null && max != null && min !== max) return `${money(min)} - ${money(max)}`;
   return money((min ?? max) as number);

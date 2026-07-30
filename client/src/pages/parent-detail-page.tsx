@@ -1,36 +1,42 @@
+/**
+ * The parent record at /parents/:id.
+ *
+ * ONE page for both a GoStork admin and a provider. Before this, an admin
+ * clicking a parent landed on the account-admin form (password, calendar link)
+ * and could not see the journey a provider could see; the two surfaces had
+ * drifted apart with no way to keep them honest. Now both read the same
+ * payload and render the same tree, and the admin's extra powers are
+ * conditional blocks inside it rather than a separate page.
+ *
+ * /users/:id still exists for the account-admin job (password, roles,
+ * calendars) and is reachable from the Account settings button in the header.
+ */
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, AlertCircle, Users, ClipboardList, Download, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ParentProfileCard } from "@/components/profile-cards";
-import type { SessionUser } from "@/components/chat/chat-types";
-import { formatPhoneDisplay } from "@/lib/phone-countries";
-
-type AccountMember = {
-  id: string;
-  name: string | null;
-  email: string;
-  mobileNumber: string | null;
-  photoUrl: string | null;
-};
-
-type IpFormStatus = {
-  responseId: string | null;
-  status: string; // NOT_STARTED | DRAFT | SUBMITTED
-  submittedAt: string | null;
-  promptedAt: string | null;
-  // Surrogacy agencies only - the safe variant exists to forward to candidates.
-  surrogateAvailable?: boolean;
-};
+import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
+import { ContactReleaseSection } from "@/components/chat/contact-release-section";
+import {
+  ParentCrmPanel,
+  ParentIdentitySection,
+  ParentMoneySection,
+  ParentRecordHeader,
+  RecordSection,
+  InterestedProfilesSection,
+  useOpenSections,
+} from "@/components/parents";
+import type { ParentRecord } from "@/components/parents";
 
 export default function ParentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { isOpen, toggle } = useOpenSections(["identity", "interested"]);
 
-  const { data: parent, isLoading, error } = useQuery<SessionUser & { accountMembers?: AccountMember[]; ipForm?: IpFormStatus }>({
-    queryKey: ["/api/provider/parents", id],
+  const { data: record, isLoading, error } = useQuery<ParentRecord>({
+    queryKey: ["/api/parents", id, "record"],
     queryFn: async () => {
-      const res = await fetch(`/api/provider/parents/${id}`, { credentials: "include" });
+      const res = await fetch(`/api/parents/${id}/record`, { credentials: "include" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ message: "Failed to load parent" }));
         throw new Error(body.message || `Failed to load parent (${res.status})`);
@@ -41,26 +47,22 @@ export default function ParentDetailPage() {
     retry: false,
   });
 
+  const isAdmin = record?.viewer.role === "admin";
+
   return (
     <div className="flex flex-col min-h-[calc(100dvh-64px)]">
       <div className="flex items-center gap-3 px-4 h-14 border-b bg-background shrink-0">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate(-1)}
-          className="gap-1.5"
-          data-testid="btn-parent-detail-back"
-        >
+        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1.5" data-testid="btn-parent-detail-back">
           <ArrowLeft className="w-4 h-4" />
           Back
         </Button>
-        <span className="text-sm font-medium font-ui">Parent profile</span>
+        <span className="text-sm font-medium font-ui">Parent record</span>
       </div>
 
       <div className="flex-1 px-4 py-6">
-        <div className="max-w-2xl mx-auto w-full">
+        <div className="w-full space-y-4">
           {isLoading && (
-            <div className="flex flex-col items-center justify-center gap-3 py-12">
+            <div className="flex flex-col items-center justify-center gap-3 py-12" data-testid="parent-record-loading">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
               <p className="t-helper">Loading parent...</p>
             </div>
@@ -73,79 +75,84 @@ export default function ParentDetailPage() {
               <p className="t-helper max-w-sm">
                 You can only view parents you've connected with through a chat session or booking.
               </p>
+              {/* A 403 here usually arrives from a stale link, so going "back"
+                  just re-lands on the same dead link. */}
+              <Button variant="outline" size="sm" onClick={() => navigate("/parents")} data-testid="btn-record-back-to-parents">
+                Back to parents
+              </Button>
             </div>
           )}
 
-          {parent && (
-            <div className="space-y-4">
-              {/* Shared parent account: both partners have their own login
-                  but share one journey - surface every member's contact
-                  info so the provider can reach either of them. */}
-              {(parent.accountMembers?.length || 0) > 1 && (
-                <div className="rounded-[var(--radius)] border p-4" style={{ background: "hsl(var(--accent) / 0.08)" }} data-testid="parent-detail-household">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Users className="w-4 h-4" style={{ color: "hsl(var(--accent))" }} />
-                    <span className="text-sm font-medium font-ui">Shared account - {parent.accountMembers!.length} members</span>
-                  </div>
+          {record && (
+            <>
+              <ParentRecordHeader record={record} isAdmin={!!isAdmin} onJumpToCrm={() => toggle("crm", true)} />
+
+              <RecordSection id="identity" title="Profile" open={isOpen("identity")} onToggle={toggle}>
+                <ParentIdentitySection record={record} />
+              </RecordSection>
+
+              <RecordSection
+                id="interested"
+                title="Interested profiles"
+                count={record.conversations.length + record.savedProfiles.length}
+                open={isOpen("interested")}
+                onToggle={toggle}
+              >
+                <InterestedProfilesSection record={record} groupByProvider={!!isAdmin} />
+              </RecordSection>
+
+              <RecordSection id="journey" title="Journey" open={isOpen("journey")} onToggle={toggle}>
+                {/* No sessionId: the record is the full relationship view,
+                    which is exactly what this card's own docs say to omit it
+                    for. The wrapper is a plain bordered div, never a Card -
+                    Card's overflow-hidden clips the timeline. */}
+                <JourneyTimelineCard
+                  parentUserId={record.parent.id}
+                  providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
+                  showEvents
+                  variant={isAdmin ? "home" : "sidebar"}
+                  testId="record-journey"
+                />
+              </RecordSection>
+
+              <RecordSection
+                id="money"
+                title="Cost sheets, invoices and agreements"
+                count={record.money.byProvider.length}
+                open={isOpen("money")}
+                onToggle={toggle}
+              >
+                <ParentMoneySection record={record} showProviderName={!!isAdmin} />
+              </RecordSection>
+
+              <RecordSection id="crm" title="Notes and follow-up" open={isOpen("crm")} onToggle={toggle}>
+                <ParentCrmPanel record={record} />
+              </RecordSection>
+
+              {isAdmin && (
+                <RecordSection id="admin" title="GoStork only" open={isOpen("admin")} onToggle={toggle}>
                   <div className="space-y-2">
-                    {parent.accountMembers!.map(m => (
-                      <div key={m.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-sm" data-testid={`household-member-${m.id}`}>
-                        <span className="font-medium">{m.name || "-"}</span>
-                        <span className="text-muted-foreground">{m.email}</span>
-                        {m.mobileNumber && <span className="text-muted-foreground">{formatPhoneDisplay(m.mobileNumber)}</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {/* Intended Parent Form: download (submitted) or blocked-notice.
-                  Backed by the same PDF endpoints as /provider/parent-forms. */}
-              {parent.ipForm && (
-                <div className="rounded-[var(--radius)] border p-4" data-testid="parent-detail-ipform">
-                  <div className="flex items-center gap-2 mb-2">
-                    <ClipboardList className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium font-ui">Intended Parent Form</span>
-                  </div>
-                  {parent.ipForm.status === "SUBMITTED" && parent.ipForm.responseId ? (
-                    <div className="space-y-2">
-                      <p className="t-helper">
-                        Submitted{parent.ipForm.submittedAt ? ` on ${new Date(parent.ipForm.submittedAt).toLocaleDateString()}` : ""} - download it with your branding.
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => window.open(`/api/provider/ip-forms/${parent.ipForm!.responseId}/pdf?variant=full`, "_blank", "noopener,noreferrer")}
-                          data-testid="parent-detail-ipform-full"
-                        >
-                          <Download className="w-3.5 h-3.5 mr-1.5" /> Full PDF
-                        </Button>
-                        {parent.ipForm.surrogateAvailable && (
-                          <Button
-                            size="sm"
-                            onClick={() => window.open(`/api/provider/ip-forms/${parent.ipForm!.responseId}/pdf?variant=surrogate`, "_blank", "noopener,noreferrer")}
-                            data-testid="parent-detail-ipform-surrogate"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Surrogate Version
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
                     <p className="t-helper">
-                      Not submitted yet
-                      {parent.ipForm.surrogateAvailable
-                        ? " - a match call cannot be scheduled until the family completes and signs their form."
-                        : " - it becomes available to download here once the family completes and signs it."}
-                      {parent.ipForm.promptedAt ? " They have been asked and receive reminders." : ""}
+                      Contact sharing is per provider org. Unlocking one does not affect the others.
                     </p>
-                  )}
-                </div>
+                    {record.providerOrgs.length === 0 ? (
+                      <p className="t-helper">This family has no provider relationships yet.</p>
+                    ) : (
+                      record.providerOrgs.map((org, i) => (
+                        <ContactReleaseSection
+                          key={org.providerId}
+                          providerId={org.providerId}
+                          parentAccountId={record.accountKey}
+                          heading={`Contact sharing - ${org.providerName}`}
+                          divider={i > 0}
+                          testId={`contact-release-${org.providerId}`}
+                        />
+                      ))
+                    )}
+                  </div>
+                </RecordSection>
               )}
-              <div className="rounded-[var(--radius)] bg-card border p-5" data-testid="parent-detail-card">
-                <ParentProfileCard user={parent} testId="parent-detail-profile" />
-              </div>
-            </div>
+            </>
           )}
         </div>
       </div>

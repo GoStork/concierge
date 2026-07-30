@@ -15,6 +15,10 @@
  *  PR-13 The greeting posts on booking without marking the provider present.
  *  PR-14 The provider's own /book/<slug> link is covered, once per parent.
  *  PR-15 The private parent briefing is provider-only - never the parent.
+ *  CL-01 One open consultation per provider type; other lines stay open.
+ *  CL-02 Every way out of a lock: admin unlock and the parent moving on.
+ *  CL-03 The 7-day self-release, and the live match call that suspends it.
+ *  CL-04 A new profile at an already-connected agency opens a thread, not a call.
  *
  * Usage:
  *   TEST_BASE_URL=http://localhost:5001 npx tsx scripts/test-provider-flows.ts
@@ -172,6 +176,7 @@ async function destroyFixture(db: Client, f: Fixture) {
   await db.query(`DELETE FROM "IntendedParentProfile" WHERE "parentAccountId" = $1`, [f.parentAcctId]);
   await db.query(`DELETE FROM "User" WHERE id IN ($1, $2)`, [f.parentUserId, f.providerUserId]);
   await db.query(`DELETE FROM "ParentAccount" WHERE id = $1`, [f.parentAcctId]).catch(() => {});
+  await db.query(`DELETE FROM "ProviderService" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
   await db.query(`DELETE FROM "ReferralFeeConfig" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
   await db.query(`DELETE FROM "Provider" WHERE id = $1`, [f.providerId]).catch(() => {});
 }
@@ -674,15 +679,72 @@ async function pr11(db: Client) {
 
 // ─── Booking auto-reply helpers ───────────────────────────────────────────────
 /** Give the provider user a public booking page so /book/:slug is reachable. */
-async function mkBookingPage(db: Client, f: Fixture, tag: string): Promise<string> {
-  const slug = `zz-test-${tag}-${Date.now()}`;
+async function mkBookingPage(db: Client, f: Fixture, tag: string, providerUserId?: string): Promise<string> {
+  const slug = `zz-test-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   await db.query(
     `INSERT INTO "ScheduleConfig" (id, "userId", timezone, "meetingDuration", "minBookingNotice", "bookingPageSlug")
      VALUES (gen_random_uuid(), $1, 'America/New_York', 30, 0, $2)
      ON CONFLICT ("userId") DO UPDATE SET "bookingPageSlug" = $2`,
-    [f.providerUserId, slug],
+    [providerUserId || f.providerUserId, slug],
   );
   return slug;
+}
+
+/**
+ * Give a fixture provider an APPROVED service line.
+ *
+ * The consultation focus lock resolves a provider's type from its approved
+ * services, and deliberately fails OPEN when it cannot tell - so a fixture with
+ * no ProviderService is never locked at all. Every lock case needs this.
+ */
+async function mkApprovedService(db: Client, providerId: string, typeName: string): Promise<void> {
+  const t = await db.query(`SELECT id FROM "ProviderType" WHERE name = $1 LIMIT 1`, [typeName]);
+  const typeId = t.rows[0]?.id;
+  if (!typeId) throw new Error(`ProviderType "${typeName}" not seeded`);
+  await db.query(
+    `INSERT INTO "ProviderService" (id, "providerId", "providerTypeId", status)
+     VALUES (gen_random_uuid(), $1, $2, 'APPROVED')
+     ON CONFLICT ("providerId", "providerTypeId") DO UPDATE SET status = 'APPROVED'`,
+    [providerId, typeId],
+  );
+}
+
+/** Tick a consent gate as the parent, exactly as the card does. */
+async function ackGate(f: Fixture, gate: string, providerId: string, sessionId?: string): Promise<number> {
+  const res = await fetch(`${BASE}/api/consultation-gates/acknowledge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...f.parentAuth } as any,
+    body: JSON.stringify({ gate, providerId, sessionId }),
+  });
+  return res.status;
+}
+
+/** Book through the real endpoint and return { status, body } rather than throwing. */
+async function tryBook(
+  slug: string,
+  f: Fixture,
+  opts: { aiSessionId?: string; providerId?: string; hoursOut: number },
+): Promise<{ status: number; body: any }> {
+  const when = new Date(Date.now() + opts.hoursOut * 3600_000);
+  const body: any = {
+    scheduledAt: when.toISOString().replace(/\.\d{3}Z$/, ""),
+    name: `Test Parent ${f.parentEmail.split("@")[0]}`,
+    email: f.parentEmail,
+    timezone: "America/New_York",
+  };
+  if (opts.aiSessionId) {
+    body.aiSessionId = opts.aiSessionId;
+    body.consultationProviderId = opts.providerId;
+    body.matchmakerId = MATCHMAKER_ID;
+    body.profileLabel = "Surrogate #ZZTEST";
+    body.subjectType = "surrogate";
+  }
+  const res = await fetch(`${BASE}/api/calendar/book/${slug}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
 /** The session-creation + auto-reply work is fire-and-forget off the booking
@@ -980,6 +1042,292 @@ async function pr15(db: Client) {
   }
 }
 
+// ─── CL-01: one open consultation per provider type ──────────────────────────
+// The whole point of the focus lock. A family with a surrogacy consultation on
+// the calendar cannot open a second one with a DIFFERENT surrogacy agency, but
+// every other service line stays wide open and the SAME agency is never
+// blocked by its own call.
+async function cl01(db: Client) {
+  const a = await createFixture(db, "cl01a");   // surrogacy agency the parent books
+  const b = await createFixture(db, "cl01b");   // a second surrogacy agency
+  const c = await createFixture(db, "cl01c");   // an egg donor agency
+  try {
+    await mkApprovedService(db, a.providerId, "Surrogacy Agency");
+    await mkApprovedService(db, b.providerId, "Surrogacy Agency");
+    await mkApprovedService(db, c.providerId, "Egg Donor Agency");
+
+    const evaSession = await mkSession(db, a, { status: "ACTIVE", title: "AI Concierge Chat" });
+    const slugA = await mkBookingPage(db, a, "cl01a");
+    const slugB = await mkBookingPage(db, b, "cl01b", b.providerUserId);
+    const slugC = await mkBookingPage(db, c, "cl01c", c.providerUserId);
+
+    check("the parent acknowledged what agency A's consultation leads to",
+      (await ackGate(a, "PRELIMINARY_STEP", a.providerId, evaSession)) < 400);
+    const first = await tryBook(slugA, a, { aiSessionId: evaSession, providerId: a.providerId, hoursOut: 48 });
+    check("the first surrogacy consultation is accepted", first.status < 400, `status=${first.status}`);
+
+    // The lock runs BEFORE the acknowledgement gate, so agency B is refused for
+    // the right reason even though its own ack was never given.
+    const second = await tryBook(slugB, a, { aiSessionId: evaSession, providerId: b.providerId, hoursOut: 72 });
+    check("a SECOND surrogacy agency is refused", second.status === 409, `status=${second.status}`);
+    check("the refusal is the focus lock, not the ack gate",
+      second.body?.code === "CONSULTATION_ALREADY_OPEN", JSON.stringify(second.body).slice(0, 160));
+    check("the refusal names the provider they already have booked",
+      second.body?.blockingProviderName === (await db.query(`SELECT name FROM "Provider" WHERE id=$1`, [a.providerId])).rows[0].name,
+      String(second.body?.blockingProviderName));
+    // A parent must never read about themselves in the third person.
+    check("the message is written to the parent in second person",
+      /\byou\b/i.test(second.body?.message || "") && !/the parent/i.test(second.body?.message || ""),
+      String(second.body?.message).slice(0, 120));
+    check("no booking row was created for the blocked agency",
+      (await db.query(`SELECT id FROM "Booking" WHERE "providerUserId"=$1`, [b.providerUserId])).rowCount === 0);
+
+    // A DIFFERENT service line is untouched by the surrogacy lock.
+    check("the parent acknowledged agency C's consultation",
+      (await ackGate(a, "PRELIMINARY_STEP", c.providerId, evaSession)) < 400);
+    const eggDonor = await tryBook(slugC, a, { aiSessionId: evaSession, providerId: c.providerId, hoursOut: 96 });
+    check("an EGG DONOR agency books fine - types are independent", eggDonor.status < 400,
+      `status=${eggDonor.status} ${JSON.stringify(eggDonor.body).slice(0, 120)}`);
+
+    // Rebooking the same agency is the flow working, not a violation - the
+    // lock never fires. What DOES fire is the preliminary-step gate, because
+    // the acknowledgement is scoped per consultation: "each new agency, every
+    // time" means a second call with the same agency is asked again too.
+    const again = await tryBook(slugA, a, { aiSessionId: evaSession, providerId: a.providerId, hoursOut: 120 });
+    check("the SAME agency is never blocked by the focus lock",
+      again.body?.code !== "CONSULTATION_ALREADY_OPEN", JSON.stringify(again.body).slice(0, 140));
+    check("...it is only asked to re-acknowledge what this next call leads to",
+      again.body?.code === "CONSULT_PRELIM_ACK_REQUIRED", JSON.stringify(again.body).slice(0, 140));
+    await ackGate(a, "PRELIMINARY_STEP", a.providerId, evaSession);
+    const againOk = await tryBook(slugA, a, { aiSessionId: evaSession, providerId: a.providerId, hoursOut: 120 });
+    check("...and then it books", againOk.status < 400, `status=${againOk.status}`);
+  } finally {
+    await destroyFixture(db, a);
+    await destroyFixture(db, b);
+    await destroyFixture(db, c);
+  }
+}
+
+// ─── CL-02: the ways out of a lock ───────────────────────────────────────────
+// A guardrail with no exit is a cage. This drives the two deliberate releases:
+// a GoStork admin unlocking a stuck family, and the parent telling Eva they
+// want to move on (the [[CONSULT_RELEASE]] tag writes the same event).
+async function cl02(db: Client) {
+  const a = await createFixture(db, "cl02a");
+  const b = await createFixture(db, "cl02b");
+  const admin = await createFixture(db, "cl02adm");
+  try {
+    await mkApprovedService(db, a.providerId, "Surrogacy Agency");
+    await mkApprovedService(db, b.providerId, "Surrogacy Agency");
+    await db.query(`UPDATE "User" SET roles = ARRAY['GOSTORK_ADMIN']::text[] WHERE id = $1`, [admin.providerUserId]);
+    const adminAuth = await login(admin.parentEmail).catch(() => null);
+    const adminHeaders = await login((await db.query(`SELECT email FROM "User" WHERE id=$1`, [admin.providerUserId])).rows[0].email);
+
+    const evaSession = await mkSession(db, a, { status: "ACTIVE", title: "AI Concierge Chat" });
+    const slugA = await mkBookingPage(db, a, "cl02a");
+    const slugB = await mkBookingPage(db, b, "cl02b", b.providerUserId);
+    await ackGate(a, "PRELIMINARY_STEP", a.providerId, evaSession);
+    await tryBook(slugA, a, { aiSessionId: evaSession, providerId: a.providerId, hoursOut: 48 });
+
+    const blocked = await tryBook(slugB, a, { aiSessionId: evaSession, providerId: b.providerId, hoursOut: 72 });
+    check("the second agency starts out locked", blocked.body?.code === "CONSULTATION_ALREADY_OPEN", `status=${blocked.status}`);
+
+    // Admin view: the lock is visible with a reason and an auto-release date.
+    const view: any = await (await fetch(
+      `${BASE}/api/admin/consultation-lock?parentAccountId=${a.parentAcctId}`, { headers: adminHeaders as any },
+    )).json();
+    const row = (view.open || []).find((o: any) => o.providerId === a.providerId);
+    check("the admin can see the open consultation", !!row, JSON.stringify(view).slice(0, 140));
+    check("it is reported as actively locking", row?.releasedBy === "NONE", String(row?.releasedBy));
+    check("its service line is resolved", row?.providerTypeName === "Surrogacy Agency", String(row?.providerTypeName));
+    check("the auto-release date is surfaced so an admin can leave it alone", !!row?.releaseEligibleAt, String(row?.releaseEligibleAt));
+
+    // A reason is required - "why was this family unlocked" gets asked later.
+    const noReason = await fetch(`${BASE}/api/admin/consultation-lock/release`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...(adminHeaders as any) },
+      body: JSON.stringify({ parentAccountId: a.parentAcctId, providerId: a.providerId, reason: "  " }),
+    });
+    check("an unlock without a reason is refused", noReason.status === 400, `status=${noReason.status}`);
+
+    const released = await fetch(`${BASE}/api/admin/consultation-lock/release`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...(adminHeaders as any) },
+      body: JSON.stringify({ parentAccountId: a.parentAcctId, providerId: a.providerId, reason: "Family called support - agency went silent" }),
+    });
+    check("the admin unlock succeeds", released.status < 400, `status=${released.status}`);
+    check("the release is recorded with its reason and actor",
+      (await db.query(
+        `SELECT id FROM "JourneyEvent" WHERE "parentAccountId"=$1 AND "eventType"='CONSULTATION_LOCK_RELEASED'
+           AND metadata->>'reason'='ADMIN' AND metadata->>'note' IS NOT NULL`, [a.parentAcctId],
+      )).rowCount === 1);
+
+    await ackGate(a, "PRELIMINARY_STEP", b.providerId, evaSession);
+    const nowAllowed = await tryBook(slugB, a, { aiSessionId: evaSession, providerId: b.providerId, hoursOut: 72 });
+    check("the second agency books once unlocked", nowAllowed.status < 400,
+      `status=${nowAllowed.status} ${JSON.stringify(nowAllowed.body).slice(0, 120)}`);
+
+    // The parent-initiated release ([[CONSULT_RELEASE]]) writes the same event
+    // with reason PARENT_MOVED_ON. Prove that value releases a lock too.
+    const c = await createFixture(db, "cl02c");
+    try {
+      await mkApprovedService(db, c.providerId, "Surrogacy Agency");
+      const slugC = await mkBookingPage(db, c, "cl02c", c.providerUserId);
+      const stillLocked = await tryBook(slugC, a, { aiSessionId: evaSession, providerId: c.providerId, hoursOut: 96 });
+      check("a THIRD agency is locked by the newly-booked second one",
+        stillLocked.body?.code === "CONSULTATION_ALREADY_OPEN", `status=${stillLocked.status}`);
+
+      await db.query(
+        `INSERT INTO "JourneyEvent" (id,"parentAccountId","providerId","eventType","actorRole",metadata,"createdAt")
+         VALUES (gen_random_uuid(),$1,$2,'CONSULTATION_LOCK_RELEASED','parent','{"reason":"PARENT_MOVED_ON"}'::jsonb, now())`,
+        [a.parentAcctId, b.providerId],
+      );
+      await ackGate(a, "PRELIMINARY_STEP", c.providerId, evaSession);
+      const afterMovedOn = await tryBook(slugC, a, { aiSessionId: evaSession, providerId: c.providerId, hoursOut: 96 });
+      check("PARENT_MOVED_ON releases the lock too", afterMovedOn.status < 400,
+        `status=${afterMovedOn.status} ${JSON.stringify(afterMovedOn.body).slice(0, 120)}`);
+    } finally {
+      await destroyFixture(db, c);
+    }
+    void adminAuth;
+  } finally {
+    await destroyFixture(db, a);
+    await destroyFixture(db, b);
+    await destroyFixture(db, admin);
+  }
+}
+
+// ─── CL-03: the 7-day self-release, and what keeps a track alive ─────────────
+// The lock has to let go on its own or a family whose agency went quiet is
+// stuck forever. But a stale-looking consultation with a match call on the
+// books is a LIVE track and must keep holding.
+async function cl03(db: Client) {
+  const a = await createFixture(db, "cl03a");
+  const b = await createFixture(db, "cl03b");
+  try {
+    await mkApprovedService(db, a.providerId, "Surrogacy Agency");
+    await mkApprovedService(db, b.providerId, "Surrogacy Agency");
+    const evaSession = await mkSession(db, a, { status: "ACTIVE", title: "AI Concierge Chat" });
+    const slugA = await mkBookingPage(db, a, "cl03a");
+    const slugB = await mkBookingPage(db, b, "cl03b", b.providerUserId);
+    await ackGate(a, "PRELIMINARY_STEP", a.providerId, evaSession);
+    const booked = await tryBook(slugA, a, { aiSessionId: evaSession, providerId: a.providerId, hoursOut: 48 });
+    check("the first consultation is booked", booked.status < 400, `status=${booked.status}`);
+
+    // Backdate it past the window. The call happened, nothing came of it.
+    await db.query(
+      `UPDATE "Booking" SET "scheduledAt" = now() - interval '8 days' WHERE "providerUserId" = $1`,
+      [a.providerUserId],
+    );
+    await ackGate(a, "PRELIMINARY_STEP", b.providerId, evaSession);
+    const afterStale = await tryBook(slugB, a, { aiSessionId: evaSession, providerId: b.providerId, hoursOut: 72 });
+    check("a consultation 8 days old with no match call stops locking", afterStale.status < 400,
+      `status=${afterStale.status} ${JSON.stringify(afterStale.body).slice(0, 140)}`);
+
+    // Now give the STALE consultation a live match call and re-check: that
+    // track is progressing, so it must lock again.
+    await db.query(`DELETE FROM "Booking" WHERE "providerUserId" = $1`, [b.providerUserId]);
+    await db.query(
+      `INSERT INTO "Booking" (id,"publicToken","providerUserId","parentUserId","scheduledAt",duration,"meetingType","meetingSubtype",status,"createdAt","updatedAt")
+       VALUES (gen_random_uuid(), gen_random_uuid(), $1, $2, now() + interval '3 days', 30, 'video', 'MATCH_CALL', 'CONFIRMED', now(), now())`,
+      [a.providerUserId, a.parentUserId],
+    );
+    const withMatchCall = await tryBook(slugB, a, { aiSessionId: evaSession, providerId: b.providerId, hoursOut: 96 });
+    check("a stale consultation WITH a scheduled match call keeps locking",
+      withMatchCall.body?.code === "CONSULTATION_ALREADY_OPEN",
+      `status=${withMatchCall.status} ${JSON.stringify(withMatchCall.body).slice(0, 140)}`);
+  } finally {
+    await destroyFixture(db, a);
+    await destroyFixture(db, b);
+  }
+}
+
+// ─── CL-04: a new profile at an agency the family already works with ─────────
+// No second consultation. The thread opens directly, in a state that says what
+// is actually true - the provider is in the room and no call exists on THIS
+// thread - and the announcement addresses each side in its own voice.
+//
+// Driven through the real module against the real database rather than through
+// Gemini: the tag-to-function wiring is five lines, while everything that can
+// silently go wrong (the whisper trap, the dedupe key, the session status, the
+// dual-audience split) lives in here.
+async function cl04(db: Client) {
+  const f = await createFixture(db, "cl04");
+  try {
+    await mkApprovedService(db, f.providerId, "Surrogacy Agency");
+    const surrogate = await db.query(
+      `INSERT INTO "Surrogate" (id,"providerId","firstName","externalId","createdAt","updatedAt")
+       VALUES (gen_random_uuid(), $1, 'Zztest', $2, now(), now()) RETURNING id`,
+      [f.providerId, `ZZ${Date.now() % 100000}`],
+    );
+    const surrogateId = surrogate.rows[0].id;
+    const externalId = (await db.query(`SELECT "externalId" FROM "Surrogate" WHERE id=$1`, [surrogateId])).rows[0].externalId;
+
+    // The existing relationship, plus a real consultation to reference.
+    const connected = await mkSession(db, f, { status: "PROVIDER_CONNECTED", title: "Surrogate #OLD", providerJoined: true });
+    await db.query(
+      `INSERT INTO "Booking" (id,"publicToken","providerUserId","parentUserId","scheduledAt",duration,"meetingType",status,"bookerTimezone","createdAt","updatedAt")
+       VALUES (gen_random_uuid(), gen_random_uuid(), $1, $2, now() - interval '2 days', 30, 'video', 'CONFIRMED', 'America/New_York', now(), now())`,
+      [f.providerUserId, f.parentUserId],
+    );
+    // THE TRAP: a whisper stamps providerId onto the parent's PRIVATE Eva
+    // session. If the shortcut trusted a bare providerId lookup it would treat
+    // this as the connection and skip consultations for every whispered agency.
+    const whisperStamped = await mkSession(db, f, { status: "ACTIVE", title: "AI Concierge Chat" });
+
+    process.env.DATABASE_URL = process.env.DATABASE_URL || dbUrl!;
+    const { findConnectedProviderSession } = await import("../server/parent-visibility");
+    const resolved = await findConnectedProviderSession([f.parentUserId], f.providerId, { excludeSessionId: whisperStamped });
+    check("the connection resolves to the SHARED thread, never the Eva chat",
+      resolved?.id === connected, `${resolved?.id} (eva=${whisperStamped}, shared=${connected})`);
+
+    const { openConnectedAgencySubjectThread } = await import("../server/connected-agency-shortcut");
+    const opened = await openConnectedAgencySubjectThread({
+      parentUserId: f.parentUserId,
+      providerId: f.providerId,
+      connectedSessionId: connected,
+      subjectProfileId: surrogateId,
+      subjectType: "Surrogate",
+    });
+    check("a thread was opened", !!opened?.sessionId, JSON.stringify(opened));
+    check("it is titled from the surrogate's external id", opened?.title === `Surrogate #${externalId}`, String(opened?.title));
+
+    const sess = (await db.query(
+      `SELECT id, status, "providerJoinedAt", "subjectProfileId" FROM "AiChatSession" WHERE id = $1`, [opened!.sessionId],
+    )).rows[0];
+    check("the thread says the provider is present, not that a call is booked",
+      sess.status === "PROVIDER_CONNECTED", sess.status);
+    check("providerJoinedAt is stamped so the shared-thread lookups see it", !!sess.providerJoinedAt);
+    check("it is scoped to the new surrogate", sess.subjectProfileId === surrogateId);
+
+    // No phantom call: nothing points a booking at this thread.
+    check("NO booking is attached to the new thread",
+      (await db.query(`SELECT id FROM "Booking" WHERE "sessionId" = $1`, [opened!.sessionId])).rowCount === 0);
+
+    const msg = (await db.query(
+      `SELECT content, "uiCardData" FROM "AiChatMessage" WHERE "sessionId" = $1 ORDER BY "createdAt" ASC LIMIT 1`,
+      [opened!.sessionId],
+    )).rows[0];
+    check("the parent is addressed in SECOND person", /you're already connected/i.test(msg?.content || ""), String(msg?.content).slice(0, 110));
+    check("the parent copy never refers to them in the third person",
+      !/\bthe parent\b/i.test(msg?.content || ""), String(msg?.content).slice(0, 110));
+    check("the provider gets their own copy", !!msg?.uiCardData?.providerContent, JSON.stringify(msg?.uiCardData || {}).slice(0, 110));
+    check("the provider copy is about the family, not addressed to them",
+      /is interested in/i.test(msg?.uiCardData?.providerContent || ""), String(msg?.uiCardData?.providerContent).slice(0, 110));
+    check("it references the consultation they already had",
+      /consultation on/i.test(msg?.uiCardData?.providerContent || ""), String(msg?.uiCardData?.providerContent).slice(0, 140));
+
+    // Idempotent: the same profile must not spawn a second thread.
+    const twice = await openConnectedAgencySubjectThread({
+      parentUserId: f.parentUserId, providerId: f.providerId, connectedSessionId: connected,
+      subjectProfileId: surrogateId, subjectType: "Surrogate",
+    });
+    check("re-running reuses the thread instead of duplicating it",
+      twice?.sessionId === opened?.sessionId && twice?.created === false, JSON.stringify(twice));
+  } finally {
+    await db.query(`DELETE FROM "Surrogate" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
+    await destroyFixture(db, f);
+  }
+}
+
 const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] = [
   { id: "PR-01", name: "Whisper answer relays into the parent's own chat (consolidated threads)", run: pr01 },
   { id: "PR-02", name: "Parent identity masked before booking, revealed after", run: pr02 },
@@ -996,6 +1344,10 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "PR-13", name: "Booking auto-reply lands without faking the provider's presence", run: pr13 },
   { id: "PR-14", name: "Auto-reply covers the provider's own booking link, once per parent", run: pr14 },
   { id: "PR-15", name: "The private parent briefing reaches the provider, never the parent", run: pr15 },
+  { id: "CL-01", name: "One open consultation per provider type, other types untouched", run: cl01 },
+  { id: "CL-02", name: "A locked family can always get out: admin unlock and parent-moved-on", run: cl02 },
+  { id: "CL-03", name: "The lock self-releases after 7 quiet days, but not on a live track", run: cl03 },
+  { id: "CL-04", name: "A new profile at a connected agency opens a thread, not a second call", run: cl04 },
 ];
 
 (async () => {

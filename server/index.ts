@@ -127,6 +127,10 @@ export function log(message: string, source = "nestjs") {
   // Intended Parent Form (surrogacy agencies' parent profile form).
   const { ipFormRouter } = await import("./ip-form-router");
   app.use(ipFormRouter);
+  // The parent CRM record at /parents/:id, read by GoStork staff and provider
+  // staff from one payload, plus the notes / next steps / owners / tags on it.
+  const { parentRecordRouter } = await import("./parent-record-router");
+  app.use(parentRecordRouter);
   const { ensureIpFormTemplateSeeded } = await import("./ip-form-defaults");
   void ensureIpFormTemplateSeeded();
 

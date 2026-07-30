@@ -2004,149 +2004,31 @@ chatRouter.post("/api/provider/concierge-assistant/message", requireAuth, async 
 // share at least one PROVIDER_CONNECTED chat session or a Booking with this
 // parent. Admins bypass. Returns the same SessionUser shape the chat sidebar
 // renders so ParentProfileCard can be reused on the new /parents/:id page.
+/**
+ * Legacy alias. The record builder in parent-record.ts is now the one place
+ * that resolves access, scoping and redaction for a parent - this route keeps
+ * its original flat response shape so existing callers do not change, but the
+ * ~140 lines of access checks and gate logic that used to live here are gone.
+ * New work should call GET /api/parents/:id/record.
+ */
 chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
-  const user = req.user as any;
-  if (!isProviderUser(user) && !isAdminOrConcierge(user)) {
-    return res.status(403).json({ message: "Forbidden" });
-  }
   try {
-    const parentId = req.params.id as string;
-
-    // Couples share one journey: the chat session may belong to the
-    // partner's login, so both the access check and the booking check run
-    // against every login on the same parent account.
-    const targetUser = await prisma.user.findUnique({
-      where: { id: parentId },
-      select: { parentAccountId: true },
-    });
-    const accountUserIds = targetUser?.parentAccountId
-      ? (await prisma.user.findMany({
-          where: { parentAccountId: targetUser.parentAccountId },
-          select: { id: true },
-        })).map(u => u.id)
-      : [parentId];
-
-    if (!isAdminOrConcierge(user)) {
-      const providerId = user.providerId;
-      if (!providerId) return res.status(403).json({ message: "Forbidden" });
-
-      const sharedSession = await prisma.aiChatSession.findFirst({
-        where: {
-          userId: { in: accountUserIds },
-          providerId,
-          status: { in: ["PROVIDER_CONNECTED", "CONSULTATION_BOOKED"] },
-        },
-        select: { id: true },
-      });
-
-      // A contact release is itself a relationship: an IP-form-only or
-      // invoice-only pair must not 403 out of the page that shows what they
-      // were released.
-      let hasRelationship = !!sharedSession
-        || await hasContactRelease(providerId, targetUser?.parentAccountId || parentId);
-      if (!hasRelationship) {
-        const staff = await prisma.user.findMany({
-          where: { providerId },
-          select: { id: true },
-        });
-        const staffIds = staff.map(s => s.id);
-        if (staffIds.length > 0) {
-          const booking = await prisma.booking.findFirst({
-            where: {
-              parentUserId: { in: accountUserIds },
-              providerUserId: { in: staffIds },
-            },
-            select: { id: true },
-          });
-          hasRelationship = !!booking;
-        }
-      }
-
-      if (!hasRelationship) return res.status(403).json({ message: "Forbidden" });
-    }
-
-    const parent = await prisma.user.findUnique({
-      where: { id: parentId },
-      select: {
-        id: true, name: true, email: true, photoUrl: true, city: true, state: true,
-        mobileNumber: true, relationshipStatus: true, partnerFirstName: true,
-        partnerAge: true, dateOfBirth: true,
-        parentAccount: {
-          select: {
-            intendedParentProfile: {
-              select: {
-                journeyStage: true, interestedServices: true, isFirstIvf: true,
-                eggSource: true, spermSource: true, carrier: true, hasEmbryos: true,
-                embryoCount: true, embryosTested: true, needsClinic: true,
-                currentClinicName: true, clinicPriority: true, needsEggDonor: true,
-                needsSurrogate: true, surrogateCountries: true, surrogateTermination: true,
-                surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true,
-                surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true,
-                donorEyeColor: true, donorHairColor: true, donorHeight: true,
-                donorEducation: true, donorEthnicity: true, spermDonorType: true,
-                currentAgencyName: true, currentAttorneyName: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!parent) return res.status(404).json({ message: "Parent not found" });
-
-    // All logins on the shared parent account (couple), requested parent
-    // first, so the detail page can show both partners' contact info.
-    const accountMembers = accountUserIds.length > 1
-      ? (await prisma.user.findMany({
-          where: { id: { in: accountUserIds }, roles: { has: "PARENT" } },
-          select: { id: true, name: true, email: true, mobileNumber: true, photoUrl: true },
-          orderBy: { createdAt: "asc" },
-        })).sort((a, b) => (a.id === parentId ? -1 : b.id === parentId ? 1 : 0))
-      : [];
-
-    // Intended Parent Form status for the account. Any connected provider can
-    // download the full PDF once it's submitted - collecting the form is about
-    // who asks for it, not who may read it. The surrogate-safe variant is
-    // surrogacy-agency only (nobody else has a surrogate to share it with).
-    const ipFormAccountId = targetUser?.parentAccountId || parentId;
-    const ipFormRow = await prisma.ipFormResponse.findUnique({
-      where: { parentAccountId: ipFormAccountId },
-      select: { id: true, status: true, submittedAt: true, promptedAt: true },
-    }).catch(() => null);
-    const { providerOffersSurrogacy } = await import("./ip-form-flow");
-    const surrogateAvailable = user.providerId
-      ? await providerOffersSurrogacy(user.providerId)
-      : isAdminOrConcierge(user);
-    const ipForm = ipFormRow
-      ? { responseId: ipFormRow.id, status: ipFormRow.status, submittedAt: ipFormRow.submittedAt, promptedAt: ipFormRow.promptedAt, surrogateAvailable }
-      : { responseId: null, status: "NOT_STARTED", submittedAt: null, promptedAt: null, surrogateAvailable };
-
-    // Admins and GoStork staff see everything; a provider sees the parent
-    // through the two gates. Note accountMembers selects email AND mobileNumber
-    // for both partners, so it needs the same treatment as the primary user -
-    // redacting one and not the other would just move the leak next door.
-    const detailGates: ParentGates = isAdminOrConcierge(user)
-      ? GATES_OPEN
-      : await resolveParentGates(user.providerId, targetUser?.parentAccountId || parentId, {
-          sessionStatus: null,
-          hasBooking: true, // the access check above already proved a relationship
-        });
-
+    const { buildParentRecord } = await import("./parent-record");
+    const rec = await buildParentRecord(req.user as any, req.params.id, { sections: ["identity"] });
     res.json({
-      ...redactParentContact(parent as any, detailGates),
-      accountMembers: redactParentMembers(accountMembers as any, detailGates),
-      // The IP form is the richest PII payload we hold - legal names, date of
-      // birth, home address, emergency contacts. Withhold the responseId (the
-      // PDF handle) unless contact has actually been released.
-      ipForm: detailGates.showContact ? ipForm : { ...ipForm, responseId: null },
-      contactReleased: detailGates.showContact,
-      contactReleaseReason: detailGates.contactReason,
+      ...(rec.parent as any),
+      accountMembers: rec.accountMembers,
+      ipForm: rec.ipForm,
+      contactReleased: rec.contactReleased,
+      contactReleaseReason: rec.contactReleaseReason,
     });
   } catch (e: any) {
+    if (e?.name === "ParentRecordError") return res.status(e.status).json({ message: e.message });
     console.error("Provider parent detail error:", e);
     res.status(500).json({ message: e.message });
   }
 });
+
 
 chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, async (req, res) => {
   const user = req.user as any;

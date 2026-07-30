@@ -13,7 +13,12 @@ type Release = {
   note: string | null;
 };
 
-const REASON_LABEL: Record<Release["reason"], string> = {
+/**
+ * Exported so surfaces that render the release STATE (the parent record header
+ * says "shared because you sent an invoice") word it the same way this panel
+ * does, rather than keeping a second copy that drifts.
+ */
+export const REASON_LABEL: Record<Release["reason"], string> = {
   IP_FORM: "intake form submitted",
   INVOICE: "invoice sent",
   AGREEMENT: "agreement sent",
@@ -40,9 +45,17 @@ const REASON_LABEL: Record<Release["reason"], string> = {
 export function ContactReleaseSection({
   providerId,
   parentAccountId,
+  // The chat sidebar stacks this mid-rail, so it opens with its own rule.
+  // Inside an already-titled section on the parent record that rule reads as a
+  // stray line, and with one panel per provider org the heading has to name the
+  // org. Defaults keep the monitor byte-identical.
+  divider = true,
+  heading = "Contact sharing",
   testId = "contact-release",
 }: {
   providerId: string | null;
+  divider?: boolean;
+  heading?: string;
   parentAccountId: string | null;
   testId?: string;
 }) {
@@ -108,9 +121,9 @@ export function ContactReleaseSection({
   const release = releases?.[0];
 
   return (
-    <div className="border-t pt-4 mt-4" data-testid={testId}>
+    <div className={divider ? "border-t pt-4 mt-4" : "pt-1"} data-testid={testId}>
       <h4 className="font-semibold text-sm mb-2" style={{ fontFamily: "var(--font-display)" }}>
-        Contact sharing
+        {heading}
       </h4>
 
       {isLoading ? (

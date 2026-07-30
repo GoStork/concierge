@@ -132,6 +132,25 @@ async function run() {
     });
     check("Provider edit replaces the schedule", replaced!.tranches.length === 1 && replaced!.tranches[0].name === "Corrected Deposit");
     check("Range amounts survive the round trip", replaced!.tranches[0].minValueCents === 500000 && replaced!.tranches[0].maxValueCents === 750000);
+
+    // A single-amount payment: the editor leaves "highest, if it varies" blank
+    // and sends null. Number(null) is 0, so a naive coercion turns "no upper
+    // bound" into a real $0 - which rendered as "$17,500 - $0" and halved the
+    // payment in reconciliation. Found by clicking through the real UI.
+    const singleAmount = await svc.replaceSchedule(sheet.id, {
+      tranches: [
+        // Keeps an item assigned so the assignment-preservation check further
+        // down still has something to preserve.
+        { name: "Flat Payment", triggerType: "AT_SIGNING", minValueCents: 17_500_00, maxValueCents: null, amountBasis: "STATED", payTo: "PROVIDER", itemIds: [agencyFee.id] },
+      ],
+      source: "provider_confirmed",
+    });
+    check("A blank upper bound stays null, never becomes $0",
+      singleAmount!.tranches[0].minValueCents === 1750000 && singleAmount!.tranches[0].maxValueCents === null,
+      `got min=${singleAmount!.tranches[0].minValueCents} max=${singleAmount!.tranches[0].maxValueCents}`);
+    check("A single-amount payment reconciles at full value",
+      singleAmount!.reconciliation.trancheTotalCents === 1750000,
+      `expected 1750000, got ${singleAmount!.reconciliation.trancheTotalCents}`);
     check("provider_authored marker preserved", replaced!.scheduleSource === "provider_authored");
 
     // --- The trap: rewriting line items must NOT wipe assignments ----------

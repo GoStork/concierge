@@ -253,6 +253,27 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.parentContactRelease;
   }
 
+  // Parent CRM (notes / next steps / lead owners / tags on a parent account).
+  get parentNote() {
+    return prisma.parentNote;
+  }
+
+  get parentFollowUp() {
+    return prisma.parentFollowUp;
+  }
+
+  get parentOwner() {
+    return prisma.parentOwner;
+  }
+
+  get parentTagDefinition() {
+    return prisma.parentTagDefinition;
+  }
+
+  get parentTagAssignment() {
+    return prisma.parentTagAssignment;
+  }
+
   get journeyPreferences() {
     return prisma.journeyPreferences;
   }
