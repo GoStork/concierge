@@ -2432,7 +2432,6 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         data={data}
         messageId={msg.id || ""}
         sessionId={sessionId || ""}
-        messageContent={msg.content || ""}
         viewerRole="parent"
         positiveChipStyle={positiveChipStyle}
       />

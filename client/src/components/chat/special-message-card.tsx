@@ -372,7 +372,6 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
         data={data}
         messageId={msg.id}
         sessionId={sessionId}
-        messageContent={msg.content || ""}
         viewerRole={viewerRole === "parent" ? "parent" : "provider"}
       />
     );

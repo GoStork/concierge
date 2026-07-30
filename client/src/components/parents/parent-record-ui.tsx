@@ -135,10 +135,13 @@ function ContactLine({ record }: { record: ParentRecord }) {
         ))}
       </div>
       {/* Providers ask "why can I see this now?" constantly, and the payload
-          already carries the answer. */}
+          already carries the answer. Phrased exactly as the release panel
+          phrases it ("Shared - invoice sent") rather than wrapping the label in
+          a sentence: the labels are noun phrases, so "Shared because the
+          invoice sent" reads as broken English. */}
       {reason && REASON_LABEL[reason] && (
         <p className="t-helper" data-testid="record-contact-reason">
-          Shared because the {REASON_LABEL[reason]}.
+          Shared - {REASON_LABEL[reason]}
         </p>
       )}
     </div>
@@ -352,6 +355,9 @@ export function ParentMoneySection({
           <div className="grid gap-4 md:grid-cols-3">
             <div>
               <p className="t-micro-label mb-1.5">Cost sheets</p>
+              {/* No providerName on the rows: an admin already has the group
+                  heading above them, and a provider only ever sees their own
+                  org, so repeating it on every line is pure noise. */}
               <ParentCostSheetsCell
                 costSheets={g.costSheets}
                 sessionId={null}
@@ -359,7 +365,6 @@ export function ParentMoneySection({
                 parentUserId={record.parent.id}
                 limit={0}
                 layout="list"
-                providerName={showProviderName ? null : g.providerName}
                 testId={`money-costsheets-${g.providerId}`}
               />
             </div>

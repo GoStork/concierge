@@ -3462,6 +3462,7 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
 
     // Only a member of the account that owns the card may tick it. Without
     // this, any authenticated user could satisfy another family's gate.
+    let shownCardData: any = null;
     if (messageId) {
       const msg = await prisma.aiChatMessage.findUnique({
         where: { id: messageId },
@@ -3474,11 +3475,25 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
       if (!ownerIds.includes(user.id)) {
         return res.status(403).json({ message: "Not your card" });
       }
+      shownCardData = msg.uiCardData as any;
     }
 
     const memberIds = await callerAccountMemberIds(user);
+    // What the parent actually SAW is the figure baked into the card when it
+    // was posted - read back from the message row, not from the request body,
+    // so it cannot be forged. Re-resolving at click time would record a
+    // different number whenever the provider edited their sheet in between
+    // (or, as in a provider with no sheet at all, record "none" against a card
+    // that displayed a real amount). The shown figure is the meaningful one if
+    // anyone ever disputes it; the live one is kept alongside for contrast.
     const deposit =
-      gate === "DECISION_WINDOW" ? await resolveDepositSnapshot(providerId, memberIds) : null;
+      gate === "DECISION_WINDOW"
+        ? (shownCardData?.deposit ?? (await resolveDepositSnapshot(providerId, memberIds)))
+        : null;
+    const liveDeposit =
+      gate === "DECISION_WINDOW" && shownCardData?.deposit
+        ? await resolveDepositSnapshot(providerId, memberIds)
+        : null;
 
     await recordGateAck({
       gate,
@@ -3490,6 +3505,7 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
       actorUserId: user.id,
       actorName: user.name || user.firstName || null,
       depositSnapshot: deposit,
+      liveDepositAtAck: liveDeposit,
     });
 
     const acknowledgedAt = new Date();

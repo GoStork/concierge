@@ -692,6 +692,46 @@ async function ut17() {
   check("...and still excludes the caller's own session", queries[1]?.id?.not === "eva1", JSON.stringify(queries[1]?.id));
 }
 
+// ─── UT-18: every tag the prompt promises to strip is actually stripped ──────
+// The failure mode is loud and embarrassing rather than subtle: a raw
+// [[CONSULT_RELEASE:8f3b...]] rendered in a parent's chat. It happens whenever
+// someone adds a tag to the prompt and forgets the matching `.replace()` in
+// the router, which no other test would catch. Read both files and compare.
+async function ut18() {
+  const fs = await import("fs");
+  const path = await import("path");
+  const root = process.cwd();
+  const prompts = fs.readFileSync(path.join(root, "server/ai-prompt-defaults.ts"), "utf8");
+  const router = fs.readFileSync(path.join(root, "server/ai-router.ts"), "utf8");
+
+  // The protocols section ends with an explicit "these are stripped" list.
+  const claim = prompts.match(/All \[\[SAVE:\.\.\.\]\][^\n]*tags are stripped[^\n]*/)?.[0];
+  check("the prompt still declares which tags are stripped", !!claim, String(claim).slice(0, 80));
+  if (!claim) return;
+
+  const claimed = Array.from(claim.matchAll(/\[\[([A-Z_]+)[:\]]/g)).map((m) => m[1]);
+  check("the strip list parses into tag names", claimed.length >= 10, claimed.join(","));
+  check("CONSULT_RELEASE is declared as stripped", claimed.includes("CONSULT_RELEASE"), claimed.join(","));
+
+  for (const tag of claimed) {
+    // Either a targeted replace for that tag, or the tag consumed by a shared
+    // strip pass. Both end with it gone from the user-visible content.
+    const stripped = new RegExp(`replace\\(\\s*/\\\\\\[\\\\\\[${tag}\\b`).test(router)
+      || new RegExp(`\\\\\\[\\\\\\[${tag}[^\\n]*\\]\\]\\/g?[a-z]*,\\s*""`).test(router);
+    check(`[[${tag}]] is stripped in ai-router before the reply is saved`, stripped);
+  }
+
+  // And the tag must be emitted only after a confirmation - the prompt is the
+  // only thing enforcing that, so pin the wording that carries it.
+  const releaseRule = prompts.match(/RELEASING A LOCK[\s\S]{0,900}/)?.[0] || "";
+  check("the release rule requires confirming ONCE before emitting",
+    /confirm ONCE/i.test(releaseRule) && /ONLY after they confirm/i.test(releaseRule));
+  check("the release rule forbids firing on a first mention",
+    /Never emit it on a first mention/i.test(releaseRule));
+  check("the release rule forbids pairing it with a booking tag",
+    /never emit it in the same message as a \[\[CONSULTATION_BOOKING\]\]/i.test(releaseRule));
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-01", name: "Bare-id [[MATCH_CARD:<uuid>]] form is accepted", run: ut01 },
   { id: "UT-02", name: "Well-formed card JSON parses unchanged", run: ut02 },
@@ -710,6 +750,7 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-15", name: "Match-call gates fire in order and never quote an unconfirmed deposit", run: ut15 },
   { id: "UT-16", name: "Consent card registration stays in lockstep with visibility", run: ut16 },
   { id: "UT-17", name: "A whisper-stamped Eva session never counts as a provider connection", run: ut17 },
+  { id: "UT-18", name: "Every tag the prompt promises to strip is stripped before the parent sees it", run: ut18 },
 ];
 
 (async () => {

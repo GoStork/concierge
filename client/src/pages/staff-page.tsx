@@ -25,12 +25,16 @@ import {
   HouseholdBadge,
   JOURNEY_STATUS_LABELS,
   MatchStatusBadge,
+  NextStepCell,
+  OwnerCell,
   ParentAgreementsCell,
   ParentCostSheetsCell,
   ParentInvoicesCell,
   SERVICE_LABELS,
   ServiceChips,
+  TagsCell,
   dedupeHouseholdPhones,
+  matchesCrmFilters,
   toDateParam,
 } from "@/components/parents";
 
@@ -68,6 +72,7 @@ export default function StaffPage() {
 }
 
 function GostorkAdminUsersView() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [deleteMember, setDeleteMember] = useState<StaffMember | null>(null);
@@ -90,6 +95,9 @@ function GostorkAdminUsersView() {
   const setDateTo = (v: string) => updateUsersParam("to", v);
   const serviceFilter = searchParams.get("svc") || "all";
   const statusFilter = searchParams.get("status") || "all";
+  const ownerFilter = searchParams.get("owner") || "all";
+  const nextFilter = searchParams.get("next") || "all";
+  const tagFilter = searchParams.get("tag") || "all";
 
   const { sortConfig, handleSort, sortData } = useTableSort("created", "desc");
 
@@ -118,7 +126,7 @@ function GostorkAdminUsersView() {
     staleTime: 15_000,
   });
 
-  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter !== "all" || statusFilter !== "all";
+  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter !== "all" || statusFilter !== "all" || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all";
 
   const filteredUsers = parentUsers.filter(member => {
     if (serviceFilter !== "all") {
@@ -126,6 +134,7 @@ function GostorkAdminUsersView() {
       if (!svcs.some(sv => sv.toLowerCase().includes(serviceFilter.toLowerCase()))) return false;
     }
     if (statusFilter !== "all" && overview[member.id]?.matchStatus !== statusFilter) return false;
+    if (!matchesCrmFilters(overview[member.id] || {}, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const fields = [
@@ -154,7 +163,7 @@ function GostorkAdminUsersView() {
     // (each built from the same stale params), so only the last key cleared.
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      for (const key of ["q", "from", "to", "svc", "status"]) next.delete(key);
+      for (const key of ["q", "from", "to", "svc", "status", "owner", "next", "tag"]) next.delete(key);
       return next;
     }, { replace: true });
   }
@@ -168,6 +177,9 @@ function GostorkAdminUsersView() {
       case "updated": return overview[item.id]?.updatedAt || "";
       case "services": return (overview[item.id]?.services || []).join(", ");
       case "status": return overview[item.id]?.matchStatus || "";
+      case "owner": return overview[item.id]?.owner?.name || "";
+      // sortData puts nulls last, which is what "no next step" should be.
+      case "nextDue": return overview[item.id]?.nextStep?.dueAt || null;
       default: return "";
     }
   });
@@ -362,6 +374,43 @@ function GostorkAdminUsersView() {
         <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="button-clear-filters" />
       </div>
 
+      {/* Quick filters on the same URL-param contract as the selects above,
+          so a bookmarked "my overdue leads" view survives a reload. */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-3" data-testid="parents-quick-filters">
+        {[
+          { key: "all", label: "All", apply: { owner: "", next: "" } },
+          { key: "mine", label: "My leads", apply: { owner: "me", next: "" } },
+          { key: "overdue", label: "Overdue", apply: { owner: "", next: "overdue" } },
+          { key: "unowned", label: "No owner", apply: { owner: "unassigned", next: "" } },
+        ].map(pill => {
+          // Normalise BOTH sides to "all" before comparing: the pills store a
+          // cleared filter as "", the URL stores it as absent -> "all".
+          const active =
+            (pill.apply.owner || "all") === (ownerFilter || "all") &&
+            (pill.apply.next || "all") === (nextFilter || "all");
+          return (
+            <button
+              key={pill.key}
+              type="button"
+              className="text-xs font-ui px-2.5 py-1 rounded-full border transition-colors"
+              style={active
+                ? { background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))", borderColor: "hsl(var(--primary) / 0.4)" }
+                : undefined}
+              onClick={() => setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                for (const [k, v] of Object.entries(pill.apply)) {
+                  if (v) next.set(k, v); else next.delete(k);
+                }
+                return next;
+              }, { replace: true })}
+              data-testid={`quick-filter-${pill.key}`}
+            >
+              {pill.label}
+            </button>
+          );
+        })}
+      </div>
+
       <Card className="overflow-x-auto">
         <Table className="[&_th]:px-2 [&_td]:px-2 [&_th]:text-xs">
           <TableHeader>
@@ -384,6 +433,9 @@ function GostorkAdminUsersView() {
               <TableHead className="hidden lg:table-cell whitespace-nowrap">Agreements</TableHead>
               <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-created" />
               <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
+              <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
+              <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
+              <TableHead className="whitespace-nowrap hidden xl:table-cell">Tags</TableHead>
               <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -472,6 +524,15 @@ function GostorkAdminUsersView() {
                     <span className="t-helper">{new Date(overview[member.id].updatedAt).toLocaleDateString()}</span>
                   ) : <span className="t-helper">-</span>}
                 </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  <OwnerCell owner={overview[member.id]?.owner} testId={`cell-owner-${member.id}`} />
+                </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  <NextStepCell nextStep={overview[member.id]?.nextStep} testId={`cell-next-step-${member.id}`} />
+                </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  <TagsCell tags={overview[member.id]?.tags} testId={`cell-tags-${member.id}`} />
+                </TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-end gap-1">
                     {/* No edit button - clicking anywhere on the row opens the edit page */}
@@ -493,7 +554,7 @@ function GostorkAdminUsersView() {
               );
             }) : (
               <TableRow>
-                <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={15} className="text-center text-muted-foreground py-8">
                   {hasActiveFilters ? "No parents match your filters." : "No parents found."}
                 </TableCell>
               </TableRow>
@@ -532,6 +593,7 @@ function GostorkAdminUsersView() {
 }
 
 function ProviderParentContactsView({ providerId }: { providerId: string }) {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const searchQuery = searchParams.get("q") || "";
   const serviceFilter = searchParams.get("svc") || "all";
@@ -547,11 +609,14 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
     }, { replace: true });
   };
   const setSearchQuery = (v: string) => setParam("q", v);
-  const hasActiveFilters = !!(searchQuery || serviceFilter !== "all" || statusFilter !== "all" || dateFrom || dateTo);
+  const ownerFilter = searchParams.get("owner") || "all";
+  const nextFilter = searchParams.get("next") || "all";
+  const tagFilter = searchParams.get("tag") || "all";
+  const hasActiveFilters = !!(searchQuery || serviceFilter !== "all" || statusFilter !== "all" || dateFrom || dateTo || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all");
   const clearFilters = () => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      ["q", "svc", "status", "from", "to"].forEach(k => next.delete(k));
+      ["q", "svc", "status", "from", "to", "owner", "next", "tag"].forEach(k => next.delete(k));
       return next;
     }, { replace: true });
   };
@@ -571,6 +636,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
     (parents || []).filter(p => {
       if (serviceFilter !== "all" && p.serviceType !== serviceFilter) return false;
       if (statusFilter !== "all" && p.matchStatus !== statusFilter) return false;
+      if (!matchesCrmFilters(p, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
       if (dateFrom && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) < new Date(`${dateFrom}T00:00:00`))) return false;
       if (dateTo && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) > new Date(`${dateTo}T23:59:59`))) return false;
       if (!searchQuery.trim()) return true;
@@ -586,6 +652,8 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         case "status": return p.matchStatus || "";
         case "created": return p.sessionCreatedAt ? new Date(p.sessionCreatedAt).getTime() : 0;
         case "updated": return p.sessionUpdatedAt ? new Date(p.sessionUpdatedAt).getTime() : 0;
+        case "owner": return p.owner?.name || "";
+        case "nextDue": return p.nextStep?.dueAt ? new Date(p.nextStep.dueAt).getTime() : null;
         default: return null;
       }
     },
@@ -678,6 +746,43 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="provider-parents-clear-filters" />
       </div>
 
+      {/* Quick filters on the same URL-param contract as the selects above,
+          so a bookmarked "my overdue leads" view survives a reload. */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-3" data-testid="parents-quick-filters">
+        {[
+          { key: "all", label: "All", apply: { owner: "", next: "" } },
+          { key: "mine", label: "My leads", apply: { owner: "me", next: "" } },
+          { key: "overdue", label: "Overdue", apply: { owner: "", next: "overdue" } },
+          { key: "unowned", label: "No owner", apply: { owner: "unassigned", next: "" } },
+        ].map(pill => {
+          // Normalise BOTH sides to "all" before comparing: the pills store a
+          // cleared filter as "", the URL stores it as absent -> "all".
+          const active =
+            (pill.apply.owner || "all") === (ownerFilter || "all") &&
+            (pill.apply.next || "all") === (nextFilter || "all");
+          return (
+            <button
+              key={pill.key}
+              type="button"
+              className="text-xs font-ui px-2.5 py-1 rounded-full border transition-colors"
+              style={active
+                ? { background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))", borderColor: "hsl(var(--primary) / 0.4)" }
+                : undefined}
+              onClick={() => setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                for (const [k, v] of Object.entries(pill.apply)) {
+                  if (v) next.set(k, v); else next.delete(k);
+                }
+                return next;
+              }, { replace: true })}
+              data-testid={`quick-filter-${pill.key}`}
+            >
+              {pill.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* overflow-x-auto so wide rows scroll horizontally instead of
           wrapping. whitespace-nowrap on every cell enforces single-line
           per column. Source column was removed - every parent in this
@@ -698,6 +803,9 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
               <TableHead className="hidden lg:table-cell whitespace-nowrap">Agreements</TableHead>
               <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
               <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
+              <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
+              <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
+              <TableHead className="hidden xl:table-cell whitespace-nowrap">Tags</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -780,11 +888,20 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                 <TableCell className="hidden xl:table-cell whitespace-nowrap">
                   <span className="t-helper">{row.sessionUpdatedAt ? new Date(row.sessionUpdatedAt).toLocaleDateString() : "-"}</span>
                 </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  <OwnerCell owner={row.owner} testId={`cell-owner-${row.rowId}`} />
+                </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  <NextStepCell nextStep={row.nextStep} testId={`cell-next-step-${row.rowId}`} />
+                </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  <TagsCell tags={row.tags} testId={`cell-tags-${row.rowId}`} />
+                </TableCell>
               </TableRow>
             )) : (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                  {searchQuery ? "No parents match your search." : "No parent contacts yet. Parents will appear here when the AI concierge connects them with you."}
+                <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
+                  {hasActiveFilters ? "No parents match your filters." : "No parent contacts yet. Parents will appear here when the AI concierge connects them with you."}
                 </TableCell>
               </TableRow>
             )}

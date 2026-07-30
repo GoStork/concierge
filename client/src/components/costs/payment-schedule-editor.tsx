@@ -113,9 +113,21 @@ const dollarsToCents = (raw: string): number | null => {
   return Number.isFinite(n) ? Math.round(n * 100) : null;
 };
 
-function toDraft(t: any): TrancheDraft {
+/**
+ * Server tranche -> comparable shape, with no client-only uid.
+ *
+ * Kept separate from toDraft because dirty-checking runs on every render:
+ * routing it through toDraft would allocate a fresh uid each time, which is a
+ * side effect during render.
+ */
+function toComparable(t: any) {
+  const { uid, ...rest } = toDraft(t, "");
+  return rest;
+}
+
+function toDraft(t: any, uid: string = nextUid()): TrancheDraft {
   return {
-    uid: nextUid(),
+    uid,
     name: t.name ?? "",
     triggerType: t.triggerType ?? "OTHER",
     triggerLabel: t.triggerLabel ?? "",
@@ -186,7 +198,7 @@ export function PaymentScheduleEditor({
   // on every refetch would stomp on edits in progress.
   useEffect(() => {
     if (data && drafts === null) {
-      setDrafts(data.tranches.map(toDraft));
+      setDrafts(data.tranches.map((t) => toDraft(t)));
       setTerms(data.paymentTerms ?? {});
     }
   }, [data, drafts]);
@@ -195,7 +207,7 @@ export function PaymentScheduleEditor({
   const source = data?.scheduleSource ?? null;
   const isDirty = useMemo(() => {
     if (!data || drafts === null) return false;
-    return JSON.stringify(data.tranches.map(toDraft).map(stripUid)) !== JSON.stringify(drafts.map(stripUid))
+    return JSON.stringify(data.tranches.map(toComparable)) !== JSON.stringify(drafts.map(stripUid))
       || JSON.stringify(data.paymentTerms ?? {}) !== JSON.stringify(terms);
   }, [data, drafts, terms]);
 
@@ -226,9 +238,12 @@ export function PaymentScheduleEditor({
     },
     onSuccess: (fresh: ScheduleResponse) => {
       queryClient.setQueryData(scheduleKey, fresh);
-      setDrafts(fresh.tranches.map(toDraft));
+      setDrafts(fresh.tranches.map((t) => toDraft(t)));
       setTerms(fresh.paymentTerms ?? {});
-      queryClient.invalidateQueries({ queryKey: ["/api/costs/provider", providerId] });
+      // Deliberately does NOT invalidate the provider's cost-sheet query.
+      // A schedule changes nothing that query renders - totals and badges are
+      // all derived from line items - and poking that heavy, effect-laden
+      // parent query from here sent the cost-sheet tab into a render loop.
       toast({ title: "Payment schedule saved", description: "Parents will see this with their cost sheet." });
     },
     onError: (err: any) => {
@@ -688,7 +703,7 @@ export function PaymentScheduleEditor({
             </Button>
             {isDirty && (
               <Button size="sm" variant="ghost"
-                onClick={() => { setDrafts(data!.tranches.map(toDraft)); setTerms(data!.paymentTerms ?? {}); }}
+                onClick={() => { setDrafts(data!.tranches.map((t) => toDraft(t))); setTerms(data!.paymentTerms ?? {}); }}
                 data-testid="btn-reset-payment-schedule">
                 Discard changes
               </Button>

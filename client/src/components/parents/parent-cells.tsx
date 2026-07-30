@@ -299,6 +299,58 @@ export function TagsCell({
   );
 }
 
+/**
+ * The CRM filter predicates, shared by both parents tables.
+ *
+ * Written once so "overdue" cannot come to mean two different things depending
+ * on which table you are looking at. `viewerUserId` powers the "My leads"
+ * shortcut without the caller needing to know how ownership is stored.
+ */
+export function matchesCrmFilters(
+  row: {
+    owner?: { userId?: string; name?: string | null } | null;
+    nextStep?: { dueAt: string; overdue: boolean } | null;
+    tags?: { label: string }[] | null;
+  },
+  filters: { owner: string; next: string; tag: string },
+  viewerUserId?: string | null,
+): boolean {
+  if (filters.owner !== "all") {
+    if (filters.owner === "unassigned") {
+      if (row.owner) return false;
+    } else if (filters.owner === "me") {
+      if (!row.owner || row.owner.userId !== viewerUserId) return false;
+    } else if (row.owner?.userId !== filters.owner) {
+      return false;
+    }
+  }
+
+  if (filters.next !== "all") {
+    const step = row.nextStep;
+    if (filters.next === "none") {
+      if (step) return false;
+    } else {
+      if (!step) return false;
+      if (filters.next === "overdue" && !step.overdue) return false;
+      if (filters.next === "today") {
+        const due = new Date(step.dueAt);
+        if (due.toDateString() !== new Date().toDateString()) return false;
+      }
+      if (filters.next === "week") {
+        const due = new Date(step.dueAt).getTime();
+        const weekOut = Date.now() + 7 * 24 * 60 * 60 * 1000;
+        if (due > weekOut) return false;
+      }
+    }
+  }
+
+  if (filters.tag !== "all") {
+    if (!(row.tags || []).some((t) => t.label === filters.tag)) return false;
+  }
+
+  return true;
+}
+
 /** Shared shape for the money cells: chips in a table, one row per item on a record. */
 export type MoneyCellLayout = "chips" | "list";
 

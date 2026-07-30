@@ -1238,15 +1238,18 @@ function ConsultationLockPanel({ parentAccountId }: { parentAccountId: string })
         onClick={() => setOpen((v) => !v)}
         data-testid="btn-toggle-consultation-lock"
       >
-        <h4 className="font-semibold text-sm flex items-center gap-1.5" style={{ fontFamily: "var(--font-display)" }}>
-          <Lock className="w-4 h-4 text-primary" /> Consultation focus lock
+        {/* This sidebar is ~255px wide, so the badge has to hold its own line
+            and the title has to be the part that gives. */}
+        <h4 className="font-semibold text-sm flex items-center gap-1.5 min-w-0" style={{ fontFamily: "var(--font-display)" }}>
+          <Lock className="w-4 h-4 shrink-0 text-primary" />
+          <span className="min-w-0">Consultation focus lock</span>
           {open && activeCount > 0 && (
-            <span className="ml-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground">
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground">
               {activeCount} active
             </span>
           )}
         </h4>
-        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
@@ -1266,9 +1269,9 @@ function ConsultationLockPanel({ parentAccountId }: { parentAccountId: string })
                 style={{ borderRadius: "var(--radius)" }}
                 data-testid={`lock-row-${o.providerId}`}
               >
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start justify-between gap-2 flex-wrap">
                   <div className="min-w-0">
-                    <span className="inline-block rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground">
+                    <span className="inline-block whitespace-nowrap rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground">
                       {o.providerTypeName}
                     </span>
                     <p className="text-xs font-medium text-foreground mt-1 truncate">{o.providerName}</p>
@@ -1295,7 +1298,9 @@ function ConsultationLockPanel({ parentAccountId }: { parentAccountId: string })
                     <p className="t-helper">
                       Releases on its own {new Date(o.releaseEligibleAt).toLocaleDateString()} if no match call is scheduled.
                     </p>
-                    <div className="flex gap-2">
+                    {/* Stacked, not side by side: at this width an inline
+                        input left room for about three characters. */}
+                    <div className="space-y-1.5">
                       <Input
                         value={reasons[o.providerId] || ""}
                         onChange={(e) => setReasons((r) => ({ ...r, [o.providerId]: e.target.value }))}
@@ -1307,12 +1312,12 @@ function ConsultationLockPanel({ parentAccountId }: { parentAccountId: string })
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="h-8 shrink-0 text-xs"
+                        className="h-8 w-full text-xs"
                         disabled={!((reasons[o.providerId] || "").trim()) || releasing === o.providerId}
                         onClick={() => release(o.providerId)}
                         data-testid={`btn-unlock-${o.providerId}`}
                       >
-                        {releasing === o.providerId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unlock"}
+                        {releasing === o.providerId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unlock this type"}
                       </Button>
                     </div>
                   </>

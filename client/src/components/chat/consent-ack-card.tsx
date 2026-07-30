@@ -62,7 +62,6 @@ interface ConsentAckCardProps {
   data: ConsentAckData;
   messageId: string;
   sessionId: string;
-  messageContent: string;
   viewerRole?: "parent" | "provider";
   positiveChipStyle?: React.CSSProperties;
 }
@@ -101,12 +100,15 @@ export function ConsentAckCard({
   data,
   messageId,
   sessionId,
-  messageContent,
   viewerRole = "parent",
   positiveChipStyle,
 }: ConsentAckCardProps) {
   const queryClient = useQueryClient();
   const [acknowledgedAt, setAcknowledgedAt] = useState<string | null>(data.acknowledgedAt ?? null);
+  // Distinct from "acknowledged": the gate stopped applying (the family is not
+  // a couple after all, the form got submitted). Hiding the button is right;
+  // claiming they confirmed something they never did is not.
+  const [noLongerRequired, setNoLongerRequired] = useState(false);
   const [saving, setSaving] = useState(false);
   const isProvider = viewerRole === "provider";
   const Icon = GATE_ICON[data.gate] ?? Check;
@@ -129,7 +131,7 @@ export function ConsentAckCard({
           intent === "MATCH_CALL"
             ? (s.missing || []).includes(data.gate)
             : s.preliminaryAck?.allowed === false;
-        if (!stillMissing) setAcknowledgedAt(new Date().toISOString());
+        if (!stillMissing) setNoLongerRequired(true);
       })
       .catch(() => {});
     return () => {
@@ -169,29 +171,34 @@ export function ConsentAckCard({
     }
   };
 
-  const body = isProvider ? data.providerContent || messageContent : messageContent;
   const deposit = data.deposit;
   const amount = deposit && deposit.source !== "NONE" ? depositAmountLabel(deposit) : null;
 
+  // The message bubble above already renders the body - and swaps in
+  // providerContent for provider viewers (chat-message-list.tsx). Repeating it
+  // here printed every sentence twice.
   if (acknowledgedAt) {
     return (
-      <div style={chatBubbleStyle}>
-        <p>{body}</p>
-        <div
-          className="flex items-center gap-2 mt-2 font-medium"
-          style={{ fontSize: "var(--chat-bubble-font-size, 12px)", color: "hsl(var(--brand-success))" }}
-        >
-          <Check className="w-3.5 h-3.5" />
-          <span>
-            Confirmed{data.acknowledgedByName ? ` by ${data.acknowledgedByName}` : ""}
-          </span>
-        </div>
+      <div
+        className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+        style={{ background: "hsl(var(--brand-success) / 0.1)", color: "hsl(var(--brand-success))" }}
+      >
+        <Check className="w-3.5 h-3.5" />
+        Confirmed{data.acknowledgedByName ? ` by ${data.acknowledgedByName}` : ""}
       </div>
     );
   }
 
+  // The gate stopped applying. Say nothing rather than claim a confirmation
+  // that never happened - and never leave an actionable button behind.
+  if (noLongerRequired) return null;
+
   return (
-    <div style={{ ...chatBubbleStyle, padding: 0, overflow: "hidden" }}>
+    // Without the body paragraph the card has no wide content of its own, so
+    // it collapsed to the deposit block and wrapped "$8,000 - $12,000" onto two
+    // lines in the narrower conversations column. min-width holds the amount on
+    // one line; `min(...)` keeps it honest on a phone.
+    <div style={{ ...chatBubbleStyle, padding: 0, overflow: "hidden", marginTop: "6px", minWidth: "min(340px, 100%)" }}>
       <div
         className="flex items-center gap-2 font-medium border-b"
         style={{
@@ -206,8 +213,6 @@ export function ConsentAckCard({
       </div>
 
       <div style={{ padding: "var(--chat-bubble-py, 11px) var(--chat-bubble-px, 16px)" }} className="space-y-3">
-        <p>{body}</p>
-
         {data.gate === "DECISION_WINDOW" && deposit && (
           <div
             className="rounded-md"
@@ -223,7 +228,7 @@ export function ConsentAckCard({
               <>
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="font-medium">{deposit.label || "Match deposit"}</span>
-                  <span className="font-semibold">{amount}</span>
+                  <span className="font-semibold whitespace-nowrap">{amount}</span>
                 </div>
                 {deposit.payToLabel && (
                   <div className="opacity-80 mt-1">Paid to {deposit.payToLabel}</div>
@@ -232,8 +237,14 @@ export function ConsentAckCard({
                   <div className="opacity-80 mt-1">{deposit.triggerLabel}</div>
                 )}
                 {deposit.isRefundable === false && (
+                  // The provider's own refundNote usually restates
+                  // "non-refundable" in their words, so prefixing it blindly
+                  // produced "Non-refundable - Non-refundable once she is on
+                  // hold". Their wording wins when it already says it.
                   <div className="opacity-80 mt-1">
-                    Non-refundable{deposit.refundNote ? ` - ${deposit.refundNote}` : ""}
+                    {/refundab/i.test(deposit.refundNote || "")
+                      ? deposit.refundNote
+                      : `Non-refundable${deposit.refundNote ? ` - ${deposit.refundNote}` : ""}`}
                   </div>
                 )}
               </>

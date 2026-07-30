@@ -179,7 +179,10 @@ function NextStepCard({
   const quick = (days: number) => {
     const d = new Date();
     d.setDate(d.getDate() + days);
-    d.setHours(17, 0, 0, 0);
+    // End of the chosen DAY, not 5pm. A "Today" that lands at 17:00 is already
+    // overdue for anyone who clicks it after five, which turns the quick-pick
+    // into a way to manufacture a red chip.
+    d.setHours(23, 59, 59, 999);
     setDueAt(d);
   };
 

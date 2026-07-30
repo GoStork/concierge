@@ -1785,9 +1785,17 @@ function SingleCostsTab({
 
   useEffect(() => {
     const allCategories = Object.keys(groupedItems);
-    if (allCategories.length > 0) {
-      setAccordionValue(allCategories);
-    }
+    if (allCategories.length === 0) return;
+    // Bail out when the category set is unchanged. Setting state to a freshly
+    // built array every time makes React re-render on reference inequality
+    // alone, which re-derives displayItems, which re-fires this effect - an
+    // unbounded loop ("Maximum update depth exceeded") that surfaces whenever
+    // anything else on the page causes displayItems to churn.
+    setAccordionValue((prev) =>
+      prev.length === allCategories.length && allCategories.every((c) => prev.includes(c))
+        ? prev
+        : allCategories,
+    );
   }, [displayItems]);
 
   const totals = calculateTotalCost(displayItems);

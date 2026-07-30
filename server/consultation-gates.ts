@@ -1002,7 +1002,10 @@ export async function recordGateAck(input: {
   sessionId?: string | null;
   actorUserId?: string | null;
   actorName?: string | null;
+  /** The figure the card actually displayed - the one that matters. */
   depositSnapshot?: DepositSnapshot | null;
+  /** What the provider's sheet said at click time, when it differs. */
+  liveDepositAtAck?: DepositSnapshot | null;
 }): Promise<void> {
   await emitEvent({
     eventType: GATE_EVENT_TYPE[input.gate],
@@ -1020,6 +1023,7 @@ export async function recordGateAck(input: {
       ...(input.gate === "DECISION_WINDOW" && input.depositSnapshot
         ? { depositSnapshot: input.depositSnapshot }
         : {}),
+      ...(input.liveDepositAtAck ? { liveDepositAtAck: input.liveDepositAtAck } : {}),
     },
   });
 }
