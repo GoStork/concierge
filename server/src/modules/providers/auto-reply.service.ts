@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { renderAutoReplyBody, type AutoReplyVars } from "../../../../shared/auto-reply-starters";
 import { logContactBlock, scanForContactInfo } from "../../../contact-guard";
 import { getBaseUrl } from "../../lib/get-base-url";
+import { providerTypeFromSubject } from "../../../provider-type-resolve";
 
 /**
  * Provider booking auto-reply.
@@ -32,17 +33,8 @@ export type AutoReplyAttachment = {
   size?: number | null;
 };
 
-/** Session subjectType -> ProviderType.name. Session values are loose and
- *  historically inconsistent ("egg_donor", "egg", "surrog", "surrogate"), so
- *  match on substrings rather than an exact set. */
-const SUBJECT_TYPE_TO_PROVIDER_TYPE: Array<{ test: RegExp; typeName: string }> = [
-  { test: /egg.*bank/i, typeName: "Egg Bank" },
-  { test: /sperm/i, typeName: "Sperm Bank" },
-  { test: /egg|donor/i, typeName: "Egg Donor Agency" },
-  { test: /surrog/i, typeName: "Surrogacy Agency" },
-  { test: /legal|lawyer|attorney/i, typeName: "Legal Services" },
-  { test: /clinic|doctor|ivf/i, typeName: "IVF Clinic" },
-];
+// Session subjectType -> ProviderType.name lives in server/provider-type-resolve.ts;
+// the consultation focus lock needs the identical mapping, so there is one copy.
 
 @Injectable()
 export class AutoReplyService {
@@ -69,13 +61,10 @@ export class AutoReplyService {
     });
     if (services.length === 0) return null;
 
-    const subject = (opts.subjectType || "").trim();
-    if (subject) {
-      const match = SUBJECT_TYPE_TO_PROVIDER_TYPE.find((m) => m.test.test(subject));
-      if (match) {
-        const svc = services.find((s: any) => s.providerType?.name === match.typeName);
-        if (svc) return svc.providerTypeId;
-      }
+    const matchName = providerTypeFromSubject(opts.subjectType);
+    if (matchName) {
+      const svc = services.find((s: any) => s.providerType?.name === matchName);
+      if (svc) return svc.providerTypeId;
     }
 
     // No usable subject label: unambiguous only when the org runs exactly one line.

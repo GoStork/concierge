@@ -1,6 +1,14 @@
 import { Router, Request, Response } from "express";
 import { isUsableCardId, parseMatchCardTag, topResultId, UUID_RE } from "./match-card-parse";
-import { PARENT_VISIBLE_SYSTEM_CARDS } from "./parent-visibility";
+import { PARENT_VISIBLE_SYSTEM_CARDS, findConnectedProviderSession } from "./parent-visibility";
+import {
+  listOpenConsultations,
+  evaluateConsultationLock,
+  evaluateMatchCallGates,
+  releaseConsultationLock,
+  expandParentAccount,
+} from "./consultation-gates";
+import { openConnectedAgencySubjectThread } from "./connected-agency-shortcut";
 import { blockContactInfo, isSharedWithProvider, logContactBlock, scanForContactInfo } from "./contact-guard";
 import Anthropic from "@anthropic-ai/sdk";
 import { getBaseUrl } from "./src/lib/get-base-url";
@@ -3159,6 +3167,14 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     // enforcement uses it to avoid forcing a calendar for an agency the parent
     // already has a call booked with (a DIFFERENT provider is still fine).
     let upcomingConsultProviderId: string | null = null;
+    // Every login on the household. Couples share one journey, so ANY query
+    // about "what has this family done" must span all of them - this was
+    // recomputed four separate times in this function and one of the copies
+    // (the CALL ALREADY BOOKED lookup) was missing the expansion entirely,
+    // which meant a call booked by one partner was invisible to the other.
+    const accountMemberIds: string[] = userRecord?.parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
+      : [userId];
     if (userRecord) {
       const parts: string[] = [];
 
@@ -3403,35 +3419,39 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // provider's parent-profile card is filled before the call. The rules live in
       // the post_booking_call_prep prompt section; this block activates it and
       // scopes it to ONLY the missing items.
-      // journeyStage alone is a STALE signal - it stays "Consultation Requested"
-      // after calls happen or get cancelled, which would make every later favorite
-      // act like a call is already scheduled. Require a real upcoming
-      // provider-hosted consultation (GoStork concierge calls don't count -
-      // there's no agency to prep for).
-      const upcomingProviderConsult = profile?.journeyStage === "Consultation Requested"
-        ? await prisma.booking.findFirst({
-            where: {
-              parentUserId: userId,
-              status: { in: ["PENDING", "CONFIRMED"] },
-              scheduledAt: { gte: new Date() },
-              providerUser: { providerId: { not: null } },
-            },
+      // The query's OWN predicates are the signal: an upcoming, uncancelled,
+      // provider-hosted consultation. journeyStage was previously ANDed in as a
+      // gate and it is stale by construction - it stays "Consultation Requested"
+      // long after calls happen or get cancelled, and any booking path that
+      // doesn't set it made the call invisible here entirely.
+      // Two other defects fixed in the same query: it looked at `userId` alone,
+      // so a call booked by the partner never counted; and it matched ANY
+      // subtype, so a MATCH_CALL switched on CALL PREP MODE for a call that
+      // needs no agency prep.
+      const upcomingProviderConsult = await prisma.booking.findFirst({
+        where: {
+          parentUserId: { in: accountMemberIds },
+          meetingSubtype: null,
+          status: { in: ["PENDING", "CONFIRMED"] },
+          scheduledAt: { gte: new Date() },
+          providerUser: { providerId: { not: null } },
+        },
+        orderBy: { scheduledAt: "asc" },
+        select: {
+          id: true,
+          providerUser: {
             select: {
-              id: true,
-              providerUser: {
+              provider: {
                 select: {
-                  provider: {
-                    select: {
-                      id: true,
-                      name: true,
-                      services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
-                    },
-                  },
+                  id: true,
+                  name: true,
+                  services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
                 },
               },
             },
-          })
-        : null;
+          },
+        },
+      });
       hasUpcomingProviderConsult = !!upcomingProviderConsult;
       upcomingConsultProviderId = (upcomingProviderConsult?.providerUser?.provider as any)?.id || null;
 
@@ -3479,6 +3499,75 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       } catch (e: any) {
         console.error("[PAPERWORK CONTEXT] Failed:", e?.message);
       }
+
+      // CONSULTATION FOCUS LOCK: one open consultation per provider type.
+      // "CALL ALREADY BOOKED" below only covers the SAME provider; this covers
+      // the whole service line, which is the actual failure mode - a parent
+      // booking four surrogacy agencies in a week and progressing with none.
+      // The server enforces it too (calendar.controller.enforceConsultationGates);
+      // this block exists so Eva never offers a calendar she cannot deliver.
+      try {
+        const open = (await listOpenConsultations(accountMemberIds)).filter((o) => o.releasedBy === "NONE");
+        if (open.length > 0) {
+          const lines = open.map(
+            (o) => `- ${o.providerTypeName}: ${o.providerName} (providerId: ${o.providerId}), call on ${o.scheduledAt.toISOString()}${o.subjectLabel ? ` about ${o.subjectLabel}` : ""}`,
+          );
+          parts.push(
+            `CONSULTATION FOCUS LOCK - these provider types are LOCKED for this family right now:\n${lines.join("\n")}\n` +
+            `Do NOT emit [[CONSULTATION_BOOKING]] for any OTHER provider of a LOCKED type, and do not offer them a calendar - the booking would be refused. ` +
+            `Every other type is completely open (an open Surrogacy Agency call does not block an Egg Donor Agency, IVF Clinic, bank or legal call), and the SAME provider listed above is always fine. ` +
+            `Keep showing profiles, searching and answering questions - the lock is about CALLS, not browsing. ` +
+            `If they ask to book a locked type, name the call they already have and offer the real choice (keep it, or move on from that provider) per the CONSULTATION FOCUS LOCK section.`,
+          );
+        }
+      } catch (e: any) {
+        console.error("[CONSULTATION-LOCK CONTEXT] Failed:", e?.message);
+      }
+
+      // CONNECTED AGENCY + MATCH CALL GATES, both scoped to the profile the
+      // parent is actually looking at. Without these the model happily offers a
+      // calendar for an agency they already work with, and narrates a match
+      // call as if it were one step away when three confirmations are open.
+      try {
+        const latestCard = currentSessionId ? await findLatestMatchCard(currentSessionId) : null;
+        const agencyId = latestCard?.ownerProviderId || null;
+        if (agencyId) {
+          const connected = await findConnectedProviderSession(accountMemberIds, agencyId, {
+            excludeSessionId: currentSessionId,
+          });
+          if (connected) {
+            const agency = await prisma.provider
+              .findUnique({ where: { id: agencyId }, select: { name: true } })
+              .catch(() => null);
+            parts.push(
+              `CONNECTED AGENCY - NO NEW CALL: the family is ALREADY connected with ${agency?.name || "the agency"} (providerId: ${agencyId}), which represents the profile currently on screen. Do NOT emit [[CONSULTATION_BOOKING:${agencyId}]] and do NOT offer a calendar for them - the system opens a dedicated thread for this profile instead. Follow the CONNECTED AGENCY - NO NEW CALL section. A match call with this specific profile is still a separate step.`,
+            );
+
+            // Only meaningful once a real thread exists - before that the
+            // gates have nowhere to render and nothing to block.
+            const gates = await evaluateMatchCallGates({
+              parentUserId: userId,
+              providerId: agencyId,
+              subjectProfileId: latestCard?.providerId || null,
+            });
+            if (!gates.allowed) {
+              const outstanding = [
+                gates.ipFormMissing ? "the Intended Parent Form is not submitted" : null,
+                gates.missing.includes("BOTH_PARENTS") ? "both parents have not confirmed they will attend" : null,
+                gates.missing.includes("DECISION_WINDOW") ? "the 24-hour decision window and deposit have not been acknowledged" : null,
+              ].filter(Boolean);
+              parts.push(
+                `MATCH CALL GATES - OUTSTANDING for ${agency?.name || "this agency"}: ${outstanding.join("; ")}. ` +
+                `A match call CANNOT be scheduled until all of these are done, and the system already posted the confirmation cards in the family's chat. ` +
+                `Follow the MATCH CALL GATES section: mention only what is actually outstanding, once, warmly. NEVER state a deposit amount yourself - the card carries the official figure.`,
+              );
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error("[MATCH-CALL-GATES CONTEXT] Failed:", e?.message);
+      }
+
       if (upcomingProviderConsult) {
         // These two directives must hold for the WHOLE post-booking phase -
         // not just while prep items are missing (prep completes quickly and
@@ -3645,9 +3734,18 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         console.log(`[PROMPT SLICE] conversation_flow ${fullCf.length} -> ${slicedCf.length} chars (intake=${inc.intake} A=${inc.A} B=${inc.B} C=${inc.C} D=${inc.D})`);
       }
     }
+    // NOTE: this explicit list - not sortOrder - is what reaches the live
+    // prompt. A section seeded into ConciergePromptSection but missing here is
+    // editable in the admin UI and has no effect on Eva.
     const biologicalMasterLogicFromDb = sectionsForPrompt ? assemblePromptFromSections(sectionsForPrompt, [
       "expert_persona", "ui_components", "conversation_flow", "matching_rules",
-      "match_blurb_rules", "protocols", "post_match_behavior", "agency_confidentiality", "general_behavior",
+      "match_blurb_rules", "protocols",
+      // Consultation focus lock + consent gates. Each one is a no-op until its
+      // matching context block appears (they open with "applies when ..."), so
+      // they sit in the cached static block rather than being injected per turn.
+      "consultation_focus_lock", "consultation_preliminary_step", "match_call_gates",
+      "connected_agency_shortcut",
+      "post_match_behavior", "agency_confidentiality", "general_behavior",
       "post_booking_call_prep",
     ]) : null;
 
@@ -8277,6 +8375,34 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     }
 
+    // [[CONSULT_RELEASE:PROVIDER_ID]] - the parent confirmed they want to move
+    // on from a provider they have an open consultation with. This is one of
+    // only two human decisions the focus lock cannot derive from bookings, so
+    // it gets a durable JourneyEvent. Eva is instructed to emit it ONLY after a
+    // yes/no confirmation, never on a first mention - "I'm not sure about them"
+    // must not silently close a track.
+    const releaseMatch = finalContent.match(/\[\[CONSULT_RELEASE:(.*?)\]\]/);
+    if (releaseMatch) {
+      const releaseProviderId = releaseMatch[1].trim();
+      try {
+        if (releaseProviderId) {
+          await releaseConsultationLock({
+            parentUserId: userId,
+            parentAccountId: userRecord?.parentAccountId || null,
+            providerId: releaseProviderId,
+            reason: "PARENT_MOVED_ON",
+            sessionId: currentSessionId,
+            actorUserId: userId,
+            actorName: userRecord?.name || firstName || null,
+          });
+          console.log(`[CONSULT_RELEASE] Parent ${userId} released the lock on provider ${releaseProviderId}`);
+        }
+      } catch (e) {
+        console.error("Failed to process CONSULT_RELEASE:", e);
+      }
+      finalContent = finalContent.replace(/\[\[CONSULT_RELEASE:.*?\]\]/g, "").trim();
+    }
+
     let sendPrepDoc = false;
     const hotLeadMatch = finalContent.match(/\[\[HOT_LEAD:(.*?)\]\]/);
     if (hotLeadMatch) {
@@ -9748,6 +9874,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     }
 
     let consultationCard: any = null;
+    // Set when the already-connected shortcut opens a subject thread instead of
+    // a booking card - the client uses it to refresh its conversation list.
+    let openedSubjectSessionId: string | null = null;
 
     const consultationMatch = finalContent.match(/\[\[CONSULTATION_BOOKING:(.*?)\]\]/);
     if (consultationMatch) {
@@ -9842,6 +9971,72 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           consultProviderId = "";
         }
       } catch { /* fail open - the directive still guards */ }
+
+      // ALREADY CONNECTED: no second consultation with an agency the family
+      // already works with. Open the subject thread directly instead.
+      //
+      // The lookup MUST be the strict one. A whisper stamps `providerId` onto
+      // the parent's own Eva session, so a bare providerId lookup would report
+      // "connected" for every agency they ever whispered to - and silently skip
+      // a consultation they actually need. currentSessionId is excluded for the
+      // same reason.
+      if (consultProviderId) {
+        try {
+          const memberIds = await expandParentAccount(userId);
+          const connected = await findConnectedProviderSession(memberIds, consultProviderId, {
+            excludeSessionId: currentSessionId,
+          });
+          if (connected) {
+            const mc = await findLatestMatchCard(currentSessionId);
+            const newSubjectId = mc?.providerId || null;
+            // Only shortcut a genuinely NEW subject. Re-booking the same
+            // profile is the parent asking for something else entirely.
+            if (!newSubjectId || connected.subjectProfileId !== newSubjectId) {
+              const opened = await openConnectedAgencySubjectThread({
+                parentUserId: userId,
+                providerId: consultProviderId,
+                connectedSessionId: connected.id,
+                subjectProfileId: newSubjectId,
+                subjectType: mc?.type || null,
+                profileLabel: mc?.name || null,
+                profilePhotoUrl: mc?.photo || mc?.photoUrl || null,
+              });
+              if (opened) {
+                console.log(`[CONSULTATION] Already connected with ${consultProviderId} - opened subject thread ${opened.sessionId} instead of a booking card`);
+                // Eva's reply says "I've opened a thread just for her", so the
+                // client has to refetch its conversation list or that thread is
+                // invisible until the next navigation. The done event only
+                // triggers a refetch when the EVA session id changes, and this
+                // is a different session entirely.
+                openedSubjectSessionId = opened.sessionId;
+                consultProviderId = "";
+              }
+            }
+          }
+        } catch (e: any) {
+          console.error("[CONSULTATION] Connected-agency shortcut failed:", e?.message);
+        }
+      }
+
+      // CONSULTATION FOCUS LOCK: one open consultation per provider type. The
+      // booking endpoint refuses it too, so emitting the card here would only
+      // produce a calendar that 409s when the parent picks a time.
+      if (consultProviderId) {
+        try {
+          const mcForType = await findLatestMatchCard(currentSessionId);
+          const lock = await evaluateConsultationLock({
+            parentUserId: userId,
+            targetProviderId: consultProviderId,
+            subjectType: mcForType?.type || null,
+          });
+          if (!lock.allowed && lock.blocker) {
+            console.log(`[CONSULTATION] Focus lock active (${lock.providerTypeName}, open call with ${lock.blocker.providerName}) - dropping consultation card for ${consultProviderId}`);
+            consultProviderId = "";
+          }
+        } catch (e: any) {
+          console.error("[CONSULTATION] Focus lock check failed:", e?.message);
+        }
+      }
       try {
         const cpResult = await mcpClient!.callTool({
           name: "resolve_provider",
@@ -10099,19 +10294,40 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         // The presentation IS the legal journey's "Exploring Profiles" rung.
         void emitJourneyEvent({ eventType: "PROFILE_PRESENTED", parentUserId: userId, providerId: lawyerBypassPick.provider.id, sessionId: currentSessionId || null, metadata: { kind: "law_group" } });
         if (!consultationCard && lawyerBypassPick.member?.slug) {
-          consultationCard = {
-            providerId: lawyerBypassPick.provider.id,
-            providerName: lawyerBypassPick.provider.name,
-            providerLogo: lawyerBypassPick.provider.logoUrl,
-            bookingUrl: `/book/${lawyerBypassPick.member.slug}`,
-            iframeEnabled: true,
-            memberBookingSlug: lawyerBypassPick.member.slug,
-            memberName: lawyerBypassPick.member.name,
-            memberPhoto: lawyerBypassPick.member.photoUrl,
-            aiSessionId: currentSessionId || undefined,
-            subjectType: "legal",
-          };
-          console.log(`[LAWYER_CALENDAR] Card built: slug=${lawyerBypassPick.member.slug}, provider=${lawyerBypassPick.provider.name}`);
+          // Legal Services is a locked type like any other, and this path is
+          // deterministic (maybeOfferLawyerIntro fires it automatically after a
+          // first agency call), so without this check it would be the one hole
+          // in the lock. The FIRM CARD still renders - only the calendar is
+          // withheld, because only the calendar would 409.
+          let legalLocked = false;
+          try {
+            const legalLock = await evaluateConsultationLock({
+              parentUserId: userId,
+              targetProviderId: lawyerBypassPick.provider.id,
+              subjectType: "legal",
+            });
+            legalLocked = !legalLock.allowed;
+            if (legalLocked) {
+              console.log(`[LAWYER_CALENDAR] Focus lock active on Legal Services (open call with ${legalLock.blocker?.providerName}) - firm card shown without a calendar`);
+            }
+          } catch (e: any) {
+            console.error("[LAWYER_CALENDAR] Focus lock check failed:", e?.message);
+          }
+          if (!legalLocked) {
+            consultationCard = {
+              providerId: lawyerBypassPick.provider.id,
+              providerName: lawyerBypassPick.provider.name,
+              providerLogo: lawyerBypassPick.provider.logoUrl,
+              bookingUrl: `/book/${lawyerBypassPick.member.slug}`,
+              iframeEnabled: true,
+              memberBookingSlug: lawyerBypassPick.member.slug,
+              memberName: lawyerBypassPick.member.name,
+              memberPhoto: lawyerBypassPick.member.photoUrl,
+              aiSessionId: currentSessionId || undefined,
+              subjectType: "legal",
+            };
+            console.log(`[LAWYER_CALENDAR] Card built: slug=${lawyerBypassPick.member.slug}, provider=${lawyerBypassPick.provider.name}`);
+          }
         }
       } else {
         console.warn("[LAWYER_CALENDAR] No approved Legal Services provider - nothing to present");
@@ -10515,6 +10731,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       humanNeeded: humanNeeded || undefined,
       consultationCard: consultationCard || undefined,
       meetingCards: meetingCards.length > 0 ? meetingCards : undefined,
+      openedSubjectSessionId: openedSubjectSessionId || undefined,
     });
   } catch (error: any) {
     console.error("AI Router Error:", error);

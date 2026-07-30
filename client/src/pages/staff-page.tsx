@@ -20,6 +20,19 @@ import { useToast } from "@/hooks/use-toast";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import MembersTable from "@/components/members-table";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import {
+  ContactHiddenChip,
+  HouseholdBadge,
+  JOURNEY_STATUS_LABELS,
+  MatchStatusBadge,
+  ParentAgreementsCell,
+  ParentCostSheetsCell,
+  ParentInvoicesCell,
+  SERVICE_LABELS,
+  ServiceChips,
+  dedupeHouseholdPhones,
+  toDateParam,
+} from "@/components/parents";
 
 type StaffMember = {
   id: string;
@@ -35,34 +48,6 @@ type StaffMember = {
   assignedLocations?: any[];
   isDisabled?: boolean;
 };
-
-// yyyy-mm-dd in LOCAL time (toISOString would shift the day near midnight)
-function toDateParam(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-// Chip marking a row that belongs to a shared parent account (a couple
-// with two logins). Pass selfName to spell out WHO the partner is
-// ("Couple - Ariel Parent 2") so rows are linkable at a glance even when
-// filters hide the partner's row. Hover shows every member.
-function HouseholdBadge({ memberNames, selfName, testId }: { memberNames: string[]; selfName?: string | null; testId: string }) {
-  if (!memberNames || memberNames.length < 2) return null;
-  const others = selfName ? memberNames.filter(n => n && n !== selfName) : [];
-  const label = others.length ? `Couple - ${others.join(" & ")}` : "Couple";
-  return (
-    <span
-      className="shrink-0 inline-flex items-center gap-1 text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
-      style={{ background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}
-      title={`Shared account: ${memberNames.filter(Boolean).join(", ")}`}
-      data-testid={testId}
-    >
-      <Users className="w-3 h-3 shrink-0" />
-      <span className="truncate max-w-[120px]">{label}</span>
-    </span>
-  );
-}
 
 export default function StaffPage() {
   const { user } = useAuth();
@@ -413,7 +398,7 @@ function GostorkAdminUsersView() {
                 // Couple rows are pulled adjacent (groupedUsers) and share
                 // an accent tint + left bar so the pair reads as one block.
                 style={household ? { background: "hsl(var(--accent) / 0.06)", boxShadow: "inset 3px 0 0 hsl(var(--accent) / 0.6)" } : undefined}
-                onClick={() => navigate(`/users/${member.id}`)}
+                onClick={() => navigate(`/parents/${member.id}`)}
               >
                 <TableCell className="pl-4 w-10" onClick={(e) => e.stopPropagation()}>
                   <Checkbox
@@ -430,7 +415,7 @@ function GostorkAdminUsersView() {
                     ) : (
                       <DoctorMonogram name={member.name} size={32} rounded="var(--radius)" />
                     )}
-                    <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer truncate max-w-[150px]" title={member.name || undefined} onClick={(e) => { e.stopPropagation(); navigate(`/users/${member.id}`); }} data-testid={`link-user-name-${member.id}`}>{member.name || "-"}</button>
+                    <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer truncate max-w-[150px]" title={member.name || undefined} onClick={(e) => { e.stopPropagation(); navigate(`/parents/${member.id}`); }} data-testid={`link-user-name-${member.id}`}>{member.name || "-"}</button>
                     {member.name && <CopyButton value={member.name} testId={`btn-copy-name-${member.id}`} />}
                     {member.isDisabled && (
                       <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-${member.id}`}>Disabled</span>
@@ -458,30 +443,18 @@ function GostorkAdminUsersView() {
                   ) : <span className="t-helper">-</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  {(overview[member.id]?.services || []).length > 0 ? (
-                    <div className="flex flex-wrap gap-1 items-center max-w-[170px]">
-                      {(overview[member.id].services as string[]).slice(0, 2).map(svc => (
-                        <span key={svc} className="text-xs font-ui px-2 py-0.5 rounded-full" style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
-                          {svc}
-                        </span>
-                      ))}
-                      {(overview[member.id].services as string[]).length > 2 && (
-                        <span
-                          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
-                          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
-                          title={(overview[member.id].services as string[]).slice(2).join(", ")}
-                        >
-                          +{(overview[member.id].services as string[]).length - 2}
-                        </span>
-                      )}
-                    </div>
-                  ) : <span className="t-helper">-</span>}
+                  <ServiceChips services={overview[member.id]?.services} testId={`chips-services-${member.id}`} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <MatchStatusBadge status={overview[member.id]?.matchStatus} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                  <ParentCostSheetsCell costSheets={overview[member.id]?.costSheets || []} sessionId={null} />
+                  <ParentCostSheetsCell
+                    costSheets={overview[member.id]?.costSheets || []}
+                    sessionId={null}
+                    isAdmin
+                    parentUserId={member.id}
+                  />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentInvoicesCell invoices={overview[member.id]?.invoices || []} />
@@ -555,44 +528,6 @@ function GostorkAdminUsersView() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-const SERVICE_LABELS: Record<string, string> = {
-  SURROGACY: "Surrogacy",
-  EGG_DONATION: "Egg Donation",
-  SPERM_DONATION: "Sperm Donation",
-  IVF_CLINIC: "IVF Clinic",
-};
-
-const JOURNEY_STATUS_LABELS: Record<string, string> = {
-  CONSULTATION_BOOKED: "Call Booked",
-  PROVIDER_CONNECTED: "Connected",
-  MATCH_CALL: "Match Call",
-  MATCHED: "Matched",
-  DEPOSIT_PAID: "Invoice Paid",
-  AGREEMENT_SIGNED: "Agreement Signed",
-  HANDED_OFF: "Handed Off",
-};
-
-/**
- * Stands in for the email and mobile columns until the parent has released
- * their contact details to this provider.
- *
- * Says WHY and says WHAT UNLOCKS IT. A blank cell reads as missing data and
- * generates a support ticket; this reads as a policy, and it tells the provider
- * the thing they can actually act on.
- */
-function ContactHiddenChip({ testId }: { testId: string }) {
-  return (
-    <span
-      data-testid={testId}
-      title="GoStork keeps parent contact details private until they share them. Sending an intake form, an invoice or an agreement unlocks them. Message them any time right here in chat."
-      className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs font-ui text-foreground/70 whitespace-nowrap"
-    >
-      <Lock className="w-3 h-3 shrink-0" />
-      Shared after intake or invoice
-    </span>
   );
 }
 
@@ -810,8 +745,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                   {!row.contactReleased ? <ContactHiddenChip testId={`chip-mobile-hidden-${row.rowId}`} /> : (() => {
                     // Distinct numbers across the household - partners often
                     // share one phone, so dedupe by value.
-                    const source: any[] = row.members?.length > 1 ? row.members : [{ id: row.id, mobileNumber: row.mobileNumber }];
-                    const mobiles = Array.from(new Map(source.filter(m => m.mobileNumber).map(m => [m.mobileNumber, m])).values()) as any[];
+                    const mobiles = dedupeHouseholdPhones(row.members, { id: row.id, mobileNumber: row.mobileNumber });
                     if (mobiles.length === 0) return <span className="t-helper">-</span>;
                     return (
                       <div className="flex flex-col gap-0.5">
@@ -826,17 +760,13 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
                   })()}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  {row.serviceType ? (
-                    <span className="text-xs font-ui px-2 py-0.5 rounded-full" style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
-                      {SERVICE_LABELS[row.serviceType] || row.serviceType}
-                    </span>
-                  ) : <span className="t-helper">-</span>}
+                  <ServiceChips services={row.serviceType ? [row.serviceType] : []} testId={`chips-services-${row.rowId}`} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <MatchStatusBadge status={row.matchStatus} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <ParentCostSheetsCell costSheets={row.costSheets || []} sessionId={row.sessionId} />
+                  <ParentCostSheetsCell costSheets={row.costSheets || []} sessionId={row.sessionId} parentUserId={row.id} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <ParentInvoicesCell invoices={row.invoices || []} />
@@ -861,215 +791,6 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           </TableBody>
         </Table>
       </Card>
-    </div>
-  );
-}
-
-// ─── Match status badge ─────────────────────────────────────────────────────
-//
-// Mirrors the chat right-pane "Match Status" pill exactly so providers see
-// the same label + color treatment whether they're looking at the chat or
-// the Parents table.
-//   CONSULTATION_BOOKED -> "Call Booked" (success / green)
-//   PROVIDER_CONNECTED  -> "Connected"   (success / green)
-// ACTIVE (anonymous Q&A) shouldn't reach the table - the server filters it
-// out so the agency only sees parents who've actually committed to a
-// consultation. Anything unexpected falls through to a neutral pill.
-function MatchStatusBadge({ status }: { status: string | null | undefined }) {
-  if (!status) return <span className="t-helper">-</span>;
-  // Journey ladder (server derives the most-advanced stage per session):
-  // Call Booked -> Connected -> Match Call -> Matched -> Deposit Paid ->
-  // Agreement Signed. Early stages green, match milestones accent/primary.
-  const map: Record<string, { label: string; bg: string; fg: string }> = {
-    CONSULTATION_BOOKED: { label: "Call Booked", bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
-    PROVIDER_CONNECTED: { label: "Connected", bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
-    MATCH_CALL: { label: "Match Call", bg: "hsl(var(--brand-warning) / 0.15)", fg: "hsl(var(--brand-warning))" },
-    MATCHED: { label: "Matched", bg: "hsl(var(--accent) / 0.15)", fg: "hsl(var(--accent))" },
-    DEPOSIT_PAID: { label: "Invoice Paid", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
-    AGREEMENT_SIGNED: { label: "Agreement Signed", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
-    HANDED_OFF: { label: "Handed Off", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
-  };
-  const entry = map[status];
-  if (!entry) {
-    return (
-      <span
-        className="text-xs font-ui px-2 py-0.5 rounded-full"
-        style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
-      >
-        {status}
-      </span>
-    );
-  }
-  return (
-    <span
-      className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
-      style={{ background: entry.bg, color: entry.fg }}
-    >
-      <CheckCircle2 className="w-3 h-3" />
-      {entry.label}
-    </span>
-  );
-}
-
-// ─── Invoices cell ──────────────────────────────────────────────────────────
-//
-// Each invoice is a clickable chip that opens the provider-side invoice
-// document. The backend chooses what to serve:
-//   - PAID    -> the receipt PDF that was emailed to parent + agency
-//   - UNPAID  -> a branded HTML document styled like the payment-request
-//                email body (no payment buttons - provider is just viewing).
-// Real <a target="_blank"> so cmd-click / middle-click opens in a new tab
-// without leaving the Parents list.
-function ParentInvoicesCell({ invoices }: { invoices: any[] }) {
-  if (!invoices || invoices.length === 0) {
-    return <span className="t-helper">-</span>;
-  }
-  // Cap at 2 chips + "+N" so a busy journey doesn't blow up the row
-  const shown = invoices.slice(0, 2);
-  const extra = invoices.length - shown.length;
-  return (
-    <div className="flex flex-wrap gap-1.5 items-center">
-      {shown.map(inv => {
-        const isPaid = inv.status === "PAID";
-        const isAwaiting = inv.status === "AWAITING_PAYMENT" || inv.status === "PAYMENT_PROCESSING";
-        const tone = isPaid ? "success" : isAwaiting ? "warning" : "muted";
-        const bg =
-          tone === "success" ? "hsl(var(--brand-success) / 0.12)"
-          : tone === "warning" ? "hsl(var(--brand-warning) / 0.15)"
-          : "hsl(var(--secondary))";
-        const fg =
-          tone === "success" ? "hsl(var(--brand-success))"
-          : tone === "warning" ? "hsl(var(--brand-warning))"
-          : "hsl(var(--foreground))";
-        return (
-          <a
-            key={inv.id}
-            href={`/api/provider/invoices/${inv.id}/document`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={e => e.stopPropagation()}
-            className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
-            style={{ background: bg, color: fg }}
-            title={`${inv.serviceType?.replace(/_/g, " ")} - $${(inv.serviceAmount / 100).toLocaleString()} - ${inv.status}${isPaid ? " (opens receipt PDF)" : " (opens invoice document)"}`}
-          >
-            ${(inv.serviceAmount / 100).toLocaleString()}
-          </a>
-        );
-      })}
-      {extra > 0 && (
-        <span
-          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
-          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
-          title={invoices.slice(2).map(inv => `$${(inv.serviceAmount / 100).toLocaleString()} - ${inv.status}`).join("\n")}
-        >
-          +{extra}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// ─── Cost sheets cell ───────────────────────────────────────────────────────
-//
-// One chip per cost sheet on the session, colored by state. Click deep-links
-// into the chat scrolled to that cost-sheet card (?msg=quote:<id>).
-function ParentCostSheetsCell({ costSheets, sessionId }: { costSheets: any[]; sessionId: string | null }) {
-  const navigate = useNavigate();
-  if (!costSheets || costSheets.length === 0) {
-    return <span className="t-helper">-</span>;
-  }
-  // Cap at 2 chips + "+N" (some journeys accumulate many superseded quotes)
-  const shown = costSheets.slice(0, 2);
-  const extra = costSheets.length - shown.length;
-  return (
-    <div className="flex flex-wrap gap-1.5 items-center">
-      {shown.map(cs => {
-        const superseded = !!cs.supersededAt;
-        const acked = !superseded && !!cs.parentAcknowledgedAt;
-        const bg = acked ? "hsl(var(--brand-success) / 0.12)"
-          : superseded ? "hsl(var(--secondary))"
-          : "hsl(var(--brand-warning) / 0.15)";
-        const fg = acked ? "hsl(var(--brand-success))"
-          : superseded ? "hsl(var(--muted-foreground))"
-          : "hsl(var(--brand-warning))";
-        return (
-          <button
-            key={cs.id}
-            type="button"
-            onClick={e => {
-              e.stopPropagation();
-              const sid = cs.sessionId || sessionId;
-              if (sid) navigate(`/chat/${sid}?msg=quote:${cs.id}`);
-            }}
-            className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
-            style={{ background: bg, color: fg, opacity: superseded ? 0.75 : 1 }}
-            title={`${superseded ? "Superseded" : acked ? "Acknowledged" : "Awaiting review"} - ${new Date(cs.createdAt).toLocaleDateString()}`}
-          >
-            ${((cs.totalCostCents || 0) / 100).toLocaleString()}
-          </button>
-        );
-      })}
-      {extra > 0 && (
-        <span
-          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
-          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
-          title={costSheets.slice(2).map(cs => `$${((cs.totalCostCents || 0) / 100).toLocaleString()}${cs.supersededAt ? " (superseded)" : ""}`).join("\n")}
-        >
-          +{extra}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// ─── Agreements cell ────────────────────────────────────────────────────────
-//
-// One chip per agreement on the session, colored by signing state. Click
-// opens the agreement page in a new tab without leaving the Parents list.
-function ParentAgreementsCell({ agreements }: { agreements: any[] }) {
-  if (!agreements || agreements.length === 0) {
-    return <span className="t-helper">-</span>;
-  }
-  const shown = agreements.slice(0, 2);
-  const extra = agreements.length - shown.length;
-  return (
-    <div className="flex flex-wrap gap-1.5 items-center">
-      {shown.map(agr => {
-        const isSigned = agr.status === "SIGNED";
-        const isSent = agr.status === "SENT";
-        const bg = isSigned
-          ? "hsl(var(--brand-success) / 0.12)"
-          : isSent ? "hsl(var(--brand-warning) / 0.15)"
-          : "hsl(var(--secondary))";
-        const fg = isSigned
-          ? "hsl(var(--brand-success))"
-          : isSent ? "hsl(var(--brand-warning))"
-          : "hsl(var(--foreground))";
-        const label = isSigned ? "Signed" : isSent ? "Awaiting Signature" : agr.status.charAt(0) + agr.status.slice(1).toLowerCase();
-        return (
-          <a
-            key={agr.id}
-            href={`/agreements/${agr.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={e => e.stopPropagation()}
-            className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
-            style={{ background: bg, color: fg }}
-            title={`${agr.documentType} - ${agr.status}`}
-          >
-            {label}
-          </a>
-        );
-      })}
-      {extra > 0 && (
-        <span
-          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
-          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
-          title={agreements.slice(2).map(agr => `${agr.documentType} - ${agr.status}`).join("\n")}
-        >
-          +{extra}
-        </span>
-      )}
     </div>
   );
 }

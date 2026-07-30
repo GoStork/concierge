@@ -16,6 +16,7 @@ import { ClearanceTrackerCard } from "@/components/clearance-tracker-card";
 import { BankCheckoutCard } from "@/components/chat/bank-checkout-card";
 import { PartnerInfoRequestCard } from "@/components/chat/partner-info-request-card";
 import { PaymentScheduleTimeline } from "@/components/costs/payment-schedule-timeline";
+import { ConsentAckCard } from "@/components/chat/consent-ack-card";
 
 // Egg-donor hold decision (provider-only card): the deposit is overdue and
 // the donor has been sitting ON_HOLD - the provider chooses to keep holding
@@ -352,6 +353,27 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
         messageId={msg.id}
         data={data}
         brandColor={brandColor}
+      />
+    );
+  }
+
+  // Match-call consent gates. Rendered for BOTH sides on purpose: the parent
+  // ticks them, and the provider - who is the one refused at
+  // propose-call-times - gets a read-only view of exactly what is outstanding.
+  // consult_preliminary_ack is deliberately absent: it renders pre-booking,
+  // where this agency's identity is still masked, so it is parent-private and
+  // only ever appears in the concierge chat.
+  if (
+    (msg.uiCardType === "match_call_attendance_ack" || msg.uiCardType === "match_call_decision_ack") &&
+    sessionId
+  ) {
+    return (
+      <ConsentAckCard
+        data={data}
+        messageId={msg.id}
+        sessionId={sessionId}
+        messageContent={msg.content || ""}
+        viewerRole={viewerRole === "parent" ? "parent" : "provider"}
       />
     );
   }

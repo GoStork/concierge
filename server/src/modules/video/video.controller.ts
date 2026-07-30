@@ -22,6 +22,7 @@ import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { PrismaService } from "../prisma/prisma.service";
 import { getBaseUrl } from "../../lib/get-base-url";
 import { formatWhen, resolveProviderTimezone } from "../../lib/booking-when";
+import { displayProviderType } from "../../../provider-type-resolve";
 import { VideoService } from "./video.service";
 import { NotificationService } from "../notifications/notification.service";
 import { BookingEventsService } from "../calendar/booking-events.service";
@@ -1003,10 +1004,10 @@ export class VideoController {
     if (!provider) return;
 
     // When a provider has multiple service types, pick the most specific one.
-    // Priority: IVF Clinic > Egg Donor Agency > Egg Bank > Sperm Bank > Surrogacy Agency
+    // Priority list lives in server/provider-type-resolve.ts (shared with the
+    // consultation focus lock, which uses it for labels only - never for gates).
     const serviceTypeNames = provider.services.map(s => s.providerType?.name).filter(Boolean) as string[];
-    const typePriority = ["IVF Clinic", "Egg Donor Agency", "Egg Bank", "Sperm Bank", "Surrogacy Agency"];
-    const providerTypeName = typePriority.find(t => serviceTypeNames.includes(t)) || serviceTypeNames[0] || "";
+    const providerTypeName = displayProviderType(serviceTypeNames);
     const isSurrogacyAgency = providerTypeName === "Surrogacy Agency";
 
     // Find the provider session (PROVIDER_CONNECTED or CONSULTATION_BOOKED) - needed for

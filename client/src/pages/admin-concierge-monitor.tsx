@@ -13,8 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageStatus } from "@/components/ui/message-status";
 import {
-  ArrowLeft, ChevronRight, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video, Sparkles, Brain, ChevronDown,
+  ArrowLeft, ChevronRight, Headphones, MessageCircle, User, Clock, CheckCircle2, Loader2, UserPlus, LogOut, Trash2, Video, Sparkles, Brain, ChevronDown, Lock,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import {
   timeAgo,
   truncateMessage,
@@ -1052,6 +1053,12 @@ export default function AdminConciergeMonitor() {
                     historySummary={detail.historySummary}
                     parentAccountId={detail.user.parentAccountId || detail.user.id}
                   />
+                  {/* Consultation focus lock: which service lines are closed to
+                      this family right now, and the manual valve for the one
+                      that is genuinely stuck. */}
+                  <ConsultationLockPanel
+                    parentAccountId={detail.user.parentAccountId || detail.user.id}
+                  />
                   {activeBookings.length > 0 && (
                     <div className="border-t pt-4 mt-4" data-testid="panel-concierge-call-section">
                       <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>GoStork Concierge Call</h4>
@@ -1156,6 +1163,166 @@ export default function AdminConciergeMonitor() {
         </Button>
       }
     />
+  );
+}
+
+const LOCK_RELEASE_LABEL: Record<string, string> = {
+  TERMINAL_OUTCOME: "Call cancelled or expired",
+  NOT_A_FIT: "Provider said not a fit",
+  PARENT_MOVED_ON: "Parent moved on",
+  STALE_WINDOW: "7 days elapsed",
+  ADMIN_OVERRIDE: "Unlocked by GoStork",
+};
+
+/**
+ * Consultation focus lock, admin view.
+ *
+ * A family is held to one open consultation per provider type so they progress
+ * on one agency instead of collecting intro calls. It normally releases itself
+ * (cancelled call, no-show, not-a-fit, or seven days with no match call), and
+ * the parent can always tell Eva they want to move on. This panel is the
+ * manual valve for the family that called support anyway.
+ *
+ * Inline and collapsed by design - no modal, per the app's UI rules.
+ * Providers deliberately have no equivalent: a provider must never be able to
+ * release a competitor's lock.
+ */
+function ConsultationLockPanel({ parentAccountId }: { parentAccountId: string }) {
+  const [open, setOpen] = useState(false);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [releasing, setReleasing] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const lockQuery = useQuery({
+    queryKey: ["/api/admin/consultation-lock", parentAccountId],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/admin/consultation-lock?parentAccountId=${encodeURIComponent(parentAccountId)}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Failed to load consultation lock");
+      return res.json();
+    },
+    enabled: open && !!parentAccountId,
+  });
+
+  const openConsults: any[] = lockQuery.data?.open ?? [];
+  const activeCount = openConsults.filter((o) => o.releasedBy === "NONE").length;
+
+  const release = async (providerId: string) => {
+    const reason = (reasons[providerId] || "").trim();
+    if (!reason) return;
+    setReleasing(providerId);
+    try {
+      const res = await fetch("/api/admin/consultation-lock/release", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ parentAccountId, providerId, reason }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setReasons((r) => ({ ...r, [providerId]: "" }));
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/consultation-lock", parentAccountId] });
+    } catch (e) {
+      console.error("[consultation-lock] release failed", e);
+    } finally {
+      setReleasing(null);
+    }
+  };
+
+  return (
+    <div className="border-b pb-4 mb-4" data-testid="consultation-lock-panel">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between gap-2 text-left"
+        onClick={() => setOpen((v) => !v)}
+        data-testid="btn-toggle-consultation-lock"
+      >
+        <h4 className="font-semibold text-sm flex items-center gap-1.5" style={{ fontFamily: "var(--font-display)" }}>
+          <Lock className="w-4 h-4 text-primary" /> Consultation focus lock
+          {open && activeCount > 0 && (
+            <span className="ml-1 rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground">
+              {activeCount} active
+            </span>
+          )}
+        </h4>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-3">
+          {lockQuery.isLoading && <p className="t-helper">Loading...</p>}
+          {!lockQuery.isLoading && openConsults.length === 0 && (
+            <p className="t-helper">
+              No open consultations - every provider type is available to this family.
+            </p>
+          )}
+          {openConsults.map((o: any) => {
+            const released = o.releasedBy !== "NONE";
+            return (
+              <div
+                key={o.bookingId}
+                className="rounded-md bg-secondary p-2.5 space-y-2"
+                style={{ borderRadius: "var(--radius)" }}
+                data-testid={`lock-row-${o.providerId}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="inline-block rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-accent-foreground">
+                      {o.providerTypeName}
+                    </span>
+                    <p className="text-xs font-medium text-foreground mt-1 truncate">{o.providerName}</p>
+                    <p className="t-helper">
+                      {new Date(o.scheduledAt).toLocaleString()} - {o.status}
+                      {o.subjectLabel ? ` - ${o.subjectLabel}` : ""}
+                    </p>
+                  </div>
+                  {released ? (
+                    <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {LOCK_RELEASE_LABEL[o.releasedBy] || "Released"}
+                    </span>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-brand-warning/15 px-2 py-0.5 text-[11px] font-medium" style={{ color: "hsl(var(--brand-warning))" }}>
+                      Locking
+                    </span>
+                  )}
+                </div>
+
+                {!released && (
+                  <>
+                    {/* Surface the auto-release date so an admin can see it is
+                        imminent and choose to leave it alone. */}
+                    <p className="t-helper">
+                      Releases on its own {new Date(o.releaseEligibleAt).toLocaleDateString()} if no match call is scheduled.
+                    </p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={reasons[o.providerId] || ""}
+                        onChange={(e) => setReasons((r) => ({ ...r, [o.providerId]: e.target.value }))}
+                        placeholder="Why are you unlocking this?"
+                        className="h-8 text-xs"
+                        data-testid={`input-unlock-reason-${o.providerId}`}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 shrink-0 text-xs"
+                        disabled={!((reasons[o.providerId] || "").trim()) || releasing === o.providerId}
+                        onClick={() => release(o.providerId)}
+                        data-testid={`btn-unlock-${o.providerId}`}
+                      >
+                        {releasing === o.providerId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Unlock"}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

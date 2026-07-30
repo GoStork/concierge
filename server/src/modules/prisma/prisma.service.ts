@@ -39,6 +39,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.providerMemberLocation;
   }
 
+  get providerBankAccount() {
+    return prisma.providerBankAccount;
+  }
+
   get providerReview() {
     return prisma.providerReview;
   }
@@ -277,6 +281,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.invoiceReminder;
   }
 
+  get costSheetReminder() {
+    return prisma.costSheetReminder;
+  }
+
   get referralFeeConfig() {
     return prisma.referralFeeConfig;
   }
@@ -359,6 +367,12 @@ export class PrismaService implements OnModuleDestroy {
 
   get $queryRawUnsafe() {
     return prisma.$queryRawUnsafe.bind(prisma);
+  }
+
+  // Tagged-template form. Must stay bound: a tag function is invoked without a
+  // receiver, so an unbound reference loses `this` and throws at call time.
+  get $queryRaw() {
+    return prisma.$queryRaw.bind(prisma);
   }
 
   async onModuleDestroy() {

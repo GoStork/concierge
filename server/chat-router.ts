@@ -1,5 +1,16 @@
 import { Router, Request, Response } from "express";
-import { PARENT_HIDDEN_MESSAGE_FILTER } from "./parent-visibility";
+import { PARENT_HIDDEN_MESSAGE_FILTER, PARENT_PRIVATE_SYSTEM_CARDS } from "./parent-visibility";
+
+/**
+ * Consent-gate cards never make a good conversation preview - "Both of you
+ * need to be on the match call" as the sidebar's last-message line is noise,
+ * not news. Excluded from every last-message lookup, same as review_prompt.
+ */
+const GATE_PREVIEW_HIDDEN = [
+  "consult_preliminary_ack",
+  "match_call_attendance_ack",
+  "match_call_decision_ack",
+];
 import { blockContactInfo } from "./contact-guard";
 import {
   GATES_CLOSED, GATES_OPEN, hasContactRelease, parentAccountKey, parentDisplayName, redactParentContact,
@@ -17,6 +28,19 @@ import { getBaseUrl as getAppBaseUrlShared } from "./src/lib/get-base-url";
 import { formatWhen, resolveProviderTimezone } from "./src/lib/booking-when";
 import { buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
 import { canProviderAccessSession, canSendProviderMessage, COORDINATOR_SUBJECT_TYPES, ALL_SESSION_PROVIDER_ROLES } from "../shared/roles";
+import {
+  evaluateMatchCallGates,
+  evaluateConsultationLock,
+  evaluateConsultationAckGate,
+  postMissingGateCards,
+  listOpenConsultations,
+  releaseConsultationLock,
+  recordGateAck,
+  resolveDepositSnapshot,
+  expandParentAccount,
+  GATE_CARD_TYPE,
+  type ConsentGate,
+} from "./consultation-gates";
 
 const storageService = new StorageService();
 
@@ -410,7 +434,7 @@ chatRouter.get("/api/my/chat-sessions", requireAuth, async (req, res) => {
       where: { userId: { in: accountUserIds } },
       orderBy: { updatedAt: "desc" },
       include: {
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt", ...GATE_PREVIEW_HIDDEN] } }, orderBy: { createdAt: "desc" }, take: 1 },
         provider: { select: { id: true, name: true, logoUrl: true } },
       },
     });
@@ -717,7 +741,7 @@ chatRouter.get("/api/admin/concierge-sessions", requireAuth, async (req, res) =>
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true } },
         provider: { select: { id: true, name: true, logoUrl: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt", ...GATE_PREVIEW_HIDDEN] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: [{ humanRequested: "desc" }, { updatedAt: "desc" }],
@@ -1269,7 +1293,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       },
       include: {
         user: { select: { id: true, name: true, email: true, photoUrl: true, parentAccountId: true } },
-        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt"] } }, orderBy: { createdAt: "desc" }, take: 1 },
+        messages: { where: { uiCardType: { notIn: ["provider_assessment", "provider_only", "cost_sheet_draft_approval", "invoice_draft_approval", "agreement_draft_approval", "provider_readiness_prompt", "review_prompt", "ip_form_prompt", ...GATE_PREVIEW_HIDDEN] } }, orderBy: { createdAt: "desc" }, take: 1 },
         _count: { select: { messages: true } },
       },
       orderBy: { updatedAt: "desc" },
@@ -1611,6 +1635,11 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       && m.uiCardType !== "review_prompt"
       // The IP form nudge is likewise parent-private.
       && m.uiCardType !== "ip_form_prompt"
+      // The preliminary-step ack renders PRE-booking, where this agency's
+      // identity is still masked from the parent - it is parent-private.
+      // The two match-call acks are deliberately NOT here: the provider is the
+      // one refused at propose-call-times and needs to see the blocker.
+      && !PARENT_PRIVATE_SYSTEM_CARDS.includes(m.uiCardType || "")
     );
 
     // Provider-level thread consolidation: a booked/connected provider-level
@@ -1629,6 +1658,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       siblingSessionIds = siblings.map(sib => sib.id);
       const crossoverHidden = new Set([
         "review_prompt", "ip_form_prompt", "provider_only", "provider_readiness_prompt",
+        ...PARENT_PRIVATE_SYSTEM_CARDS,
         // Draft-approval cards stay in their home session - their approve
         // endpoints are addressed by (sessionId, messageId) and must not
         // render under another session id.
@@ -2750,6 +2780,78 @@ chatRouter.get("/api/chat-session/:id/schedulable-hosts", requireAuth, async (re
   }
 });
 
+/** Everything the match-call gates need off a session. */
+const MATCH_CALL_SESSION_SELECT = {
+  id: true,
+  providerId: true,
+  providerName: true,
+  userId: true,
+  title: true,
+  subjectType: true,
+  subjectProfileId: true,
+} as const;
+
+/**
+ * The three things that must be true before a match call is scheduled: the
+ * Intended Parent Form is submitted, both parents have confirmed they will
+ * attend, and the family has acknowledged the 24-hour decision window and the
+ * deposit.
+ *
+ * Every route that can produce a MATCH_CALL booking goes through here.
+ * Previously only /propose-call-times checked the IP form, so /schedule-call
+ * booked straight past it - and /proposed-times/:id/accept, which is the route
+ * that actually CREATES the booking, checked nothing at all.
+ *
+ * Refusing is not enough on its own: the PROVIDER is the one who sees the 409,
+ * so the same call posts the missing card into the family's chat and says so.
+ * Otherwise the provider is told "no" with no visible cause and no way to move.
+ *
+ * @returns true when it has already sent a response.
+ */
+async function refuseUngatedMatchCall(
+  session: {
+    id: string;
+    providerId: string | null;
+    providerName?: string | null;
+    userId: string;
+    title?: string | null;
+    subjectType?: string | null;
+    subjectProfileId?: string | null;
+  },
+  subtype: string | null,
+  res: any,
+): Promise<boolean> {
+  if (subtype !== "MATCH_CALL" || !session.providerId) return false;
+  const gate = await evaluateMatchCallGates({
+    parentUserId: session.userId,
+    providerId: session.providerId,
+    subjectProfileId: session.subjectProfileId,
+  });
+  if (gate.allowed) return false;
+
+  if (gate.ipFormMissing) {
+    // The IP form has its own nudge machinery (ip-form-flow.ts) - do not
+    // duplicate it here, just report it.
+    console.log(`[MATCH-CALL-GATE] Refused: IP form not submitted (session ${session.id})`);
+  }
+  if (gate.missing.length > 0) {
+    await postMissingGateCards({
+      sessionId: session.id,
+      parentUserId: session.userId,
+      providerId: session.providerId,
+      providerName: session.providerName,
+      subjectLabel: session.title,
+      subjectProfileId: session.subjectProfileId,
+      gates: gate.missing,
+      deposit: gate.deposit,
+      bothParents: gate.bothParents,
+    }).catch((e: any) => console.error(`[MATCH-CALL-GATE] Card post failed: ${e?.message}`));
+    console.log(`[MATCH-CALL-GATE] Refused ${gate.code} (session ${session.id}) - asked for ${gate.missing.join(", ")}`);
+  }
+  res.status(409).json({ code: gate.code, message: gate.message });
+  return true;
+}
+
 // Propose candidate time slots to the parent. The scheduler collects the
 // surrogate's availability OFFLINE, picks matching open slots on the
 // coordinator's calendar, and the parent gets a card with the options.
@@ -2768,29 +2870,13 @@ chatRouter.post("/api/chat-session/:id/propose-call-times", requireAuth, async (
 
     const session = await prisma.aiChatSession.findUnique({
       where: { id: req.params.id },
-      select: { id: true, providerId: true, userId: true, subjectType: true, subjectProfileId: true },
+      select: MATCH_CALL_SESSION_SELECT,
     });
     if (!session?.providerId) return res.status(404).json({ message: "Session has no provider" });
     if (!isAdminOrConcierge(user) && user.providerId !== session.providerId) {
       return res.status(403).json({ message: "Forbidden" });
     }
-    // Match-call gate: the Intended Parent Form must be SUBMITTED before a
-    // match call can be proposed - the agency sends that form to the
-    // surrogate so she can decide whether to meet the family.
-    if (subtype === "MATCH_CALL") {
-      const sessOwner = await prisma.user.findUnique({ where: { id: session.userId }, select: { parentAccountId: true } });
-      const acctId = sessOwner?.parentAccountId || session.userId;
-      const ipForm = await prisma.ipFormResponse.findUnique({
-        where: { parentAccountId: acctId },
-        select: { status: true },
-      }).catch(() => null);
-      if (ipForm?.status !== "SUBMITTED") {
-        return res.status(409).json({
-          code: "IP_FORM_REQUIRED",
-          message: "The parents have not submitted their Intended Parent Form yet. A match call can be scheduled once the form is complete - the parents have been asked to fill it.",
-        });
-      }
-    }
+    if (await refuseUngatedMatchCall(session, subtype, res)) return;
     // The call is WITH the surrogate/doctor's patient side - the coordinator
     // hosts it. Name the subject in all copy.
     let subjectLabel: string | null = null;
@@ -2876,7 +2962,7 @@ chatRouter.post("/api/chat-session/:id/proposed-times/:messageId/accept", requir
     const { slot } = req.body || {};
     const session = await prisma.aiChatSession.findUnique({
       where: { id: req.params.id },
-      select: { id: true, providerId: true, userId: true },
+      select: MATCH_CALL_SESSION_SELECT,
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
     let isParent = session.userId === user.id;
@@ -2894,6 +2980,11 @@ chatRouter.post("/api/chat-session/:id/proposed-times/:messageId/accept", requir
     if (!slot || !Array.isArray(data.slots) || !data.slots.includes(slot)) {
       return res.status(400).json({ message: "Pick one of the offered times" });
     }
+    // This is the route that actually CREATES the booking, so it re-checks the
+    // gates rather than trusting the proposal. A card proposed while the gates
+    // were satisfied would otherwise book straight through a later regression
+    // (a cancelled match call re-opens the acks, an IP form can be reset).
+    if (await refuseUngatedMatchCall(session, data.meetingSubtype || null, res)) return;
     // Already booked + a DIFFERENT offered slot -> the parent changed their
     // mind: reschedule the existing booking to the new time (old invites are
     // cancelled, fresh ones go out, meetingSubtype is preserved).
@@ -3047,13 +3138,17 @@ chatRouter.post("/api/chat-session/:id/schedule-call", requireAuth, async (req, 
 
     const session = await prisma.aiChatSession.findUnique({
       where: { id: req.params.id },
-      select: { id: true, providerId: true, userId: true, title: true },
+      select: MATCH_CALL_SESSION_SELECT,
     });
     if (!session?.providerId) return res.status(404).json({ message: "Session has no provider" });
     const isAdmin = isAdminOrConcierge(user);
     if (!isAdmin && user.providerId !== session.providerId) {
       return res.status(403).json({ message: "Forbidden" });
     }
+    // This route books directly with no proposal step, so it needs the same
+    // gates. It previously skipped them entirely - a provider could book a
+    // match call here while the IP form was still unsubmitted.
+    if (await refuseUngatedMatchCall(session, subtype, res)) return;
 
     const host = await prisma.user.findUnique({
       where: { id: hostUserId },
@@ -3451,6 +3546,211 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
     res.json({ success: true, agreementId: agreement.id, status: agreement.status });
   } catch (e: any) {
     console.error("Agreement generation error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Consultation focus lock + consent gates
+// ---------------------------------------------------------------------------
+
+const VALID_CONSENT_GATES: ConsentGate[] = ["PRELIMINARY_STEP", "BOTH_PARENTS", "DECISION_WINDOW"];
+
+/** Every login on the caller's own household. */
+async function callerAccountMemberIds(user: any): Promise<string[]> {
+  return expandParentAccount(user.id);
+}
+
+/**
+ * The parent ticks a consent card.
+ *
+ * The JourneyEvent row IS the acknowledgement - there is no separate consent
+ * table. The card message is then patched so it renders in its resolved state
+ * on reload rather than offering a button that would do nothing.
+ */
+chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: Request, res: Response) => {
+  const user = req.user as any;
+  if (!user) return res.status(401).json({ message: "Not authenticated" });
+  try {
+    const { gate, providerId, subjectProfileId, subjectType, sessionId, messageId } = req.body || {};
+    if (!VALID_CONSENT_GATES.includes(gate)) {
+      return res.status(400).json({ message: "Unknown gate" });
+    }
+    if (!providerId) return res.status(400).json({ message: "providerId is required" });
+
+    // Only a member of the account that owns the card may tick it. Without
+    // this, any authenticated user could satisfy another family's gate.
+    if (messageId) {
+      const msg = await prisma.aiChatMessage.findUnique({
+        where: { id: messageId },
+        select: { id: true, uiCardType: true, uiCardData: true, session: { select: { userId: true } } },
+      });
+      if (!msg || msg.uiCardType !== GATE_CARD_TYPE[gate as ConsentGate]) {
+        return res.status(404).json({ message: "Card not found" });
+      }
+      const ownerIds = await expandParentAccount(msg.session.userId);
+      if (!ownerIds.includes(user.id)) {
+        return res.status(403).json({ message: "Not your card" });
+      }
+    }
+
+    const memberIds = await callerAccountMemberIds(user);
+    const deposit =
+      gate === "DECISION_WINDOW" ? await resolveDepositSnapshot(providerId, memberIds) : null;
+
+    await recordGateAck({
+      gate,
+      parentUserId: user.id,
+      providerId,
+      subjectProfileId,
+      subjectType,
+      sessionId,
+      actorUserId: user.id,
+      actorName: user.name || user.firstName || null,
+      depositSnapshot: deposit,
+    });
+
+    const acknowledgedAt = new Date();
+    const acknowledgedByName = (user.firstName || user.name || "").trim().split(/\s+/)[0] || null;
+    if (messageId) {
+      const existing = await prisma.aiChatMessage.findUnique({
+        where: { id: messageId },
+        select: { uiCardData: true },
+      });
+      await prisma.aiChatMessage
+        .update({
+          where: { id: messageId },
+          data: {
+            uiCardData: {
+              ...((existing?.uiCardData as any) || {}),
+              acknowledgedAt: acknowledgedAt.toISOString(),
+              acknowledgedByName,
+            } as any,
+          },
+        })
+        .catch(() => {});
+    }
+    console.log(`[CONSENT] ${gate} acknowledged by ${user.id} for provider ${providerId}${subjectProfileId ? ` (subject ${subjectProfileId})` : ""}`);
+    res.json({ acknowledgedAt: acknowledgedAt.toISOString(), acknowledgedByName });
+  } catch (e: any) {
+    console.error("[consultation-gates/acknowledge]", e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+/**
+ * Live gate state for a (provider, subject) pair. The ack cards re-query this
+ * on mount so a stale card sitting in scrollback never shows an actionable
+ * button for something already ticked.
+ */
+chatRouter.get("/api/consultation-gates/status", requireAuth, async (req: Request, res: Response) => {
+  const user = req.user as any;
+  if (!user) return res.status(401).json({ message: "Not authenticated" });
+  try {
+    const providerId = String(req.query.providerId || "");
+    const subjectProfileId = req.query.subjectProfileId ? String(req.query.subjectProfileId) : null;
+    const subjectType = req.query.subjectType ? String(req.query.subjectType) : null;
+    const intent = String(req.query.intent || "CONSULTATION");
+    if (!providerId) return res.status(400).json({ message: "providerId is required" });
+
+    const memberIds = await callerAccountMemberIds(user);
+    if (intent === "MATCH_CALL") {
+      const gate = await evaluateMatchCallGates({
+        parentUserId: user.id,
+        providerId,
+        subjectProfileId,
+      });
+      return res.json({
+        intent,
+        allowed: gate.allowed,
+        code: gate.code,
+        missing: gate.missing,
+        ipFormMissing: gate.ipFormMissing,
+        deposit: gate.deposit,
+        bothParents: gate.bothParents,
+      });
+    }
+    const [lock, ack] = await Promise.all([
+      evaluateConsultationLock({ parentUserId: user.id, targetProviderId: providerId, subjectType }),
+      evaluateConsultationAckGate({ parentUserId: user.id, providerId, subjectProfileId }),
+    ]);
+    res.json({
+      intent: "CONSULTATION",
+      allowed: lock.allowed && ack.allowed,
+      lock: {
+        allowed: lock.allowed,
+        code: lock.code,
+        providerTypeName: lock.providerTypeName,
+        blockingProviderName: lock.blocker?.providerName ?? null,
+        blockingScheduledAt: lock.blocker?.scheduledAt ?? null,
+      },
+      preliminaryAck: { allowed: ack.allowed, code: ack.code },
+      openConsultations: (await listOpenConsultations(memberIds)).filter((o) => o.releasedBy === "NONE"),
+    });
+  } catch (e: any) {
+    console.error("[consultation-gates/status]", e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+/** Admin view of a family's focus lock. Read-only. */
+chatRouter.get("/api/admin/consultation-lock", requireAuth, async (req: Request, res: Response) => {
+  const user = req.user as any;
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const parentUserId = req.query.parentUserId ? String(req.query.parentUserId) : null;
+    const parentAccountId = req.query.parentAccountId ? String(req.query.parentAccountId) : null;
+    if (!parentUserId && !parentAccountId) {
+      return res.status(400).json({ message: "parentUserId or parentAccountId is required" });
+    }
+    const memberIds = parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId }, select: { id: true } })).map((u) => u.id)
+      : await expandParentAccount(parentUserId!);
+    res.json({ open: await listOpenConsultations(memberIds) });
+  } catch (e: any) {
+    console.error("[admin/consultation-lock]", e.message);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+/**
+ * Admin unlock. The 7-day window and the parent's own "I want to move on" are
+ * the normal ways out; this is the manual valve for the family that is stuck
+ * and has called support.
+ *
+ * Providers deliberately have NO unlock control - a provider must never be
+ * able to release a competitor's lock.
+ */
+chatRouter.post("/api/admin/consultation-lock/release", requireAuth, async (req: Request, res: Response) => {
+  const user = req.user as any;
+  if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const { parentUserId, parentAccountId, providerId, reason } = req.body || {};
+    if (!providerId) return res.status(400).json({ message: "providerId is required" });
+    if (!parentUserId && !parentAccountId) {
+      return res.status(400).json({ message: "parentUserId or parentAccountId is required" });
+    }
+    // A required note, because "why was this family unlocked" is the question
+    // support will ask three weeks from now.
+    if (!String(reason || "").trim()) {
+      return res.status(400).json({ message: "A reason is required" });
+    }
+    await releaseConsultationLock({
+      parentUserId: parentUserId || null,
+      parentAccountId: parentAccountId || null,
+      providerId,
+      reason: "ADMIN",
+      note: String(reason).trim(),
+      actorUserId: user.id,
+      actorName: user.name || user.email || null,
+    });
+    const memberIds = parentAccountId
+      ? (await prisma.user.findMany({ where: { parentAccountId }, select: { id: true } })).map((u) => u.id)
+      : await expandParentAccount(parentUserId);
+    console.log(`[CONSULTATION-LOCK] Admin ${user.id} released provider ${providerId} - "${String(reason).trim()}"`);
+    res.json({ open: await listOpenConsultations(memberIds) });
+  } catch (e: any) {
+    console.error("[admin/consultation-lock/release]", e.message);
     res.status(500).json({ message: e.message });
   }
 });

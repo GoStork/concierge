@@ -379,6 +379,319 @@ async function ut12() {
   }
 }
 
+// ─── Consultation focus lock fixtures ───────────────────────────────────────
+// The lock is DERIVED on every read, so a fake Prisma client is enough to pin
+// every rule with no server and no database. Getting these wrong is silent in
+// the worst direction: a wrong lock is a dead end the parent cannot see.
+const DAY = 24 * 60 * 60 * 1000;
+
+function lockClient(opts: {
+  members?: string[];
+  bookings?: any[];
+  sessions?: any[];
+  events?: any[];
+  matchCalls?: any[];
+  services?: Record<string, string[]>;
+  partners?: Record<string, string[]>;
+}) {
+  const members = opts.members ?? ["u1"];
+  const bookingCalls: any[] = [];
+  return {
+    bookingCalls,
+    client: {
+      user: {
+        findUnique: async () => ({ parentAccountId: "acct1" }),
+        findMany: async () => members.map((id) => ({ id })),
+      },
+      booking: {
+        findMany: async (q: any) => {
+          bookingCalls.push(q.where);
+          return q.where?.meetingSubtype === "MATCH_CALL" ? (opts.matchCalls ?? []) : (opts.bookings ?? []);
+        },
+        findFirst: async () => null,
+      },
+      aiChatSession: { findMany: async () => opts.sessions ?? [] },
+      journeyEvent: { findMany: async () => opts.events ?? [] },
+      providerService: {
+        findMany: async (q: any) =>
+          (opts.services?.[q.where.providerId] ?? []).map((name) => ({ providerType: { name } })),
+      },
+      provider: {
+        findMany: async (q: any) =>
+          (q.where.id.in as string[]).map((id) => ({ id, partnerProviderIds: opts.partners?.[id] ?? [] })),
+        findUnique: async () => null,
+      },
+    },
+  };
+}
+
+/** One live consultation booking, `daysAgo` in the past (negative = future). */
+function consult(over: Partial<any> = {}) {
+  return {
+    id: "b1",
+    sessionId: "s1",
+    scheduledAt: new Date(Date.now() + 2 * DAY),
+    status: "PENDING",
+    createdAt: new Date(Date.now() - DAY),
+    outcome: null,
+    providerUser: { provider: { id: "pAgency", name: "Agency A", services: [{ providerType: { name: "Surrogacy Agency" } }] } },
+    ...over,
+  };
+}
+
+// ─── UT-13: the focus lock's release rules and account scoping ───────────────
+async function ut13() {
+  const { evaluateConsultationLock, listOpenConsultations } = await import("../server/consultation-gates");
+
+  const base = {
+    bookings: [consult()],
+    sessions: [{ id: "s1", subjectType: "Surrogate", title: "Surrogate #1", handoffCompletedAt: null }],
+    services: { pAgency: ["Surrogacy Agency"], pOther: ["Surrogacy Agency"], pDonor: ["Egg Donor Agency"] },
+  };
+
+  const blocked = await evaluateConsultationLock({
+    parentUserId: "u1", targetProviderId: "pOther", subjectType: "Surrogate",
+    client: lockClient(base).client,
+  });
+  check("a second agency of the SAME type is blocked", !blocked.allowed && blocked.code === "CONSULTATION_ALREADY_OPEN", JSON.stringify(blocked.code));
+  check("the blocker names the provider they already have", blocked.blocker?.providerId === "pAgency", String(blocked.blocker?.providerId));
+
+  const otherType = await evaluateConsultationLock({
+    parentUserId: "u1", targetProviderId: "pDonor", subjectType: "Egg Donor",
+    client: lockClient(base).client,
+  });
+  check("a DIFFERENT provider type is untouched (types are independent)", otherType.allowed, JSON.stringify(otherType.code));
+
+  const self = await evaluateConsultationLock({
+    parentUserId: "u1", targetProviderId: "pAgency", subjectType: "Surrogate",
+    client: lockClient(base).client,
+  });
+  check("a provider never blocks itself", self.allowed, JSON.stringify(self.code));
+
+  // Account expansion: the booking belongs to the PARTNER, not the caller.
+  const partnerHeld = lockClient({ ...base, members: ["u1", "u2"], bookings: [consult({ id: "b2" })] });
+  const cross = await evaluateConsultationLock({
+    parentUserId: "u1", targetProviderId: "pOther", subjectType: "Surrogate", client: partnerHeld.client,
+  });
+  check("a call booked by the partner still locks (parentAccountId expansion)", !cross.allowed, JSON.stringify(cross.code));
+  const bookingWhere = partnerHeld.bookingCalls[0];
+  check("the booking query spans every account member",
+    Array.isArray(bookingWhere?.parentUserId?.in) && bookingWhere.parentUserId.in.length === 2,
+    JSON.stringify(bookingWhere?.parentUserId));
+
+  // THE PRISMA NULL TRAP: `outcome: { notIn: [...] }` silently drops NULL rows,
+  // and an un-swept booking has outcome: null - exactly the one that must lock.
+  check("the outcome filter spells out NULL rather than relying on notIn",
+    Array.isArray(bookingWhere?.OR) && bookingWhere.OR.some((o: any) => o.outcome === null),
+    JSON.stringify(bookingWhere?.OR));
+
+  // Each release condition, one at a time.
+  const releases: Array<[string, any, string]> = [
+    ["a no-show releases it", { bookings: [] }, "TERMINAL_OUTCOME"],
+    ["provider not-a-fit releases it", { events: [{ providerId: "pAgency", eventType: "CONSULTATION_NOT_A_FIT", createdAt: new Date(), metadata: {} }] }, "NOT_A_FIT"],
+    ["parent moving on releases it", { events: [{ providerId: "pAgency", eventType: "CONSULTATION_LOCK_RELEASED", createdAt: new Date(), metadata: { reason: "PARENT_MOVED_ON" } }] }, "PARENT_MOVED_ON"],
+    ["an admin override releases it", { events: [{ providerId: "pAgency", eventType: "CONSULTATION_LOCK_RELEASED", createdAt: new Date(), metadata: { reason: "ADMIN" } }] }, "ADMIN_OVERRIDE"],
+    ["7 days with no match call releases it", { bookings: [consult({ scheduledAt: new Date(Date.now() - 8 * DAY) })] }, "STALE_WINDOW"],
+  ];
+  for (const [label, over, _expected] of releases) {
+    const r = await evaluateConsultationLock({
+      parentUserId: "u1", targetProviderId: "pOther", subjectType: "Surrogate",
+      client: lockClient({ ...base, ...over }).client,
+    });
+    check(label, r.allowed, JSON.stringify(r.code));
+  }
+
+  // ...but a stale call WITH a live match call still locks - that track is alive.
+  const staleButMatched = await evaluateConsultationLock({
+    parentUserId: "u1", targetProviderId: "pOther", subjectType: "Surrogate",
+    client: lockClient({
+      ...base,
+      bookings: [consult({ scheduledAt: new Date(Date.now() - 8 * DAY) })],
+      matchCalls: [{ providerUser: { providerId: "pAgency" } }],
+    }).client,
+  });
+  check("a stale call with a scheduled match call still locks", !staleButMatched.allowed, JSON.stringify(staleButMatched.code));
+
+  // A release event OLDER than the booking must not release it - otherwise
+  // last month's "not a fit" would unlock a call booked today.
+  const oldEvent = await evaluateConsultationLock({
+    parentUserId: "u1", targetProviderId: "pOther", subjectType: "Surrogate",
+    client: lockClient({
+      ...base,
+      events: [{ providerId: "pAgency", eventType: "CONSULTATION_NOT_A_FIT", createdAt: new Date(Date.now() - 10 * DAY), metadata: {} }],
+    }).client,
+  });
+  check("a release event older than the booking does NOT release it", !oldEvent.allowed, JSON.stringify(oldEvent.code));
+
+  // A handed-off journey is finished business and never locks.
+  const handedOff = await listOpenConsultations(["u1"], lockClient({
+    ...base,
+    sessions: [{ id: "s1", subjectType: "Surrogate", title: "Surrogate #1", handoffCompletedAt: new Date() }],
+  }).client);
+  check("a handed-off journey never locks", handedOff.length === 0, String(handedOff.length));
+
+  // International programs: two legs of one decision never block each other.
+  const partner = await evaluateConsultationLock({
+    parentUserId: "u1", targetProviderId: "pOther", subjectType: "Surrogate",
+    client: lockClient({ ...base, partners: { pAgency: ["pOther"] } }).client,
+  });
+  check("a partner clinic in the same program is not blocked", partner.allowed, JSON.stringify(partner.code));
+}
+
+// ─── UT-14: which service line a provider is locked on ───────────────────────
+// A wrong answer here locks a lane the family never entered, so the ambiguous
+// case MUST fail open rather than guess.
+async function ut14() {
+  const { resolveLockProviderType, providerTypeFromSubject } = await import("../server/provider-type-resolve");
+  const svc = (names: string[]) => ({
+    providerService: { findMany: async () => names.map((name) => ({ providerType: { name } })) },
+  });
+
+  const multi = ["IVF Clinic", "Surrogacy Agency", "Egg Donor Agency"];
+  check("subjectType wins over the org's other service lines",
+    (await resolveLockProviderType("p", "Surrogate", svc(multi))) === "Surrogacy Agency");
+  check("an egg-donor subject resolves to the donor line",
+    (await resolveLockProviderType("p", "Egg Donor", svc(multi))) === "Egg Donor Agency");
+  check("a single approved service resolves with no subject at all",
+    (await resolveLockProviderType("p", null, svc(["Surrogacy Agency"]))) === "Surrogacy Agency");
+  check("AMBIGUOUS multi-service org returns null so the caller ALLOWS",
+    (await resolveLockProviderType("p", null, svc(multi))) === null);
+  check("an org with no approved services returns null",
+    (await resolveLockProviderType("p", "Surrogate", svc([]))) === null);
+
+  check("egg bank beats the generic egg/donor rule", providerTypeFromSubject("Egg Bank donor") === "Egg Bank");
+  check("sperm is matched before egg/donor", providerTypeFromSubject("Sperm Donor") === "Sperm Bank");
+  check("legal maps to Legal Services", providerTypeFromSubject("legal") === "Legal Services");
+  check("an unrecognised subject is null, never a guess", providerTypeFromSubject("something else") === null);
+}
+
+// ─── UT-15: the match-call gates fire in a fixed order ───────────────────────
+async function ut15() {
+  const { evaluateMatchCallGates, resolveDepositSnapshot } = await import("../server/consultation-gates");
+
+  const gateClient = (o: {
+    ipStatus?: string; couple?: boolean; acks?: string[];
+    quoteSchedule?: any; sheets?: any[];
+  }) => ({
+    user: {
+      findUnique: async () => ({
+        parentAccountId: "acct1",
+        relationshipStatus: o.couple ? "Married" : "Single",
+        partnerFirstName: o.couple ? "Sam" : null,
+      }),
+      findMany: async () => [{ id: "u1" }],
+    },
+    ipFormResponse: { findUnique: async () => ({ status: o.ipStatus ?? "SUBMITTED", hasSecondParent: false, hasSecondParentManual: false }) },
+    intendedParentProfile: { findUnique: async () => ({ sameSexCouple: false }) },
+    journeyEvent: {
+      findMany: async (q: any) =>
+        (o.acks ?? []).includes(q.where.eventType) ? [{ createdAt: new Date(), metadata: {} }] : [],
+    },
+    booking: { findFirst: async () => null, findMany: async () => [] },
+    provider: { findUnique: async () => ({ depositMilestone: null }) },
+    providerQuote: { findFirst: async () => (o.quoteSchedule ? { paymentSchedule: o.quoteSchedule } : null) },
+    providerCostSheet: { findMany: async () => o.sheets ?? [] },
+  });
+
+  const noForm = await evaluateMatchCallGates({ parentUserId: "u1", providerId: "p", client: gateClient({ ipStatus: "DRAFT", couple: true }) as any });
+  check("the IP form is refused first", noForm.code === "IP_FORM_REQUIRED", String(noForm.code));
+
+  const noAttendance = await evaluateMatchCallGates({ parentUserId: "u1", providerId: "p", client: gateClient({ couple: true }) as any });
+  check("both-parents comes second", noAttendance.code === "BOTH_PARENTS_ACK_REQUIRED", String(noAttendance.code));
+
+  const noDecision = await evaluateMatchCallGates({
+    parentUserId: "u1", providerId: "p",
+    client: gateClient({ couple: true, acks: ["MATCH_CALL_ATTENDANCE_ACKNOWLEDGED"] }) as any,
+  });
+  check("the decision window comes third", noDecision.code === "MATCH_DECISION_ACK_REQUIRED", String(noDecision.code));
+
+  const solo = await evaluateMatchCallGates({
+    parentUserId: "u1", providerId: "p",
+    client: gateClient({ couple: false, acks: ["MATCH_CALL_DECISION_ACKNOWLEDGED"] }) as any,
+  });
+  check("a genuinely single parent is not asked to promise a partner", solo.allowed, String(solo.code));
+  check("...and both-parents is not listed as missing", !solo.missing.includes("BOTH_PARENTS"), solo.missing.join(","));
+
+  // An ai_proposed schedule is provider-only. Showing it to a parent as a real
+  // figure would be worse than showing no figure at all.
+  const tranche = { triggerType: "AT_MATCH", name: "First Deposit", minValueCents: 800000, maxValueCents: 800000, payToLabel: "Escrow" };
+  const unconfirmed = await resolveDepositSnapshot("p", ["u1"], gateClient({
+    sheets: [{ scheduleSource: "ai_proposed", tranches: [tranche] }],
+  }) as any);
+  check("an ai_proposed schedule is REFUSED and falls back to no figure", unconfirmed.source === "NONE", unconfirmed.source);
+
+  const confirmed = await resolveDepositSnapshot("p", ["u1"], gateClient({
+    sheets: [{ scheduleSource: "provider_confirmed", tranches: [tranche] }],
+  }) as any);
+  check("a provider-confirmed schedule yields the real figure", confirmed.source === "COST_SHEET" && confirmed.minCents === 800000, JSON.stringify(confirmed));
+
+  const quoted = await resolveDepositSnapshot("p", ["u1"], gateClient({
+    quoteSchedule: { tranches: [{ ...tranche, minValueCents: 750000, maxValueCents: 750000 }] },
+    sheets: [{ scheduleSource: "provider_confirmed", tranches: [tranche] }],
+  }) as any);
+  check("the family's OWN quote beats the provider's generic sheet", quoted.source === "QUOTE" && quoted.minCents === 750000, JSON.stringify(quoted));
+}
+
+// ─── UT-16: card registration stays in lockstep ──────────────────────────────
+// A card the parent cannot see but the unread count still counts is a badge
+// they can never clear - the exact failure parent-visibility.ts exists to stop.
+async function ut16() {
+  const { PARENT_VISIBLE_SYSTEM_CARDS, PARENT_PRIVATE_SYSTEM_CARDS } = await import("../server/parent-visibility");
+  const { GATE_CARD_TYPE } = await import("../server/consultation-gates");
+
+  for (const [gate, cardType] of Object.entries(GATE_CARD_TYPE)) {
+    check(`${gate} card (${cardType}) is parent-visible`, PARENT_VISIBLE_SYSTEM_CARDS.includes(cardType), cardType);
+  }
+  check("the preliminary ack is parent-PRIVATE (it renders while the agency is masked)",
+    PARENT_PRIVATE_SYSTEM_CARDS.includes("consult_preliminary_ack"));
+  // The two match-call gates must NOT be private: the provider is the one
+  // refused at propose-call-times and needs to see the blocker.
+  check("the both-parents card stays visible to the provider",
+    !PARENT_PRIVATE_SYSTEM_CARDS.includes("match_call_attendance_ack"));
+  check("the decision-window card stays visible to the provider",
+    !PARENT_PRIVATE_SYSTEM_CARDS.includes("match_call_decision_ack"));
+}
+
+// ─── UT-17: the whisper trap ─────────────────────────────────────────────────
+// A whisper stamps providerId onto the parent's PRIVATE Eva session, so a bare
+// providerId lookup reports "already connected" for every agency they ever
+// whispered to - and would silently skip a consultation they actually need.
+async function ut17() {
+  const { findConnectedProviderSession, findSharedProviderSession } = await import("../server/parent-visibility");
+  const queries: any[] = [];
+  const client = (results: (any | null)[]) => ({
+    aiChatSession: {
+      findFirst: async (q: any) => {
+        queries.push(q.where);
+        return results[queries.length - 1] ?? null;
+      },
+    },
+  });
+
+  queries.length = 0;
+  const whisperOnly = await findConnectedProviderSession(["u1"], "p", { client: client([null]) });
+  check("a whisper-stamped Eva session is NOT treated as connected", whisperOnly === null, JSON.stringify(whisperOnly));
+  check("the strict lookup runs exactly one query (no loose fallback)", queries.length === 1, String(queries.length));
+  check("the strict query requires a joined provider or a shared status",
+    Array.isArray(queries[0]?.OR) && queries[0].OR.length === 2, JSON.stringify(queries[0]?.OR));
+
+  queries.length = 0;
+  const real = await findConnectedProviderSession(["u1"], "p", { client: client([{ id: "shared", status: "PROVIDER_CONNECTED", providerJoinedAt: new Date(), subjectProfileId: "d1", subjectType: "Surrogate", title: "Surrogate #1" }]) });
+  check("a real shared thread IS returned", real?.id === "shared", String(real?.id));
+
+  queries.length = 0;
+  await findConnectedProviderSession(["u1"], "p", { client: client([null]), excludeSessionId: "eva1" });
+  check("the caller's own session is excluded from the strict query", queries[0]?.id?.not === "eva1", JSON.stringify(queries[0]?.id));
+
+  // findSharedProviderSession keeps the loose fallback (it answers "where do I
+  // post this?", not "are they connected?") but must try strict FIRST.
+  queries.length = 0;
+  const posted = await findSharedProviderSession(["u1"], "p", { client: client([null, { id: "loose" }]), excludeSessionId: "eva1" });
+  check("the posting lookup falls back to a loose match", posted?.id === "loose", String(posted?.id));
+  check("...only after trying the strict one first", queries.length === 2 && Array.isArray(queries[0]?.OR), String(queries.length));
+  check("...and still excludes the caller's own session", queries[1]?.id?.not === "eva1", JSON.stringify(queries[1]?.id));
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-01", name: "Bare-id [[MATCH_CARD:<uuid>]] form is accepted", run: ut01 },
   { id: "UT-02", name: "Well-formed card JSON parses unchanged", run: ut02 },
@@ -392,6 +705,11 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-10", name: "Auto-reply starter copy stays in sync with its tokens", run: ut10 },
   { id: "UT-11", name: "Contact guard blocks contact details and leaves ordinary text alone", run: ut11 },
   { id: "UT-12", name: "Every obfuscation of one address and one number still blocks", run: ut12 },
+  { id: "UT-13", name: "Consultation focus lock: types are independent and every release works", run: ut13 },
+  { id: "UT-14", name: "Provider service line resolves, or fails OPEN when ambiguous", run: ut14 },
+  { id: "UT-15", name: "Match-call gates fire in order and never quote an unconfirmed deposit", run: ut15 },
+  { id: "UT-16", name: "Consent card registration stays in lockstep with visibility", run: ut16 },
+  { id: "UT-17", name: "A whisper-stamped Eva session never counts as a provider connection", run: ut17 },
 ];
 
 (async () => {

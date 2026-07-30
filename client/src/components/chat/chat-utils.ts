@@ -2,6 +2,7 @@
  * Shared chat utility functions used by conversations-page,
  * admin-concierge-monitor, and extracted chat sub-components.
  */
+import { labelToProfileType, typeToUrlSlug } from "@/lib/profile-utils";
 
 /**
  * Converts a date string to a human-friendly day label.
@@ -48,11 +49,12 @@ export function truncateMessage(msg: string, maxLen = 60): string {
 /**
  * Returns the URL slug prefix for a profile type
  * (surrogate, eggdonor, spermdonor).
+ *
+ * Takes the HUMAN LABEL form that chat cards and AiChatSession.subjectType
+ * carry ("Egg Donor"). Thin wrapper over the single slug map in profile-utils -
+ * this used to be a hand-written third copy of that map, and an identical
+ * fourth copy lived inline in concierge-chat-page.tsx.
  */
 export function getProfileUrlSlug(type: string): string {
-  const t = type.toLowerCase();
-  if (t === "surrogate") return "surrogate";
-  if (t === "egg donor") return "eggdonor";
-  if (t === "sperm donor") return "spermdonor";
-  return "surrogate";
+  return typeToUrlSlug(labelToProfileType(type));
 }

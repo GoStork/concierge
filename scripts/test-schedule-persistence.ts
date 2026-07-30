@@ -149,6 +149,69 @@ async function run() {
     check("Line-item edit preserves tranche assignments", beforeLinks > 0 && afterLinks === beforeLinks,
       `before=${beforeLinks} after=${afterLinks}`);
 
+    // --- Personalisation to a matched person's compensation ----------------
+    // updateSheetItems above rewrote the item rows, so the ids captured
+    // earlier are stale. Re-read them.
+    const liveItems = await prisma.costItem.findMany({ where: { providerCostSheetId: sheet.id } });
+    const comp2 = liveItems.find((i) => i.key === "Surrogate Compensation")!;
+    const agencyFee2 = liveItems.find((i) => i.key === "Agency Fee")!;
+
+    // Genesis-shaped: a deposit that carries 80% of surrogate compensation,
+    // published as a range because the surrogate isn't known yet.
+    await svc.replaceSchedule(sheet.id, {
+      tranches: [
+        {
+          name: "Second Deposit", triggerType: "AT_LEGAL_CLEARANCE", triggerLabel: "Due at legal clearance",
+          minValueCents: 117_670_00, maxValueCents: 158_670_00, amountBasis: "STATED", payTo: "ESCROW",
+          itemPayments: [{ costItemId: comp2.id, percent: 80 }],
+        },
+      ],
+      source: "provider_confirmed",
+    });
+    // Restore the compensation line to a published RANGE so there is a band
+    // to collapse (the earlier edit left the sheet at two items).
+    await prisma.costItem.update({ where: { id: comp2.id }, data: { minValue: 55000, maxValue: 100000 } });
+
+    const load = async () =>
+      prisma.providerCostSheet.findUnique({
+        where: { id: sheet.id },
+        include: { items: true, tranches: { orderBy: { sortOrder: "asc" }, include: { itemPayments: { include: { costItem: true } } } } },
+      });
+
+    const generic = buildParentPaymentSchedule((await load()) as any);
+    check("Without a match, the published range is untouched",
+      generic?.tranches[0].minValueCents === 117_670_00 && generic?.tranches[0].maxValueCents === 158_670_00,
+      `got ${generic?.tranches[0].minValueCents} - ${generic?.tranches[0].maxValueCents}`);
+    check("Without a match, not flagged as personalised", generic?.isPersonalised === false);
+
+    // Matched surrogate at $65,000. 80% share: swap out 80% of the published
+    // 55,000-100,000 band, swap in 80% of 65,000.
+    //   min: 117,670 - 44,000 + 52,000 = 125,670
+    //   max: 158,670 - 80,000 + 52,000 = 130,670
+    const personalised = buildParentPaymentSchedule((await load()) as any, 65000);
+    check("Matched compensation rewrites the amount",
+      personalised?.tranches[0].minValueCents === 125_670_00 && personalised?.tranches[0].maxValueCents === 130_670_00,
+      `expected 12567000 - 13067000, got ${personalised?.tranches[0].minValueCents} - ${personalised?.tranches[0].maxValueCents}`);
+    check("Matched compensation is flagged as personalised", personalised?.isPersonalised === true);
+
+    const genericWidth = (generic!.tranches[0].maxValueCents - generic!.tranches[0].minValueCents) / 100;
+    const personalWidth = (personalised!.tranches[0].maxValueCents - personalised!.tranches[0].minValueCents) / 100;
+    check("The compensation-driven band collapses", personalWidth < genericWidth / 4,
+      `range width went from $${genericWidth.toLocaleString()} to $${personalWidth.toLocaleString()}`);
+    console.log(`        range width $${genericWidth.toLocaleString()} -> $${personalWidth.toLocaleString()}`);
+
+    // A tranche with no compensation exposure must not move.
+    await svc.replaceSchedule(sheet.id, {
+      tranches: [
+        { name: "Retainer", triggerType: "AT_SIGNING", triggerLabel: "On signing", minValueCents: 5_000_00, maxValueCents: 5_000_00, amountBasis: "STATED", payTo: "PROVIDER", itemIds: [agencyFee2.id] },
+      ],
+      source: "provider_confirmed",
+    });
+    const untouched = buildParentPaymentSchedule((await load()) as any, 65000);
+    check("A payment with no compensation exposure is left alone",
+      untouched?.tranches[0].minValueCents === 5_000_00 && untouched?.isPersonalised === false,
+      `got ${untouched?.tranches[0].minValueCents}, personalised=${untouched?.isPersonalised}`);
+
     // --- Clearing ----------------------------------------------------------
     const cleared = await svc.clearSchedule(sheet.id);
     check("Clearing removes every tranche", cleared!.tranches.length === 0);

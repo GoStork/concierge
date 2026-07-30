@@ -42,7 +42,24 @@ export const PARENT_VISIBLE_SYSTEM_CARDS: string[] = [
   "ip_form_prompt",
   // System-sent file attachments (e.g. the Match Call prep guide).
   "attachment",
+  // Consultation focus lock / match call consent gates
+  // (server/consultation-gates.ts). All three are the PARENT's action - they
+  // must render for the parent or the gate is unsatisfiable. The two match-call
+  // ones are ALSO visible to the provider (deliberately: the provider is the one
+  // who hits the 409 on propose-call-times and needs to see the blocker), while
+  // consult_preliminary_ack is parent-private - it renders pre-booking, where
+  // the agency's identity is still masked.
+  "consult_preliminary_ack",
+  "match_call_attendance_ack",
+  "match_call_decision_ack",
 ];
+
+/**
+ * Card types that belong to the parent alone and must never surface in the
+ * provider's feed, previews or badges. Import this rather than re-typing the
+ * list at each `notIn` site.
+ */
+export const PARENT_PRIVATE_SYSTEM_CARDS: string[] = ["consult_preliminary_ack"];
 
 /**
  * A Prisma `where` fragment that excludes exactly the messages the parent's
@@ -103,4 +120,106 @@ export async function resolveParentEvaSessionId(
     select: { id: true },
   });
   return anyPrivate?.id ?? null;
+}
+
+/** The subset of AiChatSession every caller of findSharedProviderSession needs. */
+export interface SharedProviderSession {
+  id: string;
+  status: string;
+  providerJoinedAt: Date | null;
+  subjectProfileId: string | null;
+  subjectType: string | null;
+  title: string | null;
+}
+
+const SHARED_SESSION_SELECT = {
+  id: true,
+  status: true,
+  providerJoinedAt: true,
+  subjectProfileId: true,
+  subjectType: true,
+  title: true,
+} as const;
+
+/**
+ * The REAL shared parent-provider thread for a given provider - the inverse of
+ * resolveParentEvaSessionId, and subject to the same trap from the other side.
+ *
+ * THE TRAP: a whisper stamps `providerId` onto the parent's PRIVATE Eva session
+ * (ai-router.ts, the [[WHISPER]] handler), so `findFirst({ providerId })` alone
+ * can return Eva. Two things go wrong when it does: a provider-facing card lands
+ * somewhere the provider cannot see it, and any "are they already connected?"
+ * check answers YES for every agency the parent ever whispered to - which would
+ * silently skip a consultation the parent actually needs.
+ *
+ * The reliable discriminator is the same one the client uses to split the
+ * conversations list (conversations-page.tsx `isProviderThread`): a joined
+ * provider, or a status that only a shared thread reaches.
+ *
+ * @param excludeSessionId pass the caller's own session id (typically the Eva
+ *   thread the request is running in) so the loose fallback can never resolve
+ *   to it. Always pass it when the answer drives a skip/branch decision.
+ */
+export async function findSharedProviderSession(
+  memberIds: string[],
+  providerId: string,
+  opts?: { excludeSessionId?: string | null; client?: any },
+): Promise<SharedProviderSession | null> {
+  if (!memberIds?.length || !providerId) return null;
+  const db = opts?.client ?? (await import("./db")).prisma;
+  const exclude = opts?.excludeSessionId
+    ? { id: { not: opts.excludeSessionId } }
+    : {};
+
+  const strict = await db.aiChatSession.findFirst({
+    where: {
+      ...exclude,
+      userId: { in: memberIds },
+      providerId,
+      OR: [
+        { status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } },
+        { providerJoinedAt: { not: null } },
+      ],
+    },
+    orderBy: { updatedAt: "desc" },
+    select: SHARED_SESSION_SELECT,
+  });
+  if (strict) return strict as SharedProviderSession;
+
+  // Loose fallback: better than dropping a message on the floor when no shared
+  // thread exists yet. Never trust it as proof of a real connection.
+  const loose = await db.aiChatSession.findFirst({
+    where: { ...exclude, userId: { in: memberIds }, providerId },
+    orderBy: { updatedAt: "desc" },
+    select: SHARED_SESSION_SELECT,
+  });
+  return (loose as SharedProviderSession) ?? null;
+}
+
+/**
+ * Strict variant: resolves ONLY a genuinely shared thread, never the loose
+ * fallback. Use this when the answer drives a branch (skip the consultation,
+ * treat the parent as connected) rather than "where do I post this?".
+ */
+export async function findConnectedProviderSession(
+  memberIds: string[],
+  providerId: string,
+  opts?: { excludeSessionId?: string | null; client?: any },
+): Promise<SharedProviderSession | null> {
+  if (!memberIds?.length || !providerId) return null;
+  const db = opts?.client ?? (await import("./db")).prisma;
+  const found = await db.aiChatSession.findFirst({
+    where: {
+      ...(opts?.excludeSessionId ? { id: { not: opts.excludeSessionId } } : {}),
+      userId: { in: memberIds },
+      providerId,
+      OR: [
+        { status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } },
+        { providerJoinedAt: { not: null } },
+      ],
+    },
+    orderBy: { updatedAt: "desc" },
+    select: SHARED_SESSION_SELECT,
+  });
+  return (found as SharedProviderSession) ?? null;
 }

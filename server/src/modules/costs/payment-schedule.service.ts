@@ -13,6 +13,84 @@ import {
 import type { ParsedTranche } from "./costs-ai.service";
 
 /**
+ * True for the line that carries a donor's or surrogate's base compensation.
+ *
+ * Matches the rule `getProviderParentPrograms` already uses to swap in a
+ * specific person's actual comp: category "compensation", or any key
+ * containing "compensation". Catches "Surrogate Compensation", "Donor
+ * Compensation", "Egg Donor Compensation" without false-positiving on lines
+ * like "Health Insurance".
+ */
+export function isCompensationItem(item: { category?: string | null; key?: string | null }): boolean {
+  const cat = (item.category || "").toLowerCase();
+  const key = (item.key || "").toLowerCase();
+  return cat === "compensation" || key.includes("compensation");
+}
+
+/**
+ * Rewrite a tranche's amount for a KNOWN person's compensation.
+ *
+ * Real schedules are stated as ranges because the surrogate's or donor's
+ * compensation is not yet known - Genesis pays "80% of fixed surrogate
+ * compensation" in deposit 2 and 20% in deposit 3, giving a $41,000-wide
+ * band. Once the person is known, that band is mostly noise, and leaving it
+ * would also contradict the line items on the same card, which already show
+ * that person's real comp.
+ *
+ * Only the compensation-driven share of the amount moves; any other
+ * variability in the tranche is preserved. Returns null when this tranche has
+ * no compensation exposure, so callers can leave it untouched.
+ */
+function personaliseTrancheAmount(
+  tranche: { minValueCents: number | null; maxValueCents: number | null; amountBasis: string; itemPayments?: Array<any> },
+  actualCompensationCents: number,
+): { minValueCents: number; maxValueCents: number } | null {
+  const payments = tranche.itemPayments ?? [];
+  const compPayment = payments.find((p) => isCompensationItem(p.costItem ?? {}));
+  if (!compPayment) return null;
+
+  const origMinCents = Math.round((compPayment.costItem?.minValue ?? compPayment.costItem?.maxValue ?? 0) * 100);
+  const origMaxCents = Math.round((compPayment.costItem?.maxValue ?? compPayment.costItem?.minValue ?? 0) * 100);
+  const origMidCents = Math.round((origMinCents + origMaxCents) / 2);
+  if (origMidCents <= 0) return null;
+
+  // What share of the compensation line this tranche carries.
+  //   percent  -> stated directly (the 80/20 and 50/50 splits)
+  //   amounts  -> a stated portion, scaled proportionally
+  //   neither  -> the whole line falls in this tranche
+  let share: number;
+  if (compPayment.percent != null && compPayment.percent > 0) {
+    share = compPayment.percent / 100;
+  } else if (compPayment.minValueCents != null || compPayment.maxValueCents != null) {
+    const portionMid =
+      ((compPayment.minValueCents ?? compPayment.maxValueCents ?? 0) +
+        (compPayment.maxValueCents ?? compPayment.minValueCents ?? 0)) / 2;
+    share = portionMid / origMidCents;
+  } else {
+    share = 1;
+  }
+  if (!Number.isFinite(share) || share <= 0) return null;
+
+  const statedMin = tranche.minValueCents ?? tranche.maxValueCents;
+  const statedMax = tranche.maxValueCents ?? tranche.minValueCents;
+  if (statedMin == null || statedMax == null) return null;
+
+  // Swap this tranche's compensation share out at the published range and
+  // back in at the real figure. The comp-driven part of the band collapses;
+  // everything else about the tranche stays exactly as published.
+  const newMin = statedMin - Math.round(share * origMinCents) + Math.round(share * actualCompensationCents);
+  const newMax = statedMax - Math.round(share * origMaxCents) + Math.round(share * actualCompensationCents);
+
+  // A published range can be narrower than the comp range it contains (the
+  // provider rounded), which would invert min and max. Order defensively
+  // rather than showing a backwards range.
+  const lo = Math.min(newMin, newMax);
+  const hi = Math.max(newMin, newMax);
+  if (lo < 0) return null;
+  return { minValueCents: lo, maxValueCents: hi };
+}
+
+/**
  * Shape a loaded cost sheet's schedule for parent consumption, or null when
  * there isn't one to show.
  *
@@ -23,16 +101,26 @@ import type { ParsedTranche } from "./costs-ai.service";
  *
  * Returns null unless the provider has confirmed or authored the schedule.
  */
-export function buildParentPaymentSchedule(sheet: {
-  scheduleSource?: string | null;
-  paymentTerms?: any;
-  tranches?: Array<any>;
-  items?: Array<{ minValue: number | null; maxValue: number | null; isIncluded: boolean; isTier: boolean; key: string }>;
-}): {
+export function buildParentPaymentSchedule(
+  sheet: {
+    scheduleSource?: string | null;
+    paymentTerms?: any;
+    tranches?: Array<any>;
+    items?: Array<{ minValue: number | null; maxValue: number | null; isIncluded: boolean; isTier: boolean; key: string; category?: string }>;
+  },
+  /**
+   * The matched donor's or surrogate's actual compensation, in DOLLARS, when
+   * one is known. Tranche amounts are rewritten around it so the schedule
+   * agrees with the line items on the same card, which already swap in this
+   * person's real compensation. Omit while browsing generally.
+   */
+  specificCompensation?: number | null,
+): {
   tranches: Array<any>;
   paymentTerms: any;
   coversWholeProgram: boolean;
   scheduleNote: string | null;
+  isPersonalised: boolean;
 } | null {
   if (!isParentVisibleSchedule(sheet.scheduleSource)) return null;
   const tranches = sheet.tranches ?? [];
@@ -44,18 +132,45 @@ export function buildParentPaymentSchedule(sheet: {
 
   // Program total from LINE ITEMS only - the same basis the rest of the cost
   // system uses. Tranches are never summed into a total.
+  //
+  // When a specific person's compensation is in play, the total is computed
+  // at that figure, exactly as getProviderParentPrograms does for the card.
+  // Reconciling personalised tranches against a published total would
+  // otherwise report a mismatch that doesn't exist.
   let programTotal = 0;
   const tierValues: number[] = [];
   for (const it of items) {
     if (!it.isIncluded) continue;
-    const v = mid(it.minValue, it.maxValue);
+    const v =
+      specificCompensation != null && specificCompensation > 0 && isCompensationItem(it)
+        ? specificCompensation
+        : mid(it.minValue, it.maxValue);
     if (it.isTier) tierValues.push(v);
     else programTotal += v;
   }
   if (tierValues.length > 0) programTotal += Math.min(...tierValues);
   const programTotalCents = Math.round(programTotal * 100);
 
-  const statedAmounts = tranches
+  // Rewrite compensation-driven amounts around the matched person, so the
+  // schedule agrees with the line items beside it and a parent gets a figure
+  // they can actually plan against instead of a band tens of thousands wide.
+  const actualCompCents =
+    specificCompensation != null && specificCompensation > 0
+      ? Math.round(specificCompensation * 100)
+      : null;
+  let isPersonalised = false;
+  const resolved = tranches.map((t) => {
+    if (actualCompCents == null) return t;
+    const adjusted = personaliseTrancheAmount(t, actualCompCents);
+    if (!adjusted) return t;
+    isPersonalised = true;
+    return { ...t, minValueCents: adjusted.minValueCents, maxValueCents: adjusted.maxValueCents };
+  });
+
+  // Reconcile on the RESOLVED amounts. The program total on a personalised
+  // card is already computed at this person's comp, so comparing it against
+  // published tranche figures would read as a mismatch that isn't there.
+  const statedAmounts = resolved
     .filter((t) => t.amountBasis !== "REMAINDER" && t.amountBasis !== "TBD")
     .map((t) => trancheMidpointCents(t))
     .filter((c) => c > 0);
@@ -69,7 +184,8 @@ export function buildParentPaymentSchedule(sheet: {
   const coversWholeProgram = rec.verdict === "PARTITIONS_TOTAL" || hasRemainder;
 
   return {
-    tranches: tranches.map((t) => ({
+    isPersonalised,
+    tranches: resolved.map((t) => ({
       id: t.id,
       name: t.name,
       triggerType: t.triggerType,

@@ -1507,7 +1507,12 @@ export class CostsService {
           // Installment plan, only once the provider has confirmed or
           // authored it. Payment terms are higher-stakes than a subtype
           // label, so an unreviewed parse stays provider-only.
-          paymentSchedule: buildParentPaymentSchedule(sheet),
+          //
+          // specificCompensation is passed through so the schedule resolves
+          // to the same person the line items above it already resolve to.
+          // Without it the card contradicts itself: real comp on the line,
+          // a published range in the schedule built on a different figure.
+          paymentSchedule: buildParentPaymentSchedule(sheet, specificCompensation),
         };
 
         // Render the compensation row at the donor's / surrogate's actual

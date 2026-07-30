@@ -161,6 +161,9 @@ async function destroyFixture(db: Client, f: Fixture) {
   await db.query(`DELETE FROM "Booking" WHERE "providerUserId" = $1 OR "parentUserId" = $2`, [f.providerUserId, f.parentUserId]).catch(() => {});
   await db.query(`DELETE FROM "ScheduleConfig" WHERE "userId" = $1`, [f.providerUserId]).catch(() => {});
   await db.query(`DELETE FROM "AiChatMessage" WHERE "sessionId" IN (SELECT id FROM "AiChatSession" WHERE "userId" = $1)`, [f.parentUserId]);
+  // Journey events hold FKs to the session and the account, and consent ticks
+  // land here - a leftover ack would satisfy a later run's gate for free.
+  await db.query(`DELETE FROM "JourneyEvent" WHERE "parentAccountId" = $1 OR "providerId" = $2`, [f.parentAcctId, f.providerId]).catch(() => {});
   // Invoice/ProviderQuote hold an FK to AiChatSession, so they must go first.
   await db.query(`DELETE FROM "Invoice" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
   await db.query(`DELETE FROM "ProviderQuote" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
@@ -457,9 +460,15 @@ async function pr07(db: Client) {
 
 
 // ─── PR-08: the server-side match-call gate (the real enforcement) ───────────
-// Eva's IP-form reminder is a prompt directive and can be talked around; THIS
-// is the gate that actually holds. The agency proposes match-call times, and
-// the endpoint refuses while the Intended Parent Form is unsubmitted.
+// Eva's reminders are prompt directives and can be talked around; THESE are
+// the gates that actually hold. The agency proposes match-call times and the
+// endpoint refuses until all three are satisfied, in a fixed order: the
+// Intended Parent Form, then both parents confirming they will attend, then
+// the 24-hour decision window and the match deposit.
+//
+// Each refusal also POSTS the missing card into the family's chat. Refusing
+// without asking would leave the provider staring at a 409 with no visible
+// cause and no way to move - the failure mode the IP-form toast used to have.
 async function pr08(db: Client) {
   const f = await createFixture(db, "pr08");
   try {
@@ -487,10 +496,66 @@ async function pr08(db: Client) {
     check("the gate does NOT block other call types", otherCall.status < 400, `status=${otherCall.status}`);
 
     await db.query(`UPDATE "IpFormResponse" SET status='SUBMITTED', "submittedAt"=now() WHERE "parentAccountId"=$1`, [f.parentAcctId]);
+
+    // The IP form is only the FIRST of three gates. The family must also
+    // acknowledge the 24-hour decision window and the match deposit before a
+    // match call can be scheduled - that acknowledgement is what stops the
+    // deposit being a surprise on the first invoice.
+    const stillBlocked = await propose("MATCH_CALL");
+    const stillBody: any = await stillBlocked.json().catch(() => ({}));
+    check("the form alone is not enough - the decision window is still open",
+      stillBlocked.status === 409 && stillBody?.code === "MATCH_DECISION_ACK_REQUIRED",
+      `status=${stillBlocked.status} ${JSON.stringify(stillBody).slice(0, 120)}`);
+    // Refusing silently would leave the provider stuck with no visible cause,
+    // so the same request asks the family in their own chat.
+    check("the refusal posts the decision-window card into the family's chat",
+      (await db.query(
+        `SELECT id FROM "AiChatMessage" WHERE "sessionId"=$1 AND "uiCardType"='match_call_decision_ack'`, [sessionId],
+      )).rowCount === 1);
+
+    // A retry must not stack a second identical card on the family.
+    await propose("MATCH_CALL");
+    check("a provider retry does not post a duplicate card",
+      (await db.query(
+        `SELECT id FROM "AiChatMessage" WHERE "sessionId"=$1 AND "uiCardType"='match_call_decision_ack'`, [sessionId],
+      )).rowCount === 1);
+
+    // This parent is single (no relationshipStatus, no partner, one account
+    // member, hasSecondParent=false), so the both-parents gate correctly
+    // stays out of the way.
+    check("a single parent is never asked to promise a partner will attend",
+      (await db.query(
+        `SELECT id FROM "AiChatMessage" WHERE "sessionId"=$1 AND "uiCardType"='match_call_attendance_ack'`, [sessionId],
+      )).rowCount === 0);
+
+    const ack = await fetch(`${BASE}/api/consultation-gates/acknowledge`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...f.parentAuth },
+      body: JSON.stringify({ gate: "DECISION_WINDOW", providerId: f.providerId, sessionId }),
+    });
+    check("the parent can acknowledge the decision window", ack.status < 400, `status=${ack.status}`);
+    check("the acknowledgement is recorded as a journey event",
+      (await db.query(
+        `SELECT id FROM "JourneyEvent" WHERE "parentAccountId"=$1 AND "eventType"='MATCH_CALL_DECISION_ACKNOWLEDGED'`, [f.parentAcctId],
+      )).rowCount === 1);
+
     const allowed = await propose("MATCH_CALL");
-    check("match-call times are accepted once the form is submitted", allowed.status < 400, `status=${allowed.status}`);
+    check("match-call times are accepted once the form AND the gates are done", allowed.status < 400, `status=${allowed.status}`);
     check("the proposed-times card reaches the chat",
       (await db.query(`SELECT id FROM "AiChatMessage" WHERE "sessionId"=$1 AND "uiCardType"='proposed_times'`, [sessionId])).rowCount > 0);
+
+    // A couple must confirm BOTH parents attend - a surrogate is choosing a
+    // family, and a second match call "so my partner can meet her" is not
+    // something an agency will run.
+    await db.query(`UPDATE "User" SET "relationshipStatus"='Married', "partnerFirstName"='Sam' WHERE id=$1`, [f.parentUserId]);
+    const coupleBlocked = await propose("MATCH_CALL");
+    const coupleBody: any = await coupleBlocked.json().catch(() => ({}));
+    check("a partnered family is refused until both parents confirm attendance",
+      coupleBlocked.status === 409 && coupleBody?.code === "BOTH_PARENTS_ACK_REQUIRED",
+      `status=${coupleBlocked.status} ${JSON.stringify(coupleBody).slice(0, 120)}`);
+    check("the both-parents card is posted where BOTH sides can see it",
+      (await db.query(
+        `SELECT id FROM "AiChatMessage" WHERE "sessionId"=$1 AND "uiCardType"='match_call_attendance_ack'`, [sessionId],
+      )).rowCount === 1);
   } finally {
     await db.query(`DELETE FROM "IpFormResponse" WHERE "parentAccountId"=$1`, [f.parentAcctId]).catch(() => {});
     await destroyFixture(db, f);
@@ -749,6 +814,18 @@ async function pr13(db: Client) {
 
     const slug = await mkBookingPage(db, f, "pr13");
     const evaSession = await mkSession(db, f, { status: "ACTIVE", title: "AI Concierge Chat" });
+
+    // A concierge-path booking now requires the parent to have acknowledged
+    // that an agency consultation is the preliminary step toward a match call
+    // (consultation-gates.ts). Real parents tick that card before the calendar
+    // unlocks; do the same here so this case keeps testing the auto-reply
+    // rather than the gate - PR-08 covers the gate itself.
+    const ack = await fetch(`${BASE}/api/consultation-gates/acknowledge`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...f.parentAuth },
+      body: JSON.stringify({ gate: "PRELIMINARY_STEP", providerId: f.providerId, sessionId: evaSession }),
+    });
+    check("the parent acknowledged what the consultation leads to", ack.status < 400, `status=${ack.status}`);
+
     const booked = await bookViaHttp(slug, f, { aiSessionId: evaSession, providerId: f.providerId, hoursOut: 48 });
     check("the booking was accepted", !!booked?.id, JSON.stringify(booked).slice(0, 140));
 
@@ -911,7 +988,7 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
   { id: "PR-05", name: "Invoice draft approval issues a real invoice", run: pr05 },
   { id: "PR-06", name: "A draft cannot be approved from another session", run: pr06 },
   { id: "PR-07", name: "Pinned provider assistant answers without leaking parent identity", run: pr07 },
-  { id: "PR-08", name: "Match-call times are gated server-side on the Intended Parent Form", run: pr08 },
+  { id: "PR-08", name: "Match-call times are gated server-side: IP form, both parents, 24h + deposit", run: pr08 },
   { id: "PR-09", name: "Agreement draft: parent-invisible, rejectable, not re-actionable", run: pr09 },
   { id: "PR-10", name: "Unread badge counts only what the parent can actually see", run: pr10 },
   { id: "PR-11", name: "Merged provider view never marks the parent's private chat delivered", run: pr11 },

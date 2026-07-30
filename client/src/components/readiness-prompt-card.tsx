@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ThumbsUp, Clock } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { chipBase } from "@/components/chat/chip-styles";
 
 interface ReadinessPromptData {
   bookingId?: string;
@@ -45,15 +46,8 @@ interface ReadinessPromptCardProps {
   onYesReady?: (text: string) => void; // bypasses LLM, streams fixed confirmation
 }
 
-const chipBase: React.CSSProperties = {
-  borderRadius: "var(--quick-reply-radius, 999px)",
-  fontSize: "var(--quick-reply-font-size, 13px)",
-  paddingLeft: "var(--quick-reply-px, 14px)",
-  paddingRight: "var(--quick-reply-px, 14px)",
-  paddingTop: "var(--quick-reply-py, 6px)",
-  paddingBottom: "var(--quick-reply-py, 6px)",
-  height: "auto",
-};
+// Shared with consent-ack-card.tsx so a card button and a quick-reply chip
+// stay the same control - see components/chat/chip-styles.ts.
 
 /** Persist answered state to DB so data.answered is correct on next load */
 async function markAnswered(messageId: string, answer: "yes" | "no" | "later") {

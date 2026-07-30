@@ -163,6 +163,11 @@ model Provider {
   autoReplySends                        ProviderAutoReplySend[]
   parentBriefings                       ProviderParentBriefing[]
   parentContactReleases                 ParentContactRelease[]
+  parentNotes                           ParentNote[]
+  parentFollowUps                       ParentFollowUp[]
+  parentOwners                          ParentOwner[]
+  parentTagDefinitions                  ParentTagDefinition[]
+  parentTagAssignments                  ParentTagAssignment[]
 }
 
 /// Send log for the AI-written private parent briefing. Same "once per parent
@@ -482,6 +487,7 @@ model User {
   createdProviderQuotes  ProviderQuote[]         @relation("ProviderQuoteCreatedBy")
   reservedSurrogates     Surrogate[]             @relation("SurrogateReservations")
   autoReplies            ProviderAutoReply[]     @relation("AutoReplyStaff")
+  parentOwnerships       ParentOwner[]           @relation("ParentOwnerUser")
 }
 
 model UserDonorPreference {
@@ -2730,6 +2736,148 @@ model ParentContactRelease {
 
   @@unique([providerId, parentAccountId])
   @@index([parentAccountId])
+}
+
+// ─── Parent CRM ─────────────────────────────────────────────────────────────
+//
+// Notes, next steps, lead owners and tags on a parent, for the record page at
+// /parents/:id. Two audiences share that page - GoStork staff and one provider
+// org - so every row here carries a `scope`:
+//
+//   GOSTORK  - GoStork staff only. providerId is always null. A label like
+//              "price shopper" must never reach an agency.
+//   PROVIDER - GoStork staff AND the single org in providerId.
+//
+// There is deliberately no "shared with everyone" scope: a note is written for
+// a named audience, and widening it later has to be an explicit new row rather
+// than an edit, so the disclosure is on the record.
+//
+// KEYING: `parentAccountId` holds parentAccountKey(user) = parentAccountId ??
+// userId, and carries NO foreign key to ParentAccount - a solo parent's key IS
+// their User.id, and an FK would reject every solo row. ParentContactRelease
+// above set this precedent; JourneyEvent follows it too.
+//
+// The one-per-scope rules (a single GoStork owner, a single OPEN follow-up per
+// org) cannot be expressed as Prisma @@unique: Postgres treats NULLs as
+// distinct, so a unique on (parentAccountId, scope, providerId) would happily
+// admit two GOSTORK rows. They live as partial unique indexes in the migration.
+
+/// Free-text note on a parent, authored by GoStork staff or provider staff.
+model ParentNote {
+  id               String    @id @default(uuid())
+  /// parentAccountKey(user) - parentAccountId ?? userId. No FK, see above.
+  parentAccountId  String
+  /// GOSTORK | PROVIDER
+  scope            String
+  /// Required when scope = PROVIDER, always null when scope = GOSTORK.
+  providerId       String?
+  body             String
+  pinned           Boolean   @default(false)
+  authorUserId     String
+  /// Snapshot. A renamed or deleted staff account must not blank an existing
+  /// byline, and the read path should not need a join to render one.
+  authorName       String?
+  authorProviderId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  /// Soft delete: a provider-visible note that has already been read cannot be
+  /// un-read, so the row survives for the disclosure audit.
+  deletedAt        DateTime?
+
+  provider Provider? @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([parentAccountId, createdAt])
+  @@index([parentAccountId, scope])
+  @@index([providerId, parentAccountId])
+}
+
+/// The next step on a parent. Each org tracks its own independently of GoStork's.
+model ParentFollowUp {
+  id                String    @id @default(uuid())
+  parentAccountId   String
+  /// GOSTORK | PROVIDER
+  scope             String
+  providerId        String?
+  body              String
+  dueAt             DateTime
+  /// OPEN | DONE | CANCELED
+  status            String    @default("OPEN")
+  assigneeUserId    String?
+  assigneeName      String?
+  completedAt       DateTime?
+  completedByUserId String?
+  createdByUserId   String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  provider Provider? @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([parentAccountId, status, dueAt])
+  @@index([providerId, status, dueAt])
+  /// Drives the "overdue first" sort on the parents table.
+  @@index([scope, providerId, status, dueAt])
+}
+
+/// Lead owner. A parent can have both a GoStork owner and a per-org owner.
+model ParentOwner {
+  id               String   @id @default(uuid())
+  parentAccountId  String
+  /// GOSTORK | PROVIDER
+  scope            String
+  providerId       String?
+  ownerUserId      String
+  /// Snapshot - the parents table renders hundreds of these per page.
+  ownerName        String?
+  assignedByUserId String?
+  assignedAt       DateTime @default(now())
+
+  provider Provider? @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  owner    User      @relation("ParentOwnerUser", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([ownerUserId, scope])
+  @@index([providerId, parentAccountId])
+  @@index([parentAccountId, scope])
+}
+
+/// Tag vocabulary. Each audience defines its own labels.
+model ParentTagDefinition {
+  id              String   @id @default(uuid())
+  /// GOSTORK | PROVIDER
+  scope           String
+  providerId      String?
+  label           String
+  /// Brand token NAME, never a hex - hardcoded colors are forbidden.
+  /// primary | secondary | accent | brand-success | brand-warning | muted
+  colorToken      String   @default("accent")
+  sortOrder       Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  provider    Provider?             @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  assignments ParentTagAssignment[]
+
+  @@index([scope, providerId, isActive])
+}
+
+model ParentTagAssignment {
+  id               String   @id @default(uuid())
+  parentAccountId  String
+  tagId            String
+  /// Denormalised from the definition at write time (server-side - never
+  /// accepted from the client) so the list endpoints can filter by audience in
+  /// one indexed query with no join.
+  scope            String
+  providerId       String?
+  assignedByUserId String?
+  assignedAt       DateTime @default(now())
+
+  tag      ParentTagDefinition @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  provider Provider?           @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([parentAccountId, tagId])
+  @@index([parentAccountId])
+  @@index([scope, providerId, parentAccountId])
 }
 
 // Phase 7A: append-only journey event log. Every notable event in a parent's

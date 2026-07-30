@@ -26,6 +26,7 @@ import { StorageService } from "../storage/storage.service";
 import { prisma } from "../../../db";
 import { formatMoneyCents } from "../../lib/format-money";
 import { buildParentPaymentSchedule } from "../costs/payment-schedule.service";
+import { extractFromChatMessages } from "./cost-sheet-chat-extractor";
 
 /**
  * Endpoints for the cost-sheet + invoice flow that sits between the AI chat and Stripe billing.
@@ -81,7 +82,7 @@ export class CostSheetController {
    * which is the common case and renders as no timeline at all - never as an
    * invented one.
    */
-  private async resolvePaymentScheduleSnapshot(providerId: string) {
+  private async resolvePaymentScheduleSnapshot(providerId: string, sessionId: string) {
     try {
       const sheet = await this.db.providerCostSheet.findFirst({
         where: {
@@ -105,7 +106,27 @@ export class CostSheetController {
         },
       });
       if (!sheet) return null;
-      return buildParentPaymentSchedule(sheet as any);
+
+      // Resolve the schedule at the matched person's real compensation when
+      // the conversation has established one. Reuses the extractor the
+      // auto-draft flow already relies on, so both read a match the same way.
+      // Falls back to the published range when nothing is known, which is the
+      // right answer for a quote sent before a match exists.
+      let specificCompensation: number | null = null;
+      try {
+        const messages = await this.db.aiChatMessage.findMany({
+          where: { sessionId },
+          orderBy: { createdAt: "asc" },
+          select: { content: true },
+        });
+        const extracted = extractFromChatMessages(messages);
+        const compCents = extracted.surrogateCompCents ?? extracted.donorCompCents;
+        if (compCents && compCents > 0) specificCompensation = compCents / 100;
+      } catch {
+        // Extraction is opportunistic. A published range is a fine answer.
+      }
+
+      return buildParentPaymentSchedule(sheet as any, specificCompensation);
     } catch (err: any) {
       // A schedule is additive information on the quote. Never let a failure
       // here block a provider from sending a cost sheet.
@@ -200,7 +221,7 @@ export class CostSheetController {
     // a later edit to the source sheet must not rewrite a quote already in
     // their hands. Falls back to the provider's most recent approved sheet
     // when the send isn't tied to a specific one.
-    const paymentScheduleSnapshot = await this.resolvePaymentScheduleSnapshot(session.providerId!);
+    const paymentScheduleSnapshot = await this.resolvePaymentScheduleSnapshot(session.providerId!, sessionId);
 
     // Supersede prior active quotes for this session, then create the new one.
     const quote = await this.db.$transaction(async tx => {

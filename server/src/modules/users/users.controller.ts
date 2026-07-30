@@ -1550,18 +1550,49 @@ export class UsersController {
     // The meeting-only half had NO gate at all: a parent who booked through a
     // public booking page handed over name, email and mobile with nothing in
     // between. A booking now opens Gate A (they chose to meet) and never Gate B.
+    //
+    // Gate A must be fed the RAW chat-session status. `row.matchStatus` is the
+    // DERIVED journey ladder built above (HANDED_OFF, AGREEMENT_SIGNED,
+    // DEPOSIT_PAID, MATCHED, MATCH_CALL), and none of those promoted strings
+    // are in the resolver's IDENTITY_STATUSES. Passing it here closed Gate A on
+    // the most advanced parents in the table and dropped them at the filter
+    // below. Most rungs were rescued by accident - an invoice or agreement
+    // implies a release row, a MATCH_CALL implies a booking - but MATCHED was a
+    // live failure: an agency sets Surrogate.status itself, so a
+    // PROVIDER_CONNECTED parent could vanish from their own agency's table.
+    //
+    // NOTE: gateKeyFor returns `parentAccountId ?? userId`, matching
+    // parentAccountKey - the key release rows are written under. It is NOT the
+    // local accountKey() above, which returns a prefixed `acct-<id>` /
+    // `user-<id>` grouping key. The two look interchangeable and are not.
+    const gateKeyFor = (userId: string) => accountIdByUser.get(userId) || userId;
+    const rawStatusesByAccount = new Map<string, string[]>();
+    for (const cs of chatSessions) {
+      if (!cs.userId) continue;
+      const k = gateKeyFor(cs.userId);
+      const list = rawStatusesByAccount.get(k) || [];
+      list.push(cs.status);
+      rawStatusesByAccount.set(k, list);
+    }
+    const bookingAccounts = new Set(
+      rows
+        .filter((r: any) => !!r.lastMeetingAt || r.source === "meeting")
+        .map((r: any) => gateKeyFor(r.id)),
+    );
+    const gateKeys = Array.from(new Set(rows.map((r: any) => gateKeyFor(r.id))));
     const rowGates = await resolveParentGatesBatch(
       providerId,
-      rows.map((r: any) => ({
-        accountKey: accountIdByUser.get(r.id) || r.id,
-        sessionStatus: r.matchStatus || null,
-        hasBooking: !!r.lastMeetingAt || r.source === "meeting",
+      gateKeys.map((k) => ({
+        accountKey: k,
+        sessionStatus: null,
+        siblingStatuses: rawStatusesByAccount.get(k) || [],
+        hasBooking: bookingAccounts.has(k),
       })),
       this.prisma,
     );
     return rows
       .map((r: any) => {
-        const g = rowGates.get(accountIdByUser.get(r.id) || r.id) || GATES_CLOSED;
+        const g = rowGates.get(gateKeyFor(r.id)) || GATES_CLOSED;
         return {
           ...redactParentContact(r, g),
           // combineParentNames built this from the raw member names, so it has
@@ -1575,7 +1606,7 @@ export class UsersController {
       // A row whose identity is still closed has nothing to show on a contacts
       // page: no name, no email, no phone. Drop it rather than render a row of
       // blanks that looks like a bug.
-      .filter((r: any) => rowGates.get(accountIdByUser.get(r.id) || r.id)?.showIdentity !== false);
+      .filter((r: any) => rowGates.get(gateKeyFor(r.id))?.showIdentity !== false);
   }
 
   @Get("providers/:providerId/users")

@@ -78,7 +78,24 @@ export type JourneyEventType =
   | "REVIEW_UPDATED"
   // Intended Parent Form (surrogacy agencies' parent profile form)
   | "IP_FORM_PROMPTED"
-  | "IP_FORM_SUBMITTED";
+  | "IP_FORM_SUBMITTED"
+  // Consultation focus lock (server/consultation-gates.ts). The lock itself is
+  // DERIVED from bookings; these rows are the only thing that cannot be -
+  // the human decisions that release it early.
+  | "CONSULTATION_NOT_A_FIT"
+  // metadata.reason: PARENT_MOVED_ON | ADMIN (+ note, actorUserId, actorName)
+  | "CONSULTATION_LOCK_RELEASED"
+  // Consent ledger. These rows ARE the acknowledgements - there is no separate
+  // table. Scoped by (parentAccountId, providerId, metadata.subjectProfileId)
+  // and compared against the relevant booking's createdAt, so a re-booked call
+  // re-asks rather than reusing a stale tick.
+  | "CONSULT_PRELIM_ACKNOWLEDGED"
+  | "MATCH_CALL_ATTENDANCE_ACKNOWLEDGED"
+  // metadata.depositSnapshot records the exact figure the parent was shown.
+  | "MATCH_CALL_DECISION_ACKNOWLEDGED"
+  // A subject thread opened with an agency the parent was already connected
+  // to, with no new consultation call (server/connected-agency-shortcut.ts).
+  | "SUBJECT_THREAD_OPENED";
 
 export type JourneyActor = "parent" | "provider" | "system" | "admin";
 

@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 import { formatMoneyDollars } from "@/lib/format-money";
 import { formatFieldLabel } from "@/lib/format-label";
 import { formatTiming, formatTrancheAmount, payToLabel } from "@shared/payment-schedule";
-import { Info, RotateCcw } from "lucide-react";
+import { Info, RotateCcw, UserCheck } from "lucide-react";
 
 /**
  * Parent-facing payment schedule.
@@ -57,6 +57,12 @@ export interface PaymentScheduleData {
   } | null;
   coversWholeProgram?: boolean;
   scheduleNote?: string | null;
+  /**
+   * True when the amounts were resolved against a specific matched person's
+   * compensation rather than the provider's published range. Surfaced to the
+   * parent so a precise figure doesn't read as a fixed quote.
+   */
+  isPersonalised?: boolean;
 }
 
 const money = (cents: number) => formatMoneyDollars(cents / 100);
@@ -90,6 +96,16 @@ export function PaymentScheduleTimeline({
           <span className="t-helper">Covers part of the program</span>
         )}
       </div>
+
+      {/* Say plainly where a precise figure came from. These amounts move with
+          the matched person's compensation, so an unqualified number would
+          read as a fixed quote rather than an estimate for this match. */}
+      {schedule.isPersonalised && (
+        <p className="t-helper flex items-start gap-1.5">
+          <UserCheck className="w-3.5 h-3.5 mt-0.5 shrink-0 text-accent" />
+          Based on your match&rsquo;s compensation. Amounts shift if that changes.
+        </p>
+      )}
 
       <ol className="relative space-y-0">
         {schedule.tranches.map((t, idx) => {

@@ -40,6 +40,12 @@ import { CostSheetAutoDraftService } from "../billing/cost-sheet-auto-draft.serv
 import { AutoReplyService } from "../providers/auto-reply.service";
 import { ParentBriefingService } from "../providers/parent-briefing.service";
 import { assertNoContactInfo } from "../../../contact-guard";
+import { deriveSubjectSessionTitle } from "../../../subject-session-title";
+import {
+  evaluateConsultationLock,
+  evaluateConsultationAckGate,
+  postPreliminaryAckCard,
+} from "../../../consultation-gates";
 import {
   GATES_CLOSED, calendarAttendeesFor, parentAccountKey, parentDisplayName,
   redactBookingForProvider, releasedAccountIds, resolveParentGates, resolveParentGatesBatch,
@@ -198,31 +204,17 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     if (!provider) return;
 
     const parentName = booking.parentUser.name || booking.attendeeName || "Parent";
-    // Session title guard: some booking paths (e.g. the win-back reschedule
-    // card) carry no subject label, and one path passed the Eva chat's own
-    // title through - which created a 3-way session titled "AI Concierge
-    // Chat" that looked like a duplicate Eva session and hid the whole
-    // provider flow inside "the AI chat". Never accept a generic/blank
-    // label: derive from the subject profile, else fall back to the
-    // provider name.
-    let sessionTitle: string | null = body.profileLabel || null;
-    if (!sessionTitle || /^ai concierge/i.test(sessionTitle.trim())) {
-      sessionTitle = null;
-      if (body.subjectProfileId) {
-        const subjType = (body.subjectType || "").toLowerCase();
-        const lookup = subjType.includes("egg")
-          ? this.prisma.eggDonor
-          : subjType.includes("sperm")
-            ? this.prisma.spermDonor
-            : this.prisma.surrogate;
-        const subj = await (lookup as any).findUnique({ where: { id: body.subjectProfileId }, select: { externalId: true } }).catch(() => null);
-        if (subj?.externalId) {
-          const prefix = subjType.includes("egg") ? "Egg Donor" : subjType.includes("sperm") ? "Sperm Donor" : "Surrogate";
-          sessionTitle = `${prefix} #${subj.externalId}`;
-        }
-      }
-      sessionTitle = sessionTitle || provider?.name || null;
-    }
+    // Session title guard lives in server/subject-session-title.ts - the
+    // already-connected-agency shortcut opens threads too, and the dedupe key
+    // is (accountUserIds, providerId, title), so both paths must derive the
+    // identical title or one surrogate ends up with two threads.
+    const sessionTitle: string | null = await deriveSubjectSessionTitle({
+      proposedLabel: body.profileLabel,
+      subjectProfileId: body.subjectProfileId,
+      subjectType: body.subjectType,
+      providerName: provider?.name,
+      client: this.prisma,
+    });
 
     // Check for existing provider session with same title
     const parentAccount = await this.prisma.user.findUnique({
@@ -2381,11 +2373,73 @@ I'll check in with you right after the call. You've got this!`;
     };
   }
 
+  /**
+   * Block a second parallel consultation of the same provider type, and make
+   * sure the parent knows what an agency consultation actually leads to.
+   *
+   * Runs only on the concierge booking path. Every failure to resolve
+   * something - unknown email, no provider org, ambiguous service line -
+   * results in ALLOW: a missed lock is a soft product miss, a wrong one is a
+   * dead end the parent cannot see or undo.
+   */
+  private async enforceConsultationGates(body: any, config: any): Promise<void> {
+    const VALID_MEETING_SUBTYPES = new Set(["MATCH_CALL", "DOCTOR_CONSULTATION"]);
+    if (!body.aiSessionId) return;
+    if (VALID_MEETING_SUBTYPES.has(body.meetingSubtype)) return;
+
+    const parentUser = await this.prisma.user
+      .findUnique({ where: { email: body.email }, select: { id: true } })
+      .catch(() => null);
+    if (!parentUser) return; // unknown booker: no history to enforce against
+
+    const providerId = body.consultationProviderId || config.user?.providerId || null;
+    if (!providerId) return; // GoStork concierge call, or a personal calendar
+
+    const lock = await evaluateConsultationLock({
+      parentUserId: parentUser.id,
+      targetProviderId: providerId,
+      subjectType: body.subjectType,
+    });
+    if (!lock.allowed && lock.blocker) {
+      this.logger.log(
+        `[CONSULTATION-LOCK] Blocked ${providerId} (${lock.providerTypeName}) for parent ${parentUser.id} - open call with ${lock.blocker.providerId}`,
+      );
+      throw new ConflictException({
+        code: lock.code,
+        message: lock.message,
+        providerTypeName: lock.providerTypeName,
+        blockingProviderName: lock.blocker.providerName,
+        blockingScheduledAt: lock.blocker.scheduledAt,
+      });
+    }
+
+    const ack = await evaluateConsultationAckGate({
+      parentUserId: parentUser.id,
+      providerId,
+      subjectProfileId: body.subjectProfileId,
+    });
+    if (!ack.allowed) {
+      // Ask in the same breath as refusing, or the parent hits a wall with no
+      // way through it.
+      await postPreliminaryAckCard({
+        parentUserId: parentUser.id,
+        providerId,
+        subjectProfileId: body.subjectProfileId,
+        subjectType: body.subjectType,
+        subjectLabel: body.profileLabel,
+      });
+      this.logger.log(
+        `[CONSULTATION-GATE] Preliminary ack missing for parent ${parentUser.id} + provider ${providerId} - card posted`,
+      );
+      throw new ConflictException({ code: ack.code, message: ack.message });
+    }
+  }
+
   @Post("book/:slug")
   async bookSlot(@Param("slug") slug: string, @Body() body: any) {
     const config = await this.prisma.scheduleConfig.findUnique({
       where: { bookingPageSlug: slug },
-      include: { user: { select: { id: true, name: true, email: true } } },
+      include: { user: { select: { id: true, name: true, email: true, providerId: true } } },
     });
 
     if (!config) throw new NotFoundException("Booking page not found");
@@ -2405,6 +2459,15 @@ I'll check in with you right after the call. You've got this!`;
     if (!parsedDT.isValid) {
       throw new BadRequestException("Invalid scheduledAt date");
     }
+
+    // Consultation focus lock + preliminary-step acknowledgement.
+    //
+    // SCOPED TO THE CONCIERGE PATH ONLY (body.aiSessionId present, no
+    // meetingSubtype). This route is public and unauthenticated by design so a
+    // provider can share their own calendar link, and it resolves the parent by
+    // looking up body.email - so a stranger's booking has no history to check
+    // and must never be blocked. Fail open on every unknown.
+    await this.enforceConsultationGates(body, config);
     const scheduledAt = parsedDT.toJSDate();
     const duration = config.meetingDuration;
     const slotEnd = new Date(scheduledAt.getTime() + duration * 60 * 1000);

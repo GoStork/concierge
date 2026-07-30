@@ -23,6 +23,36 @@ interface SchedulableHost {
   isSelf: boolean;
 }
 
+/**
+ * The three match-call gates each 409 with their own `code`. Map them to a
+ * toast that says what the family still owes and that they have been asked -
+ * a bare "failed" would leave the provider with no idea what to do next.
+ */
+function matchCallGateToast(msg: string): { title: string; description: string } | null {
+  if (msg.includes("IP_FORM_REQUIRED") || msg.includes("Intended Parent Form")) {
+    return {
+      title: "Parent form not submitted yet",
+      description:
+        "A match call can be scheduled once the family completes and signs their Intended Parent Form. They have been asked and receive reminders.",
+    };
+  }
+  if (msg.includes("BOTH_PARENTS_ACK_REQUIRED")) {
+    return {
+      title: "Both parents have not confirmed yet",
+      description:
+        "Both intended parents must attend the match call. We have asked them to confirm in their chat - you can send times as soon as they do.",
+    };
+  }
+  if (msg.includes("MATCH_DECISION_ACK_REQUIRED")) {
+    return {
+      title: "Decision window not acknowledged yet",
+      description:
+        "The family still needs to confirm they understand the 24-hour decision window and the match deposit. We have asked them in their chat.",
+    };
+  }
+  return null;
+}
+
 function formatTime12(t: string): string {
   const [h, m] = t.split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
@@ -132,13 +162,9 @@ export function ScheduleCallSection({
     },
     onError: (err: any) => {
       const msg = String(err?.message || "");
-      // Match-call gate: the Intended Parent Form must be submitted first.
-      if (msg.includes("IP_FORM_REQUIRED") || msg.includes("Intended Parent Form")) {
-        toast({
-          title: "Parent form not submitted yet",
-          description: "A match call can be scheduled once the family completes and signs their Intended Parent Form. They have been asked and receive reminders.",
-          variant: "destructive",
-        });
+      const gate = matchCallGateToast(msg);
+      if (gate) {
+        toast({ ...gate, variant: "destructive" });
         return;
       }
       toast({ title: "Failed to send time options", description: msg || "Try again.", variant: "destructive" });

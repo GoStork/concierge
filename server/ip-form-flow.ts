@@ -22,7 +22,7 @@
  * permanent holes without a catch-up, not just a one-time migration.
  */
 import { prisma } from "./db";
-import { resolveParentEvaSessionId } from "./parent-visibility";
+import { resolveParentEvaSessionId, findSharedProviderSession } from "./parent-visibility";
 import { emitJourneyEvent } from "./journey-events";
 import { sendIpFormParentNudge } from "./notify-ip-form";
 
@@ -249,22 +249,8 @@ export async function maybePromptIpForm(opts: { parentUserId: string; providerId
       const parentFirst = (providerFirstName?.firstName || providerFirstName?.name || "").trim().split(/\s+/)[0] || "The parent";
       // Prefer a REAL shared parent-provider thread - a whisper stamps
       // providerId onto the private Eva session, so the loose lookup can pick
-      // the wrong chat (see notify-ip-form.ts for the full rationale).
-      const sharedSession =
-        (await prisma.aiChatSession.findFirst({
-          where: {
-            userId: { in: memberIds },
-            providerId: provider.id,
-            OR: [{ status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } }, { providerJoinedAt: { not: null } }],
-          },
-          orderBy: { updatedAt: "desc" },
-          select: { id: true },
-        })) ??
-        (await prisma.aiChatSession.findFirst({
-          where: { userId: { in: memberIds }, providerId: provider.id },
-          orderBy: { updatedAt: "desc" },
-          select: { id: true },
-        }));
+      // the wrong chat (see parent-visibility.ts for the full rationale).
+      const sharedSession = await findSharedProviderSession(memberIds, provider.id);
       if (sharedSession) {
         await prisma.aiChatMessage.create({
           data: {

@@ -22,6 +22,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
 import { deriveChatPalette } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { getProfileUrlSlug } from "@/components/chat/chat-utils";
 import { isVideoInviteExpired } from "@/lib/booking-time";
 import { StagedFileChip } from "@/components/chat/staged-file-chip";
 import { AttachmentMessageCard } from "@/components/chat/attachment-message-card";
@@ -63,7 +64,9 @@ import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-ca
 import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera, UploadCloud } from "lucide-react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiError } from "@/lib/api-error";
 import { ReadinessPromptCard } from "@/components/readiness-prompt-card";
+import { ConsentAckCard, CONSENT_ACK_CARD_TYPES } from "@/components/chat/consent-ack-card";
 import { CelebrationBurst } from "@/components/chat/celebration-burst";
 import { useScrollToMessage, captureMessageTarget, hasPendingMessageTarget } from "@/hooks/use-scroll-to-message";
 import { ProposedTimesCard } from "@/components/chat/proposed-times-card";
@@ -686,7 +689,9 @@ function BookingForm({
         )}
 
         {bookMutation.isError && (
-          <p className="text-xs text-destructive">{(bookMutation.error as Error).message}</p>
+          // The consultation focus lock and the preliminary-step gate both 409
+          // with a structured body, so unwrap it rather than printing raw JSON.
+          <p className="text-xs text-destructive">{parseApiError(bookMutation.error).message}</p>
         )}
         <Button
           type="submit"
@@ -1727,15 +1732,6 @@ function BookingOverlay({
   );
 }
 
-function getProfileUrlSlug(type: string): string {
-  const t = type.toLowerCase();
-  if (t === "surrogate") return "surrogate";
-  if (t === "egg donor") return "eggdonor";
-  if (t === "sperm donor") return "spermdonor";
-  return "surrogate";
-}
-
-
 function buildMatchTabs(profile: any, cardType: string, reasons: string[] = []): TabSection[] {
   reasons = reasons || [];
   const t = cardType.toLowerCase();
@@ -2424,6 +2420,21 @@ function ConciergeSpecialCard({ msg, brandColor, onOpenInlineVideo, sessionId, i
         declineChipStyle={declineChipStyle}
         onAnswer={onAnswer}
         onYesReady={onYesReady}
+      />
+    );
+  }
+
+  // Consultation focus lock + match-call consent gates. One component for all
+  // three - they are the same interaction, driven by uiCardData.
+  if (CONSENT_ACK_CARD_TYPES.includes(msg.uiCardType as any)) {
+    return (
+      <ConsentAckCard
+        data={data}
+        messageId={msg.id || ""}
+        sessionId={sessionId || ""}
+        messageContent={msg.content || ""}
+        viewerRole="parent"
+        positiveChipStyle={positiveChipStyle}
       />
     );
   }
@@ -4048,6 +4059,13 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               setSessionId(data.sessionId);
               queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
             }
+            // Eva opened a thread for a profile at an agency the family is
+            // already connected to (no second consultation needed). It is a
+            // DIFFERENT session, so the check above never fires for it - and
+            // her reply has just told the parent the thread exists.
+            if (data.openedSubjectSessionId) {
+              queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+            }
 
             if (data.userMessageId) {
               knownMessageIds.current.add(data.userMessageId);
@@ -4499,6 +4517,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               const data = ev;
               if (data.sessionId && data.sessionId !== sessionId) {
                 setSessionId(data.sessionId);
+                queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
+              }
+              // See the note in the other done handler: a subject thread opened
+              // by the already-connected shortcut is a different session id.
+              if (data.openedSubjectSessionId) {
                 queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
               }
               if (data.skipAiResponse) {

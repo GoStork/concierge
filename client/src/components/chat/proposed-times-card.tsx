@@ -64,7 +64,19 @@ export function ProposedTimesCard({
       queryClient.invalidateQueries({ queryKey: ["/api/chat-session/bookings", sessionId] });
       queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-sessions", sessionId] });
     } catch (e: any) {
-      setError(e?.message || "That time may have just been taken - try another option.");
+      // This route re-checks the match-call gates, so the parent can land here
+      // with an outstanding confirmation rather than a slot conflict. Point
+      // them at the card that unblocks it instead of at the calendar.
+      const raw = String(e?.message || "");
+      if (raw.includes("BOTH_PARENTS_ACK_REQUIRED")) {
+        setError("Please confirm above that both of you will attend, then pick your time.");
+      } else if (raw.includes("MATCH_DECISION_ACK_REQUIRED")) {
+        setError("Please confirm above that you understand the 24-hour decision window, then pick your time.");
+      } else if (raw.includes("IP_FORM_REQUIRED")) {
+        setError("Your Intended Parent Form needs to be submitted before this call can be booked.");
+      } else {
+        setError(raw || "That time may have just been taken - try another option.");
+      }
     } finally {
       setPendingSlot(null);
     }

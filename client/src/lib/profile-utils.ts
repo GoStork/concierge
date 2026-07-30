@@ -28,6 +28,25 @@ export function typeToUrlSlug(type: string): string {
   return TYPE_TO_SLUG[type] || type;
 }
 
+/**
+ * Human label ("Egg Donor", "egg donor") -> canonical ProfileType.
+ *
+ * Chat cards and AiChatSession.subjectType carry the label form, while every
+ * URL helper here keys off the kebab form. This is the one place that bridges
+ * them, so getProfileUrlSlug in chat-utils can be a thin wrapper over
+ * TYPE_TO_SLUG instead of a third hand-written copy of the same map.
+ */
+export function labelToProfileType(label: string | null | undefined): ProfileType {
+  const t = (label || "").trim().toLowerCase().replace(/[\s_]+/g, "-");
+  // Strict superset of the exact-match table this replaced, with the same
+  // "surrogate" default. Deliberately no bare "donor" branch: that would flip
+  // an ambiguous label from the old default to egg-donor.
+  if (t.includes("surrogate") || t.includes("surrogacy")) return "surrogate";
+  if (t.includes("sperm")) return "sperm-donor";
+  if (t.includes("egg")) return "egg-donor";
+  return "surrogate";
+}
+
 export function urlSlugToType(slug: string): ProfileType {
   return SLUG_TO_TYPE[slug] || (slug as ProfileType);
 }
@@ -321,7 +340,7 @@ export function getProfileCardSummary(d: any, type: string): { label: string; va
 function fmtTotalCostRange(tc: { min: number; max: number } | null): string {
   if (!tc) return "-";
   if (tc.min === tc.max || tc.max === 0) return fmtDollarsLocal(tc.min);
-  return `${fmtDollarsLocal(tc.min)} – ${fmtDollarsLocal(tc.max)}`;
+  return `${fmtDollarsLocal(tc.min)} - ${fmtDollarsLocal(tc.max)}`;
 }
 
 export function getProfileDetails(d: any, type: ProfileType): { label: string; value: string }[] {
@@ -386,7 +405,7 @@ export function getProfileDetails(d: any, type: ProfileType): { label: string; v
       { label: "Same Sex Couple", value: B(r.openToSameSexCouple) },
       { label: "International Parents", value: B(r.agreesToInternationalParents) },
       { label: "Base Compensation", value: (r.resolvedCompensation ?? r.baseCompensation) ? fmtDollarsLocal((r.resolvedCompensation ?? r.baseCompensation)!) : "-" },
-      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCostMin ? `${fmtDollarsLocal(r.totalCostMin)}${r.totalCostMax && r.totalCostMax !== r.totalCostMin ? ` – ${fmtDollarsLocal(r.totalCostMax)}` : ""}` : "-") },
+      { label: "Total Cost", value: r.calculatedTotalCost ? fmtTotalCostRange(r.calculatedTotalCost) : (r.totalCostMin ? `${fmtDollarsLocal(r.totalCostMin)}${r.totalCostMax && r.totalCostMax !== r.totalCostMin ? ` - ${fmtDollarsLocal(r.totalCostMax)}` : ""}` : "-") },
     );
   } else {
     const r = resolveSpermDonorFields(d);

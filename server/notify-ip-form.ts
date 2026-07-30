@@ -15,6 +15,7 @@
 import { prisma } from "./db";
 import { getBaseUrl } from "./src/lib/get-base-url";
 import { esc, buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
+import { findSharedProviderSession } from "./parent-visibility";
 
 function isTestEmail(email: string | null | undefined): boolean {
   return /@gostork-test\.com$/i.test(email || "");
@@ -316,23 +317,8 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
     // `providerId` onto the parent's private Eva session (ai-router.ts), so an
     // unfiltered providerId lookup can pick Eva - and `ip_form_submitted` is
     // not in the parent's card allow-list, so landing there makes the message
-    // invisible to everyone. Fall back to the loose lookup only if no shared
-    // thread exists yet.
-    const sharedSession =
-      (await prisma.aiChatSession.findFirst({
-        where: {
-          userId: { in: memberIds },
-          providerId: provider.id,
-          OR: [{ status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } }, { providerJoinedAt: { not: null } }],
-        },
-        orderBy: { updatedAt: "desc" },
-        select: { id: true },
-      })) ??
-      (await prisma.aiChatSession.findFirst({
-        where: { userId: { in: memberIds }, providerId: provider.id },
-        orderBy: { updatedAt: "desc" },
-        select: { id: true },
-      }));
+    // invisible to everyone. findSharedProviderSession owns that two-tier rule.
+    const sharedSession = await findSharedProviderSession(memberIds, provider.id);
     if (sharedSession) {
       void prisma.aiChatMessage.create({
         data: {
@@ -433,7 +419,10 @@ export async function notifyProvidersPhotocopyUploaded(responseId: string): Prom
     for (const pu of providerUsers) {
       void prisma.inAppNotification.create({ data: { userId: pu.id, eventType: "IP_FORM_SUBMITTED", payload: { responseId, parentNames } } }).catch(() => {});
     }
-    const sharedSession = await prisma.aiChatSession.findFirst({ where: { userId: { in: memberIds }, providerId: provider.id }, orderBy: { updatedAt: "desc" }, select: { id: true } });
+    // Same trap as above: this posts `ip_form_submitted`, which is NOT in the
+    // parent's card allow-list, so a whisper-stamped Eva session would swallow
+    // it silently. Use the shared two-tier lookup.
+    const sharedSession = await findSharedProviderSession(memberIds, provider.id);
     if (sharedSession) {
       void prisma.aiChatMessage.create({
         data: {
