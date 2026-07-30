@@ -25,8 +25,7 @@ import { NotificationService } from "../notifications/notification.service";
 import { StorageService } from "../storage/storage.service";
 import { prisma } from "../../../db";
 import { formatMoneyCents } from "../../lib/format-money";
-import { buildParentPaymentSchedule } from "../costs/payment-schedule.service";
-import { extractFromChatMessages } from "./cost-sheet-chat-extractor";
+import { resolveQuotePaymentSchedule } from "../costs/payment-schedule.service";
 
 /**
  * Endpoints for the cost-sheet + invoice flow that sits between the AI chat and Stripe billing.
@@ -82,57 +81,8 @@ export class CostSheetController {
    * which is the common case and renders as no timeline at all - never as an
    * invented one.
    */
-  private async resolvePaymentScheduleSnapshot(providerId: string, sessionId: string) {
-    try {
-      const sheet = await this.db.providerCostSheet.findFirst({
-        where: {
-          providerId,
-          status: "APPROVED",
-          parentClientId: null,
-          scheduleSource: { in: ["provider_confirmed", "provider_authored"] },
-        },
-        orderBy: { updatedAt: "desc" },
-        include: {
-          items: { orderBy: [{ category: "asc" }, { sortOrder: "asc" }] },
-          tranches: {
-            orderBy: { sortOrder: "asc" },
-            include: {
-              itemPayments: {
-                orderBy: { sortOrder: "asc" },
-                include: { costItem: { select: { key: true, category: true } } },
-              },
-            },
-          },
-        },
-      });
-      if (!sheet) return null;
-
-      // Resolve the schedule at the matched person's real compensation when
-      // the conversation has established one. Reuses the extractor the
-      // auto-draft flow already relies on, so both read a match the same way.
-      // Falls back to the published range when nothing is known, which is the
-      // right answer for a quote sent before a match exists.
-      let specificCompensation: number | null = null;
-      try {
-        const messages = await this.db.aiChatMessage.findMany({
-          where: { sessionId },
-          orderBy: { createdAt: "asc" },
-          select: { content: true },
-        });
-        const extracted = extractFromChatMessages(messages);
-        const compCents = extracted.surrogateCompCents ?? extracted.donorCompCents;
-        if (compCents && compCents > 0) specificCompensation = compCents / 100;
-      } catch {
-        // Extraction is opportunistic. A published range is a fine answer.
-      }
-
-      return buildParentPaymentSchedule(sheet as any, specificCompensation);
-    } catch (err: any) {
-      // A schedule is additive information on the quote. Never let a failure
-      // here block a provider from sending a cost sheet.
-      this.logger.warn(`Payment schedule snapshot failed for provider ${providerId}: ${err.message}`);
-      return null;
-    }
+  private resolvePaymentScheduleSnapshot(providerId: string, sessionId: string) {
+    return resolveQuotePaymentSchedule(this.db, providerId, { sessionId });
   }
 
   // ─── Send a cost sheet ─────────────────────────────────────────────────────

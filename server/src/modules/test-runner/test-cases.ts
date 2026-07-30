@@ -763,8 +763,40 @@ export const TEST_CASES: TestCaseDef[] = [
   },
   {
     id: "PR-08", persona: "provider",
-    name: "PR-08: Match-call times are gated server-side on the Intended Parent Form",
-    desc: "Proposing MATCH_CALL times is refused with IP_FORM_REQUIRED while the form is unsubmitted, other call types are unaffected, and it succeeds once submitted",
+    name: "PR-08: Match-call times are gated server-side: form, both parents, 24h + deposit",
+    desc: "Proposing MATCH_CALL times is refused in a fixed order - IP form, then both parents confirming attendance, then the 24-hour decision window and deposit. Each refusal posts the missing card into the family's chat (a retry does not duplicate it), a single parent is never asked about a partner, and it succeeds once every gate is satisfied",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+
+  // ── CONSULTATION FOCUS LOCK (CL-01..) ─────────────────────────────────────
+  // Also in scripts/test-provider-flows.ts: they share its fixture machinery
+  // and drive the same public booking endpoint a parent's calendar widget hits.
+  {
+    id: "CL-01", persona: "provider",
+    name: "CL-01: One open consultation per provider type, other types untouched",
+    desc: "With a surrogacy consultation booked, a SECOND surrogacy agency is refused with CONSULTATION_ALREADY_OPEN (before the ack gate, and creating no booking row) while an egg donor agency books fine. The same agency is never blocked by its own call - it is only asked to re-acknowledge what the next consultation leads to",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "CL-02", persona: "provider",
+    name: "CL-02: A locked family can always get out",
+    desc: "A guardrail with no exit is a cage. An admin sees the open consultation, its service line and its auto-release date, cannot unlock without a written reason, and the release is recorded with that reason and actor. The parent's own 'I want to move on' (the [[CONSULT_RELEASE]] event) releases a lock the same way",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "CL-03", persona: "provider",
+    name: "CL-03: The lock self-releases after 7 quiet days, but not on a live track",
+    desc: "A consultation 8 days old with no match call stops locking, so a family whose agency went silent is never stuck. The same stale consultation WITH a scheduled match call keeps locking - that track is progressing",
+    interestedServices: ["Surrogate"],
+    messageCount: 0,
+  },
+  {
+    id: "CL-04", persona: "provider",
+    name: "CL-04: A new profile at a connected agency opens a thread, not a second call",
+    desc: "The connection resolves to the real shared thread and never the whisper-stamped Eva chat. The new thread is PROVIDER_CONNECTED with providerJoinedAt set and NO booking attached (no phantom call), titled from the surrogate's external id, idempotent on re-run, and its announcement addresses the parent in second person while the provider gets their own copy",
     interestedServices: ["Surrogate"],
     messageCount: 0,
   },
@@ -895,6 +927,42 @@ export const TEST_CASES: TestCaseDef[] = [
     id: "UT-12", persona: "unit",
     name: "UT-12: Every obfuscation of one address and one number still blocks",
     desc: "One canonical email and one canonical phone number, put through spacing, bracketed and spelled separators, fullwidth characters, zero-width injection and case changes - proving the normalizer pipeline composes rather than each rule catching only its favorite spelling",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-13", persona: "unit",
+    name: "UT-13: Consultation focus lock - types are independent and every release works",
+    desc: "One open consultation per provider type: a second agency of the same line is blocked while other lines and the same provider are not, a partner's booking still locks (account expansion), and each release lifts it individually - cancelled, not-a-fit, parent moved on, admin, and the 7-day window. Also pins the Prisma trap where notIn silently drops the outcome: null rows that SHOULD lock",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-14", persona: "unit",
+    name: "UT-14: A provider's service line resolves, or fails OPEN when ambiguous",
+    desc: "The chat thread's subjectType decides which line a multi-service org is locked on; a single approved service needs no subject; and an org running several lines with no usable subject returns null so the caller ALLOWS. A wrong lock is a dead end the parent cannot see, so guessing is never correct",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-15", persona: "unit",
+    name: "UT-15: Match-call gates fire in order and never quote an unconfirmed deposit",
+    desc: "IP form, then both parents, then the decision window - each with its own 409 code, and a genuinely single parent is never asked to promise a partner. The deposit resolver prefers the quote this family actually holds, refuses an ai_proposed schedule the provider has not confirmed, and falls back to no figure rather than inventing one",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-16", persona: "unit",
+    name: "UT-16: Consent card registration stays in lockstep with visibility",
+    desc: "All three gate cards are parent-visible (a card counted but not rendered is a badge the parent can never clear), the preliminary ack stays parent-private because it renders while the agency is masked, and the two match-call cards stay visible to the provider - who is the one refused and needs to see the blocker",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-17", persona: "unit",
+    name: "UT-17: A whisper-stamped Eva session never counts as a provider connection",
+    desc: "A whisper stamps providerId onto the parent's PRIVATE Eva chat, so the strict lookup must reject it - otherwise the already-connected shortcut reports a connection for every agency the family ever whispered to and silently skips a consultation they need. The loose fallback stays only for 'where do I post this', never for 'are they connected'",
+    interestedServices: [], messageCount: 0,
+  },
+  {
+    id: "UT-18", persona: "unit",
+    name: "UT-18: Every tag the prompt promises to strip is stripped",
+    desc: "Cross-checks the protocols section's 'these tags are stripped' list against the router's actual strip passes, so a new tag can never reach a parent's chat as raw [[CONSULT_RELEASE:8f3b...]]. Also pins the confirm-once wording that stops a lock being released on a first mention",
     interestedServices: [], messageCount: 0,
   },
 

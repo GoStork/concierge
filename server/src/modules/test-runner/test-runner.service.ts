@@ -183,8 +183,13 @@ export class TestRunnerService {
     const isCgCase = (id: string) => /^CG-/i.test(id);
     const isPpCase = (id: string) => /^PP-/i.test(id);
     const isPdCase = (id: string) => /^PD-/i.test(id);
+    // Consultation focus lock. Lives in test-provider-flows.ts (it shares
+    // that suite's fixtures) but keeps its own prefix, so it has to be
+    // routed there explicitly or a single-case run falls through to the
+    // concierge suite and silently matches nothing.
+    const isClCase = (id: string) => /^CL-/i.test(id);
     const wantsFt = !filter || filter === "free-text" || isFtCase(filter);
-    const wantsPr = !filter || filter === "provider" || isPrCase(filter);
+    const wantsPr = !filter || filter === "provider" || isPrCase(filter) || isClCase(filter);
     const wantsJr = !filter || filter === "journey" || isJrCase(filter);
     const wantsUt = !filter || filter === "unit" || isUtCase(filter);
     const wantsPx = !filter || filter === "profile-ux" || isPxCase(filter);
@@ -194,7 +199,7 @@ export class TestRunnerService {
     const wantsMain = !filter || (filter !== "free-text" && filter !== "provider" && filter !== "journey"
       && filter !== "unit" && filter !== "profile-ux" && filter !== "contact-guard" && filter !== "parent-privacy" && filter !== "pandadoc"
       && !isFtCase(filter) && !isPrCase(filter) && !isJrCase(filter) && !isUtCase(filter) && !isPxCase(filter)
-      && !isCgCase(filter) && !isPpCase(filter) && !isPdCase(filter));
+      && !isCgCase(filter) && !isPpCase(filter) && !isPdCase(filter) && !isClCase(filter));
 
     const launch = (procKey: string, scriptFile: string, extraArgs: string[]) => {
     const scriptPath = path.resolve(process.cwd(), "scripts", scriptFile);
@@ -354,7 +359,7 @@ export class TestRunnerService {
       launch(`${runId}:ft`, "test-freetext-requests.ts", filter && isFtCase(filter) ? [`--id=${filter}`] : []);
     }
     if (wantsPr) {
-      launch(`${runId}:pr`, "test-provider-flows.ts", filter && isPrCase(filter) ? [`--id=${filter}`] : []);
+      launch(`${runId}:pr`, "test-provider-flows.ts", filter && (isPrCase(filter) || isClCase(filter)) ? [`--id=${filter}`] : []);
     }
     if (wantsJr) {
       launch(`${runId}:jr`, "test-journey-flows.ts", filter && isJrCase(filter) ? [`--id=${filter}`] : []);

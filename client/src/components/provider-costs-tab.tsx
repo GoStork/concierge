@@ -1379,14 +1379,22 @@ function SingleCostsTab({
   // them. Skips the first mount (initial state already came from
   // pendingItems) and bails when the parent isn't managing saves.
   const itemsBubbleSkipRef = useRef(true);
+  // The parent passes a fresh inline arrow on every one of ITS renders, so
+  // onItemsChange must NOT be an effect dependency: any parent re-render
+  // (a toast, a refetch) would otherwise re-fire the bubble, which sets
+  // parent state, which re-renders the parent, which makes another new
+  // arrow - "Maximum update depth exceeded". Read the latest callback from
+  // a ref instead so the bubble fires only when editItems genuinely change.
+  const onItemsChangeRef = useRef(onItemsChange);
+  onItemsChangeRef.current = onItemsChange;
   useEffect(() => {
-    if (!parentOwnsSave || !onItemsChange) return;
+    if (!parentOwnsSave || !onItemsChangeRef.current) return;
     if (itemsBubbleSkipRef.current) {
       itemsBubbleSkipRef.current = false;
       return;
     }
-    onItemsChange(editItems);
-  }, [editItems, parentOwnsSave, onItemsChange]);
+    onItemsChangeRef.current(editItems);
+  }, [editItems, parentOwnsSave]);
 
   const createQuoteMutation = useMutation({
     mutationFn: async () => {
@@ -3008,9 +3016,34 @@ function ProgramsView({
           }
         }
       }
+      // Referential stability matters here: every consumer of this state
+      // re-renders on a new object identity, and ProgramsView re-rendering
+      // hands SingleCostsTab a new onItemsChange. Returning a fresh object
+      // for a no-op staging call is enough to spin that into a render loop,
+      // so both exits below return `prev` untouched when nothing changed.
       if (Object.keys(merged).length === 0) {
+        if (!(id in prev)) return prev;
         const { [id]: _drop, ...rest } = prev;
         return rest;
+      }
+      const existing = prev[id];
+      if (existing) {
+        const keys = Object.keys(merged) as (keyof ProgramPending)[];
+        const sameKeys = keys.length === Object.keys(existing).length;
+        const unchanged = sameKeys && keys.every((k) => {
+          if (k === "items") {
+            const a = merged.items ?? [];
+            const b = existing.items ?? [];
+            return itemsEqualForPending(a, b);
+          }
+          if (k === "subTypes") {
+            const a = merged.subTypes ?? [];
+            const b = existing.subTypes ?? [];
+            return a.length === b.length && a.every((s, i) => s === b[i]);
+          }
+          return merged[k] === existing[k];
+        });
+        if (unchanged) return prev;
       }
       return { ...prev, [id]: merged };
     });

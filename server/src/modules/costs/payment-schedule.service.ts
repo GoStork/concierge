@@ -28,6 +28,28 @@ export function isCompensationItem(item: { category?: string | null; key?: strin
 }
 
 /**
+ * Rows whose value is a COUNT, not money - "Number of Transfers Included: 3"
+ * means three transfers, not three dollars.
+ *
+ * getProviderParentPrograms already excludes these from the total it shows
+ * providers and parents. Reconciliation has to exclude them too, or the
+ * "payments total X against a program total of Y" line quotes a Y that
+ * disagrees with the figure on the same screen.
+ */
+const COUNTED_ONLY_KEYS = new Set([
+  "Number of Egg Retrievals Included",
+  "Number of Sperm Collections Included",
+  "Number of Transfers Included",
+]);
+
+function isCountedOnlyItem(item: { key?: string | null }): boolean {
+  // Variant suffixes ("(Standard)", "(Variant 2)") are stripped the same way
+  // the totals path strips them.
+  const baseKey = (item.key || "").replace(/\s*\((?:Standard|Variant \d+)\)$/, "");
+  return COUNTED_ONLY_KEYS.has(baseKey);
+}
+
+/**
  * Rewrite a tranche's amount for a KNOWN person's compensation.
  *
  * Real schedules are stated as ranges because the surrogate's or donor's
@@ -71,8 +93,14 @@ function personaliseTrancheAmount(
   }
   if (!Number.isFinite(share) || share <= 0) return null;
 
-  const statedMin = tranche.minValueCents ?? tranche.maxValueCents;
-  const statedMax = tranche.maxValueCents ?? tranche.minValueCents;
+  // Read the bounds through the same normalization the display and maths
+  // layers use, so a malformed upper bound cannot skew the personalised
+  // figure the way it skewed the rendered one.
+  const rawMin = tranche.minValueCents ?? null;
+  const rawMax = tranche.maxValueCents ?? null;
+  const safeMax = rawMin != null && rawMax != null && rawMax < rawMin ? null : rawMax;
+  const statedMin = rawMin ?? safeMax;
+  const statedMax = safeMax ?? rawMin;
   if (statedMin == null || statedMax == null) return null;
 
   // Swap this tranche's compensation share out at the published range and
@@ -141,6 +169,7 @@ export function buildParentPaymentSchedule(
   const tierValues: number[] = [];
   for (const it of items) {
     if (!it.isIncluded) continue;
+    if (isCountedOnlyItem(it)) continue;
     const v =
       specificCompensation != null && specificCompensation > 0 && isCompensationItem(it)
         ? specificCompensation
@@ -178,7 +207,16 @@ export function buildParentPaymentSchedule(
   const rec = reconcileSchedule(
     statedAmounts,
     programTotalCents,
-    items.filter((i) => i.isIncluded).map((i) => ({ key: i.key, cents: Math.round(mid(i.minValue, i.maxValue) * 100) })),
+    items
+      .filter((i) => i.isIncluded && !isCountedOnlyItem(i))
+      .map((i) => ({
+        key: i.key,
+        cents: Math.round(
+          (specificCompensation != null && specificCompensation > 0 && isCompensationItem(i)
+            ? specificCompensation
+            : mid(i.minValue, i.maxValue)) * 100,
+        ),
+      })),
   );
   const hasRemainder = tranches.some((t) => t.amountBasis === "REMAINDER");
   const coversWholeProgram = rec.verdict === "PARTITIONS_TOTAL" || hasRemainder;
@@ -221,6 +259,87 @@ export function buildParentPaymentSchedule(
           ? rec.message
           : null,
   };
+}
+
+/**
+ * The provider's published installment plan, shaped for a parent and ready to
+ * be frozen onto a quote at send time.
+ *
+ * Shared by every path that creates a ProviderQuote - the manual send, the
+ * auto-draft approval and bank checkout - so a parent's experience does not
+ * depend on which button the provider happened to press.
+ *
+ * `preferredSheetId` targets the exact sheet a quote was drafted from when the
+ * caller knows it; otherwise the provider's most recently updated approved
+ * sheet carrying a confirmed schedule stands in. Returns null when they have
+ * none, which renders as no timeline rather than an invented one.
+ */
+export async function resolveQuotePaymentSchedule(
+  db: any,
+  providerId: string,
+  opts: { sessionId?: string | null; preferredSheetId?: string | null } = {},
+): Promise<ReturnType<typeof buildParentPaymentSchedule>> {
+  const include = {
+    items: { orderBy: [{ category: "asc" as const }, { sortOrder: "asc" as const }] },
+    tranches: {
+      orderBy: { sortOrder: "asc" as const },
+      include: {
+        itemPayments: {
+          orderBy: { sortOrder: "asc" as const },
+          include: { costItem: { select: { key: true, category: true } } },
+        },
+      },
+    },
+  };
+  const publishedSources = ["provider_confirmed", "provider_authored"];
+
+  try {
+    let sheet: any = null;
+    if (opts.preferredSheetId) {
+      sheet = await db.providerCostSheet.findFirst({
+        where: { id: opts.preferredSheetId, scheduleSource: { in: publishedSources } },
+        include,
+      });
+    }
+    if (!sheet) {
+      sheet = await db.providerCostSheet.findFirst({
+        where: {
+          providerId,
+          status: "APPROVED",
+          parentClientId: null,
+          scheduleSource: { in: publishedSources },
+        },
+        orderBy: { updatedAt: "desc" },
+        include,
+      });
+    }
+    if (!sheet) return null;
+
+    // Resolve at the matched person's real compensation when the conversation
+    // has established one, so the schedule agrees with the line items.
+    let specificCompensation: number | null = null;
+    if (opts.sessionId) {
+      try {
+        const { extractFromChatMessages } = await import("../billing/cost-sheet-chat-extractor");
+        const messages = await db.aiChatMessage.findMany({
+          where: { sessionId: opts.sessionId },
+          orderBy: { createdAt: "asc" },
+          select: { content: true },
+        });
+        const extracted = extractFromChatMessages(messages);
+        const compCents = extracted.surrogateCompCents ?? extracted.donorCompCents;
+        if (compCents && compCents > 0) specificCompensation = compCents / 100;
+      } catch {
+        // Opportunistic. The published range is a fine answer.
+      }
+    }
+
+    return buildParentPaymentSchedule(sheet, specificCompensation);
+  } catch {
+    // A schedule is additive information on a quote. Never let this block a
+    // provider from sending a cost sheet.
+    return null;
+  }
 }
 
 /**
@@ -295,13 +414,15 @@ export class PaymentScheduleService {
    * (optional/contingency) items are out.
    */
   private programTotalCents(
-    items: Array<{ minValue: number | null; maxValue: number | null; isIncluded: boolean; isTier: boolean }>,
+    items: Array<{ minValue: number | null; maxValue: number | null; isIncluded: boolean; isTier: boolean; key?: string }>,
   ): number {
     const dollarsToCents = (v: number) => Math.round(v * 100);
     let total = 0;
     const tierValues: number[] = [];
     for (const it of items) {
       if (!it.isIncluded) continue;
+      // Count rows ("Number of Transfers Included: 3") are not money.
+      if (isCountedOnlyItem(it)) continue;
       const min = it.minValue ?? it.maxValue ?? 0;
       const max = it.maxValue ?? it.minValue ?? 0;
       const mid = (min + max) / 2;
@@ -327,7 +448,7 @@ export class PaymentScheduleService {
 
     const programTotal = this.programTotalCents(items);
     const itemAmounts = items
-      .filter((i) => i.isIncluded)
+      .filter((i) => i.isIncluded && !isCountedOnlyItem(i))
       .map((i) => ({
         key: i.key,
         cents: Math.round((((i.minValue ?? i.maxValue ?? 0) + (i.maxValue ?? i.minValue ?? 0)) / 2) * 100),
@@ -660,51 +781,4 @@ export class PaymentScheduleService {
   // Parent-facing
   // -------------------------------------------------------------------------
 
-  /**
-   * The schedule as a parent should see it, or null when there isn't one to
-   * show. Gated on provider confirmation - an unreviewed AI parse never
-   * reaches a parent.
-   */
-  async getParentSchedule(sheetId: string) {
-    const schedule = await this.getSchedule(sheetId);
-    if (!schedule || !schedule.isParentVisible || schedule.tranches.length === 0) return null;
-    return {
-      tranches: schedule.tranches.map((t) => ({
-        id: t.id,
-        name: t.name,
-        triggerType: t.triggerType,
-        triggerLabel: t.triggerLabel,
-        offsetDays: t.offsetDays,
-        offsetBasis: t.offsetBasis,
-        offsetDirection: t.offsetDirection,
-        minValueCents: t.minValueCents,
-        maxValueCents: t.maxValueCents,
-        amountBasis: t.amountBasis,
-        payTo: t.payTo,
-        payToLabel: t.payToLabel,
-        isRefundable: t.isRefundable,
-        refundNote: t.refundNote,
-        notes: t.notes,
-        items: t.itemPayments.map((p) => ({
-          key: p.costItem.key,
-          category: p.costItem.category,
-          minValueCents: p.minValueCents,
-          maxValueCents: p.maxValueCents,
-          percent: p.percent,
-          label: p.label,
-        })),
-      })),
-      paymentTerms: schedule.paymentTerms,
-      // Parents are told plainly when the schedule only covers part of the
-      // program, rather than being left to assume the timeline is the whole
-      // bill. Several real sheets schedule only the agency's own fee.
-      coversWholeProgram: schedule.reconciliation.verdict === "PARTITIONS_TOTAL",
-      scheduleNote:
-        schedule.reconciliation.verdict === "PARTIAL"
-          ? "This schedule covers part of the program. Remaining costs are billed separately."
-          : schedule.reconciliation.verdict === "SPLITS_ITEM"
-            ? schedule.reconciliation.message
-            : null,
-    };
-  }
 }

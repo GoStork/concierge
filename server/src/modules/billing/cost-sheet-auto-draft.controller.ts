@@ -20,6 +20,7 @@ import { CostSheetAutoDraftService } from "./cost-sheet-auto-draft.service";
 import { prisma } from "../../../db";
 import { formatMoneyCents } from "../../lib/format-money";
 import { canSendProviderMessage } from "../../../../shared/roles";
+import { resolveQuotePaymentSchedule } from "../costs/payment-schedule.service";
 
 // Phase 2 cost-sheet auto-draft endpoints.
 //
@@ -139,6 +140,15 @@ export class CostSheetAutoDraftController {
     const costSheetFileUrl = attachFile ? (data.fileUrl || null) : null;
     const costSheetFileName = attachFile ? (data.fileName || null) : null;
 
+    // Snapshot the installment plan, exactly as the manual send does - a
+    // parent's experience must not depend on which button the provider
+    // pressed. This path knows the source sheet, so it targets that one
+    // rather than falling back to the provider's most recent.
+    const paymentScheduleSnapshot = await resolveQuotePaymentSchedule(this.db, session.providerId!, {
+      sessionId,
+      preferredSheetId: data.sourceCostSheetId || null,
+    });
+
     // Supersede prior active quotes for this session, then create the new one.
     const quote = await this.db.$transaction(async tx => {
       await tx.providerQuote.updateMany({
@@ -157,6 +167,7 @@ export class CostSheetAutoDraftController {
           source: "AUTO_DRAFT_APPROVED",
           createdByUserId: user.id || null,
           lineItems: lineItems as any,
+          paymentSchedule: (paymentScheduleSnapshot ?? undefined) as any,
           sourceCostSheetId: data.sourceCostSheetId || null,
           autoDraftedAt: data.autoDraftedAt ? new Date(data.autoDraftedAt) : new Date(),
         },
@@ -168,7 +179,9 @@ export class CostSheetAutoDraftController {
       data: {
         sessionId,
         role: "assistant",
-        content: `${session.provider?.name || "Your provider"} sent a cost sheet. Total: ${formatMoneyCents(totalCostCents)}`,
+        content: `${session.provider?.name || "Your provider"} sent you a cost sheet. Total: ${formatMoneyCents(totalCostCents)}${
+          paymentScheduleSnapshot ? ". It includes a payment schedule so you can see what is due and when." : ""
+        }`,
         senderType: "system",
         senderName: session.provider?.name || "Provider",
         uiCardType: "cost_sheet",
@@ -183,6 +196,15 @@ export class CostSheetAutoDraftController {
           parentAcknowledgedAt: null,
           sentAt: quote.createdAt.toISOString(),
           source: "AUTO_DRAFT_APPROVED",
+          paymentSchedule: paymentScheduleSnapshot ?? null,
+          // The provider reads this same card, so it needs their side of the
+          // sentence too - nobody should read about themselves in the third
+          // person in their own chat.
+          providerContent: `You sent a cost sheet. Total: ${formatMoneyCents(totalCostCents)}${
+            paymentScheduleSnapshot
+              ? `, with a ${paymentScheduleSnapshot.tranches.length}-payment schedule attached.`
+              : "."
+          }`,
         },
       },
     });

@@ -17,6 +17,7 @@ import {
   maybeCompleteHandoff,
 } from "../../../agreement-flow";
 import { resolveAgreementTemplate, agreementDocumentType } from "../../../pandadoc-service";
+import { resolveQuotePaymentSchedule } from "../costs/payment-schedule.service";
 import {
   getCardDetailsForPaymentIntent,
   getOrCreateStripeCustomer,
@@ -1168,6 +1169,11 @@ export class BillingService {
       },
     });
 
+    // Snapshot the bank's installment plan, same as every other send path.
+    const paymentScheduleSnapshot = await resolveQuotePaymentSchedule(this.prisma, providerId, {
+      sessionId: session.id,
+    });
+
     // Post the bank's price as a quote + cost-sheet card (supersede priors).
     const quote = await this.prisma.$transaction(async (tx: any) => {
       await tx.providerQuote.updateMany({
@@ -1182,6 +1188,7 @@ export class BillingService {
           totalCostCents: priceCents,
           notes: `${donorLabel} - ${bankTypeName} package (published total cost)`,
           source: "BANK_CHECKOUT",
+          paymentSchedule: (paymentScheduleSnapshot ?? undefined) as any,
         },
       });
     });
@@ -1189,7 +1196,9 @@ export class BillingService {
       data: {
         sessionId: session.id,
         role: "assistant",
-        content: `${provider.name} sent a cost sheet. Total: ${formatMoneyCents(priceCents)}`,
+        content: `${provider.name} sent you a cost sheet. Total: ${formatMoneyCents(priceCents)}${
+          paymentScheduleSnapshot ? ". It includes a payment schedule so you can see what is due and when." : ""
+        }`,
         senderType: "system",
         senderName: provider.name,
         uiCardType: "cost_sheet",
@@ -1200,6 +1209,12 @@ export class BillingService {
           notes: quote.notes,
           parentAcknowledgedAt: null,
           sentAt: quote.createdAt.toISOString(),
+          paymentSchedule: paymentScheduleSnapshot ?? null,
+          providerContent: `A cost sheet was sent automatically. Total: ${formatMoneyCents(priceCents)}${
+            paymentScheduleSnapshot
+              ? `, with a ${paymentScheduleSnapshot.tranches.length}-payment schedule attached.`
+              : "."
+          }`,
         },
       },
     });
