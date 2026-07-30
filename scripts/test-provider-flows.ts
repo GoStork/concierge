@@ -256,12 +256,34 @@ async function pr02(db: Client) {
       check("parent email hidden before booking", !rowBefore.userEmail, String(rowBefore.userEmail));
     }
 
+    // Booking opens GATE A (identity) only. The parent's contact details are a
+    // SECOND gate that needs an explicit ParentContactRelease - the provider
+    // sees who they are talking to, not how to reach them off-platform. This
+    // assertion used to expect the email here and had been failing ever since
+    // the two-tier model landed, which is worse than no test: a permanently
+    // red case trains everyone to skim past the suite.
     await db.query(`UPDATE "AiChatSession" SET status = 'CONSULTATION_BOOKED' WHERE id = $1`, [anonSessionId]);
     const listAfter: any = await (await jfetch(`${BASE}/api/provider/concierge-sessions`, { headers: f.providerAuth })).json();
     const rowAfter = (Array.isArray(listAfter) ? listAfter : listAfter.sessions || []).find((s: any) => s.id === anonSessionId);
     check("real parent name revealed once booked", !!rowAfter && !/prospective parent/i.test(rowAfter.userName || ""), rowAfter?.userName);
-    check("parent email revealed once booked", !!rowAfter?.userEmail, String(rowAfter?.userEmail));
+    check("parent email STILL hidden after booking - contact is its own gate",
+      !rowAfter?.userEmail, String(rowAfter?.userEmail));
+    check("...and the row says so", rowAfter?.contactReleased === false, String(rowAfter?.contactReleased));
+
+    // Gate B: a real release (an invoice, an agreement, the IP form, or an
+    // admin unlock) is what hands over the contact details.
+    await db.query(
+      `INSERT INTO "ParentContactRelease" (id, "providerId", "parentAccountId", reason, "releasedAt")
+       VALUES (gen_random_uuid(), $1, $2, 'ADMIN', now())
+       ON CONFLICT ("providerId", "parentAccountId") DO UPDATE SET reason = 'ADMIN'`,
+      [f.providerId, f.parentAcctId],
+    );
+    const listReleased: any = await (await jfetch(`${BASE}/api/provider/concierge-sessions`, { headers: f.providerAuth })).json();
+    const rowReleased = (Array.isArray(listReleased) ? listReleased : listReleased.sessions || []).find((s: any) => s.id === anonSessionId);
+    check("parent email revealed once contact is released", !!rowReleased?.userEmail, String(rowReleased?.userEmail));
+    check("the release is reported to the provider", rowReleased?.contactReleased === true, String(rowReleased?.contactReleased));
   } finally {
+    await db.query(`DELETE FROM "ParentContactRelease" WHERE "providerId" = $1`, [f.providerId]).catch(() => {});
     await destroyFixture(db, f);
   }
 }
@@ -561,6 +583,30 @@ async function pr08(db: Client) {
       (await db.query(
         `SELECT id FROM "AiChatMessage" WHERE "sessionId"=$1 AND "uiCardType"='match_call_attendance_ack'`, [sessionId],
       )).rowCount === 1);
+
+    // The provider's proposal routes are not the only way to book a match
+    // call: /book/<slug>?subtype=MATCH_CALL and the win-back reschedule card
+    // both post one straight to the public booking endpoint. Gating only the
+    // proposal routes would leave the whole thing walk-aroundable.
+    const slug = await mkBookingPage(db, f, "pr08");
+    const direct = await tryBook(slug, f, { hoursOut: 72 });
+    check("a plain consultation through the booking link is unaffected", direct.status < 400, `status=${direct.status}`);
+    const directMatch = await fetch(`${BASE}/api/calendar/book/${slug}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduledAt: new Date(Date.now() + 96 * 3600_000).toISOString().replace(/\.\d{3}Z$/, ""),
+        name: "Test Parent", email: f.parentEmail, timezone: "America/New_York",
+        meetingSubtype: "MATCH_CALL",
+      }),
+    });
+    const directBody: any = await directMatch.json().catch(() => ({}));
+    check("a MATCH_CALL through the raw booking link is gated too",
+      directMatch.status === 409 && directBody?.code === "BOTH_PARENTS_ACK_REQUIRED",
+      `status=${directMatch.status} ${JSON.stringify(directBody).slice(0, 120)}`);
+    check("...and no match-call booking was created",
+      (await db.query(
+        `SELECT id FROM "Booking" WHERE "parentUserId"=$1 AND "meetingSubtype"='MATCH_CALL'`, [f.parentUserId],
+      )).rowCount === 0);
   } finally {
     await db.query(`DELETE FROM "IpFormResponse" WHERE "parentAccountId"=$1`, [f.parentAcctId]).catch(() => {});
     await destroyFixture(db, f);

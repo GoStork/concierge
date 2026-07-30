@@ -63,6 +63,31 @@ const line = (l: string, v: any) => console.log(`  ${l.padEnd(32)} ${v}`);
   ck("admin email present", !!(a.parent as any)?.email);
   ck("released provider sees email", !!(p.parent as any)?.email === p.contactReleased);
 
+  // ── CRM note scoping ──────────────────────────────────────────────────────
+  // The whole point of the two-scope design: a GOSTORK note ("price shopper")
+  // must never reach an agency, while the agency keeps seeing its own.
+  const gostorkNotes = a.crm.notes.filter((n: any) => n.scope === "GOSTORK");
+  const provNotes = p.crm.notes;
+  if (gostorkNotes.length === 0) {
+    console.log("\nCRM NOTE SCOPING - skipped, no GOSTORK note on the fixture");
+  } else {
+    console.log("\nCRM NOTE SCOPING");
+    ck("provider sees NO GOSTORK-scope note", !provNotes.some((n: any) => n.scope === "GOSTORK"));
+    ck("provider sees no GOSTORK note body",
+      !provNotes.some((n: any) => gostorkNotes.some((g: any) => g.body === n.body)));
+    ck("provider still sees its own PROVIDER note",
+      provNotes.every((n: any) => n.scope === "PROVIDER" && n.providerId === FC));
+    ck("admin sees both scopes", a.crm.notes.length >= provNotes.length);
+  }
+
+  // Follow-ups and tags are scoped the same way and are just as disclosing.
+  ck("provider sees only its own follow-ups",
+    p.crm.followUps.every((f: any) => f.scope === "PROVIDER" && f.providerId === FC));
+  ck("provider sees only its own tags",
+    p.crm.tags.every((t: any) => t.scope === "PROVIDER" && t.providerId === FC));
+  ck("provider sees only its own owner rows",
+    p.crm.owners.every((o: any) => o.scope === "PROVIDER" && o.providerId === FC));
+
   // ── Gate B closed: a real session, no release row ─────────────────────────
   const iflg = await prisma.provider.findFirst({
     where: { name: { contains: "IFLG" } },

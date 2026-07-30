@@ -77,7 +77,10 @@ export function ConversationRowCard({
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium truncate">{row.displayName}</span>
           <MatchStatusBadge status={row.matchStatus} />
-          {showOrg && row.providerName && (
+          {/* A thread with no subject profile is titled with the org itself, so
+              the org chip would just say the same words twice - under a group
+              header that already says them a third time. */}
+          {showOrg && row.providerName && row.providerName !== row.displayName && (
             <span
               className="text-xs font-ui px-2 py-0.5 rounded-full"
               style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}

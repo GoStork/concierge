@@ -44,8 +44,12 @@ import { deriveSubjectSessionTitle } from "../../../subject-session-title";
 import {
   evaluateConsultationLock,
   evaluateConsultationAckGate,
+  evaluateMatchCallGates,
   postPreliminaryAckCard,
+  postMissingGateCards,
+  expandParentAccount,
 } from "../../../consultation-gates";
+import { findConnectedProviderSession } from "../../../parent-visibility";
 import {
   GATES_CLOSED, calendarAttendeesFor, parentAccountKey, parentDisplayName,
   redactBookingForProvider, releasedAccountIds, resolveParentGates, resolveParentGatesBatch,
@@ -2383,10 +2387,6 @@ I'll check in with you right after the call. You've got this!`;
    * dead end the parent cannot see or undo.
    */
   private async enforceConsultationGates(body: any, config: any): Promise<void> {
-    const VALID_MEETING_SUBTYPES = new Set(["MATCH_CALL", "DOCTOR_CONSULTATION"]);
-    if (!body.aiSessionId) return;
-    if (VALID_MEETING_SUBTYPES.has(body.meetingSubtype)) return;
-
     const parentUser = await this.prisma.user
       .findUnique({ where: { email: body.email }, select: { id: true } })
       .catch(() => null);
@@ -2394,6 +2394,50 @@ I'll check in with you right after the call. You've got this!`;
 
     const providerId = body.consultationProviderId || config.user?.providerId || null;
     if (!providerId) return; // GoStork concierge call, or a personal calendar
+
+    // A MATCH CALL can reach this endpoint two ways - a /book/<slug>?subtype=
+    // MATCH_CALL link, and the win-back reschedule card, which renders a
+    // booking widget inside the parent's own chat. Both would otherwise skip
+    // the IP form, the both-parents confirmation and the deposit
+    // acknowledgement entirely, which is the same hole /schedule-call had.
+    // A match call is the higher-stakes booking of the two, so it is gated
+    // whether or not the request came from the concierge widget.
+    if (body.meetingSubtype === "MATCH_CALL") {
+      const gate = await evaluateMatchCallGates({
+        parentUserId: parentUser.id,
+        providerId,
+        subjectProfileId: body.subjectProfileId,
+      });
+      if (gate.allowed) return;
+      // Ask in the same breath as refusing. The shared thread is where these
+      // cards belong; the widget's own session is the fallback.
+      const memberIds = await expandParentAccount(parentUser.id);
+      const shared = await findConnectedProviderSession(memberIds, providerId);
+      const target = shared?.id || body.aiSessionId || null;
+      if (target && gate.missing.length > 0) {
+        await postMissingGateCards({
+          sessionId: target,
+          parentUserId: parentUser.id,
+          providerId,
+          subjectLabel: body.profileLabel,
+          subjectProfileId: body.subjectProfileId,
+          gates: gate.missing,
+          deposit: gate.deposit,
+          bothParents: gate.bothParents,
+        }).catch((e: any) => this.logger.warn(`[MATCH-CALL-GATE] Card post failed: ${e.message}`));
+      } else if (!target) {
+        this.logger.error(
+          `[MATCH-CALL-GATE] Refusing a match call for parent ${parentUser.id} with no thread to ask in - they have no way through`,
+        );
+      }
+      this.logger.log(`[MATCH-CALL-GATE] Blocked ${gate.code} on the booking endpoint for parent ${parentUser.id}`);
+      throw new ConflictException({ code: gate.code, message: gate.message });
+    }
+
+    // The lock and the preliminary-step gate are about CONSULTATIONS, so a
+    // doctor call passes straight through.
+    if (body.meetingSubtype === "DOCTOR_CONSULTATION") return;
+    if (!body.aiSessionId) return;
 
     const lock = await evaluateConsultationLock({
       parentUserId: parentUser.id,
@@ -2427,6 +2471,9 @@ I'll check in with you right after the call. You've got this!`;
         subjectProfileId: body.subjectProfileId,
         subjectType: body.subjectType,
         subjectLabel: body.profileLabel,
+        // The widget's own session, so the card lands somewhere the parent is
+        // actually looking even if the canonical Eva lookup misses.
+        fallbackSessionId: body.aiSessionId,
       });
       this.logger.log(
         `[CONSULTATION-GATE] Preliminary ack missing for parent ${parentUser.id} + provider ${providerId} - card posted`,

@@ -161,28 +161,38 @@ export function buildParentPaymentSchedule(
   // Program total from LINE ITEMS only - the same basis the rest of the cost
   // system uses. Tranches are never summed into a total.
   //
-  // When a specific person's compensation is in play, the total is computed
-  // at that figure, exactly as getProviderParentPrograms does for the card.
-  // Reconciling personalised tranches against a published total would
-  // otherwise report a mismatch that doesn't exist.
-  let programTotal = 0;
-  const tierValues: number[] = [];
-  for (const it of items) {
-    if (!it.isIncluded) continue;
-    if (isCountedOnlyItem(it)) continue;
-    const v =
-      specificCompensation != null && specificCompensation > 0 && isCompensationItem(it)
-        ? specificCompensation
-        : mid(it.minValue, it.maxValue);
-    if (it.isTier) tierValues.push(v);
-    else programTotal += v;
-  }
-  if (tierValues.length > 0) programTotal += Math.min(...tierValues);
-  const programTotalCents = Math.round(programTotal * 100);
+  // Two totals, because a schedule and the card's total can legitimately be
+  // stated on different bases: the PUBLISHED total, and the total recomputed
+  // at a matched person's real compensation (which is what the card shows).
+  // The reconciliation has to be judged against whichever basis the tranche
+  // amounts themselves are in, or it reports a mismatch that isn't real.
+  const totalOn = (useSpecific: boolean): number => {
+    let sum = 0;
+    const tiers: number[] = [];
+    for (const it of items) {
+      if (!it.isIncluded) continue;
+      if (isCountedOnlyItem(it)) continue;
+      const v =
+        useSpecific && specificCompensation != null && specificCompensation > 0 && isCompensationItem(it)
+          ? specificCompensation
+          : mid(it.minValue, it.maxValue);
+      if (it.isTier) tiers.push(v);
+      else sum += v;
+    }
+    if (tiers.length > 0) sum += Math.min(...tiers);
+    return Math.round(sum * 100);
+  };
+  const publishedTotalCents = totalOn(false);
+  const personalisedTotalCents = totalOn(true);
 
   // Rewrite compensation-driven amounts around the matched person, so the
   // schedule agrees with the line items beside it and a parent gets a figure
   // they can actually plan against instead of a band tens of thousands wide.
+  //
+  // This can only fire for a tranche that has the compensation line assigned
+  // to it. A schedule whose stages carry no item assignments - common when
+  // the source document lists deposits in prose - cannot be personalised, and
+  // is handled honestly below rather than silently mismatched.
   const actualCompCents =
     specificCompensation != null && specificCompensation > 0
       ? Math.round(specificCompensation * 100)
@@ -196,9 +206,20 @@ export function buildParentPaymentSchedule(
     return { ...t, minValueCents: adjusted.minValueCents, maxValueCents: adjusted.maxValueCents };
   });
 
-  // Reconcile on the RESOLVED amounts. The program total on a personalised
-  // card is already computed at this person's comp, so comparing it against
-  // published tranche figures would read as a mismatch that isn't there.
+  // Judge the stages against the basis they are actually stated in. When the
+  // stages personalised, that is the personalised total; when they stayed at
+  // published figures, it is the published total. Comparing published stages
+  // against a personalised total made a complete schedule report as covering
+  // only part of the program.
+  const programTotalCents = isPersonalised ? personalisedTotalCents : publishedTotalCents;
+
+  // A card whose totals moved for this person but whose stages could not:
+  // the amounts are still the provider's published estimate, and saying so is
+  // the honest alternative to either faking precision or letting the two
+  // halves of the card quietly disagree.
+  const showsPublishedAmountsOnPersonalisedCard =
+    actualCompCents != null && !isPersonalised && personalisedTotalCents !== publishedTotalCents;
+
   const statedAmounts = resolved
     .filter((t) => t.amountBasis !== "REMAINDER" && t.amountBasis !== "TBD")
     .map((t) => trancheMidpointCents(t))
@@ -211,8 +232,10 @@ export function buildParentPaymentSchedule(
       .filter((i) => i.isIncluded && !isCountedOnlyItem(i))
       .map((i) => ({
         key: i.key,
+        // Same basis as the total above, so a SPLITS_ITEM match compares
+        // like with like.
         cents: Math.round(
-          (specificCompensation != null && specificCompensation > 0 && isCompensationItem(i)
+          (isPersonalised && specificCompensation != null && specificCompensation > 0 && isCompensationItem(i)
             ? specificCompensation
             : mid(i.minValue, i.maxValue)) * 100,
         ),
@@ -250,10 +273,13 @@ export function buildParentPaymentSchedule(
     })),
     paymentTerms: sheet.paymentTerms ?? null,
     coversWholeProgram,
-    // Parents are told plainly when the schedule is only part of the bill,
-    // rather than being left to assume the timeline covers everything.
-    scheduleNote:
-      !coversWholeProgram && rec.verdict === "PARTIAL"
+    // Parents are told plainly what they are looking at: a schedule that only
+    // covers part of the bill, a split of one fee, or - when the card's totals
+    // moved for their match but these stages could not - that the amounts are
+    // still the provider's published estimate.
+    scheduleNote: showsPublishedAmountsOnPersonalisedCard
+      ? "These amounts are the provider's published estimate. Your match's compensation differs, so the actual payments will vary."
+      : !coversWholeProgram && rec.verdict === "PARTIAL"
         ? "This schedule covers part of the program. Remaining costs are billed separately."
         : rec.verdict === "SPLITS_ITEM"
           ? rec.message

@@ -721,8 +721,8 @@ export const TEST_CASES: TestCaseDef[] = [
   },
   {
     id: "PR-02", persona: "provider",
-    name: "PR-02: Parent identity masked before booking, revealed after",
-    desc: "Provider inbox shows 'Prospective Parent' with no email pre-booking; real name + email once the consultation is booked",
+    name: "PR-02: The two privacy gates - identity opens on booking, contact does not",
+    desc: "Provider inbox shows 'Prospective Parent' with no email pre-booking. Booking opens the IDENTITY gate only - the real name appears while the email stays hidden and contactReleased stays false. The contact gate opens separately, on a ParentContactRelease (IP form, invoice, agreement, callback or admin unlock)",
     interestedServices: ["Surrogate"],
     messageCount: 0,
   },

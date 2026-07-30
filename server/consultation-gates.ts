@@ -897,14 +897,22 @@ export async function postPreliminaryAckCard(input: {
   subjectProfileId?: string | null;
   subjectType?: string | null;
   subjectLabel?: string | null;
+  /**
+   * The session the booking widget was embedded in. Used when the canonical
+   * Eva lookup comes up empty - refusing the booking AND dropping the card
+   * would leave the parent staring at an error with no way through it, and
+   * this gate is the only one whose card has nowhere else to go.
+   */
+  fallbackSessionId?: string | null;
   client?: any;
 }): Promise<boolean> {
   const { resolveParentEvaSessionId } = await import("./parent-visibility");
   const memberIds = await expandParentAccount(input.parentUserId, input.client);
-  const sessionId = await resolveParentEvaSessionId(memberIds, input.client);
+  const sessionId =
+    (await resolveParentEvaSessionId(memberIds, input.client)) || input.fallbackSessionId || null;
   if (!sessionId) {
     console.error(
-      `[consultation-gates] No Eva session for parent ${input.parentUserId} - preliminary ack card dropped`,
+      `[consultation-gates] No session to post the preliminary ack card for parent ${input.parentUserId} - the booking will be refused with no way through. THIS IS A DEAD END.`,
     );
     return false;
   }

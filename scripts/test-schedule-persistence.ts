@@ -219,6 +219,39 @@ async function run() {
       `range width went from $${genericWidth.toLocaleString()} to $${personalWidth.toLocaleString()}`);
     console.log(`        range width $${genericWidth.toLocaleString()} -> $${personalWidth.toLocaleString()}`);
 
+    // A schedule whose stages carry NO item assignments cannot personalise -
+    // real documents often list deposits in prose. The card's totals still
+    // move for the matched person, so the two halves are on different bases.
+    // Judging published stages against a personalised total made a complete
+    // schedule report as "covers part of the program", which was simply false.
+    // Pin the line items so this block does not inherit earlier mutations:
+    // 30,000 agency + 60,000 compensation = 90,000 published.
+    await prisma.costItem.update({ where: { id: agencyFee2.id }, data: { minValue: 30000, maxValue: 30000 } });
+    await prisma.costItem.update({ where: { id: comp2.id }, data: { minValue: 60000, maxValue: 60000 } });
+
+    await svc.replaceSchedule(sheet.id, {
+      tranches: [
+        { name: "Escrow Deposit", triggerType: "AT_SIGNING", minValueCents: 12_000_00, amountBasis: "STATED", payTo: "ESCROW" },
+        { name: "First Deposit", triggerType: "AT_MATCH", minValueCents: 50_000_00, amountBasis: "STATED", payTo: "ESCROW" },
+        { name: "Second Deposit", triggerType: "AT_LEGAL_CLEARANCE", minValueCents: 28_000_00, amountBasis: "STATED", payTo: "ESCROW" },
+      ],
+      source: "provider_confirmed",
+    });
+    // The three stages sum to exactly the 90,000 published total.
+    const unassignedGeneric = buildParentPaymentSchedule((await load()) as any);
+    check("Unassigned stages reconcile against the published total",
+      unassignedGeneric?.coversWholeProgram === true,
+      `coversWholeProgram=${unassignedGeneric?.coversWholeProgram}`);
+
+    const unassignedScoped = buildParentPaymentSchedule((await load()) as any, 105000);
+    check("A match that cannot personalise still reports covering the program",
+      unassignedScoped?.coversWholeProgram === true,
+      `coversWholeProgram=${unassignedScoped?.coversWholeProgram}, note=${unassignedScoped?.scheduleNote}`);
+    check("...and says plainly that the amounts are the published estimate",
+      (unassignedScoped?.scheduleNote ?? "").includes("published estimate"),
+      `note=${unassignedScoped?.scheduleNote}`);
+    check("...without claiming to be personalised", unassignedScoped?.isPersonalised === false);
+
     // A tranche with no compensation exposure must not move.
     await svc.replaceSchedule(sheet.id, {
       tranches: [
