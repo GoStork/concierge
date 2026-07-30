@@ -9,6 +9,7 @@ import {
   expandParentAccount,
 } from "./consultation-gates";
 import { openConnectedAgencySubjectThread } from "./connected-agency-shortcut";
+import { EVA_PROMPT_SECTION_KEYS } from "./ai-prompt-defaults";
 import { blockContactInfo, isSharedWithProvider, logContactBlock, scanForContactInfo } from "./contact-guard";
 import Anthropic from "@anthropic-ai/sdk";
 import { getBaseUrl } from "./src/lib/get-base-url";
@@ -3734,20 +3735,13 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         console.log(`[PROMPT SLICE] conversation_flow ${fullCf.length} -> ${slicedCf.length} chars (intake=${inc.intake} A=${inc.A} B=${inc.B} C=${inc.C} D=${inc.D})`);
       }
     }
-    // NOTE: this explicit list - not sortOrder - is what reaches the live
-    // prompt. A section seeded into ConciergePromptSection but missing here is
-    // editable in the admin UI and has no effect on Eva.
-    const biologicalMasterLogicFromDb = sectionsForPrompt ? assemblePromptFromSections(sectionsForPrompt, [
-      "expert_persona", "ui_components", "conversation_flow", "matching_rules",
-      "match_blurb_rules", "protocols",
-      // Consultation focus lock + consent gates. Each one is a no-op until its
-      // matching context block appears (they open with "applies when ..."), so
-      // they sit in the cached static block rather than being injected per turn.
-      "consultation_focus_lock", "consultation_preliminary_step", "match_call_gates",
-      "connected_agency_shortcut",
-      "post_match_behavior", "agency_confidentiality", "general_behavior",
-      "post_booking_call_prep",
-    ]) : null;
+    // NOTE: EVA_PROMPT_SECTION_KEYS - not sortOrder - is what reaches the live
+    // prompt. A section seeded into ConciergePromptSection but missing from
+    // that array is editable in the admin UI and has no effect on Eva, which is
+    // why the array is shared with the admin endpoint that badges each section.
+    const biologicalMasterLogicFromDb = sectionsForPrompt
+      ? assemblePromptFromSections(sectionsForPrompt, EVA_PROMPT_SECTION_KEYS)
+      : null;
 
     const biologicalMasterLogic = biologicalMasterLogicFromDb || `
 CONVERSATIONAL FLOW - EXPERT CONSULTANT MODE:
@@ -5479,10 +5473,24 @@ ${ragContext}${requirementsContext}${priorProfileAnswersContext}${answeredWhispe
 
     if (needsSurrogate && !isLookAlikeTurn) {
       // --- 1. AGE: maxAge < 36 ---
-      const ageMaxMatch = userMessage.match(
+      // A number is only an AGE if it isn't already spoken for by another
+      // criterion. The comparator words below ("under", "no more than", "less
+      // than", "max") are shared with the BMI / pregnancy / c-section /
+      // delivery advisories, so scanning the raw message made "BMI under 24"
+      // and "no more than 2 pregnancies" fire the AGE advisory too - Eva would
+      // answer a BMI question by quoting surrogate age ranges. Blank out every
+      // non-age quantity phrase first, then look for an age in what's left.
+      const ageScanText = userMessage
+        .replace(/(?:bmi|body\s*mass)[^.?!,;]*/gi, " ")
+        .replace(/\d+(?:\.\d+)?\s*(?:or\s+(?:more|fewer|less)\s*)?(?:bmi|c.?sections?|pregnanc(?:y|ies)|deliver(?:y|ies)|birth(?:s)?|live\s+birth(?:s)?|miscarriages?|abortions?|kids?|children|times\s+pregnant)/gi, " ")
+        .replace(/(?:c.?sections?|pregnanc(?:y|ies)|deliver(?:y|ies)|live\s+birth(?:s)?|miscarriages?|abortions?)[^.?!,;]*/gi, " ");
+      const ageMaxMatch = ageScanText.match(
         /(?:not\s+older\s+than|no\s+older\s+than|young\w*\s+than|under\s+(?:age\s+)?|at\s+most\s+(?:age\s+)?|max(?:imum)?\s*(?:age\s*)?|no\s+more\s+than\s+|below\s+(?:age\s+)?|less\s+than\s+(?:age\s+)?|age(?:d)?\s+(?:of\s+)?)(\d+)/i
-      ) || (userMessage.match(/\b(2\d|3[0-5])\b/) ? userMessage.match(/\b(2\d|3[0-5])\b/) : null);
-      const requestedMaxAge = ageMaxMatch ? parseInt(ageMaxMatch[1]) : null;
+      ) || (ageScanText.match(/\b(2\d|3[0-5])\b/) ? ageScanText.match(/\b(2\d|3[0-5])\b/) : null);
+      const parsedMaxAge = ageMaxMatch ? parseInt(ageMaxMatch[1]) : null;
+      // Anything under 18 is a count, a quantity, or a typo - never a surrogate
+      // age preference. Without this floor "no more than 2" quoted age ranges.
+      const requestedMaxAge = parsedMaxAge !== null && parsedMaxAge >= 18 ? parsedMaxAge : null;
       if (requestedMaxAge !== null && requestedMaxAge < 36 && !advisoryGiven("clinics approve surrogates between ages 20 and 38")) {
         surrogateAdvisories.push(`AGE ADVISORY: The parent wants a surrogate not older than ${requestedMaxAge}.
 Tell them: "I completely understand wanting a younger surrogate! Just so you know, clinics approve surrogates between ages 20 and 38 - surrogates aged ${requestedMaxAge + 1} to 38 are fully clinic-eligible and often more experienced. Limiting to ${requestedMaxAge} may significantly reduce your options. Would you like me to search up to 38, or would you prefer to stick with ${requestedMaxAge}?" [[QUICK_REPLY:Search up to 38|Stick with ${requestedMaxAge}]]`);

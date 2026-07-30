@@ -3798,7 +3798,26 @@ chatRouter.get("/api/admin/concierge-prompts", requireAuth, async (req, res) => 
   if (!isAdminUser(user) && !getUserRoles(user).includes("GOSTORK_DEVELOPER")) return res.status(403).json({ message: "Forbidden" });
   try {
     const sections = await prisma.conciergePromptSection.findMany({ orderBy: { sortOrder: "asc" } });
-    res.json(sections);
+    // Tell the admin whether editing a section actually changes Eva. Only the
+    // keys in EVA_PROMPT_SECTION_KEYS are concatenated into her system prompt;
+    // everything else is either consumed elsewhere (handoff copy) or inert, and
+    // usageNote says which. Without this the UI renders an inert section
+    // identically to a live one and an admin's edit silently does nothing.
+    const { EVA_PROMPT_SECTION_KEYS, NON_PROMPT_SECTION_USAGE } = await import("./ai-prompt-defaults");
+    const promptOrder = new Map(EVA_PROMPT_SECTION_KEYS.map((k, i) => [k, i]));
+    res.json(sections.map((s) => {
+      const usage = NON_PROMPT_SECTION_USAGE[s.key];
+      // "unregistered" = seeded but in neither list. Almost always a section
+      // someone added without registering it, i.e. silently inert.
+      const status = promptOrder.has(s.key) ? "prompt" : usage ? (usage.live ? "live_elsewhere" : "inert") : "unregistered";
+      return {
+        ...s,
+        status,
+        inPrompt: status === "prompt",
+        promptOrder: promptOrder.get(s.key) ?? null,
+        usageNote: usage?.note ?? null,
+      };
+    }));
   } catch (e: any) {
     res.status(500).json({ message: e.message });
   }

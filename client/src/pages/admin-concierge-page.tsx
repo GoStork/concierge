@@ -195,7 +195,24 @@ interface PromptSection {
   content: string;
   isActive: boolean;
   sortOrder: number;
+  /**
+   * Where this section actually takes effect:
+   *  prompt         - assembled into Eva's system prompt
+   *  live_elsewhere - read by other code (handoff copy, feature flag, tool block)
+   *  inert          - nothing reads it; edits change nothing
+   *  unregistered   - seeded but registered nowhere, so almost certainly inert
+   */
+  status?: "prompt" | "live_elsewhere" | "inert" | "unregistered";
+  inPrompt?: boolean;
+  /** Where a non-prompt section is actually consumed, or why it is inert. */
+  usageNote?: string | null;
 }
+
+const SECTION_STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  live_elsewhere: { label: "Used outside Eva's prompt", className: "bg-secondary" },
+  inert: { label: "Not used", className: "bg-[hsl(var(--brand-warning))] text-white" },
+  unregistered: { label: "Unregistered", className: "bg-[hsl(var(--brand-warning))] text-white" },
+};
 
 function PromptEditorCard() {
   const { toast } = useToast();
@@ -290,6 +307,11 @@ function PromptEditorCard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {section.status && SECTION_STATUS_BADGE[section.status] && (
+                      <span className={`t-helper rounded-full px-2 py-0.5 whitespace-nowrap ${SECTION_STATUS_BADGE[section.status].className}`}>
+                        {SECTION_STATUS_BADGE[section.status].label}
+                      </span>
+                    )}
                     {!section.isActive && <span className="t-helper">Disabled</span>}
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </div>
@@ -297,6 +319,20 @@ function PromptEditorCard() {
 
                 {isExpanded && (
                   <div className="px-4 pb-4 space-y-3">
+                    {section.status && section.status !== "prompt" && (
+                      <div className="rounded-[var(--radius)] bg-secondary p-3">
+                        <p className="t-helper">
+                          <span className="font-semibold">
+                            {section.status === "live_elsewhere"
+                              ? "This section is not part of Eva's system prompt."
+                              : "Editing this section has no effect."}
+                          </span>{" "}
+                          {section.usageNote
+                            ? section.usageNote
+                            : "It is saved to the database but no code reads it, so changes here will not affect Eva or anything else. Register it in EVA_PROMPT_SECTION_KEYS or NON_PROMPT_SECTION_USAGE (server/ai-prompt-defaults.ts)."}
+                        </p>
+                      </div>
+                    )}
                     <Textarea
                       value={currentContent}
                       onChange={(e) => setEditContent(prev => ({ ...prev, [section.key]: e.target.value }))}

@@ -4,6 +4,91 @@
  * Once in the DB, the AI router reads from there and admins can edit via UI.
  */
 
+/**
+ * THE list of sections that are concatenated into Eva's live system prompt, in
+ * this exact order. `sortOrder` orders the ADMIN UI only and has no effect on
+ * assembly - this array is the only thing that reaches the model.
+ *
+ * A seeded section that is missing from this array is editable in the admin UI
+ * and has ZERO effect on Eva. If you add a section that is meant to steer the
+ * model, add its key here too, and give it a NON_PROMPT_SECTION_USAGE entry if
+ * it is deliberately excluded. The admin UI badges every section from these two
+ * lists, so an unregistered section is visible instead of silently inert.
+ */
+export const EVA_PROMPT_SECTION_KEYS: string[] = [
+  "expert_persona", "ui_components", "conversation_flow", "matching_rules",
+  "match_blurb_rules", "protocols",
+  // Consultation focus lock + consent gates. Each one is a no-op until its
+  // matching context block appears (they open with "applies when ..."), so
+  // they sit in the cached static block rather than being injected per turn.
+  "consultation_focus_lock", "consultation_preliminary_step", "match_call_gates",
+  "connected_agency_shortcut",
+  // Same "applies when <block> appears" shape, activated by a per-request
+  // directive that names the section by title:
+  //   ip_form_guidance          <- "IP FORM PENDING" directive (ai-router)
+  //   contact_exchange_policy   <- backs the deterministic contact guard
+  //   surrogate_reservation_skip<- narration for search-tool exclusions
+  "ip_form_guidance", "contact_exchange_policy", "surrogate_reservation_skip",
+  "post_match_behavior", "agency_confidentiality", "general_behavior",
+  "post_booking_call_prep",
+];
+
+const HANDOFF_WRAPUP_USAGE = {
+  live: true,
+  note: "Message copy, not an instruction - so it is not in Eva's prompt, but it IS live. agreement-flow reads the row matching the journey type and appends it verbatim to the handoff congratulations once the agreement is signed and the invoice is paid. {providerName} is substituted. Edits take effect on the next handoff.",
+};
+
+/**
+ * Every section that is NOT in EVA_PROMPT_SECTION_KEYS, and what it actually
+ * does. `live: true` means the row is read somewhere else in the codebase and
+ * edits DO have an effect; `live: false` means nothing reads it and edits
+ * change nothing. The admin UI badges each section from this map so an admin
+ * at /account/concierge can tell a live section from an inert one.
+ *
+ * A seeded section in neither this map nor EVA_PROMPT_SECTION_KEYS is badged
+ * "Unregistered" in the UI - that is the drift alarm. If you add a section,
+ * register it in one place or the other.
+ */
+export const NON_PROMPT_SECTION_USAGE: Record<string, { live: boolean; note: string }> = {
+  tool_usage: {
+    live: true,
+    note: "Live, via its own path rather than the assembled block: ai-router reads this key directly and appends it AFTER the main prompt, alongside the MCP tool list. Edits take effect on the next turn.",
+  },
+  provider_assistant_prompt: {
+    live: true,
+    note: "Live, via its own path: chat-router reads this key directly as the system prompt for the provider-facing pinned Eva. It does not affect the parent-facing concierge.",
+  },
+  auto_cost_sheet_on_booking: {
+    live: true,
+    note: "Feature flag, not prompt text - only the Active toggle is read. The body is documentation for whoever flips it; editing the text changes nothing.",
+  },
+  auto_invoice_on_ready: {
+    live: true,
+    note: "Feature flag, not prompt text - only the Active toggle is read. The body is documentation for whoever flips it; editing the text changes nothing.",
+  },
+  auto_agreement_on_paid: {
+    live: true,
+    note: "Feature flag, not prompt text - only the Active toggle is read. The body is documentation for whoever flips it; editing the text changes nothing.",
+  },
+  surrogate_advisory: {
+    live: false,
+    note: "Reference only - nothing reads this. All 7 advisories are enforced server-side in ai-router, which injects them as directives the moment a parent states a criterion, and the eligibility numbers parents are quoted come from the GoStork house provider's Surrogate Matching Requirements (loaded per request as the GOSTORK PLATFORM MINIMUMS block). This text also states different thresholds than those live sources, so it is kept out of the prompt deliberately. To change an advisory's wording edit ai-router; to change a threshold edit the GoStork provider's requirements.",
+  },
+  payment_safety_onboarding: {
+    live: false,
+    note: "Reference only - nothing reads this, so the script is never delivered to any parent. It makes explicit refund and GoStork Guarantee commitments, so turning it on is a product/legal decision rather than a copy edit. Add the key to EVA_PROMPT_SECTION_KEYS to make it live.",
+  },
+  lawyer_intro_prompt: {
+    live: false,
+    note: "Superseded - nothing reads this. Lawyer connect is deterministic: ai-router matches the ask in both tiers and serves the vetted firm via lawyer-intro-flow, and the model-facing rules live in the Protocols section under LAWYER CONNECT. Edit those, not this.",
+  },
+  handoff_wrapup_surrogacy: HANDOFF_WRAPUP_USAGE,
+  handoff_wrapup_egg_donation: HANDOFF_WRAPUP_USAGE,
+  handoff_wrapup_ivf: HANDOFF_WRAPUP_USAGE,
+  handoff_wrapup_bank: HANDOFF_WRAPUP_USAGE,
+  handoff_wrapup_legal: HANDOFF_WRAPUP_USAGE,
+};
+
 export function getDefaultPromptSections() {
   return [
     {
@@ -834,7 +919,7 @@ SEARCH GATE: Do NOT call any search tool until:
   (3) [[CURATION]] summary sent and "ready" received
 MANDATORY STOP after the last applicable question: your ONLY valid next action is to send the [[CURATION]] summary message. Do NOT call any search tool. Do NOT show any [[MATCH_CARD]]. Do NOT offer to schedule a consultation. Just send the curation summary and wait for "ready". This is non-negotiable.
 
-BEFORE sending the [[CURATION]] message - age advisory check: if the parent mentioned ANY age preference (e.g., "not older than X", "under X", "between X and Y") BEFORE or DURING the D1/D2/D3 questions AND the parent selected USA, apply the SURROGATE AGE ADVISORY (see Surrogate Advisory Guidelines section) before sending [[CURATION]]. Give the advisory, wait for their confirmed final preference, save it, THEN send [[CURATION]].
+BEFORE sending the [[CURATION]] message - age advisory check: if the parent mentioned ANY age preference (e.g., "not older than X", "under X", "between X and Y") BEFORE or DURING the D1/D2/D3 questions AND the parent selected USA, apply the SURROGATE AGE ADVISORY described immediately below before sending [[CURATION]]. Give the advisory, wait for their confirmed final preference, save it, THEN send [[CURATION]].
 
 SURROGATE AGE ADVISORY - ALWAYS FIRES FOR USA (NO EXCEPTIONS):
 If the parent selected USA and a stated surrogate age preference has maxAge < 36, the surrogate advisory MUST fire before any search - regardless of timing. This applies whether the age preference arrived before [[CURATION]], together with "ready", or mid-conversation after a match card has already been shown. There is no scenario where maxAge < 36 bypasses the advisory.
