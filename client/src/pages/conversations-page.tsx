@@ -1875,6 +1875,7 @@ const sendMessageMutation = useMutation({
                 className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors text-left border-b border-border/20"
                 style={selectedParentSession?.id === session.id ? { backgroundColor: `${brandColor}15` } : undefined}
                 onClick={() => handleParentSessionClick(session)}
+                data-selected={selectedParentSession?.id === session.id ? "true" : undefined}
                 data-testid={`chat-session-${session.id}`}
               >
                 <div className="w-11 h-11 rounded-full flex-shrink-0 relative">
@@ -1965,7 +1966,8 @@ const sendMessageMutation = useMutation({
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
                         style={selectedParentSession?.id === session.id ? { backgroundColor: `${brandColor}15` } : undefined}
                         onClick={() => handleParentSessionClick(session)}
-                        data-testid={`chat-session-provider-${session.id}`}
+                        data-selected={selectedParentSession?.id === session.id ? "true" : undefined}
+                data-testid={`chat-session-provider-${session.id}`}
                       >
                         <div className="w-12 h-12 rounded-full flex-shrink-0 relative">
                           <div className="w-full h-full rounded-full overflow-hidden">
@@ -2267,6 +2269,7 @@ const sendMessageMutation = useMutation({
       <>
         <ConversationsShell
           hasSelection={!!selectedParentSession}
+          selectedKey={selectedParentSession?.id ?? null}
           onBack={() => setSelectedParentSession(null)}
           isLoading={parentSessionsQuery.isLoading}
           sidebarItems={sidebarContent}
@@ -2559,6 +2562,7 @@ const sendMessageMutation = useMutation({
                     className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left border-b border-border/10 relative ${isSelected ? "bg-secondary" : "hover:bg-muted/50"}`}
                     style={isSelected ? { borderLeft: `4px solid ${brandColor}`, paddingLeft: "calc(1rem - 4px)" } : undefined}
                     onClick={() => { setAssistantOpen(false); setSelectedSessionId(s.id, s); }}
+                    data-selected={isSelected ? "true" : undefined}
                     data-testid={`provider-session-${s.id}`}
                     aria-current={isSelected ? "page" : undefined}
                   >
@@ -3269,6 +3273,7 @@ const sendMessageMutation = useMutation({
       <>
         <ConversationsShell
           hasSelection={!!selectedSessionId || assistantOpen}
+          selectedKey={selectedSessionId}
           onBack={() => { setAssistantOpen(false); setSelectedSessionId(null); }}
           isLoading={providerSessionsQuery.isLoading}
           sidebarItems={sidebarContent}

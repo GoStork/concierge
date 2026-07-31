@@ -73,16 +73,19 @@ export function ParentsTable({
   // first, so overflow-x on any ancestor is dead weight and the columns past
   // the edge were simply being cut off with no scrollbar to reach them.
   //
-  // Pinning means the middle slides under the edges, which is only readable if
-  // the pinned cells are opaque and cast a shadow while there is more to see.
-  // Without it, an email sliding under the name column just looks truncated.
+  // Only the RIGHT edge is pinned. Name used to be pinned too, and the cost was
+  // the email: the moment the table scrolled a few pixels the email slid under
+  // the name column and read as a truncated address ("MAIL", "est-cardview-1").
+  // Keeping a row identifiable while scrolling is not worth a column that looks
+  // permanently broken - Name is the first column, so it stays in view for the
+  // small scroll this table actually needs.
   const scroller = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState({ left: false, right: false });
   const measure = useCallback(() => {
     const el = scroller.current;
     if (!el) return;
     const max = el.scrollWidth - el.clientWidth;
-    setEdge({ left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 });
+    setEdge({ left: false, right: el.scrollLeft < max - 1 });
   }, []);
   useEffect(() => {
     measure();
@@ -97,7 +100,6 @@ export function ParentsTable({
   // a narrow empty column of its own, which is worse than the ambiguity it was
   // meant to resolve; a single rule looks like the table dividers already here
   // and still says "this column is pinned, the rest slides under it".
-  const pinL = edge.left ? { borderRight: "1px solid hsl(var(--border))" } : undefined;
   const pinR = edge.right ? { borderLeft: "1px solid hsl(var(--border))" } : undefined;
 
   return (
@@ -111,7 +113,7 @@ export function ParentsTable({
         <TableHeader>
           <TableRow>
             {selectable && (
-              <TableHead className="w-10 pl-4 sticky left-0 z-20 bg-muted" style={pinL}>
+              <TableHead className="w-10 pl-4">
                 <Checkbox
                   checked={allVisibleSelected ? true : someSelected ? "indeterminate" : false}
                   onCheckedChange={onToggleSelectAll}
@@ -124,7 +126,7 @@ export function ParentsTable({
                 way. The width that bought is the caps on Name and Email below,
                 not wrapping - measured under the admin column budget, the table
                 fits with the headers unwrapped. */}
-            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className={`min-w-[164px] sticky z-20 bg-muted ${selectable ? "left-10" : "left-0"}`} style={selectable ? undefined : pinL} data-testid="sort-name" />
+            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className="min-w-[164px]" data-testid="sort-name" />
             <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell max-w-[170px]" data-testid="sort-email" />
             <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-mobile" />
             <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
@@ -162,7 +164,7 @@ export function ParentsTable({
                 onClick={() => onRowClick(row)}
               >
                 {selectable && (
-                  <TableCell className="pl-4 w-10 sticky left-0 z-10 bg-inherit" style={pinL} onClick={(e) => e.stopPropagation()}>
+                  <TableCell className="pl-4 w-10" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={selectedIds?.has(row.id) || false}
                       onCheckedChange={() => onToggleSelect?.(row.id)}
@@ -172,7 +174,7 @@ export function ParentsTable({
                   </TableCell>
                 )}
 
-                <TableCell className={`font-ui whitespace-nowrap min-w-[164px] sticky z-10 bg-inherit ${selectable ? "left-10" : "left-0"}`} style={selectable ? undefined : pinL}>
+                <TableCell className="font-ui whitespace-nowrap min-w-[164px]">
                   <div className="flex items-center gap-2">
                     {photo ? (
                       <img src={photo} alt="" className="w-8 h-8 rounded-[var(--radius)] object-cover" />

@@ -81,6 +81,7 @@ export default function AdminConciergeMonitor() {
   // This means the browser back button automatically works: when the URL changes,
   // selectedSessionId updates and the component re-renders to show the list.
   const selectedSessionId = searchParams.get("sessionId");
+
   const setSelectedSessionId = (id: string | null) => {
     if (id) {
       if (lastChatKey) localStorage.setItem(lastChatKey, id);
@@ -530,6 +531,7 @@ export default function AdminConciergeMonitor() {
               return (
                 <button
                   key={s.id}
+                  data-selected={selectedSessionId === s.id ? "true" : undefined}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left border-b border-border/10"
                   style={selectedSessionId === s.id ? { backgroundColor: `${brandColor}15` } : undefined}
                   onClick={() => setSelectedSessionId(s.id)}
@@ -1143,6 +1145,7 @@ export default function AdminConciergeMonitor() {
       onBack={() => setSelectedSessionId(null)}
       isLoading={sessionsQuery.isLoading}
       sidebarItems={sidebarItems}
+      selectedKey={selectedSessionId}
       emptyMessage="No active AI conversations right now"
       detailContent={detailContent}
       brandColor={brandColor}

@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Search, Loader2, MessageSquare } from "lucide-react";
@@ -23,6 +23,17 @@ interface ConversationsShellProps {
   onFilterChange: (filter: FilterTab) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  /**
+   * The currently selected conversation's id. Arriving from a deep link
+   * (Open chat on a parent record, a cost-sheet chip) highlights the row but
+   * used to leave the list scrolled wherever it was, so on a long inbox the
+   * highlighted thread sat off-screen and you had to hunt for it.
+   *
+   * The shell cannot reach inside sidebarItems, so the contract is one
+   * attribute: mark the selected row `data-selected="true"` and it gets
+   * scrolled into view whenever this key changes.
+   */
+  selectedKey?: string | null;
 }
 
 export function ConversationsShell({
@@ -41,7 +52,23 @@ export function ConversationsShell({
   onFilterChange,
   searchQuery,
   onSearchChange,
+  selectedKey,
 }: ConversationsShellProps) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  // Bring the selected row into view when the selection changes - which covers
+  // arriving on a deep link. Keyed on selectedKey rather than every render, so
+  // clicking a row already on screen never yanks the list under you.
+  useEffect(() => {
+    if (!selectedKey) return;
+    // Two frames: the list re-renders with the new selection first.
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => {
+      listRef.current
+        ?.querySelector('[data-selected="true"]')
+        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }));
+    return () => cancelAnimationFrame(raf);
+  }, [selectedKey]);
 
   // Lock body scroll on mobile so the page body doesn't compete with the inner list scroll
   useEffect(() => {
@@ -110,7 +137,7 @@ export function ConversationsShell({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto" ref={listRef}>
           {isLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
