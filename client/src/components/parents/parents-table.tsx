@@ -73,7 +73,7 @@ export function ParentsTable({
         <TableHeader>
           <TableRow>
             {selectable && (
-              <TableHead className="w-10 pl-4 sticky left-0 z-20 bg-card">
+              <TableHead className="w-10 pl-4 sticky left-0 z-20 bg-muted">
                 <Checkbox
                   checked={allVisibleSelected ? true : someSelected ? "indeterminate" : false}
                   onCheckedChange={onToggleSelectAll}
@@ -82,9 +82,9 @@ export function ParentsTable({
                 />
               </TableHead>
             )}
-            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className={`min-w-[190px] sticky z-20 bg-card ${selectable ? "left-10" : "left-0"}`} data-testid="sort-name" />
+            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className={`min-w-[190px] sticky z-20 bg-muted ${selectable ? "left-10" : "left-0"}`} data-testid="sort-name" />
             <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell max-w-[190px]" data-testid="sort-email" />
-            <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden md:table-cell" data-testid="sort-mobile" />
+            <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-mobile" />
             <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
             <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
             <TableHead className="hidden lg:table-cell whitespace-nowrap">Cost Sheets</TableHead>
@@ -180,7 +180,7 @@ export function ParentsTable({
                     <div className="flex flex-col gap-0.5">
                       {contactLines.filter((m) => m.email).map((m) => (
                         <div key={m.id} className="flex items-center gap-1.5">
-                          <span className="truncate max-w-[150px] inline-block align-middle" title={m.email || undefined}>{m.email}</span>
+                          <span className="truncate max-w-[118px] inline-block align-middle" title={m.email || undefined}>{m.email}</span>
                           <CopyButton value={m.email as string} testId={`btn-copy-email-${row.key}-${m.id}`} />
                         </div>
                       ))}
@@ -189,7 +189,7 @@ export function ParentsTable({
                   )}
                 </TableCell>
 
-                <TableCell className="hidden md:table-cell whitespace-nowrap" data-testid={`text-parent-mobile-${row.id}`} onClick={(e) => e.stopPropagation()}>
+                <TableCell className="hidden 2xl:table-cell whitespace-nowrap" data-testid={`text-parent-mobile-${row.id}`} onClick={(e) => e.stopPropagation()}>
                   {!row.contactReleased ? (
                     <ContactHiddenChip testId={`chip-mobile-hidden-${row.key}`} />
                   ) : phones.length === 0 ? (
@@ -207,7 +207,7 @@ export function ParentsTable({
                 </TableCell>
 
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <ServiceChips services={row.services} testId={`chips-services-${row.id}`} />
+                  <ServiceChips services={row.services} limit={1} testId={`chips-services-${row.id}`} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <MatchStatusBadge status={row.matchStatus} />
@@ -218,13 +218,14 @@ export function ParentsTable({
                     sessionId={row.sessionId}
                     isAdmin={isAdmin}
                     parentUserId={row.id}
+                    limit={1}
                   />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                  <ParentInvoicesCell invoices={row.invoices || []} />
+                  <ParentInvoicesCell invoices={row.invoices || []} limit={1} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                  <ParentAgreementsCell agreements={row.agreements || []} />
+                  <ParentAgreementsCell agreements={row.agreements || []} limit={1} />
                 </TableCell>
                 <TableCell className="hidden 2xl:table-cell" data-testid={`text-created-${row.id}`}>
                   <span className="t-helper">{row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"}</span>

@@ -13,7 +13,7 @@
  * two contexts, per the no-fork rule in CLAUDE.md.
  */
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Lock, Users } from "lucide-react";
+import { AlertTriangle, Lock, Users } from "lucide-react";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 
 export const SERVICE_LABELS: Record<string, string> = {
@@ -207,10 +207,9 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
   }
   return (
     <span
-      className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
+      className="inline-flex items-center text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
       style={{ background: entry.bg, color: entry.fg }}
     >
-      <CheckCircle2 className="w-3 h-3" />
       {entry.label}
     </span>
   );
