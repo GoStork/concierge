@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { ExternalLink, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
+import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { MatchStatusBadge, chatDeepLink } from "./parent-cells";
 import type { ConversationRow, ParentRecord, SavedProfileRow } from "./parent-record-types";
@@ -216,7 +217,16 @@ export function InterestedProfilesSection({
             {groups.map((g) => (
               <div key={g.key} className="space-y-2" data-testid={`interests-group-${g.key}`}>
                 <div className="flex items-center gap-2">
-                  {g.logoUrl && <img src={getPhotoSrc(g.logoUrl) || ""} alt="" className="w-6 h-6 rounded object-contain" />}
+                  {/* DoctorAvatar, not a bare img: a provider whose logo URL
+                      has gone dead on their own site rendered the browser's
+                      broken-image icon. This falls back to initials. */}
+                  <DoctorAvatar
+                    name={g.label}
+                    photoUrl={g.logoUrl}
+                    size={24}
+                    rounded="var(--radius)"
+                    className="object-contain"
+                  />
                   <span className="text-sm font-medium font-ui">{g.label}</span>
                   <span className="t-helper">({g.rows.length})</span>
                 </div>
