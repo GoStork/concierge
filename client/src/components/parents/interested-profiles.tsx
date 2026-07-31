@@ -68,10 +68,14 @@ export function ConversationRowCard({
     isAdmin,
   );
   return (
+    // Stacks on a phone. Side by side, the two buttons hold ~200px of a 390px
+    // screen, which left the text about 130px: the name truncated to "S...",
+    // the badges stacked, and the meta line broke one word per row.
     <div
-      className="rounded-[var(--radius)] border bg-card p-3 flex items-start gap-3 hover:bg-secondary/30 transition-colors"
+      className="rounded-[var(--radius)] border bg-card p-3 flex flex-col sm:flex-row sm:items-start gap-3 hover:bg-secondary/30 transition-colors"
       data-testid={`row-conversation-${row.sessionId}`}
     >
+      <div className="flex items-start gap-3 min-w-0 flex-1">
       <Avatar photoUrl={row.photoUrl} name={row.displayName} status={row.profileStatus} />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
@@ -89,7 +93,7 @@ export function ConversationRowCard({
             </span>
           )}
         </div>
-        <p className="t-helper">
+        <p className="t-helper break-words">
           {KIND_LABEL[row.subjectKind] || "Thread"}
           {" · started "}{new Date(row.createdAt).toLocaleDateString()}
           {row.updatedAt ? ` · last activity ${new Date(row.updatedAt).toLocaleDateString()}` : ""}
@@ -98,7 +102,8 @@ export function ConversationRowCard({
           <p className="t-helper italic truncate">"{row.lastMessagePreview}"</p>
         )}
       </div>
-      <div className="flex items-center gap-1.5 shrink-0">
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
         {chatHref && (
           <Button variant="outline" size="sm" onClick={() => navigate(chatHref)} data-testid={`btn-open-chat-${row.sessionId}`}>
             <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Open chat
@@ -118,20 +123,24 @@ function SavedRowCard({ row }: { row: SavedProfileRow }) {
   const navigate = useNavigate();
   return (
     <div
-      className="rounded-[var(--radius)] border bg-card p-3 flex items-center gap-3 hover:bg-secondary/30 transition-colors"
+      className="rounded-[var(--radius)] border bg-card p-3 flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-secondary/30 transition-colors"
       data-testid={`row-saved-${row.profileId}`}
     >
+      <div className="flex items-center gap-3 min-w-0 flex-1">
       <Avatar photoUrl={row.photoUrl} name={row.displayName} status={row.profileStatus} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium truncate">{row.displayName}</p>
-        <p className="t-helper">
+        {/* break-words: a provider like "Sperm Bank California | Fertility
+            Center of California" ran straight past the card's right edge. */}
+        <p className="t-helper break-words">
           {KIND_LABEL[row.subjectKind] || "Profile"}
           {row.providerName ? ` · ${row.providerName}` : ""}
           {" · saved "}{new Date(row.savedAt).toLocaleDateString()}
         </p>
       </div>
+      </div>
       {row.profileUrl && (
-        <Button variant="ghost" size="sm" onClick={() => navigate(row.profileUrl as string)} data-testid={`btn-saved-profile-${row.profileId}`}>
+        <Button variant="ghost" size="sm" className="shrink-0 self-end sm:self-auto" onClick={() => navigate(row.profileUrl as string)} data-testid={`btn-saved-profile-${row.profileId}`}>
           <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Profile
         </Button>
       )}
