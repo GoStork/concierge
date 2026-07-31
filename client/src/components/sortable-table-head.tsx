@@ -30,17 +30,19 @@ export function SortableTableHead({ label, sortKey, currentSort, onSort, classNa
       onClick={() => onSort(sortKey)}
       data-testid={props["data-testid"]}
     >
-      {/* Flex would give the label a box as wide as the column and strand the
-          arrow at its far edge once the text wraps, so a wrapping header lays
-          out inline and the arrow follows the last word. */}
-      <div className={wrapLabel ? "leading-tight" : "flex items-center gap-1 whitespace-nowrap"}>
-        <span>{label}{wrapLabel ? " " : ""}</span>
+      {/* A wrapping label stays a flex item so the arrow sits beside it, not
+          under it - but it needs w-min, or the label box keeps the column's
+          full width and strands the arrow at the far edge with a gap. w-min
+          shrinks the box to the longest word, so the arrow lands right after
+          the text and every header's arrow reads the same way. */}
+      <div className={`flex items-center gap-1 ${wrapLabel ? "leading-tight" : "whitespace-nowrap"}`}>
+        <span className={wrapLabel ? "w-min" : undefined}>{label}</span>
         {direction === "asc" ? (
-          <ArrowUp className={`w-3.5 h-3.5 text-foreground/70 ${wrapLabel ? "inline align-middle" : ""}`} />
+          <ArrowUp className="w-3.5 h-3.5 shrink-0 text-foreground/70" />
         ) : direction === "desc" ? (
-          <ArrowDown className={`w-3.5 h-3.5 text-foreground/70 ${wrapLabel ? "inline align-middle" : ""}`} />
+          <ArrowDown className="w-3.5 h-3.5 shrink-0 text-foreground/70" />
         ) : (
-          <ArrowUpDown className={`w-3.5 h-3.5 text-foreground/40 ${wrapLabel ? "inline align-middle" : ""}`} />
+          <ArrowUpDown className="w-3.5 h-3.5 shrink-0 text-foreground/40" />
         )}
       </div>
     </TableHead>
