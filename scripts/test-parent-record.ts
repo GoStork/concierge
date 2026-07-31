@@ -38,6 +38,27 @@ const line = (l: string, v: any) => console.log(`  ${l.padEnd(32)} ${v}`);
   const admin: any = { id: "admin-test", name: "Admin", roles: ["GOSTORK_ADMIN"], providerId: null };
   const prov: any = { id: "prov-test", name: "FC Staff", roles: ["PROVIDER_ADMIN"], providerId: FC };
 
+  // The note-scoping branch below needs one note of each scope to assert
+  // against. Seeding them here rather than leaving them on the parent forever
+  // keeps the assertion honest without parking a fake "price shopper" note on
+  // a real record. Torn down in the finally, including on a failed assertion.
+  const seeded: string[] = [];
+  const seed = async (scope: string, providerId: string | null, body: string) => {
+    const n = await prisma.parentNote.create({
+      data: {
+        parentAccountId: acct, scope, providerId, body,
+        authorUserId: "test-seed", authorName: "Test Seed",
+        authorProviderId: providerId,
+      },
+      select: { id: true },
+    });
+    seeded.push(n.id);
+  };
+  await seed("GOSTORK", null, `[test-seed ${process.pid}] internal only - price shopper`);
+  await seed("PROVIDER", FC, `[test-seed ${process.pid}] shared with the agency`);
+
+  try {
+
   const a = await buildParentRecord(admin, parent.id);
   const p = await buildParentRecord(prov, parent.id);
 
@@ -131,15 +152,19 @@ const line = (l: string, v: any) => console.log(`  ${l.padEnd(32)} ${v}`);
   // must never reach an agency, while the agency keeps seeing its own.
   const gostorkNotes = a.crm.notes.filter((n: any) => n.scope === "GOSTORK");
   const provNotes = p.crm.notes;
-  if (gostorkNotes.length === 0) {
-    console.log("\nCRM NOTE SCOPING - skipped, no GOSTORK note on the fixture");
-  } else {
-    console.log("\nCRM NOTE SCOPING");
+  console.log("\nCRM NOTE SCOPING");
+  // Both scopes are seeded above, so an empty set means the seed failed - and a
+  // silent skip here would read as a pass on the one check that matters most.
+  ck("fixture seeded a GOSTORK note", gostorkNotes.length > 0);
+  if (gostorkNotes.length > 0) {
     ck("provider sees NO GOSTORK-scope note", !provNotes.some((n: any) => n.scope === "GOSTORK"));
     ck("provider sees no GOSTORK note body",
       !provNotes.some((n: any) => gostorkNotes.some((g: any) => g.body === n.body)));
+    // .every() alone is vacuously true on an empty list, which would turn a
+    // provider seeing NOTHING into a pass. The seeded FC note makes the count
+    // assertable, so assert it.
     ck("provider still sees its own PROVIDER note",
-      provNotes.every((n: any) => n.scope === "PROVIDER" && n.providerId === FC));
+      provNotes.length > 0 && provNotes.every((n: any) => n.scope === "PROVIDER" && n.providerId === FC));
     ck("admin sees both scopes", a.crm.notes.length >= provNotes.length);
   }
 
@@ -195,6 +220,13 @@ const line = (l: string, v: any) => console.log(`  ${l.padEnd(32)} ${v}`);
     }
     console.log(`\nUNRELATED PROVIDER (${stranger.name})`);
     ck("403 on no relationship", status === 403);
+  }
+
+  } finally {
+    // Hard delete, not the soft delete the API uses - these rows are ours and
+    // were never disclosed to anyone, so there is nothing to keep for audit.
+    // process.exit skips finally, so the report below sits outside the try.
+    await prisma.parentNote.deleteMany({ where: { id: { in: seeded } } });
   }
 
   console.log(fails.length ? `\n${fails.length} FAILED` : "\nALL PASSED");
