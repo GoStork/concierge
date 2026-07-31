@@ -282,7 +282,7 @@ function NextStepCard({
 
 // ─── Owner ──────────────────────────────────────────────────────────────────
 
-function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord; isAdmin: boolean; choice: ScopeChoice }) {
+export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord; isAdmin: boolean; choice: ScopeChoice }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const mut = useCrmMutation(record.parent.id, () => setOpen(false));
@@ -467,6 +467,20 @@ function TagEditor({ record, isAdmin, choice }: { record: ParentRecord; isAdmin:
 
 // ─── Panel ──────────────────────────────────────────────────────────────────
 
+/**
+ * The lead owner on its own, for the always-visible record header. Ownership is
+ * the first thing anyone opening a record asks about, so it should not be
+ * behind a collapsed section - and it is deliberately NOT repeated inside the
+ * notes panel below, because two controls for one setting is what made the
+ * owners filter confusing in the first place.
+ */
+export function ParentLeadOwner({ record }: { record: ParentRecord }) {
+  const isAdmin = record.viewer.role === "admin";
+  const primary = scopeChoices(record, isAdmin)[0];
+  if (!primary) return null;
+  return <OwnerPicker record={record} isAdmin={isAdmin} choice={primary} />;
+}
+
 export function ParentCrmPanel({ record }: { record: ParentRecord }) {
   const isAdmin = record.viewer.role === "admin";
   const choices = scopeChoices(record, isAdmin);
@@ -478,7 +492,7 @@ export function ParentCrmPanel({ record }: { record: ParentRecord }) {
     <div className="flex flex-col-reverse lg:grid lg:grid-cols-[1fr_320px] gap-6">
       <NotesFeed record={record} isAdmin={isAdmin} />
       <div className="space-y-3">
-        {primary && <OwnerPicker record={record} isAdmin={isAdmin} choice={primary} />}
+        {/* Lead owner lives in the record header now - see ParentLeadOwner. */}
         {choices.map((c) => (
           <NextStepCard
             key={c.key}

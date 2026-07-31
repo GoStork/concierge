@@ -14,6 +14,14 @@ interface ParentProfileCardProps {
    * pointless. Same component, two contexts - do not fork it.
    */
   layout?: "rail" | "wide";
+  /**
+   * Drop the heading, the avatar-and-name row, and the email/phone lines when
+   * the surrounding page already shows all four - the parent record does, right
+   * above this card, and printing them twice made the page read as two separate
+   * profile blocks. Everything unique to this card (location, relationship,
+   * journey, biological baseline, clinic preferences) still renders.
+   */
+  hideIdentity?: boolean;
   testId?: string;
 }
 
@@ -137,7 +145,7 @@ function buildSections(user: SessionUser): ProfileSection[] {
  * Single source of truth - any new parent profile field should be added here
  * (and to the SessionUser type / API payload).
  */
-export function ParentProfileCard({ user, isOnline, layout = "rail", testId = "parent-profile-card" }: ParentProfileCardProps) {
+export function ParentProfileCard({ user, isOnline, layout = "rail", hideIdentity = false, testId = "parent-profile-card" }: ParentProfileCardProps) {
   const sections = buildSections(user);
   const basics = buildBasics(user);
   const photoSrc = user.photoUrl ? getPhotoSrc(user.photoUrl) : null;
@@ -145,9 +153,12 @@ export function ParentProfileCard({ user, isOnline, layout = "rail", testId = "p
 
   return (
     <div data-testid={testId}>
-      <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
+      {!hideIdentity && (
+        <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Parent Profile</h4>
+      )}
       {/* Identity row - mirrors the "Interested Egg Donor" card style:
           avatar (with online dot) + name + online label. */}
+      {!hideIdentity && (
       <div className="flex items-center gap-2.5 mb-3">
         <div className="relative w-10 h-10 shrink-0">
           {photoSrc ? (
@@ -177,17 +188,18 @@ export function ParentProfileCard({ user, isOnline, layout = "rail", testId = "p
           )}
         </div>
       </div>
+      )}
       <div className="space-y-1.5 mb-3">
         {/* Email and phone are Gate B: the server sends null until the parent
             releases them, and a bare "Email -" reads as broken data. Say what
             is actually true instead. */}
-        {user.email
+        {!hideIdentity && (user.email
           ? <div className={`t-micro-value${wide ? "" : " truncate"}`}><span className="t-micro-label">Email</span> {user.email}</div>
-          : <div className="t-micro-value"><span className="t-micro-label">Contact</span> Shared after intake or invoice</div>}
+          : <div className="t-micro-value"><span className="t-micro-label">Contact</span> Shared after intake or invoice</div>)}
         {(user.city || user.state) && (
           <div className="t-micro-value"><span className="t-micro-label">Location</span> {[user.city, user.state].filter(Boolean).join(", ")}</div>
         )}
-        {basics.phone && <div className="t-micro-value"><span className="t-micro-label">Phone</span> {basics.phone}</div>}
+        {!hideIdentity && basics.phone && <div className="t-micro-value"><span className="t-micro-label">Phone</span> {basics.phone}</div>}
         {basics.age && <div className="t-micro-value"><span className="t-micro-label">Age</span> {basics.age}</div>}
         {basics.relationshipStatus && (
           <div className="t-micro-value"><span className="t-micro-label">Relationship status</span> {basics.relationshipStatus}</div>

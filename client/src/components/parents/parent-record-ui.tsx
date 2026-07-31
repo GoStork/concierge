@@ -149,12 +149,17 @@ function ContactLine({ record }: { record: ParentRecord }) {
 }
 
 export function ParentRecordHeader({
-  record, isAdmin, onJumpToCrm,
-}: { record: ParentRecord; isAdmin: boolean; onJumpToCrm: () => void }) {
+  record, isAdmin, onJumpToCrm, ownerSlot,
+}: {
+  record: ParentRecord;
+  isAdmin: boolean;
+  onJumpToCrm: () => void;
+  /** The lead owner control. Lives here, above every collapsible section, so
+      "who owns this family" is answerable without opening anything. */
+  ownerSlot?: ReactNode;
+}) {
   const navigate = useNavigate();
   const photoSrc = record.parent.photoUrl ? getPhotoSrc(record.parent.photoUrl) : null;
-  const owner = record.crm.owners.find((o) => (isAdmin ? o.scope === "GOSTORK" : o.scope === "PROVIDER"))
-    || record.crm.owners[0];
   const nextStep = record.crm.followUps[0];
   const newestSession = record.conversations[0]?.sessionId ?? null;
 
@@ -187,6 +192,7 @@ export function ParentRecordHeader({
           </div>
         </div>
 
+        <div className="flex flex-col items-end gap-2 shrink-0">
         {isAdmin && (
           <div className="flex items-center gap-2 shrink-0">
             {newestSession && (
@@ -209,15 +215,14 @@ export function ParentRecordHeader({
             </Button>
           </div>
         )}
+        {ownerSlot && <div className="w-[240px] max-w-full" data-testid="record-owner-slot">{ownerSlot}</div>}
+        </div>
       </div>
 
       {/* Read-only mirror of the CRM state, so the answer to "who owns this and
           what is next" is visible without scrolling. Clicking opens the panel. */}
-      {(owner || nextStep || record.crm.tags.length > 0) && (
+      {(nextStep || record.crm.tags.length > 0) && (
         <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t">
-          <button type="button" onClick={onJumpToCrm} className="t-helper hover:text-primary transition-colors" data-testid="btn-record-jump-crm">
-            {owner ? `Owner: ${owner.ownerName || "Assigned"}` : "Unassigned"}
-          </button>
           {nextStep && (
             <button
               type="button"
@@ -326,7 +331,10 @@ export function ParentIdentitySection({ record }: { record: ParentRecord }) {
         </div>
       )}
 
-      <ParentProfileCard user={record.parent} layout="wide" testId="record-profile" />
+      {/* hideIdentity: the header directly above already shows the photo,
+          name, email and phone. Repeating them here is what made the page
+          read as two separate Profile blocks. */}
+      <ParentProfileCard user={record.parent} layout="wide" hideIdentity testId="record-profile" />
     </div>
   );
 }

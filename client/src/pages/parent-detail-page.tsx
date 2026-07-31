@@ -20,6 +20,7 @@ import { ContactReleaseSection } from "@/components/chat/contact-release-section
 import { EvaKnowledgePanel } from "@/components/chat/eva-knowledge-panel";
 import {
   ParentCrmPanel,
+  ParentLeadOwner,
   ParentIdentitySection,
   ParentMoneySection,
   ParentRecordHeader,
@@ -86,10 +87,19 @@ export default function ParentDetailPage() {
 
           {record && (
             <>
-              <ParentRecordHeader record={record} isAdmin={!!isAdmin} onJumpToCrm={() => toggle("crm", true)} />
+              <ParentRecordHeader
+                record={record}
+                isAdmin={!!isAdmin}
+                onJumpToCrm={() => toggle("crm", true)}
+                ownerSlot={<ParentLeadOwner record={record} />}
+              />
 
               <RecordSection id="identity" title="Profile" open={isOpen("identity")} onToggle={toggle}>
                 <ParentIdentitySection record={record} />
+              </RecordSection>
+
+              <RecordSection id="crm" title="Notes and follow-up" open={isOpen("crm")} onToggle={toggle}>
+                <ParentCrmPanel record={record} />
               </RecordSection>
 
               <RecordSection
@@ -124,10 +134,6 @@ export default function ParentDetailPage() {
                 onToggle={toggle}
               >
                 <ParentMoneySection record={record} showProviderName={!!isAdmin} />
-              </RecordSection>
-
-              <RecordSection id="crm" title="Notes and follow-up" open={isOpen("crm")} onToggle={toggle}>
-                <ParentCrmPanel record={record} />
               </RecordSection>
 
               {isAdmin && (

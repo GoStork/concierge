@@ -21,12 +21,22 @@ const ck = (n: string, ok: boolean) => {
 };
 
 (async () => {
-  const parent = await prisma.user.findFirst({
-    where: { email: "natan123+lala@gmail.com" },
+  // Any parent whose account has no GoStork owner yet. Pinning this to one
+  // fixture email meant the backfill could hand that family an owner and turn
+  // this suite into a permanent skip - which reads as a pass on the checks
+  // that matter most.
+  const owned = new Set(
+    (await prisma.parentOwner.findMany({ where: { scope: "GOSTORK" }, select: { parentAccountId: true } }))
+      .map((o) => o.parentAccountId),
+  );
+  const candidates = await prisma.user.findMany({
+    where: { roles: { has: "PARENT" } },
     select: { id: true, name: true, parentAccountId: true },
+    take: 200,
   });
+  const parent = candidates.find((c) => !owned.has(c.parentAccountId || c.id));
   if (!parent) {
-    console.log("fixture parent missing - skipping (not a failure on a fresh DB)");
+    console.log("every parent already has a GoStork owner - nothing free to test against");
     process.exit(0);
   }
   const acct = parent.parentAccountId || parent.id;
@@ -41,15 +51,6 @@ const ck = (n: string, ok: boolean) => {
     process.exit(0);
   }
   const [first, second] = staff;
-
-  const preexisting = await prisma.parentOwner.findFirst({
-    where: { parentAccountId: acct, scope: "GOSTORK" },
-    select: { id: true },
-  });
-  if (preexisting) {
-    console.log("fixture parent already has a GoStork owner - skipping so we do not disturb it");
-    process.exit(0);
-  }
 
   const created: string[] = [];
   try {
@@ -90,7 +91,7 @@ const ck = (n: string, ok: boolean) => {
     ck("claiming never writes a PROVIDER-scope owner",
       (await prisma.parentOwner.count({ where: { parentAccountId: acct, scope: "PROVIDER", assignedByUserId: first.id } })) === 0);
   } finally {
-    // Ours alone: the run bailed out above if the parent already had an owner.
+    // Ours alone: the parent was chosen precisely because it had no owner.
     await prisma.parentOwner.deleteMany({ where: { parentAccountId: acct, scope: "GOSTORK" } });
     void created;
   }
