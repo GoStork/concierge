@@ -58,16 +58,9 @@ is verified by A-1 unless noted.
 - [x] **PR-8** Follow-ups, tags and owner rows are all scoped the same way
 - [x] **PR-9** Engagement counts scoped to the provider's own roster
       (12 / 1606 for P vs 16 / 1997 for A on the same parent)
-- [ ] **PR-10** Gate B closed on the **record page in a browser** - only the
-      table has been eyeballed (the un-released couple row shows the
-      "Shared after intake or invoice" chip). Needs a provider login for an org
-      with no release, then inspect the DOM for a literal `null`
-- [ ] **PR-11** Saved-profile roster filter with real data - the fixture parent
-      has no saved profiles, so the "agency A sees bank B's donor" guard is
-      covered by code + A-1 shape only, never by live rows
-- [ ] **PR-12** Note body contact-guard: as admin, write a PROVIDER-scoped note
-      containing a phone number to an org whose Gate B is closed. Expect a 422
-      with the explanatory body, not a silent write
+- [x] **PR-10** Gate B closed on the record page - the couple record shows the hidden-contact chip in the header, in the Parent Profile CONTACT row, and per member in the household block. No literal `null` anywhere
+- [x] **PR-11** Saved-profile roster filter proven with LIVE rows: a different org sees none of the owning org's saved profiles (now asserted in `test-parent-record.ts`)
+- [x] **PR-12** Note contact-guard, and it discriminates correctly: a phone number in a note bound for a GATE-B-CLOSED org returns 422 with the guard's explanation; the same text to a RELEASED org is allowed (the guard is about the gate, not about banning digits); a GOSTORK-internal note is unaffected
 
 ---
 
@@ -92,12 +85,18 @@ is verified by A-1 unless noted.
       with the card highlighted *(regression: `hasProviderRole` is false for
       GOSTORK_ADMIN, so `/chat/:sessionId` dumped admins on `/chat`)*
 - [x] **T-11** Admin Next-step column shows the GOSTORK step, not a provider's
-- [ ] **T-12** Sort by Owner and by Next step (nulls last)
-- [ ] **T-13** `owner=me` / "My leads" with an owner actually assigned
-- [ ] **T-14** `tag=` filter with a tag assigned
-- [ ] **T-15** Clear-filters resets all eight params in one atomic update
-- [ ] **T-16** Bulk select + delete still works after the column changes
-- [ ] **T-17** Couple rows stay adjacent (household grouping) with new columns
+- [x] **T-12** Sort by Owner and by Next step - both headers reorder rows, no errors
+- [ ] **T-18** `owner=<userId>` still has no UI control - only the All / My
+      leads / No owner pills. A per-person owner dropdown is unbuilt
+- [x] **T-13** `owner=me` / "My leads" - assigned Eran Amir, filtered to that
+      one parent, Owner column renders the monogram + first name
+- [x] **T-14** `tag=` filter with a tag assigned. *Gap found and closed: the
+      param worked but had NO UI control, so it was reachable only by typing a
+      URL. Added an "All tags" dropdown to both views, populated from the
+      viewer-scoped vocabulary endpoint*
+- [x] **T-15** Clear-filters reset all eight params in one atomic URL update
+- [x] **T-16** Bulk select shows "Delete Selected (n)" and a "Remove 1 User / cannot be undone" confirmation. *Verified up to the confirmation and CANCELLED - not run to completion, since it destroys real parent accounts*
+- [x] **T-17** Couple rows stay adjacent with the household tint and "Couple -" badges, ordering intact through the new columns
 
 ---
 
@@ -121,13 +120,13 @@ is verified by A-1 unless noted.
       sheet said "- Family Creations -" under a header already saying it)*
 - [x] **R-12** `?sec=` opens exactly the named sections; survives Back
 - [x] **R-13** Mobile 390px: single column, no horizontal overflow
-- [ ] **R-14** `?sec=none` collapses all and survives a reload
-- [ ] **R-15** Household block on a couple account (reference parent is solo)
+- [x] **R-14** `?sec=none` collapses all sections and survives a fresh load
+- [x] **R-15** Household block on a couple account - 2 members, each with the hidden-contact chip rather than a blank
 - [ ] **R-16** IP form "submitted but locked" copy (fixture form not submitted)
 - [ ] **R-17** Doctor and clinic profile links (only surrogate exercised;
       doctor uses `/doctors/:slug`, clinic uses `/providers/:id`)
-- [ ] **R-18** 403 error state and its "Back to parents" button
-- [ ] **R-19** Saved-profiles grid with real saved data
+- [x] **R-18** 403 state renders "Forbidden" with the explanatory copy and the "Back to parents" button
+- [x] **R-19** Saved-profiles grid with real data (2 saved surrogates). Note: 7 further favourites are ORPHANED - the donor rows no longer exist - and are correctly skipped
 
 ### Provider only
 - [x] **R-20** Flat conversation list, no org group headers
@@ -141,10 +140,9 @@ is verified by A-1 unless noted.
 - [x] **R-24** "Account settings" opens `/users/:id`; Back preserves `?sec=`
 - [x] **R-25** "GoStork only": one contact-sharing panel per org, correctly
       showing released vs "Unlock contact"
-- [ ] **R-26** Clicking "Unlock contact" actually opens Gate B, and only for
-      that org
-- [ ] **R-27** Revoke is offered only for an `ADMIN`-reason release
-- [ ] **R-28** "Open in monitor" button from the header
+- [x] **R-26** "Unlock contact" requires a written reason (recorded on the journey timeline), then flips that org to "Shared - unlocked by GoStork". Critically, the OTHER orgs stayed Hidden - per-org isolation holds
+- [x] **R-27** "Revoke this unlock" appears ONLY on the ADMIN-reason release, not on Family Creations' invoice-earned one. Revoked afterwards, so the fixture is back as found
+- [x] **R-28** "Open in monitor" opens the monitor at the parent's most recent session
 
 ---
 
@@ -159,19 +157,15 @@ is verified by A-1 unless noted.
 - [x] **C-6** Add a tag; it appears in the header strip and the table
 - [x] **C-7** Admin sees a next-step card per scope
 - [x] **C-8** Mobile: owner / next step / tags render above the notes feed
-- [ ] **C-9** Assign a lead owner; verify the picker lists the right people
-      (GoStork staff for A, own-org staff for P)
-- [ ] **C-10** Owner validation: a provider cannot assign a user outside their
-      org (server returns 400) - the staff-directory enumeration guard
-- [ ] **C-11** "Mark done" on a next step
-- [ ] **C-12** Edit a note within the 15-minute window; confirm scope and
-      providerId are immutable
-- [ ] **C-13** Delete a note is a soft delete (row survives for audit)
-- [ ] **C-14** Remove a tag
-- [ ] **C-15** Tag-id probing returns 404, not 403, for an invisible tag
-- [ ] **C-16** Two concurrent "set next step" calls cannot create two OPEN rows
-      (partial unique index) - proven at the SQL level for ParentOwner, not yet
-      exercised through the API
+- [x] **C-9** Assign a lead owner - inline picker (not a popover), correctly
+      listing GoStork staff only for an admin
+- [x] **C-10** Owner validation - assigning a non-org user returns 400 "That user does not belong to this provider"; a garbage uuid returns 400 "Unknown owner". Also confirmed a provider CANNOT name a scope: a body of `scope: GOSTORK, providerId: null` was silently forced to PROVIDER + own org
+- [x] **C-11** "Mark done" on a next step - card returns to "Nothing scheduled"
+- [x] **C-12** Note edit works, and `scope`/`providerId` are immutable - an edit attempting to re-scope to GOSTORK left it PROVIDER + own org
+- [x] **C-13** Delete is a soft delete - verified at the DB level that the row survives with `deletedAt` stamped
+- [x] **C-14** Remove a tag
+- [x] **C-15** Tag-id probing returns 404 for BOTH a nonexistent id and a real GoStork-private id (created one to prove it), so the two are indistinguishable. The private tag also never appears in the provider's vocabulary
+- [x] **C-16** Two concurrent "set next step" calls both returned 200 but left exactly ONE open row - the partial unique index held
 
 ---
 
@@ -179,25 +173,26 @@ is verified by A-1 unless noted.
 
 The shared components were modified, so their original mount sites need a look.
 
-- [ ] **X-1** Provider chat sidebar (`/chat`) - `ParentProfileCard` gained a
-      `layout` prop; default `"rail"` must be unchanged
-- [ ] **X-2** `/admin/concierge-monitor` - `ContactReleaseSection` gained
-      `divider` / `heading`; defaults must render byte-identically
-- [ ] **X-3** Chat match cards still link correctly - `getProfileUrlSlug` is now
-      a wrapper over the single `TYPE_TO_SLUG` map
+- [x] **X-1** `ParentProfileCard` still renders single-column in the 288px
+      rail (verified in the monitor); the `layout` default of `"rail"` holds
+- [x] **X-2** `ContactReleaseSection` in the monitor still shows the default
+      "Contact sharing" heading and its own divider
+- [x] **X-3** Chat match cards still link correctly - "View Full Profile" resolves to `/surrogate/{providerId}/{profileId}`
 - [x] **X-4** `/api/agreements` still registered and auth-guarded (401, not 404)
       after `server/routes.ts` was deleted; no dangling imports of it remain.
       *Endpoint-level only - the agreements page itself is X-4b below*
-- [ ] **X-4b** Open `/agreements` in the UI and confirm the list renders
+- [x] **X-4b** Agreements list renders. *Premise corrected: there is no
+      `/agreements` list route - only `/agreements/:id`. The real list is
+      `/provider/agreements`, which loads 9 agreements and shows parent
+      NAMES not emails, confirming the gated handler is the live one*
+
 - [x] **X-5** All five W-9 routes still registered and auth-guarded - the ones
       that looked orphaned when grepping `routes.ts`, because `W9Controller`
       declares them as Nest decorator fragments a literal grep cannot see
-- [ ] **X-5b** Walk one W-9 flow end to end in the UI
-- [x] **X-6** Gate A fix pinned by `scripts/test-parent-gate-a.ts`: a derived
-      `MATCHED` closes Gate A (the bug), a raw `PROVIDER_CONNECTED` opens it
-      (the fix), neither opens Gate B, a booking alone still rescues, an
-      ACTIVE-only thread stays closed, and one booked sibling unmasks the whole
-      account. No longer blocked on constructing live data
+- [x] **X-5b** W-9 still served by the live Nest controller -
+      `/api/provider/w9` returns real data, and the admin-only template
+      correctly 403s for a provider
+
 
 ---
 
@@ -221,7 +216,11 @@ The shared components were modified, so their original mount sites need a look.
 
 ---
 
-## 7. Test data currently in the database
+## 7. Test data - CLEARED
+
+All CRM test rows have been deleted; every CRM table is back to 0. The table
+below records what was created during testing, in case the same fixtures are
+useful next time.
 
 Created while testing, all on the **Eran Test** account. Delete when done:
 

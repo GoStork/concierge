@@ -38,6 +38,23 @@ import {
   toDateParam,
 } from "@/components/parents";
 
+/**
+ * The tag vocabulary this viewer may filter by. Scoped server-side: an admin
+ * gets every scope, a provider only their own org's labels.
+ */
+function useTagVocabulary() {
+  const { data = [] } = useQuery<any[]>({
+    queryKey: ["/api/parents/crm/tag-vocabulary"],
+    queryFn: async () => {
+      const res = await fetch("/api/parents/crm/tag-vocabulary", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 5 * 60_000,
+  });
+  return data as { id: string; label: string }[];
+}
+
 type StaffMember = {
   id: string;
   name: string | null;
@@ -73,6 +90,7 @@ export default function StaffPage() {
 
 function GostorkAdminUsersView() {
   const { user } = useAuth();
+  const tagVocabulary = useTagVocabulary();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [deleteMember, setDeleteMember] = useState<StaffMember | null>(null);
@@ -370,6 +388,15 @@ function GostorkAdminUsersView() {
           <option value="all">All statuses</option>
           {Object.entries(JOURNEY_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        <select
+          value={tagFilter}
+          onChange={e => updateUsersParam("tag", e.target.value === "all" ? "" : e.target.value)}
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
+          data-testid="admin-parents-tag-filter"
+        >
+          <option value="all">All tags</option>
+          {tagVocabulary.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
+        </select>
       </div>
         <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="button-clear-filters" />
       </div>
@@ -594,6 +621,7 @@ function GostorkAdminUsersView() {
 
 function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const { user } = useAuth();
+  const tagVocabulary = useTagVocabulary();
   const [searchParams, setSearchParams] = useSearchParams();
   const searchQuery = searchParams.get("q") || "";
   const serviceFilter = searchParams.get("svc") || "all";
@@ -741,6 +769,15 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         >
           <option value="all">All statuses</option>
           {Object.entries(JOURNEY_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select
+          value={tagFilter}
+          onChange={e => setParam("tag", e.target.value)}
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
+          data-testid="parents-tag-filter"
+        >
+          <option value="all">All tags</option>
+          {tagVocabulary.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
         </select>
       </div>
         <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="provider-parents-clear-filters" />

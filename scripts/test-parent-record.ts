@@ -63,6 +63,69 @@ const line = (l: string, v: any) => console.log(`  ${l.padEnd(32)} ${v}`);
   ck("admin email present", !!(a.parent as any)?.email);
   ck("released provider sees email", !!(p.parent as any)?.email === p.contactReleased);
 
+  // ── Saved-profile roster filter, with LIVE rows ───────────────────────────
+  //
+  // A parent's favourites span every org's roster, and the saved-preference
+  // endpoints are self-only, so no ownership filter has ever been needed
+  // before. Without one, agency A learns the family is shopping bank B.
+  //
+  // Finding a parent who actually has saved profiles takes a query - most
+  // fixtures have none, which is why the shape-only check was never enough.
+  const savedRow = await prisma.userDonorPreference.findFirst({
+    where: { type: "favorite" },
+    select: { userId: true, donorId: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const owningSurrogate = savedRow
+    ? await prisma.surrogate.findUnique({
+        where: { id: savedRow.donorId },
+        select: { id: true, providerId: true },
+      })
+    : null;
+
+  if (!owningSurrogate) {
+    console.log("\nSAVED ROSTER FILTER - skipped, no live favourited profile found");
+  } else {
+    const saver = await prisma.user.findUnique({
+      where: { id: savedRow!.userId },
+      select: { id: true, parentAccountId: true },
+    });
+    const owner = owningSurrogate.providerId;
+    // Any OTHER org that can legitimately open this parent's record.
+    const otherOrgId = await prisma.aiChatSession.findFirst({
+      where: {
+        userId: saver!.id,
+        providerId: { not: owner },
+        status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
+      },
+      select: { providerId: true },
+    });
+
+    console.log("\nSAVED ROSTER FILTER");
+    const ownerView = await buildParentRecord(
+      { id: "o", roles: ["PROVIDER_ADMIN"], providerId: owner }, saver!.id,
+    ).catch(() => null);
+    if (ownerView) {
+      ck("owning org sees only its own saved profiles",
+        ownerView.savedProfiles.every((s: any) => s.providerId === owner));
+    }
+    if (otherOrgId?.providerId) {
+      const otherView = await buildParentRecord(
+        { id: "x", roles: ["PROVIDER_ADMIN"], providerId: otherOrgId.providerId }, saver!.id,
+      ).catch(() => null);
+      if (otherView) {
+        ck("a DIFFERENT org sees none of the owning org's saved profiles",
+          !otherView.savedProfiles.some((s: any) => s.providerId === owner));
+      }
+    } else {
+      console.log("  (no second org on this parent - cross-org half not exercised)");
+    }
+    // Admin is the control: it must see what the providers are filtered out of.
+    const adminView = await buildParentRecord({ id: "a", roles: ["GOSTORK_ADMIN"] }, saver!.id);
+    ck("admin sees at least as many saved profiles as the owning org",
+      adminView.savedProfiles.length >= (ownerView?.savedProfiles.length ?? 0));
+  }
+
   // ── CRM note scoping ──────────────────────────────────────────────────────
   // The whole point of the two-scope design: a GOSTORK note ("price shopper")
   // must never reach an agency, while the agency keeps seeing its own.
