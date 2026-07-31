@@ -179,7 +179,7 @@ export interface ParentTableRow {
   createdAt: string | null;
   updatedAt: string | null;
   isDisabled?: boolean;
-  ownerName?: string | null;
+  owner?: { userId?: string; name: string | null } | null;
   nextStep?: { id: string; body: string; dueAt: string; overdue: boolean } | null;
   tags?: { tagId: string; label: string; colorToken: string }[];
 }

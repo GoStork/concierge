@@ -263,6 +263,22 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   for (const d of savedDonorRows) donorLikeIds.add(d.donorId);
   const idList = Array.from(donorLikeIds);
 
+  // Doctor threads carry a SLUG in subjectProfileId, not a uuid, and doctors
+  // live in ProviderMember rather than any donor table - so they need their own
+  // lookup or a doctor thread renders under the clinic's name with no link.
+  const doctorSlugs = Array.from(new Set(
+    sessions
+      .filter((s2) => classifySubject(s2.subjectType) === "doctor" && s2.subjectProfileId)
+      .map((s2) => s2.subjectProfileId as string),
+  ));
+  const doctors = doctorSlugs.length
+    ? await prisma.providerMember.findMany({
+        where: { slug: { in: doctorSlugs } },
+        select: { slug: true, name: true, title: true, photoUrl: true, providerId: true },
+      })
+    : [];
+  const doctorBySlug = new Map(doctors.map((d) => [d.slug as string, d]));
+
   const [eggDonors, surrogates, spermDonors] = idList.length
     ? await Promise.all([
         prisma.eggDonor.findMany({
@@ -339,11 +355,16 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     const prof = s.subjectProfileId ? profileById.get(s.subjectProfileId) : null;
     const org = s.providerId ? orgById.get(s.providerId) : null;
     const resolvedKind: SubjectKind = prof ? prof.kind : kind;
+    const doc = resolvedKind === "doctor" && s.subjectProfileId
+      ? doctorBySlug.get(s.subjectProfileId)
+      : null;
     const displayName = prof
       ? displayNameFor(prof.kind, prof)
-      : resolvedKind === "clinic" || resolvedKind === "agency"
-        ? (org?.name || "Provider")
-        : org?.name || "GoStork concierge";
+      : doc
+        ? doc.name
+        : resolvedKind === "clinic" || resolvedKind === "agency"
+          ? (org?.name || "Provider")
+          : org?.name || "GoStork concierge";
     return {
       sessionId: s.id,
       providerId: s.providerId,
@@ -352,9 +373,17 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       subjectKind: resolvedKind,
       subjectProfileId: s.subjectProfileId,
       displayName,
-      photoUrl: prof?.photo ?? org?.logoUrl ?? null,
+      photoUrl: prof?.photo ?? doc?.photoUrl ?? org?.logoUrl ?? null,
       profileStatus: prof?.status ?? null,
-      profileUrl: profileUrlFor(resolvedKind, prof?.providerId ?? s.providerId, s.subjectProfileId, null),
+      // A doctor's subjectProfileId is a SLUG, not a uuid - /doctors/:slug is
+      // keyed that way. Passing null here meant every doctor thread rendered
+      // with no Profile link at all.
+      profileUrl: profileUrlFor(
+        resolvedKind,
+        prof?.providerId ?? s.providerId,
+        s.subjectProfileId,
+        resolvedKind === "doctor" ? s.subjectProfileId : null,
+      ),
       serviceType: serviceTypeFor(resolvedKind),
       matchStatus: sessionStatus(s),
       rawStatus: s.status,

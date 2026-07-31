@@ -8,35 +8,18 @@ import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Card } from "@/components/ui/card";
-import { Plus, UserCircle, Trash2, Pencil, Loader2, Phone, Search, XCircle, Calendar, ChevronDown, CheckCircle2, Ban, UserCheck, Users, Lock } from "lucide-react";
-import { CopyButton } from "@/components/ui/copy-button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { getPhotoSrc } from "@/lib/profile-utils";
-import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
-import { formatPhoneDisplay } from "@/lib/phone-countries";
+import { Plus, Trash2, Loader2, Search, Calendar, Ban, UserCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
+import { useTableSort } from "@/components/sortable-table-head";
 import MembersTable from "@/components/members-table";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import {
-  ContactHiddenChip,
-  HouseholdBadge,
   JOURNEY_STATUS_LABELS,
-  MatchStatusBadge,
-  NextStepCell,
-  OwnerCell,
-  ParentAgreementsCell,
-  ParentCostSheetsCell,
-  ParentInvoicesCell,
   SERVICE_LABELS,
-  ServiceChips,
-  TagsCell,
-  dedupeHouseholdPhones,
   matchesCrmFilters,
   toDateParam,
 } from "@/components/parents";
+import { ParentsTable } from "@/components/parents/parents-table";
 
 /**
  * The tag vocabulary this viewer may filter by. Scoped server-side: an admin
@@ -460,157 +443,68 @@ function GostorkAdminUsersView() {
         })}
       </div>
 
-      <Card className="overflow-x-auto">
-        <Table className="[&_th]:px-2 [&_td]:px-2 [&_th]:text-xs">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-10 pl-4">
-                <Checkbox
-                  checked={allVisibleSelected ? true : someSelected ? "indeterminate" : false}
-                  onCheckedChange={toggleSelectAll}
-                  aria-label="Select all"
-                  data-testid="checkbox-select-all"
-                />
-              </TableHead>
-              <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={handleSort} data-testid="sort-name" />
-              <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={handleSort} className="hidden sm:table-cell" data-testid="sort-email" />
-              <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden md:table-cell" data-testid="sort-mobile" />
-              <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
-              <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Cost Sheets</TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Invoices</TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Agreements</TableHead>
-              <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-created" />
-              <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
-              <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
-              <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
-              <TableHead className="whitespace-nowrap hidden xl:table-cell">Tags</TableHead>
-              <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {groupedUsers.length > 0 ? groupedUsers.map((member) => {
-              const household = overview[member.id]?.household as { memberIds: string[]; memberNames: string[] } | undefined;
-              return (
-              <TableRow
-                key={member.id}
-                data-testid={`row-staff-${member.id}`}
-                className={`cursor-pointer ${member.isDisabled ? "opacity-60" : ""}`}
-                // Couple rows are pulled adjacent (groupedUsers) and share
-                // an accent tint + left bar so the pair reads as one block.
-                style={household ? { background: "hsl(var(--accent) / 0.06)", boxShadow: "inset 3px 0 0 hsl(var(--accent) / 0.6)" } : undefined}
-                onClick={() => navigate(`/parents/${member.id}`)}
+      <ParentsTable
+        rows={groupedUsers.map(member => {
+          const o = overview[member.id] || {};
+          const household = o.household as { memberIds: string[]; memberNames: string[] } | undefined;
+          return {
+            key: member.id,
+            id: member.id,
+            name: member.name,
+            email: member.email,
+            mobileNumber: member.mobileNumber,
+            photoUrl: member.photoUrl,
+            members: [],
+            householdNames: household?.memberNames,
+            // GoStork staff are never behind Gate B.
+            contactReleased: true,
+            services: o.serviceKeys || [],
+            matchStatus: o.matchStatus ?? null,
+            costSheets: o.costSheets || [],
+            invoices: o.invoices || [],
+            agreements: o.agreements || [],
+            sessionId: null,
+            createdAt: member.createdAt ?? null,
+            updatedAt: o.updatedAt ?? null,
+            isDisabled: member.isDisabled,
+            owner: o.owner ?? null,
+            nextStep: o.nextStep ?? null,
+            tags: o.tags || [],
+          };
+        })}
+        sortConfig={sortConfig}
+        onSort={handleSort}
+        onRowClick={(row) => navigate(`/parents/${row.id}`)}
+        isAdmin
+        selectable
+        selectedIds={selectedIds}
+        onToggleSelect={toggleSelect}
+        onToggleSelectAll={toggleSelectAll}
+        allVisibleSelected={allVisibleSelected}
+        someSelected={someSelected}
+        rowActions={(row) => {
+          const member = parentUsers.find(u => u.id === row.id);
+          if (!member) return null;
+          return (
+            <div className="flex items-center justify-end gap-1">
+              {/* No edit button - clicking anywhere on the row opens the record */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={member.isDisabled ? "text-success hover:text-success" : "text-warning hover:text-warning"}
+                onClick={() => toggleDisabledMutation.mutate(member)}
+                disabled={toggleDisabledMutation.isPending}
+                title={member.isDisabled ? "Enable login" : "Disable login"}
+                data-testid={`button-toggle-disabled-${member.id}`}
               >
-                <TableCell className="pl-4 w-10" onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selectedIds.has(member.id)}
-                    onCheckedChange={() => toggleSelect(member.id)}
-                    aria-label={`Select ${member.name || member.email}`}
-                    data-testid={`checkbox-select-${member.id}`}
-                  />
-                </TableCell>
-                <TableCell className="font-ui whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    {getPhotoSrc(member.photoUrl) ? (
-                      <img src={getPhotoSrc(member.photoUrl)!} alt="" className="w-8 h-8 rounded-[var(--radius)] object-cover" />
-                    ) : (
-                      <DoctorMonogram name={member.name} size={32} rounded="var(--radius)" />
-                    )}
-                    <button type="button" className="text-left hover:text-primary hover:underline transition-colors cursor-pointer truncate max-w-[150px]" title={member.name || undefined} onClick={(e) => { e.stopPropagation(); navigate(`/parents/${member.id}`); }} data-testid={`link-user-name-${member.id}`}>{member.name || "-"}</button>
-                    {member.name && <CopyButton value={member.name} testId={`btn-copy-name-${member.id}`} />}
-                    {member.isDisabled && (
-                      <span className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap bg-destructive text-destructive-foreground" data-testid={`badge-disabled-${member.id}`}>Disabled</span>
-                    )}
-                  </div>
-                  {/* Second line so the chip never bleeds into the email column */}
-                  {household && (
-                    <div className="mt-1 pl-6">
-                      <HouseholdBadge memberNames={household.memberNames} selfName={member.name} testId={`badge-couple-${member.id}`} />
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell className="hidden sm:table-cell" data-testid={`text-email-${member.id}`}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate max-w-[135px] inline-block align-middle" title={member.email}>{member.email}</span>
-                    <CopyButton value={member.email} testId={`btn-copy-email-${member.id}`} />
-                  </div>
-                </TableCell>
-                <TableCell className="hidden md:table-cell whitespace-nowrap" data-testid={`text-mobile-${member.id}`}>
-                  {member.mobileNumber ? (
-                    <div className="flex items-center gap-1 text-sm">
-                      <span className="whitespace-nowrap">{formatPhoneDisplay(member.mobileNumber)}</span>
-                      <CopyButton value={member.mobileNumber} testId={`btn-copy-mobile-${member.id}`} />
-                    </div>
-                  ) : <span className="t-helper">-</span>}
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <ServiceChips services={overview[member.id]?.serviceKeys} testId={`chips-services-${member.id}`} />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <MatchStatusBadge status={overview[member.id]?.matchStatus} />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                  <ParentCostSheetsCell
-                    costSheets={overview[member.id]?.costSheets || []}
-                    sessionId={null}
-                    isAdmin
-                    parentUserId={member.id}
-                  />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                  <ParentInvoicesCell invoices={overview[member.id]?.invoices || []} />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                  <ParentAgreementsCell agreements={overview[member.id]?.agreements || []} />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell" data-testid={`text-created-${member.id}`}>
-                  {member.createdAt ? (
-                    <span className="t-helper">{new Date(member.createdAt).toLocaleDateString()}</span>
-                  ) : <span className="t-helper">-</span>}
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  {overview[member.id]?.updatedAt ? (
-                    <span className="t-helper">{new Date(overview[member.id].updatedAt).toLocaleDateString()}</span>
-                  ) : <span className="t-helper">-</span>}
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <OwnerCell owner={overview[member.id]?.owner} testId={`cell-owner-${member.id}`} />
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <NextStepCell nextStep={overview[member.id]?.nextStep} testId={`cell-next-step-${member.id}`} />
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <TagsCell tags={overview[member.id]?.tags} testId={`cell-tags-${member.id}`} />
-                </TableCell>
-                <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-end gap-1">
-                    {/* No edit button - clicking anywhere on the row opens the edit page */}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={member.isDisabled ? "text-success hover:text-success" : "text-warning hover:text-warning"}
-                      onClick={() => toggleDisabledMutation.mutate(member)}
-                      disabled={toggleDisabledMutation.isPending}
-                      title={member.isDisabled ? "Enable login" : "Disable login"}
-                      data-testid={`button-toggle-disabled-${member.id}`}
-                    >
-                      {member.isDisabled ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
-                    </Button>
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteMember(member)} data-testid={`button-delete-${member.id}`}><Trash2 className="w-4 h-4" /></Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-              );
-            }) : (
-              <TableRow>
-                <TableCell colSpan={15} className="text-center text-muted-foreground py-8">
-                  {hasActiveFilters ? "No parents match your filters." : "No parents found."}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+                {member.isDisabled ? <UserCheck className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+              </Button>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteMember(member)} data-testid={`button-delete-${member.id}`}><Trash2 className="w-4 h-4" /></Button>
+            </div>
+          );
+        }}
+        emptyMessage={hasActiveFilters ? "No parents match your filters." : "No parents found."}
+      />
 
       <Dialog open={!!deleteMember} onOpenChange={(open) => { if (!open) setDeleteMember(null); }}>
         <DialogContent>
@@ -860,125 +754,37 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           table got here by booking a consultation through the AI chat,
           so "source" was always the same value and the column didn't
           earn its width. */}
-      <Card className="overflow-x-auto">
-        <Table className="[&_th]:px-2 [&_td]:px-2 [&_th]:text-xs">
-          <TableHeader>
-            <TableRow>
-              <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
-              <TableHead className="hidden sm:table-cell whitespace-nowrap">Email</TableHead>
-              <TableHead className="hidden md:table-cell whitespace-nowrap">Mobile</TableHead>
-              <SortableTableHead label="Services" sortKey="service" currentSort={sortConfig} onSort={handleSort} className="hidden lg:table-cell whitespace-nowrap" />
-              <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="hidden lg:table-cell whitespace-nowrap" />
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Cost Sheets</TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Invoices</TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Agreements</TableHead>
-              <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
-              <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
-              <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
-              <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={handleSort} className="hidden xl:table-cell whitespace-nowrap" />
-              <TableHead className="hidden xl:table-cell whitespace-nowrap">Tags</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length > 0 ? filtered.map((row: any) => (
-              <TableRow
-                // Row key has to include the sessionId/rowId so a parent
-                // with multiple matches (e.g. surrogacy + egg donation
-                // sessions) renders as multiple distinct rows.
-                key={row.rowId || row.id}
-                data-testid={`row-match-${row.rowId || row.id}`}
-                className="cursor-pointer hover:bg-secondary/30"
-                onClick={() => {
-                  // Click anywhere on the row navigates into the parent
-                  // detail page. The session-specific chat link is
-                  // implicit since most parents only have one session.
-                  navigate(`/parents/${row.id}`);
-                }}
-              >
-                <TableCell className="font-ui whitespace-nowrap">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-[var(--radius)] bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                      <UserCircle className="w-4 h-4" />
-                    </div>
-                    {/* Cap the combined household name so a couple's longer
-                        name doesn't push the table wider than the page */}
-                    <span data-testid={`text-parent-name-${row.id}`} className="truncate max-w-[170px] inline-block align-middle" title={row.name}>{row.name || "-"}</span>
-                    {row.name && <CopyButton value={row.name} testId={`btn-copy-name-${row.rowId}`} />}
-                    <HouseholdBadge memberNames={(row.members || []).map((m: any) => m.name)} testId={`badge-couple-${row.rowId}`} />
-                  </div>
-                </TableCell>
-                <TableCell className="hidden sm:table-cell whitespace-nowrap" data-testid={`text-parent-email-${row.id}`}>
-                  {/* Couples: one line per login so the provider can reach either partner */}
-                  {!row.contactReleased ? <ContactHiddenChip testId={`chip-email-hidden-${row.rowId}`} /> : (
-                  <div className="flex flex-col gap-0.5">
-                    {((row.members?.length > 1 ? row.members : [{ id: row.id, email: row.email }]) as any[]).map(m => (
-                      <div key={m.id} className="flex items-center gap-1.5">
-                        <span className="truncate max-w-[150px] inline-block align-middle" title={m.email}>{m.email}</span>
-                        <CopyButton value={m.email} testId={`btn-copy-email-${row.rowId}-${m.id}`} />
-                      </div>
-                    ))}
-                  </div>
-                  )}
-                </TableCell>
-                <TableCell className="hidden md:table-cell whitespace-nowrap" data-testid={`text-parent-mobile-${row.id}`}>
-                  {!row.contactReleased ? <ContactHiddenChip testId={`chip-mobile-hidden-${row.rowId}`} /> : (() => {
-                    // Distinct numbers across the household - partners often
-                    // share one phone, so dedupe by value.
-                    const mobiles = dedupeHouseholdPhones(row.members, { id: row.id, mobileNumber: row.mobileNumber });
-                    if (mobiles.length === 0) return <span className="t-helper">-</span>;
-                    return (
-                      <div className="flex flex-col gap-0.5">
-                        {mobiles.map(m => (
-                          <div key={m.id} className="flex items-center gap-1 text-sm">
-                            <span className="whitespace-nowrap">{formatPhoneDisplay(m.mobileNumber)}</span>
-                            <CopyButton value={m.mobileNumber} testId={`btn-copy-mobile-${row.rowId}-${m.id}`} />
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <ServiceChips services={row.serviceType ? [row.serviceType] : []} testId={`chips-services-${row.rowId}`} />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <MatchStatusBadge status={row.matchStatus} />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <ParentCostSheetsCell costSheets={row.costSheets || []} sessionId={row.sessionId} parentUserId={row.id} />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <ParentInvoicesCell invoices={row.invoices || []} />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <ParentAgreementsCell agreements={row.agreements || []} />
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <span className="t-helper">{row.sessionCreatedAt ? new Date(row.sessionCreatedAt).toLocaleDateString() : "-"}</span>
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <span className="t-helper">{row.sessionUpdatedAt ? new Date(row.sessionUpdatedAt).toLocaleDateString() : "-"}</span>
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <OwnerCell owner={row.owner} testId={`cell-owner-${row.rowId}`} />
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <NextStepCell nextStep={row.nextStep} testId={`cell-next-step-${row.rowId}`} />
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <TagsCell tags={row.tags} testId={`cell-tags-${row.rowId}`} />
-                </TableCell>
-              </TableRow>
-            )) : (
-              <TableRow>
-                <TableCell colSpan={13} className="text-center text-muted-foreground py-8">
-                  {hasActiveFilters ? "No parents match your filters." : "No parent contacts yet. Parents will appear here when the AI concierge connects them with you."}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+      <ParentsTable
+        rows={filtered.map((row: any) => ({
+          key: row.rowId || row.id,
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          mobileNumber: row.mobileNumber,
+          photoUrl: row.photoUrl,
+          members: row.members || [],
+          householdNames: (row.members || []).length > 1 ? (row.members || []).map((m: any) => m.name) : undefined,
+          contactReleased: !!row.contactReleased,
+          services: row.serviceType ? [row.serviceType] : [],
+          matchStatus: row.matchStatus ?? null,
+          costSheets: row.costSheets || [],
+          invoices: row.invoices || [],
+          agreements: row.agreements || [],
+          sessionId: row.sessionId ?? null,
+          createdAt: row.sessionCreatedAt ?? null,
+          updatedAt: row.sessionUpdatedAt ?? null,
+          owner: row.owner ?? null,
+          nextStep: row.nextStep ?? null,
+          tags: row.tags || [],
+        }))}
+        sortConfig={sortConfig}
+        onSort={handleSort}
+        onRowClick={(row) => navigate(`/parents/${row.id}`)}
+        isAdmin={false}
+        emptyMessage={hasActiveFilters
+          ? "No parents match your filters."
+          : "No parent contacts yet. Parents will appear here when the AI concierge connects them with you."}
+      />
     </div>
   );
 }

@@ -34,7 +34,9 @@ npx tsx scripts/test-parent-gate-a.ts
 - [x] **A-1** `test-parent-record.ts` - 24 assertions, ALL PASSED
 - [x] **A-2** `test-parent-crm-scope.ts` - 19 assertions, ALL PASSED
 - [x] **A-3** `test-parent-gate-a.ts` - 6 assertions, ALL PASSED
-- [ ] **A-4** Wire all three into the main suite / CI rather than running by hand
+- [x] **A-4** All four registered in package.json: `test:parent-record`,
+      `test:parent-crm`, `test:parent-gate-a`, and `test:parents` which
+      chains them with `test:parent-privacy`
 
 ---
 
@@ -121,9 +123,16 @@ is verified by A-1 unless noted.
 - [x] **R-13** Mobile 390px: single column, no horizontal overflow
 - [x] **R-14** `?sec=none` collapses all sections and survives a fresh load
 - [x] **R-15** Household block on a couple account - 2 members, each with the hidden-contact chip rather than a blank
-- [ ] **R-16** IP form "submitted but locked" copy (fixture form not submitted)
-- [ ] **R-17** Doctor and clinic profile links (only surrogate exercised;
-      doctor uses `/doctors/:slug`, clinic uses `/providers/:id`)
+- [x] **R-16** Submitted-but-locked verified by flipping the IP form to
+      SUBMITTED: the gated org gets `status=SUBMITTED, responseId=null` (the
+      locked-copy branch) while the released org gets the PDF handle. Fixture
+      restored to DRAFT afterwards
+- [x] **R-17** Doctor and clinic links. *Found a real bug: a doctor's
+      subjectProfileId is a SLUG, and the slug argument was passed as null,
+      so every doctor thread rendered with NO link - and under the clinic's
+      name, because doctors live in ProviderMember and were never hydrated.
+      Now resolves to "Dr. Vicken Sepilian" -> /doctors/vicken-sepilian;
+      clinic -> /providers/:id*
 - [x] **R-18** 403 state renders "Forbidden" with the explanatory copy and the "Back to parents" button
 - [x] **R-19** Saved-profiles grid with real data (2 saved surrogates). Note: 7 further favourites are ORPHANED - the donor rows no longer exist - and are correctly skipped
 
@@ -207,18 +216,18 @@ The shared components were modified, so their original mount sites need a look.
       `sessionSummaries` prop for the record's N sessions, and mounted in the
       GoStork-only block. The monitor's single-summary path is unchanged and
       re-verified in the browser
-- [!] **G-2** The two table views were **not** structurally converged. They
-      share the cells, the filter predicate and the CRM columns, but the table
-      scaffolding is still two copies. Deferred as a large refactor with real
-      regression risk
+- [x] **G-2** DONE. Both tables now render one `ParentsTable`; each view maps
+      its payload into `ParentTableRow`. The real differences are props -
+      `selectable`, `rowActions`, `contactReleased`, `members`. staff-page
+      dropped from 984 to 790 lines and ~25 now-dead imports went with it
 - [x] **G-3** DONE. `parents-overview` now emits a normalised `serviceKeys`
       array alongside the display labels, so the admin table filters by enum
       equality exactly like the provider one and both selects are built from
       `SERVICE_LABELS`. Stored `interestedServices` is untouched - it is
       user-facing text shown verbatim on the parent profile card
-- [!] **G-4** `server/auth.ts` is now fully orphaned (zero importers) after
-      `routes.ts` was deleted. It still exports `hashPassword`; deleting it is a
-      judgment call, not a cleanup
+- [!] **G-4** `server/auth.ts` is orphaned (zero importers) but still exports
+      `hashPassword`. **Left in place by explicit decision** - not an open
+      task
 
 ---
 
