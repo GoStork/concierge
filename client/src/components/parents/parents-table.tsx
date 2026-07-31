@@ -108,22 +108,22 @@ export function ParentsTable({
                 />
               </TableHead>
             )}
-            {/* Two-word headers wrap rather than forcing their column wide. The
-                header text was the widest thing in Match Status, Cost Sheets and
-                Next step - wrapping costs one taller header row and buys back
-                roughly 130px of table width. */}
+            {/* Every header stays on one line so all thirteen read the same
+                way. The width that bought is the caps on Name and Email below,
+                not wrapping - measured under the admin column budget, the table
+                fits with the headers unwrapped. */}
             <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className={`min-w-[164px] sticky z-20 bg-muted ${selectable ? "left-10" : "left-0"} ${selectable ? "" : pinL}`} data-testid="sort-name" />
             <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell max-w-[170px]" data-testid="sort-email" />
             <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-mobile" />
             <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
-            <SortableTableHead label="Match Status" wrapLabel sortKey="status" currentSort={sortConfig} onSort={onSort} className="hidden lg:table-cell leading-tight" data-testid="sort-status" />
-            <SortableTableHead label="Cost Sheets" wrapLabel sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="hidden lg:table-cell leading-tight" data-testid="sort-cost-sheets" />
+            <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
+            <SortableTableHead label="Cost Sheets" sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-cost-sheets" />
             <SortableTableHead label="Invoices" sortKey="invoices" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-invoices" />
             <SortableTableHead label="Agreements" sortKey="agreements" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-agreements" />
             <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-created" />
             <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
             <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
-            <SortableTableHead label="Next step" wrapLabel sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="hidden xl:table-cell leading-tight" data-testid="sort-next-step" />
+            <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
             <SortableTableHead label="Tags" sortKey="tags" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-tags" />
             {rowActions && <TableHead className={`text-right whitespace-nowrap sticky right-0 z-20 bg-muted ${pinR}`}>Actions</TableHead>}
           </TableRow>
