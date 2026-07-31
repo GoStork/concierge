@@ -93,11 +93,12 @@ export function ParentsTable({
     return () => ro.disconnect();
   }, [measure, rows.length]);
 
-  // Inline rather than a class: an arbitrary Tailwind shadow carrying
-  // hsl(var(--foreground)/0.28) compiles to a transparent shadow, so the
-  // affordance silently did nothing.
-  const pinL = edge.left ? { boxShadow: "8px 0 10px -8px hsl(var(--foreground) / 0.28)" } : undefined;
-  const pinR = edge.right ? { boxShadow: "-8px 0 10px -8px hsl(var(--foreground) / 0.28)" } : undefined;
+  // A hairline, not a drop shadow. A blurred edge on a pinned column reads as
+  // a narrow empty column of its own, which is worse than the ambiguity it was
+  // meant to resolve; a single rule looks like the table dividers already here
+  // and still says "this column is pinned, the rest slides under it".
+  const pinL = edge.left ? { borderRight: "1px solid hsl(var(--border))" } : undefined;
+  const pinR = edge.right ? { borderLeft: "1px solid hsl(var(--border))" } : undefined;
 
   return (
     <Card>
