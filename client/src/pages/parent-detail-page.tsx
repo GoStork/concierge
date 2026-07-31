@@ -87,16 +87,19 @@ export default function ParentDetailPage() {
 
           {record && (
             <>
+              {/* One Profile block. The identity card and the old "Profile"
+                  section rendered the same person twice, so the section is
+                  folded in here and ?sec=identity now drives this card. */}
               <ParentRecordHeader
                 record={record}
                 isAdmin={!!isAdmin}
                 onJumpToCrm={() => toggle("crm", true)}
                 ownerSlot={<ParentLeadOwner record={record} />}
-              />
-
-              <RecordSection id="identity" title="Profile" open={isOpen("identity")} onToggle={toggle}>
+                open={isOpen("identity")}
+                onToggle={() => toggle("identity")}
+              >
                 <ParentIdentitySection record={record} />
-              </RecordSection>
+              </ParentRecordHeader>
 
               <RecordSection id="crm" title="Notes and follow-up" open={isOpen("crm")} onToggle={toggle}>
                 <ParentCrmPanel record={record} />

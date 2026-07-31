@@ -148,15 +148,27 @@ function ContactLine({ record }: { record: ParentRecord }) {
   );
 }
 
+/**
+ * The single Profile block: identity, contact, lead owner, and the profile
+ * detail underneath. There used to be two - this card, and a separate "Profile"
+ * section repeating the same photo, name, email and phone - which read as two
+ * profiles for one person.
+ *
+ * Collapsing hides the detail but never the identity row or the lead owner, so
+ * "who is this and who owns them" survives with the card shut.
+ */
 export function ParentRecordHeader({
-  record, isAdmin, onJumpToCrm, ownerSlot,
+  record, isAdmin, onJumpToCrm, ownerSlot, open = true, onToggle, children,
 }: {
   record: ParentRecord;
   isAdmin: boolean;
   onJumpToCrm: () => void;
-  /** The lead owner control. Lives here, above every collapsible section, so
-      "who owns this family" is answerable without opening anything. */
+  /** The lead owner control. Always rendered, collapsed or not. */
   ownerSlot?: ReactNode;
+  open?: boolean;
+  onToggle?: () => void;
+  /** The profile detail folded into this card. */
+  children?: ReactNode;
 }) {
   const navigate = useNavigate();
   const photoSrc = record.parent.photoUrl ? getPhotoSrc(record.parent.photoUrl) : null;
@@ -174,6 +186,18 @@ export function ParentRecordHeader({
           )}
           <div className="min-w-0 space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
+              {onToggle && (
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  className="text-muted-foreground hover:text-foreground transition-colors -ml-1"
+                  aria-expanded={open}
+                  aria-label={open ? "Collapse profile" : "Expand profile"}
+                  data-testid="btn-toggle-profile"
+                >
+                  <ChevronDown className={`w-4 h-4 transition-transform ${open ? "" : "-rotate-90"}`} />
+                </button>
+              )}
               <h1 className="text-lg font-semibold" style={{ fontFamily: "var(--font-display)" }} data-testid="record-parent-name">
                 {record.parent.name || "Parent"}
               </h1>
@@ -247,6 +271,10 @@ export function ParentRecordHeader({
             </span>
           ))}
         </div>
+      )}
+
+      {open && children && (
+        <div className="mt-4 pt-4 border-t" data-testid="record-profile-detail">{children}</div>
       )}
     </div>
   );
