@@ -5,6 +5,13 @@ CRM layer (notes, next step, lead owner, tags).
 
 Status legend: `[x]` verified, `[ ]` not yet run, `[!]` known gap.
 
+This file is the record of what has been verified. The **executable** form of the
+same coverage - 67 cases as action plus expected result, with per-case Pass/Fail
+tracking - is the QA worksheet at
+<https://claude.ai/code/artifact/5a8ff180-bb92-4c8d-88e5-9d6a1ec1cf18>. Its
+sections map onto this document: A automated (section 0), B gates (1), C record
+(3), D CRM (4), E admin-only (3), F table (2), G real data, H regressions (5).
+
 **Roles used below**
 - **P** = provider staff. Reference account: Jered Mercer / Family Creations.
 - **A** = GoStork admin. Reference account: Eran Amir.
