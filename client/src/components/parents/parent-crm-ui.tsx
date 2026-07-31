@@ -305,12 +305,12 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
   const filtered = options.filter((u) => !q || (u.name || "").toLowerCase().includes(q.toLowerCase()));
 
   return (
-    // No surface of its own: this renders inside the record header card, and a
-    // filled box nested in a card is the "weird small area background".
-    <div className="space-y-1.5" data-testid={`owner-${choice.key}`}>
-      <p className="t-micro-label">Lead owner</p>
+    // A labelled value on one line, the same shape as "EMAIL foo@bar.com" and
+    // "LOCATION New York" elsewhere on this record - not a block of its own.
+    <div data-testid={`owner-${choice.key}`}>
       {!open ? (
         <div className="flex items-center gap-2 flex-wrap">
+          <span className="t-micro-label">Lead owner</span>
           {current ? (
             <span className="flex items-center gap-1.5 text-sm">
               <DoctorMonogram name={current.ownerName || "?"} size={22} rounded="999px" />

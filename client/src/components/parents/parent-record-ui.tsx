@@ -8,6 +8,7 @@
  */
 import { ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ProfileSection } from "@/components/ui/profile-section";
 import { ArrowLeft, ChevronDown, ClipboardList, Download, ShieldCheck, Settings, Users, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -76,24 +77,24 @@ export function RecordSection({
   children: ReactNode;
 }) {
   return (
-    // Deliberately a plain bordered div, NOT a Card: Card carries
-    // overflow-hidden, which clips anything that needs to break out (the
-    // lesson the PandaDoc editor learned twice).
-    <div className="rounded-[var(--radius)] border bg-card" data-testid={`section-${id}`}>
-      <button
-        type="button"
-        onClick={() => onToggle(id)}
-        className="w-full flex items-center gap-2 px-5 py-3.5 text-left hover:bg-secondary/40 transition-colors rounded-[var(--radius)]"
-        data-testid={`section-toggle-${id}`}
-      >
-        <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`} />
-        <span className="text-sm font-medium font-ui">{title}</span>
-        {typeof count === "number" && count > 0 && (
-          <span className="t-helper">({count})</span>
-        )}
-      </button>
-      {open && <div className="px-5 pb-5 pt-1">{children}</div>}
-    </div>
+    // The shared section card every profile detail page uses - its own docs
+    // say not to re-implement a section header, and this page had been doing
+    // exactly that with a plain bordered div and no header bar.
+    <ProfileSection
+      title={
+        <span className="flex items-center gap-2">
+          {title}
+          {typeof count === "number" && count > 0 && <span className="t-helper">({count})</span>}
+        </span>
+      }
+      collapsible
+      open={open}
+      onToggle={() => onToggle(id)}
+      contentClassName="p-5"
+      data-testid={`section-${id}`}
+    >
+      {children}
+    </ProfileSection>
   );
 }
 
@@ -163,90 +164,52 @@ export function ParentRecordHeader({
   record: ParentRecord;
   isAdmin: boolean;
   onJumpToCrm: () => void;
-  /** The lead owner control. Always rendered, collapsed or not. */
+  /** The lead owner control. Sits in the header bar, so it stays put when the
+      card is collapsed. */
   ownerSlot?: ReactNode;
   open?: boolean;
   onToggle?: () => void;
   /** The profile detail folded into this card. */
   children?: ReactNode;
 }) {
-  const navigate = useNavigate();
   const photoSrc = record.parent.photoUrl ? getPhotoSrc(record.parent.photoUrl) : null;
   const nextStep = record.crm.followUps[0];
-  const newestSession = record.conversations[0]?.sessionId ?? null;
 
   return (
-    <div className="rounded-[var(--radius)] border bg-card p-5" data-testid="record-header">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-start gap-3 min-w-0">
-          {photoSrc ? (
-            <img src={photoSrc} alt={record.parent.name || "Parent"} className="w-12 h-12 rounded-[var(--radius)] object-cover object-top shrink-0" />
-          ) : (
-            <DoctorMonogram name={record.parent.name || "Parent"} size={48} rounded="var(--radius)" />
-          )}
-          <div className="min-w-0 space-y-1.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              {onToggle && (
-                <button
-                  type="button"
-                  onClick={onToggle}
-                  className="text-muted-foreground hover:text-foreground transition-colors -ml-1"
-                  aria-expanded={open}
-                  aria-label={open ? "Collapse profile" : "Expand profile"}
-                  data-testid="btn-toggle-profile"
-                >
-                  <ChevronDown className={`w-4 h-4 transition-transform ${open ? "" : "-rotate-90"}`} />
-                </button>
-              )}
-              <h1 className="text-lg font-semibold" style={{ fontFamily: "var(--font-display)" }} data-testid="record-parent-name">
-                {record.parent.name || "Parent"}
-              </h1>
-              {record.parent.name && <CopyButton value={record.parent.name} testId="btn-copy-record-name" />}
-              <HouseholdBadge
-                memberNames={record.accountMembers.map((m) => m.name || "")}
-                selfName={record.parent.name}
-                testId="record-household"
-              />
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <MatchStatusBadge status={record.matchStatus} />
-              <ServiceChips services={record.services} limit={0} testId="record-services" />
-            </div>
-            <ContactLine record={record} />
-          </div>
-        </div>
-
-        <div className="flex flex-col items-end gap-2 shrink-0">
-        {isAdmin && (
-          <div className="flex items-center gap-2 shrink-0">
-            {newestSession && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(chatDeepLink({ sessionId: newestSession }, true) as string)}
-                data-testid="btn-record-open-monitor"
-              >
-                <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Open in monitor
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate(`/users/${record.parent.id}`)}
-              data-testid="btn-parent-account-settings"
-            >
-              <Settings className="w-3.5 h-3.5 mr-1.5" /> Account settings
-            </Button>
-          </div>
+    <ProfileSection
+      title="Profile"
+      collapsible
+      open={open}
+      onToggle={() => onToggle?.()}
+      headerActions={ownerSlot}
+      contentClassName="p-5 space-y-4"
+      data-testid="record-header"
+    >
+      <div className="flex items-start gap-3 min-w-0">
+        {photoSrc ? (
+          <img src={photoSrc} alt={record.parent.name || "Parent"} className="w-12 h-12 rounded-[var(--radius)] object-cover object-top shrink-0" />
+        ) : (
+          <DoctorMonogram name={record.parent.name || "Parent"} size={48} rounded="var(--radius)" />
         )}
-        {ownerSlot && <div className="w-[240px] max-w-full" data-testid="record-owner-slot">{ownerSlot}</div>}
+        {/* The name is the page title now, so it is not repeated here. */}
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <MatchStatusBadge status={record.matchStatus} />
+            <ServiceChips services={record.services} limit={0} testId="record-services" />
+            <HouseholdBadge
+              memberNames={record.accountMembers.map((m) => m.name || "")}
+              selfName={record.parent.name}
+              testId="record-household"
+            />
+          </div>
+          <ContactLine record={record} />
         </div>
       </div>
 
-      {/* Read-only mirror of the CRM state, so the answer to "who owns this and
-          what is next" is visible without scrolling. Clicking opens the panel. */}
+      {/* Read-only mirror of the CRM state, so "what is next" is answerable
+          without opening the notes panel. Clicking opens it. */}
       {(nextStep || record.crm.tags.length > 0) && (
-        <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t">
+        <div className="flex flex-wrap items-center gap-2 pt-3 border-t">
           {nextStep && (
             <button
               type="button"
@@ -273,9 +236,35 @@ export function ParentRecordHeader({
         </div>
       )}
 
-      {open && children && (
-        <div className="mt-4 pt-4 border-t" data-testid="record-profile-detail">{children}</div>
+      {children}
+    </ProfileSection>
+  );
+}
+
+/** Admin-only page actions, rendered beside the page title. */
+export function ParentRecordActions({ record }: { record: ParentRecord }) {
+  const navigate = useNavigate();
+  const newestSession = record.conversations[0]?.sessionId ?? null;
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      {newestSession && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => navigate(chatDeepLink({ sessionId: newestSession }, true) as string)}
+          data-testid="btn-record-open-monitor"
+        >
+          <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Open in monitor
+        </Button>
       )}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => navigate(`/users/${record.parent.id}`)}
+        data-testid="btn-parent-account-settings"
+      >
+        <Settings className="w-3.5 h-3.5 mr-1.5" /> Account settings
+      </Button>
     </div>
   );
 }

@@ -21,6 +21,7 @@ import { EvaKnowledgePanel } from "@/components/chat/eva-knowledge-panel";
 import {
   ParentCrmPanel,
   ParentLeadOwner,
+  ParentRecordActions,
   ParentIdentitySection,
   ParentMoneySection,
   ParentRecordHeader,
@@ -53,16 +54,25 @@ export default function ParentDetailPage() {
 
   return (
     <div className="flex flex-col min-h-[calc(100dvh-64px)]">
-      <div className="flex items-center gap-3 px-4 h-14 border-b bg-background shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1.5" data-testid="btn-parent-detail-back">
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Button>
-        <span className="text-sm font-medium font-ui">Parent record</span>
-      </div>
-
       <div className="flex-1 px-4 py-6">
         <div className="w-full space-y-4">
+          {/* Same page-title treatment as /parents. This was a 14px label in a
+              bar of its own, which read as a breadcrumb rather than the title
+              of the page you are on. */}
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="space-y-2">
+              <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1.5 -ml-2" data-testid="btn-parent-detail-back">
+                <ArrowLeft className="w-4 h-4" />
+                Back
+              </Button>
+              <h1 className="font-display t-page-title text-primary" data-testid="text-page-title">
+                {record?.parent.name || "Parent record"}
+              </h1>
+            </div>
+            {/* Page-level actions belong beside the page title, the way Add
+                Parent sits on /parents - not inside the profile card. */}
+            {record && isAdmin && <ParentRecordActions record={record} />}
+          </div>
           {isLoading && (
             <div className="flex flex-col items-center justify-center gap-3 py-12" data-testid="parent-record-loading">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ChevronDown } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,15 @@ interface ProfileSectionProps {
   contentClassName?: string;
   /** Optional node rendered on the right side of the header bar. */
   headerActions?: React.ReactNode;
+  /**
+   * Turn the header bar into a toggle and hide the body when closed. Off by
+   * default, so every existing profile page renders exactly as before. Added
+   * so the parent record could stop hand-rolling its own section header - the
+   * warning above is only enforceable if this covers the collapsing case too.
+   */
+  collapsible?: boolean;
+  open?: boolean;
+  onToggle?: () => void;
   "data-testid"?: string;
 }
 
@@ -29,26 +39,48 @@ export function ProfileSection({
   className,
   contentClassName = "p-6",
   headerActions,
+  collapsible = false,
+  open = true,
+  onToggle,
   ...rest
 }: ProfileSectionProps) {
   const testId = rest["data-testid"];
+  const heading = (
+    <h3
+      className="font-heading text-foreground"
+      style={{ fontSize: "var(--section-title-size)", fontWeight: "var(--section-title-weight)" as any }}
+      data-testid={
+        typeof title === "string"
+          ? `section-header-${title.toLowerCase().replace(/\s+/g, "-")}`
+          : undefined
+      }
+    >
+      {title}
+    </h3>
+  );
+
   return (
     <Card className={cn("overflow-hidden", className)} data-testid={testId}>
-      <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b bg-muted/50">
-        <h3
-          className="font-heading text-foreground"
-          style={{ fontSize: "var(--section-title-size)", fontWeight: "var(--section-title-weight)" as any }}
-          data-testid={
-            typeof title === "string"
-              ? `section-header-${title.toLowerCase().replace(/\s+/g, "-")}`
-              : undefined
-          }
-        >
-          {title}
-        </h3>
-        {headerActions}
+      <div className="flex items-center justify-between gap-3 border-b bg-muted/50">
+        {collapsible ? (
+          // The whole bar is the target, not just the chevron - a 3px icon is
+          // a poor place to make someone aim.
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            className="flex-1 min-w-0 flex items-center gap-2 px-5 py-3.5 text-left hover:bg-muted transition-colors"
+            data-testid={testId ? `${testId}-toggle` : undefined}
+          >
+            <ChevronDown className={cn("w-4 h-4 shrink-0 transition-transform", !open && "-rotate-90")} />
+            {heading}
+          </button>
+        ) : (
+          <div className="flex-1 min-w-0 px-5 py-3.5">{heading}</div>
+        )}
+        {headerActions && <div className="pr-5 shrink-0">{headerActions}</div>}
       </div>
-      <div className={contentClassName}>{children}</div>
+      {(!collapsible || open) && <div className={contentClassName}>{children}</div>}
     </Card>
   );
 }
