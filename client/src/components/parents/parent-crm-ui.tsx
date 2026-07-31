@@ -99,7 +99,15 @@ function NotesFeed({ record, isAdmin }: { record: ParentRecord; isAdmin: boolean
         />
         {isAdmin ? (
           <OptionPills
-            options={choices.map((c) => ({ value: c.key, label: c.label }))}
+            // One line per pill. A provider like "Sperm Bank California |
+            // Fertility Center of California" wrapped inside the rounded pill
+            // and made it two rows tall with the text centred oddly. Truncating
+            // here rather than in OptionPills, which is shared and has callers
+            // whose labels should still wrap.
+            options={choices.map((c) => ({
+              value: c.key,
+              label: <span className="block truncate max-w-[200px] sm:max-w-[280px]" title={c.label}>{c.label}</span>,
+            }))}
             value={scopeKey}
             onChange={(v: string) => setScopeKey(v)}
             testIdPrefix="pill-note-scope"
