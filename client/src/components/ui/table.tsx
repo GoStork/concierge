@@ -4,9 +4,24 @@ import { cn } from "@/lib/utils"
 
 const Table = React.forwardRef<
   HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-x-hidden">
+  React.HTMLAttributes<HTMLTableElement> & {
+    /**
+     * The wrapper below is the real scroll container - a caller putting
+     * overflow-x-auto on an ancestor achieves nothing, because this div clips
+     * first and the overflow is lost with no scrollbar to reach it. These three
+     * let a wide table opt into scrolling instead. Default stays clipping, so
+     * every existing table is untouched.
+     */
+    wrapperClassName?: string;
+    wrapperRef?: React.Ref<HTMLDivElement>;
+    onWrapperScroll?: React.UIEventHandler<HTMLDivElement>;
+  }
+>(({ className, wrapperClassName, wrapperRef, onWrapperScroll, ...props }, ref) => (
+  <div
+    ref={wrapperRef}
+    onScroll={onWrapperScroll}
+    className={cn("relative w-full overflow-x-hidden", wrapperClassName)}
+  >
     <table
       ref={ref}
       className={cn("w-full caption-bottom text-sm table-auto", className)}

@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useState } from "react";
 import { TableHead } from "@/components/ui/table";
 import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
@@ -11,16 +12,19 @@ type Props = {
   currentSort: SortConfig;
   onSort: (key: string) => void;
   className?: string;
+  /** For a pinned column that needs an edge shadow the class layer cannot express. */
+  style?: React.CSSProperties;
   "data-testid"?: string;
 };
 
-export function SortableTableHead({ label, sortKey, currentSort, onSort, className, ...props }: Props) {
+export function SortableTableHead({ label, sortKey, currentSort, onSort, className, style, ...props }: Props) {
   const isActive = currentSort.key === sortKey;
   const direction = isActive ? currentSort.direction : null;
 
   return (
     <TableHead
       className={`cursor-pointer select-none transition-colors ${className || ""}`}
+      style={style}
       onClick={() => onSort(sortKey)}
       data-testid={props["data-testid"]}
     >

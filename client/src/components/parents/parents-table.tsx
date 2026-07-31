@@ -67,12 +67,15 @@ export function ParentsTable({
   // checkbox + 12 shared + optional actions
   const colSpan = 12 + (selectable ? 1 : 0) + (rowActions ? 1 : 0);
 
-  // The admin view carries two columns the provider does not (select-all and
-  // Actions), so it runs out of room first and the table starts scrolling. Both
-  // edges are pinned, which means the middle slides UNDER them - readable only
-  // if the pinned cells are opaque and cast a shadow while there is more to
-  // see. Without the shadow, an email sliding under the name column just looks
-  // like a truncated email.
+  // Thirteen columns do not fit a laptop, and the admin view adds two more, so
+  // this table scrolls sideways by design with both edges pinned. The scroll
+  // container is the Table's OWN wrapper, not the Card: the wrapper clips
+  // first, so overflow-x on any ancestor is dead weight and the columns past
+  // the edge were simply being cut off with no scrollbar to reach them.
+  //
+  // Pinning means the middle slides under the edges, which is only readable if
+  // the pinned cells are opaque and cast a shadow while there is more to see.
+  // Without it, an email sliding under the name column just looks truncated.
   const scroller = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState({ left: false, right: false });
   const measure = useCallback(() => {
@@ -90,16 +93,24 @@ export function ParentsTable({
     return () => ro.disconnect();
   }, [measure, rows.length]);
 
-  const pinL = edge.left ? "shadow-[8px_0_10px_-8px_hsl(var(--foreground)/0.28)]" : "";
-  const pinR = edge.right ? "shadow-[-8px_0_10px_-8px_hsl(var(--foreground)/0.28)]" : "";
+  // Inline rather than a class: an arbitrary Tailwind shadow carrying
+  // hsl(var(--foreground)/0.28) compiles to a transparent shadow, so the
+  // affordance silently did nothing.
+  const pinL = edge.left ? { boxShadow: "8px 0 10px -8px hsl(var(--foreground) / 0.28)" } : undefined;
+  const pinR = edge.right ? { boxShadow: "-8px 0 10px -8px hsl(var(--foreground) / 0.28)" } : undefined;
 
   return (
-    <Card className="overflow-x-auto" ref={scroller} onScroll={measure}>
-      <Table className="[&_th]:px-2 [&_td]:px-2 [&_th]:text-xs">
+    <Card>
+      <Table
+        className="[&_th]:px-2 [&_td]:px-2 [&_th]:text-xs"
+        wrapperClassName="overflow-x-auto"
+        wrapperRef={scroller}
+        onWrapperScroll={measure}
+      >
         <TableHeader>
           <TableRow>
             {selectable && (
-              <TableHead className={`w-10 pl-4 sticky left-0 z-20 bg-muted ${pinL}`}>
+              <TableHead className="w-10 pl-4 sticky left-0 z-20 bg-muted" style={pinL}>
                 <Checkbox
                   checked={allVisibleSelected ? true : someSelected ? "indeterminate" : false}
                   onCheckedChange={onToggleSelectAll}
@@ -112,7 +123,7 @@ export function ParentsTable({
                 way. The width that bought is the caps on Name and Email below,
                 not wrapping - measured under the admin column budget, the table
                 fits with the headers unwrapped. */}
-            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className={`min-w-[164px] sticky z-20 bg-muted ${selectable ? "left-10" : "left-0"} ${selectable ? "" : pinL}`} data-testid="sort-name" />
+            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className={`min-w-[164px] sticky z-20 bg-muted ${selectable ? "left-10" : "left-0"}`} style={selectable ? undefined : pinL} data-testid="sort-name" />
             <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell max-w-[170px]" data-testid="sort-email" />
             <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-mobile" />
             <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
@@ -125,7 +136,7 @@ export function ParentsTable({
             <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
             <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
             <SortableTableHead label="Tags" sortKey="tags" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-tags" />
-            {rowActions && <TableHead className={`text-right whitespace-nowrap sticky right-0 z-20 bg-muted ${pinR}`}>Actions</TableHead>}
+            {rowActions && <TableHead className="text-right whitespace-nowrap sticky right-0 z-20 bg-muted" style={pinR}>Actions</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -150,7 +161,7 @@ export function ParentsTable({
                 onClick={() => onRowClick(row)}
               >
                 {selectable && (
-                  <TableCell className={`pl-4 w-10 sticky left-0 z-10 bg-inherit ${pinL}`} onClick={(e) => e.stopPropagation()}>
+                  <TableCell className="pl-4 w-10 sticky left-0 z-10 bg-inherit" style={pinL} onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={selectedIds?.has(row.id) || false}
                       onCheckedChange={() => onToggleSelect?.(row.id)}
@@ -160,7 +171,7 @@ export function ParentsTable({
                   </TableCell>
                 )}
 
-                <TableCell className={`font-ui whitespace-nowrap min-w-[164px] sticky z-10 bg-inherit ${selectable ? "left-10" : `left-0 ${pinL}`}`}>
+                <TableCell className={`font-ui whitespace-nowrap min-w-[164px] sticky z-10 bg-inherit ${selectable ? "left-10" : "left-0"}`} style={selectable ? undefined : pinL}>
                   <div className="flex items-center gap-2">
                     {photo ? (
                       <img src={photo} alt="" className="w-8 h-8 rounded-[var(--radius)] object-cover" />
@@ -275,7 +286,7 @@ export function ParentsTable({
 
                 {rowActions && (
                   <TableCell
-                    className={`text-right whitespace-nowrap sticky right-0 z-10 bg-inherit ${pinR}`}
+                    className="text-right whitespace-nowrap sticky right-0 z-10 bg-inherit" style={pinR}
                     onClick={(e) => e.stopPropagation()}
                   >
                     {rowActions(row)}
