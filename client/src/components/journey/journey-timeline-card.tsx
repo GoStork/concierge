@@ -86,6 +86,14 @@ const EVENT_LABELS: Record<string, string> = {
   WINBACK_RESPONSE: "Parent replied to follow-up",
   CHURN_REASON: "Parent shared why they paused",
   REENGAGED: "Parent re-engaged",
+  // CRM activity. These were emitted from the start but never labelled, so the
+  // timeline fell back to rendering the raw key as "crm_owner_assigned".
+  CRM_NOTE_ADDED: "Internal note added",
+  CRM_NOTE_SHARED_WITH_PROVIDER: "Note shared with provider",
+  CRM_FOLLOWUP_SET: "Next step set",
+  CRM_FOLLOWUP_COMPLETED: "Next step completed",
+  CRM_OWNER_ASSIGNED: "Lead owner assigned",
+  CRM_TAG_ADDED: "Tag added",
 };
 
 function fmtDate(iso: string | null): string | null {

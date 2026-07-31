@@ -18,6 +18,7 @@ import {
   type ParentGates,
 } from "./parent-privacy";
 import { emitJourneyEvent } from "./journey-events";
+import { claimGostorkOwner } from "./parent-owner-claim";
 import multer from "multer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
@@ -939,6 +940,9 @@ chatRouter.post("/api/admin/concierge-sessions/:id/join", requireAuth, async (re
       where: { id: session.id },
       data: { humanJoinedAt: new Date(), humanConcludedAt: null, humanAgentId: user.id, status: newStatus },
     });
+    // Joining is the moment a named person takes this family on. Best effort,
+    // and it never overwrites an owner somebody already chose.
+    await claimGostorkOwner(session.userId, user, "JOINED_CHAT");
 
     await prisma.aiChatMessage.create({
       data: {
@@ -1157,6 +1161,8 @@ chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async 
       where: { id: session.id },
       data: { updatedAt: new Date(), ...(!session.humanAgentId ? { humanAgentId: user.id } : {}) },
     });
+    // Replying without pressing Join first is just as much a takeover.
+    await claimGostorkOwner(session.userId, user, "FIRST_REPLY");
 
     await prisma.inAppNotification.create({
       data: {
