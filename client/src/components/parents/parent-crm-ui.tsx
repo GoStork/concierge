@@ -188,11 +188,15 @@ function NextStepCard({
 
   if (!editing) {
     return (
+      // A bordered card on the page's own surface, like every other block on
+      // this record. The cream fill made three small tinted rectangles float
+      // against white for no reason - overdue is the only state that earns a
+      // tint, because it means something.
       <div
-        className="rounded-[var(--radius)] p-3 space-y-1.5"
+        className="rounded-[var(--radius)] border bg-card p-4 space-y-2"
         style={existing?.overdue
-          ? { background: "hsl(var(--brand-warning) / 0.1)" }
-          : { background: "hsl(var(--secondary))" }}
+          ? { background: "hsl(var(--brand-warning) / 0.06)", borderColor: "hsl(var(--brand-warning) / 0.4)" }
+          : undefined}
         data-testid={`next-step-${choice.key}`}
       >
         <p className="t-micro-label">{isAdmin ? choice.label.replace("Share with ", "") : "Next step"}</p>
@@ -301,7 +305,9 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
   const filtered = options.filter((u) => !q || (u.name || "").toLowerCase().includes(q.toLowerCase()));
 
   return (
-    <div className="rounded-[var(--radius)] bg-secondary p-3 space-y-2" data-testid={`owner-${choice.key}`}>
+    // No surface of its own: this renders inside the record header card, and a
+    // filled box nested in a card is the "weird small area background".
+    <div className="space-y-1.5" data-testid={`owner-${choice.key}`}>
       <p className="t-micro-label">Lead owner</p>
       {!open ? (
         <div className="flex items-center gap-2 flex-wrap">
@@ -313,19 +319,19 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
           ) : (
             <span className="t-helper">Unassigned</span>
           )}
-          <Button variant="ghost" size="sm" onClick={() => setOpen(true)} data-testid={`btn-owner-${choice.key}`}>
+          <Button variant="outline" size="sm" onClick={() => setOpen(true)} data-testid={`btn-owner-${choice.key}`}>
             {current ? "Change" : "Assign"}
           </Button>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2 rounded-[var(--radius)] border bg-card p-2">
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search people" data-testid={`input-owner-search-${choice.key}`} />
           <div className="max-h-64 overflow-y-auto space-y-1">
             {filtered.map((u) => (
               <button
                 key={u.id}
                 type="button"
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[var(--radius)] hover:bg-background text-left text-sm"
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[var(--radius)] hover:bg-secondary text-left text-sm"
                 onClick={() => mut.mutate({
                   url: `/api/parents/${record.parent.id}/owner`,
                   method: "PUT",
@@ -400,7 +406,7 @@ function TagEditor({ record, isAdmin, choice }: { record: ParentRecord; isAdmin:
   }
 
   return (
-    <div className="rounded-[var(--radius)] bg-secondary p-3 space-y-2" data-testid="tag-editor">
+    <div className="rounded-[var(--radius)] border bg-card p-4 space-y-2" data-testid="tag-editor">
       <p className="t-micro-label">Tags</p>
       <div className="flex flex-wrap gap-1.5">
         {record.crm.tags.map((t) => {
@@ -427,14 +433,9 @@ function TagEditor({ record, isAdmin, choice }: { record: ParentRecord; isAdmin:
           );
         })}
         {!adding && (
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full border"
-            onClick={() => setAdding(true)}
-            data-testid="btn-add-tag"
-          >
-            <Plus className="w-3 h-3" /> Add
-          </button>
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)} data-testid="btn-add-tag">
+            <Plus className="w-3 h-3 mr-1" /> Add
+          </Button>
         )}
       </div>
       {adding && (
