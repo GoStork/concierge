@@ -47,7 +47,7 @@ export function ProfileSection({
   const testId = rest["data-testid"];
   const heading = (
     <h3
-      className="font-heading text-foreground"
+      className="font-heading text-foreground truncate"
       style={{ fontSize: "var(--section-title-size)", fontWeight: "var(--section-title-weight)" as any }}
       data-testid={
         typeof title === "string"
@@ -61,7 +61,9 @@ export function ProfileSection({
 
   return (
     <Card className={cn("overflow-hidden", className)} data-testid={testId}>
-      <div className="flex items-center justify-between gap-3 border-b bg-muted/50">
+      {/* Wraps: headerActions can be as wide as a lead-owner control with a
+          name and a button, which on a phone sat on top of the title. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 border-b bg-muted/50">
         {collapsible ? (
           // The whole bar is the target, not just the chevron - a 3px icon is
           // a poor place to make someone aim.
@@ -78,7 +80,7 @@ export function ProfileSection({
         ) : (
           <div className="flex-1 min-w-0 px-5 py-3.5">{heading}</div>
         )}
-        {headerActions && <div className="pr-5 shrink-0">{headerActions}</div>}
+        {headerActions && <div className="px-5 pb-3.5 pt-0 sm:pt-3.5 sm:pl-0 shrink-0">{headerActions}</div>}
       </div>
       {(!collapsible || open) && <div className={contentClassName}>{children}</div>}
     </Card>

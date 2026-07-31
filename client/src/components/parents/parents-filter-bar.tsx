@@ -191,12 +191,15 @@ export function ParentsFilterBar({
     <>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
+          {/* Full width on a phone: a fixed 260px search left just enough room
+              for the From pill to hang off the right edge of the screen instead
+              of wrapping onto the next line with the others. */}
+          <div className="relative w-full sm:w-auto">
             <Input
               placeholder="Search by name, email, or phone..."
               value={state.q}
               onChange={(e) => setParam("q", e.target.value)}
-              className="h-9 w-[260px] rounded-full"
+              className="h-9 w-full sm:w-[260px] rounded-full"
               data-testid={`${testIdPrefix}-search`}
             />
           </div>
