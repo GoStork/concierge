@@ -73,7 +73,7 @@ export function ParentsTable({
         <TableHeader>
           <TableRow>
             {selectable && (
-              <TableHead className="w-10 pl-4">
+              <TableHead className="w-10 pl-4 sticky left-0 z-20 bg-card">
                 <Checkbox
                   checked={allVisibleSelected ? true : someSelected ? "indeterminate" : false}
                   onCheckedChange={onToggleSelectAll}
@@ -82,15 +82,15 @@ export function ParentsTable({
                 />
               </TableHead>
             )}
-            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} data-testid="sort-name" />
-            <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell" data-testid="sort-email" />
+            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className={`min-w-[190px] sticky z-20 bg-card ${selectable ? "left-10" : "left-0"}`} data-testid="sort-name" />
+            <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell max-w-[190px]" data-testid="sort-email" />
             <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden md:table-cell" data-testid="sort-mobile" />
             <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
             <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
             <TableHead className="hidden lg:table-cell whitespace-nowrap">Cost Sheets</TableHead>
             <TableHead className="hidden lg:table-cell whitespace-nowrap">Invoices</TableHead>
             <TableHead className="hidden lg:table-cell whitespace-nowrap">Agreements</TableHead>
-            <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-created" />
+            <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-created" />
             <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
             <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
             <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
@@ -111,7 +111,7 @@ export function ParentsTable({
               <TableRow
                 key={row.key}
                 data-testid={`row-staff-${row.id}`}
-                className={`cursor-pointer ${row.isDisabled ? "opacity-60" : ""}`}
+                className={`cursor-pointer bg-card ${row.isDisabled ? "opacity-60" : ""}`}
                 // Couple rows are pulled adjacent by the caller and share an
                 // accent tint + left bar so the pair reads as one block.
                 style={row.householdNames?.length
@@ -120,7 +120,7 @@ export function ParentsTable({
                 onClick={() => onRowClick(row)}
               >
                 {selectable && (
-                  <TableCell className="pl-4 w-10" onClick={(e) => e.stopPropagation()}>
+                  <TableCell className="pl-4 w-10 sticky left-0 z-10 bg-inherit" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={selectedIds?.has(row.id) || false}
                       onCheckedChange={() => onToggleSelect?.(row.id)}
@@ -130,7 +130,7 @@ export function ParentsTable({
                   </TableCell>
                 )}
 
-                <TableCell className="font-ui whitespace-nowrap">
+                <TableCell className={`font-ui whitespace-nowrap min-w-[190px] sticky z-10 bg-inherit ${selectable ? "left-10" : "left-0"}`}>
                   <div className="flex items-center gap-2">
                     {photo ? (
                       <img src={photo} alt="" className="w-8 h-8 rounded-[var(--radius)] object-cover" />
@@ -139,7 +139,7 @@ export function ParentsTable({
                     )}
                     <button
                       type="button"
-                      className="text-left hover:text-primary hover:underline transition-colors cursor-pointer truncate max-w-[150px]"
+                      className="text-left hover:text-primary hover:underline transition-colors cursor-pointer truncate max-w-[210px]"
                       title={row.name || undefined}
                       onClick={(e) => { e.stopPropagation(); onRowClick(row); }}
                       data-testid={`link-user-name-${row.id}`}
@@ -226,7 +226,7 @@ export function ParentsTable({
                 <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentAgreementsCell agreements={row.agreements || []} />
                 </TableCell>
-                <TableCell className="hidden lg:table-cell" data-testid={`text-created-${row.id}`}>
+                <TableCell className="hidden 2xl:table-cell" data-testid={`text-created-${row.id}`}>
                   <span className="t-helper">{row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"}</span>
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap">

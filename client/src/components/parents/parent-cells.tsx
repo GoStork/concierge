@@ -374,7 +374,7 @@ function OverflowChip({ count, title }: { count: number; title: string }) {
 }
 
 function moneyWrapClass(layout: MoneyCellLayout): string {
-  return layout === "list" ? "flex flex-col gap-1.5 items-start" : "flex flex-wrap gap-1.5 items-center";
+  return layout === "list" ? "flex flex-col gap-1.5 items-start" : "flex flex-nowrap gap-1.5 items-center";
 }
 
 // ─── Invoices cell ──────────────────────────────────────────────────────────
@@ -543,7 +543,7 @@ export function ParentAgreementsCell({
           ? "hsl(var(--brand-success))"
           : isSent ? "hsl(var(--brand-warning))"
           : "hsl(var(--foreground))";
-        const label = isSigned ? "Signed" : isSent ? "Awaiting Signature" : agr.status.charAt(0) + agr.status.slice(1).toLowerCase();
+        const label = isSigned ? "Signed" : isSent ? "Awaiting" : agr.status.charAt(0) + agr.status.slice(1).toLowerCase();
         return (
           <a
             key={agr.id}
