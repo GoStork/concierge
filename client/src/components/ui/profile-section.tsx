@@ -80,7 +80,15 @@ export function ProfileSection({
         ) : (
           <div className="flex-1 min-w-0 px-5 py-3.5">{heading}</div>
         )}
-        {headerActions && <div className="px-5 pb-3.5 pt-0 sm:pt-3.5 sm:pl-0 shrink-0">{headerActions}</div>}
+        {/* basis-full below sm: the actions take their own row rather than
+            competing with the title. flex-1 + truncate on the title meant the
+            shrink-0 actions won that fight and squeezed the heading to zero
+            width - the title vanished entirely on a narrow phone. */}
+        {headerActions && (
+          <div className="px-5 pb-3.5 sm:pb-3.5 sm:pt-3.5 sm:pl-0 basis-full sm:basis-auto shrink-0">
+            {headerActions}
+          </div>
+        )}
       </div>
       {(!collapsible || open) && <div className={contentClassName}>{children}</div>}
     </Card>
