@@ -1099,6 +1099,31 @@ export class UsersController {
       [/sperm/i, "Sperm Donor"],
       [/ivf|clinic|doctor/i, "Fertility Clinic"],
     ];
+
+    /**
+     * The admin and provider parents tables used to speak different service
+     * vocabularies: this endpoint emitted human labels ("Surrogate",
+     * "Fertility Clinic") from IntendedParentProfile.interestedServices, while
+     * parent-contacts emitted enum keys (SURROGACY, IVF_CLINIC). The two
+     * filters therefore had to work differently - substring match here,
+     * equality there - and the same dropdown behaved differently per role.
+     *
+     * Normalise to the enum keys at the API boundary rather than migrating the
+     * stored values: interestedServices is user-facing text shown verbatim on
+     * the parent profile card, so rewriting it would change what parents see.
+     */
+    const SERVICE_KEY_BY_LABEL: [RegExp, string][] = [
+      [/egg/i, "EGG_DONATION"],
+      [/surrog/i, "SURROGACY"],
+      [/sperm/i, "SPERM_DONATION"],
+      [/ivf|clinic|doctor/i, "IVF_CLINIC"],
+    ];
+    const toServiceKeys = (labels: string[]): string[] =>
+      Array.from(new Set(
+        (labels || [])
+          .map((l) => SERVICE_KEY_BY_LABEL.find(([re]) => re.test(l))?.[1])
+          .filter(Boolean) as string[],
+      ));
     const chatServicesByUser = new Map<string, string[]>();
     for (const r of subjectRows) {
       const label = SUBJECT_SERVICE_LABELS.find(([re]) => re.test(r.subjectType || ""))?.[1];
@@ -1160,8 +1185,11 @@ export class UsersController {
       const crmKey = parent.parentAccountId || parent.id;
       const owner = ownerByKey.get(crmKey);
       const step = nextStepByKey.get(crmKey);
+      const svcLabels = profileServices.length ? profileServices : (chatServicesByUser.get(parent.id) || []);
       overview[parent.id] = {
-        services: profileServices.length ? profileServices : (chatServicesByUser.get(parent.id) || []),
+        services: svcLabels,
+        // Enum keys, so the admin table filters exactly like the provider one.
+        serviceKeys: toServiceKeys(svcLabels),
         costSheets: [],
         invoices: [],
         agreements: [],
@@ -1204,6 +1232,7 @@ export class UsersController {
       const invoicesMerged = memberIds.flatMap(id => overview[id]?.invoices || []);
       const agreementsMerged = memberIds.flatMap(id => overview[id]?.agreements || []).sort(byCreatedDesc);
       const servicesMerged = Array.from(new Set(memberIds.flatMap(id => overview[id]?.services || [])));
+      const serviceKeysMerged = Array.from(new Set(memberIds.flatMap(id => overview[id]?.serviceKeys || [])));
       const household = { memberIds, memberNames: members.map(m => m.name || "") };
       for (const id of memberIds) {
         if (!overview[id]) continue;
@@ -1213,6 +1242,7 @@ export class UsersController {
         overview[id].invoices = invoicesMerged;
         overview[id].agreements = agreementsMerged;
         overview[id].services = servicesMerged;
+        overview[id].serviceKeys = serviceKeysMerged;
         overview[id].household = household;
       }
     }

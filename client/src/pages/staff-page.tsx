@@ -42,6 +42,19 @@ import {
  * The tag vocabulary this viewer may filter by. Scoped server-side: an admin
  * gets every scope, a provider only their own org's labels.
  */
+function useOwnerOptions() {
+  const { data = [] } = useQuery<any[]>({
+    queryKey: ["/api/parents/crm/owner-options"],
+    queryFn: async () => {
+      const res = await fetch("/api/parents/crm/owner-options", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 5 * 60_000,
+  });
+  return data as { id: string; name: string | null }[];
+}
+
 function useTagVocabulary() {
   const { data = [] } = useQuery<any[]>({
     queryKey: ["/api/parents/crm/tag-vocabulary"],
@@ -91,6 +104,7 @@ export default function StaffPage() {
 function GostorkAdminUsersView() {
   const { user } = useAuth();
   const tagVocabulary = useTagVocabulary();
+  const ownerOptions = useOwnerOptions();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [deleteMember, setDeleteMember] = useState<StaffMember | null>(null);
@@ -147,10 +161,10 @@ function GostorkAdminUsersView() {
   const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter !== "all" || statusFilter !== "all" || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all";
 
   const filteredUsers = parentUsers.filter(member => {
-    if (serviceFilter !== "all") {
-      const svcs: string[] = overview[member.id]?.services || [];
-      if (!svcs.some(sv => sv.toLowerCase().includes(serviceFilter.toLowerCase()))) return false;
-    }
+    // Equality on enum keys, exactly like the provider table. This used to be a
+    // substring match on free-text labels, so the same dropdown behaved
+    // differently depending on which role was looking at it.
+    if (serviceFilter !== "all" && !(overview[member.id]?.serviceKeys || []).includes(serviceFilter)) return false;
     if (statusFilter !== "all" && overview[member.id]?.matchStatus !== statusFilter) return false;
     if (!matchesCrmFilters(overview[member.id] || {}, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
     if (searchQuery.trim()) {
@@ -193,7 +207,7 @@ function GostorkAdminUsersView() {
       case "mobile": return item.mobileNumber || "";
       case "created": return item.createdAt || "";
       case "updated": return overview[item.id]?.updatedAt || "";
-      case "services": return (overview[item.id]?.services || []).join(", ");
+      case "services": return (overview[item.id]?.serviceKeys || []).join(", ");
       case "status": return overview[item.id]?.matchStatus || "";
       case "owner": return overview[item.id]?.owner?.name || "";
       // sortData puts nulls last, which is what "no next step" should be.
@@ -374,10 +388,7 @@ function GostorkAdminUsersView() {
           data-testid="admin-parents-service-filter"
         >
           <option value="all">All services</option>
-          <option value="Surrogate">Surrogacy</option>
-          <option value="Egg Donor">Egg Donation</option>
-          <option value="Sperm">Sperm Donation</option>
-          <option value="IVF">IVF Clinic</option>
+          {Object.entries(SERVICE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <select
           value={statusFilter}
@@ -396,6 +407,17 @@ function GostorkAdminUsersView() {
         >
           <option value="all">All tags</option>
           {tagVocabulary.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
+        </select>
+        <select
+          value={ownerFilter}
+          onChange={e => updateUsersParam("owner", e.target.value === "all" ? "" : e.target.value)}
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
+          data-testid="admin-parents-owner-filter"
+        >
+          <option value="all">All owners</option>
+          <option value="me">My leads</option>
+          <option value="unassigned">Unassigned</option>
+          {ownerOptions.map(o => <option key={o.id} value={o.id}>{o.name || "Unnamed"}</option>)}
         </select>
       </div>
         <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="button-clear-filters" />
@@ -522,7 +544,7 @@ function GostorkAdminUsersView() {
                   ) : <span className="t-helper">-</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <ServiceChips services={overview[member.id]?.services} testId={`chips-services-${member.id}`} />
+                  <ServiceChips services={overview[member.id]?.serviceKeys} testId={`chips-services-${member.id}`} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <MatchStatusBadge status={overview[member.id]?.matchStatus} />
@@ -622,6 +644,7 @@ function GostorkAdminUsersView() {
 function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const { user } = useAuth();
   const tagVocabulary = useTagVocabulary();
+  const ownerOptions = useOwnerOptions();
   const [searchParams, setSearchParams] = useSearchParams();
   const searchQuery = searchParams.get("q") || "";
   const serviceFilter = searchParams.get("svc") || "all";
@@ -778,6 +801,17 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         >
           <option value="all">All tags</option>
           {tagVocabulary.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
+        </select>
+        <select
+          value={ownerFilter}
+          onChange={e => setParam("owner", e.target.value)}
+          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
+          data-testid="parents-owner-filter"
+        >
+          <option value="all">All owners</option>
+          <option value="me">My leads</option>
+          <option value="unassigned">Unassigned</option>
+          {ownerOptions.map(o => <option key={o.id} value={o.id}>{o.name || "Unnamed"}</option>)}
         </select>
       </div>
         <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="provider-parents-clear-filters" />

@@ -108,9 +108,12 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
     // same guard the chat composer uses, so the author gets an explanation.
     if (target.scope === "PROVIDER" && target.providerId) {
       const g = await resolveParentGates(target.providerId, accountKey, { sessionStatus: null, hasBooking: true });
+      // "note" surface: the person being stopped here is STAFF, not the
+      // parent, so the chat wording ("your messages are always free") would be
+      // nonsense. They need to know this org has not earned the details yet.
       if (!g.showContact && blockContactInfo(res, body, "parent CRM note", {
         parentAccountId: accountKey, providerId: target.providerId, authorUserId: viewer.userId,
-      })) return;
+      }, "note")) return;
     }
 
     const note = await prisma.parentNote.create({

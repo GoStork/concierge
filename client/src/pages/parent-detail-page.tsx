@@ -17,6 +17,7 @@ import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import { ContactReleaseSection } from "@/components/chat/contact-release-section";
+import { EvaKnowledgePanel } from "@/components/chat/eva-knowledge-panel";
 import {
   ParentCrmPanel,
   ParentIdentitySection,
@@ -149,6 +150,24 @@ export default function ParentDetailPage() {
                         />
                       ))
                     )}
+                    {/* The record is account-scoped, so this gets every
+                        session's rolling summary rather than the monitor's
+                        single one. historySummary is admin-only on the wire -
+                        the server sends null to providers - so this block
+                        cannot render for them even if it were mounted. */}
+                    <div className="border-t pt-4 mt-4">
+                      <EvaKnowledgePanel
+                        parentAccountId={record.accountKey}
+                        divider={false}
+                        sessionSummaries={record.conversations
+                          .filter((c) => !!c.historySummary)
+                          .map((c) => ({
+                            sessionId: c.sessionId,
+                            label: [c.providerName, c.displayName].filter(Boolean).join(" - ") || "Concierge",
+                            historySummary: c.historySummary as string,
+                          }))}
+                      />
+                    </div>
                   </div>
                 </RecordSection>
               )}

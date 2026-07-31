@@ -520,11 +520,32 @@ const KIND_NOUN: Record<ContactKind, string> = {
  * "not allowed" reads as a bug, and the parent has no way to know that calls
  * and files on GoStork are already free.
  */
-export function contactGuardMessage(kinds: ContactKind[]): string {
+/**
+ * Where the blocked text was being written. The guard protects two very
+ * different surfaces and the same wording cannot serve both:
+ *
+ *   "chat"  - a parent or provider typing into a conversation. They are the
+ *             one being protected, so the message reassures them the platform
+ *             is free and asks them to resend.
+ *   "note"  - GoStork or provider STAFF writing an internal CRM note about a
+ *             parent. Telling them their messages are free is nonsense; what
+ *             they need to know is that this particular org has not earned the
+ *             parent's contact details yet.
+ */
+export type ContactGuardSurface = "chat" | "note";
+
+export function contactGuardMessage(kinds: ContactKind[], surface: ContactGuardSurface = "chat"): string {
   const list = (kinds.length ? kinds : (["email"] as ContactKind[])).map((k) => KIND_NOUN[k]);
   const nouns = list.length === 1
     ? list[0]
     : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+  if (surface === "note") {
+    return (
+      `This note is shared with a provider who has not been given this family's contact ` +
+      `details yet, so ${nouns} cannot go in it. Remove that part, or share the contact ` +
+      `details first if the provider genuinely needs them.`
+    );
+  }
   return (
     `To keep your journey protected, GoStork keeps conversations on-platform, so ${nouns} ` +
     `cannot be shared here. Please remove that part and send again. Your messages, calls and ` +

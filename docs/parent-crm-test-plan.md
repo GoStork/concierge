@@ -86,8 +86,7 @@ is verified by A-1 unless noted.
       GOSTORK_ADMIN, so `/chat/:sessionId` dumped admins on `/chat`)*
 - [x] **T-11** Admin Next-step column shows the GOSTORK step, not a provider's
 - [x] **T-12** Sort by Owner and by Next step - both headers reorder rows, no errors
-- [ ] **T-18** `owner=<userId>` still has no UI control - only the All / My
-      leads / No owner pills. A per-person owner dropdown is unbuilt
+- [x] **T-18** Per-person owner dropdown on both tables - lists All owners / My leads / Unassigned plus each assignable staff member, scoped server-side
 - [x] **T-13** `owner=me` / "My leads" - assigned Eran Amir, filtered to that
       one parent, Owner column renders the monogram + first name
 - [x] **T-14** `tag=` filter with a tag assigned. *Gap found and closed: the
@@ -198,18 +197,25 @@ The shared components were modified, so their original mount sites need a look.
 
 ## 6. Known gaps and deferred work
 
-- [!] **G-1** `EvaKnowledgePanel` was **not** extracted from
-      `admin-concierge-monitor.tsx`, so the record page has no "What Eva knows"
-      block. Deferred because another session had an active 160-line insertion
-      in that file
+- [x] **Guard copy** DONE. `contactGuardMessage` takes a `ContactGuardSurface`
+      (`"chat"` | `"note"`). A blocked CRM note now explains the GATE in staff
+      language instead of telling staff their messages are free. Every chat
+      caller keeps the default surface; `test-contact-guard.ts` still 7/7
+
+- [x] **G-1** DONE. `EvaKnowledgePanel` extracted to
+      `client/src/components/chat/eva-knowledge-panel.tsx`, widened with a
+      `sessionSummaries` prop for the record's N sessions, and mounted in the
+      GoStork-only block. The monitor's single-summary path is unchanged and
+      re-verified in the browser
 - [!] **G-2** The two table views were **not** structurally converged. They
       share the cells, the filter predicate and the CRM columns, but the table
       scaffolding is still two copies. Deferred as a large refactor with real
       regression risk
-- [!] **G-3** Admin vs provider service filters still differ: admin
-      substring-matches free-text labels, provider equality-matches an enum key.
-      Normalising `/api/admin/parents-overview` onto `SERVICE_LABELS` keys is a
-      follow-up
+- [x] **G-3** DONE. `parents-overview` now emits a normalised `serviceKeys`
+      array alongside the display labels, so the admin table filters by enum
+      equality exactly like the provider one and both selects are built from
+      `SERVICE_LABELS`. Stored `interestedServices` is untouched - it is
+      user-facing text shown verbatim on the parent profile card
 - [!] **G-4** `server/auth.ts` is now fully orphaned (zero importers) after
       `routes.ts` was deleted. It still exports `hashPassword`; deleting it is a
       judgment call, not a cleanup

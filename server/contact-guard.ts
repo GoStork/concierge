@@ -24,7 +24,7 @@
  */
 
 import { HttpException } from "@nestjs/common";
-import { detectContactInfo, contactGuardMessage, CONTACT_GUARD_CODE, type ContactScanResult } from "../shared/contact-guard";
+import { detectContactInfo, contactGuardMessage, CONTACT_GUARD_CODE, type ContactScanResult, ContactGuardSurface } from "../shared/contact-guard";
 
 export { CONTACT_GUARD_CODE };
 export type { ContactScanResult };
@@ -45,10 +45,13 @@ export interface ContactBlockedBody {
  * echoing the matched text back would hand a determined sender a normalization
  * oracle to tune obfuscations against.
  */
-export function contactBlockedBody(scan: ContactScanResult): ContactBlockedBody {
+export function contactBlockedBody(
+  scan: ContactScanResult,
+  surface: ContactGuardSurface = "chat",
+): ContactBlockedBody {
   return {
     code: CONTACT_GUARD_CODE,
-    message: contactGuardMessage(scan.kinds),
+    message: contactGuardMessage(scan.kinds, surface),
     kinds: scan.kinds,
     spans: scan.spans,
   };
@@ -78,11 +81,12 @@ export function blockContactInfo(
   text: string | null | undefined,
   where: string,
   meta: Record<string, unknown> = {},
+  surface: ContactGuardSurface = "chat",
 ): boolean {
   const scan = detectContactInfo(text || "");
   if (!scan.blocked) return false;
   logContactBlock(where, scan, meta);
-  res.status(CONTACT_GUARD_STATUS).json(contactBlockedBody(scan));
+  res.status(CONTACT_GUARD_STATUS).json(contactBlockedBody(scan, surface));
   return true;
 }
 
