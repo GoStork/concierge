@@ -1163,6 +1163,17 @@ export class UsersController {
         ])
       : [[], [], []];
 
+    // The owner row snapshots the name (so a rename never blanks a byline) but
+    // not the photo - a photo snapshot goes stale the moment someone changes
+    // theirs. Resolve it live; a missing photo falls back to initials.
+    const ownerPhotoById = new Map<string, string | null>();
+    {
+      const ids = Array.from(new Set(crmOwners.map((o: any) => o.ownerUserId).filter(Boolean)));
+      if (ids.length) {
+        const us = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, photoUrl: true } });
+        for (const u of us) ownerPhotoById.set(u.id, u.photoUrl);
+      }
+    }
     const ownerByKey = new Map<string, any>();
     for (const o of crmOwners) if (o.scope === "GOSTORK") ownerByKey.set(o.parentAccountId, o);
     const nextStepByKey = new Map<string, any>();
@@ -1195,7 +1206,7 @@ export class UsersController {
         agreements: [],
         updatedAt: lastActivityByUser.get(parent.id) || null,
         matchStatus: statusByUser.get(parent.id) || null,
-        owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName } : null,
+        owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
         nextStep: step
           ? { id: step.id, body: step.body, dueAt: step.dueAt, overdue: new Date(step.dueAt).getTime() < nowMs }
           : null,
@@ -1696,6 +1707,16 @@ export class UsersController {
       : [[], [], []];
     // The partial unique indexes guarantee at most one owner and one OPEN
     // follow-up per key, so these are plain Maps with no dedup pass.
+    // Same as the admin list: resolve the owner photo live rather than storing
+    // a snapshot that goes stale.
+    const ownerPhotoById = new Map<string, string | null>();
+    {
+      const ids = Array.from(new Set(crmOwners.map((o: any) => o.ownerUserId).filter(Boolean)));
+      if (ids.length) {
+        const us = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, photoUrl: true } });
+        for (const u of us) ownerPhotoById.set(u.id, u.photoUrl);
+      }
+    }
     const ownerByKey = new Map(crmOwners.map((o: any) => [o.parentAccountId, o]));
     const stepByKey = new Map<string, any>();
     for (const f of crmFollowUps) if (!stepByKey.has(f.parentAccountId)) stepByKey.set(f.parentAccountId, f);
@@ -1723,7 +1744,7 @@ export class UsersController {
           contactReleaseReason: g.contactReason,
           // Staff data about the parent, not parent PII, so it sits outside
           // redactParentContact - but still only on rows that survive Gate A.
-          owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName } : null,
+          owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
           nextStep: step
             ? { id: step.id, body: step.body, dueAt: step.dueAt, overdue: new Date(step.dueAt).getTime() < nowMs }
             : null,

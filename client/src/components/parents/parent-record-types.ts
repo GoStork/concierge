@@ -106,6 +106,9 @@ export interface CrmOwner {
   providerId: string | null;
   ownerUserId: string;
   ownerName: string | null;
+  /** Resolved live from the user, not snapshotted - a photo snapshot goes
+      stale the first time someone changes theirs. Null falls back to initials. */
+  ownerPhotoUrl?: string | null;
 }
 
 export interface CrmTag {

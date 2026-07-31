@@ -550,6 +550,20 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       ])
     : [[], [], [], []];
 
+  // The owner row snapshots the NAME so a renamed staff account never blanks an
+  // existing byline, but a photo snapshot would go stale the first time someone
+  // changed theirs. Resolve it live instead - and a missing photo is fine, the
+  // client falls back to a monogram.
+  const ownerPhotoById = new Map<string, string | null>();
+  if (owners.length) {
+    const ownerUsers = await prisma.user.findMany({
+      where: { id: { in: Array.from(new Set(owners.map((o: any) => o.ownerUserId))) } },
+      select: { id: true, photoUrl: true },
+    });
+    for (const u of ownerUsers) ownerPhotoById.set(u.id, u.photoUrl);
+  }
+  const ownersWithPhoto = owners.map((o: any) => ({ ...o, ownerPhotoUrl: ownerPhotoById.get(o.ownerUserId) ?? null }));
+
   const now = Date.now();
 
   // ── Identity ─────────────────────────────────────────────────────────────
@@ -602,7 +616,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     crm: {
       notes,
       followUps: followUps.map((f) => ({ ...f, overdue: new Date(f.dueAt).getTime() < now })),
-      owners,
+      owners: ownersWithPhoto,
       tags: tagAssignments.map((t: any) => ({
         id: t.id,
         tagId: t.tagId,

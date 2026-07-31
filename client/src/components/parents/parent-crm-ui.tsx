@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { OptionPills } from "@/components/ui/option-pills";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
-import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
+import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { useToast } from "@/hooks/use-toast";
 import type { CrmScope, ParentRecord, ProviderOrg } from "./parent-record-types";
 
@@ -313,7 +313,7 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
           <span className="t-micro-label">Lead owner</span>
           {current ? (
             <span className="flex items-center gap-1.5 text-sm">
-              <DoctorMonogram name={current.ownerName || "?"} size={22} rounded="999px" />
+              <DoctorAvatar name={current.ownerName || "?"} photoUrl={(current as any).ownerPhotoUrl} size={22} rounded="999px" />
               {current.ownerName || "Assigned"}
             </span>
           ) : (

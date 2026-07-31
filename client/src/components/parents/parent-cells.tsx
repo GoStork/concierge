@@ -14,7 +14,7 @@
  */
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Lock, Users } from "lucide-react";
-import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
+import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 
 export const SERVICE_LABELS: Record<string, string> = {
   SURROGACY: "Surrogacy",
@@ -147,7 +147,14 @@ export function ServiceChips({
   const shown = limit > 0 ? list.slice(0, limit) : list;
   const extra = list.length - shown.length;
   return (
-    <div className="flex flex-wrap gap-1 items-center max-w-[170px]" data-testid={testId}>
+    // The width cap and the wrapping belong to the table column, where chips
+    // are capped to one or two. limit={0} means "show them all", which is the
+    // record page - there the cap made two services stack into two rows in a
+    // card 1800px wide.
+    <div
+      className={`flex gap-1 items-center ${limit > 0 ? "flex-wrap max-w-[170px]" : "flex-nowrap"}`}
+      data-testid={testId}
+    >
       {shown.map((svc) => (
         <span
           key={svc}
@@ -220,7 +227,7 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
 // One implementation each, rendered by BOTH parents tables. Adding these as
 // inline JSX twice would have re-created the fork this module exists to close.
 
-export function OwnerCell({ owner, testId }: { owner?: { name: string | null } | null; testId?: string }) {
+export function OwnerCell({ owner, testId }: { owner?: { name: string | null; photoUrl?: string | null } | null; testId?: string }) {
   if (!owner?.name) {
     return (
       <span
@@ -235,7 +242,7 @@ export function OwnerCell({ owner, testId }: { owner?: { name: string | null } |
   const first = owner.name.split(" ")[0];
   return (
     <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap" title={owner.name} data-testid={testId}>
-      <DoctorMonogram name={owner.name} size={20} rounded="999px" />
+      <DoctorAvatar name={owner.name} photoUrl={owner.photoUrl} size={20} rounded="999px" />
       {first}
     </span>
   );
@@ -275,7 +282,14 @@ export function TagsCell({
   const shown = limit > 0 ? list.slice(0, limit) : list;
   const extra = list.length - shown.length;
   return (
-    <div className="flex flex-wrap gap-1 items-center max-w-[170px]" data-testid={testId}>
+    // The width cap and the wrapping belong to the table column, where chips
+    // are capped to one or two. limit={0} means "show them all", which is the
+    // record page - there the cap made two services stack into two rows in a
+    // card 1800px wide.
+    <div
+      className={`flex gap-1 items-center ${limit > 0 ? "flex-wrap max-w-[170px]" : "flex-nowrap"}`}
+      data-testid={testId}
+    >
       {shown.map((t) => (
         <span
           key={t.tagId}
