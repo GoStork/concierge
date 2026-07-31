@@ -40,24 +40,46 @@ import type { ParentRecord } from "./parent-record-types";
  * The "none" sentinel matters: an empty ?sec= is indistinguishable from "never
  * set", so collapsing everything would silently spring back open on reload.
  */
-export function useOpenSections(defaults: string[]) {
+const SECTIONS_KEY = "gostork-parent-record-sections";
+
+function readSaved(): string[] | null {
+  try {
+    const raw = localStorage.getItem(SECTIONS_KEY);
+    if (raw === null) return null;
+    return raw === "none" ? [] : raw.split(",").filter(Boolean);
+  } catch {
+    return null;   // private mode
+  }
+}
+
+/**
+ * Which sections are open, in the URL so a link carries the view, and mirrored
+ * to localStorage so the choice survives to the next parent you open.
+ *
+ * Precedence: an explicit ?sec= wins (someone sent you that link), then what
+ * you last left the page in, then everything open. Everything open is the
+ * default because a record you have to unfold five times is a record you stop
+ * reading.
+ */
+export function useOpenSections(allSections: string[]) {
   const [params, setParams] = useSearchParams();
   const raw = params.get("sec");
-  const open = new Set(
-    raw === null ? defaults : raw === "none" ? [] : raw.split(",").filter(Boolean),
-  );
+  const resolve = (value: string | null): string[] =>
+    value === null ? (readSaved() ?? allSections) : value === "none" ? [] : value.split(",").filter(Boolean);
+
+  const open = new Set(resolve(raw));
+
   const toggle = (id: string, force?: boolean) => {
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        const cur = next.get("sec");
-        const set = new Set(
-          cur === null ? defaults : cur === "none" ? [] : cur.split(",").filter(Boolean),
-        );
+        const set = new Set(resolve(next.get("sec")));
         const shouldOpen = force ?? !set.has(id);
         if (shouldOpen) set.add(id);
         else set.delete(id);
-        next.set("sec", set.size ? Array.from(set).join(",") : "none");
+        const encoded = set.size ? Array.from(set).join(",") : "none";
+        try { localStorage.setItem(SECTIONS_KEY, encoded); } catch { /* private mode */ }
+        next.set("sec", encoded);
         return next;
       },
       { replace: true },

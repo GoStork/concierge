@@ -34,7 +34,9 @@ import type { ParentRecord } from "@/components/parents";
 export default function ParentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isOpen, toggle } = useOpenSections(["identity", "interested"]);
+  // Every section, so the default is "all open" and a saved state can name
+  // any of them.
+  const { isOpen, toggle } = useOpenSections(["identity", "crm", "interested", "journey", "money", "admin"]);
 
   const { data: record, isLoading, error } = useQuery<ParentRecord>({
     queryKey: ["/api/parents", id, "record"],
