@@ -22,6 +22,12 @@ interface ChatSession {
   providerName: string | null;
 }
 
+interface ProviderAssistant {
+  id: string;
+  matchmakerId: string | null;
+  matchmakerName: string | null;
+}
+
 export default function ConciergeSettingsTab() {
   const { data: brand, isLoading: brandLoading } = useBrandSettings();
   const { user } = useAuth();
@@ -34,10 +40,26 @@ export default function ConciergeSettingsTab() {
 
   const roles: string[] = (user as any)?.roles || [];
   const isParent = roles.includes("PARENT");
+  // Providers get the same choice for their own pinned assistant. Admins keep
+  // the read-only roster - persona CRUD is their job, elsewhere on this page.
+  const isProvider = !isParent && !!(user as any)?.providerId;
+  const canChoose = isParent || isProvider;
 
   const sessionsQuery = useQuery<ChatSession[]>({
     queryKey: ["/api/my/chat-sessions"],
     enabled: isParent && !!user,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
+  const assistantQuery = useQuery<ProviderAssistant>({
+    queryKey: ["/api/provider/concierge-assistant"],
+    queryFn: async () => {
+      const res = await fetch("/api/provider/concierge-assistant", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: isProvider && !!user,
     staleTime: 0,
     refetchOnMount: "always",
   });
@@ -48,7 +70,9 @@ export default function ConciergeSettingsTab() {
 
   const sessions = sessionsQuery.data || [];
   const conciergeSession = sessions.find(s => !s.providerJoinedAt || !s.providerName);
-  const currentMatchmakerId = conciergeSession?.matchmakerId || null;
+  const currentMatchmakerId = isProvider
+    ? assistantQuery.data?.matchmakerId || null
+    : conciergeSession?.matchmakerId || null;
 
   const handleSelect = (matchmaker: Matchmaker) => {
     setSelectedId(matchmaker.id);
@@ -58,12 +82,23 @@ export default function ConciergeSettingsTab() {
     if (!selectedId) return;
     setSwitching(true);
     try {
-      if (conciergeSession) {
-        const res = await fetch("/api/my/chat-session/matchmaker", {
+      if (isProvider) {
+        const res = await fetch("/api/provider/concierge-assistant/matchmaker", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ matchmakerId: selectedId }),
+        });
+        if (!res.ok) throw new Error("Failed to switch");
+        await queryClient.invalidateQueries({ queryKey: ["/api/provider/concierge-assistant"] });
+        toast({ title: "Concierge switched!", description: `Your concierge is now ${matchmakers.find(m => m.id === selectedId)?.name}.` });
+        setSelectedId(null);
+      } else if (conciergeSession) {
+        const res = await fetch("/api/my/chat-session/matchmaker", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ matchmakerId: selectedId, sessionId: conciergeSession.id }),
         });
         if (!res.ok) throw new Error("Failed to switch");
         await queryClient.invalidateQueries({ queryKey: ["/api/my/chat-sessions"] });
@@ -87,16 +122,11 @@ export default function ConciergeSettingsTab() {
     );
   }
 
-  if (!brand?.enableAiConcierge) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="concierge-disabled">
-        <Sparkles className="w-12 h-12 text-muted-foreground mb-4" />
-        <h2 className="font-display text-lg font-semibold mb-2">AI Concierge Not Available</h2>
-        <p className="t-helper">The AI Concierge is currently not enabled.</p>
-      </div>
-    );
-  }
-
+  // NOTE: deliberately NOT gated on brand.enableAiConcierge. That flag is
+  // derived from parentExperienceMode (MARKETPLACE_ONLY => false) and only
+  // changes which nav a parent lands on - the concierge chat, the pinned Eva
+  // thread and the provider assistant are all live either way. Gating this tab
+  // on it silently removed the persona picker from every account.
   if (matchmakers.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center px-6" data-testid="concierge-no-matchmakers">
@@ -121,7 +151,9 @@ export default function ConciergeSettingsTab() {
         <p className="t-helper mb-6">
           {isParent
             ? "Choose the concierge personality that best fits your communication style. Switching will update your existing conversation - the new concierge picks up right where you left off."
-            : "View the available AI concierge personalities that assist parents on the platform."
+            : isProvider
+              ? "Choose the concierge personality for your own AI assistant. Switching updates your pinned assistant in Chats - it picks up right where you left off."
+              : "View the available AI concierge personalities that assist parents on the platform."
           }
         </p>
 
@@ -133,7 +165,7 @@ export default function ConciergeSettingsTab() {
               <div
                 key={m.id}
                 className={`relative rounded-[var(--radius)] border-2 p-4 space-y-3 transition-all duration-200 ${
-                  isParent ? "cursor-pointer hover:shadow-md" : ""
+                  canChoose ? "cursor-pointer hover:shadow-md" : ""
                 } ${
                   isSelected
                     ? "shadow-lg"
@@ -143,7 +175,7 @@ export default function ConciergeSettingsTab() {
                   borderColor: isSelected ? brandColor : undefined,
                   borderRadius: "var(--container-radius, 0.5rem)",
                 }}
-                onClick={() => isParent && handleSelect(m)}
+                onClick={() => canChoose && handleSelect(m)}
                 data-testid={`matchmaker-card-${m.id}`}
               >
                 {isCurrent && (
@@ -192,7 +224,7 @@ export default function ConciergeSettingsTab() {
           })}
         </div>
 
-        {isParent && selectedId && selectedId !== currentMatchmakerId && (
+        {canChoose && selectedId && selectedId !== currentMatchmakerId && (
           <div className="flex justify-center mt-6">
             <Button
               size="lg"
@@ -207,7 +239,7 @@ export default function ConciergeSettingsTab() {
               ) : (
                 <MessageCircle className="w-4 h-4" />
               )}
-              {conciergeSession
+              {isProvider || conciergeSession
                 ? `Switch to ${matchmakers.find(m => m.id === selectedId)?.name}`
                 : `Start Chatting with ${matchmakers.find(m => m.id === selectedId)?.name}`
               }
@@ -216,8 +248,10 @@ export default function ConciergeSettingsTab() {
         )}
       </Card>
 
-      {/* Cross-thread memory lives with the concierge settings - one AI tab. */}
-      <ConciergeMemoryTab />
+      {/* Cross-thread memory lives with the concierge settings - one AI tab.
+          Parent-only: ConciergeMemory is scoped by parentAccountId, so there is
+          nothing for a provider or admin to read here. */}
+      {isParent && <ConciergeMemoryTab />}
     </div>
   );
 }

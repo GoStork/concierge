@@ -622,16 +622,21 @@ chatRouter.post("/api/chat-sessions/:id/read", requireAuth, async (req, res) => 
 
 chatRouter.patch("/api/my/chat-session/matchmaker", requireAuth, async (req, res) => {
   const user = req.user as any;
-  const { matchmakerId } = req.body;
+  const { matchmakerId, sessionId } = req.body;
   if (!matchmakerId) return res.status(400).json({ message: "matchmakerId required" });
   try {
     const accountUserIds = user.parentAccountId
       ? (await prisma.user.findMany({ where: { parentAccountId: user.parentAccountId }, select: { id: true } })).map(u => u.id)
       : [user.id];
-    const session = await prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountUserIds }, providerId: null },
-      orderBy: { updatedAt: "desc" },
-    });
+    // Prefer the exact session the settings tab is showing. A whisper stamps
+    // providerId onto the parent's PRIVATE Eva session, so the old
+    // providerId-null lookup 404s on the very session the UI offers to switch.
+    const session = sessionId
+      ? await prisma.aiChatSession.findFirst({ where: { id: sessionId, userId: { in: accountUserIds } } })
+      : await prisma.aiChatSession.findFirst({
+          where: { userId: { in: accountUserIds }, providerJoinedAt: null },
+          orderBy: { updatedAt: "desc" },
+        });
     if (!session) return res.status(404).json({ message: "No concierge session found" });
     const updated = await prisma.aiChatSession.update({
       where: { id: session.id },
@@ -1848,6 +1853,13 @@ async function findOrCreateProviderAssistantSession(user: any) {
     orderBy: { updatedAt: "desc" },
   });
   if (existing) return existing;
+  // Providers pick their own concierge persona in Settings > AI Concierge, the
+  // same way parents do. Seed with the default (first active) matchmaker so the
+  // assistant always has a name and a face rather than a bare sparkle icon.
+  const defaultMatchmaker = await prisma.matchmaker.findFirst({
+    where: { isActive: true },
+    orderBy: { sortOrder: "asc" },
+  });
   return prisma.aiChatSession.create({
     data: {
       userId: user.id,
@@ -1855,8 +1867,23 @@ async function findOrCreateProviderAssistantSession(user: any) {
       sessionType: "PROVIDER_CONCIERGE",
       status: "ACTIVE",
       title: "AI Concierge",
+      matchmakerId: defaultMatchmaker?.id || null,
     },
   });
+}
+
+/**
+ * The persona this provider's assistant speaks as. Falls back to the default
+ * matchmaker when the session predates persona selection or its persona was
+ * deactivated - never to a hardcoded "Eva", which is an internal name no user
+ * has ever seen anywhere else in the product.
+ */
+async function resolveProviderAssistantMatchmaker(session: any) {
+  if (session.matchmakerId) {
+    const chosen = await prisma.matchmaker.findUnique({ where: { id: session.matchmakerId } });
+    if (chosen?.isActive) return chosen;
+  }
+  return prisma.matchmaker.findFirst({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
 }
 
 // Live pipeline snapshot injected into every assistant request. Never cached -
@@ -1932,14 +1959,53 @@ chatRouter.get("/api/provider/concierge-assistant", requireAuth, async (req, res
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const session = await findOrCreateProviderAssistantSession(user);
-    const messages = await prisma.aiChatMessage.findMany({
-      where: { sessionId: session.id },
-      orderBy: { createdAt: "asc" },
-      take: 200,
+    const [messages, matchmaker] = await Promise.all([
+      prisma.aiChatMessage.findMany({
+        where: { sessionId: session.id },
+        orderBy: { createdAt: "asc" },
+        take: 200,
+      }),
+      resolveProviderAssistantMatchmaker(session),
+    ]);
+    res.json({
+      id: session.id,
+      title: session.title,
+      messages,
+      matchmakerId: matchmaker?.id || null,
+      matchmakerName: matchmaker?.name || null,
+      matchmakerAvatar: matchmaker?.avatarUrl || null,
+      matchmakerTitle: matchmaker?.title || null,
     });
-    res.json({ id: session.id, title: session.title, messages });
   } catch (e: any) {
     console.error("Provider assistant fetch error:", e);
+    res.status(500).json({ message: e.message });
+  }
+});
+
+// Provider-side twin of PATCH /api/my/chat-session/matchmaker: swap the persona
+// the provider's own pinned assistant speaks as. One session per provider, so
+// the switch is account-wide for that provider's staff.
+chatRouter.patch("/api/provider/concierge-assistant/matchmaker", requireAuth, async (req, res) => {
+  const user = req.user as any;
+  if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const { matchmakerId } = req.body;
+  if (!matchmakerId) return res.status(400).json({ message: "matchmakerId required" });
+  try {
+    const matchmaker = await prisma.matchmaker.findUnique({ where: { id: matchmakerId } });
+    if (!matchmaker || !matchmaker.isActive) {
+      return res.status(404).json({ message: "Concierge persona not found" });
+    }
+    const session = await findOrCreateProviderAssistantSession(user);
+    await prisma.aiChatSession.update({ where: { id: session.id }, data: { matchmakerId } });
+    res.json({
+      sessionId: session.id,
+      matchmakerId: matchmaker.id,
+      matchmakerName: matchmaker.name,
+      matchmakerAvatar: matchmaker.avatarUrl,
+      matchmakerTitle: matchmaker.title,
+    });
+  } catch (e: any) {
+    console.error("Provider assistant matchmaker switch error:", e);
     res.status(500).json({ message: e.message });
   }
 });
@@ -1963,7 +2029,7 @@ chatRouter.post("/api/provider/concierge-assistant/message", requireAuth, async 
       data: { sessionId: session.id, role: "user", content: content.trim(), senderType: "provider", senderName: senderDisplayName },
     });
 
-    const [promptSection, context, history] = await Promise.all([
+    const [promptSection, context, history, matchmaker] = await Promise.all([
       prisma.conciergePromptSection.findUnique({ where: { key: "provider_assistant_prompt" } }),
       buildProviderAssistantContext(user),
       prisma.aiChatMessage.findMany({
@@ -1971,18 +2037,26 @@ chatRouter.post("/api/provider/concierge-assistant/message", requireAuth, async 
         orderBy: { createdAt: "desc" },
         take: 20,
       }),
+      resolveProviderAssistantMatchmaker(session),
     ]);
     if (!promptSection?.content || promptSection.isActive === false) {
       return res.status(503).json({ message: "Provider assistant prompt is not configured or inactive" });
     }
 
+    // The provider chose this persona in Settings > AI Concierge - it has to
+    // drive the voice and the byline, not just the avatar on the row.
+    const assistantName = matchmaker?.name || "AI Concierge";
+    const personaBlock = matchmaker
+      ? `PERSONA (the provider chose this concierge - stay in this voice):\nYou are ${matchmaker.name}, ${matchmaker.title}. ${matchmaker.personalityPrompt}\n\n`
+      : "";
+
     const historyText = history.reverse().map(m =>
-      `${m.role === "user" ? `PROVIDER (${m.senderName || "staff"})` : "EVA"}: ${m.content}`
+      `${m.role === "user" ? `PROVIDER (${m.senderName || "staff"})` : assistantName.toUpperCase()}: ${m.content}`
     ).join("\n");
 
     const model = providerAssistantAI.getGenerativeModel({
       model: "gemini-3.5-flash",
-      systemInstruction: `${promptSection.content}\n\n${context}`,
+      systemInstruction: `${promptSection.content}\n\n${personaBlock}${context}`,
     });
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: `${historyText ? `CONVERSATION SO FAR:\n${historyText}\n\n` : ""}PROVIDER (${senderDisplayName}): ${content.trim()}` }] }],
@@ -1995,7 +2069,7 @@ chatRouter.post("/api/provider/concierge-assistant/message", requireAuth, async 
     }
 
     const aiMessage = await prisma.aiChatMessage.create({
-      data: { sessionId: session.id, role: "assistant", content: aiText, senderType: "ai", senderName: "Eva" },
+      data: { sessionId: session.id, role: "assistant", content: aiText, senderType: "ai", senderName: assistantName },
     });
     await prisma.aiChatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
 

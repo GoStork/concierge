@@ -793,7 +793,15 @@ export default function ConversationsPage() {
   // its transcript comes from its own endpoint (the parent-session detail
   // endpoint would mask Eva's replies during the anonymous phase).
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const providerAssistantQuery = useQuery<{ id: string; title: string | null; messages: any[] }>({
+  const providerAssistantQuery = useQuery<{
+    id: string;
+    title: string | null;
+    messages: any[];
+    matchmakerId: string | null;
+    matchmakerName: string | null;
+    matchmakerAvatar: string | null;
+    matchmakerTitle: string | null;
+  }>({
     queryKey: ["/api/provider/concierge-assistant"],
     queryFn: async () => {
       const res = await fetch("/api/provider/concierge-assistant", { credentials: "include" });
@@ -2448,6 +2456,10 @@ const sendMessageMutation = useMutation({
       const msgs = providerAssistantQuery.data?.messages || [];
       return msgs.length ? msgs[msgs.length - 1] : null;
     })();
+    // The persona the provider picked in Settings > AI Concierge. "Eva" is an
+    // internal name - never show it.
+    const assistantName = providerAssistantQuery.data?.matchmakerName || "AI Concierge";
+    const assistantAvatar = getPhotoSrc(providerAssistantQuery.data?.matchmakerAvatar) || null;
     const sidebarContent = (
       <>
         {/* Pinned provider assistant - Eva as the provider's own copilot.
@@ -2467,15 +2479,25 @@ const sendMessageMutation = useMutation({
             data-testid="provider-assistant-row"
             aria-current={assistantOpen ? "page" : undefined}
           >
-            <div
-              className="w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center"
-              style={{ backgroundColor: brandColor }}
-            >
-              <Sparkles className="w-5 h-5 text-primary-foreground" />
+            <div className="w-11 h-11 rounded-full flex-shrink-0 relative">
+              {assistantAvatar && (
+                <img
+                  src={assistantAvatar}
+                  alt={assistantName}
+                  className="w-11 h-11 rounded-full object-cover border absolute inset-0 z-10"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
+              <div
+                className="w-11 h-11 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold"
+                style={{ backgroundColor: brandColor }}
+              >
+                {assistantName.charAt(0)}
+              </div>
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>AI Concierge</span>
+                <span className="text-sm font-ui truncate" style={{ fontWeight: 600 }}>{assistantName}</span>
                 {assistantLastMsg && (
                   <span className="t-helper flex-shrink-0">{timeAgo(assistantLastMsg.createdAt)}</span>
                 )}
@@ -3223,11 +3245,21 @@ const sendMessageMutation = useMutation({
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: brandColor }}>
-            <Sparkles className="w-4 h-4 text-primary-foreground" />
+          <div className="w-10 h-10 rounded-full flex-shrink-0 relative">
+            {assistantAvatar && (
+              <img
+                src={assistantAvatar}
+                alt={assistantName}
+                className="w-10 h-10 rounded-full object-cover border absolute inset-0 z-10"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            )}
+            <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground text-sm font-bold" style={{ backgroundColor: brandColor }}>
+              {assistantName.charAt(0)}
+            </div>
           </div>
           <div className="flex-1 min-w-0">
-            <span className="font-semibold text-sm font-ui truncate block">AI Concierge</span>
+            <span className="font-semibold text-sm font-ui truncate block">{assistantName}</span>
             <p className="t-helper truncate">Your GoStork assistant - pipeline, platform help, drafting</p>
           </div>
         </div>
@@ -3238,10 +3270,20 @@ const sendMessageMutation = useMutation({
             </div>
           ) : assistantMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-6">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: brandColor }}>
-                <Sparkles className="w-5 h-5 text-primary-foreground" />
+              <div className="w-12 h-12 rounded-full mb-3 relative">
+                {assistantAvatar && (
+                  <img
+                    src={assistantAvatar}
+                    alt={assistantName}
+                    className="w-12 h-12 rounded-full object-cover border absolute inset-0 z-10"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                )}
+                <div className="w-12 h-12 rounded-full flex items-center justify-center text-primary-foreground font-bold" style={{ backgroundColor: brandColor }}>
+                  {assistantName.charAt(0)}
+                </div>
               </div>
-              <p className="text-sm font-medium">Ask Eva anything</p>
+              <p className="text-sm font-medium">Ask {assistantName} anything</p>
               <p className="t-helper mt-1 max-w-sm">
                 "What needs my attention today?", "How do anonymous parent questions work?", or "Help me word an answer about our success rates."
               </p>
@@ -3253,8 +3295,10 @@ const sendMessageMutation = useMutation({
               chatPalette={chatPalette}
               viewerRole="provider"
               isOwnMessage={(m: any) => m.senderType === "provider"}
-              nameLabel={(m: any) => m.senderName || (m.senderType === "ai" ? "Eva" : null)}
-              aiName="Eva"
+              /* AI rows always take the CURRENT persona name - older messages
+                 were stamped senderName "Eva", an internal name. */
+              nameLabel={(m: any) => (m.senderType === "ai" ? assistantName : m.senderName || null)}
+              aiName={assistantName}
               msgTestIdPrefix="provider-assistant-msg"
             />
           )}
@@ -3263,7 +3307,7 @@ const sendMessageMutation = useMutation({
           onSend={(text) => { if (text.trim()) assistantSendMutation.mutate(text.trim()); }}
           isLoading={assistantSendMutation.isPending}
           brandColor={brandColor}
-          placeholder="Ask Eva anything..."
+          placeholder={`Ask ${assistantName} anything...`}
           testIdPrefix="provider-assistant"
         />
       </div>
