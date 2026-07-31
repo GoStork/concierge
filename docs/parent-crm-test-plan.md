@@ -216,7 +216,12 @@ The shared components were modified, so their original mount sites need a look.
       `sessionSummaries` prop for the record's N sessions, and mounted in the
       GoStork-only block. The monitor's single-summary path is unchanged and
       re-verified in the browser
-- [x] **G-2** DONE. Both tables now render one `ParentsTable`; each view maps
+- [x] **G-2** DONE and verified on BOTH roles in a browser. *One regression
+      found only by looking: the household badge read "Couple - Eran Parent 1
+      & Ariel Parent 2" for a provider, because that payload's `name` is the
+      COMBINED household name, so HouseholdBadge's selfName filter matched
+      nothing. selfName is now passed only when the row is one person.*
+      Both tables now render one `ParentsTable`; each view maps
       its payload into `ParentTableRow`. The real differences are props -
       `selectable`, `rowActions`, `contactReleased`, `members`. staff-page
       dropped from 984 to 790 lines and ~25 now-dead imports went with it

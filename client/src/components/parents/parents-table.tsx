@@ -159,7 +159,16 @@ export function ParentsTable({
                   {/* Second line so the chip never bleeds into the email column */}
                   {(row.householdNames?.length || 0) > 1 && (
                     <div className="mt-1 pl-6">
-                      <HouseholdBadge memberNames={row.householdNames!} selfName={row.name} testId={`badge-couple-${row.id}`} />
+                      {/* selfName only when the row is ONE person. The provider
+                          payload's `name` is the combined household name, so
+                          passing it would filter nothing out and the badge
+                          would list both partners - duplicating the name cell
+                          an inch to the left. Then it correctly reads "Couple". */}
+                      <HouseholdBadge
+                        memberNames={row.householdNames!}
+                        selfName={row.householdNames!.includes(row.name || "") ? row.name : undefined}
+                        testId={`badge-couple-${row.id}`}
+                      />
                     </div>
                   )}
                 </TableCell>
