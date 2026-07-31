@@ -9,6 +9,7 @@
  * Everything lives in URL search params, per the tab-state rule: a filtered
  * view survives a reload, a bookmark, and the back button.
  */
+import { useState } from "react";
 import { CalendarIcon, Check, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,19 +19,25 @@ import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { SERVICE_LABELS, JOURNEY_STATUS_LABELS, toDateParam } from "./parent-cells";
 
 /**
- * A checkbox list behind a trigger, so several services (or statuses) can be on
- * at once. The trigger reports the selection rather than making you open it:
- * one pick names itself, several show a count.
+ * The one filter control, for all four dropdowns.
+ *
+ * Tags and Owner used to be native <select>s, which draw their own arrow hard
+ * against the edge of the pill - beside the two custom triggers it read as a
+ * different control. They are single-choice rather than multi, so this takes a
+ * `single` mode instead of a second component: same trigger, same panel, same
+ * arrow position, and the row is a radio rather than a checkbox.
  */
-function MultiFilter({
-  label, options, selected, onChange, testId,
+function FilterDropdown({
+  label, options, selected, onChange, testId, single = false,
 }: {
   label: string;
   options: [string, string][];
   selected: string[];
   onChange: (next: string[]) => void;
   testId: string;
+  single?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
   const active = selected.length > 0;
   const summary = selected.length === 0
     ? label
@@ -38,11 +45,19 @@ function MultiFilter({
       ? (options.find(([k]) => k === selected[0])?.[1] || selected[0])
       : `${selected.length} selected`;
 
-  const toggle = (key: string) =>
+  const toggle = (key: string) => {
+    if (single) {
+      // Picking the current value again clears it, so there is always a way
+      // back to "all" without hunting for a separate reset row.
+      onChange(selected[0] === key ? [] : [key]);
+      setOpen(false);
+      return;
+    }
     onChange(selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key]);
+  };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -74,19 +89,21 @@ function MultiFilter({
               <button
                 key={key}
                 type="button"
-                role="checkbox"
+                role={single ? "radio" : "checkbox"}
                 aria-checked={on}
                 className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-[var(--radius)] text-sm text-left hover:bg-secondary transition-colors"
                 onClick={() => toggle(key)}
                 data-testid={`${testId}-opt-${key}`}
               >
                 <span
-                  className="w-4 h-4 rounded-[4px] border flex items-center justify-center shrink-0"
+                  className={`w-4 h-4 border flex items-center justify-center shrink-0 ${single ? "rounded-full" : "rounded-[4px]"}`}
                   style={on
                     ? { background: "hsl(var(--primary))", borderColor: "hsl(var(--primary))" }
                     : undefined}
                 >
-                  {on && <Check className="w-3 h-3 text-primary-foreground" />}
+                  {on && (single
+                    ? <span className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />
+                    : <Check className="w-3 h-3 text-primary-foreground" />)}
                 </span>
                 <span className="truncate">{text}</span>
               </button>
@@ -187,39 +204,38 @@ export function ParentsFilterBar({
           <DateFilter value={state.from} onChange={(v) => setParam("from", v)} placeholder="From" testId={`${testIdPrefix}-date-from`} />
           <DateFilter value={state.to} onChange={(v) => setParam("to", v)} placeholder="To" testId={`${testIdPrefix}-date-to`} />
 
-          <MultiFilter
+          <FilterDropdown
             label="All services"
             options={Object.entries(SERVICE_LABELS)}
             selected={state.services}
             onChange={(next) => setParam("svc", next.join(","))}
             testId={`${testIdPrefix}-service-filter`}
           />
-          <MultiFilter
+          <FilterDropdown
             label="All statuses"
             options={Object.entries(JOURNEY_STATUS_LABELS)}
             selected={state.statuses}
             onChange={(next) => setParam("status", next.join(","))}
             testId={`${testIdPrefix}-status-filter`}
           />
-
-          <select
-            value={state.tag}
-            onChange={(e) => setParam("tag", e.target.value === "all" ? "" : e.target.value)}
-            className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-            data-testid={`${testIdPrefix}-tag-filter`}
-          >
-            <option value="all">All tags</option>
-            {tagVocabulary.map((t) => <option key={t.id} value={t.label}>{t.label}</option>)}
-          </select>
-          <select
-            value={state.owner === "me" || state.owner === "unassigned" ? "all" : state.owner}
-            onChange={(e) => setParam("owner", e.target.value === "all" ? "" : e.target.value)}
-            className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-            data-testid={`${testIdPrefix}-owner-filter`}
-          >
-            <option value="all">All owners</option>
-            {ownerOptions.map((o) => <option key={o.id} value={o.id}>{o.name || "Unnamed"}</option>)}
-          </select>
+          <FilterDropdown
+            single
+            label="All tags"
+            options={tagVocabulary.map((t) => [t.label, t.label] as [string, string])}
+            selected={state.tag === "all" ? [] : [state.tag]}
+            onChange={(next) => setParam("tag", next[0] || "")}
+            testId={`${testIdPrefix}-tag-filter`}
+          />
+          <FilterDropdown
+            single
+            label="All owners"
+            options={ownerOptions.map((o) => [o.id, o.name || "Unnamed"] as [string, string])}
+            // "me" and "unassigned" belong to the pills below, not to a person
+            // picker, so neither shows as a selected owner here.
+            selected={state.owner === "all" || state.owner === "me" || state.owner === "unassigned" ? [] : [state.owner]}
+            onChange={(next) => setParam("owner", next[0] || "")}
+            testId={`${testIdPrefix}-owner-filter`}
+          />
         </div>
         <ClearFiltersButton pill show={hasActive} onClick={onClear} testId={`${testIdPrefix}-clear-filters`} />
       </div>
