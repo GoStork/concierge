@@ -11,10 +11,16 @@ type Props = {
   currentSort: SortConfig;
   onSort: (key: string) => void;
   className?: string;
+  /**
+   * Let a two-word label wrap instead of forcing its column as wide as the
+   * header text. Off by default so every existing table is untouched; worth
+   * turning on where the header is the widest thing in a narrow column.
+   */
+  wrapLabel?: boolean;
   "data-testid"?: string;
 };
 
-export function SortableTableHead({ label, sortKey, currentSort, onSort, className, ...props }: Props) {
+export function SortableTableHead({ label, sortKey, currentSort, onSort, className, wrapLabel, ...props }: Props) {
   const isActive = currentSort.key === sortKey;
   const direction = isActive ? currentSort.direction : null;
 
@@ -24,14 +30,17 @@ export function SortableTableHead({ label, sortKey, currentSort, onSort, classNa
       onClick={() => onSort(sortKey)}
       data-testid={props["data-testid"]}
     >
-      <div className="flex items-center gap-1 whitespace-nowrap">
-        <span>{label}</span>
+      {/* Flex would give the label a box as wide as the column and strand the
+          arrow at its far edge once the text wraps, so a wrapping header lays
+          out inline and the arrow follows the last word. */}
+      <div className={wrapLabel ? "leading-tight" : "flex items-center gap-1 whitespace-nowrap"}>
+        <span>{label}{wrapLabel ? " " : ""}</span>
         {direction === "asc" ? (
-          <ArrowUp className="w-3.5 h-3.5 text-foreground/70" />
+          <ArrowUp className={`w-3.5 h-3.5 text-foreground/70 ${wrapLabel ? "inline align-middle" : ""}`} />
         ) : direction === "desc" ? (
-          <ArrowDown className="w-3.5 h-3.5 text-foreground/70" />
+          <ArrowDown className={`w-3.5 h-3.5 text-foreground/70 ${wrapLabel ? "inline align-middle" : ""}`} />
         ) : (
-          <ArrowUpDown className="w-3.5 h-3.5 text-foreground/40" />
+          <ArrowUpDown className={`w-3.5 h-3.5 text-foreground/40 ${wrapLabel ? "inline align-middle" : ""}`} />
         )}
       </div>
     </TableHead>

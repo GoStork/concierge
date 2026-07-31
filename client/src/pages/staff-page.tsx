@@ -4,22 +4,20 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { ClearFiltersButton } from "@/components/clear-filters-button";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Plus, Trash2, Loader2, Search, Calendar, Ban, UserCheck } from "lucide-react";
+import { Plus, Trash2, Loader2, Ban, UserCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTableSort } from "@/components/sortable-table-head";
 import MembersTable from "@/components/members-table";
-import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import {
-  JOURNEY_STATUS_LABELS,
-  SERVICE_LABELS,
   matchesCrmFilters,
-  toDateParam,
+  matchesMulti,
+  matchesMultiAny,
+  parentSortValue,
+  parseMulti,
 } from "@/components/parents";
 import { ParentsTable } from "@/components/parents/parents-table";
+import { ParentsFilterBar } from "@/components/parents/parents-filter-bar";
 
 /**
  * The tag vocabulary this viewer may filter by. Scoped server-side: an admin
@@ -108,11 +106,21 @@ function GostorkAdminUsersView() {
   const setSearchQuery = (v: string) => updateUsersParam("q", v);
   const setDateFrom = (v: string) => updateUsersParam("from", v);
   const setDateTo = (v: string) => updateUsersParam("to", v);
-  const serviceFilter = searchParams.get("svc") || "all";
-  const statusFilter = searchParams.get("status") || "all";
+  // Services and statuses are comma lists so several can be on at once.
+  const serviceFilter = parseMulti(searchParams.get("svc"));
+  const statusFilter = parseMulti(searchParams.get("status"));
   const ownerFilter = searchParams.get("owner") || "all";
   const nextFilter = searchParams.get("next") || "all";
   const tagFilter = searchParams.get("tag") || "all";
+  const setParams = useCallback((entries: Record<string, string>) => {
+    // One atomic update: successive single writes each build from the same
+    // stale params, so only the last one survives.
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(entries)) { if (v) next.set(k, v); else next.delete(k); }
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const { sortConfig, handleSort, sortData } = useTableSort("created", "desc");
 
@@ -141,14 +149,14 @@ function GostorkAdminUsersView() {
     staleTime: 15_000,
   });
 
-  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter !== "all" || statusFilter !== "all" || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all";
+  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter.length > 0 || statusFilter.length > 0 || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all";
 
   const filteredUsers = parentUsers.filter(member => {
     // Equality on enum keys, exactly like the provider table. This used to be a
     // substring match on free-text labels, so the same dropdown behaved
     // differently depending on which role was looking at it.
-    if (serviceFilter !== "all" && !(overview[member.id]?.serviceKeys || []).includes(serviceFilter)) return false;
-    if (statusFilter !== "all" && overview[member.id]?.matchStatus !== statusFilter) return false;
+    if (!matchesMultiAny(serviceFilter, overview[member.id]?.serviceKeys)) return false;
+    if (!matchesMulti(statusFilter, overview[member.id]?.matchStatus)) return false;
     if (!matchesCrmFilters(overview[member.id] || {}, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -183,20 +191,18 @@ function GostorkAdminUsersView() {
     }, { replace: true });
   }
 
+  // Every column resolves through the shared comparator, so the two tables
+  // cannot answer to different sort keys again. sortData sinks nulls, which is
+  // what "no owner" and "no next step" should do.
   const sortedUsers = sortData(filteredUsers, (item, key) => {
-    switch (key) {
-      case "name": return item.name || "";
-      case "email": return item.email;
-      case "mobile": return item.mobileNumber || "";
-      case "created": return item.createdAt || "";
-      case "updated": return overview[item.id]?.updatedAt || "";
-      case "services": return (overview[item.id]?.serviceKeys || []).join(", ");
-      case "status": return overview[item.id]?.matchStatus || "";
-      case "owner": return overview[item.id]?.owner?.name || "";
-      // sortData puts nulls last, which is what "no next step" should be.
-      case "nextDue": return overview[item.id]?.nextStep?.dueAt || null;
-      default: return "";
-    }
+    const o = overview[item.id] || {};
+    return parentSortValue(key, {
+      name: item.name, email: item.email, mobile: item.mobileNumber,
+      services: o.serviceKeys, matchStatus: o.matchStatus,
+      createdAt: item.createdAt, updatedAt: o.updatedAt,
+      costSheets: o.costSheets, invoices: o.invoices, agreements: o.agreements,
+      owner: o.owner, nextStep: o.nextStep, tags: o.tags,
+    });
   });
 
   // Couples stay visually together: after sorting, pull the remaining
@@ -306,142 +312,15 @@ function GostorkAdminUsersView() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-      <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide flex-1 min-w-0" data-testid="card-parent-filters">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name, email, or phone..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
-            data-testid="input-search-users"
-          />
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant={dateFrom ? "default" : "outline"} size="sm" className="shrink-0 h-8 text-xs rounded-full gap-1" data-testid="filter-btn-date-from">
-              <Calendar className="w-3 h-3" />
-              {dateFrom || "From"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <CalendarPicker
-              mode="single"
-              selected={dateFrom ? new Date(`${dateFrom}T00:00:00`) : undefined}
-              onSelect={(d) => setDateFrom(d ? toDateParam(d) : "")}
-              data-testid="calendar-date-from"
-            />
-            {dateFrom && (
-              <div className="border-t px-3 py-2">
-                <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => setDateFrom("")}>
-                  Clear
-                </Button>
-              </div>
-            )}
-          </PopoverContent>
-        </Popover>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant={dateTo ? "default" : "outline"} size="sm" className="shrink-0 h-8 text-xs rounded-full gap-1" data-testid="filter-btn-date-to">
-              <Calendar className="w-3 h-3" />
-              {dateTo || "To"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <CalendarPicker
-              mode="single"
-              selected={dateTo ? new Date(`${dateTo}T00:00:00`) : undefined}
-              onSelect={(d) => setDateTo(d ? toDateParam(d) : "")}
-              data-testid="calendar-date-to"
-            />
-            {dateTo && (
-              <div className="border-t px-3 py-2">
-                <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => setDateTo("")}>
-                  Clear
-                </Button>
-              </div>
-            )}
-          </PopoverContent>
-        </Popover>
-        <select
-          value={serviceFilter}
-          onChange={e => updateUsersParam("svc", e.target.value === "all" ? "" : e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-          data-testid="admin-parents-service-filter"
-        >
-          <option value="all">All services</option>
-          {Object.entries(SERVICE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={e => updateUsersParam("status", e.target.value === "all" ? "" : e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-          data-testid="admin-parents-status-filter"
-        >
-          <option value="all">All statuses</option>
-          {Object.entries(JOURNEY_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select
-          value={tagFilter}
-          onChange={e => updateUsersParam("tag", e.target.value === "all" ? "" : e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-          data-testid="admin-parents-tag-filter"
-        >
-          <option value="all">All tags</option>
-          {tagVocabulary.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
-        </select>
-        <select
-          value={ownerFilter}
-          onChange={e => updateUsersParam("owner", e.target.value === "all" ? "" : e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-          data-testid="admin-parents-owner-filter"
-        >
-          <option value="all">All owners</option>
-          <option value="me">My leads</option>
-          <option value="unassigned">Unassigned</option>
-          {ownerOptions.map(o => <option key={o.id} value={o.id}>{o.name || "Unnamed"}</option>)}
-        </select>
-      </div>
-        <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="button-clear-filters" />
-      </div>
-
-      {/* Quick filters on the same URL-param contract as the selects above,
-          so a bookmarked "my overdue leads" view survives a reload. */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-3" data-testid="parents-quick-filters">
-        {[
-          { key: "all", label: "All", apply: { owner: "", next: "" } },
-          { key: "mine", label: "My leads", apply: { owner: "me", next: "" } },
-          { key: "overdue", label: "Overdue", apply: { owner: "", next: "overdue" } },
-          { key: "unowned", label: "No owner", apply: { owner: "unassigned", next: "" } },
-        ].map(pill => {
-          // Normalise BOTH sides to "all" before comparing: the pills store a
-          // cleared filter as "", the URL stores it as absent -> "all".
-          const active =
-            (pill.apply.owner || "all") === (ownerFilter || "all") &&
-            (pill.apply.next || "all") === (nextFilter || "all");
-          return (
-            <button
-              key={pill.key}
-              type="button"
-              className="text-xs font-ui px-2.5 py-1 rounded-full border transition-colors"
-              style={active
-                ? { background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))", borderColor: "hsl(var(--primary) / 0.4)" }
-                : undefined}
-              onClick={() => setSearchParams(prev => {
-                const next = new URLSearchParams(prev);
-                for (const [k, v] of Object.entries(pill.apply)) {
-                  if (v) next.set(k, v); else next.delete(k);
-                }
-                return next;
-              }, { replace: true })}
-              data-testid={`quick-filter-${pill.key}`}
-            >
-              {pill.label}
-            </button>
-          );
-        })}
-      </div>
+      <ParentsFilterBar
+        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, tag: tagFilter, owner: ownerFilter, next: nextFilter }}
+        setParam={updateUsersParam}
+        setParams={setParams}
+        onClear={clearFilters}
+        tagVocabulary={tagVocabulary}
+        ownerOptions={ownerOptions}
+        testIdPrefix="admin-parents"
+      />
 
       <ParentsTable
         rows={groupedUsers.map(member => {
@@ -541,8 +420,8 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const ownerOptions = useOwnerOptions();
   const [searchParams, setSearchParams] = useSearchParams();
   const searchQuery = searchParams.get("q") || "";
-  const serviceFilter = searchParams.get("svc") || "all";
-  const statusFilter = searchParams.get("status") || "all";
+  const serviceFilter = parseMulti(searchParams.get("svc"));
+  const statusFilter = parseMulti(searchParams.get("status"));
   const dateFrom = searchParams.get("from") || "";
   const dateTo = searchParams.get("to") || "";
   const setParam = (key: string, v: string) => {
@@ -553,11 +432,18 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       return next;
     }, { replace: true });
   };
+  const setParams = (entries: Record<string, string>) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(entries)) { if (v) next.set(k, v); else next.delete(k); }
+      return next;
+    }, { replace: true });
+  };
   const setSearchQuery = (v: string) => setParam("q", v);
   const ownerFilter = searchParams.get("owner") || "all";
   const nextFilter = searchParams.get("next") || "all";
   const tagFilter = searchParams.get("tag") || "all";
-  const hasActiveFilters = !!(searchQuery || serviceFilter !== "all" || statusFilter !== "all" || dateFrom || dateTo || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all");
+  const hasActiveFilters = !!(searchQuery || serviceFilter.length || statusFilter.length || dateFrom || dateTo || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all");
   const clearFilters = () => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
@@ -579,8 +465,8 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
 
   const filtered = sortData(
     (parents || []).filter(p => {
-      if (serviceFilter !== "all" && p.serviceType !== serviceFilter) return false;
-      if (statusFilter !== "all" && p.matchStatus !== statusFilter) return false;
+      if (!matchesMulti(serviceFilter, p.serviceType)) return false;
+      if (!matchesMulti(statusFilter, p.matchStatus)) return false;
       if (!matchesCrmFilters(p, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
       if (dateFrom && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) < new Date(`${dateFrom}T00:00:00`))) return false;
       if (dateTo && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) > new Date(`${dateTo}T23:59:59`))) return false;
@@ -590,18 +476,17 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       const memberFields = (p.members || []).flatMap((m: any) => [m.name, m.email, m.mobileNumber]);
       return [p.name, p.email, p.mobileNumber, ...memberFields].filter(Boolean).some((f: string) => f.toLowerCase().includes(q));
     }),
-    (p: any, key: string) => {
-      switch (key) {
-        case "name": return (p.name || "").toLowerCase();
-        case "service": return p.serviceType || "";
-        case "status": return p.matchStatus || "";
-        case "created": return p.sessionCreatedAt ? new Date(p.sessionCreatedAt).getTime() : 0;
-        case "updated": return p.sessionUpdatedAt ? new Date(p.sessionUpdatedAt).getTime() : 0;
-        case "owner": return p.owner?.name || "";
-        case "nextDue": return p.nextStep?.dueAt ? new Date(p.nextStep.dueAt).getTime() : null;
-        default: return null;
-      }
-    },
+    // Same comparator as the admin table. This switch used to answer to
+    // "service" while the header sent "services", so that column's sort arrow
+    // did nothing at all, and email and mobile were missing outright.
+    (p: any, key: string) => parentSortValue(key, {
+      name: p.name, email: p.email, mobile: p.mobileNumber,
+      services: p.serviceType ? [p.serviceType] : [],
+      matchStatus: p.matchStatus,
+      createdAt: p.sessionCreatedAt, updatedAt: p.sessionUpdatedAt,
+      costSheets: p.costSheets, invoices: p.invoices, agreements: p.agreements,
+      owner: p.owner, nextStep: p.nextStep, tags: p.tags,
+    }),
   );
 
   if (isLoading) return <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -613,140 +498,16 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         <p className="text-muted-foreground">Parents who have connected with you via the AI concierge or meetings.</p>
       </div>
 
-      <div className="flex items-center gap-3">
-      <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide flex-1 min-w-0">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name, email, or phone..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
-            data-testid="input-search-parents"
-          />
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant={dateFrom ? "default" : "outline"} size="sm" className="shrink-0 h-9 text-xs rounded-full gap-1" data-testid="provider-parents-date-from">
-              <Calendar className="w-3 h-3" />
-              {dateFrom || "From"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <CalendarPicker
-              mode="single"
-              selected={dateFrom ? new Date(`${dateFrom}T00:00:00`) : undefined}
-              onSelect={(d) => setParam("from", d ? toDateParam(d) : "")}
-            />
-            {dateFrom && (
-              <div className="border-t px-3 py-2">
-                <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => setParam("from", "")}>
-                  Clear
-                </Button>
-              </div>
-            )}
-          </PopoverContent>
-        </Popover>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant={dateTo ? "default" : "outline"} size="sm" className="shrink-0 h-9 text-xs rounded-full gap-1" data-testid="provider-parents-date-to">
-              <Calendar className="w-3 h-3" />
-              {dateTo || "To"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <CalendarPicker
-              mode="single"
-              selected={dateTo ? new Date(`${dateTo}T00:00:00`) : undefined}
-              onSelect={(d) => setParam("to", d ? toDateParam(d) : "")}
-            />
-            {dateTo && (
-              <div className="border-t px-3 py-2">
-                <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => setParam("to", "")}>
-                  Clear
-                </Button>
-              </div>
-            )}
-          </PopoverContent>
-        </Popover>
-        <select
-          value={serviceFilter}
-          onChange={e => setParam("svc", e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-          data-testid="parents-service-filter"
-        >
-          <option value="all">All services</option>
-          {Object.entries(SERVICE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={e => setParam("status", e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-          data-testid="parents-status-filter"
-        >
-          <option value="all">All statuses</option>
-          {Object.entries(JOURNEY_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select
-          value={tagFilter}
-          onChange={e => setParam("tag", e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-          data-testid="parents-tag-filter"
-        >
-          <option value="all">All tags</option>
-          {tagVocabulary.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
-        </select>
-        <select
-          value={ownerFilter}
-          onChange={e => setParam("owner", e.target.value)}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0"
-          data-testid="parents-owner-filter"
-        >
-          <option value="all">All owners</option>
-          <option value="me">My leads</option>
-          <option value="unassigned">Unassigned</option>
-          {ownerOptions.map(o => <option key={o.id} value={o.id}>{o.name || "Unnamed"}</option>)}
-        </select>
-      </div>
-        <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="provider-parents-clear-filters" />
-      </div>
+      <ParentsFilterBar
+        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, tag: tagFilter, owner: ownerFilter, next: nextFilter }}
+        setParam={setParam}
+        setParams={setParams}
+        onClear={clearFilters}
+        tagVocabulary={tagVocabulary}
+        ownerOptions={ownerOptions}
+        testIdPrefix="provider-parents"
+      />
 
-      {/* Quick filters on the same URL-param contract as the selects above,
-          so a bookmarked "my overdue leads" view survives a reload. */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-3" data-testid="parents-quick-filters">
-        {[
-          { key: "all", label: "All", apply: { owner: "", next: "" } },
-          { key: "mine", label: "My leads", apply: { owner: "me", next: "" } },
-          { key: "overdue", label: "Overdue", apply: { owner: "", next: "overdue" } },
-          { key: "unowned", label: "No owner", apply: { owner: "unassigned", next: "" } },
-        ].map(pill => {
-          // Normalise BOTH sides to "all" before comparing: the pills store a
-          // cleared filter as "", the URL stores it as absent -> "all".
-          const active =
-            (pill.apply.owner || "all") === (ownerFilter || "all") &&
-            (pill.apply.next || "all") === (nextFilter || "all");
-          return (
-            <button
-              key={pill.key}
-              type="button"
-              className="text-xs font-ui px-2.5 py-1 rounded-full border transition-colors"
-              style={active
-                ? { background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))", borderColor: "hsl(var(--primary) / 0.4)" }
-                : undefined}
-              onClick={() => setSearchParams(prev => {
-                const next = new URLSearchParams(prev);
-                for (const [k, v] of Object.entries(pill.apply)) {
-                  if (v) next.set(k, v); else next.delete(k);
-                }
-                return next;
-              }, { replace: true })}
-              data-testid={`quick-filter-${pill.key}`}
-            >
-              {pill.label}
-            </button>
-          );
-        })}
-      </div>
 
       {/* overflow-x-auto so wide rows scroll horizontally instead of
           wrapping. whitespace-nowrap on every cell enforces single-line

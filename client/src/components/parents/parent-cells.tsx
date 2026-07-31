@@ -299,6 +299,70 @@ export function TagsCell({
 }
 
 /**
+ * Every sortable column, resolved in one place.
+ *
+ * Both tables previously kept their own switch, and they had already drifted:
+ * the provider one answered to "service" while the header sent "services", so
+ * that column silently did nothing, and neither answered to email or mobile
+ * despite rendering a sort arrow on both. Each view now adapts its own payload
+ * into this shape and the comparison lives here.
+ *
+ * Money columns sort by total value rather than count - "who is the biggest
+ * deal" is the question a money column gets asked. Agreements have no amount,
+ * so they sort by how many there are. Nulls sink to the bottom via sortData.
+ */
+export interface ParentSortSource {
+  name?: string | null;
+  email?: string | null;
+  mobile?: string | null;
+  services?: string[] | null;
+  matchStatus?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  costSheets?: { totalCostCents?: number | null }[] | null;
+  invoices?: { serviceAmount?: number | null }[] | null;
+  agreements?: unknown[] | null;
+  owner?: { name?: string | null } | null;
+  nextStep?: { dueAt: string } | null;
+  tags?: { label: string }[] | null;
+}
+
+export function parentSortValue(key: string, src: ParentSortSource): string | number | null {
+  const sum = (list: any[] | null | undefined, field: string) =>
+    (list?.length ? list.reduce((n, r) => n + (Number(r?.[field]) || 0), 0) : null);
+  switch (key) {
+    case "name": return (src.name || "").toLowerCase();
+    case "email": return (src.email || "").toLowerCase();
+    case "mobile": return src.mobile || "";
+    case "services": return (src.services || []).map((s) => SERVICE_LABELS[s] || s).sort().join(", ");
+    case "status": return src.matchStatus || "";
+    case "created": return src.createdAt ? new Date(src.createdAt).getTime() : null;
+    case "updated": return src.updatedAt ? new Date(src.updatedAt).getTime() : null;
+    case "costSheets": return sum(src.costSheets, "totalCostCents");
+    case "invoices": return sum(src.invoices, "serviceAmount");
+    case "agreements": return src.agreements?.length || null;
+    case "owner": return src.owner?.name || null;
+    case "nextDue": return src.nextStep?.dueAt ? new Date(src.nextStep.dueAt).getTime() : null;
+    case "tags": return src.tags?.length ? src.tags.map((t) => t.label).sort().join(", ") : null;
+    default: return null;
+  }
+}
+
+/**
+ * Service and status filters accept several values at once, carried in the URL
+ * as a comma list so a multi-pick view still survives a reload and a bookmark.
+ * An empty selection means "no filter", never "match nothing".
+ */
+export const parseMulti = (raw: string | null): string[] =>
+  (raw || "").split(",").map((s) => s.trim()).filter(Boolean);
+
+export const matchesMulti = (selected: string[], value: string | null | undefined) =>
+  selected.length === 0 || (!!value && selected.includes(value));
+
+export const matchesMultiAny = (selected: string[], values: string[] | null | undefined) =>
+  selected.length === 0 || (values || []).some((v) => selected.includes(v));
+
+/**
  * The CRM filter predicates, shared by both parents tables.
  *
  * Written once so "overdue" cannot come to mean two different things depending

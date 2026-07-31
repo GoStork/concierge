@@ -17,7 +17,7 @@
  *   members      - a couple renders one line per login, which only the
  *                  provider payload carries today but the admin one may later
  */
-import { ReactNode } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -67,13 +67,39 @@ export function ParentsTable({
   // checkbox + 12 shared + optional actions
   const colSpan = 12 + (selectable ? 1 : 0) + (rowActions ? 1 : 0);
 
+  // The admin view carries two columns the provider does not (select-all and
+  // Actions), so it runs out of room first and the table starts scrolling. Both
+  // edges are pinned, which means the middle slides UNDER them - readable only
+  // if the pinned cells are opaque and cast a shadow while there is more to
+  // see. Without the shadow, an email sliding under the name column just looks
+  // like a truncated email.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ left: false, right: false });
+  const measure = useCallback(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    setEdge({ left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 });
+  }, []);
+  useEffect(() => {
+    measure();
+    const el = scroller.current;
+    if (!el) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure, rows.length]);
+
+  const pinL = edge.left ? "shadow-[8px_0_10px_-8px_hsl(var(--foreground)/0.28)]" : "";
+  const pinR = edge.right ? "shadow-[-8px_0_10px_-8px_hsl(var(--foreground)/0.28)]" : "";
+
   return (
-    <Card className="overflow-x-auto">
+    <Card className="overflow-x-auto" ref={scroller} onScroll={measure}>
       <Table className="[&_th]:px-2 [&_td]:px-2 [&_th]:text-xs">
         <TableHeader>
           <TableRow>
             {selectable && (
-              <TableHead className="w-10 pl-4 sticky left-0 z-20 bg-muted">
+              <TableHead className={`w-10 pl-4 sticky left-0 z-20 bg-muted ${pinL}`}>
                 <Checkbox
                   checked={allVisibleSelected ? true : someSelected ? "indeterminate" : false}
                   onCheckedChange={onToggleSelectAll}
@@ -82,20 +108,24 @@ export function ParentsTable({
                 />
               </TableHead>
             )}
-            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className={`min-w-[190px] sticky z-20 bg-muted ${selectable ? "left-10" : "left-0"}`} data-testid="sort-name" />
-            <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell max-w-[190px]" data-testid="sort-email" />
+            {/* Two-word headers wrap rather than forcing their column wide. The
+                header text was the widest thing in Match Status, Cost Sheets and
+                Next step - wrapping costs one taller header row and buys back
+                roughly 130px of table width. */}
+            <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className={`min-w-[164px] sticky z-20 bg-muted ${selectable ? "left-10" : "left-0"} ${selectable ? "" : pinL}`} data-testid="sort-name" />
+            <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell max-w-[170px]" data-testid="sort-email" />
             <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-mobile" />
             <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
-            <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
-            <TableHead className="hidden lg:table-cell whitespace-nowrap">Cost Sheets</TableHead>
-            <TableHead className="hidden lg:table-cell whitespace-nowrap">Invoices</TableHead>
-            <TableHead className="hidden lg:table-cell whitespace-nowrap">Agreements</TableHead>
+            <SortableTableHead label="Match Status" wrapLabel sortKey="status" currentSort={sortConfig} onSort={onSort} className="hidden lg:table-cell leading-tight" data-testid="sort-status" />
+            <SortableTableHead label="Cost Sheets" wrapLabel sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="hidden lg:table-cell leading-tight" data-testid="sort-cost-sheets" />
+            <SortableTableHead label="Invoices" sortKey="invoices" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-invoices" />
+            <SortableTableHead label="Agreements" sortKey="agreements" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-agreements" />
             <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-created" />
             <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
             <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
-            <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
-            <TableHead className="whitespace-nowrap hidden xl:table-cell">Tags</TableHead>
-            {rowActions && <TableHead className="text-right whitespace-nowrap">Actions</TableHead>}
+            <SortableTableHead label="Next step" wrapLabel sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="hidden xl:table-cell leading-tight" data-testid="sort-next-step" />
+            <SortableTableHead label="Tags" sortKey="tags" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-tags" />
+            {rowActions && <TableHead className={`text-right whitespace-nowrap sticky right-0 z-20 bg-muted ${pinR}`}>Actions</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -120,7 +150,7 @@ export function ParentsTable({
                 onClick={() => onRowClick(row)}
               >
                 {selectable && (
-                  <TableCell className="pl-4 w-10 sticky left-0 z-10 bg-inherit" onClick={(e) => e.stopPropagation()}>
+                  <TableCell className={`pl-4 w-10 sticky left-0 z-10 bg-inherit ${pinL}`} onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={selectedIds?.has(row.id) || false}
                       onCheckedChange={() => onToggleSelect?.(row.id)}
@@ -130,7 +160,7 @@ export function ParentsTable({
                   </TableCell>
                 )}
 
-                <TableCell className={`font-ui whitespace-nowrap min-w-[190px] sticky z-10 bg-inherit ${selectable ? "left-10" : "left-0"}`}>
+                <TableCell className={`font-ui whitespace-nowrap min-w-[164px] sticky z-10 bg-inherit ${selectable ? "left-10" : `left-0 ${pinL}`}`}>
                   <div className="flex items-center gap-2">
                     {photo ? (
                       <img src={photo} alt="" className="w-8 h-8 rounded-[var(--radius)] object-cover" />
@@ -139,7 +169,7 @@ export function ParentsTable({
                     )}
                     <button
                       type="button"
-                      className="text-left hover:text-primary hover:underline transition-colors cursor-pointer truncate max-w-[210px]"
+                      className="text-left hover:text-primary hover:underline transition-colors cursor-pointer truncate max-w-[168px]"
                       title={row.name || undefined}
                       onClick={(e) => { e.stopPropagation(); onRowClick(row); }}
                       data-testid={`link-user-name-${row.id}`}
@@ -244,7 +274,10 @@ export function ParentsTable({
                 </TableCell>
 
                 {rowActions && (
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                  <TableCell
+                    className={`text-right whitespace-nowrap sticky right-0 z-10 bg-inherit ${pinR}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {rowActions(row)}
                   </TableCell>
                 )}
