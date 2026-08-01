@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,8 @@ export interface VoiceOption {
   language?: string;
   previewUrl?: string;
   locked?: boolean;
+  library?: boolean;
+  publicOwnerId?: string;
 }
 export interface AvatarOption {
   id: string;
@@ -51,10 +53,16 @@ export async function playVoicePreview(provider: string, voiceId?: string): Prom
   await audio.play();
 }
 
-function useVoiceCatalog(provider: string) {
+function useVoiceCatalog(provider: string, q = "") {
   return useQuery<{ voices: VoiceOption[] }>({
-    queryKey: ["/api/voice/options/voices", provider],
-    queryFn: async () => (await apiRequest("GET", `/api/voice/options/voices?provider=${encodeURIComponent(provider)}`)).json(),
+    queryKey: ["/api/voice/options/voices", provider, q],
+    queryFn: async () =>
+      (
+        await apiRequest(
+          "GET",
+          `/api/voice/options/voices?provider=${encodeURIComponent(provider)}${q ? `&q=${encodeURIComponent(q)}` : ""}`,
+        )
+      ).json(),
     staleTime: 10 * 60 * 1000,
     retry: 1,
   });
@@ -145,9 +153,19 @@ export function VoicePicker({
   const [accent, setAccent] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [addingId, setAddingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const queryClient = useQueryClient();
 
-  const { data, isError } = useVoiceCatalog(provider);
+  // Debounced query drives the server-side ElevenLabs LIBRARY search (the
+  // account's own voices are searched instantly client-side).
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 350);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const { data, isError } = useVoiceCatalog(provider, debouncedQuery.length >= 2 ? debouncedQuery : "");
   const voices = data?.voices || [];
   const selected = voices.find((v) => v.id === value);
 
@@ -243,14 +261,37 @@ export function VoicePicker({
           </div>
           <div className="max-h-80 overflow-y-auto divide-y rounded-[var(--radius)] border">
             {filtered.length === 0 && (
-              <p className="t-helper italic p-4 text-center">{voices.length ? "No voices match the filters." : "Loading voices..."}</p>
+              <p className="t-helper italic p-4 text-center">
+                {voices.length
+                  ? "No voices match the filters."
+                  : debouncedQuery
+                    ? "Searching your voices and the ElevenLabs library..."
+                    : "Loading voices..."}
+              </p>
             )}
             {filtered.map((v) => (
               <div
                 key={v.id}
                 className={`flex items-center gap-3 p-2.5 transition-colors ${v.locked ? "opacity-60" : v.id === value ? "bg-secondary/70 cursor-pointer" : "hover:bg-secondary/40 cursor-pointer"}`}
-                onClick={() => {
-                  if (v.locked) return; // not selectable on the current plan
+                onClick={async () => {
+                  if (v.locked || addingId) return; // not selectable on the current plan
+                  if (v.library && v.publicOwnerId) {
+                    // Community-library voice: add it to the account first.
+                    setAddingId(v.id);
+                    try {
+                      const res = await apiRequest("POST", "/api/voice/library/add", {
+                        voiceId: v.id,
+                        publicOwnerId: v.publicOwnerId,
+                        name: v.name,
+                      });
+                      if (!res.ok) throw new Error("add failed");
+                      queryClient.invalidateQueries({ queryKey: ["/api/voice/options/voices", provider] });
+                    } catch {
+                      setAddingId(null);
+                      return; // loud console error server-side; keep the row selectable to retry
+                    }
+                    setAddingId(null);
+                  }
                   onChange(v.id);
                   stopAudio();
                   setOpen(false);
@@ -288,6 +329,16 @@ export function VoicePicker({
                         {cap(t!)}
                       </span>
                     ))}
+                    {v.library && (
+                      <span className="text-xs font-ui px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground">
+                        Library
+                      </span>
+                    )}
+                    {addingId === v.id && (
+                      <span className="text-xs font-ui text-muted-foreground flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Adding to account...
+                      </span>
+                    )}
                     {v.locked && (
                       <span className="text-xs font-ui px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]">
                         Requires ElevenLabs upgrade

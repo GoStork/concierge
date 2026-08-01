@@ -79,6 +79,49 @@ export interface VoiceOption {
   // ElevenLabs library voices on the Free tier). Shown greyed out with an
   // upgrade note instead of hidden, so admins know it exists.
   locked?: boolean;
+  // ElevenLabs community-library search result not yet in the account;
+  // selecting it (on a paid plan) adds it to My Voices first.
+  library?: boolean;
+  publicOwnerId?: string;
+}
+
+async function elevenLabsTier(key: string): Promise<string> {
+  try {
+    const sub = await fetch("https://api.elevenlabs.io/v1/user/subscription", {
+      headers: { "xi-api-key": key },
+    });
+    if (sub.ok) return ((await sub.json()) as any)?.tier || "free";
+  } catch {
+    /* conservative default below */
+  }
+  return "free";
+}
+
+// Search ElevenLabs' community library (thousands of voices beyond the
+// account's own list) - same catalog their Explore page browses.
+async function searchElevenLabsLibrary(q: string): Promise<VoiceOption[]> {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) return [];
+  const tier = await elevenLabsTier(key);
+  const resp = await fetch(
+    `https://api.elevenlabs.io/v1/shared-voices?page_size=12&search=${encodeURIComponent(q)}`,
+    { headers: { "xi-api-key": key } },
+  );
+  if (!resp.ok) return [];
+  const body: any = await resp.json();
+  return (body.voices || []).map((v: any) => ({
+    id: v.voice_id,
+    name: v.name,
+    description: v.descriptive || undefined,
+    gender: v.gender,
+    age: v.age?.replace(/_/g, " "),
+    accent: v.accent?.replace(/_/g, " "),
+    language: v.language,
+    previewUrl: v.preview_url || undefined,
+    locked: tier === "free" ? true : undefined,
+    library: true,
+    publicOwnerId: v.public_owner_id,
+  }));
 }
 
 // OpenAI's TTS voices are a fixed named set - no listing API.
@@ -192,15 +235,52 @@ voiceRouter.get("/api/voice/stats", async (req, res) => {
 voiceRouter.get("/api/voice/options/voices", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const provider = String(req.query.provider || "elevenlabs");
+  const q = String(req.query.q || "").trim();
   try {
     let voices: VoiceOption[];
     if (provider === "openai") voices = OPENAI_VOICES;
     else if (provider === "cartesia") voices = await cached("cartesia-voices", listCartesiaVoices);
-    else voices = await cached("elevenlabs-voices", listElevenLabsVoices);
+    else {
+      voices = await cached("elevenlabs-voices", listElevenLabsVoices);
+      if (q.length >= 2) {
+        // Extend the search into the community library, deduped against the
+        // voices already in the account.
+        const inAccount = new Set(voices.map((v) => v.id));
+        const library = (await searchElevenLabsLibrary(q)).filter((v) => !inAccount.has(v.id));
+        voices = [...voices, ...library];
+      }
+    }
     res.json({ provider, voices });
   } catch (err: any) {
     console.error(`[voice] voice catalog failed (${provider}): ${err?.message}`);
     res.status(502).json({ message: `Could not load ${provider} voices: ${err?.message}` });
+  }
+});
+
+// Add a community-library voice to the account (needed before it can be
+// selected/synthesized). Reachable only for non-locked results, i.e. paid
+// plans - the Free tier shows library voices locked.
+voiceRouter.post("/api/voice/library/add", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { voiceId, publicOwnerId, name } = req.body || {};
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) return res.status(503).json({ message: "ELEVENLABS_API_KEY not set" });
+  if (!voiceId || !publicOwnerId) return res.status(400).json({ message: "voiceId and publicOwnerId required" });
+  try {
+    const resp = await fetch(
+      `https://api.elevenlabs.io/v1/voices/add/${encodeURIComponent(publicOwnerId)}/${encodeURIComponent(voiceId)}`,
+      {
+        method: "POST",
+        headers: { "xi-api-key": key, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_name: name || "Library voice" }),
+      },
+    );
+    if (!resp.ok) throw new Error(`ElevenLabs add ${resp.status}: ${await resp.text()}`);
+    catalogCache.delete("elevenlabs-voices"); // account list changed
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error(`[voice] library add failed: ${err?.message}`);
+    res.status(502).json({ message: `Could not add library voice: ${err?.message}` });
   }
 });
 
