@@ -55,29 +55,21 @@ export function voiceProviderStatus() {
 
 // Voice ids are provider-specific (ElevenLabs: opaque ids, OpenAI: named
 // voices, Cartesia: UUIDs). The persona is the single source of truth -
-// admins pick voices per persona in the AI Concierge tab. The built-ins
-// below are EMERGENCY fallbacks only (logged loudly when used), so a
-// parent's session never dies because a persona is missing a voice for the
-// provider the admin just switched to.
-export const BUILTIN_DEFAULT_VOICES: Record<string, string> = {
-  elevenlabs: "EXAVITQu4vr4xnSDxMaL", // Sarah (premade - usable on every plan)
-  openai: "shimmer",
-  cartesia: "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4", // Skylar - Friendly Guide
-};
+// admins pick voices per persona in the AI Concierge tab. There is
+// deliberately NO hardcoded fallback voice: a persona without a voice for
+// the active provider fails LOUDLY (session rejected with
+// "voice_not_configured", admin UI warns on switch) rather than speaking
+// with a voice nobody chose.
 export function resolveVoiceForProvider(
   provider: string,
   personaVoiceIds: any,
   personaLegacyVoiceId: string | null | undefined,
 ): string {
-  const personaPick =
+  return (
     personaVoiceIds?.[provider] ||
-    (provider === "elevenlabs" ? personaLegacyVoiceId : null);
-  if (personaPick) return personaPick;
-  const builtin = BUILTIN_DEFAULT_VOICES[provider] || "";
-  if (builtin) {
-    log(`no persona voice for provider "${provider}" - using built-in fallback voice`);
-  }
-  return builtin;
+    (provider === "elevenlabs" ? personaLegacyVoiceId : null) ||
+    ""
+  );
 }
 
 function log(msg: string) {
@@ -239,6 +231,16 @@ class VoiceSession {
         this.chatSessionId = msg.sessionId || null;
         this.matchmakerId = msg.matchmakerId || null;
         void this.applyPersonaVoice().then(async () => {
+          // No voice for the active provider = loud failure, never a voice
+          // nobody chose. The admin UI warns about this on provider switch.
+          if (!this.voiceId) {
+            log(
+              `VOICE NOT CONFIGURED: persona ${this.matchmakerId || "(none)"} has no voice for ` +
+                `provider "${this.settings.voiceTtsProvider}" - rejecting session. Set it in the admin persona form.`,
+            );
+            void this.destroy("voice_not_configured");
+            return;
+          }
           await this.maybeStartAvatar();
           this.send({ type: "ready" });
           // Voice-first greeting: the client passes the init-session greeting

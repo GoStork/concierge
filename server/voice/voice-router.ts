@@ -228,7 +228,7 @@ voiceRouter.post("/api/voice/preview", async (req, res) => {
     return res.status(503).json({ message: `TTS provider "${providerName}" is not configured (API key missing)` });
   }
   if (!voiceId) {
-    return res.status(400).json({ message: "No voice ID: set a default voice or pass voiceId" });
+    return res.status(400).json({ message: "No voice selected for this provider - choose a voice in the persona form first" });
   }
 
   try {

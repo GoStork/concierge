@@ -3244,8 +3244,16 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, voiceSession.stop]);
   // Server-initiated end (silence timeout, session cap): close the panel.
+  // voice_not_configured stays OPEN in error state - the parent should see
+  // why voice stopped instead of the panel silently vanishing.
   useEffect(() => {
-    if (voiceMode && voiceSession.state === "ended" && voiceSession.endReason && voiceSession.endReason !== "user_ended") {
+    if (
+      voiceMode &&
+      voiceSession.state === "ended" &&
+      voiceSession.endReason &&
+      voiceSession.endReason !== "user_ended" &&
+      voiceSession.endReason !== "voice_not_configured"
+    ) {
       closeVoiceMode();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

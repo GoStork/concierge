@@ -157,6 +157,17 @@ function VoiceSettingsCard() {
   const set = (key: string, v: any) => setDraft((d) => ({ ...d, [key]: v }));
   const hasChanges = Object.keys(draft).length > 0;
 
+  // Personas with NO voice saved for the currently selected provider. There
+  // is deliberately no hardcoded fallback voice - the app asks the admin to
+  // set one per persona, and voice sessions fail loudly until it's done.
+  const selectedTts = val("voiceTtsProvider", "elevenlabs");
+  const personasMissingVoice = ((brandSettings?.matchmakers || []) as Matchmaker[]).filter(
+    (m) =>
+      m.isActive &&
+      !(m.voiceIds || {})[selectedTts] &&
+      !(selectedTts === "elevenlabs" && m.voiceId),
+  );
+
   // Tri-state: true/false once status is loaded, null while loading or on
   // error - "API key not set" must never appear just because the status
   // request hasn't succeeded yet.
@@ -267,6 +278,26 @@ function VoiceSettingsCard() {
           Switching the voice provider instantly switches every persona to its voice for that provider - each persona
           row below shows what it speaks with right now.
         </p>
+
+        {val("voiceModeEnabled", false) && personasMissingVoice.length > 0 && (
+          <div
+            className="flex items-start gap-2.5 p-3 rounded-[var(--radius)] border border-[hsl(var(--brand-warning))]/40 bg-[hsl(var(--brand-warning))]/10"
+            data-testid="voice-missing-personas-warning"
+          >
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[hsl(var(--brand-warning))]" />
+            <div className="text-sm">
+              <span className="font-medium">
+                {personasMissingVoice.map((m) => m.name).join(" and ")} {personasMissingVoice.length === 1 ? "has" : "have"} no{" "}
+                {TTS_PROVIDER_LABELS[selectedTts]?.split(" ")[0] || selectedTts} voice yet.
+              </span>{" "}
+              <span className="text-muted-foreground">
+                There is no default - set a voice on each persona in the Personas section below, or parents starting a
+                voice chat with {personasMissingVoice.length === 1 ? "this persona" : "these personas"} will get a
+                "voice not set up" error.
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
           <div className="space-y-1.5">

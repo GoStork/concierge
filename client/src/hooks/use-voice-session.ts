@@ -167,6 +167,13 @@ export function useVoiceSession() {
           break;
         case "ended":
           stop(msg.reason || "server_ended");
+          if (msg.reason === "voice_not_configured") {
+            // Loud, honest failure: the persona has no voice for the active
+            // provider. Keep the panel open in error state so the parent
+            // knows to continue in text (and the admin sees what to fix).
+            setError("Voice isn't set up for this assistant yet. Please continue in text.");
+            setStateBoth("error");
+          }
           break;
       }
     };
