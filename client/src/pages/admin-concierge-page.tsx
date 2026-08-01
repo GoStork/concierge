@@ -40,6 +40,7 @@ import {
   Check,
   Video,
   ExternalLink,
+  Play,
 } from "lucide-react";
 import ImageCropPreview from "@/components/image-crop-preview";
 
@@ -1204,6 +1205,23 @@ export default function AdminConciergePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [personaPreviewing, setPersonaPreviewing] = useState(false);
+  // Which inline persona-voice play button is busy ("personaId:provider")
+  const [chipPreviewing, setChipPreviewing] = useState<string | null>(null);
+  const previewPersonaVoice = async (key: string, provider: string, voiceId: string, personaName: string) => {
+    if (chipPreviewing) return;
+    setChipPreviewing(key);
+    try {
+      await playVoicePreview(
+        provider,
+        voiceId,
+        `Hi, I'm ${personaName}. It's lovely to meet you - I'm here to help with every step of your journey.`,
+      );
+    } catch (err: any) {
+      toast({ title: "Voice preview failed", description: err?.message, variant: "destructive" });
+    } finally {
+      setChipPreviewing(null);
+    }
+  };
   const [editForm, setEditForm] = useState<Partial<Matchmaker>>({});
   const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1520,9 +1538,23 @@ export default function AdminConciergePage() {
                           const vName = vid ? resolveVoiceName(activeTtsProvider, vid) : null;
                           const provLabel = TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider;
                           return vName ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground whitespace-nowrap max-w-full truncate">
-                              <Volume2 className="w-3 h-3" /> Speaks with {vName?.split(" - ")[0]} ({provLabel})
-                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void previewPersonaVoice(`${m.id}:header`, activeTtsProvider, vid!, m.name);
+                              }}
+                              className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground whitespace-nowrap max-w-full truncate hover:bg-secondary/70 transition-colors"
+                              aria-label={`Play ${m.name}'s voice`}
+                              data-testid={`btn-play-persona-voice-${m.id}`}
+                            >
+                              {chipPreviewing === `${m.id}:header` ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Play className="w-3 h-3 text-primary" />
+                              )}
+                              Speaks with {vName?.split(" - ")[0]} ({provLabel})
+                            </button>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] whitespace-nowrap max-w-full truncate">
                               <Volume2 className="w-3 h-3" /> No {provLabel} voice - voice chat will fail
@@ -1594,7 +1626,26 @@ export default function AdminConciergePage() {
                                   {TTS_PROVIDER_LABELS[prov]?.split(" ")[0]}
                                   {prov === activeTtsProvider ? " *" : ""}
                                 </span>
-                                {name ? <span>{name}</span> : <span className="t-helper italic">Not set - uses built-in fallback</span>}
+                                {name ? (
+                                  <>
+                                    <span className="truncate">{name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => void previewPersonaVoice(`${m.id}:${prov}`, prov, vid!, m.name)}
+                                      className="w-6 h-6 shrink-0 rounded-full border flex items-center justify-center text-primary hover:bg-secondary transition-colors"
+                                      aria-label={`Play ${m.name}'s ${prov} voice`}
+                                      data-testid={`btn-play-${prov}-${m.id}`}
+                                    >
+                                      {chipPreviewing === `${m.id}:${prov}` ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <Play className="w-3 h-3 ml-0.5" />
+                                      )}
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="t-helper italic">Not set</span>
+                                )}
                               </div>
                             );
                           })}
