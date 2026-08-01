@@ -223,6 +223,9 @@ const ALLOWED_FIELDS = [
   "cardTitleSize", "cardOverlaySize", "filterLabelSize", "badgeTextSize", "drawerMinHeight",
   "drawerTitleSize", "drawerBodySize", "drawerHandleWidth", "sliderValueSize", "sliderThumbSize",
   "enableAiConcierge", "parentExperienceMode",
+  // Voice mode (Eva live voice conversations) - admin Voice settings section
+  "voiceModeEnabled", "voiceTtsProvider", "voiceSttProvider", "voiceDefaultVoiceId",
+  "voiceSessionCapMinutes", "voiceDailyCapMinutes", "voiceAvatarEnabled", "voiceAvatarProvider",
   "onboardingClinicImageUrl", "onboardingEggDonorImageUrl", "onboardingSurrogateImageUrl", "onboardingSpermDonorImageUrl",
   "chatBubbleFontSize", "chatBubbleFontSizeDesktop", "chatBubbleLineHeight",
   "chatBubblePaddingX", "chatBubblePaddingY", "chatBubbleMaxWidth", "chatBubbleRadius",
@@ -433,6 +436,35 @@ function validateBrandBody(body: any) {
       throw new ForbiddenException("chatTimestampOpacity must be between 0.1 and 1.0");
     }
     body.chatTimestampOpacity = v;
+  }
+
+  // Voice mode settings
+  if (body.voiceTtsProvider !== undefined && !["elevenlabs", "openai", "cartesia"].includes(body.voiceTtsProvider)) {
+    throw new ForbiddenException("voiceTtsProvider must be elevenlabs, openai, or cartesia");
+  }
+  if (body.voiceSttProvider !== undefined && !["google", "deepgram"].includes(body.voiceSttProvider)) {
+    throw new ForbiddenException("voiceSttProvider must be google or deepgram");
+  }
+  if (body.voiceAvatarProvider !== undefined && !["heygen", "simli"].includes(body.voiceAvatarProvider)) {
+    throw new ForbiddenException("voiceAvatarProvider must be heygen or simli");
+  }
+  for (const field of ["voiceModeEnabled", "voiceAvatarEnabled"]) {
+    if (body[field] !== undefined && body[field] !== null) {
+      body[field] = body[field] === true || body[field] === "true";
+    }
+  }
+  const voiceIntFields: Record<string, [number, number]> = {
+    voiceSessionCapMinutes: [1, 120],
+    voiceDailyCapMinutes: [1, 600],
+  };
+  for (const [field, [min, max]] of Object.entries(voiceIntFields)) {
+    if (body[field] !== undefined && body[field] !== null) {
+      const v = Number(body[field]);
+      if (isNaN(v) || v < min || v > max) {
+        throw new ForbiddenException(`${field} must be between ${min} and ${max}`);
+      }
+      body[field] = Math.round(v);
+    }
   }
 
   const data: Record<string, any> = {};
@@ -838,6 +870,7 @@ export class BrandController {
         initialGreeting: body.initialGreeting || null,
         isActive: body.isActive !== undefined ? !!body.isActive : true,
         sortOrder: body.sortOrder ?? count,
+        voiceId: body.voiceId || null,
       },
     });
   }
@@ -863,6 +896,7 @@ export class BrandController {
     if (body.initialGreeting !== undefined) data.initialGreeting = body.initialGreeting || null;
     if (body.isActive !== undefined) data.isActive = !!body.isActive;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
+    if (body.voiceId !== undefined) data.voiceId = body.voiceId || null;
 
     return this.prisma.matchmaker.update({ where: { id }, data });
   }

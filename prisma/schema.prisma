@@ -1531,6 +1531,19 @@ model SiteSettings {
   enableAiConcierge    Boolean @default(false)
   parentExperienceMode String  @default("MARKETPLACE_ONLY")
 
+  // Voice mode (live voice conversation with Eva). Admin-controlled from the
+  // AI Concierge tab; the voice gateway reads these per session start, so
+  // changes apply to new voice sessions without a server restart. Env vars
+  // hold API keys only - provider selection lives here.
+  voiceModeEnabled       Boolean @default(false)
+  voiceTtsProvider       String  @default("elevenlabs") // elevenlabs | openai | cartesia
+  voiceSttProvider       String  @default("google") // google | deepgram
+  voiceDefaultVoiceId    String?
+  voiceSessionCapMinutes Int     @default(10)
+  voiceDailyCapMinutes   Int     @default(30)
+  voiceAvatarEnabled     Boolean @default(false)
+  voiceAvatarProvider    String  @default("heygen") // heygen | simli
+
   // GoStork W-9 template (single global PandaDoc template that every provider signs)
   w9TemplateUrl          String?
   w9TemplateOriginalName String?
@@ -1621,6 +1634,13 @@ model Matchmaker {
   initialGreeting   String?  @db.Text
   isActive          Boolean  @default(true)
   sortOrder         Int      @default(0)
+  // Voice mode: TTS voice for this persona, interpreted by the active TTS
+  // provider selected in the admin Voice settings (SiteSettings.voiceTtsProvider).
+  voiceId           String?
+  // Phase 3 realtime video avatar: provider-side face/avatar id generated from
+  // this persona's photo, plus which avatar vendor created it.
+  avatarFaceId      String?
+  avatarProvider    String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -1898,6 +1918,25 @@ model AiChatMessage {
 
   session AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
+  @@index([sessionId])
+}
+
+// One row per live voice-mode session (Eva voice conversation). Used for the
+// per-user daily minutes cap and for cost auditing (STT seconds billed by
+// Google/Deepgram, TTS characters billed by ElevenLabs, avatar seconds billed
+// by HeyGen/Simli in Phase 3).
+model VoiceSessionLog {
+  id            String    @id @default(uuid())
+  userId        String
+  sessionId     String
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  seconds       Int       @default(0)
+  sttSeconds    Int       @default(0)
+  ttsChars      Int       @default(0)
+  avatarSeconds Int       @default(0)
+
+  @@index([userId, startedAt])
   @@index([sessionId])
 }
 

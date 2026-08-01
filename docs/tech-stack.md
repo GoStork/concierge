@@ -44,7 +44,8 @@
 - **Anthropic Claude** (`@anthropic-ai/sdk`) - concierge Tier 2 reasoning
 - **AWS Rekognition** (`@aws-sdk/client-rekognition`) - look-alike face matching
 - **gemini-embedding-001** - profile/KB vector embeddings (migrated off OpenAI)
-- **Google Cloud Speech-to-Text** (`@google-cloud/speech`) - telehealth transcription
+- **Google Cloud Speech-to-Text** (`@google-cloud/speech`) - telehealth transcription + voice-mode streaming STT
+- **ElevenLabs** (REST/WebSocket, no SDK; `eleven_flash_v2_5`) - Eva voice-mode TTS; key in `ELEVENLABS_API_KEY`, provider selection is an admin setting on SiteSettings
 
 ## Integrations
 - **SendGrid** - email (all via `buildBrandedEmail()`)

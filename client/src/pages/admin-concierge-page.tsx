@@ -34,6 +34,8 @@ import {
   Send,
   CheckCircle,
   AlertCircle,
+  Mic,
+  Volume2,
 } from "lucide-react";
 import ImageCropPreview from "@/components/image-crop-preview";
 
@@ -109,6 +111,225 @@ function SystemSettingsCard() {
             >
               {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
               Save Settings
+            </Button>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+const TTS_PROVIDER_LABELS: Record<string, string> = {
+  elevenlabs: "ElevenLabs (most human)",
+  openai: "OpenAI (budget)",
+  cartesia: "Cartesia (fastest)",
+};
+const STT_PROVIDER_LABELS: Record<string, string> = {
+  google: "Google Cloud STT",
+  deepgram: "Deepgram (budget)",
+};
+
+function VoiceSettingsCard() {
+  const { toast } = useToast();
+  const { data: brandSettings } = useBrandSettings();
+  const [draft, setDraft] = useState<Record<string, any>>({});
+  const [saving, setSaving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+
+  // Which vendors actually have API keys on the server - unconfigured ones are
+  // selectable-but-disabled with an honest "API key not set" label.
+  const { data: providerStatus } = useQuery<{ tts: { name: string; configured: boolean }[]; stt: { name: string; configured: boolean }[] }>({
+    queryKey: ["/api/voice/providers"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/voice/providers");
+      return res.json();
+    },
+  });
+
+  const val = (key: string, fallback: any) =>
+    draft[key] !== undefined ? draft[key] : ((brandSettings as any)?.[key] ?? fallback);
+  const set = (key: string, v: any) => setDraft((d) => ({ ...d, [key]: v }));
+  const hasChanges = Object.keys(draft).length > 0;
+
+  const ttsConfigured = (name: string) =>
+    providerStatus?.tts?.find((p) => p.name === name)?.configured ?? false;
+  const sttConfigured = (name: string) =>
+    providerStatus?.stt?.find((p) => p.name === name)?.configured ?? false;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await apiRequest("PUT", "/api/brand/settings", draft);
+      queryClient.invalidateQueries({ queryKey: ["/api/brand/settings"] });
+      setDraft({});
+      toast({ title: "Voice settings saved" });
+    } catch {
+      toast({ title: "Failed to save voice settings", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    setPreviewing(true);
+    try {
+      const res = await fetch("/api/voice/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          provider: val("voiceTtsProvider", "elevenlabs"),
+          voiceId: val("voiceDefaultVoiceId", "") || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Preview failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch (err: any) {
+      toast({ title: "Voice preview failed", description: err?.message, variant: "destructive" });
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  return (
+    <Card className="rounded-[var(--radius)] p-6" data-testid="card-voice-settings">
+      <div className="flex items-center gap-2.5 mb-1">
+        <Mic className="w-5 h-5 text-primary" />
+        <h3 className="font-display text-base font-semibold">Voice</h3>
+      </div>
+      <p className="t-helper mb-4">
+        Live voice conversations with the AI Concierge. Provider changes apply to new voice sessions immediately - no restart needed.
+      </p>
+
+      <div className="space-y-5">
+        <div className="flex items-center justify-between p-3 rounded-[var(--radius)] border">
+          <div>
+            <span className="text-sm font-medium">Voice mode</span>
+            <p className="t-helper">Parents get a mic button in the Eva chat to start a voice conversation</p>
+          </div>
+          <Switch
+            checked={val("voiceModeEnabled", false)}
+            onCheckedChange={(checked) => set("voiceModeEnabled", checked)}
+            data-testid="switch-voice-mode"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Voice provider (text-to-speech)</Label>
+            <RadioGroup
+              value={val("voiceTtsProvider", "elevenlabs")}
+              onValueChange={(v) => set("voiceTtsProvider", v)}
+              className="space-y-1.5"
+              data-testid="radio-voice-tts-provider"
+            >
+              {Object.entries(TTS_PROVIDER_LABELS).map(([name, label]) => {
+                const configured = ttsConfigured(name);
+                return (
+                  <label
+                    key={name}
+                    className={`flex items-center gap-2.5 p-2.5 rounded-[var(--radius)] border transition-colors ${configured ? "cursor-pointer hover:bg-muted/30" : "opacity-55 cursor-not-allowed"}`}
+                  >
+                    <RadioGroupItem value={name} disabled={!configured} />
+                    <span className="text-sm">{label}</span>
+                    {!configured && (
+                      <span className="ml-auto text-xs text-muted-foreground font-ui">API key not set</span>
+                    )}
+                  </label>
+                );
+              })}
+            </RadioGroup>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Transcription provider (speech-to-text)</Label>
+            <RadioGroup
+              value={val("voiceSttProvider", "google")}
+              onValueChange={(v) => set("voiceSttProvider", v)}
+              className="space-y-1.5"
+              data-testid="radio-voice-stt-provider"
+            >
+              {Object.entries(STT_PROVIDER_LABELS).map(([name, label]) => {
+                const configured = sttConfigured(name);
+                return (
+                  <label
+                    key={name}
+                    className={`flex items-center gap-2.5 p-2.5 rounded-[var(--radius)] border transition-colors ${configured ? "cursor-pointer hover:bg-muted/30" : "opacity-55 cursor-not-allowed"}`}
+                  >
+                    <RadioGroupItem value={name} disabled={!configured} />
+                    <span className="text-sm">{label}</span>
+                    {!configured && (
+                      <span className="ml-auto text-xs text-muted-foreground font-ui">API key not set</span>
+                    )}
+                  </label>
+                );
+              })}
+            </RadioGroup>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Default voice ID</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Provider voice ID (fallback when a persona has none)"
+                value={val("voiceDefaultVoiceId", "") || ""}
+                onChange={(e) => set("voiceDefaultVoiceId", e.target.value)}
+                data-testid="input-voice-default-voice-id"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={handlePreview}
+                disabled={previewing}
+                data-testid="btn-voice-preview"
+              >
+                {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Volume2 className="w-3.5 h-3.5 mr-1.5" />}
+                Preview
+              </Button>
+            </div>
+            <p className="t-helper">Used when a persona has no voice of its own. Set per-persona voices in the Personas section below.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Session cap (min)</Label>
+              <NumberInput
+                value={val("voiceSessionCapMinutes", 10)}
+                onChange={(v: number | null) => set("voiceSessionCapMinutes", v ?? 10)}
+                min={1}
+                max={120}
+                data-testid="input-voice-session-cap"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Daily cap / parent (min)</Label>
+              <NumberInput
+                value={val("voiceDailyCapMinutes", 30)}
+                onChange={(v: number | null) => set("voiceDailyCapMinutes", v ?? 30)}
+                min={1}
+                max={600}
+                data-testid="input-voice-daily-cap"
+              />
+            </div>
+          </div>
+        </div>
+
+        {hasChanges && (
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setDraft({})} data-testid="btn-voice-settings-cancel">
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={saving} data-testid="btn-save-voice-settings">
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
+              Save Voice Settings
             </Button>
           </div>
         )}
@@ -845,6 +1066,7 @@ function KnowledgeBaseCard() {
 export default function AdminConciergePage() {
   const { toast } = useToast();
   const confirm = useConfirm();
+  const { data: brandSettings } = useBrandSettings();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Matchmaker>>({});
@@ -980,6 +1202,12 @@ export default function AdminConciergePage() {
           <p className="t-helper">Optional. Displayed as the opening message when a parent selects this persona.</p>
         </div>
 
+        <div className="space-y-1.5">
+          <Label >Voice ID</Label>
+          <Input placeholder="e.g. an ElevenLabs voice ID" value={editForm.voiceId || ""} onChange={(e) => setEditForm({ ...editForm, voiceId: e.target.value })} data-testid="input-matchmaker-voice-id" />
+          <p className="t-helper">The voice this persona speaks with in voice mode, from the active voice provider{brandSettings?.voiceTtsProvider ? ` (currently ${TTS_PROVIDER_LABELS[brandSettings.voiceTtsProvider] || brandSettings.voiceTtsProvider})` : ""}. Falls back to the default voice in Voice settings.</p>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label >Avatar</Label>
@@ -1033,6 +1261,8 @@ export default function AdminConciergePage() {
   return (
     <div className="space-y-6" data-testid="admin-concierge-page">
       <SystemSettingsCard />
+
+      <VoiceSettingsCard />
 
       <Card className="rounded-[var(--radius)] p-6" data-testid="card-personas">
         <div className="flex items-center justify-between mb-4">

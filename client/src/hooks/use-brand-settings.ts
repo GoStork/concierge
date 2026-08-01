@@ -12,6 +12,11 @@ export interface Matchmaker {
   initialGreeting: string | null;
   isActive: boolean;
   sortOrder: number;
+  // Voice mode: per-persona TTS voice id, interpreted by the active provider
+  voiceId?: string | null;
+  // Phase 3 realtime video avatar identity
+  avatarFaceId?: string | null;
+  avatarProvider?: string | null;
 }
 
 export interface BrandSettings {
@@ -173,6 +178,15 @@ export interface BrandSettings {
   pageTitleWeight: string;
   enableAiConcierge?: boolean;
   parentExperienceMode?: string;
+  // Voice mode (Eva live voice conversations)
+  voiceModeEnabled?: boolean;
+  voiceTtsProvider?: string;
+  voiceSttProvider?: string;
+  voiceDefaultVoiceId?: string | null;
+  voiceSessionCapMinutes?: number;
+  voiceDailyCapMinutes?: number;
+  voiceAvatarEnabled?: boolean;
+  voiceAvatarProvider?: string;
   matchmakers?: Matchmaker[];
   // Billing identity for payment-receipt PDFs (agency-level)
   legalName?: string | null;

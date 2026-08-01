@@ -117,6 +117,13 @@ export function log(message: string, source = "nestjs") {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // Live voice mode (Eva voice conversations): WS upgrade on /api/voice/ws,
+  // authenticated with the same session middleware as HTTP requests.
+  const { attachVoiceGateway } = await import("./voice/voice-gateway");
+  attachVoiceGateway(httpServer, sessionMiddleware);
+  const { voiceRouter } = await import("./voice/voice-router");
+  app.use(voiceRouter);
+
   app.use("/api/ai-concierge", aiRouter);
   app.use(chatRouter);
   // Phase 8: Reviews & Ratings (docs/reviews-ratings-spec.md).

@@ -61,7 +61,9 @@ import {
   type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
 import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
-import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera, UploadCloud } from "lucide-react";
+import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera, UploadCloud, Mic } from "lucide-react";
+import { VoiceModePanel } from "@/components/voice/VoiceModePanel";
+import { useVoiceSession } from "@/hooks/use-voice-session";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { parseApiError } from "@/lib/api-error";
@@ -2771,6 +2773,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [multiSelectChoices, setMultiSelectChoices] = useState<Set<string>>(new Set());
   const [sessionId, setSessionId] = useState<string | null>(existingSessionId);
+  // Live voice conversation mode (full-height inline takeover of the chat column)
+  const [voiceMode, setVoiceMode] = useState(false);
+  const voiceSession = useVoiceSession();
   const [showCuration, setShowCuration] = useState(false);
   const showCurationRef = useRef(false);
   const [pendingCurationMessage, setPendingCurationMessage] = useState<ChatMessage | null>(null);
@@ -3212,6 +3217,35 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   }, [selectedMatchmaker?.avatarUrl, effectiveMatchmakerId]);
 
   const brandColor = brand?.primaryColor || "#004D4D";
+
+  // Voice mode: gated by the admin Voice settings toggle; Eva sessions only
+  // (never a provider/human chat). The mic button opens the inline takeover.
+  const voiceModeAvailable = !!(brand as any)?.voiceModeEnabled && !providerInChat;
+  const openVoiceMode = () => {
+    setVoiceMode(true);
+    // Runs inside the click gesture: AudioContext resume + mic permission.
+    void voiceSession.start({
+      sessionId,
+      matchmakerId: effectiveMatchmakerId || null,
+    });
+  };
+  const closeVoiceMode = useCallback(() => {
+    voiceSession.stop();
+    setVoiceMode(false);
+    // The transcript was persisted server-side by the /chat pipeline - reload
+    // so the written record appears in the thread.
+    if (sessionId) void loadMessagesForSession(sessionId);
+    queryClient.invalidateQueries({ queryKey: ["concierge-sessions"] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, voiceSession.stop]);
+  // Server-initiated end (silence timeout, session cap): close the panel.
+  useEffect(() => {
+    if (voiceMode && voiceSession.state === "ended" && voiceSession.endReason && voiceSession.endReason !== "user_ended") {
+      closeVoiceMode();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceSession.state, voiceSession.endReason, voiceMode]);
+
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
   const qrStyle = brand?.quickReplyColorStyle ?? "primary";
   const qrColor = qrStyle === "accent" ? (brand?.accentColor ?? "#0DA4EA")
@@ -4646,6 +4680,22 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           onDragLeave={handleChatDragLeave}
           onDrop={handleChatDrop}
         >
+        {voiceMode && (
+          <VoiceModePanel
+            state={voiceSession.state}
+            avatarUrl={resolvedAvatarUrl}
+            personaName={aiName}
+            brandColor={brandColor}
+            partialTranscript={voiceSession.partialTranscript}
+            caption={voiceSession.caption}
+            cards={voiceSession.cards}
+            micMuted={voiceSession.micMuted}
+            error={voiceSession.error}
+            onToggleMute={() => voiceSession.setMicMuted(!voiceSession.micMuted)}
+            onQuickReply={(text) => voiceSession.sendText(text, true)}
+            onClose={closeVoiceMode}
+          />
+        )}
         {isDraggingFile && (
           <div
             className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
@@ -5580,6 +5630,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               }}
               data-testid="input-concierge-message"
             />
+            {voiceModeAvailable && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-10 w-10 p-0 shrink-0 rounded-full border"
+                style={{
+                  color: brandColor,
+                  backgroundColor: `${brandColor}14`,
+                  borderColor: `${brandColor}40`,
+                }}
+                onClick={openVoiceMode}
+                disabled={sending || parentUploading || !isOnline}
+                aria-label={`Start a voice conversation with ${aiName || "your AI Concierge"}`}
+                data-testid="btn-voice-mode"
+              >
+                <Mic className="w-5 h-5" strokeWidth={2.25} />
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={handleSend}
