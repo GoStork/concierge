@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Sparkles,
   Plus,
@@ -124,12 +125,89 @@ const TTS_PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI (budget)",
   cartesia: "Cartesia (fastest)",
 };
-// Voice ids are NOT portable between providers - each provider keeps its own.
-const VOICE_ID_PLACEHOLDERS: Record<string, string> = {
-  elevenlabs: "ElevenLabs voice ID (e.g. EXAVITQu4vr4xnSDxMaL)",
-  openai: "alloy, echo, fable, onyx, nova, shimmer, coral, sage...",
-  cartesia: "Cartesia voice UUID",
-};
+interface VoiceOption { id: string; name: string; description?: string; gender?: string; previewUrl?: string }
+interface AvatarOption { id: string; name: string; imageUrl?: string; kind: "custom" | "preset" }
+
+// Human-friendly voice picker: names from the live provider catalog, never raw ids.
+function VoiceSelect({ provider, value, onChange, testId }: { provider: string; value: string; onChange: (id: string) => void; testId?: string }) {
+  const { data, isError } = useQuery<{ voices: VoiceOption[] }>({
+    queryKey: ["/api/voice/options/voices", provider],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/voice/options/voices?provider=${encodeURIComponent(provider)}`);
+      return res.json();
+    },
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
+  });
+  const voices = data?.voices || [];
+  const known = voices.some((v) => v.id === value);
+  return (
+    <Select value={value || undefined} onValueChange={onChange}>
+      <SelectTrigger data-testid={testId} className="w-full">
+        <SelectValue placeholder={isError ? "Could not load voices" : voices.length ? "Choose a voice..." : "Loading voices..."} />
+      </SelectTrigger>
+      <SelectContent className="max-h-72">
+        {!known && value && (
+          <SelectItem value={value}>
+            <span className="text-muted-foreground">Current: {value}</span>
+          </SelectItem>
+        )}
+        {voices.map((v) => (
+          <SelectItem key={v.id} value={v.id}>
+            <span className="flex items-center gap-2">
+              <span>{v.name}</span>
+              {v.description && <span className="text-xs text-muted-foreground">{v.description}</span>}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// Avatar picker with the actual face photos from LiveAvatar.
+function AvatarSelect({ value, onChange, testId }: { value: string; onChange: (id: string) => void; testId?: string }) {
+  const { data, isError } = useQuery<{ avatars: AvatarOption[] }>({
+    queryKey: ["/api/voice/options/avatars"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/voice/options/avatars");
+      return res.json();
+    },
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
+  });
+  const avatars = data?.avatars || [];
+  const known = avatars.some((a) => a.id === value);
+  return (
+    <Select value={value || undefined} onValueChange={onChange}>
+      <SelectTrigger data-testid={testId} className="w-full h-11">
+        <SelectValue placeholder={isError ? "Could not load avatars" : avatars.length ? "Choose an avatar..." : "Loading avatars..."} />
+      </SelectTrigger>
+      <SelectContent className="max-h-80">
+        {!known && value && (
+          <SelectItem value={value}>
+            <span className="text-muted-foreground">Current: {value}</span>
+          </SelectItem>
+        )}
+        {avatars.map((a) => (
+          <SelectItem key={a.id} value={a.id}>
+            <span className="flex items-center gap-2.5">
+              {a.imageUrl ? (
+                <img src={a.imageUrl} alt="" className="w-8 h-8 rounded-full object-cover border" loading="lazy" />
+              ) : (
+                <span className="w-8 h-8 rounded-full bg-secondary" />
+              )}
+              <span>{a.name}</span>
+              {a.kind === "custom" && (
+                <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground font-ui">Custom</span>
+              )}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 const STT_PROVIDER_LABELS: Record<string, string> = {
   google: "Google Cloud STT",
   deepgram: "Deepgram (budget)",
@@ -315,11 +393,11 @@ function VoiceSettingsCard() {
           <div className="space-y-1.5">
             <Label>Default voice - {TTS_PROVIDER_LABELS[val("voiceTtsProvider", "elevenlabs")]?.split(" ")[0] || val("voiceTtsProvider", "elevenlabs")}</Label>
             <div className="flex items-center gap-2">
-              <Input
-                placeholder={VOICE_ID_PLACEHOLDERS[val("voiceTtsProvider", "elevenlabs")] || "Voice ID"}
+              <VoiceSelect
+                provider={val("voiceTtsProvider", "elevenlabs")}
                 value={currentDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"))}
-                onChange={(e) => setDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"), e.target.value)}
-                data-testid="input-voice-default-voice-id"
+                onChange={(id) => setDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"), id)}
+                testId="input-voice-default-voice-id"
               />
               <Button
                 variant="outline"
@@ -333,7 +411,7 @@ function VoiceSettingsCard() {
                 Preview
               </Button>
             </div>
-            <p className="t-helper">Each provider keeps its own voice - switching providers never loses the others. Used when a persona has no voice of its own.</p>
+            <p className="t-helper">Each provider keeps its own voice - switching providers never loses the others. Used when a persona has no voice of its own. Tap Preview to hear the selected voice.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -371,14 +449,13 @@ function VoiceSettingsCard() {
 
         {val("voiceAvatarEnabled", false) && (
           <div className="space-y-1.5">
-            <Label>Default avatar ID</Label>
-            <Input
-              placeholder="LiveAvatar avatar ID (fallback when a persona has none)"
+            <Label>Default avatar</Label>
+            <AvatarSelect
               value={val("voiceDefaultAvatarId", "") || ""}
-              onChange={(e) => set("voiceDefaultAvatarId", e.target.value)}
-              data-testid="input-voice-default-avatar-id"
+              onChange={(id) => set("voiceDefaultAvatarId", id)}
+              testId="input-voice-default-avatar-id"
             />
-            <p className="t-helper">Create photo avatars from the persona photos in the HeyGen/LiveAvatar dashboard, then paste each avatar's ID here or on the persona.</p>
+            <p className="t-helper">The talking head used when a persona has no avatar of its own. To use Ariel's or Adam's real face, create a photo avatar in the LiveAvatar dashboard - it appears here automatically with a "Custom" badge.</p>
           </div>
         )}
 
@@ -1265,19 +1342,23 @@ export default function AdminConciergePage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label >Voice ID - {TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider}</Label>
-            <Input
-              placeholder={VOICE_ID_PLACEHOLDERS[activeTtsProvider] || "Voice ID"}
+            <Label >Voice - {TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider}</Label>
+            <VoiceSelect
+              provider={activeTtsProvider}
               value={(editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : "")}
-              onChange={(e) => setEditForm({ ...editForm, voiceIds: { ...(editForm.voiceIds || {}), [activeTtsProvider]: e.target.value } })}
-              data-testid="input-matchmaker-voice-id"
+              onChange={(id) => setEditForm({ ...editForm, voiceIds: { ...(editForm.voiceIds || {}), [activeTtsProvider]: id } })}
+              testId="input-matchmaker-voice-id"
             />
-            <p className="t-helper">This persona's voice for the ACTIVE provider. Each provider keeps its own voice, so switching providers never loses the others. Falls back to the default voice in Voice settings.</p>
+            <p className="t-helper">How this persona sounds in voice mode (for the active provider - each provider keeps its own choice). Falls back to the default voice in Voice settings.</p>
           </div>
           <div className="space-y-1.5">
-            <Label >Video avatar ID</Label>
-            <Input placeholder="LiveAvatar avatar ID (optional)" value={editForm.avatarFaceId || ""} onChange={(e) => setEditForm({ ...editForm, avatarFaceId: e.target.value })} data-testid="input-matchmaker-avatar-face-id" />
-            <p className="t-helper">Realtime talking-head avatar for this persona (created from its photo in the LiveAvatar dashboard). Falls back to the default avatar in Voice settings.</p>
+            <Label >Video avatar</Label>
+            <AvatarSelect
+              value={editForm.avatarFaceId || ""}
+              onChange={(id) => setEditForm({ ...editForm, avatarFaceId: id })}
+              testId="input-matchmaker-avatar-face-id"
+            />
+            <p className="t-helper">The talking head this persona uses. Create a photo avatar from this persona's photo in the LiveAvatar dashboard and it appears here with a "Custom" badge. Falls back to the default avatar.</p>
           </div>
         </div>
 

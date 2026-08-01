@@ -51,6 +51,136 @@ voiceRouter.get("/api/voice/providers", (req, res) => {
   res.json(voiceProviderStatus());
 });
 
+// ---------------------------------------------------------------------------
+// Voice + avatar catalogs for the admin dropdowns: humans pick by NAME (and
+// photo, for avatars), never by raw vendor id. Fetched live from each
+// platform and cached in-memory for 10 minutes.
+// ---------------------------------------------------------------------------
+const catalogCache = new Map<string, { at: number; data: any }>();
+const CATALOG_TTL_MS = 10 * 60 * 1000;
+async function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const hit = catalogCache.get(key);
+  if (hit && Date.now() - hit.at < CATALOG_TTL_MS) return hit.data as T;
+  const data = await fn();
+  catalogCache.set(key, { at: Date.now(), data });
+  return data;
+}
+
+export interface VoiceOption {
+  id: string;
+  name: string;
+  description?: string;
+  gender?: string;
+  previewUrl?: string;
+}
+
+// OpenAI's TTS voices are a fixed named set - no listing API.
+const OPENAI_VOICES: VoiceOption[] = [
+  { id: "shimmer", name: "Shimmer", description: "Warm, gentle female", gender: "female" },
+  { id: "nova", name: "Nova", description: "Bright, friendly female", gender: "female" },
+  { id: "coral", name: "Coral", description: "Calm, caring female", gender: "female" },
+  { id: "sage", name: "Sage", description: "Soft, thoughtful female", gender: "female" },
+  { id: "alloy", name: "Alloy", description: "Neutral, balanced", gender: "neutral" },
+  { id: "onyx", name: "Onyx", description: "Deep, reassuring male", gender: "male" },
+  { id: "echo", name: "Echo", description: "Clear, steady male", gender: "male" },
+  { id: "fable", name: "Fable", description: "Expressive storyteller", gender: "neutral" },
+  { id: "ash", name: "Ash", description: "Grounded, warm male", gender: "male" },
+  { id: "ballad", name: "Ballad", description: "Smooth, melodic male", gender: "male" },
+  { id: "verse", name: "Verse", description: "Versatile, energetic", gender: "neutral" },
+  { id: "marin", name: "Marin", description: "Natural, conversational female", gender: "female" },
+  { id: "cedar", name: "Cedar", description: "Rich, natural male", gender: "male" },
+];
+
+async function listElevenLabsVoices(): Promise<VoiceOption[]> {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error("ELEVENLABS_API_KEY not set");
+  const resp = await fetch("https://api.elevenlabs.io/v2/voices?page_size=100", {
+    headers: { "xi-api-key": key },
+  });
+  if (!resp.ok) throw new Error(`ElevenLabs voices ${resp.status}`);
+  const body: any = await resp.json();
+  return (body.voices || []).map((v: any) => ({
+    id: v.voice_id,
+    name: v.name,
+    description: [v.labels?.descriptive, v.labels?.age?.replace("_", " ")].filter(Boolean).join(", "),
+    gender: v.labels?.gender,
+    previewUrl: v.preview_url || undefined,
+  }));
+}
+
+async function listCartesiaVoices(): Promise<VoiceOption[]> {
+  const key = process.env.CARTESIA_API_KEY;
+  if (!key) throw new Error("CARTESIA_API_KEY not set");
+  const resp = await fetch("https://api.cartesia.ai/voices/?limit=100", {
+    headers: { "X-API-Key": key, "Cartesia-Version": "2025-04-16" },
+  });
+  if (!resp.ok) throw new Error(`Cartesia voices ${resp.status}`);
+  const body: any = await resp.json();
+  return (body.data || []).map((v: any) => ({
+    id: v.id,
+    name: v.name,
+    description: v.description || undefined,
+  }));
+}
+
+voiceRouter.get("/api/voice/options/voices", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const provider = String(req.query.provider || "elevenlabs");
+  try {
+    let voices: VoiceOption[];
+    if (provider === "openai") voices = OPENAI_VOICES;
+    else if (provider === "cartesia") voices = await cached("cartesia-voices", listCartesiaVoices);
+    else voices = await cached("elevenlabs-voices", listElevenLabsVoices);
+    res.json({ provider, voices });
+  } catch (err: any) {
+    console.error(`[voice] voice catalog failed (${provider}): ${err?.message}`);
+    res.status(502).json({ message: `Could not load ${provider} voices: ${err?.message}` });
+  }
+});
+
+export interface AvatarOption {
+  id: string;
+  name: string;
+  imageUrl?: string;
+  kind: "custom" | "preset";
+}
+
+async function listLiveAvatars(): Promise<AvatarOption[]> {
+  const key = process.env.LIVEAVATAR_API_KEY || process.env.HEYGEN_API_KEY;
+  if (!key) throw new Error("LIVEAVATAR_API_KEY not set");
+  const headers = { "X-API-KEY": key };
+  const out: AvatarOption[] = [];
+  // Custom avatars (created from persona photos) come first.
+  const custom = await fetch("https://api.liveavatar.com/v1/avatars", { headers });
+  if (custom.ok) {
+    const body: any = await custom.json();
+    for (const a of body?.data?.results || []) {
+      out.push({ id: a.id, name: a.name, imageUrl: a.preview_url || undefined, kind: "custom" });
+    }
+  }
+  let url: string | null = "https://api.liveavatar.com/v1/avatars/public?page_size=50";
+  while (url) {
+    const resp = await fetch(url, { headers });
+    if (!resp.ok) throw new Error(`LiveAvatar public avatars ${resp.status}`);
+    const body: any = await resp.json();
+    for (const a of body?.data?.results || []) {
+      out.push({ id: a.id, name: a.name, imageUrl: a.preview_url || undefined, kind: "preset" });
+    }
+    url = body?.data?.next || null;
+  }
+  return out;
+}
+
+voiceRouter.get("/api/voice/options/avatars", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    res.json({ avatars: await cached("liveavatar-avatars", listLiveAvatars) });
+  } catch (err: any) {
+    console.error(`[voice] avatar catalog failed: ${err?.message}`);
+    res.status(502).json({ message: `Could not load avatars: ${err?.message}` });
+  }
+});
+
 voiceRouter.post("/api/voice/preview", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const text: string =
