@@ -75,6 +75,10 @@ export interface VoiceOption {
   accent?: string;
   language?: string;
   previewUrl?: string;
+  // True when the current plan cannot synthesize this voice via API (e.g.
+  // ElevenLabs library voices on the Free tier). Shown greyed out with an
+  // upgrade note instead of hidden, so admins know it exists.
+  locked?: boolean;
 }
 
 // OpenAI's TTS voices are a fixed named set - no listing API.
@@ -117,18 +121,17 @@ async function listElevenLabsVoices(): Promise<VoiceOption[]> {
   if (!resp.ok) throw new Error(`ElevenLabs voices ${resp.status}`);
   const body: any = await resp.json();
   const usableOnFree = new Set(["premade", "generated", "cloned"]);
-  return (body.voices || [])
-    .filter((v: any) => tier !== "free" || usableOnFree.has(v.category))
-    .map((v: any) => ({
-      id: v.voice_id,
-      name: v.name,
-      description: v.labels?.descriptive || undefined,
-      gender: v.labels?.gender,
-      age: v.labels?.age?.replace(/_/g, " "),
-      accent: v.labels?.accent?.replace(/_/g, " "),
-      language: v.labels?.language,
-      previewUrl: v.preview_url || undefined,
-    }));
+  return (body.voices || []).map((v: any) => ({
+    id: v.voice_id,
+    name: v.name,
+    description: v.labels?.descriptive || undefined,
+    gender: v.labels?.gender,
+    age: v.labels?.age?.replace(/_/g, " "),
+    accent: v.labels?.accent?.replace(/_/g, " "),
+    language: v.labels?.language,
+    previewUrl: v.preview_url || undefined,
+    locked: tier === "free" && !usableOnFree.has(v.category) ? true : undefined,
+  }));
 }
 
 async function listCartesiaVoices(): Promise<VoiceOption[]> {

@@ -19,6 +19,7 @@ export interface VoiceOption {
   accent?: string;
   language?: string;
   previewUrl?: string;
+  locked?: boolean;
 }
 export interface AvatarOption {
   id: string;
@@ -247,8 +248,9 @@ export function VoicePicker({
             {filtered.map((v) => (
               <div
                 key={v.id}
-                className={`flex items-center gap-3 p-2.5 cursor-pointer transition-colors ${v.id === value ? "bg-secondary/70" : "hover:bg-secondary/40"}`}
+                className={`flex items-center gap-3 p-2.5 transition-colors ${v.locked ? "opacity-60" : v.id === value ? "bg-secondary/70 cursor-pointer" : "hover:bg-secondary/40 cursor-pointer"}`}
                 onClick={() => {
+                  if (v.locked) return; // not selectable on the current plan
                   onChange(v.id);
                   stopAudio();
                   setOpen(false);
@@ -286,6 +288,11 @@ export function VoicePicker({
                         {cap(t!)}
                       </span>
                     ))}
+                    {v.locked && (
+                      <span className="text-xs font-ui px-1.5 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/15 text-[hsl(var(--brand-warning))]">
+                        Requires ElevenLabs upgrade
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -301,16 +308,18 @@ export function AvatarPicker({
   value,
   onChange,
   testId,
+  initialOrientation = null,
 }: {
   value: string;
   onChange: (id: string) => void;
   testId?: string;
+  initialOrientation?: "landscape" | "portrait" | null;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<string | null>(null);
   const [gender, setGender] = useState<string | null>(null);
-  const [orientation, setOrientation] = useState<string | null>(null);
+  const [orientation, setOrientation] = useState<string | null>(initialOrientation);
   // Which card is playing its talking-video preview (hover on desktop, the
   // corner play button on touch).
   const [previewingId, setPreviewingId] = useState<string | null>(null);

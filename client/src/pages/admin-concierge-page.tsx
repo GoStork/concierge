@@ -1376,13 +1376,21 @@ export default function AdminConciergePage() {
             <p className="t-helper">How this persona sounds in voice mode, for the active provider - each provider keeps its own choice. Tap Preview to hear it.</p>
           </div>
           <div className="space-y-1.5">
-            <Label >Video avatar</Label>
+            <Label >Video avatar - desktop</Label>
             <AvatarPicker
               value={editForm.avatarFaceId || ""}
               onChange={(id) => setEditForm({ ...editForm, avatarFaceId: id })}
               testId="input-matchmaker-avatar-face-id"
             />
             <p className="t-helper">The talking head this persona uses when the video avatar is on. Create a photo avatar from this persona's photo in the LiveAvatar dashboard and it appears here with a "Custom" badge.</p>
+            <Label className="pt-1 block">Video avatar - mobile (portrait)</Label>
+            <AvatarPicker
+              value={(editForm as any).avatarFaceIdPortrait || ""}
+              onChange={(id) => setEditForm({ ...editForm, avatarFaceIdPortrait: id } as any)}
+              testId="input-matchmaker-avatar-portrait-id"
+              initialOrientation="portrait"
+            />
+            <p className="t-helper">Optional. Phones (portrait screens) get this variant; when unset, they crop the desktop avatar.</p>
           </div>
         </div>
 

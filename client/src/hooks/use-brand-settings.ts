@@ -16,8 +16,9 @@ export interface Matchmaker {
   // voiceId is the legacy single field (elevenlabs fallback)
   voiceIds?: Record<string, string> | null;
   voiceId?: string | null;
-  // Phase 3 realtime video avatar identity
+  // Phase 3 realtime video avatar identity (desktop + optional mobile portrait)
   avatarFaceId?: string | null;
+  avatarFaceIdPortrait?: string | null;
   avatarProvider?: string | null;
 }
 

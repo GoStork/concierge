@@ -886,6 +886,7 @@ export class BrandController {
         voiceId: body.voiceId || null,
         voiceIds: body.voiceIds && typeof body.voiceIds === "object" ? body.voiceIds : undefined,
         avatarFaceId: body.avatarFaceId || null,
+        avatarFaceIdPortrait: body.avatarFaceIdPortrait || null,
       },
     });
   }
@@ -916,6 +917,7 @@ export class BrandController {
       data.voiceIds = body.voiceIds;
     }
     if (body.avatarFaceId !== undefined) data.avatarFaceId = body.avatarFaceId || null;
+    if (body.avatarFaceIdPortrait !== undefined) data.avatarFaceIdPortrait = body.avatarFaceIdPortrait || null;
 
     return this.prisma.matchmaker.update({ where: { id }, data });
   }

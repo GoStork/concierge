@@ -1649,6 +1649,9 @@ model Matchmaker {
   // Phase 3 realtime video avatar: provider-side face/avatar id generated from
   // this persona's photo, plus which avatar vendor created it.
   avatarFaceId      String?
+  // Optional portrait-framed avatar served to phones (portrait viewports);
+  // falls back to avatarFaceId (cropped) when unset.
+  avatarFaceIdPortrait String?
   avatarProvider    String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

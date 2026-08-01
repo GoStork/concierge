@@ -230,6 +230,9 @@ class VoiceSession {
       case "hello":
         this.chatSessionId = msg.sessionId || null;
         this.matchmakerId = msg.matchmakerId || null;
+        // Phones report a portrait viewport; personas can carry a
+        // portrait-framed avatar variant for them.
+        this.portraitViewport = msg.portrait === true;
         void this.applyPersonaVoice().then(async () => {
           // No voice for the active provider = loud failure, never a voice
           // nobody chose. The admin UI warns about this on provider switch.
@@ -274,7 +277,11 @@ class VoiceSession {
           mm.voiceId,
         );
         if (resolved) this.voiceId = resolved;
-        if (mm.avatarFaceId) this.personaAvatarId = mm.avatarFaceId;
+        // Portrait clients get the portrait variant when it exists; otherwise
+        // the landscape avatar (client crops it).
+        const avatarPick =
+          (this.portraitViewport && mm.avatarFaceIdPortrait) || mm.avatarFaceId;
+        if (avatarPick) this.personaAvatarId = avatarPick;
       }
     } catch (err: any) {
       log(`persona voice lookup failed: ${err?.message}`);
@@ -282,6 +289,7 @@ class VoiceSession {
   }
 
   private personaAvatarId: string | null = null;
+  private portraitViewport = false;
 
   // Start the realtime video avatar when enabled + configured. Failure is
   // LOUD in the log and falls back to the audio-over-WS path with the static

@@ -117,6 +117,8 @@ export function useVoiceSession() {
           sessionId: opts.sessionId,
           matchmakerId: opts.matchmakerId,
           greetingText: opts.greetingText || undefined,
+          // Phones get the persona's portrait avatar variant when one is set
+          portrait: window.innerHeight > window.innerWidth,
         }),
       );
     };
