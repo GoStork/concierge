@@ -53,6 +53,31 @@ export function voiceProviderStatus() {
   };
 }
 
+// Voice ids are provider-specific (ElevenLabs: opaque ids, OpenAI: named
+// voices, Cartesia: UUIDs). Resolution order: persona's per-provider map ->
+// persona legacy voiceId (elevenlabs only) -> settings per-provider map ->
+// settings legacy default / env (elevenlabs only) -> built-in provider default.
+const BUILTIN_DEFAULT_VOICES: Record<string, string> = {
+  openai: "shimmer",
+};
+export function resolveVoiceForProvider(
+  provider: string,
+  personaVoiceIds: any,
+  personaLegacyVoiceId: string | null | undefined,
+  settings: { voiceDefaultVoiceIds?: any; voiceDefaultVoiceId?: string | null },
+): string {
+  return (
+    personaVoiceIds?.[provider] ||
+    (provider === "elevenlabs" ? personaLegacyVoiceId : null) ||
+    settings.voiceDefaultVoiceIds?.[provider] ||
+    (provider === "elevenlabs"
+      ? settings.voiceDefaultVoiceId || process.env.ELEVENLABS_DEFAULT_VOICE_ID
+      : null) ||
+    BUILTIN_DEFAULT_VOICES[provider] ||
+    ""
+  );
+}
+
 function log(msg: string) {
   console.log(`[voice] ${msg}`);
 }
@@ -77,6 +102,7 @@ interface VoiceSettings {
   voiceModeEnabled: boolean;
   voiceTtsProvider: string;
   voiceSttProvider: string;
+  voiceDefaultVoiceIds: any;
   voiceDefaultVoiceId: string | null;
   voiceSessionCapMinutes: number;
   voiceDailyCapMinutes: number;
@@ -236,9 +262,17 @@ class VoiceSession {
   private async applyPersonaVoice() {
     if (!this.matchmakerId) return;
     try {
-      const mm = await prisma.matchmaker.findUnique({ where: { id: this.matchmakerId } });
-      if (mm?.voiceId) this.voiceId = mm.voiceId;
-      if (mm?.avatarFaceId) this.personaAvatarId = mm.avatarFaceId;
+      const mm: any = await prisma.matchmaker.findUnique({ where: { id: this.matchmakerId } });
+      if (mm) {
+        const resolved = resolveVoiceForProvider(
+          this.settings.voiceTtsProvider,
+          mm.voiceIds,
+          mm.voiceId,
+          this.settings,
+        );
+        if (resolved) this.voiceId = resolved;
+        if (mm.avatarFaceId) this.personaAvatarId = mm.avatarFaceId;
+      }
     } catch (err: any) {
       log(`persona voice lookup failed: ${err?.message}`);
     }
@@ -551,6 +585,7 @@ async function loadSettings(): Promise<VoiceSettings | null> {
     voiceModeEnabled: !!s.voiceModeEnabled,
     voiceTtsProvider: s.voiceTtsProvider || "elevenlabs",
     voiceSttProvider: s.voiceSttProvider || "google",
+    voiceDefaultVoiceIds: s.voiceDefaultVoiceIds || null,
     voiceDefaultVoiceId: s.voiceDefaultVoiceId || null,
     voiceSessionCapMinutes: s.voiceSessionCapMinutes ?? 10,
     voiceDailyCapMinutes: s.voiceDailyCapMinutes ?? 30,
@@ -589,8 +624,12 @@ export function attachVoiceGateway(httpServer: HttpServer, sessionMiddleware: an
           }
           const tts = resolveTtsProvider(settings.voiceTtsProvider);
           const stt = resolveSttProvider(settings.voiceSttProvider);
-          const defaultVoiceId =
-            settings.voiceDefaultVoiceId || process.env.ELEVENLABS_DEFAULT_VOICE_ID || "";
+          const defaultVoiceId = resolveVoiceForProvider(
+            settings.voiceTtsProvider,
+            null,
+            null,
+            settings,
+          );
           if (!tts || !tts.isConfigured() || !stt || !stt.isConfigured() || !defaultVoiceId) {
             log(
               `voice session rejected: tts=${settings.voiceTtsProvider}(${tts?.isConfigured() ? "ok" : "unconfigured"}) ` +

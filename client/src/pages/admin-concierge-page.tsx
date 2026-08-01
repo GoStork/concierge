@@ -124,6 +124,12 @@ const TTS_PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI (budget)",
   cartesia: "Cartesia (fastest)",
 };
+// Voice ids are NOT portable between providers - each provider keeps its own.
+const VOICE_ID_PLACEHOLDERS: Record<string, string> = {
+  elevenlabs: "ElevenLabs voice ID (e.g. EXAVITQu4vr4xnSDxMaL)",
+  openai: "alloy, echo, fable, onyx, nova, shimmer, coral, sage...",
+  cartesia: "Cartesia voice UUID",
+};
 const STT_PROVIDER_LABELS: Record<string, string> = {
   google: "Google Cloud STT",
   deepgram: "Deepgram (budget)",
@@ -156,6 +162,21 @@ function VoiceSettingsCard() {
   const set = (key: string, v: any) => setDraft((d) => ({ ...d, [key]: v }));
   const hasChanges = Object.keys(draft).length > 0;
 
+  // Per-provider default voices ({provider: voiceId}); the legacy single
+  // voiceDefaultVoiceId acts as the elevenlabs fallback for old rows.
+  const defaultVoiceIds = (): Record<string, string> => ({
+    ...((brandSettings as any)?.voiceDefaultVoiceIds || {}),
+    ...(draft.voiceDefaultVoiceIds || {}),
+  });
+  const currentDefaultVoiceFor = (provider: string): string => {
+    const ids = defaultVoiceIds();
+    if (ids[provider] !== undefined) return ids[provider];
+    if (provider === "elevenlabs") return (brandSettings as any)?.voiceDefaultVoiceId || "";
+    return "";
+  };
+  const setDefaultVoiceFor = (provider: string, voiceId: string) =>
+    set("voiceDefaultVoiceIds", { ...defaultVoiceIds(), [provider]: voiceId });
+
   // Tri-state: true/false once status is loaded, null while loading or on
   // error - "API key not set" must never appear just because the status
   // request hasn't succeeded yet.
@@ -187,7 +208,7 @@ function VoiceSettingsCard() {
         credentials: "include",
         body: JSON.stringify({
           provider: val("voiceTtsProvider", "elevenlabs"),
-          voiceId: val("voiceDefaultVoiceId", "") || undefined,
+          voiceId: currentDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs")) || undefined,
         }),
       });
       if (!res.ok) {
@@ -292,12 +313,12 @@ function VoiceSettingsCard() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label>Default voice ID</Label>
+            <Label>Default voice - {TTS_PROVIDER_LABELS[val("voiceTtsProvider", "elevenlabs")]?.split(" ")[0] || val("voiceTtsProvider", "elevenlabs")}</Label>
             <div className="flex items-center gap-2">
               <Input
-                placeholder="Provider voice ID (fallback when a persona has none)"
-                value={val("voiceDefaultVoiceId", "") || ""}
-                onChange={(e) => set("voiceDefaultVoiceId", e.target.value)}
+                placeholder={VOICE_ID_PLACEHOLDERS[val("voiceTtsProvider", "elevenlabs")] || "Voice ID"}
+                value={currentDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"))}
+                onChange={(e) => setDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"), e.target.value)}
                 data-testid="input-voice-default-voice-id"
               />
               <Button
@@ -312,7 +333,7 @@ function VoiceSettingsCard() {
                 Preview
               </Button>
             </div>
-            <p className="t-helper">Used when a persona has no voice of its own. Set per-persona voices in the Personas section below.</p>
+            <p className="t-helper">Each provider keeps its own voice - switching providers never loses the others. Used when a persona has no voice of its own.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -1106,6 +1127,7 @@ export default function AdminConciergePage() {
   const { toast } = useToast();
   const confirm = useConfirm();
   const { data: brandSettings } = useBrandSettings();
+  const activeTtsProvider = (brandSettings as any)?.voiceTtsProvider || "elevenlabs";
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Matchmaker>>({});
@@ -1243,9 +1265,14 @@ export default function AdminConciergePage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label >Voice ID</Label>
-            <Input placeholder="e.g. an ElevenLabs voice ID" value={editForm.voiceId || ""} onChange={(e) => setEditForm({ ...editForm, voiceId: e.target.value })} data-testid="input-matchmaker-voice-id" />
-            <p className="t-helper">The voice this persona speaks with in voice mode, from the active voice provider{brandSettings?.voiceTtsProvider ? ` (currently ${TTS_PROVIDER_LABELS[brandSettings.voiceTtsProvider] || brandSettings.voiceTtsProvider})` : ""}. Falls back to the default voice in Voice settings.</p>
+            <Label >Voice ID - {TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider}</Label>
+            <Input
+              placeholder={VOICE_ID_PLACEHOLDERS[activeTtsProvider] || "Voice ID"}
+              value={(editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : "")}
+              onChange={(e) => setEditForm({ ...editForm, voiceIds: { ...(editForm.voiceIds || {}), [activeTtsProvider]: e.target.value } })}
+              data-testid="input-matchmaker-voice-id"
+            />
+            <p className="t-helper">This persona's voice for the ACTIVE provider. Each provider keeps its own voice, so switching providers never loses the others. Falls back to the default voice in Voice settings.</p>
           </div>
           <div className="space-y-1.5">
             <Label >Video avatar ID</Label>

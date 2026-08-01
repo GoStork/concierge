@@ -12,7 +12,9 @@ export interface Matchmaker {
   initialGreeting: string | null;
   isActive: boolean;
   sortOrder: number;
-  // Voice mode: per-persona TTS voice id, interpreted by the active provider
+  // Voice mode: per-provider TTS voice ids ({"elevenlabs": "...", "openai": "shimmer"});
+  // voiceId is the legacy single field (elevenlabs fallback)
+  voiceIds?: Record<string, string> | null;
   voiceId?: string | null;
   // Phase 3 realtime video avatar identity
   avatarFaceId?: string | null;
@@ -182,6 +184,7 @@ export interface BrandSettings {
   voiceModeEnabled?: boolean;
   voiceTtsProvider?: string;
   voiceSttProvider?: string;
+  voiceDefaultVoiceIds?: Record<string, string> | null;
   voiceDefaultVoiceId?: string | null;
   voiceSessionCapMinutes?: number;
   voiceDailyCapMinutes?: number;

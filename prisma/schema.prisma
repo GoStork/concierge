@@ -1538,6 +1538,9 @@ model SiteSettings {
   voiceModeEnabled       Boolean @default(false)
   voiceTtsProvider       String  @default("elevenlabs") // elevenlabs | openai | cartesia
   voiceSttProvider       String  @default("google") // google | deepgram
+  // Per-provider default voices: {"elevenlabs": "...", "openai": "shimmer", ...}.
+  // voiceDefaultVoiceId is the legacy single field, read as ElevenLabs fallback.
+  voiceDefaultVoiceIds   Json?
   voiceDefaultVoiceId    String?
   voiceSessionCapMinutes Int     @default(10)
   voiceDailyCapMinutes   Int     @default(30)
@@ -1635,8 +1638,13 @@ model Matchmaker {
   initialGreeting   String?  @db.Text
   isActive          Boolean  @default(true)
   sortOrder         Int      @default(0)
-  // Voice mode: TTS voice for this persona, interpreted by the active TTS
-  // provider selected in the admin Voice settings (SiteSettings.voiceTtsProvider).
+  // Voice mode: TTS voices for this persona, one per provider - voice ids are
+  // NOT portable between vendors (ElevenLabs uses opaque ids, OpenAI uses
+  // named voices, Cartesia uses UUIDs), so switching the active provider must
+  // never invalidate a stored voice. Shape: {"elevenlabs": "...", "openai":
+  // "shimmer", "cartesia": "..."}. voiceId is the legacy single-provider field,
+  // still read as the ElevenLabs fallback.
+  voiceIds          Json?
   voiceId           String?
   // Phase 3 realtime video avatar: provider-side face/avatar id generated from
   // this persona's photo, plus which avatar vendor created it.

@@ -224,7 +224,7 @@ const ALLOWED_FIELDS = [
   "drawerTitleSize", "drawerBodySize", "drawerHandleWidth", "sliderValueSize", "sliderThumbSize",
   "enableAiConcierge", "parentExperienceMode",
   // Voice mode (Eva live voice conversations) - admin Voice settings section
-  "voiceModeEnabled", "voiceTtsProvider", "voiceSttProvider", "voiceDefaultVoiceId",
+  "voiceModeEnabled", "voiceTtsProvider", "voiceSttProvider", "voiceDefaultVoiceId", "voiceDefaultVoiceIds",
   "voiceSessionCapMinutes", "voiceDailyCapMinutes", "voiceAvatarEnabled", "voiceAvatarProvider",
   "voiceDefaultAvatarId",
   "onboardingClinicImageUrl", "onboardingEggDonorImageUrl", "onboardingSurrogateImageUrl", "onboardingSpermDonorImageUrl",
@@ -448,6 +448,18 @@ function validateBrandBody(body: any) {
   }
   if (body.voiceAvatarProvider !== undefined && !["heygen", "simli"].includes(body.voiceAvatarProvider)) {
     throw new ForbiddenException("voiceAvatarProvider must be heygen or simli");
+  }
+  if (body.voiceDefaultVoiceIds !== undefined && body.voiceDefaultVoiceIds !== null) {
+    if (typeof body.voiceDefaultVoiceIds !== "object" || Array.isArray(body.voiceDefaultVoiceIds)) {
+      throw new ForbiddenException("voiceDefaultVoiceIds must be an object of provider -> voice id");
+    }
+    const clean: Record<string, string> = {};
+    for (const [prov, vid] of Object.entries(body.voiceDefaultVoiceIds)) {
+      if (["elevenlabs", "openai", "cartesia"].includes(prov) && typeof vid === "string" && vid.trim()) {
+        clean[prov] = vid.trim();
+      }
+    }
+    body.voiceDefaultVoiceIds = clean;
   }
   for (const field of ["voiceModeEnabled", "voiceAvatarEnabled"]) {
     if (body[field] !== undefined && body[field] !== null) {
@@ -872,6 +884,7 @@ export class BrandController {
         isActive: body.isActive !== undefined ? !!body.isActive : true,
         sortOrder: body.sortOrder ?? count,
         voiceId: body.voiceId || null,
+        voiceIds: body.voiceIds && typeof body.voiceIds === "object" ? body.voiceIds : undefined,
         avatarFaceId: body.avatarFaceId || null,
       },
     });
@@ -899,6 +912,9 @@ export class BrandController {
     if (body.isActive !== undefined) data.isActive = !!body.isActive;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
     if (body.voiceId !== undefined) data.voiceId = body.voiceId || null;
+    if (body.voiceIds !== undefined && (body.voiceIds === null || typeof body.voiceIds === "object")) {
+      data.voiceIds = body.voiceIds;
+    }
     if (body.avatarFaceId !== undefined) data.avatarFaceId = body.avatarFaceId || null;
 
     return this.prisma.matchmaker.update({ where: { id }, data });

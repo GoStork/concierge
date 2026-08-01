@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { resolveTtsProvider, voiceProviderStatus } from "./voice-gateway";
+import { resolveTtsProvider, resolveVoiceForProvider, voiceProviderStatus } from "./voice-gateway";
 import { prisma } from "../db";
 
 // HTTP companion to the voice WS gateway:
@@ -64,7 +64,8 @@ voiceRouter.post("/api/voice/preview", async (req, res) => {
 
   const settings: any = await prisma.siteSettings.findFirst();
   const providerName = req.body?.provider || settings?.voiceTtsProvider || "elevenlabs";
-  voiceId = voiceId || settings?.voiceDefaultVoiceId || process.env.ELEVENLABS_DEFAULT_VOICE_ID || null;
+  // Voice ids are provider-specific - resolve for the provider being previewed.
+  voiceId = voiceId || resolveVoiceForProvider(providerName, null, null, settings || {}) || null;
 
   const provider = resolveTtsProvider(providerName);
   if (!provider || !provider.isConfigured()) {
