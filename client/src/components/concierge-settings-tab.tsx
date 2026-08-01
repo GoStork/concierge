@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings, Matchmaker } from "@/hooks/use-brand-settings";
+import { PersonaVoicePreviewButton } from "@/components/voice/persona-voice-preview-button";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -219,6 +220,7 @@ export default function ConciergeSettingsTab() {
                   </div>
                 </div>
                 <p className="t-helper leading-relaxed">{m.description}</p>
+                <PersonaVoicePreviewButton matchmakerId={m.id} personaName={m.name} brandColor={brandColor} />
               </div>
             );
           })}

@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, Sparkles, ArrowRight } from "lucide-react";
+import { PersonaVoicePreviewButton } from "@/components/voice/persona-voice-preview-button";
 
 export default function MatchmakerSelectionPage() {
   const { data: brand, isLoading } = useBrandSettings();
@@ -215,6 +216,9 @@ export default function MatchmakerSelectionPage() {
                 </div>
               </div>
               <p className="text-sm text-foreground leading-relaxed text-center">{m.description}</p>
+              <div className="flex justify-center">
+                <PersonaVoicePreviewButton matchmakerId={m.id} personaName={m.name} brandColor={brand?.primaryColor} />
+              </div>
             </Card>
           );
         })}

@@ -387,6 +387,98 @@ voiceRouter.get("/api/voice/options/avatars", async (req, res) => {
   }
 });
 
+// Wrap raw 16kHz mono PCM in a WAV header so browsers can play it directly.
+function pcmToWav(pcm: Buffer): Buffer {
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(16000, 24);
+  header.writeUInt32LE(16000 * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+
+async function synthesizeOnce(providerName: string, voiceId: string, text: string): Promise<Buffer> {
+  const provider = resolveTtsProvider(providerName);
+  if (!provider || !provider.isConfigured()) {
+    throw new Error(`TTS provider "${providerName}" is not configured`);
+  }
+  const chunks: Buffer[] = [];
+  const stream = provider.openStream({ voiceId });
+  const pcm = await new Promise<Buffer>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      stream.close();
+      reject(new Error("synthesis timed out (15s)"));
+    }, 15_000);
+    stream.onAudio((buf) => chunks.push(buf));
+    stream.onEnd(() => {
+      clearTimeout(timeout);
+      stream.close();
+      resolve(Buffer.concat(chunks));
+    });
+    stream.onError((err) => {
+      clearTimeout(timeout);
+      stream.close();
+      reject(err);
+    });
+    stream.sendText(text + " ");
+    stream.flush();
+  });
+  return pcmToWav(pcm);
+}
+
+// Persona voice preview for PARENTS and PROVIDERS (any authenticated user):
+// the persona-picker cards' "hear this persona" button. Deliberately narrow -
+// only a persona's configured voice with a fixed server-side line, so it
+// cannot be abused as a free-form TTS API. Cached per persona+provider+voice,
+// so a thousand parents tapping it costs one synthesis.
+const personaPreviewCache = new Map<string, Buffer>();
+voiceRouter.get("/api/voice/persona-preview", async (req: any, res) => {
+  if (!req.isAuthenticated?.() || !req.user) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  const matchmakerId = String(req.query.matchmakerId || "");
+  if (!matchmakerId) return res.status(400).json({ message: "matchmakerId required" });
+  try {
+    const settings: any = await prisma.siteSettings.findFirst();
+    if (!settings?.voiceModeEnabled) return res.status(403).json({ message: "Voice mode is disabled" });
+    const mm: any = await prisma.matchmaker.findUnique({ where: { id: matchmakerId } });
+    if (!mm || !mm.isActive) return res.status(404).json({ message: "Persona not found" });
+    const providerName = settings.voiceTtsProvider || "elevenlabs";
+    const voiceId = resolveVoiceForProvider(providerName, mm.voiceIds, mm.voiceId);
+    if (!voiceId) {
+      return res.status(404).json({ message: `${mm.name} has no voice configured yet` });
+    }
+    const cacheKey = `${matchmakerId}:${providerName}:${voiceId}`;
+    let wav = personaPreviewCache.get(cacheKey);
+    if (!wav) {
+      wav = await synthesizeOnce(
+        providerName,
+        voiceId,
+        `Hi, I'm ${mm.name}. It's lovely to meet you - I'm here to help with every step of your journey.`,
+      );
+      if (personaPreviewCache.size > 24) {
+        personaPreviewCache.delete(personaPreviewCache.keys().next().value!);
+      }
+      personaPreviewCache.set(cacheKey, wav);
+    }
+    res.setHeader("Content-Type", "audio/wav");
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.send(wav);
+  } catch (err: any) {
+    console.error(`[voice] persona preview failed: ${err?.message}`);
+    res.status(502).json({ message: `Voice preview failed: ${err?.message}` });
+  }
+});
+
 voiceRouter.post("/api/voice/preview", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   // Callers pass persona-specific text (e.g. "Hi, I'm Ariel..."); the default
@@ -415,45 +507,9 @@ voiceRouter.post("/api/voice/preview", async (req, res) => {
   }
 
   try {
-    const chunks: Buffer[] = [];
-    const stream = provider.openStream({ voiceId });
-    const pcm = await new Promise<Buffer>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        stream.close();
-        reject(new Error("preview synthesis timed out (15s)"));
-      }, 15_000);
-      stream.onAudio((buf) => chunks.push(buf));
-      stream.onEnd(() => {
-        clearTimeout(timeout);
-        stream.close();
-        resolve(Buffer.concat(chunks));
-      });
-      stream.onError((err) => {
-        clearTimeout(timeout);
-        stream.close();
-        reject(err);
-      });
-      stream.sendText(text + " ");
-      stream.flush();
-    });
-
-    // Wrap raw 16kHz mono PCM in a WAV header so the browser can play it.
-    const header = Buffer.alloc(44);
-    header.write("RIFF", 0);
-    header.writeUInt32LE(36 + pcm.length, 4);
-    header.write("WAVE", 8);
-    header.write("fmt ", 12);
-    header.writeUInt32LE(16, 16);
-    header.writeUInt16LE(1, 20); // PCM
-    header.writeUInt16LE(1, 22); // mono
-    header.writeUInt32LE(16000, 24);
-    header.writeUInt32LE(16000 * 2, 28);
-    header.writeUInt16LE(2, 32);
-    header.writeUInt16LE(16, 34);
-    header.write("data", 36);
-    header.writeUInt32LE(pcm.length, 40);
+    const wav = await synthesizeOnce(providerName, voiceId, text);
     res.setHeader("Content-Type", "audio/wav");
-    res.send(Buffer.concat([header, pcm]));
+    res.send(wav);
   } catch (err: any) {
     console.error(`[voice] preview failed: ${err?.message}`);
     res.status(502).json({ message: `Voice preview failed: ${err?.message}` });

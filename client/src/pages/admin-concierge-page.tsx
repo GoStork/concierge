@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { VoicePicker, AvatarPicker, playVoicePreview, type VoiceOption, type AvatarOption } from "@/components/admin/voice-pickers";
+import { VoicePicker, AvatarPicker, playVoicePreview, useVoiceCatalog, type VoiceOption, type AvatarOption } from "@/components/admin/voice-pickers";
 import {
   Sparkles,
   Plus,
@@ -168,6 +168,42 @@ function VoiceSettingsCard() {
   const set = (key: string, v: any) => setDraft((d) => ({ ...d, [key]: v }));
   const hasChanges = Object.keys(draft).length > 0;
 
+  // Per-provider readiness shown on each provider card: every active
+  // persona's saved voice (with a play button), or an amber "select a voice"
+  // prompt where missing. Catalogs share the pickers' query cache.
+  const activePersonas = ((brandSettings?.matchmakers || []) as Matchmaker[]).filter((m) => m.isActive);
+  const catalogEl = useVoiceCatalog("elevenlabs");
+  const catalogOa = useVoiceCatalog("openai");
+  const catalogCa = useVoiceCatalog("cartesia");
+  const catalogFor: Record<string, VoiceOption[]> = {
+    elevenlabs: catalogEl.data?.voices || [],
+    openai: catalogOa.data?.voices || [],
+    cartesia: catalogCa.data?.voices || [],
+  };
+  const personaVoiceFor = (m: Matchmaker, prov: string): string | null =>
+    (m.voiceIds || {})[prov] ?? (prov === "elevenlabs" ? m.voiceId || null : null);
+  const voiceNameFor = (prov: string, id: string | null): string | null => {
+    if (!id) return null;
+    const name = catalogFor[prov]?.find((v) => v.id === id)?.name || id;
+    return name.split(" - ")[0];
+  };
+  const [rowPreviewing, setRowPreviewing] = useState<string | null>(null);
+  const playPersonaRow = async (key: string, prov: string, voiceId: string, personaName: string) => {
+    if (rowPreviewing) return;
+    setRowPreviewing(key);
+    try {
+      await playVoicePreview(
+        prov,
+        voiceId,
+        `Hi, I'm ${personaName}. It's lovely to meet you - I'm here to help with every step of your journey.`,
+      );
+    } catch (err: any) {
+      toast({ title: "Voice preview failed", description: err?.message, variant: "destructive" });
+    } finally {
+      setRowPreviewing(null);
+    }
+  };
+
   // Personas with NO voice saved for the currently selected provider. There
   // is deliberately no hardcoded fallback voice - the app asks the admin to
   // set one per persona, and voice sessions fail loudly until it's done.
@@ -253,7 +289,7 @@ function VoiceSettingsCard() {
                 return (
                   <label
                     key={name}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-[var(--radius)] border transition-colors ${disabled ? "opacity-55 cursor-not-allowed" : "cursor-pointer hover:bg-muted/30"}`}
+                    className={`flex items-center gap-2.5 p-2.5 rounded-[var(--radius)] border transition-colors flex-wrap ${disabled ? "opacity-55 cursor-not-allowed" : "cursor-pointer hover:bg-muted/30"}`}
                   >
                     <RadioGroupItem value={name} disabled={disabled} />
                     <span className="text-sm">{label}</span>
@@ -272,6 +308,44 @@ function VoiceSettingsCard() {
                     )}
                     {configured === null && (
                       <span className="ml-auto text-xs text-muted-foreground font-ui">{providerStatusError ? "status unavailable" : "checking..."}</span>
+                    )}
+                    {/* Saved persona voices for THIS provider - audition before switching */}
+                    {configured && activePersonas.length > 0 && (
+                      <span className="basis-full pl-6 pt-1 flex flex-wrap items-center gap-1.5">
+                        {activePersonas.map((m) => {
+                          const vid = personaVoiceFor(m, name);
+                          const vName = voiceNameFor(name, vid);
+                          const key = `${name}:${m.id}`;
+                          return vid && vName ? (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void playPersonaRow(key, name, vid, m.name);
+                              }}
+                              className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground whitespace-nowrap hover:bg-secondary/70 transition-colors"
+                              aria-label={`Play ${m.name}'s ${label} voice`}
+                              data-testid={`btn-provider-voice-${name}-${m.id}`}
+                            >
+                              {rowPreviewing === key ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Play className="w-3 h-3 text-primary" />
+                              )}
+                              {m.name}: {vName}
+                            </button>
+                          ) : (
+                            <span
+                              key={m.id}
+                              className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] whitespace-nowrap"
+                            >
+                              {m.name}: select a voice
+                            </span>
+                          );
+                        })}
+                      </span>
                     )}
                   </label>
                 );

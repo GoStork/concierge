@@ -53,7 +53,7 @@ export async function playVoicePreview(provider: string, voiceId?: string, text?
   await audio.play();
 }
 
-function useVoiceCatalog(provider: string, q = "") {
+export function useVoiceCatalog(provider: string, q = "") {
   return useQuery<{ voices: VoiceOption[] }>({
     queryKey: ["/api/voice/options/voices", provider, q],
     queryFn: async () =>
