@@ -113,20 +113,22 @@ function FilterChips({
   onSelect: (v: string | null) => void;
 }) {
   if (values.length < 2) return null;
+  // One non-wrapping row: on narrow phones the chips scroll horizontally
+  // instead of orphaning the last option onto its own line.
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="t-helper w-14 shrink-0">{label}</span>
+    <div className="flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {label && <span className="t-helper w-14 shrink-0">{label}</span>}
       <button
         onClick={() => onSelect(null)}
-        className={`px-2.5 py-1 rounded-full text-xs font-ui border transition-colors ${selected === null ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-secondary"}`}
+        className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-ui border transition-colors ${selected === null ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-secondary"}`}
       >
         All
       </button>
-      {values.map((v) => (
+      {[...values].sort().map((v) => (
         <button
           key={v}
           onClick={() => onSelect(selected === v ? null : v)}
-          className={`px-2.5 py-1 rounded-full text-xs font-ui border transition-colors ${selected === v ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-secondary"}`}
+          className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-ui border transition-colors ${selected === v ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-secondary"}`}
         >
           {cap(v)}
         </button>
