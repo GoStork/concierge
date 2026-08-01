@@ -49,20 +49,21 @@ function SystemSettingsCard() {
   const [saving, setSaving] = useState(false);
 
   const currentMode = parentExperienceMode ?? brandSettings?.parentExperienceMode ?? "MARKETPLACE_ONLY";
-  const hasChanges = parentExperienceMode !== null;
 
-  const handleSave = async () => {
+  const handleSelect = async (mode: string) => {
+    if (mode === currentMode || saving) return;
+    setParentExperienceMode(mode);
     setSaving(true);
     try {
-      const body: Record<string, any> = {
-        parentExperienceMode: parentExperienceMode,
-        enableAiConcierge: parentExperienceMode !== "MARKETPLACE_ONLY",
-      };
-      await apiRequest("PUT", "/api/brand/settings", body);
-      queryClient.invalidateQueries({ queryKey: ["/api/brand/settings"] });
+      await apiRequest("PUT", "/api/brand/settings", {
+        parentExperienceMode: mode,
+        enableAiConcierge: mode !== "MARKETPLACE_ONLY",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/brand/settings"] });
       setParentExperienceMode(null);
-      toast({ title: "System settings saved" });
+      toast({ title: "Parent experience mode saved" });
     } catch {
+      setParentExperienceMode(null);
       toast({ title: "Failed to save settings", variant: "destructive" });
     } finally {
       setSaving(false);
@@ -96,8 +97,9 @@ function SystemSettingsCard() {
                 type="button"
                 role="radio"
                 aria-checked={currentMode === value}
-                onClick={() => setParentExperienceMode(value)}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                onClick={() => handleSelect(value)}
+                disabled={saving}
+                className={`px-4 py-2 text-sm font-medium transition-colors disabled:opacity-70 ${
                   currentMode === value
                     ? "bg-primary text-primary-foreground"
                     : "bg-card text-foreground hover:bg-secondary"
@@ -114,20 +116,6 @@ function SystemSettingsCard() {
               : "Skip Eva, direct parents to search"}
           </p>
         </div>
-
-        {hasChanges && (
-          <div className="flex justify-end pt-2">
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={saving}
-              data-testid="btn-save-system-settings"
-            >
-              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
-              Save Settings
-            </Button>
-          </div>
-        )}
       </div>
     </Card>
   );
@@ -478,12 +466,14 @@ function VoiceSettingsCard() {
           <div className="space-y-1.5">
             <Label>Default voice - {TTS_PROVIDER_LABELS[val("voiceTtsProvider", "elevenlabs")]?.split(" ")[0] || val("voiceTtsProvider", "elevenlabs")}</Label>
             <div className="flex items-center gap-2">
-              <VoiceSelect
-                provider={val("voiceTtsProvider", "elevenlabs")}
-                value={currentDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"))}
-                onChange={(id) => setDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"), id)}
-                testId="input-voice-default-voice-id"
-              />
+              <div className="flex-1 min-w-0">
+                <VoiceSelect
+                  provider={val("voiceTtsProvider", "elevenlabs")}
+                  value={currentDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"))}
+                  onChange={(id) => setDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"), id)}
+                  testId="input-voice-default-voice-id"
+                />
+              </div>
               <Button
                 variant="outline"
                 size="sm"
