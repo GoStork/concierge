@@ -439,6 +439,11 @@ function VoiceSettingsCard() {
           </div>
         </div>
 
+        <p className="t-helper">
+          Switching the voice provider instantly switches every persona to its voice for that provider - each persona
+          row below shows what it speaks with right now.
+        </p>
+
         <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
           <div className="space-y-1.5">
             <Label>Session cap (min)</Label>
@@ -1551,6 +1556,39 @@ export default function AdminConciergePage() {
                       )}
                     </div>
                     <p className="t-helper line-clamp-1 mt-0.5">{m.description}</p>
+                    {/* LIVE link to the global Voice settings: what this persona
+                        speaks with RIGHT NOW - updates the moment the active
+                        provider above changes. */}
+                    {(brandSettings as any)?.voiceModeEnabled && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5" data-testid={`persona-live-voice-${m.id}`}>
+                        {(() => {
+                          const vid = (m.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? m.voiceId : null);
+                          const vName = vid ? resolveVoiceName(activeTtsProvider, vid) : null;
+                          const provLabel = TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider;
+                          return vName ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+                              <Volume2 className="w-3 h-3" /> Speaks with {vName?.split(" - ")[0]} ({provLabel})
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))]">
+                              <Volume2 className="w-3 h-3" /> No {provLabel} voice - using fallback
+                            </span>
+                          );
+                        })()}
+                        {(brandSettings as any)?.voiceAvatarEnabled && (() => {
+                          const av = resolveAvatar(m.avatarFaceId);
+                          return av ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+                              <Video className="w-3 h-3" /> {av.name}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))]">
+                              <Video className="w-3 h-3" /> No avatar - voice only
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                     <Switch checked={m.isActive} onCheckedChange={(checked) => toggleActiveMutation.mutate({ id: m.id, isActive: checked })} data-testid={`switch-active-${m.id}`} />
