@@ -13,8 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { VoicePicker, AvatarPicker, playVoicePreview, type VoiceOption, type AvatarOption } from "@/components/admin/voice-pickers";
 import {
   Sparkles,
   Plus,
@@ -127,185 +126,10 @@ const TTS_PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI (budget)",
   cartesia: "Cartesia (fastest)",
 };
-interface VoiceOption { id: string; name: string; description?: string; gender?: string; previewUrl?: string }
-interface AvatarOption { id: string; name: string; imageUrl?: string; kind: "custom" | "preset" }
-
-// Human-friendly voice picker: a searchable combobox of names from the live
-// provider catalog, never raw ids.
-function VoiceSelect({ provider, value, onChange, testId }: { provider: string; value: string; onChange: (id: string) => void; testId?: string }) {
-  const [open, setOpen] = useState(false);
-  const { data, isError } = useQuery<{ voices: VoiceOption[] }>({
-    queryKey: ["/api/voice/options/voices", provider],
-    queryFn: async () => {
-      const res = await apiRequest("GET", `/api/voice/options/voices?provider=${encodeURIComponent(provider)}`);
-      return res.json();
-    },
-    staleTime: 10 * 60 * 1000,
-    retry: 1,
-  });
-  const voices = data?.voices || [];
-  const selected = voices.find((v) => v.id === value);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between font-normal"
-          data-testid={testId}
-        >
-          <span className="truncate flex items-center gap-2">
-            {selected ? (
-              <>
-                <span>{selected.name}</span>
-                {selected.description && <span className="text-xs text-muted-foreground">{selected.description}</span>}
-              </>
-            ) : value ? (
-              <span className="text-muted-foreground">Current: {value}</span>
-            ) : (
-              <span className="text-muted-foreground">{isError ? "Could not load voices" : voices.length ? "Choose a voice..." : "Loading voices..."}</span>
-            )}
-          </span>
-          <ChevronDown className="w-4 h-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-72" align="start">
-        <Command>
-          <CommandInput placeholder="Search voices..." />
-          <CommandList className="max-h-72">
-            <CommandEmpty>No voice found.</CommandEmpty>
-            <CommandGroup>
-              {voices.map((v) => (
-                <CommandItem
-                  key={v.id}
-                  value={`${v.name} ${v.description || ""} ${v.gender || ""}`}
-                  onSelect={() => {
-                    onChange(v.id);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="flex items-center gap-2">
-                    <Check className={`w-3.5 h-3.5 ${v.id === value ? "opacity-100 text-primary" : "opacity-0"}`} />
-                    <span>{v.name}</span>
-                    {v.description && <span className="text-xs text-muted-foreground">{v.description}</span>}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-// Avatar picker: searchable combobox with the actual face photos from LiveAvatar.
-function AvatarSelect({ value, onChange, testId }: { value: string; onChange: (id: string) => void; testId?: string }) {
-  const [open, setOpen] = useState(false);
-  const { data, isError } = useQuery<{ avatars: AvatarOption[] }>({
-    queryKey: ["/api/voice/options/avatars"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/voice/options/avatars");
-      return res.json();
-    },
-    staleTime: 10 * 60 * 1000,
-    retry: 1,
-  });
-  const avatars = data?.avatars || [];
-  const selected = avatars.find((a) => a.id === value);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between font-normal h-11"
-          data-testid={testId}
-        >
-          <span className="truncate flex items-center gap-2.5">
-            {selected ? (
-              <>
-                {selected.imageUrl ? (
-                  <img src={selected.imageUrl} alt="" className="w-7 h-7 rounded-full object-cover border" />
-                ) : (
-                  <span className="w-7 h-7 rounded-full bg-secondary" />
-                )}
-                <span>{selected.name}</span>
-                {selected.kind === "custom" && (
-                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground font-ui">Custom</span>
-                )}
-              </>
-            ) : value ? (
-              <span className="text-muted-foreground">Current: {value}</span>
-            ) : (
-              <span className="text-muted-foreground">{isError ? "Could not load avatars" : avatars.length ? "Choose an avatar..." : "Loading avatars..."}</span>
-            )}
-          </span>
-          <ChevronDown className="w-4 h-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-72" align="start">
-        <Command>
-          <CommandInput placeholder="Search avatars..." />
-          <CommandList className="max-h-80">
-            <CommandEmpty>No avatar found.</CommandEmpty>
-            <CommandGroup>
-              {avatars.map((a) => (
-                <CommandItem
-                  key={a.id}
-                  value={`${a.name} ${a.kind}`}
-                  onSelect={() => {
-                    onChange(a.id);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="flex items-center gap-2.5">
-                    <Check className={`w-3.5 h-3.5 ${a.id === value ? "opacity-100 text-primary" : "opacity-0"}`} />
-                    {a.imageUrl ? (
-                      <img src={a.imageUrl} alt="" className="w-8 h-8 rounded-full object-cover border" loading="lazy" />
-                    ) : (
-                      <span className="w-8 h-8 rounded-full bg-secondary" />
-                    )}
-                    <span>{a.name}</span>
-                    {a.kind === "custom" && (
-                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground font-ui">Custom</span>
-                    )}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
 const STT_PROVIDER_LABELS: Record<string, string> = {
   google: "Google Cloud STT",
   deepgram: "Deepgram (budget)",
 };
-
-// Synthesize one sentence with the given provider/voice and play it. Throws
-// on failure so the caller can toast the real error.
-async function playVoicePreview(provider: string, voiceId?: string): Promise<void> {
-  const res = await fetch("/api/voice/preview", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ provider, voiceId: voiceId || undefined }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `Preview failed (${res.status})`);
-  }
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  audio.onended = () => URL.revokeObjectURL(url);
-  await audio.play();
-}
 
 function VoiceSettingsCard() {
   const { toast } = useToast();
@@ -1397,7 +1221,7 @@ export default function AdminConciergePage() {
             <Label >Voice - {TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider}</Label>
             <div className="flex items-center gap-2">
               <div className="flex-1 min-w-0">
-                <VoiceSelect
+                <VoicePicker
                   provider={activeTtsProvider}
                   value={(editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : "")}
                   onChange={(id) => setEditForm({ ...editForm, voiceIds: { ...(editForm.voiceIds || {}), [activeTtsProvider]: id } })}
@@ -1432,7 +1256,7 @@ export default function AdminConciergePage() {
           </div>
           <div className="space-y-1.5">
             <Label >Video avatar</Label>
-            <AvatarSelect
+            <AvatarPicker
               value={editForm.avatarFaceId || ""}
               onChange={(id) => setEditForm({ ...editForm, avatarFaceId: id })}
               testId="input-matchmaker-avatar-face-id"

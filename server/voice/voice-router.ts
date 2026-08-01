@@ -71,6 +71,9 @@ export interface VoiceOption {
   name: string;
   description?: string;
   gender?: string;
+  age?: string;
+  accent?: string;
+  language?: string;
   previewUrl?: string;
 }
 
@@ -119,8 +122,11 @@ async function listElevenLabsVoices(): Promise<VoiceOption[]> {
     .map((v: any) => ({
       id: v.voice_id,
       name: v.name,
-      description: [v.labels?.descriptive, v.labels?.age?.replace("_", " ")].filter(Boolean).join(", "),
+      description: v.labels?.descriptive || undefined,
       gender: v.labels?.gender,
+      age: v.labels?.age?.replace(/_/g, " "),
+      accent: v.labels?.accent?.replace(/_/g, " "),
+      language: v.labels?.language,
       previewUrl: v.preview_url || undefined,
     }));
 }
@@ -137,6 +143,8 @@ async function listCartesiaVoices(): Promise<VoiceOption[]> {
     id: v.id,
     name: v.name,
     description: v.description || undefined,
+    language: v.language || undefined,
+    gender: v.gender || undefined,
   }));
 }
 
