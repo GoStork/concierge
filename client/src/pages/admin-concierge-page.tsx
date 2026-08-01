@@ -39,6 +39,7 @@ import {
   Volume2,
   Check,
   Video,
+  ExternalLink,
 } from "lucide-react";
 import ImageCropPreview from "@/components/image-crop-preview";
 
@@ -129,6 +130,15 @@ const TTS_PROVIDER_LABELS: Record<string, string> = {
 const STT_PROVIDER_LABELS: Record<string, string> = {
   google: "Google Cloud STT",
   deepgram: "Deepgram (budget)",
+};
+// Where the admin manages each platform (keys, billing, voice/avatar libraries)
+const PROVIDER_LINKS: Record<string, string> = {
+  elevenlabs: "https://elevenlabs.io/app/voice-library",
+  openai: "https://platform.openai.com",
+  cartesia: "https://play.cartesia.ai",
+  google: "https://console.cloud.google.com/apis/api/speech.googleapis.com",
+  deepgram: "https://console.deepgram.com",
+  liveavatar: "https://app.liveavatar.com",
 };
 
 function VoiceSettingsCard() {
@@ -246,6 +256,16 @@ function VoiceSettingsCard() {
                   >
                     <RadioGroupItem value={name} disabled={disabled} />
                     <span className="text-sm">{label}</span>
+                    <a
+                      href={PROVIDER_LINKS[name]}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                      aria-label={`Open ${label} platform`}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
                     {configured === false && (
                       <span className="ml-auto text-xs text-muted-foreground font-ui">API key not set</span>
                     )}
@@ -275,6 +295,16 @@ function VoiceSettingsCard() {
                   >
                     <RadioGroupItem value={name} disabled={disabled} />
                     <span className="text-sm">{label}</span>
+                    <a
+                      href={PROVIDER_LINKS[name]}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-muted-foreground hover:text-primary transition-colors"
+                      aria-label={`Open ${label} platform`}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
                     {configured === false && (
                       <span className="ml-auto text-xs text-muted-foreground font-ui">API key not set</span>
                     )}
@@ -371,7 +401,18 @@ function VoiceSettingsCard() {
 
         <div className="flex items-center justify-between p-3 rounded-[var(--radius)] border">
           <div className="pr-4">
-            <span className="text-sm font-medium">Video avatar (HeyGen LiveAvatar)</span>
+            <span className="text-sm font-medium flex items-center gap-1.5">
+              Video avatar (HeyGen LiveAvatar)
+              <a
+                href={PROVIDER_LINKS.liveavatar}
+                target="_blank"
+                rel="noreferrer"
+                className="text-muted-foreground hover:text-primary transition-colors"
+                aria-label="Open LiveAvatar platform"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </span>
             <p className="t-helper">The persona speaks as a realtime lip-synced talking head. Roughly doubles per-minute cost. Each persona's voice and talking head are chosen on the persona itself, in the Personas section below.</p>
           </div>
           <Switch

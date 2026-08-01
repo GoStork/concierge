@@ -206,29 +206,89 @@ export interface AvatarOption {
   name: string;
   imageUrl?: string;
   kind: "custom" | "preset";
+  gender?: string;
+  orientation?: "landscape" | "portrait";
+  previewVideoUrl?: string;
+}
+
+// Gender for LiveAvatar presets whose first names don't appear in HeyGen's
+// labeled catalog. Curated from the preset thumbnails themselves - UI filter
+// metadata only, never used for anything else. Unknown names simply carry no
+// gender and appear under the "All" filter.
+const PRESET_NAME_GENDER: Record<string, string> = {
+  katya: "female", alessandra: "female", amina: "female", anastasia: "female",
+  marianne: "female", rika: "female",
+  graham: "male", anthony: "male", pedro: "male", thaddeus: "male", wayne: "male", santa: "male",
+};
+
+const assetHash = (u?: string) => u?.match(/avatar\/v3\/([a-f0-9]{32})/)?.[1] || null;
+
+// HeyGen's public avatar catalog carries gender labels and mp4 talking
+// previews for many of the same underlying avatars - join by asset hash
+// (exact) and by unambiguous first name.
+async function heygenEnrichment(): Promise<{
+  byHash: Map<string, any>;
+  genderByFirstName: Map<string, string>;
+}> {
+  const byHash = new Map<string, any>();
+  const genderByFirstName = new Map<string, string>();
+  const key = process.env.HEYGEN_API_KEY;
+  if (!key) return { byHash, genderByFirstName };
+  try {
+    const resp = await fetch("https://api.heygen.com/v2/avatars", { headers: { "X-Api-Key": key } });
+    if (!resp.ok) return { byHash, genderByFirstName };
+    const avatars: any[] = ((await resp.json()) as any)?.data?.avatars || [];
+    const ambiguous = new Set<string>();
+    for (const a of avatars) {
+      const h = assetHash(a.preview_video_url);
+      if (h) byHash.set(h, a);
+      const fn = (a.avatar_name || "").split(" ")[0].toLowerCase();
+      if (fn && a.gender) {
+        const prev = genderByFirstName.get(fn);
+        if (prev && prev !== a.gender) ambiguous.add(fn);
+        genderByFirstName.set(fn, a.gender);
+      }
+    }
+    for (const fn of ambiguous) genderByFirstName.delete(fn);
+  } catch (err: any) {
+    console.error(`[voice] HeyGen enrichment failed (avatars stay unlabeled): ${err?.message}`);
+  }
+  return { byHash, genderByFirstName };
 }
 
 async function listLiveAvatars(): Promise<AvatarOption[]> {
   const key = process.env.LIVEAVATAR_API_KEY || process.env.HEYGEN_API_KEY;
   if (!key) throw new Error("LIVEAVATAR_API_KEY not set");
   const headers = { "X-API-KEY": key };
+  const { byHash, genderByFirstName } = await heygenEnrichment();
+
+  const enrich = (a: any, kind: "custom" | "preset"): AvatarOption => {
+    const firstName = (a.name || "").split(" ")[0].toLowerCase();
+    const joined = byHash.get(assetHash(a.preview_url) || "");
+    return {
+      id: a.id,
+      name: a.name,
+      imageUrl: a.preview_url || undefined,
+      kind,
+      gender: joined?.gender || genderByFirstName.get(firstName) || PRESET_NAME_GENDER[firstName] || undefined,
+      orientation: /\(portrait\)/i.test(a.name || "") ? "portrait" : "landscape",
+      previewVideoUrl: joined?.preview_video_url || undefined,
+    };
+  };
+
   const out: AvatarOption[] = [];
   // Custom avatars (created from persona photos) come first.
   const custom = await fetch("https://api.liveavatar.com/v1/avatars", { headers });
   if (custom.ok) {
     const body: any = await custom.json();
-    for (const a of body?.data?.results || []) {
-      out.push({ id: a.id, name: a.name, imageUrl: a.preview_url || undefined, kind: "custom" });
-    }
+    for (const a of body?.data?.results || []) out.push(enrich(a, "custom"));
   }
   let url: string | null = "https://api.liveavatar.com/v1/avatars/public?page_size=50";
   while (url) {
     const resp = await fetch(url, { headers });
     if (!resp.ok) throw new Error(`LiveAvatar public avatars ${resp.status}`);
     const body: any = await resp.json();
-    for (const a of body?.data?.results || []) {
-      out.push({ id: a.id, name: a.name, imageUrl: a.preview_url || undefined, kind: "preset" });
-    }
+    for (const a of body?.data?.results || []) out.push(enrich(a, "preset"));
     url = body?.data?.next || null;
   }
   return out;

@@ -25,6 +25,9 @@ export interface AvatarOption {
   name: string;
   imageUrl?: string;
   kind: "custom" | "preset";
+  gender?: string;
+  orientation?: "landscape" | "portrait";
+  previewVideoUrl?: string;
 }
 
 // Synthesize one sentence with the given provider/voice and play it. Throws
@@ -280,18 +283,29 @@ export function AvatarPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<string | null>(null);
+  const [gender, setGender] = useState<string | null>(null);
+  const [orientation, setOrientation] = useState<string | null>(null);
+  // Which card is playing its talking-video preview (hover on desktop, the
+  // corner play button on touch).
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
 
   const { data, isError } = useAvatarCatalog();
   const avatars = data?.avatars || [];
   const selected = avatars.find((a) => a.id === value);
   const hasCustom = avatars.some((a) => a.kind === "custom");
+  const genders = Array.from(new Set(avatars.map((a) => a.gender || "").filter(Boolean)));
+  const orientations = Array.from(new Set(avatars.map((a) => a.orientation || "").filter(Boolean)));
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return avatars.filter(
-      (a) => (!kind || a.kind === kind) && (!q || a.name.toLowerCase().includes(q)),
+      (a) =>
+        (!kind || a.kind === kind) &&
+        (!gender || a.gender === gender) &&
+        (!orientation || a.orientation === orientation) &&
+        (!q || a.name.toLowerCase().includes(q)),
     );
-  }, [avatars, query, kind]);
+  }, [avatars, query, kind, gender, orientation]);
 
   return (
     <div className="space-y-2">
@@ -326,18 +340,20 @@ export function AvatarPicker({
 
       {open && (
         <div className="border rounded-[var(--radius)] p-3 space-y-3 bg-background" data-testid={`${testId}-panel`}>
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search avatars..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="pl-8"
-              />
-            </div>
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search avatars..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <FilterChips label="Gender" values={genders} selected={gender} onSelect={setGender} />
+            <FilterChips label="Format" values={orientations} selected={orientation} onSelect={setOrientation} />
             {hasCustom && (
-              <FilterChips label="" values={["custom", "preset"]} selected={kind} onSelect={setKind} />
+              <FilterChips label="Source" values={["custom", "preset"]} selected={kind} onSelect={setKind} />
             )}
           </div>
           <div className="max-h-96 overflow-y-auto">
@@ -351,15 +367,42 @@ export function AvatarPicker({
                   type="button"
                   onClick={() => {
                     onChange(a.id);
+                    setPreviewingId(null);
                     setOpen(false);
                   }}
-                  className={`text-left rounded-[var(--radius)] border overflow-hidden transition-all hover:shadow-md ${a.id === value ? "ring-2 ring-primary border-primary" : ""}`}
+                  onMouseEnter={() => a.previewVideoUrl && setPreviewingId(a.id)}
+                  onMouseLeave={() => setPreviewingId((p) => (p === a.id ? null : p))}
+                  className={`relative text-left rounded-[var(--radius)] border overflow-hidden transition-all hover:shadow-md ${a.id === value ? "ring-2 ring-primary border-primary" : ""}`}
                   data-testid={`avatar-option-${a.id}`}
                 >
-                  {a.imageUrl ? (
+                  {previewingId === a.id && a.previewVideoUrl ? (
+                    // Live talking preview - plays while hovered / toggled
+                    <video
+                      src={a.previewVideoUrl}
+                      className="w-full aspect-video object-cover"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                    />
+                  ) : a.imageUrl ? (
                     <img src={a.imageUrl} alt={a.name} className="w-full aspect-video object-cover" loading="lazy" />
                   ) : (
                     <div className="w-full aspect-video bg-secondary" />
+                  )}
+                  {a.previewVideoUrl && (
+                    // Touch-friendly motion toggle; hover covers desktop.
+                    <span
+                      role="button"
+                      aria-label={`Preview ${a.name} talking`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewingId(previewingId === a.id ? null : a.id);
+                      }}
+                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-background/85 border flex items-center justify-center text-primary hover:bg-background"
+                    >
+                      {previewingId === a.id ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
+                    </span>
                   )}
                   <div className="flex items-center gap-1.5 px-2 py-1.5">
                     <span className="text-xs font-ui truncate flex-1">{a.name}</span>
