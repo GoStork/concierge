@@ -51,6 +51,16 @@ export class HeyGenAvatarSession {
   private buf: Buffer[] = [];
   private bufBytes = 0;
   private static readonly FRAME_BYTES = Math.floor(24000 * 0.4) * 2;
+  // The very first frame after an interrupt/flush ships at ~120ms so the
+  // avatar's lip-sync starts as early as possible; later frames use the
+  // normal size.
+  private static readonly FIRST_FRAME_BYTES = Math.floor(24000 * 0.12) * 2;
+  private sentSinceReset = false;
+  // Epoch ms when the audio queued into the avatar finishes PLAYING. The
+  // avatar renders in realtime, so this trails TTS generation by seconds on a
+  // long reply - the gateway must not flip back to "listening" (and the
+  // client must still be able to barge) until playback actually ends.
+  private playheadAt = 0;
   private keepAlive: NodeJS.Timeout | null = null;
   private sessionToken = "";
 
@@ -136,16 +146,19 @@ export class HeyGenAvatarSession {
     const up = upsample16to24(pcm16k);
     this.buf.push(up);
     this.bufBytes += up.length;
-    while (this.bufBytes >= HeyGenAvatarSession.FRAME_BYTES) this.flushFrame();
+    const target = this.sentSinceReset
+      ? HeyGenAvatarSession.FRAME_BYTES
+      : HeyGenAvatarSession.FIRST_FRAME_BYTES;
+    while (this.bufBytes >= target) this.flushFrame(target);
   }
 
-  private flushFrame() {
+  private flushFrame(frameBytes = HeyGenAvatarSession.FRAME_BYTES) {
     const all = Buffer.concat(this.buf);
-    const frame = all.subarray(0, HeyGenAvatarSession.FRAME_BYTES);
-    const rest = all.subarray(HeyGenAvatarSession.FRAME_BYTES);
+    const frame = all.subarray(0, frameBytes);
+    const rest = all.subarray(frameBytes);
     this.buf = rest.length ? [Buffer.from(rest)] : [];
     this.bufBytes = rest.length;
-    this.sendJson({ type: "agent.speak", audio: frame.toString("base64") });
+    this.speak(frame);
   }
 
   // Push out whatever is buffered (end of a reply).
@@ -154,13 +167,32 @@ export class HeyGenAvatarSession {
       const all = Buffer.concat(this.buf);
       this.buf = [];
       this.bufBytes = 0;
-      this.sendJson({ type: "agent.speak", audio: all.toString("base64") });
+      this.speak(all);
     }
+    // Next reply starts a fresh utterance - give it the fast first frame too.
+    this.sentSinceReset = false;
+  }
+
+  private speak(frame: Buffer) {
+    this.sentSinceReset = true;
+    const durMs = (frame.length / 2 / 24000) * 1000;
+    const now = Date.now();
+    this.playheadAt = Math.max(now, this.playheadAt) + durMs;
+    this.sendJson({ type: "agent.speak", audio: frame.toString("base64") });
+  }
+
+  // How much longer the avatar will keep TALKING the audio already queued
+  // into it. TTS generation finishing means nothing to the viewer - this is
+  // what "Eva is still speaking" really means in avatar mode.
+  remainingSpeechMs(): number {
+    return Math.max(0, this.playheadAt - Date.now());
   }
 
   interrupt(): void {
     this.buf = [];
     this.bufBytes = 0;
+    this.sentSinceReset = false;
+    this.playheadAt = 0;
     this.sendJson({ type: "agent.interrupt" });
   }
 

@@ -121,6 +121,12 @@ class VoiceSession {
   // finish) but no further chunks reach TTS.
   private speakSuppressed = false;
   private turnCounter = 0;
+  private lastTurnText = "";
+  private lastTurnStartedAt = 0;
+  // In avatar mode "speaking" must outlive TTS generation: the avatar plays
+  // the queued audio in realtime, so the flip back to "listening" is deferred
+  // until its playhead actually drains (client barge-in depends on this).
+  private listenTimer: NodeJS.Timeout | null = null;
 
   // Cost + latency accounting
   private startedAt = Date.now();
@@ -185,22 +191,62 @@ class VoiceSession {
     this.send({ type: "state", state });
   }
 
+  private sttRestarts = 0;
   private openStt() {
     this.stt = this.sttProvider.openStream({ sampleRate: VOICE_SAMPLE_RATE });
     this.stt.onPartial((text) => {
+      this.sttRestarts = 0;
       this.armSilenceTimer();
       this.send({ type: "partial_transcript", text });
     });
     this.stt.onFinal((text) => {
+      this.sttRestarts = 0;
       this.armSilenceTimer();
       if (!text || text.length < 2) return;
       this.send({ type: "final_transcript", text });
-      // Ignore new utterances while a turn is already being processed - the
-      // client gates the mic during THINKING, this is the server-side guard.
-      if (this.state === "thinking") return;
+      if (this.state === "thinking") {
+        // The parent spoke over Eva's thinking. Dropping this was the old
+        // behavior and it read as "Eva ignored me". Supersede instead: the
+        // in-flight turn keeps streaming for persistence but its speech is
+        // abandoned, and the new utterance becomes the live turn. A final
+        // landing right after the turn started is usually the tail of the
+        // SAME utterance (Google splits long sentences) - merge it.
+        const sincePrev = Date.now() - this.lastTurnStartedAt;
+        const merged =
+          sincePrev < 1500 && this.lastTurnText ? `${this.lastTurnText} ${text}` : text;
+        log(`turn superseded by new speech during thinking (${sincePrev}ms in)`);
+        this.tts?.cancel();
+        this.avatar?.interrupt();
+        this.send({ type: "caption_reset" });
+        void this.runTurn(merged);
+        return;
+      }
       void this.runTurn(text);
     });
-    this.stt.onError((err) => log(`STT error: ${err.message}`));
+    this.stt.onError((err) => {
+      log(`STT error: ${err.message}`);
+      // A dead recognizer must never mean a deaf session: reopen it. Partials
+      // reset the counter, so this only gives up on a hard provider outage.
+      if (this.closed) return;
+      if (this.sttRestarts >= 5) {
+        log("STT failed 5 times in a row - giving up, ending session loudly");
+        void this.destroy("stt_failed");
+        return;
+      }
+      this.sttRestarts += 1;
+      const old = this.stt;
+      this.stt = null;
+      try {
+        old?.close();
+      } catch {
+        /* already dead */
+      }
+      setTimeout(() => {
+        if (this.closed) return;
+        log(`STT stream reopened (restart #${this.sttRestarts})`);
+        this.openStt();
+      }, 300);
+    });
   }
 
   private armSilenceTimer() {
@@ -217,6 +263,10 @@ class VoiceSession {
     if (this.closed) return;
     if (isBinary) {
       this.sttBytes += data.length;
+      // The client only forwards mic frames while the parent is actually
+      // speaking (VAD-gated), so incoming audio = an active parent even if a
+      // transcript hasn't landed yet. Keeps "Are you still there?" honest.
+      this.armSilenceTimer();
       this.stt?.sendAudio(data);
       return;
     }
@@ -337,12 +387,34 @@ class VoiceSession {
   private handleBarge() {
     if (this.state !== "speaking" && this.state !== "thinking") return;
     this.speakSuppressed = true;
+    if (this.listenTimer) clearTimeout(this.listenTimer);
     this.tts?.cancel();
     this.tts = null;
     this.chunker?.reset();
     this.avatar?.interrupt();
     this.send({ type: "caption_reset" });
     this.setState("listening");
+  }
+
+  // TTS generation finished - but with an avatar the parent is still WATCHING
+  // Eva talk. Hold "speaking" until the avatar's queued audio drains, then
+  // hand back the floor. Audio-only sessions flip immediately (the client's
+  // own playback buffer is ~real-time behind generation).
+  private finishSpeaking(turnId: number | null) {
+    const stale = () =>
+      this.closed ||
+      this.state !== "speaking" ||
+      (turnId !== null && this.turnCounter !== turnId);
+    if (stale()) return;
+    const remaining = this.avatar ? this.avatar.remainingSpeechMs() + 600 : 0;
+    if (remaining <= 0) {
+      this.setState("listening");
+      return;
+    }
+    if (this.listenTimer) clearTimeout(this.listenTimer);
+    this.listenTimer = setTimeout(() => {
+      if (!stale()) this.setState("listening");
+    }, remaining);
   }
 
   private openTts(): TtsStream {
@@ -366,7 +438,7 @@ class VoiceSession {
     this.send({ type: "eva_caption", text });
     this.tts.onEnd(() => {
       this.avatar?.flushSpeech();
-      if (this.state === "speaking") this.setState("listening");
+      this.finishSpeaking(null);
     });
     this.tts.sendText(text + " ");
     this.tts.flush();
@@ -375,6 +447,9 @@ class VoiceSession {
   private async runTurn(userText: string, fixedReply = false) {
     const turnId = ++this.turnCounter;
     const tSttFinal = Date.now();
+    this.lastTurnText = userText;
+    this.lastTurnStartedAt = tSttFinal;
+    if (this.listenTimer) clearTimeout(this.listenTimer);
     let tFirstToken = 0;
     let tFirstAudio = 0;
 
@@ -388,7 +463,11 @@ class VoiceSession {
       if (this.speakSuppressed || this.turnCounter !== turnId) return;
       if (!tFirstAudio) {
         tFirstAudio = Date.now();
-        log(`turn ${turnId}: firstToken->firstAudio ${tFirstAudio - (tFirstToken || tSttFinal)}ms`);
+        log(
+          tFirstToken
+            ? `turn ${turnId}: firstToken->firstAudio ${tFirstAudio - tFirstToken}ms`
+            : `turn ${turnId}: sttFinal->fillerAudio ${tFirstAudio - tSttFinal}ms (filler spoke first)`,
+        );
       }
       this.deliverSpeech(pcm);
     });
@@ -538,12 +617,10 @@ class VoiceSession {
       const stream = this.tts;
       stream?.onEnd(() => {
         this.avatar?.flushSpeech();
-        if (this.state === "speaking" && this.turnCounter === turnId) {
-          this.setState("listening");
-        }
+        this.finishSpeaking(turnId);
       });
       stream?.flush();
-    } else {
+    } else if (this.turnCounter === turnId) {
       this.setState("listening");
     }
   }
@@ -553,6 +630,7 @@ class VoiceSession {
     this.closed = true;
     if (this.silenceTimer) clearTimeout(this.silenceTimer);
     if (this.capTimer) clearTimeout(this.capTimer);
+    if (this.listenTimer) clearTimeout(this.listenTimer);
     this.tts?.cancel();
     this.stt?.close();
     if (this.avatar) {
