@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,29 @@ function useAvatarCatalog() {
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// Voice platforms expose no artwork via API (ElevenLabs' colorful discs are
+// internal UI assets), so - like they do - each voice gets a stable generated
+// gradient disc derived from its id: same voice, same art, every time.
+function voiceArtGradient(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  const h1 = h % 360;
+  const h2 = (h1 + 40 + (h % 80)) % 360;
+  const h3 = (h1 + 180 + (h % 60)) % 360;
+  return `linear-gradient(135deg, hsl(${h1} 72% 58%), hsl(${h2} 68% 48%) 55%, hsl(${h3} 65% 42%))`;
+}
+
+function VoiceArt({ id, size = 36, children }: { id: string; size?: number; children?: ReactNode }) {
+  return (
+    <span
+      className="rounded-full shrink-0 flex items-center justify-center text-white shadow-sm"
+      style={{ width: size, height: size, background: voiceArtGradient(id) }}
+    >
+      {children}
+    </span>
+  );
+}
 
 function FilterChips({
   label,
@@ -187,6 +210,7 @@ export function VoicePicker({
         <span className="truncate flex items-center gap-2">
           {selected ? (
             <>
+              <VoiceArt id={selected.id} size={22} />
               <span>{selected.name}</span>
               {selected.gender && <span className="text-xs text-muted-foreground">{cap(selected.gender)}</span>}
               {selected.accent && <span className="text-xs text-muted-foreground">{cap(selected.accent)}</span>}
@@ -237,16 +261,18 @@ export function VoicePicker({
                     e.stopPropagation();
                     void togglePlay(v);
                   }}
-                  className="w-9 h-9 shrink-0 rounded-full border flex items-center justify-center text-primary hover:bg-secondary transition-colors"
+                  className="shrink-0 rounded-full hover:scale-105 transition-transform"
                   aria-label={`Play sample of ${v.name}`}
                 >
-                  {loadingId === v.id ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : playingId === v.id ? (
-                    <Pause className="w-4 h-4" />
-                  ) : (
-                    <Play className="w-4 h-4 ml-0.5" />
-                  )}
+                  <VoiceArt id={v.id}>
+                    {loadingId === v.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : playingId === v.id ? (
+                      <Pause className="w-4 h-4" />
+                    ) : (
+                      <Play className="w-4 h-4 ml-0.5" />
+                    )}
+                  </VoiceArt>
                 </button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
