@@ -3,6 +3,89 @@ import { Mic, MicOff, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { VoiceCardsPayload, VoiceState } from "@/hooks/use-voice-session";
 
+// Voice-first landing: shown over a brand-new session so Eva can START the
+// conversation by talking. Browsers refuse audio without a user gesture, so
+// the tap IS the gesture (resumes AudioContext + mic permission + WS).
+export function VoiceStartHero({
+  avatarUrl,
+  personaName,
+  brandColor,
+  onStart,
+  onContinueInText,
+}: {
+  avatarUrl: string | null;
+  personaName: string | null;
+  brandColor: string;
+  onStart: () => void;
+  onContinueInText: () => void;
+}) {
+  const name = personaName || "your AI Concierge";
+  return (
+    <div
+      className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-background px-6"
+      data-testid="voice-start-hero"
+    >
+      <button
+        onClick={onStart}
+        className="relative flex items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`Start talking with ${name}`}
+        data-testid="btn-voice-hero-start"
+      >
+        <span
+          className="absolute rounded-full animate-ping"
+          style={{ width: 168, height: 168, backgroundColor: `${brandColor}1f`, animationDuration: "2s" }}
+        />
+        <span className="absolute rounded-full" style={{ width: 148, height: 148, backgroundColor: `${brandColor}14` }} />
+        <span
+          className="relative w-32 h-32 rounded-full overflow-hidden border-4 flex items-center justify-center"
+          style={{ borderColor: brandColor }}
+        >
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={name} className="w-full h-full object-cover" />
+          ) : (
+            <span
+              className="w-full h-full flex items-center justify-center text-primary-foreground text-3xl font-bold"
+              style={{ backgroundColor: brandColor }}
+            >
+              {(personaName || "AI").slice(0, 1).toUpperCase()}
+            </span>
+          )}
+        </span>
+        <span
+          className="absolute -bottom-1 -right-1 w-11 h-11 rounded-full flex items-center justify-center border-4 border-background"
+          style={{ backgroundColor: brandColor }}
+        >
+          <Mic className="w-5 h-5 text-primary-foreground" />
+        </span>
+      </button>
+      <div className="flex flex-col items-center gap-1.5 text-center">
+        <span className="font-heading text-xl font-semibold text-foreground">
+          {personaName || "Eva"} is ready to talk
+        </span>
+        <span className="t-helper max-w-xs">
+          Tap to start a voice conversation - you can switch to text any time
+        </span>
+      </div>
+      <Button
+        size="lg"
+        className="h-12 px-8 rounded-full text-primary-foreground font-ui"
+        style={{ backgroundColor: brandColor }}
+        onClick={onStart}
+        data-testid="btn-voice-hero-start-cta"
+      >
+        <Mic className="w-4 h-4 mr-2" /> Start talking
+      </Button>
+      <button
+        onClick={onContinueInText}
+        className="text-sm font-ui underline underline-offset-4 text-muted-foreground hover:text-foreground transition-colors"
+        data-testid="btn-voice-hero-text-instead"
+      >
+        Continue in text instead
+      </button>
+    </div>
+  );
+}
+
 // Full-height inline takeover of the chat column while a live voice
 // conversation runs (NOT a modal/portal - rendered in the page tree, per the
 // no-dialogs rule). Shows the persona with a state-driven animation, live

@@ -5380,6 +5380,12 @@ Before asking ANY question, check if the parent already provided the answer. If 
       skipRulesPreamble = `\nHANDED OFF (read before answering): the family's journey with ${handedOffProviderNames} is signed, paid, and handed off. (a) Eva no longer arranges appointments, calls, or coordination in that lane - if they ask to schedule or arrange anything with ${handedOffProviderNames}, point them to their direct chat with ${handedOffProviderNames} (the provider owns the calendar and next steps now), and NEVER answer such a request with intake questions. (b) If they raise a NEW search or service - in any wording, including "I'm also thinking about...", "considering", "exploring" - ask FIRST, warmly and without judgment, what is prompting it: [[QUICK_REPLY:My match fell through|I want a second one in parallel|I'm not happy with the agency|Just exploring]]. That question is your ONLY output that turn - no intake questions, no profiles, no curation - and you continue normally once they answer.\n${skipRulesPreamble}`;
     }
     if (crisisDirective) skipRulesPreamble = `\n${crisisDirective}\n${skipRulesPreamble}`;
+    // Voice mode: this turn arrived through the live voice gateway and the
+    // reply is spoken aloud. Keep it conversational-short; structured tags
+    // still work (cards render in the voice panel / chat).
+    if (req.body.channel === "voice") {
+      skipRulesPreamble = `\nVOICE MODE (this turn only): the parent is TALKING to you and your reply is spoken aloud. Keep it under 3 short sentences, warm and natural, no bullet lists, no markdown, no emoji. Never spell out URLs or IDs. Structured tags ([[QUICK_REPLY]], [[MATCH_CARD]], etc.) still work and are not spoken - use them exactly as usual.\n${skipRulesPreamble}`;
+    }
 
     // Collect all previously-presented match card provider IDs to prevent re-suggesting.
     // Also bucket the card TYPES: the ready-turn force-search guard must be per-service -

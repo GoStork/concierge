@@ -62,7 +62,7 @@ import {
 } from "@/components/marketplace/swipe-mappers";
 import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
 import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera, UploadCloud, Mic } from "lucide-react";
-import { VoiceModePanel } from "@/components/voice/VoiceModePanel";
+import { VoiceModePanel, VoiceStartHero } from "@/components/voice/VoiceModePanel";
 import { useVoiceSession } from "@/hooks/use-voice-session";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
@@ -2775,6 +2775,8 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [sessionId, setSessionId] = useState<string | null>(existingSessionId);
   // Live voice conversation mode (full-height inline takeover of the chat column)
   const [voiceMode, setVoiceMode] = useState(false);
+  // Voice-first landing for a brand-new session: Eva speaks the greeting when tapped
+  const [voiceHeroGreeting, setVoiceHeroGreeting] = useState<string | null>(null);
   const voiceSession = useVoiceSession();
   const [showCuration, setShowCuration] = useState(false);
   const showCurationRef = useRef(false);
@@ -3221,6 +3223,9 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   // Voice mode: gated by the admin Voice settings toggle; Eva sessions only
   // (never a provider/human chat). The mic button opens the inline takeover.
   const voiceModeAvailable = !!(brand as any)?.voiceModeEnabled && !providerInChat;
+  // Ref mirror for effects whose closures predate the async brand load.
+  const voiceModeAvailableRef = useRef(false);
+  voiceModeAvailableRef.current = voiceModeAvailable;
   const openVoiceMode = () => {
     setVoiceMode(true);
     // Runs inside the click gesture: AudioContext resume + mic permission.
@@ -3837,6 +3842,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
         if (data.sessionId) setSessionId(data.sessionId);
         if (data.greetingMessageId) knownMessageIds.current.add(data.greetingMessageId);
         if (data.phase0MessageId) knownMessageIds.current.add(data.phase0MessageId);
+
+        // Voice-first default: on a brand-new session with voice mode enabled
+        // (and no prior opt-out), offer the tap-to-start hero so Eva SPEAKS
+        // the greeting. The greeting still types into the chat below either way.
+        if (
+          data.greeting &&
+          voiceModeAvailableRef.current &&
+          !localStorage.getItem("eva-voice-opt-out")
+        ) {
+          setVoiceHeroGreeting(data.greeting);
+        }
 
         // Display server-built greeting and phase0 with typing animation
         if (data.greeting) {
@@ -4680,6 +4696,27 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
           onDragLeave={handleChatDragLeave}
           onDrop={handleChatDrop}
         >
+        {voiceHeroGreeting && !voiceMode && (
+          <VoiceStartHero
+            avatarUrl={resolvedAvatarUrl}
+            personaName={aiName}
+            brandColor={brandColor}
+            onStart={() => {
+              const greeting = voiceHeroGreeting;
+              setVoiceHeroGreeting(null);
+              setVoiceMode(true);
+              void voiceSession.start({
+                sessionId,
+                matchmakerId: effectiveMatchmakerId || null,
+                greetingText: greeting,
+              });
+            }}
+            onContinueInText={() => {
+              localStorage.setItem("eva-voice-opt-out", "1");
+              setVoiceHeroGreeting(null);
+            }}
+          />
+        )}
         {voiceMode && (
           <VoiceModePanel
             state={voiceSession.state}

@@ -8,8 +8,11 @@ import { SentenceChunker } from "./sentence-chunker";
 import type { SttProvider, SttStream, TtsProvider, TtsStream } from "./providers";
 import { VOICE_SAMPLE_RATE } from "./providers";
 import { elevenLabsTts } from "./tts/elevenlabs-tts";
+import { openAiTts } from "./tts/openai-tts";
+import { cartesiaTts } from "./tts/cartesia-tts";
 import { fakeTts } from "./tts/fake-tts";
 import { googleStt } from "./stt/google-stt";
+import { deepgramStt } from "./stt/deepgram-stt";
 
 // Live voice-mode gateway: WS endpoint /api/voice/ws.
 //
@@ -27,9 +30,12 @@ import { googleStt } from "./stt/google-stt";
 
 const TTS_PROVIDERS: Record<string, TtsProvider> = {
   elevenlabs: elevenLabsTts,
+  openai: openAiTts,
+  cartesia: cartesiaTts,
 };
 const STT_PROVIDERS: Record<string, SttProvider> = {
   google: googleStt,
+  deepgram: deepgramStt,
 };
 
 export function resolveTtsProvider(name: string): TtsProvider | null {
@@ -288,6 +294,19 @@ class VoiceSession {
       this.tts?.sendText(sentence);
     });
 
+    // Dead-air filler: Tier2-routed turns can take ~4s to first token. If
+    // nothing has streamed after 1.8s, speak a short non-persisted filler so
+    // the parent is not left in silence. It rides the same TTS stream, ahead
+    // of the real reply.
+    const fillerTimer = setTimeout(() => {
+      if (this.turnCounter !== turnId || this.speakSuppressed || tFirstToken) return;
+      const filler = "One moment, let me look into that. ";
+      this.ttsChars += filler.length;
+      this.setState("speaking");
+      this.send({ type: "eva_caption", text: filler });
+      this.tts?.sendText(filler);
+    }, 1800);
+
     const port = process.env.PORT || "5000";
     let done: any = null;
     try {
@@ -382,6 +401,7 @@ class VoiceSession {
       done = { error: err?.message || "pipeline failure" };
     }
 
+    clearTimeout(fillerTimer);
     if (this.closed || this.turnCounter !== turnId) return;
 
     if (done?.retry || done?.error) {

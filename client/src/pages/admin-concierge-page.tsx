@@ -302,20 +302,18 @@ function VoiceSettingsCard() {
             <div className="space-y-1.5">
               <Label>Session cap (min)</Label>
               <NumberInput
-                value={val("voiceSessionCapMinutes", 10)}
-                onChange={(v: number | null) => set("voiceSessionCapMinutes", v ?? 10)}
-                min={1}
-                max={120}
+                value={String(val("voiceSessionCapMinutes", 10))}
+                onChange={(raw: string) => set("voiceSessionCapMinutes", raw === "" ? 10 : Number(raw))}
+                allowDecimal={false}
                 data-testid="input-voice-session-cap"
               />
             </div>
             <div className="space-y-1.5">
               <Label>Daily cap / parent (min)</Label>
               <NumberInput
-                value={val("voiceDailyCapMinutes", 30)}
-                onChange={(v: number | null) => set("voiceDailyCapMinutes", v ?? 30)}
-                min={1}
-                max={600}
+                value={String(val("voiceDailyCapMinutes", 30))}
+                onChange={(raw: string) => set("voiceDailyCapMinutes", raw === "" ? 30 : Number(raw))}
+                allowDecimal={false}
                 data-testid="input-voice-daily-cap"
               />
             </div>
