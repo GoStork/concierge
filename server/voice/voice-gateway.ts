@@ -13,6 +13,7 @@ import { cartesiaTts } from "./tts/cartesia-tts";
 import { fakeTts } from "./tts/fake-tts";
 import { googleStt } from "./stt/google-stt";
 import { deepgramStt } from "./stt/deepgram-stt";
+import { HeyGenAvatarSession, heygenAvatarConfigured } from "./avatar/heygen-avatar";
 
 // Live voice-mode gateway: WS endpoint /api/voice/ws.
 //
@@ -79,6 +80,9 @@ interface VoiceSettings {
   voiceDefaultVoiceId: string | null;
   voiceSessionCapMinutes: number;
   voiceDailyCapMinutes: number;
+  voiceAvatarEnabled: boolean;
+  voiceAvatarProvider: string;
+  voiceDefaultAvatarId: string | null;
 }
 
 type SessionState = "listening" | "thinking" | "speaking";
@@ -103,6 +107,13 @@ class VoiceSession {
   private sttBytes = 0;
   private ttsChars = 0;
   private logId: string | null = null;
+
+  // Phase 3: realtime video avatar. When active, Eva's TTS PCM routes to the
+  // avatar session (lip-synced audio+video reach the browser via LiveKit)
+  // instead of down our WS.
+  private avatar: HeyGenAvatarSession | null = null;
+  private avatarStartedAt = 0;
+  private avatarSeconds = 0;
 
   private silenceTimer: NodeJS.Timeout | null = null;
   private capTimer: NodeJS.Timeout | null = null;
@@ -199,7 +210,8 @@ class VoiceSession {
       case "hello":
         this.chatSessionId = msg.sessionId || null;
         this.matchmakerId = msg.matchmakerId || null;
-        void this.applyPersonaVoice().then(() => {
+        void this.applyPersonaVoice().then(async () => {
+          await this.maybeStartAvatar();
           this.send({ type: "ready" });
           // Voice-first greeting: the client passes the init-session greeting
           // text; Eva speaks it before the parent says anything.
@@ -226,9 +238,53 @@ class VoiceSession {
     try {
       const mm = await prisma.matchmaker.findUnique({ where: { id: this.matchmakerId } });
       if (mm?.voiceId) this.voiceId = mm.voiceId;
+      if (mm?.avatarFaceId) this.personaAvatarId = mm.avatarFaceId;
     } catch (err: any) {
       log(`persona voice lookup failed: ${err?.message}`);
     }
+  }
+
+  private personaAvatarId: string | null = null;
+
+  // Start the realtime video avatar when enabled + configured. Failure is
+  // LOUD in the log and falls back to the audio-over-WS path with the static
+  // avatar - never a silent stub.
+  private async maybeStartAvatar() {
+    if (!this.settings.voiceAvatarEnabled) return;
+    if (this.settings.voiceAvatarProvider !== "heygen") {
+      log(`avatar provider "${this.settings.voiceAvatarProvider}" not implemented yet - audio-only fallback`);
+      return;
+    }
+    if (!heygenAvatarConfigured()) {
+      log("avatar enabled but LIVEAVATAR_API_KEY/HEYGEN_API_KEY missing - audio-only fallback");
+      return;
+    }
+    const avatarId = this.personaAvatarId || this.settings.voiceDefaultAvatarId;
+    if (!avatarId) {
+      log("avatar enabled but no avatar id (persona avatarFaceId or default) - audio-only fallback");
+      return;
+    }
+    try {
+      const session = new HeyGenAvatarSession();
+      const info = await session.start(avatarId);
+      this.avatar = session;
+      this.avatarStartedAt = Date.now();
+      this.send({
+        type: "avatar",
+        livekitUrl: info.livekitUrl,
+        livekitToken: info.livekitClientToken,
+      });
+      log(`avatar session started (heygen, avatar ${avatarId})`);
+    } catch (err: any) {
+      log(`AVATAR START FAILED (falling back to audio-only): ${err?.message}`);
+      this.avatar = null;
+    }
+  }
+
+  // Route synthesized speech to the avatar when active, else raw PCM down the WS.
+  private deliverSpeech(pcm: Buffer) {
+    if (this.avatar) this.avatar.sendAudio(pcm);
+    else this.sendAudio(pcm);
   }
 
   private handleBarge() {
@@ -237,6 +293,7 @@ class VoiceSession {
     this.tts?.cancel();
     this.tts = null;
     this.chunker?.reset();
+    this.avatar?.interrupt();
     this.send({ type: "caption_reset" });
     this.setState("listening");
   }
@@ -244,7 +301,7 @@ class VoiceSession {
   private openTts(): TtsStream {
     const stream = this.ttsProvider.openStream({ voiceId: this.voiceId });
     stream.onAudio((pcm) => {
-      if (!this.speakSuppressed) this.sendAudio(pcm);
+      if (!this.speakSuppressed) this.deliverSpeech(pcm);
     });
     stream.onError((err) => log(`TTS error (${this.ttsProvider.name}): ${err.message}`));
     return stream;
@@ -261,6 +318,7 @@ class VoiceSession {
     this.setState("speaking");
     this.send({ type: "eva_caption", text });
     this.tts.onEnd(() => {
+      this.avatar?.flushSpeech();
       if (this.state === "speaking") this.setState("listening");
     });
     this.tts.sendText(text + " ");
@@ -285,7 +343,7 @@ class VoiceSession {
         tFirstAudio = Date.now();
         log(`turn ${turnId}: firstToken->firstAudio ${tFirstAudio - (tFirstToken || tSttFinal)}ms`);
       }
-      this.sendAudio(pcm);
+      this.deliverSpeech(pcm);
     });
 
     this.chunker = new SentenceChunker((sentence) => {
@@ -352,8 +410,9 @@ class VoiceSession {
           // start clean, mirroring the client's reset handling.
           this.tts?.cancel();
           this.tts = this.openTts();
+          this.avatar?.interrupt();
           this.tts.onAudio((pcm) => {
-            if (!this.speakSuppressed && this.turnCounter === turnId) this.sendAudio(pcm);
+            if (!this.speakSuppressed && this.turnCounter === turnId) this.deliverSpeech(pcm);
           });
           this.stripper.reset();
           this.chunker?.reset();
@@ -431,6 +490,7 @@ class VoiceSession {
       this.chunker?.flush();
       const stream = this.tts;
       stream?.onEnd(() => {
+        this.avatar?.flushSpeech();
         if (this.state === "speaking" && this.turnCounter === turnId) {
           this.setState("listening");
         }
@@ -448,6 +508,11 @@ class VoiceSession {
     if (this.capTimer) clearTimeout(this.capTimer);
     this.tts?.cancel();
     this.stt?.close();
+    if (this.avatar) {
+      this.avatarSeconds = Math.round((Date.now() - this.avatarStartedAt) / 1000);
+      void this.avatar.end();
+      this.avatar = null;
+    }
     this.send({ type: "ended", reason });
     try {
       this.ws.close(1000);
@@ -468,6 +533,7 @@ class VoiceSession {
             seconds,
             sttSeconds,
             ttsChars: this.ttsChars,
+            avatarSeconds: this.avatarSeconds,
             sessionId: this.chatSessionId || "unknown",
           },
         });
@@ -488,6 +554,9 @@ async function loadSettings(): Promise<VoiceSettings | null> {
     voiceDefaultVoiceId: s.voiceDefaultVoiceId || null,
     voiceSessionCapMinutes: s.voiceSessionCapMinutes ?? 10,
     voiceDailyCapMinutes: s.voiceDailyCapMinutes ?? 30,
+    voiceAvatarEnabled: !!s.voiceAvatarEnabled,
+    voiceAvatarProvider: s.voiceAvatarProvider || "heygen",
+    voiceDefaultAvatarId: s.voiceDefaultAvatarId || null,
   };
 }
 

@@ -4723,6 +4723,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             avatarUrl={resolvedAvatarUrl}
             personaName={aiName}
             brandColor={brandColor}
+            avatar={voiceSession.avatar}
             partialTranscript={voiceSession.partialTranscript}
             caption={voiceSession.caption}
             cards={voiceSession.cards}

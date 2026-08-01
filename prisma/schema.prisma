@@ -1543,6 +1543,7 @@ model SiteSettings {
   voiceDailyCapMinutes   Int     @default(30)
   voiceAvatarEnabled     Boolean @default(false)
   voiceAvatarProvider    String  @default("heygen") // heygen | simli
+  voiceDefaultAvatarId   String? // provider avatar id fallback when a persona has none
 
   // GoStork W-9 template (single global PandaDoc template that every provider signs)
   w9TemplateUrl          String?

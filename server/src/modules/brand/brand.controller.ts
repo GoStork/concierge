@@ -226,6 +226,7 @@ const ALLOWED_FIELDS = [
   // Voice mode (Eva live voice conversations) - admin Voice settings section
   "voiceModeEnabled", "voiceTtsProvider", "voiceSttProvider", "voiceDefaultVoiceId",
   "voiceSessionCapMinutes", "voiceDailyCapMinutes", "voiceAvatarEnabled", "voiceAvatarProvider",
+  "voiceDefaultAvatarId",
   "onboardingClinicImageUrl", "onboardingEggDonorImageUrl", "onboardingSurrogateImageUrl", "onboardingSpermDonorImageUrl",
   "chatBubbleFontSize", "chatBubbleFontSizeDesktop", "chatBubbleLineHeight",
   "chatBubblePaddingX", "chatBubblePaddingY", "chatBubbleMaxWidth", "chatBubbleRadius",
@@ -871,6 +872,7 @@ export class BrandController {
         isActive: body.isActive !== undefined ? !!body.isActive : true,
         sortOrder: body.sortOrder ?? count,
         voiceId: body.voiceId || null,
+        avatarFaceId: body.avatarFaceId || null,
       },
     });
   }
@@ -897,6 +899,7 @@ export class BrandController {
     if (body.isActive !== undefined) data.isActive = !!body.isActive;
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder;
     if (body.voiceId !== undefined) data.voiceId = body.voiceId || null;
+    if (body.avatarFaceId !== undefined) data.avatarFaceId = body.avatarFaceId || null;
 
     return this.prisma.matchmaker.update({ where: { id }, data });
   }

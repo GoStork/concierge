@@ -320,6 +320,31 @@ function VoiceSettingsCard() {
           </div>
         </div>
 
+        <div className="flex items-center justify-between p-3 rounded-[var(--radius)] border">
+          <div className="pr-4">
+            <span className="text-sm font-medium">Video avatar (HeyGen LiveAvatar)</span>
+            <p className="t-helper">The persona speaks as a realtime lip-synced talking head. Roughly doubles per-minute cost. Requires LIVEAVATAR_API_KEY (or HEYGEN_API_KEY) on the server and an avatar ID below or per persona.</p>
+          </div>
+          <Switch
+            checked={val("voiceAvatarEnabled", false)}
+            onCheckedChange={(checked) => set("voiceAvatarEnabled", checked)}
+            data-testid="switch-voice-avatar"
+          />
+        </div>
+
+        {val("voiceAvatarEnabled", false) && (
+          <div className="space-y-1.5">
+            <Label>Default avatar ID</Label>
+            <Input
+              placeholder="LiveAvatar avatar ID (fallback when a persona has none)"
+              value={val("voiceDefaultAvatarId", "") || ""}
+              onChange={(e) => set("voiceDefaultAvatarId", e.target.value)}
+              data-testid="input-voice-default-avatar-id"
+            />
+            <p className="t-helper">Create photo avatars from the persona photos in the HeyGen/LiveAvatar dashboard, then paste each avatar's ID here or on the persona.</p>
+          </div>
+        )}
+
         {hasChanges && (
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={() => setDraft({})} data-testid="btn-voice-settings-cancel">
@@ -1200,10 +1225,17 @@ export default function AdminConciergePage() {
           <p className="t-helper">Optional. Displayed as the opening message when a parent selects this persona.</p>
         </div>
 
-        <div className="space-y-1.5">
-          <Label >Voice ID</Label>
-          <Input placeholder="e.g. an ElevenLabs voice ID" value={editForm.voiceId || ""} onChange={(e) => setEditForm({ ...editForm, voiceId: e.target.value })} data-testid="input-matchmaker-voice-id" />
-          <p className="t-helper">The voice this persona speaks with in voice mode, from the active voice provider{brandSettings?.voiceTtsProvider ? ` (currently ${TTS_PROVIDER_LABELS[brandSettings.voiceTtsProvider] || brandSettings.voiceTtsProvider})` : ""}. Falls back to the default voice in Voice settings.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label >Voice ID</Label>
+            <Input placeholder="e.g. an ElevenLabs voice ID" value={editForm.voiceId || ""} onChange={(e) => setEditForm({ ...editForm, voiceId: e.target.value })} data-testid="input-matchmaker-voice-id" />
+            <p className="t-helper">The voice this persona speaks with in voice mode, from the active voice provider{brandSettings?.voiceTtsProvider ? ` (currently ${TTS_PROVIDER_LABELS[brandSettings.voiceTtsProvider] || brandSettings.voiceTtsProvider})` : ""}. Falls back to the default voice in Voice settings.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label >Video avatar ID</Label>
+            <Input placeholder="LiveAvatar avatar ID (optional)" value={editForm.avatarFaceId || ""} onChange={(e) => setEditForm({ ...editForm, avatarFaceId: e.target.value })} data-testid="input-matchmaker-avatar-face-id" />
+            <p className="t-helper">Realtime talking-head avatar for this persona (created from its photo in the LiveAvatar dashboard). Falls back to the default avatar in Voice settings.</p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

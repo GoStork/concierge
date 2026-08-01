@@ -55,6 +55,7 @@
 - **Calendars:** Google APIs (`googleapis`) for Google Calendar + Gmail; **Microsoft Graph** for Outlook; **CalDAV** (`tsdav`) for Apple iCloud
 - **PandaDoc** (`pandadoc-editor`) - agreement signing
 - **Google Cloud Storage** (`@google-cloud/storage`) - recordings, photos, cost-sheet files
+- **HeyGen LiveAvatar** (REST/WebSocket, LITE mode; `LIVEAVATAR_API_KEY`/`HEYGEN_API_KEY`) - realtime lip-synced video avatar for Eva voice mode; video delivered to the browser via **LiveKit** (`livekit-client`)
 - **2captcha** - scraper reCAPTCHA solving
 
 ## Infrastructure / deployment
@@ -212,6 +213,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 
 **Other (review & categorize)**
 - `canvas-confetti@^1.9.4`
+- `livekit-client@^2.21.0`
 
 ### Dev / build dependencies
 

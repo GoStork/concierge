@@ -43,6 +43,10 @@ export function useVoiceSession() {
   const [micMuted, setMicMutedState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [endReason, setEndReason] = useState<string | null>(null);
+  // Phase 3: realtime video avatar - LiveKit credentials from the gateway.
+  // When set, Eva's audio+video arrive through the LiveKit room instead of
+  // PCM frames over the WS.
+  const [avatar, setAvatar] = useState<{ livekitUrl: string; livekitToken: string } | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const engineRef = useRef<VoiceAudioEngine | null>(null);
@@ -82,6 +86,7 @@ export function useVoiceSession() {
     setCards(null);
     setCaption("");
     setPartialTranscript("");
+    setAvatar(null);
     setStateBoth("connecting");
 
     let engine: VoiceAudioEngine;
@@ -154,6 +159,11 @@ export function useVoiceSession() {
           break;
         case "cards":
           if (msg.payload && Object.keys(msg.payload).length) setCards(msg.payload);
+          break;
+        case "avatar":
+          if (msg.livekitUrl && msg.livekitToken) {
+            setAvatar({ livekitUrl: msg.livekitUrl, livekitToken: msg.livekitToken });
+          }
           break;
         case "ended":
           stop(msg.reason || "server_ended");
@@ -235,6 +245,7 @@ export function useVoiceSession() {
     micMuted,
     error,
     endReason,
+    avatar,
     start,
     stop,
     sendText,

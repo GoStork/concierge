@@ -32,3 +32,6 @@ CREATE TABLE IF NOT EXISTS "VoiceSessionLog" (
 
 CREATE INDEX IF NOT EXISTS "VoiceSessionLog_userId_startedAt_idx" ON "VoiceSessionLog"("userId", "startedAt");
 CREATE INDEX IF NOT EXISTS "VoiceSessionLog_sessionId_idx" ON "VoiceSessionLog"("sessionId");
+
+-- Phase 3: default realtime-avatar id fallback
+ALTER TABLE "SiteSettings" ADD COLUMN IF NOT EXISTS "voiceDefaultAvatarId" TEXT;

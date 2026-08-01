@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Mic, MicOff, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AvatarVideo } from "@/components/voice/AvatarVideo";
 import type { VoiceCardsPayload, VoiceState } from "@/hooks/use-voice-session";
 
 // Voice-first landing: shown over a brand-new session so Eva can START the
@@ -98,6 +99,8 @@ interface VoiceModePanelProps {
   avatarUrl: string | null;
   personaName: string | null;
   brandColor: string;
+  // Realtime video avatar (Phase 3): LiveKit credentials when active
+  avatar?: { livekitUrl: string; livekitToken: string } | null;
   partialTranscript: string;
   caption: string;
   cards: VoiceCardsPayload | null;
@@ -122,6 +125,7 @@ export function VoiceModePanel({
   avatarUrl,
   personaName,
   brandColor,
+  avatar,
   partialTranscript,
   caption,
   cards,
@@ -131,6 +135,8 @@ export function VoiceModePanel({
   onQuickReply,
   onClose,
 }: VoiceModePanelProps) {
+  const [avatarVideoFailed, setAvatarVideoFailed] = useState(false);
+  const showAvatarVideo = !!avatar && !avatarVideoFailed;
   const quickReplies: string[] = useMemo(() => {
     if (!cards?.quickReplies?.length) return [];
     return cards.quickReplies
@@ -175,6 +181,14 @@ export function VoiceModePanel({
 
       {/* Persona + state */}
       <div className="flex-1 flex flex-col items-center justify-center gap-5 px-6 min-h-0">
+        {showAvatarVideo ? (
+          <AvatarVideo
+            livekitUrl={avatar!.livekitUrl}
+            livekitToken={avatar!.livekitToken}
+            brandColor={brandColor}
+            onFailed={() => setAvatarVideoFailed(true)}
+          />
+        ) : (
         <div className="relative flex items-center justify-center">
           {/* Pulse rings driven by state */}
           {(state === "speaking" || state === "listening") && (
@@ -221,6 +235,7 @@ export function VoiceModePanel({
             )}
           </div>
         </div>
+        )}
 
         <div className="flex flex-col items-center gap-1">
           <span className="font-heading text-lg font-semibold text-foreground">
