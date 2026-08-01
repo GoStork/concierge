@@ -168,7 +168,7 @@ export default function MatchmakerSelectionPage() {
           return (
             <Card
               key={m.id}
-              className={`relative cursor-pointer transition-all duration-200 p-5 space-y-3 hover:shadow-md w-full sm:w-[280px] ${
+              className={`relative cursor-pointer transition-all duration-200 p-5 flex flex-col gap-3 self-stretch hover:shadow-md w-full sm:w-[280px] ${
                 isSelected
                   ? "ring-2 ring-primary shadow-lg"
                   : "hover:ring-1 hover:ring-primary/30"
@@ -215,8 +215,8 @@ export default function MatchmakerSelectionPage() {
                   <p className="text-xs text-primary font-medium">{m.title}</p>
                 </div>
               </div>
-              <p className="text-sm text-foreground leading-relaxed text-center">{m.description}</p>
-              <div className="flex justify-center">
+              <p className="text-sm text-foreground leading-relaxed text-center flex-1">{m.description}</p>
+              <div className="flex justify-center mt-auto">
                 <PersonaVoicePreviewButton matchmakerId={m.id} personaName={m.name} brandColor={brand?.primaryColor} />
               </div>
             </Card>

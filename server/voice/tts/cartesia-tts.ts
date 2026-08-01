@@ -48,7 +48,8 @@ class CartesiaStream implements TtsStream {
   private sendNow(transcript: string, cont: boolean) {
     this.ws.send(
       JSON.stringify({
-        model_id: "sonic-2",
+        // sonic-2 was sunsetted by Cartesia (Aug 2026) - sonic-3 is current
+        model_id: "sonic-3",
         transcript,
         voice: { mode: "id", id: this.voiceId },
         output_format: { container: "raw", encoding: "pcm_s16le", sample_rate: 16000 },

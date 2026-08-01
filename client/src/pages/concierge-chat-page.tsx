@@ -61,7 +61,7 @@ import {
   type DoctorCardData,
 } from "@/components/marketplace/swipe-mappers";
 import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
-import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera, UploadCloud, Mic } from "lucide-react";
+import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera, UploadCloud, AudioLines } from "lucide-react";
 import { VoiceModePanel, VoiceStartHero } from "@/components/voice/VoiceModePanel";
 import { useVoiceSession } from "@/hooks/use-voice-session";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
@@ -5677,21 +5677,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               data-testid="input-concierge-message"
             />
             {voiceModeAvailable && (
+              // ChatGPT-style voice-mode button: filled circle + waveform, NOT
+              // a microphone (that reads as dictation, this starts a live
+              // voice conversation).
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-10 w-10 p-0 shrink-0 rounded-full border"
-                style={{
-                  color: brandColor,
-                  backgroundColor: `${brandColor}14`,
-                  borderColor: `${brandColor}40`,
-                }}
+                className="h-10 w-10 p-0 shrink-0 rounded-full text-primary-foreground hover:opacity-90"
+                style={{ backgroundColor: brandColor }}
                 onClick={openVoiceMode}
                 disabled={sending || parentUploading || !isOnline}
                 aria-label={`Start a voice conversation with ${aiName || "your AI Concierge"}`}
                 data-testid="btn-voice-mode"
               >
-                <Mic className="w-5 h-5" strokeWidth={2.25} />
+                <AudioLines className="w-5 h-5" strokeWidth={2.25} />
               </Button>
             )}
             <Button

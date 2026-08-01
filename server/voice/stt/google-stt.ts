@@ -15,9 +15,26 @@ class GoogleSttStream implements SttStream {
   private partialCb: ((text: string) => void) | null = null;
   private finalCb: ((text: string) => void) | null = null;
   private errorCb: ((err: Error) => void) | null = null;
+  private lastAudioAt = Date.now();
+  private keepAlive: NodeJS.Timeout | null = null;
 
   constructor(private readonly sampleRate: number, private readonly languageCode: string) {
     void this.start();
+    // The client VAD gates mic frames, so long silences are normal - but
+    // Google kills streams that go quiet ("Audio Timeout Error"), and the
+    // restart can clip the parent's next words. A 100ms silence frame every
+    // 4 quiet seconds keeps the stream alive at ~2.5% duty cost.
+    this.keepAlive = setInterval(() => {
+      if (this.closed || !this.stream) return;
+      if (Date.now() - this.lastAudioAt > 4000) {
+        try {
+          this.stream.write(Buffer.alloc(Math.floor(this.sampleRate * 0.1) * 2));
+          this.lastAudioAt = Date.now();
+        } catch {
+          /* restart path handles it */
+        }
+      }
+    }, 2000);
   }
 
   private async start(): Promise<void> {
@@ -69,6 +86,7 @@ class GoogleSttStream implements SttStream {
   sendAudio(pcm: Buffer): void {
     if (this.closed || !this.stream) return;
     try {
+      this.lastAudioAt = Date.now();
       this.stream.write(pcm);
     } catch (err) {
       this.errorCb?.(err as Error);
@@ -77,6 +95,7 @@ class GoogleSttStream implements SttStream {
 
   close(): void {
     this.closed = true;
+    if (this.keepAlive) clearInterval(this.keepAlive);
     try {
       this.stream?.end();
     } catch {

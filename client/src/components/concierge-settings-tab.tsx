@@ -165,7 +165,7 @@ export default function ConciergeSettingsTab() {
             return (
               <div
                 key={m.id}
-                className={`relative rounded-[var(--radius)] border-2 p-4 space-y-3 transition-all duration-200 ${
+                className={`relative rounded-[var(--radius)] border-2 p-4 flex flex-col gap-3 h-full transition-all duration-200 ${
                   canChoose ? "cursor-pointer hover:shadow-md" : ""
                 } ${
                   isSelected
@@ -219,8 +219,10 @@ export default function ConciergeSettingsTab() {
                     <p className="t-helper">{m.title}</p>
                   </div>
                 </div>
-                <p className="t-helper leading-relaxed">{m.description}</p>
-                <PersonaVoicePreviewButton matchmakerId={m.id} personaName={m.name} brandColor={brandColor} />
+                <p className="t-helper leading-relaxed flex-1">{m.description}</p>
+                <div className="mt-auto">
+                  <PersonaVoicePreviewButton matchmakerId={m.id} personaName={m.name} brandColor={brandColor} />
+                </div>
               </div>
             );
           })}

@@ -45,10 +45,12 @@ export class HeyGenAvatarSession {
   private ws: WebSocket | null = null;
   private connected = false;
   private closed = false;
-  // ~1s of 24kHz PCM per agent.speak frame
+  // ~400ms of 24kHz PCM per agent.speak frame - smaller frames reach the
+  // avatar's lip-sync sooner (docs allow up to 1MB per packet; ~1s was the
+  // recommendation, but latency matters more here).
   private buf: Buffer[] = [];
   private bufBytes = 0;
-  private static readonly FRAME_BYTES = 24000 * 2;
+  private static readonly FRAME_BYTES = Math.floor(24000 * 0.4) * 2;
   private keepAlive: NodeJS.Timeout | null = null;
   private sessionToken = "";
 
