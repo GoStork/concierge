@@ -389,10 +389,12 @@ voiceRouter.get("/api/voice/options/avatars", async (req, res) => {
 
 voiceRouter.post("/api/voice/preview", async (req, res) => {
   if (!requireAdmin(req, res)) return;
+  // Callers pass persona-specific text (e.g. "Hi, I'm Ariel..."); the default
+  // deliberately names no one.
   const text: string =
     typeof req.body?.text === "string" && req.body.text.trim()
       ? req.body.text.trim().slice(0, 200)
-      : "Hi, I'm Eva, your personal fertility concierge. It's lovely to meet you.";
+      : "Hi, I'm your personal fertility concierge. It's lovely to meet you.";
   let voiceId: string | null =
     typeof req.body?.voiceId === "string" && req.body.voiceId.trim()
       ? req.body.voiceId.trim()

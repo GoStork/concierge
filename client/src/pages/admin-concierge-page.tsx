@@ -1352,6 +1352,8 @@ export default function AdminConciergePage() {
                     await playVoicePreview(
                       activeTtsProvider,
                       (editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : ""),
+                      // Speak as THIS persona, not a generic name
+                      `Hi, I'm ${editForm.name || "your GoStork concierge"}. It's lovely to meet you - I'm here to help with every step of your journey.`,
                     );
                   } catch (err: any) {
                     toast({ title: "Voice preview failed", description: err?.message, variant: "destructive" });
@@ -1370,6 +1372,7 @@ export default function AdminConciergePage() {
               value={(editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : "")}
               onChange={(id) => setEditForm({ ...editForm, voiceIds: { ...(editForm.voiceIds || {}), [activeTtsProvider]: id } })}
               testId="input-matchmaker-voice-id"
+              previewText={`Hi, I'm ${editForm.name || "your GoStork concierge"}. It's lovely to meet you - I'm here to help with every step of your journey.`}
             />
             <p className="t-helper">How this persona sounds in voice mode, for the active provider - each provider keeps its own choice. Tap Preview to hear it.</p>
           </div>

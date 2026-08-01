@@ -35,12 +35,12 @@ export interface AvatarOption {
 
 // Synthesize one sentence with the given provider/voice and play it. Throws
 // on failure so the caller can toast the real error.
-export async function playVoicePreview(provider: string, voiceId?: string): Promise<void> {
+export async function playVoicePreview(provider: string, voiceId?: string, text?: string): Promise<void> {
   const res = await fetch("/api/voice/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ provider, voiceId: voiceId || undefined }),
+    body: JSON.stringify({ provider, voiceId: voiceId || undefined, text: text || undefined }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -140,11 +140,14 @@ export function VoicePicker({
   value,
   onChange,
   testId,
+  previewText,
 }: {
   provider: string;
   value: string;
   onChange: (id: string) => void;
   testId?: string;
+  // Persona-specific sample line for on-demand synthesis (OpenAI/Cartesia)
+  previewText?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -205,7 +208,7 @@ export function VoicePicker({
       } else {
         // No hosted sample (OpenAI/Cartesia) - synthesize one line server-side.
         setLoadingId(v.id);
-        await playVoicePreview(provider, v.id);
+        await playVoicePreview(provider, v.id, previewText);
         setLoadingId(null);
       }
     } catch {
