@@ -138,12 +138,17 @@ function VoiceSettingsCard() {
 
   // Which vendors actually have API keys on the server - unconfigured ones are
   // selectable-but-disabled with an honest "API key not set" label.
-  const { data: providerStatus } = useQuery<{ tts: { name: string; configured: boolean }[]; stt: { name: string; configured: boolean }[] }>({
+  // retry + refetch: a transient failure (e.g. a server restart mid-load) must
+  // not freeze every provider into a stale "API key not set" state.
+  const { data: providerStatus, isError: providerStatusError } = useQuery<{ tts: { name: string; configured: boolean }[]; stt: { name: string; configured: boolean }[] }>({
     queryKey: ["/api/voice/providers"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/voice/providers");
       return res.json();
     },
+    retry: 2,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const val = (key: string, fallback: any) =>
@@ -151,10 +156,13 @@ function VoiceSettingsCard() {
   const set = (key: string, v: any) => setDraft((d) => ({ ...d, [key]: v }));
   const hasChanges = Object.keys(draft).length > 0;
 
-  const ttsConfigured = (name: string) =>
-    providerStatus?.tts?.find((p) => p.name === name)?.configured ?? false;
-  const sttConfigured = (name: string) =>
-    providerStatus?.stt?.find((p) => p.name === name)?.configured ?? false;
+  // Tri-state: true/false once status is loaded, null while loading or on
+  // error - "API key not set" must never appear just because the status
+  // request hasn't succeeded yet.
+  const ttsConfigured = (name: string): boolean | null =>
+    providerStatus ? (providerStatus.tts?.find((p) => p.name === name)?.configured ?? false) : null;
+  const sttConfigured = (name: string): boolean | null =>
+    providerStatus ? (providerStatus.stt?.find((p) => p.name === name)?.configured ?? false) : null;
 
   const handleSave = async () => {
     setSaving(true);
@@ -232,15 +240,19 @@ function VoiceSettingsCard() {
             >
               {Object.entries(TTS_PROVIDER_LABELS).map(([name, label]) => {
                 const configured = ttsConfigured(name);
+                const disabled = configured === false;
                 return (
                   <label
                     key={name}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-[var(--radius)] border transition-colors ${configured ? "cursor-pointer hover:bg-muted/30" : "opacity-55 cursor-not-allowed"}`}
+                    className={`flex items-center gap-2.5 p-2.5 rounded-[var(--radius)] border transition-colors ${disabled ? "opacity-55 cursor-not-allowed" : "cursor-pointer hover:bg-muted/30"}`}
                   >
-                    <RadioGroupItem value={name} disabled={!configured} />
+                    <RadioGroupItem value={name} disabled={disabled} />
                     <span className="text-sm">{label}</span>
-                    {!configured && (
+                    {configured === false && (
                       <span className="ml-auto text-xs text-muted-foreground font-ui">API key not set</span>
+                    )}
+                    {configured === null && (
+                      <span className="ml-auto text-xs text-muted-foreground font-ui">{providerStatusError ? "status unavailable" : "checking..."}</span>
                     )}
                   </label>
                 );
@@ -257,15 +269,19 @@ function VoiceSettingsCard() {
             >
               {Object.entries(STT_PROVIDER_LABELS).map(([name, label]) => {
                 const configured = sttConfigured(name);
+                const disabled = configured === false;
                 return (
                   <label
                     key={name}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-[var(--radius)] border transition-colors ${configured ? "cursor-pointer hover:bg-muted/30" : "opacity-55 cursor-not-allowed"}`}
+                    className={`flex items-center gap-2.5 p-2.5 rounded-[var(--radius)] border transition-colors ${disabled ? "opacity-55 cursor-not-allowed" : "cursor-pointer hover:bg-muted/30"}`}
                   >
-                    <RadioGroupItem value={name} disabled={!configured} />
+                    <RadioGroupItem value={name} disabled={disabled} />
                     <span className="text-sm">{label}</span>
-                    {!configured && (
+                    {configured === false && (
                       <span className="ml-auto text-xs text-muted-foreground font-ui">API key not set</span>
+                    )}
+                    {configured === null && (
+                      <span className="ml-auto text-xs text-muted-foreground font-ui">{providerStatusError ? "status unavailable" : "checking..."}</span>
                     )}
                   </label>
                 );

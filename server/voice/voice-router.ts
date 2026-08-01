@@ -11,6 +11,28 @@ import { prisma } from "../db";
 
 export const voiceRouter = Router();
 
+// JWT Bearer fallback (mobile clients + test scripts) - same contract as
+// chatRouter / aiRouter; Passport session auth still takes precedence.
+voiceRouter.use(async (req: any, _res: any, next: any) => {
+  if (!req.isAuthenticated?.()) {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      try {
+        const jwt = (await import("jsonwebtoken")).default;
+        const payload = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET || "dev-jwt-secret-change-me") as any;
+        if (payload?.sub) {
+          const jwtUser = await prisma.user.findUnique({ where: { id: payload.sub } });
+          if (jwtUser && !jwtUser.isDisabled) {
+            req.user = jwtUser;
+            req.isAuthenticated = () => true;
+          }
+        }
+      } catch { /* invalid token - continue unauthenticated */ }
+    }
+  }
+  next();
+});
+
 function requireAdmin(req: Request, res: Response): boolean {
   const user: any = req.user;
   if (!req.isAuthenticated?.() || !user) {
