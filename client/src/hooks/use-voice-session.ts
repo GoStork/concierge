@@ -56,6 +56,10 @@ export function useVoiceSession() {
   const bargeSentRef = useRef(false);
   const prebufferRef = useRef<ArrayBuffer[]>([]);
   const activeRef = useRef(false);
+  // Mic telemetry: peak RMS + frames forwarded per 5s window, reported to the
+  // gateway so "Eva stopped hearing me" is diagnosable from server logs alone.
+  const micStatsRef = useRef({ maxRms: 0, sent: 0 });
+  const statsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const setStateBoth = (s: VoiceState) => {
     stateRef.current = s;
@@ -65,6 +69,10 @@ export function useVoiceSession() {
   const stop = useCallback((reason = "user_ended") => {
     if (!activeRef.current) return;
     activeRef.current = false;
+    if (statsTimerRef.current) {
+      clearInterval(statsTimerRef.current);
+      statsTimerRef.current = null;
+    }
     try {
       wsRef.current?.send(JSON.stringify({ type: "end" }));
     } catch {
@@ -193,8 +201,18 @@ export function useVoiceSession() {
       if (activeRef.current) stop("connection_closed");
     };
 
+    micStatsRef.current = { maxRms: 0, sent: 0 };
+    if (statsTimerRef.current) clearInterval(statsTimerRef.current);
+    statsTimerRef.current = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      const s = micStatsRef.current;
+      ws.send(JSON.stringify({ type: "mic_stats", maxRms: s.maxRms, sent: s.sent }));
+      micStatsRef.current = { maxRms: 0, sent: 0 };
+    }, 5000);
+
     engine.onMicFrame((pcm, rms) => {
       if (ws.readyState !== WebSocket.OPEN) return;
+      if (rms > micStatsRef.current.maxRms) micStatsRef.current.maxRms = rms;
       const now = Date.now();
       const speaking = rms > VAD_THRESHOLD;
 
@@ -224,6 +242,7 @@ export function useVoiceSession() {
         for (const buffered of prebufferRef.current) ws.send(buffered);
         prebufferRef.current = [];
         ws.send(pcm);
+        micStatsRef.current.sent += 1;
       } else {
         prebufferRef.current.push(pcm);
         if (prebufferRef.current.length > PREBUFFER_FRAMES) prebufferRef.current.shift();

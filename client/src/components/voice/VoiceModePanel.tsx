@@ -160,17 +160,38 @@ export function VoiceModePanel({
     .slice(0, 2)
     .toUpperCase();
 
+  // FaceTime-style immersion: when the realtime avatar video is up, it fills
+  // the whole panel and everything else (name, captions, chips, controls)
+  // overlays it above gradient scrims.
+  const overVideo = showAvatarVideo;
+
   return (
     <div
       className="absolute inset-0 z-40 flex flex-col bg-background"
       data-testid="voice-mode-panel"
     >
+      {showAvatarVideo && (
+        <>
+          <AvatarVideo
+            fullBleed
+            livekitUrl={avatar!.livekitUrl}
+            livekitToken={avatar!.livekitToken}
+            brandColor={brandColor}
+            onFailed={() => setAvatarVideoFailed(true)}
+          />
+          <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-foreground/40 to-transparent pointer-events-none" />
+          <div className="absolute inset-x-0 bottom-0 h-80 bg-gradient-to-t from-foreground/70 via-foreground/30 to-transparent pointer-events-none" />
+        </>
+      )}
+
       {/* Close */}
-      <div className="flex items-center justify-end px-4 pt-4 shrink-0">
+      <div className="relative z-10 flex items-center justify-end px-4 pt-4 shrink-0">
         <Button
           variant="ghost"
           size="sm"
-          className="h-9 w-9 p-0 rounded-full border"
+          className={`h-9 w-9 p-0 rounded-full border ${
+            overVideo ? "bg-background/70 backdrop-blur-sm hover:bg-background/90" : ""
+          }`}
           onClick={onClose}
           aria-label="End voice conversation"
           data-testid="btn-voice-close"
@@ -180,15 +201,12 @@ export function VoiceModePanel({
       </div>
 
       {/* Persona + state */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-5 px-6 min-h-0">
-        {showAvatarVideo ? (
-          <AvatarVideo
-            livekitUrl={avatar!.livekitUrl}
-            livekitToken={avatar!.livekitToken}
-            brandColor={brandColor}
-            onFailed={() => setAvatarVideoFailed(true)}
-          />
-        ) : (
+      <div
+        className={`relative z-10 flex-1 flex flex-col items-center gap-5 px-6 min-h-0 ${
+          overVideo ? "justify-end pb-2" : "justify-center"
+        }`}
+      >
+        {!showAvatarVideo && (
         <div className="relative flex items-center justify-center">
           {/* Pulse rings driven by state */}
           {(state === "speaking" || state === "listening") && (
@@ -238,10 +256,19 @@ export function VoiceModePanel({
         )}
 
         <div className="flex flex-col items-center gap-1">
-          <span className="font-heading text-lg font-semibold text-foreground">
+          <span
+            className={`font-heading text-lg font-semibold ${
+              overVideo ? "text-background" : "text-foreground"
+            }`}
+          >
             {personaName || "AI Concierge"}
           </span>
-          <span className="t-helper flex items-center gap-1.5 min-h-5" data-testid="voice-state-label">
+          <span
+            className={`flex items-center gap-1.5 min-h-5 ${
+              overVideo ? "text-sm font-ui text-background/80" : "t-helper"
+            }`}
+            data-testid="voice-state-label"
+          >
             {(state === "connecting" || state === "thinking") && (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             )}
@@ -257,14 +284,21 @@ export function VoiceModePanel({
             <>
               {caption && (
                 <p
-                  className="text-base font-body text-foreground leading-relaxed max-h-36 overflow-y-auto"
+                  className={`text-base font-body leading-relaxed max-h-36 overflow-y-auto ${
+                    overVideo ? "text-background" : "text-foreground"
+                  }`}
                   data-testid="voice-eva-caption"
                 >
                   {caption}
                 </p>
               )}
               {partialTranscript && (
-                <p className="text-sm font-body text-muted-foreground italic" data-testid="voice-partial-transcript">
+                <p
+                  className={`text-sm font-body italic ${
+                    overVideo ? "text-background/75" : "text-muted-foreground"
+                  }`}
+                  data-testid="voice-partial-transcript"
+                >
                   {partialTranscript}
                 </p>
               )}
@@ -288,11 +322,13 @@ export function VoiceModePanel({
                 <button
                   key={qr}
                   onClick={() => onQuickReply(qr)}
-                  className="px-4 py-2 rounded-full border text-sm font-ui transition-colors"
+                  className={`px-4 py-2 rounded-full border text-sm font-ui transition-colors ${
+                    overVideo ? "bg-background/85 backdrop-blur-sm" : ""
+                  }`}
                   style={{
                     borderColor: `${brandColor}55`,
                     color: brandColor,
-                    backgroundColor: `${brandColor}0d`,
+                    backgroundColor: overVideo ? undefined : `${brandColor}0d`,
                   }}
                   data-testid="voice-quick-reply"
                 >
@@ -305,11 +341,13 @@ export function VoiceModePanel({
       </div>
 
       {/* Controls */}
-      <div className="flex items-center justify-center gap-6 pb-10 pt-4 shrink-0">
+      <div className="relative z-10 flex items-center justify-center gap-6 pb-10 pt-4 shrink-0">
         <Button
           variant="outline"
           size="lg"
-          className="h-14 w-14 p-0 rounded-full"
+          className={`h-14 w-14 p-0 rounded-full ${
+            overVideo ? "bg-background/70 backdrop-blur-sm hover:bg-background/90" : ""
+          }`}
           onClick={onToggleMute}
           aria-label={micMuted ? "Unmute microphone" : "Mute microphone"}
           data-testid="btn-voice-mute"

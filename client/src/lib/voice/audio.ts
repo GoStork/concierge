@@ -121,21 +121,78 @@ export async function createVoiceAudioEngine(): Promise<VoiceAudioEngine> {
     URL.revokeObjectURL(workletUrl);
   }
 
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const MIC_CONSTRAINTS: MediaStreamConstraints = {
     audio: {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
       channelCount: 1,
     },
-  });
+  };
+  let stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
 
-  const source = ctx.createMediaStreamSource(stream);
   const capture = new AudioWorkletNode(ctx, "voice-capture", {
     numberOfInputs: 1,
     numberOfOutputs: 0,
   });
+  let source = ctx.createMediaStreamSource(stream);
   source.connect(capture);
+
+  // --- iOS Safari mic resilience -------------------------------------------
+  // When WebRTC playback starts (the avatar's LiveKit audio) or the audio
+  // route changes (speaker/earpiece/AirPods), iOS is known to suspend the
+  // AudioContext or end/mute the capture track - which used to leave the
+  // session silently deaf ("she just ignores me"). Resume the context and
+  // reacquire the mic whenever that happens.
+  let destroyed = false;
+  const resumeCtx = () => {
+    if (!destroyed && ctx.state !== "running") void ctx.resume().catch(() => {});
+  };
+  ctx.onstatechange = resumeCtx;
+  const onVisible = () => {
+    if (document.visibilityState === "visible") resumeCtx();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+
+  const reacquireMic = async () => {
+    if (destroyed) return;
+    try {
+      const fresh = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+      if (destroyed) {
+        fresh.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      try {
+        source.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+      stream.getTracks().forEach((t) => t.stop());
+      stream = fresh;
+      source = ctx.createMediaStreamSource(stream);
+      source.connect(capture);
+      watchTrack();
+      resumeCtx();
+      console.warn("[voice] mic track reacquired after the OS dropped it");
+    } catch (err) {
+      console.error("[voice] mic reacquire failed:", err);
+    }
+  };
+  const watchTrack = () => {
+    const track = stream.getAudioTracks()[0];
+    if (!track) return;
+    track.onended = () => void reacquireMic();
+    track.onmute = () => {
+      // iOS mutes the track during route changes; give it a moment to
+      // unmute on its own, then force a fresh capture.
+      setTimeout(() => {
+        const t = stream.getAudioTracks()[0];
+        if (!destroyed && t && t.muted) void reacquireMic();
+      }, 1500);
+    };
+  };
+  watchTrack();
+  // --------------------------------------------------------------------------
 
   const playback = new AudioWorkletNode(ctx, "voice-playback", {
     numberOfInputs: 0,
@@ -177,8 +234,11 @@ export async function createVoiceAudioEngine(): Promise<VoiceAudioEngine> {
       muted = m;
     },
     destroy: () => {
+      destroyed = true;
       micCb = null;
       playCb = null;
+      ctx.onstatechange = null;
+      document.removeEventListener("visibilitychange", onVisible);
       try {
         source.disconnect();
         capture.disconnect();

@@ -13,19 +13,17 @@ import { Loader2 } from "lucide-react";
 // canvas that removes the green (with edge softening + despill) so the avatar
 // sits directly on the brand surface instead of a green rectangle.
 
-// Processing resolution for the chroma key. The source is 720p; keying at
-// 480px square (the display is ~224-256px) keeps the per-frame pixel loop
-// cheap on phones while staying sharper than the displayed size.
-const KEY_SIZE = 480;
+// Cap on the chroma-key processing resolution (longest edge). Keying keeps
+// the source aspect ratio - CSS object-cover does the cropping - so the same
+// canvas works for the small card and the full-bleed FaceTime layout.
+const KEY_MAX_DIM = 720;
 
 function startChromaKey(video: HTMLVideoElement, out: HTMLCanvasElement): () => void {
   const ctx = out.getContext("2d", { willReadFrequently: false })!;
   const work = document.createElement("canvas");
-  work.width = KEY_SIZE;
-  work.height = KEY_SIZE;
   const wctx = work.getContext("2d", { willReadFrequently: true })!;
-  out.width = KEY_SIZE;
-  out.height = KEY_SIZE;
+  let kw = 0;
+  let kh = 0;
 
   let raf = 0;
   const tick = () => {
@@ -33,12 +31,17 @@ function startChromaKey(video: HTMLVideoElement, out: HTMLCanvasElement): () => 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (!vw || !vh) return;
-    // Center-crop a square from the source (same as object-cover).
-    const s = Math.min(vw, vh);
-    const sx = (vw - s) / 2;
-    const sy = (vh - s) / 2;
-    wctx.drawImage(video, sx, sy, s, s, 0, 0, KEY_SIZE, KEY_SIZE);
-    const frame = wctx.getImageData(0, 0, KEY_SIZE, KEY_SIZE);
+    if (!kw) {
+      const scale = Math.min(1, KEY_MAX_DIM / Math.max(vw, vh));
+      kw = Math.round(vw * scale);
+      kh = Math.round(vh * scale);
+      work.width = kw;
+      work.height = kh;
+      out.width = kw;
+      out.height = kh;
+    }
+    wctx.drawImage(video, 0, 0, vw, vh, 0, 0, kw, kh);
+    const frame = wctx.getImageData(0, 0, kw, kh);
     const px = frame.data;
     for (let i = 0; i < px.length; i += 4) {
       const r = px[i];
@@ -56,7 +59,7 @@ function startChromaKey(video: HTMLVideoElement, out: HTMLCanvasElement): () => 
         px[i + 1] = other;
       }
     }
-    ctx.clearRect(0, 0, KEY_SIZE, KEY_SIZE);
+    ctx.clearRect(0, 0, kw, kh);
     ctx.putImageData(frame, 0, 0);
   };
   raf = requestAnimationFrame(tick);
@@ -68,11 +71,15 @@ export function AvatarVideo({
   livekitToken,
   brandColor,
   onFailed,
+  fullBleed = false,
 }: {
   livekitUrl: string;
   livekitToken: string;
   brandColor: string;
   onFailed: (reason: string) => void;
+  // FaceTime-style immersive layout: fill the parent completely, no card
+  // frame - the panel overlays name/captions/controls on top.
+  fullBleed?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -125,8 +132,12 @@ export function AvatarVideo({
 
   return (
     <div
-      className="relative w-56 h-56 sm:w-64 sm:h-64 rounded-[var(--radius)] overflow-hidden border-4 flex items-center justify-center bg-secondary"
-      style={{ borderColor: brandColor }}
+      className={
+        fullBleed
+          ? "absolute inset-0 overflow-hidden flex items-center justify-center bg-secondary"
+          : "relative w-56 h-56 sm:w-64 sm:h-64 rounded-[var(--radius)] overflow-hidden border-4 flex items-center justify-center bg-secondary"
+      }
+      style={fullBleed ? undefined : { borderColor: brandColor }}
       data-testid="voice-avatar-video"
     >
       {!connected && <Loader2 className="w-6 h-6 animate-spin text-muted-foreground absolute" />}
@@ -140,7 +151,7 @@ export function AvatarVideo({
         muted
         className="absolute w-px h-px opacity-0 pointer-events-none"
       />
-      <canvas ref={canvasRef} className="w-full h-full" />
+      <canvas ref={canvasRef} className="w-full h-full object-cover" />
       <audio ref={audioRef} autoPlay />
     </div>
   );

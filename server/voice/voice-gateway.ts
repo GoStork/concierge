@@ -283,7 +283,7 @@ class VoiceSession {
         // Phones report a portrait viewport; personas can carry a
         // portrait-framed avatar variant for them.
         this.portraitViewport = msg.portrait === true;
-        void this.applyPersonaVoice().then(async () => {
+        void this.applyPersonaVoice().then(() => {
           // No voice for the active provider = loud failure, never a voice
           // nobody chose. The admin UI warns about this on provider switch.
           if (!this.voiceId) {
@@ -294,12 +294,31 @@ class VoiceSession {
             void this.destroy("voice_not_configured");
             return;
           }
-          await this.maybeStartAvatar();
+          // Ready IMMEDIATELY - the LiveAvatar handshake (~2-3s) happens in
+          // parallel and the client swaps the static photo for video whenever
+          // the "avatar" frame lands. Blocking here was the slow "Connecting...".
           this.send({ type: "ready" });
-          // Voice-first greeting: the client passes the init-session greeting
-          // text; Eva speaks it before the parent says anything.
-          if (msg.greetingText) this.speakSystemLine(String(msg.greetingText));
+          const avatarReady = this.maybeStartAvatar();
+          // Voice-first greeting: give the avatar up to 3s to connect so the
+          // greeting is lip-synced, then speak it regardless (audio-only
+          // greeting beats silence). Skipped if the parent already spoke.
+          if (msg.greetingText) {
+            const greeting = String(msg.greetingText);
+            void Promise.race([avatarReady, new Promise((r) => setTimeout(r, 3000))]).then(() => {
+              if (!this.closed && this.turnCounter === 0 && this.state === "listening") {
+                this.speakSystemLine(greeting);
+              }
+            });
+          }
         });
+        break;
+      case "mic_stats":
+        // Client-side VAD telemetry (max mic RMS + frames forwarded per 5s
+        // window) - the remote-diagnosis line for "Eva stopped hearing me".
+        log(
+          `mic stats: peak rms ${Number(msg.maxRms || 0).toFixed(4)}, ` +
+            `${msg.sent || 0} frames forwarded, vad ${msg.maxRms > 0.015 ? "above" : "BELOW"} threshold`,
+        );
         break;
       case "barge":
         this.handleBarge();
@@ -378,9 +397,12 @@ class VoiceSession {
     }
   }
 
-  // Route synthesized speech to the avatar when active, else raw PCM down the WS.
-  private deliverSpeech(pcm: Buffer) {
-    if (this.avatar) this.avatar.sendAudio(pcm);
+  // Route synthesized speech to the avatar when active, else raw PCM down the
+  // WS. The route is SNAPSHOTTED per reply: if the avatar connects while a
+  // reply is mid-flight, that reply finishes on the WS path (splitting one
+  // reply across both outputs would garble it) and the next one is lip-synced.
+  private deliverSpeech(pcm: Buffer, route: HeyGenAvatarSession | null) {
+    if (route) route.sendAudio(pcm);
     else this.sendAudio(pcm);
   }
 
@@ -400,13 +422,13 @@ class VoiceSession {
   // Eva talk. Hold "speaking" until the avatar's queued audio drains, then
   // hand back the floor. Audio-only sessions flip immediately (the client's
   // own playback buffer is ~real-time behind generation).
-  private finishSpeaking(turnId: number | null) {
+  private finishSpeaking(turnId: number | null, route: HeyGenAvatarSession | null) {
     const stale = () =>
       this.closed ||
       this.state !== "speaking" ||
       (turnId !== null && this.turnCounter !== turnId);
     if (stale()) return;
-    const remaining = this.avatar ? this.avatar.remainingSpeechMs() + 600 : 0;
+    const remaining = route ? route.remainingSpeechMs() + 600 : 0;
     if (remaining <= 0) {
       this.setState("listening");
       return;
@@ -417,10 +439,10 @@ class VoiceSession {
     }, remaining);
   }
 
-  private openTts(): TtsStream {
+  private openTts(route: HeyGenAvatarSession | null): TtsStream {
     const stream = this.ttsProvider.openStream({ voiceId: this.voiceId });
     stream.onAudio((pcm) => {
-      if (!this.speakSuppressed) this.deliverSpeech(pcm);
+      if (!this.speakSuppressed) this.deliverSpeech(pcm, route);
     });
     stream.onError((err) => log(`TTS error (${this.ttsProvider.name}): ${err.message}`));
     return stream;
@@ -432,13 +454,14 @@ class VoiceSession {
     if (this.closed) return;
     this.speakSuppressed = false;
     this.tts?.cancel();
-    this.tts = this.openTts();
+    const route = this.avatar;
+    this.tts = this.openTts(route);
     this.ttsChars += text.length;
     this.setState("speaking");
     this.send({ type: "eva_caption", text });
     this.tts.onEnd(() => {
-      this.avatar?.flushSpeech();
-      this.finishSpeaking(null);
+      route?.flushSpeech();
+      this.finishSpeaking(null, route);
     });
     this.tts.sendText(text + " ");
     this.tts.flush();
@@ -457,8 +480,9 @@ class VoiceSession {
     this.setState("thinking");
     this.stripper.reset();
 
+    const route = this.avatar;
     this.tts?.cancel();
-    this.tts = this.openTts();
+    this.tts = this.openTts(route);
     this.tts.onAudio((pcm) => {
       if (this.speakSuppressed || this.turnCounter !== turnId) return;
       if (!tFirstAudio) {
@@ -469,7 +493,7 @@ class VoiceSession {
             : `turn ${turnId}: sttFinal->fillerAudio ${tFirstAudio - tSttFinal}ms (filler spoke first)`,
         );
       }
-      this.deliverSpeech(pcm);
+      this.deliverSpeech(pcm, route);
     });
 
     this.chunker = new SentenceChunker((sentence) => {
@@ -535,10 +559,10 @@ class VoiceSession {
           // An interceptor replaced the draft: silence what was queued and
           // start clean, mirroring the client's reset handling.
           this.tts?.cancel();
-          this.tts = this.openTts();
-          this.avatar?.interrupt();
+          this.tts = this.openTts(route);
+          route?.interrupt();
           this.tts.onAudio((pcm) => {
-            if (!this.speakSuppressed && this.turnCounter === turnId) this.deliverSpeech(pcm);
+            if (!this.speakSuppressed && this.turnCounter === turnId) this.deliverSpeech(pcm, route);
           });
           this.stripper.reset();
           this.chunker?.reset();
@@ -616,8 +640,8 @@ class VoiceSession {
       this.chunker?.flush();
       const stream = this.tts;
       stream?.onEnd(() => {
-        this.avatar?.flushSpeech();
-        this.finishSpeaking(turnId);
+        route?.flushSpeech();
+        this.finishSpeaking(turnId, route);
       });
       stream?.flush();
     } else if (this.turnCounter === turnId) {
