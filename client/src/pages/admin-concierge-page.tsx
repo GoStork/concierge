@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Sparkles,
   Plus,
@@ -37,6 +38,7 @@ import {
   AlertCircle,
   Mic,
   Volume2,
+  Check,
 } from "lucide-react";
 import ImageCropPreview from "@/components/image-crop-preview";
 
@@ -78,28 +80,39 @@ function SystemSettingsCard() {
       </p>
 
       <div className="space-y-5">
-        <div className="space-y-3">
-          <RadioGroup
-            value={currentMode}
-            onValueChange={(val) => setParentExperienceMode(val)}
-            className="space-y-2"
+        <div className="space-y-2">
+          <div
+            className="grid grid-cols-2 rounded-[var(--radius)] border border-border overflow-hidden sm:inline-grid sm:min-w-[320px]"
+            role="radiogroup"
+            aria-label="Parent Experience Mode"
             data-testid="radio-parent-mode"
           >
-            <label className="flex items-start gap-3 p-3 rounded-[var(--radius)] border cursor-pointer hover:bg-muted/30 transition-colors">
-              <RadioGroupItem value="CONCIERGE_FIRST" className="mt-0.5" data-testid="radio-concierge-first" />
-              <div>
-                <span className="text-sm font-medium">AI First</span>
-                <p className="t-helper">Direct parents to Eva after onboarding</p>
-              </div>
-            </label>
-            <label className="flex items-start gap-3 p-3 rounded-[var(--radius)] border cursor-pointer hover:bg-muted/30 transition-colors">
-              <RadioGroupItem value="MARKETPLACE_ONLY" className="mt-0.5" data-testid="radio-marketplace-only" />
-              <div>
-                <span className="text-sm font-medium">Marketplace Only</span>
-                <p className="t-helper">Skip Eva, direct parents to search</p>
-              </div>
-            </label>
-          </RadioGroup>
+            {([
+              ["CONCIERGE_FIRST", "AI First", "radio-concierge-first"],
+              ["MARKETPLACE_ONLY", "Marketplace Only", "radio-marketplace-only"],
+            ] as const).map(([value, label, testId]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={currentMode === value}
+                onClick={() => setParentExperienceMode(value)}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  currentMode === value
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-foreground hover:bg-secondary"
+                }`}
+                data-testid={testId}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="t-helper">
+            {currentMode === "CONCIERGE_FIRST"
+              ? "Direct parents to Eva after onboarding"
+              : "Skip Eva, direct parents to search"}
+          </p>
         </div>
 
         {hasChanges && (
@@ -128,8 +141,10 @@ const TTS_PROVIDER_LABELS: Record<string, string> = {
 interface VoiceOption { id: string; name: string; description?: string; gender?: string; previewUrl?: string }
 interface AvatarOption { id: string; name: string; imageUrl?: string; kind: "custom" | "preset" }
 
-// Human-friendly voice picker: names from the live provider catalog, never raw ids.
+// Human-friendly voice picker: a searchable combobox of names from the live
+// provider catalog, never raw ids.
 function VoiceSelect({ provider, value, onChange, testId }: { provider: string; value: string; onChange: (id: string) => void; testId?: string }) {
+  const [open, setOpen] = useState(false);
   const { data, isError } = useQuery<{ voices: VoiceOption[] }>({
     queryKey: ["/api/voice/options/voices", provider],
     queryFn: async () => {
@@ -140,33 +155,65 @@ function VoiceSelect({ provider, value, onChange, testId }: { provider: string; 
     retry: 1,
   });
   const voices = data?.voices || [];
-  const known = voices.some((v) => v.id === value);
+  const selected = voices.find((v) => v.id === value);
   return (
-    <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger data-testid={testId} className="w-full">
-        <SelectValue placeholder={isError ? "Could not load voices" : voices.length ? "Choose a voice..." : "Loading voices..."} />
-      </SelectTrigger>
-      <SelectContent className="max-h-72">
-        {!known && value && (
-          <SelectItem value={value}>
-            <span className="text-muted-foreground">Current: {value}</span>
-          </SelectItem>
-        )}
-        {voices.map((v) => (
-          <SelectItem key={v.id} value={v.id}>
-            <span className="flex items-center gap-2">
-              <span>{v.name}</span>
-              {v.description && <span className="text-xs text-muted-foreground">{v.description}</span>}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal"
+          data-testid={testId}
+        >
+          <span className="truncate flex items-center gap-2">
+            {selected ? (
+              <>
+                <span>{selected.name}</span>
+                {selected.description && <span className="text-xs text-muted-foreground">{selected.description}</span>}
+              </>
+            ) : value ? (
+              <span className="text-muted-foreground">Current: {value}</span>
+            ) : (
+              <span className="text-muted-foreground">{isError ? "Could not load voices" : voices.length ? "Choose a voice..." : "Loading voices..."}</span>
+            )}
+          </span>
+          <ChevronDown className="w-4 h-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-72" align="start">
+        <Command>
+          <CommandInput placeholder="Search voices..." />
+          <CommandList className="max-h-72">
+            <CommandEmpty>No voice found.</CommandEmpty>
+            <CommandGroup>
+              {voices.map((v) => (
+                <CommandItem
+                  key={v.id}
+                  value={`${v.name} ${v.description || ""} ${v.gender || ""}`}
+                  onSelect={() => {
+                    onChange(v.id);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <Check className={`w-3.5 h-3.5 ${v.id === value ? "opacity-100 text-primary" : "opacity-0"}`} />
+                    <span>{v.name}</span>
+                    {v.description && <span className="text-xs text-muted-foreground">{v.description}</span>}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
-// Avatar picker with the actual face photos from LiveAvatar.
+// Avatar picker: searchable combobox with the actual face photos from LiveAvatar.
 function AvatarSelect({ value, onChange, testId }: { value: string; onChange: (id: string) => void; testId?: string }) {
+  const [open, setOpen] = useState(false);
   const { data, isError } = useQuery<{ avatars: AvatarOption[] }>({
     queryKey: ["/api/voice/options/avatars"],
     queryFn: async () => {
@@ -177,35 +224,73 @@ function AvatarSelect({ value, onChange, testId }: { value: string; onChange: (i
     retry: 1,
   });
   const avatars = data?.avatars || [];
-  const known = avatars.some((a) => a.id === value);
+  const selected = avatars.find((a) => a.id === value);
   return (
-    <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger data-testid={testId} className="w-full h-11">
-        <SelectValue placeholder={isError ? "Could not load avatars" : avatars.length ? "Choose an avatar..." : "Loading avatars..."} />
-      </SelectTrigger>
-      <SelectContent className="max-h-80">
-        {!known && value && (
-          <SelectItem value={value}>
-            <span className="text-muted-foreground">Current: {value}</span>
-          </SelectItem>
-        )}
-        {avatars.map((a) => (
-          <SelectItem key={a.id} value={a.id}>
-            <span className="flex items-center gap-2.5">
-              {a.imageUrl ? (
-                <img src={a.imageUrl} alt="" className="w-8 h-8 rounded-full object-cover border" loading="lazy" />
-              ) : (
-                <span className="w-8 h-8 rounded-full bg-secondary" />
-              )}
-              <span>{a.name}</span>
-              {a.kind === "custom" && (
-                <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground font-ui">Custom</span>
-              )}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal h-11"
+          data-testid={testId}
+        >
+          <span className="truncate flex items-center gap-2.5">
+            {selected ? (
+              <>
+                {selected.imageUrl ? (
+                  <img src={selected.imageUrl} alt="" className="w-7 h-7 rounded-full object-cover border" />
+                ) : (
+                  <span className="w-7 h-7 rounded-full bg-secondary" />
+                )}
+                <span>{selected.name}</span>
+                {selected.kind === "custom" && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground font-ui">Custom</span>
+                )}
+              </>
+            ) : value ? (
+              <span className="text-muted-foreground">Current: {value}</span>
+            ) : (
+              <span className="text-muted-foreground">{isError ? "Could not load avatars" : avatars.length ? "Choose an avatar..." : "Loading avatars..."}</span>
+            )}
+          </span>
+          <ChevronDown className="w-4 h-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-72" align="start">
+        <Command>
+          <CommandInput placeholder="Search avatars..." />
+          <CommandList className="max-h-80">
+            <CommandEmpty>No avatar found.</CommandEmpty>
+            <CommandGroup>
+              {avatars.map((a) => (
+                <CommandItem
+                  key={a.id}
+                  value={`${a.name} ${a.kind}`}
+                  onSelect={() => {
+                    onChange(a.id);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Check className={`w-3.5 h-3.5 ${a.id === value ? "opacity-100 text-primary" : "opacity-0"}`} />
+                    {a.imageUrl ? (
+                      <img src={a.imageUrl} alt="" className="w-8 h-8 rounded-full object-cover border" loading="lazy" />
+                    ) : (
+                      <span className="w-8 h-8 rounded-full bg-secondary" />
+                    )}
+                    <span>{a.name}</span>
+                    {a.kind === "custom" && (
+                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground font-ui">Custom</span>
+                    )}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 const STT_PROVIDER_LABELS: Record<string, string> = {
