@@ -94,18 +94,35 @@ const OPENAI_VOICES: VoiceOption[] = [
 async function listElevenLabsVoices(): Promise<VoiceOption[]> {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) throw new Error("ELEVENLABS_API_KEY not set");
+  // Plan-aware filtering: the Free tier cannot synthesize "professional"
+  // library voices via the API (payment_required) - offering them in the
+  // dropdown guarantees a failure at preview/session time. Hide what the
+  // current plan cannot use; the list self-heals after an upgrade (10 min
+  // cache) because the tier is re-checked.
+  let tier = "free";
+  try {
+    const sub = await fetch("https://api.elevenlabs.io/v1/user/subscription", {
+      headers: { "xi-api-key": key },
+    });
+    if (sub.ok) tier = ((await sub.json()) as any)?.tier || "free";
+  } catch {
+    /* tier check failed - keep the conservative default */
+  }
   const resp = await fetch("https://api.elevenlabs.io/v2/voices?page_size=100", {
     headers: { "xi-api-key": key },
   });
   if (!resp.ok) throw new Error(`ElevenLabs voices ${resp.status}`);
   const body: any = await resp.json();
-  return (body.voices || []).map((v: any) => ({
-    id: v.voice_id,
-    name: v.name,
-    description: [v.labels?.descriptive, v.labels?.age?.replace("_", " ")].filter(Boolean).join(", "),
-    gender: v.labels?.gender,
-    previewUrl: v.preview_url || undefined,
-  }));
+  const usableOnFree = new Set(["premade", "generated", "cloned"]);
+  return (body.voices || [])
+    .filter((v: any) => tier !== "free" || usableOnFree.has(v.category))
+    .map((v: any) => ({
+      id: v.voice_id,
+      name: v.name,
+      description: [v.labels?.descriptive, v.labels?.age?.replace("_", " ")].filter(Boolean).join(", "),
+      gender: v.labels?.gender,
+      previewUrl: v.preview_url || undefined,
+    }));
 }
 
 async function listCartesiaVoices(): Promise<VoiceOption[]> {

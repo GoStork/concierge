@@ -39,6 +39,7 @@ import {
   Mic,
   Volume2,
   Check,
+  Video,
 } from "lucide-react";
 import ImageCropPreview from "@/components/image-crop-preview";
 
@@ -1280,6 +1281,39 @@ export default function AdminConciergePage() {
   const confirm = useConfirm();
   const { data: brandSettings } = useBrandSettings();
   const activeTtsProvider = (brandSettings as any)?.voiceTtsProvider || "elevenlabs";
+  // Catalogs for resolving voice/avatar ids to human names + photos in the
+  // expanded persona preview (same query keys as the pickers - cache shared).
+  const voiceCatalogQueries = {
+    elevenlabs: useQuery<{ voices: VoiceOption[] }>({
+      queryKey: ["/api/voice/options/voices", "elevenlabs"],
+      queryFn: async () => (await apiRequest("GET", "/api/voice/options/voices?provider=elevenlabs")).json(),
+      staleTime: 10 * 60 * 1000, retry: 1,
+    }),
+    openai: useQuery<{ voices: VoiceOption[] }>({
+      queryKey: ["/api/voice/options/voices", "openai"],
+      queryFn: async () => (await apiRequest("GET", "/api/voice/options/voices?provider=openai")).json(),
+      staleTime: 10 * 60 * 1000, retry: 1,
+    }),
+    cartesia: useQuery<{ voices: VoiceOption[] }>({
+      queryKey: ["/api/voice/options/voices", "cartesia"],
+      queryFn: async () => (await apiRequest("GET", "/api/voice/options/voices?provider=cartesia")).json(),
+      staleTime: 10 * 60 * 1000, retry: 1,
+    }),
+  } as const;
+  const avatarCatalogQuery = useQuery<{ avatars: AvatarOption[] }>({
+    queryKey: ["/api/voice/options/avatars"],
+    queryFn: async () => (await apiRequest("GET", "/api/voice/options/avatars")).json(),
+    staleTime: 10 * 60 * 1000, retry: 1,
+  });
+  const resolveVoiceName = (provider: string, id: string | null | undefined): string | null => {
+    if (!id) return null;
+    const list = (voiceCatalogQueries as any)[provider]?.data?.voices as VoiceOption[] | undefined;
+    return list?.find((v) => v.id === id)?.name || id;
+  };
+  const resolveAvatar = (id: string | null | undefined): AvatarOption | null => {
+    if (!id) return null;
+    return avatarCatalogQuery.data?.avatars.find((a) => a.id === id) || { id, name: id, kind: "preset" };
+  };
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Matchmaker>>({});
@@ -1530,7 +1564,11 @@ export default function AdminConciergePage() {
               <div key={m.id}>{renderForm(false)}</div>
             ) : (
               <Card key={m.id} className={`rounded-[var(--radius)] overflow-hidden transition-all ${!m.isActive ? "opacity-60" : ""}`} data-testid={`matchmaker-card-${m.id}`}>
-                <div className="flex items-center gap-3 p-4">
+                <div
+                  className="flex items-center gap-3 p-4 cursor-pointer hover:bg-secondary/40 transition-colors"
+                  onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
+                  data-testid={`matchmaker-header-${m.id}`}
+                >
                   <div className="flex-shrink-0 text-muted-foreground/40"><GripVertical className="w-4 h-4" /></div>
                   <div className="flex-shrink-0">
                     {m.avatarUrl ? (
@@ -1549,7 +1587,7 @@ export default function AdminConciergePage() {
                     </div>
                     <p className="t-helper line-clamp-1 mt-0.5">{m.description}</p>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                     <Switch checked={m.isActive} onCheckedChange={(checked) => toggleActiveMutation.mutate({ id: m.id, isActive: checked })} data-testid={`switch-active-${m.id}`} />
                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setExpandedId(expandedId === m.id ? null : m.id)} data-testid={`btn-expand-matchmaker-${m.id}`}>
                       {expandedId === m.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -1581,6 +1619,54 @@ export default function AdminConciergePage() {
                         ) : (
                           <p className="t-helper italic p-3">No custom greeting set</p>
                         )}
+                      </div>
+                    </div>
+                    {/* Voice + video avatar - every field the edit form has */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <div className="t-micro-label flex items-center gap-1.5">
+                          <Volume2 className="w-3.5 h-3.5" /> Voices
+                        </div>
+                        <div className="bg-muted/50 rounded-[var(--radius)] p-3 space-y-1.5">
+                          {(["elevenlabs", "openai", "cartesia"] as const).map((prov) => {
+                            const vid = (m.voiceIds || {})[prov] ?? (prov === "elevenlabs" ? m.voiceId : null);
+                            const name = resolveVoiceName(prov, vid);
+                            return (
+                              <div key={prov} className="flex items-center gap-2 text-sm">
+                                <span className={`t-helper w-24 shrink-0 ${prov === activeTtsProvider ? "font-semibold text-foreground" : ""}`}>
+                                  {TTS_PROVIDER_LABELS[prov]?.split(" ")[0]}
+                                  {prov === activeTtsProvider ? " *" : ""}
+                                </span>
+                                {name ? <span>{name}</span> : <span className="t-helper italic">Uses default</span>}
+                              </div>
+                            );
+                          })}
+                          <p className="t-helper pt-1">* active provider</p>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="t-micro-label flex items-center gap-1.5">
+                          <Video className="w-3.5 h-3.5" /> Video Avatar
+                        </div>
+                        <div className="bg-muted/50 rounded-[var(--radius)] p-3">
+                          {(() => {
+                            const av = resolveAvatar(m.avatarFaceId);
+                            if (!av) return <p className="t-helper italic">Uses default avatar</p>;
+                            return (
+                              <div className="flex items-center gap-2.5 text-sm">
+                                {av.imageUrl ? (
+                                  <img src={av.imageUrl} alt="" className="w-9 h-9 rounded-full object-cover border" />
+                                ) : (
+                                  <span className="w-9 h-9 rounded-full bg-secondary" />
+                                )}
+                                <span>{av.name}</span>
+                                {av.kind === "custom" && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-accent text-accent-foreground font-ui">Custom</span>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
                     </div>
                   </div>
