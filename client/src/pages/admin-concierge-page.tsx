@@ -1339,20 +1339,12 @@ export default function AdminConciergePage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label >Voice - {TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider}</Label>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 min-w-0">
-                <VoicePicker
-                  provider={activeTtsProvider}
-                  value={(editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : "")}
-                  onChange={(id) => setEditForm({ ...editForm, voiceIds: { ...(editForm.voiceIds || {}), [activeTtsProvider]: id } })}
-                  testId="input-matchmaker-voice-id"
-                />
-              </div>
+            <div className="flex items-center justify-between gap-2">
+              <Label >Voice - {TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider}</Label>
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0"
+                className="shrink-0 h-7"
                 disabled={personaPreviewing}
                 onClick={async () => {
                   setPersonaPreviewing(true);
@@ -1373,6 +1365,12 @@ export default function AdminConciergePage() {
                 Preview
               </Button>
             </div>
+            <VoicePicker
+              provider={activeTtsProvider}
+              value={(editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : "")}
+              onChange={(id) => setEditForm({ ...editForm, voiceIds: { ...(editForm.voiceIds || {}), [activeTtsProvider]: id } })}
+              testId="input-matchmaker-voice-id"
+            />
             <p className="t-helper">How this persona sounds in voice mode, for the active provider - each provider keeps its own choice. Tap Preview to hear it.</p>
           </div>
           <div className="space-y-1.5">
@@ -1488,11 +1486,11 @@ export default function AdminConciergePage() {
             ) : (
               <Card key={m.id} className={`rounded-[var(--radius)] overflow-hidden transition-all ${!m.isActive ? "opacity-60" : ""}`} data-testid={`matchmaker-card-${m.id}`}>
                 <div
-                  className="flex items-center gap-3 p-4 cursor-pointer hover:bg-secondary/40 transition-colors"
+                  className="flex items-center gap-3 p-4 cursor-pointer hover:bg-secondary/40 transition-colors flex-wrap"
                   onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
                   data-testid={`matchmaker-header-${m.id}`}
                 >
-                  <div className="flex-shrink-0 text-muted-foreground/40"><GripVertical className="w-4 h-4" /></div>
+                  <div className="flex-shrink-0 text-muted-foreground/40 hidden sm:block"><GripVertical className="w-4 h-4" /></div>
                   <div className="flex-shrink-0">
                     {m.avatarUrl ? (
                       <img src={getPhotoSrc(m.avatarUrl) || undefined} alt={m.name} className="w-11 h-11 rounded-full object-cover border" />
@@ -1500,10 +1498,10 @@ export default function AdminConciergePage() {
                       <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">{m.name.charAt(0)}</div>
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0 basis-52">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-sm">{m.name}</span>
-                      <span className="t-helper px-1.5 py-0.5 bg-muted rounded">{m.title}</span>
+                      <span className="t-helper px-1.5 py-0.5 bg-muted rounded whitespace-nowrap">{m.title}</span>
                       {!m.isActive && (
                         <span className="text-xs text-[hsl(var(--brand-warning))] px-1.5 py-0.5 bg-[hsl(var(--brand-warning))]/10 rounded" data-testid={`badge-inactive-${m.id}`}>Inactive</span>
                       )}
@@ -1519,23 +1517,23 @@ export default function AdminConciergePage() {
                           const vName = vid ? resolveVoiceName(activeTtsProvider, vid) : null;
                           const provLabel = TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider;
                           return vName ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground whitespace-nowrap max-w-full truncate">
                               <Volume2 className="w-3 h-3" /> Speaks with {vName?.split(" - ")[0]} ({provLabel})
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))]">
-                              <Volume2 className="w-3 h-3" /> No {provLabel} voice - using fallback
+                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] whitespace-nowrap max-w-full truncate">
+                              <Volume2 className="w-3 h-3" /> No {provLabel} voice - voice chat will fail
                             </span>
                           );
                         })()}
                         {(brandSettings as any)?.voiceAvatarEnabled && (() => {
                           const av = resolveAvatar(m.avatarFaceId);
                           return av ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground whitespace-nowrap max-w-full truncate">
                               <Video className="w-3 h-3" /> {av.name}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))]">
+                            <span className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] whitespace-nowrap max-w-full truncate">
                               <Video className="w-3 h-3" /> No avatar - voice only
                             </span>
                           );
@@ -1543,7 +1541,7 @@ export default function AdminConciergePage() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1 flex-shrink-0 ml-auto" onClick={(e) => e.stopPropagation()}>
                     <Switch checked={m.isActive} onCheckedChange={(checked) => toggleActiveMutation.mutate({ id: m.id, isActive: checked })} data-testid={`switch-active-${m.id}`} />
                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setExpandedId(expandedId === m.id ? null : m.id)} data-testid={`btn-expand-matchmaker-${m.id}`}>
                       {expandedId === m.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}

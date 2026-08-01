@@ -325,7 +325,7 @@ export function VoicePicker({
                   <div className="flex flex-wrap items-center gap-1 mt-0.5">
                     {v.description && <span className="t-helper truncate">{cap(v.description)}</span>}
                     {[v.gender, v.age, v.accent].filter(Boolean).map((t) => (
-                      <span key={t} className="text-xs font-ui px-1.5 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+                      <span key={t} className="text-xs font-ui px-1.5 py-0.5 rounded-full bg-secondary text-secondary-foreground whitespace-nowrap">
                         {cap(t!)}
                       </span>
                     ))}
