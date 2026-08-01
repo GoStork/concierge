@@ -148,6 +148,44 @@ async function listCartesiaVoices(): Promise<VoiceOption[]> {
   }));
 }
 
+// Real-world cap feedback for the admin: are parents actually hitting the
+// session/daily caps, and how long do they really talk?
+voiceRouter.get("/api/voice/stats", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  try {
+    const rows = await prisma.voiceSessionLog.findMany({
+      where: { startedAt: { gte: since } },
+      select: { userId: true, seconds: true, endReason: true, avatarSeconds: true, ttsChars: true },
+    });
+    const rejections = rows.filter((r) => r.endReason === "daily_cap_rejected");
+    const sessions = rows.filter((r) => r.endReason !== "daily_cap_rejected");
+    const durations = sessions.map((s) => s.seconds).sort((a, b) => a - b);
+    const pct = (p: number) =>
+      durations.length ? durations[Math.min(durations.length - 1, Math.floor((p / 100) * durations.length))] : 0;
+    res.json({
+      days,
+      sessions: sessions.length,
+      uniqueParents: new Set(rows.map((r) => r.userId)).size,
+      totalMinutes: Math.round(sessions.reduce((a, s) => a + s.seconds, 0) / 60),
+      avatarMinutes: Math.round(sessions.reduce((a, s) => a + (s.avatarSeconds || 0), 0) / 60),
+      avgSessionSeconds: sessions.length
+        ? Math.round(sessions.reduce((a, s) => a + s.seconds, 0) / sessions.length)
+        : 0,
+      p50SessionSeconds: pct(50),
+      p90SessionSeconds: pct(90),
+      sessionCapHits: sessions.filter((s) => s.endReason === "session_cap").length,
+      silenceTimeouts: sessions.filter((s) => s.endReason === "silence_timeout").length,
+      dailyCapRejections: rejections.length,
+      notConfiguredFailures: sessions.filter((s) => s.endReason === "voice_not_configured").length,
+    });
+  } catch (err: any) {
+    console.error(`[voice] stats failed: ${err?.message}`);
+    res.status(500).json({ message: `Stats failed: ${err?.message}` });
+  }
+});
+
 voiceRouter.get("/api/voice/options/voices", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const provider = String(req.query.provider || "elevenlabs");

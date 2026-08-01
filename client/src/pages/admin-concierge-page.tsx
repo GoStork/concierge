@@ -168,6 +168,20 @@ function VoiceSettingsCard() {
       !(selectedTts === "elevenlabs" && m.voiceId),
   );
 
+  // Real-life cap feedback: how parents actually use voice, so the caps can
+  // be tuned on data instead of guesses.
+  const { data: voiceStats } = useQuery<{
+    days: number; sessions: number; uniqueParents: number; totalMinutes: number; avatarMinutes: number;
+    avgSessionSeconds: number; p50SessionSeconds: number; p90SessionSeconds: number;
+    sessionCapHits: number; silenceTimeouts: number; dailyCapRejections: number; notConfiguredFailures: number;
+  }>({
+    queryKey: ["/api/voice/stats"],
+    queryFn: async () => (await apiRequest("GET", "/api/voice/stats?days=30")).json(),
+    staleTime: 60_000,
+    retry: 1,
+  });
+  const capHitPct = voiceStats?.sessions ? Math.round((voiceStats.sessionCapHits / voiceStats.sessions) * 100) : 0;
+
   // Tri-state: true/false once status is loaded, null while loading or on
   // error - "API key not set" must never appear just because the status
   // request hasn't succeeded yet.
@@ -319,6 +333,41 @@ function VoiceSettingsCard() {
             />
           </div>
         </div>
+
+        {voiceStats && (
+          <div className="space-y-2" data-testid="voice-usage-stats">
+            <p className="t-helper">Voice usage - last {voiceStats.days} days</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {[
+                { label: "Sessions", value: String(voiceStats.sessions) },
+                { label: "Parents", value: String(voiceStats.uniqueParents) },
+                { label: "Total minutes", value: String(voiceStats.totalMinutes) },
+                { label: "Typical session", value: `${Math.round(voiceStats.p50SessionSeconds / 60)}m ${voiceStats.p50SessionSeconds % 60}s` },
+                { label: "Longest 10% reach", value: `${Math.round(voiceStats.p90SessionSeconds / 60)}m ${voiceStats.p90SessionSeconds % 60}s` },
+                { label: "Avatar minutes", value: String(voiceStats.avatarMinutes) },
+              ].map((t) => (
+                <div key={t.label} className="rounded-[var(--radius)] border p-2.5 bg-secondary/40">
+                  <div className="text-lg font-semibold leading-tight">{t.value}</div>
+                  <div className="t-helper">{t.label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className={`rounded-[var(--radius)] border p-2.5 ${voiceStats.sessionCapHits > 0 && capHitPct >= 10 ? "border-[hsl(var(--brand-warning))]/50 bg-[hsl(var(--brand-warning))]/10" : "bg-secondary/40"}`}>
+                <div className="text-lg font-semibold leading-tight">{voiceStats.sessionCapHits} <span className="text-sm font-normal text-muted-foreground">({capHitPct}%)</span></div>
+                <div className="t-helper">Sessions cut off by the session cap{capHitPct >= 10 ? " - consider raising it" : ""}</div>
+              </div>
+              <div className={`rounded-[var(--radius)] border p-2.5 ${voiceStats.dailyCapRejections > 0 ? "border-[hsl(var(--brand-warning))]/50 bg-[hsl(var(--brand-warning))]/10" : "bg-secondary/40"}`}>
+                <div className="text-lg font-semibold leading-tight">{voiceStats.dailyCapRejections}</div>
+                <div className="t-helper">Parents blocked by the daily cap{voiceStats.dailyCapRejections > 0 ? " - consider raising it" : ""}</div>
+              </div>
+              <div className={`rounded-[var(--radius)] border p-2.5 ${voiceStats.notConfiguredFailures > 0 ? "border-[hsl(var(--brand-warning))]/50 bg-[hsl(var(--brand-warning))]/10" : "bg-secondary/40"}`}>
+                <div className="text-lg font-semibold leading-tight">{voiceStats.notConfiguredFailures}</div>
+                <div className="t-helper">Failed - persona voice not configured</div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-between p-3 rounded-[var(--radius)] border">
           <div className="pr-4">

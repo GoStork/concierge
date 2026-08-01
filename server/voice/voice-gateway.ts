@@ -573,6 +573,7 @@ class VoiceSession {
             sttSeconds,
             ttsChars: this.ttsChars,
             avatarSeconds: this.avatarSeconds,
+            endReason: reason,
             sessionId: this.chatSessionId || "unknown",
           },
         });
@@ -651,6 +652,13 @@ export function attachVoiceGateway(httpServer: HttpServer, sessionMiddleware: an
             });
             const usedMin = (agg._sum.seconds || 0) / 60;
             if (usedMin >= settings.voiceDailyCapMinutes) {
+              // Record the refusal - this is the signal the admin stats use to
+              // answer "is the daily cap too low?".
+              prisma.voiceSessionLog
+                .create({
+                  data: { userId: user.id, sessionId: "rejected", endedAt: new Date(), endReason: "daily_cap_rejected" },
+                })
+                .catch((err: any) => log(`daily-cap rejection log failed: ${err?.message}`));
               socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\ndaily voice cap reached");
               socket.destroy();
               return;

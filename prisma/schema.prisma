@@ -1944,6 +1944,11 @@ model VoiceSessionLog {
   sttSeconds    Int       @default(0)
   ttsChars      Int       @default(0)
   avatarSeconds Int       @default(0)
+  // Why the session ended (user_ended | session_cap | silence_timeout |
+  // socket_closed | voice_not_configured | ...) or "daily_cap_rejected" for
+  // connections refused before a session started. Drives the admin stats
+  // that answer "are parents hitting the caps?".
+  endReason     String?
 
   @@index([userId, startedAt])
   @@index([sessionId])
