@@ -211,8 +211,9 @@ voiceRouter.post("/api/voice/preview", async (req, res) => {
 
   const settings: any = await prisma.siteSettings.findFirst();
   const providerName = req.body?.provider || settings?.voiceTtsProvider || "elevenlabs";
-  // Voice ids are provider-specific - resolve for the provider being previewed.
-  voiceId = voiceId || resolveVoiceForProvider(providerName, null, null, settings || {}) || null;
+  // Voice ids are provider-specific; without an explicit id, preview the
+  // provider's built-in fallback voice.
+  voiceId = voiceId || resolveVoiceForProvider(providerName, null, null) || null;
 
   const provider = resolveTtsProvider(providerName);
   if (!provider || !provider.isConfigured()) {

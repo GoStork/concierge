@@ -54,28 +54,30 @@ export function voiceProviderStatus() {
 }
 
 // Voice ids are provider-specific (ElevenLabs: opaque ids, OpenAI: named
-// voices, Cartesia: UUIDs). Resolution order: persona's per-provider map ->
-// persona legacy voiceId (elevenlabs only) -> settings per-provider map ->
-// settings legacy default / env (elevenlabs only) -> built-in provider default.
-const BUILTIN_DEFAULT_VOICES: Record<string, string> = {
+// voices, Cartesia: UUIDs). The persona is the single source of truth -
+// admins pick voices per persona in the AI Concierge tab. The built-ins
+// below are EMERGENCY fallbacks only (logged loudly when used), so a
+// parent's session never dies because a persona is missing a voice for the
+// provider the admin just switched to.
+export const BUILTIN_DEFAULT_VOICES: Record<string, string> = {
+  elevenlabs: "EXAVITQu4vr4xnSDxMaL", // Sarah (premade - usable on every plan)
   openai: "shimmer",
+  cartesia: "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4", // Skylar - Friendly Guide
 };
 export function resolveVoiceForProvider(
   provider: string,
   personaVoiceIds: any,
   personaLegacyVoiceId: string | null | undefined,
-  settings: { voiceDefaultVoiceIds?: any; voiceDefaultVoiceId?: string | null },
 ): string {
-  return (
+  const personaPick =
     personaVoiceIds?.[provider] ||
-    (provider === "elevenlabs" ? personaLegacyVoiceId : null) ||
-    settings.voiceDefaultVoiceIds?.[provider] ||
-    (provider === "elevenlabs"
-      ? settings.voiceDefaultVoiceId || process.env.ELEVENLABS_DEFAULT_VOICE_ID
-      : null) ||
-    BUILTIN_DEFAULT_VOICES[provider] ||
-    ""
-  );
+    (provider === "elevenlabs" ? personaLegacyVoiceId : null);
+  if (personaPick) return personaPick;
+  const builtin = BUILTIN_DEFAULT_VOICES[provider] || "";
+  if (builtin) {
+    log(`no persona voice for provider "${provider}" - using built-in fallback voice`);
+  }
+  return builtin;
 }
 
 function log(msg: string) {
@@ -268,7 +270,6 @@ class VoiceSession {
           this.settings.voiceTtsProvider,
           mm.voiceIds,
           mm.voiceId,
-          this.settings,
         );
         if (resolved) this.voiceId = resolved;
         if (mm.avatarFaceId) this.personaAvatarId = mm.avatarFaceId;
@@ -293,9 +294,11 @@ class VoiceSession {
       log("avatar enabled but LIVEAVATAR_API_KEY/HEYGEN_API_KEY missing - audio-only fallback");
       return;
     }
+    // The persona's own avatar is the source of truth; without one this
+    // session runs audio-only (loudly logged), never a surprise face.
     const avatarId = this.personaAvatarId || this.settings.voiceDefaultAvatarId;
     if (!avatarId) {
-      log("avatar enabled but no avatar id (persona avatarFaceId or default) - audio-only fallback");
+      log("avatar enabled but persona has no video avatar - audio-only fallback");
       return;
     }
     try {
@@ -624,16 +627,12 @@ export function attachVoiceGateway(httpServer: HttpServer, sessionMiddleware: an
           }
           const tts = resolveTtsProvider(settings.voiceTtsProvider);
           const stt = resolveSttProvider(settings.voiceSttProvider);
-          const defaultVoiceId = resolveVoiceForProvider(
-            settings.voiceTtsProvider,
-            null,
-            null,
-            settings,
-          );
-          if (!tts || !tts.isConfigured() || !stt || !stt.isConfigured() || !defaultVoiceId) {
+          // Session-opening voice; the persona's own pick replaces it on hello.
+          const defaultVoiceId = resolveVoiceForProvider(settings.voiceTtsProvider, null, null);
+          if (!tts || !tts.isConfigured() || !stt || !stt.isConfigured()) {
             log(
               `voice session rejected: tts=${settings.voiceTtsProvider}(${tts?.isConfigured() ? "ok" : "unconfigured"}) ` +
-                `stt=${settings.voiceSttProvider}(${stt?.isConfigured() ? "ok" : "unconfigured"}) voiceId=${defaultVoiceId ? "set" : "MISSING"}`,
+                `stt=${settings.voiceSttProvider}(${stt?.isConfigured() ? "ok" : "unconfigured"})`,
             );
             socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\nvoice providers not configured");
             socket.destroy();

@@ -287,12 +287,31 @@ const STT_PROVIDER_LABELS: Record<string, string> = {
   deepgram: "Deepgram (budget)",
 };
 
+// Synthesize one sentence with the given provider/voice and play it. Throws
+// on failure so the caller can toast the real error.
+async function playVoicePreview(provider: string, voiceId?: string): Promise<void> {
+  const res = await fetch("/api/voice/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ provider, voiceId: voiceId || undefined }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Preview failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.onended = () => URL.revokeObjectURL(url);
+  await audio.play();
+}
+
 function VoiceSettingsCard() {
   const { toast } = useToast();
   const { data: brandSettings } = useBrandSettings();
   const [draft, setDraft] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
 
   // Which vendors actually have API keys on the server - unconfigured ones are
   // selectable-but-disabled with an honest "API key not set" label.
@@ -314,21 +333,6 @@ function VoiceSettingsCard() {
   const set = (key: string, v: any) => setDraft((d) => ({ ...d, [key]: v }));
   const hasChanges = Object.keys(draft).length > 0;
 
-  // Per-provider default voices ({provider: voiceId}); the legacy single
-  // voiceDefaultVoiceId acts as the elevenlabs fallback for old rows.
-  const defaultVoiceIds = (): Record<string, string> => ({
-    ...((brandSettings as any)?.voiceDefaultVoiceIds || {}),
-    ...(draft.voiceDefaultVoiceIds || {}),
-  });
-  const currentDefaultVoiceFor = (provider: string): string => {
-    const ids = defaultVoiceIds();
-    if (ids[provider] !== undefined) return ids[provider];
-    if (provider === "elevenlabs") return (brandSettings as any)?.voiceDefaultVoiceId || "";
-    return "";
-  };
-  const setDefaultVoiceFor = (provider: string, voiceId: string) =>
-    set("voiceDefaultVoiceIds", { ...defaultVoiceIds(), [provider]: voiceId });
-
   // Tri-state: true/false once status is loaded, null while loading or on
   // error - "API key not set" must never appear just because the status
   // request hasn't succeeded yet.
@@ -348,34 +352,6 @@ function VoiceSettingsCard() {
       toast({ title: "Failed to save voice settings", variant: "destructive" });
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handlePreview = async () => {
-    setPreviewing(true);
-    try {
-      const res = await fetch("/api/voice/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          provider: val("voiceTtsProvider", "elevenlabs"),
-          voiceId: currentDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs")) || undefined,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `Preview failed (${res.status})`);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audio.onended = () => URL.revokeObjectURL(url);
-      await audio.play();
-    } catch (err: any) {
-      toast({ title: "Voice preview failed", description: err?.message, variant: "destructive" });
-    } finally {
-      setPreviewing(false);
     }
   };
 
@@ -463,58 +439,31 @@ function VoiceSettingsCard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
           <div className="space-y-1.5">
-            <Label>Default voice - {TTS_PROVIDER_LABELS[val("voiceTtsProvider", "elevenlabs")]?.split(" ")[0] || val("voiceTtsProvider", "elevenlabs")}</Label>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 min-w-0">
-                <VoiceSelect
-                  provider={val("voiceTtsProvider", "elevenlabs")}
-                  value={currentDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"))}
-                  onChange={(id) => setDefaultVoiceFor(val("voiceTtsProvider", "elevenlabs"), id)}
-                  testId="input-voice-default-voice-id"
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={handlePreview}
-                disabled={previewing}
-                data-testid="btn-voice-preview"
-              >
-                {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Volume2 className="w-3.5 h-3.5 mr-1.5" />}
-                Preview
-              </Button>
-            </div>
-            <p className="t-helper">Each provider keeps its own voice - switching providers never loses the others. Used when a persona has no voice of its own. Tap Preview to hear the selected voice.</p>
+            <Label>Session cap (min)</Label>
+            <NumberInput
+              value={String(val("voiceSessionCapMinutes", 10))}
+              onChange={(raw: string) => set("voiceSessionCapMinutes", raw === "" ? 10 : Number(raw))}
+              allowDecimal={false}
+              data-testid="input-voice-session-cap"
+            />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Session cap (min)</Label>
-              <NumberInput
-                value={String(val("voiceSessionCapMinutes", 10))}
-                onChange={(raw: string) => set("voiceSessionCapMinutes", raw === "" ? 10 : Number(raw))}
-                allowDecimal={false}
-                data-testid="input-voice-session-cap"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Daily cap / parent (min)</Label>
-              <NumberInput
-                value={String(val("voiceDailyCapMinutes", 30))}
-                onChange={(raw: string) => set("voiceDailyCapMinutes", raw === "" ? 30 : Number(raw))}
-                allowDecimal={false}
-                data-testid="input-voice-daily-cap"
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label>Daily cap / parent (min)</Label>
+            <NumberInput
+              value={String(val("voiceDailyCapMinutes", 30))}
+              onChange={(raw: string) => set("voiceDailyCapMinutes", raw === "" ? 30 : Number(raw))}
+              allowDecimal={false}
+              data-testid="input-voice-daily-cap"
+            />
           </div>
         </div>
 
         <div className="flex items-center justify-between p-3 rounded-[var(--radius)] border">
           <div className="pr-4">
             <span className="text-sm font-medium">Video avatar (HeyGen LiveAvatar)</span>
-            <p className="t-helper">The persona speaks as a realtime lip-synced talking head. Roughly doubles per-minute cost. Requires LIVEAVATAR_API_KEY (or HEYGEN_API_KEY) on the server and an avatar ID below or per persona.</p>
+            <p className="t-helper">The persona speaks as a realtime lip-synced talking head. Roughly doubles per-minute cost. Each persona's voice and talking head are chosen on the persona itself, in the Personas section below.</p>
           </div>
           <Switch
             checked={val("voiceAvatarEnabled", false)}
@@ -522,18 +471,6 @@ function VoiceSettingsCard() {
             data-testid="switch-voice-avatar"
           />
         </div>
-
-        {val("voiceAvatarEnabled", false) && (
-          <div className="space-y-1.5">
-            <Label>Default avatar</Label>
-            <AvatarSelect
-              value={val("voiceDefaultAvatarId", "") || ""}
-              onChange={(id) => set("voiceDefaultAvatarId", id)}
-              testId="input-voice-default-avatar-id"
-            />
-            <p className="t-helper">The talking head used when a persona has no avatar of its own. To use Ariel's or Adam's real face, create a photo avatar in the LiveAvatar dashboard - it appears here automatically with a "Custom" badge.</p>
-          </div>
-        )}
 
         {hasChanges && (
           <div className="flex justify-end gap-2 pt-2">
@@ -1316,6 +1253,7 @@ export default function AdminConciergePage() {
   };
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [personaPreviewing, setPersonaPreviewing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Matchmaker>>({});
   const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1452,13 +1390,40 @@ export default function AdminConciergePage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label >Voice - {TTS_PROVIDER_LABELS[activeTtsProvider]?.split(" ")[0] || activeTtsProvider}</Label>
-            <VoiceSelect
-              provider={activeTtsProvider}
-              value={(editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : "")}
-              onChange={(id) => setEditForm({ ...editForm, voiceIds: { ...(editForm.voiceIds || {}), [activeTtsProvider]: id } })}
-              testId="input-matchmaker-voice-id"
-            />
-            <p className="t-helper">How this persona sounds in voice mode (for the active provider - each provider keeps its own choice). Falls back to the default voice in Voice settings.</p>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <VoiceSelect
+                  provider={activeTtsProvider}
+                  value={(editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : "")}
+                  onChange={(id) => setEditForm({ ...editForm, voiceIds: { ...(editForm.voiceIds || {}), [activeTtsProvider]: id } })}
+                  testId="input-matchmaker-voice-id"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                disabled={personaPreviewing}
+                onClick={async () => {
+                  setPersonaPreviewing(true);
+                  try {
+                    await playVoicePreview(
+                      activeTtsProvider,
+                      (editForm.voiceIds || {})[activeTtsProvider] ?? (activeTtsProvider === "elevenlabs" ? editForm.voiceId || "" : ""),
+                    );
+                  } catch (err: any) {
+                    toast({ title: "Voice preview failed", description: err?.message, variant: "destructive" });
+                  } finally {
+                    setPersonaPreviewing(false);
+                  }
+                }}
+                data-testid="btn-matchmaker-voice-preview"
+              >
+                {personaPreviewing ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Volume2 className="w-3.5 h-3.5 mr-1.5" />}
+                Preview
+              </Button>
+            </div>
+            <p className="t-helper">How this persona sounds in voice mode, for the active provider - each provider keeps its own choice. Tap Preview to hear it.</p>
           </div>
           <div className="space-y-1.5">
             <Label >Video avatar</Label>
@@ -1467,7 +1432,7 @@ export default function AdminConciergePage() {
               onChange={(id) => setEditForm({ ...editForm, avatarFaceId: id })}
               testId="input-matchmaker-avatar-face-id"
             />
-            <p className="t-helper">The talking head this persona uses. Create a photo avatar from this persona's photo in the LiveAvatar dashboard and it appears here with a "Custom" badge. Falls back to the default avatar.</p>
+            <p className="t-helper">The talking head this persona uses when the video avatar is on. Create a photo avatar from this persona's photo in the LiveAvatar dashboard and it appears here with a "Custom" badge.</p>
           </div>
         </div>
 
@@ -1637,7 +1602,7 @@ export default function AdminConciergePage() {
                                   {TTS_PROVIDER_LABELS[prov]?.split(" ")[0]}
                                   {prov === activeTtsProvider ? " *" : ""}
                                 </span>
-                                {name ? <span>{name}</span> : <span className="t-helper italic">Uses default</span>}
+                                {name ? <span>{name}</span> : <span className="t-helper italic">Not set - uses built-in fallback</span>}
                               </div>
                             );
                           })}
@@ -1651,7 +1616,7 @@ export default function AdminConciergePage() {
                         <div className="bg-muted/50 rounded-[var(--radius)] p-3">
                           {(() => {
                             const av = resolveAvatar(m.avatarFaceId);
-                            if (!av) return <p className="t-helper italic">Uses default avatar</p>;
+                            if (!av) return <p className="t-helper italic">Not set - voice only, no talking head</p>;
                             return (
                               <div className="flex items-center gap-2.5 text-sm">
                                 {av.imageUrl ? (
