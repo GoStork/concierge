@@ -5,6 +5,8 @@
 // audio without it. echoCancellation is load-bearing: without it Eva's own
 // voice trips the barge-in detector.
 
+import { registerRemoteAnalyzer, remoteAudioLevel } from "./remote-level";
+
 export const VOICE_SAMPLE_RATE = 16000;
 
 // Both worklet processors are inlined and loaded via a Blob URL so no extra
@@ -194,6 +196,35 @@ export async function createVoiceAudioEngine(): Promise<VoiceAudioEngine> {
   watchTrack();
   // --------------------------------------------------------------------------
 
+  // Remote (avatar) audio level meter for echo-aware barge-in - see
+  // remote-level.ts. Lives in THIS context so it shares the gesture resume.
+  const analyzerCleanups: Array<() => void> = [];
+  registerRemoteAnalyzer((track) => {
+    const src = ctx.createMediaStreamSource(new MediaStream([track]));
+    const an = ctx.createAnalyser();
+    an.fftSize = 1024;
+    src.connect(an); // analysis only - playback stays on the <audio> element
+    const buf = new Float32Array(an.fftSize);
+    const timer = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      remoteAudioLevel.rms = Math.sqrt(sum / buf.length);
+      remoteAudioLevel.updatedAt = Date.now();
+    }, 60);
+    const cleanup = () => {
+      clearInterval(timer);
+      try {
+        src.disconnect();
+      } catch {
+        /* already disconnected */
+      }
+      remoteAudioLevel.rms = 0;
+    };
+    analyzerCleanups.push(cleanup);
+    return cleanup;
+  });
+
   const playback = new AudioWorkletNode(ctx, "voice-playback", {
     numberOfInputs: 0,
     numberOfOutputs: 1,
@@ -239,6 +270,8 @@ export async function createVoiceAudioEngine(): Promise<VoiceAudioEngine> {
       playCb = null;
       ctx.onstatechange = null;
       document.removeEventListener("visibilitychange", onVisible);
+      registerRemoteAnalyzer(null);
+      for (const c of analyzerCleanups) c();
       try {
         source.disconnect();
         capture.disconnect();

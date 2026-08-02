@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createVoiceAudioEngine, type VoiceAudioEngine } from "@/lib/voice/audio";
+import { remoteAudioLevel } from "@/lib/voice/remote-level";
 
 // Client half of the voice gateway (server/voice/voice-gateway.ts). Owns the
 // WebSocket, the audio engine, client-side RMS VAD (mic frames are only
@@ -31,9 +32,15 @@ const VAD_THRESHOLD = 0.015;
 const VAD_HANGOVER_MS = 900;
 // Frames buffered while silent, replayed on speech onset so the first word is
 // never clipped.
-const PREBUFFER_FRAMES = 8; // ~320ms of 40ms frames
+const PREBUFFER_FRAMES = 12; // ~480ms of 40ms frames
 // Sustained speech this long while Eva talks = barge-in.
-const BARGE_MS = 300;
+const BARGE_MS = 450;
+// Barge-in noise floor: while Eva is audible, plain VAD level is not enough -
+// on iOS her own speaker output leaks into the mic at ~0.2 RMS (AEC does not
+// cancel WebRTC remote audio). A barge needs the mic to beat BOTH this floor
+// and a multiple of Eva's measured output level (see remote-level.ts).
+const BARGE_MIN_RMS = 0.04;
+const BARGE_ECHO_FACTOR = 1.6;
 
 export function useVoiceSession() {
   const [state, setState] = useState<VoiceState>("ended");
@@ -53,6 +60,7 @@ export function useVoiceSession() {
   const stateRef = useRef<VoiceState>("ended");
   const lastVoiceAtRef = useRef(0);
   const speechStartRef = useRef(0);
+  const bargeStartRef = useRef(0);
   const bargeSentRef = useRef(false);
   const prebufferRef = useRef<ArrayBuffer[]>([]);
   const activeRef = useRef(false);
@@ -160,8 +168,16 @@ export function useVoiceSession() {
           break;
         case "state":
           if (["listening", "thinking", "speaking"].includes(msg.state)) {
+            const wasBarge = bargeSentRef.current;
             setStateBoth(msg.state);
-            if (msg.state !== "speaking") bargeSentRef.current = false;
+            if (msg.state !== "speaking") {
+              bargeSentRef.current = false;
+              bargeStartRef.current = 0;
+              // Leaving "speaking" without a barge means the prebuffer holds
+              // Eva's own leaked tail, not the parent - drop it. After a real
+              // barge it holds the parent's interrupting words - keep those.
+              if (!wasBarge) prebufferRef.current = [];
+            }
           }
           break;
         case "partial_transcript":
@@ -250,12 +266,26 @@ export function useVoiceSession() {
         speechStartRef.current = 0;
       }
 
-      // Barge-in: sustained parent speech while Eva talks.
+      const evaSpeaking = stateRef.current === "speaking";
+
+      // Echo-aware barge-in: while Eva talks, the mic hears her own speaker
+      // output (iOS AEC does not cancel the avatar's WebRTC audio). A real
+      // interruption must beat both a hard floor and a multiple of Eva's
+      // measured output level, sustained.
+      const remoteRms =
+        now - remoteAudioLevel.updatedAt < 400 ? remoteAudioLevel.rms : 0;
+      const bargeVoice =
+        rms > Math.max(BARGE_MIN_RMS, remoteRms * BARGE_ECHO_FACTOR);
+      if (evaSpeaking && bargeVoice) {
+        if (!bargeStartRef.current) bargeStartRef.current = now;
+      } else if (!bargeVoice) {
+        bargeStartRef.current = 0;
+      }
       if (
-        stateRef.current === "speaking" &&
-        speaking &&
-        speechStartRef.current &&
-        now - speechStartRef.current >= BARGE_MS &&
+        evaSpeaking &&
+        bargeVoice &&
+        bargeStartRef.current &&
+        now - bargeStartRef.current >= BARGE_MS &&
         !bargeSentRef.current
       ) {
         bargeSentRef.current = true;
@@ -263,8 +293,14 @@ export function useVoiceSession() {
         sock.send(JSON.stringify({ type: "barge" }));
       }
 
+      // While Eva is audibly speaking (and no barge yet), mic audio must NOT
+      // reach transcription - on iOS it is largely her own leaked voice and
+      // was being transcribed as the parent. Prebuffer instead, so when a
+      // barge (or the end of her reply) opens the floor, the parent's first
+      // words replay into STT unclipped.
+      const holdForEcho = evaSpeaking && !bargeSentRef.current;
       const active = now - lastVoiceAtRef.current < VAD_HANGOVER_MS;
-      if (active) {
+      if (active && !holdForEcho) {
         // Replay the prebuffer so speech onset isn't clipped.
         for (const buffered of prebufferRef.current) sock.send(buffered);
         prebufferRef.current = [];

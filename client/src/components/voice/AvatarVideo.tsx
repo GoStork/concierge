@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { analyzeRemoteTrack } from "@/lib/voice/remote-level";
 
 // Realtime avatar video: joins the LiveAvatar LiveKit room and attaches the
 // avatar's video + audio tracks. livekit-client is dynamically imported so the
@@ -90,6 +91,7 @@ export function AvatarVideo({
     let room: any = null;
     let cancelled = false;
     let stopKey: (() => void) | null = null;
+    let stopLevel: (() => void) | null = null;
     (async () => {
       try {
         const { Room, RoomEvent, Track } = await import("livekit-client");
@@ -103,6 +105,12 @@ export function AvatarVideo({
             setConnected(true);
           } else if (track.kind === Track.Kind.Audio && audioRef.current) {
             track.attach(audioRef.current);
+            // Feed the avatar's output level to the echo-aware barge detector
+            // (iOS AEC does not cancel this audio from the mic).
+            if (track.mediaStreamTrack) {
+              stopLevel?.();
+              stopLevel = analyzeRemoteTrack(track.mediaStreamTrack);
+            }
           }
         };
         room.on(RoomEvent.TrackSubscribed, (track: any) => attach(track));
@@ -121,6 +129,7 @@ export function AvatarVideo({
     return () => {
       cancelled = true;
       stopKey?.();
+      stopLevel?.();
       try {
         room?.disconnect();
       } catch {

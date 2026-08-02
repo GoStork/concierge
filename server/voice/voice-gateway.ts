@@ -408,6 +408,7 @@ class VoiceSession {
 
   private handleBarge() {
     if (this.state !== "speaking" && this.state !== "thinking") return;
+    log(`barge-in (turn ${this.turnCounter}, was ${this.state})`);
     this.speakSuppressed = true;
     if (this.listenTimer) clearTimeout(this.listenTimer);
     this.tts?.cancel();
@@ -557,7 +558,10 @@ class VoiceSession {
           }
           const safe = this.stripper.push(json.delta);
           if (safe) {
-            this.send({ type: "eva_caption", text: safe });
+            // After a barge the reply keeps streaming for persistence, but
+            // neither audio NOR captions - captions crawling on after her
+            // voice stopped read as a crash.
+            if (!this.speakSuppressed) this.send({ type: "eva_caption", text: safe });
             this.chunker?.push(safe);
           }
         } else if (json.type === "reset") {
