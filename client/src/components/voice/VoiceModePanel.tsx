@@ -1,10 +1,5 @@
-import {
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
-} from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { useCornerDrag } from "@/lib/voice/use-corner-drag";
 import { Mic, MicOff, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AvatarVideo } from "@/components/voice/AvatarVideo";
@@ -189,33 +184,12 @@ export function VoiceModePanel({
   // through the voice session, which clears the cards - Eva returns to full
   // screen and the conversation continues.
   const takeover = overVideo && !!renderCards && (hasScreenCards || !!cardsPreview);
-  const [pipCorner, setPipCorner] = useState<"tl" | "tr" | "bl" | "br">("tr");
-  const pipRef = useRef<HTMLDivElement>(null);
-  const pipDrag = useRef({ startX: 0, startY: 0, dragging: false });
+  const { ref: pipRef, corner: pipCorner, onPointerDown: onPipPointerDown } = useCornerDrag("tr");
   const PIP_POS: Record<string, string> = {
     tl: "top-16 left-3",
     tr: "top-16 right-3",
     bl: "bottom-6 left-3",
     br: "bottom-6 right-3",
-  };
-  const onPipPointerDown = (e: ReactPointerEvent) => {
-    pipDrag.current = { startX: e.clientX, startY: e.clientY, dragging: true };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onPipPointerMove = (e: ReactPointerEvent) => {
-    if (!pipDrag.current.dragging || !pipRef.current) return;
-    pipRef.current.style.transform = `translate(${e.clientX - pipDrag.current.startX}px, ${e.clientY - pipDrag.current.startY}px)`;
-  };
-  const onPipPointerUp = (e: ReactPointerEvent) => {
-    if (!pipDrag.current.dragging) return;
-    pipDrag.current.dragging = false;
-    if (pipRef.current) pipRef.current.style.transform = "";
-    const rect = pipRef.current?.parentElement?.getBoundingClientRect();
-    if (rect) {
-      const left = e.clientX - rect.left < rect.width / 2;
-      const top = e.clientY - rect.top < rect.height / 2;
-      setPipCorner(top ? (left ? "tl" : "tr") : left ? "bl" : "br");
-    }
   };
 
   return (
@@ -237,8 +211,6 @@ export function VoiceModePanel({
             }
             style={takeover ? { borderColor: brandColor, touchAction: "none" } : undefined}
             onPointerDown={takeover ? onPipPointerDown : undefined}
-            onPointerMove={takeover ? onPipPointerMove : undefined}
-            onPointerUp={takeover ? onPipPointerUp : undefined}
             data-testid={takeover ? "voice-avatar-pip" : "voice-avatar-stage"}
           >
             <AvatarVideo

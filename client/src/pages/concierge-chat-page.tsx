@@ -4786,6 +4786,24 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     onAction={(text) => voiceSession.sendText(text)}
                   />
                 ))}
+                {/* The booking calendar Eva "pulls up" mid-call - without this
+                    the takeover opened as a blank screen for consultation
+                    cards. Booking persists server-side; the transcript reloads
+                    when the call ends. */}
+                {c.consultationCard && (
+                  <div className="w-full">
+                    <ConsultationBookingCard
+                      card={c.consultationCard}
+                      brandColor={brandColor}
+                      userEmail={(user as any)?.email || ""}
+                      userName={(user as any)?.name || ""}
+                      onSchedule={() => {}}
+                      onBookingConfirmed={() => {
+                        if (sessionId) void loadMessagesForSession(sessionId);
+                      }}
+                    />
+                  </div>
+                )}
               </>
             )}
           />

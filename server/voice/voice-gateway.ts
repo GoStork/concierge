@@ -509,7 +509,13 @@ class VoiceSession {
     // of the real reply. ONLY for substantive requests - after "hey" or
     // "thanks", "let me look into that" is nonsense; short social utterances
     // just wait the extra second in silence, like a human would.
-    const substantive = userText.trim().split(/\s+/).length >= 4;
+    // "Substantive" = worth covering dead air with "let me look into that".
+    // Word count alone let greetings through ("Hey, can you hear me?" is 5
+    // words) - social/presence phrases never get the lookup filler.
+    const SOCIAL_UTTERANCE =
+      /\b(hey|hi|hello|good (morning|afternoon|evening)|are you (there|here|with me)|can you hear( me)?|hear me|thank(s| you)?|ok(ay)?|got it)\b/i;
+    const wordCount = userText.trim().split(/\s+/).length;
+    const substantive = wordCount >= 4 && !(wordCount <= 8 && SOCIAL_UTTERANCE.test(userText));
     const fillerTimer = substantive
       ? setTimeout(() => {
           if (this.turnCounter !== turnId || this.speakSuppressed || tFirstToken) return;

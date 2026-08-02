@@ -1,9 +1,9 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import { useSharedVoiceSession } from "@/contexts/voice-session-context";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { AvatarVideo } from "@/components/voice/AvatarVideo";
+import { useCornerDrag } from "@/lib/voice/use-corner-drag";
 
 // Floating FaceTime-style frame shown while a voice call is live and the chat
 // page's full VoiceModePanel is NOT on screen (e.g. the parent tapped "View
@@ -32,9 +32,10 @@ export function GlobalVoicePip() {
   const voice = useSharedVoiceSession();
   const { data: brand } = useBrandSettings();
   const navigate = useNavigate();
-  const [corner, setCorner] = useState<"tl" | "tr" | "bl" | "br">("br");
-  const boxRef = useRef<HTMLDivElement>(null);
-  const drag = useRef({ startX: 0, startY: 0, moved: false, dragging: false });
+  // Plain tap = back to the conversation
+  const { ref: boxRef, corner, onPointerDown } = useCornerDrag("br", () =>
+    navigate(voice.meta?.returnTo || "/chat/concierge"),
+  );
 
   const active = ACTIVE_STATES.includes(voice.state);
   if (!active || voice.panelActive) return null;
@@ -42,39 +43,12 @@ export function GlobalVoicePip() {
   const brandColor = brand?.primaryColor || "#004D4D";
   const name = voice.meta?.personaName || "AI Concierge";
 
-  const onPointerDown = (e: ReactPointerEvent) => {
-    drag.current = { startX: e.clientX, startY: e.clientY, moved: false, dragging: true };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-  const onPointerMove = (e: ReactPointerEvent) => {
-    if (!drag.current.dragging || !boxRef.current) return;
-    const dx = e.clientX - drag.current.startX;
-    const dy = e.clientY - drag.current.startY;
-    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) drag.current.moved = true;
-    boxRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
-  };
-  const onPointerUp = (e: ReactPointerEvent) => {
-    if (!drag.current.dragging) return;
-    drag.current.dragging = false;
-    if (boxRef.current) boxRef.current.style.transform = "";
-    if (drag.current.moved) {
-      const left = e.clientX < window.innerWidth / 2;
-      const top = e.clientY < window.innerHeight / 2;
-      setCorner(top ? (left ? "tl" : "tr") : left ? "bl" : "br");
-    } else {
-      // Plain tap = back to the conversation
-      navigate(voice.meta?.returnTo || "/chat/concierge");
-    }
-  };
-
   return (
     <div
       ref={boxRef}
       className={`fixed z-[70] w-28 h-40 sm:w-32 sm:h-44 rounded-[var(--radius)] overflow-hidden border-2 shadow-xl cursor-grab active:cursor-grabbing bg-secondary ${PIP_POS[corner]}`}
       style={{ borderColor: brandColor, touchAction: "none" }}
       onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
       data-testid="global-voice-pip"
     >
       {voice.avatar ? (

@@ -30,17 +30,20 @@ const VAD_THRESHOLD = 0.015;
 // Keep forwarding this long after the last speech frame so trailing words and
 // natural pauses reach STT.
 const VAD_HANGOVER_MS = 900;
-// Frames buffered while silent, replayed on speech onset so the first word is
-// never clipped.
-const PREBUFFER_FRAMES = 12; // ~480ms of 40ms frames
+// Frames buffered while silent (or held back during Eva's speech), replayed
+// on speech onset so words are never clipped - big enough that a failed
+// interruption attempt still reaches STT once she stops talking.
+const PREBUFFER_FRAMES = 32; // ~1.3s of 40ms frames
 // Sustained speech this long while Eva talks = barge-in.
-const BARGE_MS = 450;
+const BARGE_MS = 400;
 // Barge-in noise floor: while Eva is audible, plain VAD level is not enough -
-// on iOS her own speaker output leaks into the mic at ~0.2 RMS (AEC does not
-// cancel WebRTC remote audio). A barge needs the mic to beat BOTH this floor
-// and a multiple of Eva's measured output level (see remote-level.ts).
-const BARGE_MIN_RMS = 0.04;
-const BARGE_ECHO_FACTOR = 1.6;
+// on iOS her own speaker output leaks into the mic (AEC does not cancel
+// WebRTC remote audio). The echo COUPLING (mic level per unit of her output)
+// varies wildly by device and volume, so a fixed multiplier was either
+// uninterruptible (speaker) or self-barging. Instead the coupling is LEARNED:
+// while Eva speaks and the parent is silent, mic/remote ratio converges to
+// the true echo level, and a barge must clearly exceed it.
+const BARGE_MIN_RMS = 0.035;
 
 export function useVoiceSession() {
   const [state, setState] = useState<VoiceState>("ended");
@@ -65,6 +68,10 @@ export function useVoiceSession() {
   const speechStartRef = useRef(0);
   const bargeStartRef = useRef(0);
   const bargeSentRef = useRef(false);
+  // Learned echo coupling: mic RMS per unit of Eva's output RMS on THIS
+  // device (headphones ~0, phone speaker can approach 1). Starts conservative
+  // and converges down whenever Eva speaks over a silent parent.
+  const echoKRef = useRef(1.2);
   const prebufferRef = useRef<ArrayBuffer[]>([]);
   const activeRef = useRef(false);
   // Mic telemetry: peak RMS + frames forwarded per 5s window, reported to the
@@ -106,6 +113,8 @@ export function useVoiceSession() {
     setCaption("");
     setPartialTranscript("");
     setAvatar(null);
+    setCardsPreview(false);
+    echoKRef.current = 1.2;
     setStateBoth("connecting");
 
     let engine: VoiceAudioEngine;
@@ -277,14 +286,20 @@ export function useVoiceSession() {
 
       const evaSpeaking = stateRef.current === "speaking";
 
-      // Echo-aware barge-in: while Eva talks, the mic hears her own speaker
-      // output (iOS AEC does not cancel the avatar's WebRTC audio). A real
-      // interruption must beat both a hard floor and a multiple of Eva's
-      // measured output level, sustained.
+      // Echo-aware barge-in with a LEARNED coupling: whenever Eva is audible,
+      // the observed mic/remote ratio pulls the coupling estimate down toward
+      // the true echo level (a silent parent = pure echo). A real interruption
+      // must beat that estimate with clear margin, sustained.
       const remoteRms =
         now - remoteAudioLevel.updatedAt < 400 ? remoteAudioLevel.rms : 0;
+      if (evaSpeaking && remoteRms > 0.03) {
+        const ratio = rms / remoteRms;
+        if (ratio < echoKRef.current) {
+          echoKRef.current = echoKRef.current * 0.7 + ratio * 0.3;
+        }
+      }
       const bargeVoice =
-        rms > Math.max(BARGE_MIN_RMS, remoteRms * BARGE_ECHO_FACTOR);
+        rms > Math.max(BARGE_MIN_RMS, remoteRms * (echoKRef.current * 1.8 + 0.05));
       if (evaSpeaking && bargeVoice) {
         if (!bargeStartRef.current) bargeStartRef.current = now;
       } else if (!bargeVoice) {
