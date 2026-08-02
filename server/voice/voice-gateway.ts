@@ -548,6 +548,8 @@ class VoiceSession {
         ? (resp.body as any).getReader()
         : null;
       let buf = "";
+      let rawSoFar = "";
+      let previewSent = false;
       const handleFrame = (json: any) => {
         if (this.turnCounter !== turnId) return; // superseded by a newer turn
         if (json.type === "token" && typeof json.delta === "string") {
@@ -555,6 +557,16 @@ class VoiceSession {
             tFirstToken = Date.now();
             log(`turn ${turnId}: sttFinal->firstToken ${tFirstToken - tSttFinal}ms`);
             if (this.state === "thinking") this.setState("speaking");
+          }
+          // A MATCH_CARD tag in the stream = a profile is coming. Tell the
+          // client NOW so the profile UI opens while Eva is still talking,
+          // instead of seconds later when the full card payload lands at done.
+          if (!previewSent) {
+            rawSoFar += json.delta;
+            if (rawSoFar.includes("[[MATCH_CARD:")) {
+              previewSent = true;
+              this.send({ type: "cards_preview" });
+            }
           }
           const safe = this.stripper.push(json.delta);
           if (safe) {

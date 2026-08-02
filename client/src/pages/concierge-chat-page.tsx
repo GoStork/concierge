@@ -2209,7 +2209,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = 
           isPremium={swipeProfile.isPremium}
           sponsored={swipeProfile.sponsored}
           tabs={tabs}
-          disableSwipe
+          disableSwipe={!fill}
           chatMode
           onPass={() => onAction(`I'm not interested in ${card.name || title}. Show me another option.`)}
           onSave={() => { persistChatFavorite("donor", card.providerId); onAction(`I like ${card.name || title}! Save as favorite. ❤️`); }}
@@ -4737,6 +4737,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             partialTranscript={voiceSession.partialTranscript}
             caption={voiceSession.caption}
             cards={voiceSession.cards}
+            cardsPreview={voiceSession.cardsPreview}
             micMuted={voiceSession.micMuted}
             error={voiceSession.error}
             onToggleMute={() => voiceSession.setMicMuted(!voiceSession.micMuted)}

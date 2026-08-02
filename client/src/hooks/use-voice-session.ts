@@ -47,6 +47,9 @@ export function useVoiceSession() {
   const [partialTranscript, setPartialTranscript] = useState("");
   const [caption, setCaption] = useState("");
   const [cards, setCards] = useState<VoiceCardsPayload | null>(null);
+  // Eva's stream contains a MATCH_CARD tag; the card payload lands at done.
+  // This bridges the gap so the profile UI opens the moment she presents it.
+  const [cardsPreview, setCardsPreview] = useState(false);
   const [micMuted, setMicMutedState] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [endReason, setEndReason] = useState<string | null>(null);
@@ -187,15 +190,21 @@ export function useVoiceSession() {
           setPartialTranscript("");
           setCaption("");
           setCards(null);
+          setCardsPreview(false);
+          break;
+        case "cards_preview":
+          setCardsPreview(true);
           break;
         case "eva_caption":
           setCaption((prev) => prev + (msg.text || ""));
           break;
         case "caption_reset":
           setCaption("");
+          setCardsPreview(false);
           break;
         case "cards":
           if (msg.payload && Object.keys(msg.payload).length) setCards(msg.payload);
+          setCardsPreview(false);
           break;
         case "avatar":
           if (msg.livekitUrl && msg.livekitToken) {
@@ -333,6 +342,7 @@ export function useVoiceSession() {
     partialTranscript,
     caption,
     cards,
+    cardsPreview,
     micMuted,
     error,
     endReason,

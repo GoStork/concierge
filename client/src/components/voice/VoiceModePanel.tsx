@@ -110,6 +110,10 @@ interface VoiceModePanelProps {
   partialTranscript: string;
   caption: string;
   cards: VoiceCardsPayload | null;
+  // Eva's reply stream contains a MATCH_CARD tag but the card data hasn't
+  // landed yet - open the takeover immediately with a loading shell so the
+  // profile appears the moment she starts presenting it.
+  cardsPreview?: boolean;
   micMuted: boolean;
   error: string | null;
   onToggleMute: () => void;
@@ -141,6 +145,7 @@ export function VoiceModePanel({
   partialTranscript,
   caption,
   cards,
+  cardsPreview,
   micMuted,
   error,
   onToggleMute,
@@ -183,7 +188,7 @@ export function VoiceModePanel({
   // draggable frame that snaps to a corner. Any action on the card routes
   // through the voice session, which clears the cards - Eva returns to full
   // screen and the conversation continues.
-  const takeover = overVideo && hasScreenCards && !!renderCards;
+  const takeover = overVideo && !!renderCards && (hasScreenCards || !!cardsPreview);
   const [pipCorner, setPipCorner] = useState<"tl" | "tr" | "bl" | "br">("tr");
   const pipRef = useRef<HTMLDivElement>(null);
   const pipDrag = useRef({ startX: 0, startY: 0, dragging: false });
@@ -263,7 +268,14 @@ export function VoiceModePanel({
           data-testid="voice-profile-takeover"
         >
           <div className="h-full max-w-md mx-auto space-y-3 overflow-y-auto overscroll-contain">
-            {renderCards!(cards!, { fill: true })}
+            {hasScreenCards ? (
+              renderCards!(cards!, { fill: true })
+            ) : (
+              <div className="w-full h-full rounded-[var(--container-radius)] bg-secondary animate-pulse flex flex-col items-center justify-center gap-3">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                <span className="t-helper">Pulling up the profile...</span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -301,9 +313,12 @@ export function VoiceModePanel({
         </Button>
       </div>
 
-      {/* Persona + state */}
+      {/* Persona + state. NOT rendered during profile takeover: even empty,
+          this full-height flex-1 layer would sit above the card and the PiP
+          and swallow every tap (observed live: no card button worked). */}
+      {!takeover && (
       <div
-        className={`relative ${takeover ? "z-30" : "z-10"} flex-1 flex flex-col items-center gap-5 px-6 min-h-0 ${
+        className={`relative z-10 flex-1 flex flex-col items-center gap-5 px-6 min-h-0 ${
           overVideo ? "justify-end pb-2" : "justify-center"
         }`}
       >
@@ -453,6 +468,7 @@ export function VoiceModePanel({
           </div>
         )}
       </div>
+      )}
 
       {/* Controls (hidden during profile takeover - mute lives in the top
           bar there and X ends the call) */}
