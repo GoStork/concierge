@@ -3692,6 +3692,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     // Try loading prompt sections from DB (admin-editable)
     const dbSections = await getPromptSections();
+    console.log(`[LATENCY] checkpoint context+sections loaded: ${Date.now() - tReq}ms`);
 
     // Journey-aware slimming: replace conversation_flow with only the blocks
     // this turn can use (see sliceConversationFlow). Signals are generous -
@@ -5370,6 +5371,7 @@ Before asking ANY question, check if the parent already provided the answer. If 
     // (both tiers read skipRulesPreamble).
     if (serviceSwitchDirective) skipRulesPreamble = `\n${serviceSwitchDirective}\n${skipRulesPreamble}`;
     if (correctionDirective) skipRulesPreamble = `\n${correctionDirective}\n${skipRulesPreamble}`;
+    console.log(`[LATENCY] checkpoint skip-directives done: ${Date.now() - tReq}ms`);
     if (cancelTruthDirective) skipRulesPreamble = `\n${cancelTruthDirective}\n${skipRulesPreamble}`;
     // Crisis leads everything - it must outrank the service/correction/cancel
     // directives above as well as call-prep mode.
@@ -6007,7 +6009,24 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     // Tier 1 does not have - observed live: "has she ever had a c-section?" on
     // a fresh deep-link session fell to Tier 1 and got the Phase 1 intake
     // question instead of an answer.
-    const useTier2 = !!(currentSession?.tier2Active) || isDonorInquiryMode;
+    // Social/presence turns ("hey", "are you there?", "thanks") carry no flow
+    // content but were paying the full Tier2 tool-stack price once tier2Active
+    // (measured live: 7s to first token for "Hey, can you hear me?" on voice).
+    // Route them to Tier1, which answers from the same history in ~1.5s.
+    // FULL-match allowlist, greetings/presence/gratitude ONLY - acknowledgment
+    // words ("ok", "ready", "got it") are flow triggers (curation -> search)
+    // and MUST keep going to Tier2. Anything with real content falls through.
+    // Two shapes: a bare greeting ("Hey!"), or a presence/gratitude phrase
+    // with an OPTIONAL greeting prefix incl. punctuation ("Hey, can you hear
+    // me?" - the comma after Hey is what broke the first version of this).
+    const SOCIAL_TURN_RE =
+      /^(hey+( there)?|hi+( there)?|hello+|good (morning|afternoon|evening))[\s.!?,]*$|^((hey+|hi+|hello+|good (morning|afternoon|evening))[\s,.!?]+)?(how are you( doing| today)?|are you (there|here|with me)|can you hear me( now)?|i can hear you( now)?|hear me( now)?|thank(s| you)( so much| a lot)?)[\s.!?,]*$/i;
+    const isSocialTurn =
+      !isSystemTrigger && SOCIAL_TURN_RE.test(String(req.body.message ?? "").trim());
+    if (isSocialTurn && (currentSession?.tier2Active || isDonorInquiryMode)) {
+      console.log("[ROUTER] social turn -> Tier1 fast path (skipping the Tier2 tool stack)");
+    }
+    const useTier2 = (!!(currentSession?.tier2Active) || isDonorInquiryMode) && !isSocialTurn;
     let finalContent = "";
     let needsRetry = false; // true when all AI tiers failed - tell client to silently retry
     let serverBypassServed = false; // true when a server-side hardcoded bypass served the response
