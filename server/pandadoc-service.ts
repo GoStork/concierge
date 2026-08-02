@@ -135,8 +135,8 @@ interface GenerateAgreementParams {
   serviceType?: string | null;
   /**
    * Base URL of the environment the agency just generated from (e.g.
-   * "https://go-stork.replit.app" or "https://polygynous-vergie-coyly.
-   * ngrok-free.dev"). Stored on the agreement so PandaDoc webhook fan-
+   * "https://go-stork.replit.app" or "https://gostork.ngrok.app").
+   * Stored on the agreement so PandaDoc webhook fan-
    * out (multiple webhook subscriptions firing on the same recipient_
    * completed event) doesn't end up emailing the next signer a URL
    * pointing at the wrong environment. Whichever server wins the

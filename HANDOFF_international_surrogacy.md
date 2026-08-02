@@ -154,10 +154,10 @@ There is NO cloud deploy / CI. Pushing to GitHub `main` does NOT deploy.
   invisible until rebuilt.**
 - **Run server**: `node dist/index.cjs` (listens on **port 5001**). Logs:
   `/tmp/gostork-server.log` if backgrounded.
-- **ngrok**: `ngrok http --url=polygynous-vergie-coyly.ngrok-free.dev 5001`
-  Public URL: `https://polygynous-vergie-coyly.ngrok-free.dev`
+- **ngrok**: `ngrok http --url=gostork.ngrok.app 5001`
+  Public URL: `https://gostork.ngrok.app`
   The browser hits the ngrok URL, so after a server restart **always confirm
-  ngrok is still up** (`curl -s https://polygynous-vergie-coyly.ngrok-free.dev/concierge -o /dev/null -w "%{http_code}"` should be 200). If ngrok died, restart it.
+  ngrok is still up** (`curl -s https://gostork.ngrok.app/concierge -o /dev/null -w "%{http_code}"` should be 200). If ngrok died, restart it.
 
 ### Restart rules (project convention - follow exactly)
 - **Client-only change** (`client/**`): `npm run build`, then tell user to hard
@@ -177,8 +177,8 @@ npm run build && lsof -ti:5001 | xargs kill -9 2>/dev/null; sleep 1
 node dist/index.cjs > /tmp/gostork-server.log 2>&1 &
 sleep 6; lsof -ti:5001 >/dev/null && echo "server up"
 ps aux | grep -i "ngrok http" | grep -v grep >/dev/null || \
-  (ngrok http --url=polygynous-vergie-coyly.ngrok-free.dev 5001 > /tmp/ngrok.log 2>&1 &)
-sleep 4; curl -s https://polygynous-vergie-coyly.ngrok-free.dev/concierge -o /dev/null -w "ngrok: %{http_code}\n"
+  (ngrok http --url=gostork.ngrok.app 5001 > /tmp/ngrok.log 2>&1 &)
+sleep 4; curl -s https://gostork.ngrok.app/concierge -o /dev/null -w "ngrok: %{http_code}\n"
 ```
 
 ### Database (Supabase)
@@ -212,7 +212,7 @@ console.log("rows",r.rowCount);await cl.end();})();
 
 ## 5. TEST PLAN (run these in order)
 
-Open the app at `https://polygynous-vergie-coyly.ngrok-free.dev`, logged in as a
+Open the app at `https://gostork.ngrok.app`, logged in as a
 parent (or admin to set up). **Always start a FRESH concierge session** for each
 conversation test (old sessions cache old prompts / state).
 

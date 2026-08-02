@@ -61,7 +61,7 @@
 ## Infrastructure / deployment
 - **Replit** - production web traffic
 - **Always-on iMac** - nightly scraper sync (in-process node-cron via launchd `LaunchDaemon`)
-- **Local Mac** - dev (port 5001 + **ngrok** tunnel at `polygynous-vergie-coyly.ngrok-free.dev`)
+- **Local Mac** - dev (port 5001 + **ngrok** tunnel at `gostork.ngrok.app`)
 - All three share the same Supabase Postgres DB
 
 ## Dependency inventory
