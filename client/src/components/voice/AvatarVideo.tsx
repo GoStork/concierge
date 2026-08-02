@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { analyzeRemoteTrack } from "@/lib/voice/remote-level";
+import { reportVoiceClientMetric } from "@/hooks/use-voice-session";
 
 // Realtime avatar video: joins the LiveAvatar LiveKit room and attaches the
 // avatar's video + audio tracks. livekit-client is dynamically imported so the
@@ -161,7 +162,9 @@ export function AvatarVideo({
         className="absolute w-px h-px opacity-0 pointer-events-none"
       />
       <canvas ref={canvasRef} className="w-full h-full object-cover" />
-      <audio ref={audioRef} autoPlay />
+      {/* Instrumentation: 'playing' marks when the LiveKit audio element
+          actually starts rendering the avatar's audio in this browser. */}
+      <audio ref={audioRef} autoPlay onPlaying={() => reportVoiceClientMetric("livekit_audio_element_playing")} />
     </div>
   );
 }

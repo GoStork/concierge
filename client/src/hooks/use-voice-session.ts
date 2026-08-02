@@ -36,6 +36,19 @@ const VAD_HANGOVER_MS = 900;
 const PREBUFFER_FRAMES = 32; // ~1.3s of 40ms frames
 // Sustained speech this long while Eva talks = barge-in.
 const BARGE_MS = 400;
+
+// ---------------------------------------------------------------------------
+// Instrumentation only: browser-side timing events reported to the gateway
+// (caption paint, first PCM played, LiveKit <audio> playing, first remote
+// audio energy) so they land in the same per-turn [TURN_METRICS] line as the
+// server marks. The active hook instance registers itself here so components
+// that render outside the hook (AvatarVideo's <audio>) can report without new
+// prop plumbing - same singleton pattern as remote-level.ts.
+let activeMetricReporter: ((event: string) => void) | null = null;
+export function reportVoiceClientMetric(event: string) {
+  activeMetricReporter?.(event);
+}
+// ---------------------------------------------------------------------------
 // Barge-in noise floor: while Eva is audible, plain VAD level is not enough -
 // on iOS her own speaker output leaks into the mic (AEC does not cancel
 // WebRTC remote audio). The echo COUPLING (mic level per unit of her output)
@@ -79,6 +92,23 @@ export function useVoiceSession() {
   const micStatsRef = useRef({ maxRms: 0, sent: 0 });
   const statsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Instrumentation: the server's live turn id (from the "turn" frame) and
+  // which per-turn events were already reported (each fires once per turn).
+  const currentTurnRef = useRef(0);
+  const reportedMetricsRef = useRef<Set<string>>(new Set());
+
+  const reportMetric = useCallback((event: string) => {
+    const turn = currentTurnRef.current;
+    if (!turn) return;
+    const key = `${turn}:${event}`;
+    if (reportedMetricsRef.current.has(key)) return;
+    reportedMetricsRef.current.add(key);
+    const sock = wsRef.current;
+    if (sock?.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({ type: "client_metric", turn, event, tClient: Date.now() }));
+    }
+  }, []);
+
   const setStateBoth = (s: VoiceState) => {
     stateRef.current = s;
     setState(s);
@@ -87,6 +117,7 @@ export function useVoiceSession() {
   const stop = useCallback((reason = "user_ended") => {
     if (!activeRef.current) return;
     activeRef.current = false;
+    activeMetricReporter = null;
     if (statsTimerRef.current) {
       clearInterval(statsTimerRef.current);
       statsTimerRef.current = null;
@@ -132,6 +163,9 @@ export function useVoiceSession() {
       return;
     }
     engineRef.current = engine;
+    currentTurnRef.current = 0;
+    reportedMetricsRef.current = new Set();
+    activeMetricReporter = reportMetric;
 
     // The socket is reconnectable: a server deploy or a mobile network blip
     // closes the WS mid-conversation, and dying to text for that reads as a
@@ -164,6 +198,11 @@ export function useVoiceSession() {
     ws.onmessage = (e) => {
       if (typeof e.data !== "string") {
         // Binary = Eva audio (16kHz PCM16)
+        // Instrumentation: first PCM pushed into local Web Audio playback for
+        // this turn. This path only carries audio when NO avatar is routing
+        // (audio-only replies) - seeing it while an avatar is live means the
+        // reply's route snapshot predated the avatar connecting.
+        reportMetric("local_pcm_play_start");
         engine.playPcm(e.data as ArrayBuffer);
         return;
       }
@@ -177,6 +216,11 @@ export function useVoiceSession() {
         case "ready":
           reconnects = 0;
           setStateBoth("listening");
+          break;
+        case "turn":
+          // Instrumentation: correlates client metric reports with the
+          // server's per-turn record.
+          currentTurnRef.current = Number(msg.turn) || 0;
           break;
         case "state":
           if (["listening", "thinking", "speaking"].includes(msg.state)) {
@@ -206,6 +250,12 @@ export function useVoiceSession() {
           break;
         case "eva_caption":
           setCaption((prev) => prev + (msg.text || ""));
+          // Instrumentation: "caption painted in the DOM" - double rAF fires
+          // after the browser commits and paints the frame containing this
+          // state update. Reported once per turn (first caption chunk).
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => reportMetric("caption_painted")),
+          );
           break;
         case "caption_reset":
           setCaption("");
@@ -292,6 +342,10 @@ export function useVoiceSession() {
       // must beat that estimate with clear margin, sustained.
       const remoteRms =
         now - remoteAudioLevel.updatedAt < 400 ? remoteAudioLevel.rms : 0;
+      // Instrumentation: first audible energy on the avatar's LiveKit audio
+      // track after the turn started - the closest client-side proxy for
+      // "LiveAvatar first speech frame" (no explicit callback is wired today).
+      if (remoteRms > 0.03) reportMetric("remote_audio_first");
       if (evaSpeaking && remoteRms > 0.03) {
         const ratio = rms / remoteRms;
         if (ratio < echoKRef.current) {

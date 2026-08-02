@@ -27,6 +27,7 @@ import fs from "fs";
 import { isUserOnline } from "./online-tracker";
 import jwt from "jsonwebtoken";
 import { getNextIntakeQuestion, buildD1HasEmbryos, buildD1NoEmbryos, type D1Costs } from "./intake-questions";
+import { turnTimingStore, newTurnTimings, mark, recordToolCall, snapshotTurnTimings } from "./turn-timing";
 
 // Singleton Anthropic client - enables HTTP connection pooling across requests.
 let _anthropicClient: Anthropic | null = null;
@@ -87,7 +88,15 @@ function setupSSE(res: Response) {
     // already-streamed content, so a rejected draft disappears the moment the
     // replacement is ready instead of sitting on screen until the final "done".
     sendReset: () => { res.write(`data: ${JSON.stringify({ type: "reset" })}\n\n`); flush(); },
-    sendDone: (payload: object) => { res.write(`data: ${JSON.stringify({ type: "done", ...payload })}\n\n`); flush(); res.end(); },
+    sendDone: (payload: object) => {
+      // Instrumentation: attach the request's timing snapshot so the voice
+      // gateway can merge router/tool timings into its per-turn metrics line.
+      // Additive field - the text client's done handler reads specific keys
+      // and ignores this one; the voice gateway strips it before forwarding.
+      mark("done_sent");
+      const timings = snapshotTurnTimings();
+      res.write(`data: ${JSON.stringify({ type: "done", ...payload, ...(timings ? { __turnTimings: timings } : {}) })}\n\n`); flush(); res.end();
+    },
     sendError: (msg: string) => { res.write(`data: ${JSON.stringify({ type: "error", message: msg })}\n\n`); flush(); res.end(); },
     sendRetry: () => { res.write(`data: ${JSON.stringify({ type: "retry_needed" })}\n\n`); flush(); res.end(); },
   };
@@ -104,6 +113,7 @@ async function callTier1Gemini(
 ): Promise<string> {
   // Use gemini-2.5-flash with thinking disabled for instant conversational responses
   // thinkingBudget: 0 disables the reasoning phase that adds 5-7s latency
+  mark("tier1_start");
   const model = geminiAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
@@ -172,6 +182,7 @@ async function callTier1Gemini(
 
   // Tokens were already streamed live above - the client's "done" replace picks
   // up any post-processing (trailing-question strip) applied to fullText.
+  mark("tier1_end");
   return fullText;
 }
 
@@ -642,6 +653,7 @@ async function callTier2Claude(
     return `SEARCH LIMIT REACHED for this turn. You have already called ${fc.name} twice - do NOT search again. The tool already relaxed filters automatically, so a repeat search will not surface different results. Present the best match from the results you ALREADY received above using ONE [[MATCH_CARD]] now, and be transparent with the parent about any preference that could not be fully matched.`;
   };
   console.log(`[TIER2] start: history=${chatHistory.length} turns, system=${fullSystem.length} chars, tools=${openAiTools.length}`);
+  mark("tier2_start");
 
   // After search_surrogacy_agencies returns, reorder the agency list cheapest-first
   // by the role-aware COMBINED country-program cost (agency surrogacy fee + each
@@ -1027,6 +1039,7 @@ async function callTier2Claude(
           if (text) { fullText += text; if (!freshPhotoUpload) sse.sendToken(text); }
         }
         console.log(`[TIER2] DONE (no tools) in ${Date.now() - t0}ms`);
+        mark("tier2_end");
         return { content: fullText, toolCallsExecuted: false, searchToolResults };
       }
 
@@ -1089,6 +1102,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
       } else {
         // Model chose text instead of calling tools - already streamed live by streamTurn
         console.log(`[TIER2] DONE (text w/ tools enabled) in ${Date.now() - t0}ms`);
+        mark("tier2_end");
         if (!firstText) {
           // Empty text + no tool calls: surface WHY (finishReason SAFETY /
           // RECITATION / MAX_TOKENS etc.) instead of failing silently.
@@ -1119,10 +1133,12 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
       if (moreFunctionCalls.length > 0) {
         if (toolRoundCount >= MAX_TOOL_ROUNDS) {
           console.warn(`[TIER2] Hit MAX_TOOL_ROUNDS=${MAX_TOOL_ROUNDS} - bailing. Attempted: ${moreFunctionCalls.map(f => f.name).join(",")}`);
+          mark("tier2_end");
           return { content: "", toolCallsExecuted: true, searchToolResults };
         }
         toolRoundCount += 1;
         console.log(`[TIER2] Round ${toolRoundCount}/${MAX_TOOL_ROUNDS} - model chained ${moreFunctionCalls.length} more tool call(s): ${moreFunctionCalls.map(f => f.name).join(",")}`);
+        mark(`tier2_round_${toolRoundCount}`);
         const moreResponses: any[] = [];
         for (const fc of moreFunctionCalls) {
           if (mcpClientRef) {
@@ -1177,6 +1193,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
         console.warn(`[TIER2] After ${toolRoundCount} tool round(s), Gemini returned no text - finishReason=${finishReason} parts=${partsCount} [${partKinds.join(",")}]${usageMetadata ? ` tokens(in=${usageMetadata.promptTokenCount},out=${usageMetadata.candidatesTokenCount})` : ""}`);
       }
       console.log(`[TIER2] DONE (after ${toolRoundCount} tool round(s)) in ${Date.now() - tStream2}ms (${fullText.length} chars). Total TIER2 ${Date.now() - t0}ms`);
+      mark("tier2_end");
       // OWED-CARD GUARANTEE: when the SERVER ran the search (preSearch), a card
       // is owed by construction - we only pre-search on a ready turn. If the
       // model wrote prose without a [[MATCH_CARD]], append one for the top
@@ -1975,6 +1992,21 @@ async function initMcp(attempt = 1): Promise<void> {
 
     await mcpClient.connect(transport);
     console.log("Express Client successfully connected to the MCP Database Server");
+
+    // Instrumentation: record every MCP tool call (name, start, end) into the
+    // request-scoped timing collector. One wrap here covers ALL ~25 call sites
+    // (tier-2 function-call loops, pre-search, post-processing card
+    // resolution, whispers) without touching any of them. Behavior unchanged -
+    // the original method runs verbatim, timing is recorded in finally.
+    const origCallTool = mcpClient.callTool.bind(mcpClient);
+    (mcpClient as any).callTool = async (params: any, schema?: any, opts?: any) => {
+      const tToolStart = Date.now();
+      try {
+        return await origCallTool(params, schema, opts);
+      } finally {
+        recordToolCall(String(params?.name || "unknown"), tToolStart, Date.now());
+      }
+    };
   } catch (error) {
     console.error(`Failed to start MCP Client (attempt ${attempt}/${maxAttempts}):`, error);
     mcpClient = null;
@@ -2393,6 +2425,11 @@ aiRouter.post("/init-session", async (req: Request, res: Response) => {
 
 aiRouter.post("/chat", async (req: Request, res: Response) => {
   const tReq = Date.now(); // request received - [LATENCY] logs measure pre-model work from here
+  // Instrumentation: request-scoped timing collector. enterWith binds the
+  // store to this request's async context; mark()/recordToolCall() write into
+  // it from anywhere downstream, and sendDone() snapshots it into the payload.
+  turnTimingStore.enterWith(newTurnTimings());
+  mark("router_entry");
   try {
     if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
       return res.status(401).json({ error: "Not authenticated" });
@@ -3693,6 +3730,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     // Try loading prompt sections from DB (admin-editable)
     const dbSections = await getPromptSections();
     console.log(`[LATENCY] checkpoint context+sections loaded: ${Date.now() - tReq}ms`);
+    mark("context_sections_loaded");
 
     // Journey-aware slimming: replace conversation_flow with only the blocks
     // this turn can use (see sliceConversationFlow). Signals are generous -
@@ -5372,6 +5410,7 @@ Before asking ANY question, check if the parent already provided the answer. If 
     if (serviceSwitchDirective) skipRulesPreamble = `\n${serviceSwitchDirective}\n${skipRulesPreamble}`;
     if (correctionDirective) skipRulesPreamble = `\n${correctionDirective}\n${skipRulesPreamble}`;
     console.log(`[LATENCY] checkpoint skip-directives done: ${Date.now() - tReq}ms`);
+    mark("skip_directives_done");
     if (cancelTruthDirective) skipRulesPreamble = `\n${cancelTruthDirective}\n${skipRulesPreamble}`;
     // Crisis leads everything - it must outrank the service/correction/cancel
     // directives above as well as call-prep mode.
@@ -6096,19 +6135,19 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           finalContent = `Absolutely - I've flagged this to the GoStork team and they'll send you new times shortly. [[HUMAN_NEEDED]]`;
         }
         sse.sendToken(finalContent.replace(/\s*\[\[[^\]]*\]\]/g, "").trim());
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         await emitJourneyEvent({ eventType: "WINBACK_RESPONSE", parentUserId: userId, providerId: wbPayload.providerId || null, sessionId: currentSessionId || null, bookingId: wbPayload.bookingId || null, actorRole: "parent", metadata: { response: "reschedule" } });
         console.log(`[winback] Parent chose reschedule (booking ${wbPayload.bookingId})`);
       } else if (/something came up|later\b|not (right )?now|need more time/i.test(wbMsg) && !/interested/i.test(wbMsg)) {
         finalContent = `Of course - no rush at all. Whenever you're ready, just tell me and I'll pull up new times with ${wbPayload.providerName || "them"}. I'm here for anything else in the meantime.`;
         sse.sendToken(finalContent);
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         await emitJourneyEvent({ eventType: "WINBACK_RESPONSE", parentUserId: userId, providerId: wbPayload.providerId || null, sessionId: currentSessionId || null, bookingId: wbPayload.bookingId || null, actorRole: "parent", metadata: { response: "later" } });
       } else if (/no longer interested|not interested/i.test(wbMsg)) {
         finalContent = `Thanks for being upfront with me - that's completely fine, and I won't keep asking. If you're open to sharing, what changed? It helps us (and ${wbPayload.providerName || "the provider"}) do better. [[QUICK_REPLY:Found a match elsewhere|Costs|Not the right timing|Just exploring]]`;
         winbackChurnAskPayload = { bookingId: wbPayload.bookingId || null, providerId: wbPayload.providerId || null, providerName: wbPayload.providerName || null };
         sse.sendToken(finalContent.replace(/\s*\[\[QUICK_REPLY:[^\]]*\]\]/g, "").trim());
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         await emitJourneyEvent({ eventType: "WINBACK_RESPONSE", parentUserId: userId, providerId: wbPayload.providerId || null, sessionId: currentSessionId || null, bookingId: wbPayload.bookingId || null, actorRole: "parent", metadata: { response: "not_interested" } });
       }
     } else if (churnAskPayload && !serverBypassServed) {
@@ -6126,7 +6165,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         };
         finalContent = closes[reason];
         sse.sendToken(finalContent);
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         await emitJourneyEvent({ eventType: "CHURN_REASON", parentUserId: userId, providerId: churnAskPayload.providerId || null, sessionId: currentSessionId || null, bookingId: churnAskPayload.bookingId || null, actorRole: "parent", metadata: { reason } });
         // Cool the lead: the provider's users + GoStork admins hear why.
         try {
@@ -6176,7 +6215,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
             ? `You're in good hands - ${lawyerBypassPick.provider.name} is our vetted fertility law partner. Here's their profile, and you can schedule a call with ${memberFirst} right here: [[LAWYER_CALENDAR]]`
             : `You're in good hands - ${lawyerBypassPick.provider.name} is our vetted fertility law partner. Here's their profile: [[LAWYER_CALENDAR]]`;
           sse.sendToken(finalContent.replace(/\s*\[\[LAWYER_CALENDAR\]\]/g, "").trim());
-          serverBypassServed = true;
+          serverBypassServed = true; mark("bypass_served");
           console.log(`[LAWYER BYPASS] Deterministic connect served (${lawyerBypassPick.provider.name}, member slug: ${lawyerBypassPick.member?.slug || "none"})`);
         } else {
           console.log("[LAWYER BYPASS] No approved Legal Services provider - falling through to the model");
@@ -6216,12 +6255,12 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           reviewCardRequest = { providerId: target.providerId, providerName: target.provider?.name || "the provider", existing: { id: target.id, rating: target.rating, stage: target.stage } };
           finalContent = `Of course! Here's your current review of ${reviewCardRequest.providerName} - tap "Update review" on the card below to change your stars or comments.`;
           sse.sendToken(finalContent);
-          serverBypassServed = true;
+          serverBypassServed = true; mark("bypass_served");
         } else if (myReviews.length > 1) {
           const opts = myReviews.slice(0, 4).map((r) => `Update my ${r.provider?.name || "provider"} review`).join("|");
           finalContent = `Happy to! Which review would you like to update? [[QUICK_REPLY:${opts}]]`;
           sse.sendToken(finalContent.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim());
-          serverBypassServed = true;
+          serverBypassServed = true; mark("bypass_served");
         } else {
           // No reviews yet: if a journey provider is review-eligible, post a fresh ask.
           const { eligibleStage } = await import("./reviews-router");
@@ -6240,7 +6279,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
               reviewCardRequest = { providerId: c.providerId!, providerName: c.provider?.name || "the provider", existing: null };
               finalContent = `I'd love that! Here's the review card for ${reviewCardRequest.providerName} - tap the stars below to get started.`;
               sse.sendToken(finalContent);
-              serverBypassServed = true;
+              serverBypassServed = true; mark("bypass_served");
               break;
             }
           }
@@ -6438,6 +6477,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
       }
 
       console.log(`[LATENCY] pre-work before Tier2: ${Date.now() - tReq}ms (session load, profile, RAG, prompt assembly)`);
+      mark("prework_done_tier2");
       const tier2Result = await callTier2Claude(
         systemPromptForTiers,
         messages,
@@ -6830,7 +6870,7 @@ ${phase0Section}`;
           : `${part2Body}\n\nDo you have any questions about GoStork and how we can help you? [[QUICK_REPLY:I understand, let's get started|I have a few questions]]`;
         finalContent = combined;
         sse.sendToken(combined);
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         console.log(`[PHASE0 PART2 BYPASS] Served Part 2${needsPhase1Now ? " + Phase 1" : ""} directly - triggered by: "${userMessage.slice(0, 40)}"`);
       } else {
 
@@ -6845,7 +6885,7 @@ ${phase0Section}`;
       if (lastAiWasGreeting && userCorrectedServices) {
         finalContent = `Got it! What are you looking for help with? Select all that apply. [[MULTI_SELECT:Surrogacy|Egg Donation|Sperm Donation|IVF Clinics]]`;
         sse.sendToken(finalContent);
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         console.log("[PHASE0 PATH B BYPASS] Served service selection - Gemini skipped");
       } else {
 
@@ -6864,7 +6904,7 @@ ${phase0Section}`;
       if ((lastAiWasPhase0Education || lastAiWasPart1ForQA) && userSaysHasQuestions) {
         finalContent = "Of course! What would you like to know?";
         sse.sendToken(finalContent);
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         console.log("[PHASE0 Q&A BYPASS] Served hardcoded open invitation - Gemini skipped");
       } else {
 
@@ -6962,7 +7002,7 @@ ${phase0Section}`;
         const whyMsg = `Of course - I can help you look at ${laneNoun === "clinic" ? "clinics" : `${laneNoun}s`}.\n\nSince your journey with ${handedOffProviderNames} is already underway, help me understand what's prompting this new search so I point you in the right direction. [[QUICK_REPLY:My match fell through|I want a second one in parallel|I'm not happy with the agency|Just exploring]]`;
         sse.sendToken(whyMsg.replace(/\[\[QUICK_REPLY:.*?\]\]/g, "").trim());
         finalContent = whyMsg;
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         console.log(`[HANDOFF WHY] Served the why-question deterministically (${laneNoun} request on a handed-off journey)`);
       } else if (shouldServePhase1) {
         // Check if Phase 0 Part 2 (Eran Amir vetting paragraph) was ever delivered.
@@ -6987,11 +7027,11 @@ ${phase0Section}`;
           `One thing that sets GoStork apart: every provider has been personally vetted by Eran Amir, our founder, who went through ${_p1_journey} himself. He personally interviews each ${_p1_providerType}'s leadership, reviews their operations, and makes sure they have the right team in place.${_p1_waitlist}\n\n`;
         finalContent = `${part2Text}To help me tailor everything to your situation -\n\nWhich best describes you? [[QUICK_REPLY:Solo man|Solo woman|Two dads|Two moms|Man and a woman]]`;
         sse.sendToken(finalContent);
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         console.log(`[PHASE1 BYPASS] Served ${part2Delivered ? "" : "Part 2 + "}Phase 1 question - triggered by: "${userMessage.slice(0, 40)}" phase0Ready:${phase0ReadyForPhase1} phase1Asked:${phase1AlreadyAsked}`);
       } else if (straightCoupleFollowUpNeeded) {
         finalContent = `And are you the woman or the man in this journey? [[QUICK_REPLY:I'm the woman|I'm the man]]`;
-        serverBypassServed = true; // set before sendToken so Gemini never runs even if sendToken throws
+        serverBypassServed = true; mark("bypass_served"); // set before sendToken so Gemini never runs even if sendToken throws
         sse.sendToken(finalContent);
         console.log("[PHASE1 BYPASS] Served straight couple follow-up - Gemini skipped");
       } else if (!useTier2 && needsSurrogate &&
@@ -7036,7 +7076,7 @@ ${phase0Section}`;
           const step0Text = `Got it! Since you'll need IVF to create embryos before transferring to a surrogate, let me ask:\n\nDo you already have a fertility clinic you're working with, or do you need help finding one? [[QUICK_REPLY:I need help finding a clinic|I already have a clinic]]`;
           finalContent = step0Text;
           sse.sendToken(step0Text);
-          serverBypassServed = true;
+          serverBypassServed = true; mark("bypass_served");
           console.log("[STEP4 CARRIER BYPASS] Asking step 0 (clinic status) first - parent needs IVF clinic for surrogate path");
         } else {
           // Use the full D1 education text (same as D-cycle bypass) - NOT a truncated version.
@@ -7058,7 +7098,7 @@ ${phase0Section}`;
           const transitionText = `${transitionLead}\n\n${d1TextFull}`;
           finalContent = transitionText;
           sse.sendToken(transitionText);
-          serverBypassServed = true;
+          serverBypassServed = true; mark("bypass_served");
           console.log("[STEP4 CARRIER BYPASS] Skipped carrier question for male/surrogate parent - Gemini never called");
         }
       } else if (!useTier2 && justAnsweredA5 && !curationAlreadySent) {
@@ -7091,7 +7131,7 @@ ${phase0Section}`;
         const curationText = `Here's what I have: ${agePart}${partnerPart}${eggPart}${twinsPart}${priorityPart}. Shall I find your perfect clinic matches now? [[CURATION]]`;
         finalContent = curationText;
         sse.sendToken(curationText);
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
         console.log("[A5 CURATION BYPASS] Served clinic curation directly - Gemini skipped");
         // A5 SAVE FALLBACK: since this bypass skips Gemini entirely, no
         // [[SAVE:{"clinicPriority":...}]] tag is ever emitted for the A5 answer
@@ -7130,7 +7170,7 @@ ${phase0Section}`;
           : buildD1NoEmbryos(d1DCycleCosts);
         finalContent = d1Text;
         sse.sendToken(d1Text);
-        serverBypassServed = true;
+        serverBypassServed = true; mark("bypass_served");
       } else {
         // -----------------------------------------------------------------------
         // INTAKE QUESTION BYPASS - serve hardcoded Phase 2 / Phase 3A / Phase 3D
@@ -7192,7 +7232,7 @@ ${phase0Section}`;
           if (intakeQuestion) {
             finalContent = intakeQuestion.text;
             sse.sendToken(intakeQuestion.text);
-            serverBypassServed = true;
+            serverBypassServed = true; mark("bypass_served");
             console.log(`[INTAKE BYPASS] Serving step=${intakeQuestion.step}: "${intakeQuestion.text.slice(0, 80)}"`);
           }
         }
@@ -7203,6 +7243,7 @@ ${phase0Section}`;
         const geminiErrorPhrases = /having trouble connecting|trouble connecting|i('m| am) sorry.*connecting|please try again.*moment|experiencing.*issues|temporarily unavailable/i;
         try {
           console.log(`[LATENCY] pre-work before Tier1: ${Date.now() - tReq}ms`);
+          mark("prework_done_tier1");
           finalContent = await callTier1Gemini(tier1SystemPrompt, tier1Messages, sse);
           // Gemini sometimes returns a generic "having trouble connecting" string instead of throwing.
           // Detect this and fall back to Tier 2 so the user gets a real response.

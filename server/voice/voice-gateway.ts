@@ -134,6 +134,50 @@ class VoiceSession {
   private ttsChars = 0;
   private logId: string | null = null;
 
+  // Per-turn structured timing (instrumentation only). Key = turnId. Each
+  // record becomes ONE [TURN_METRICS] JSON log line, emitted ~3s after the
+  // turn's speech ends so late client-side metrics (caption paint, audio
+  // play) can still attach. corrPrefix makes corrIds unique across sessions.
+  private readonly corrPrefix = Math.random().toString(36).slice(2, 8);
+  private turnMetrics = new Map<number, any>();
+  private emitTimers = new Map<number, NodeJS.Timeout>();
+
+  private scheduleEmitMetrics(turnId: number | null, delayMs = 3000) {
+    if (turnId === null || !this.turnMetrics.has(turnId)) return;
+    if (this.emitTimers.has(turnId)) return;
+    this.emitTimers.set(
+      turnId,
+      setTimeout(() => this.emitMetrics(turnId), delayMs),
+    );
+  }
+
+  private emitMetrics(turnId: number) {
+    const timer = this.emitTimers.get(turnId);
+    if (timer) clearTimeout(timer);
+    this.emitTimers.delete(turnId);
+    const m = this.turnMetrics.get(turnId);
+    if (!m) return;
+    this.turnMetrics.delete(turnId);
+    m.sessionLogId = this.logId;
+    m.chatSessionId = this.chatSessionId;
+    m.avatarActive = m.avatarActive ?? false;
+    const mk = m.marks || {};
+    const num = (v: any) => (typeof v === "number" ? v : null);
+    const diff = (a: any, b: any) =>
+      num(a) !== null && num(b) !== null ? (b as number) - (a as number) : null;
+    m.derived = {
+      stt_to_first_token_ms: diff(mk.speech_final, mk.first_token),
+      stt_to_first_audio_ms: diff(mk.speech_final, mk.tts_first_audio),
+      first_token_to_first_audio_ms: diff(mk.first_token, mk.tts_first_audio),
+      router_total_ms: diff(mk.router_fetch_sent, mk.router_done),
+      tts_generation_ms: diff(mk.tts_first_audio, mk.tts_last_audio),
+      tools_total_ms: Array.isArray(m.toolCalls)
+        ? m.toolCalls.reduce((s: number, c: any) => s + (c.ms || 0), 0)
+        : 0,
+    };
+    console.log(`[TURN_METRICS] ${JSON.stringify(m)}`);
+  }
+
   // Phase 3: realtime video avatar. When active, Eva's TTS PCM routes to the
   // avatar session (lip-synced audio+video reach the browser via LiveKit)
   // instead of down our WS.
@@ -312,6 +356,20 @@ class VoiceSession {
           }
         });
         break;
+      case "client_metric": {
+        // Browser-side timestamps (caption paint, first audio play, first
+        // remote audio energy) reported per turn. Clock caveat: tClient is the
+        // BROWSER's clock; tServerRecv is ours - use tServerRecv for cross-
+        // boundary ordering and tClient only for client-internal deltas.
+        const rec = this.turnMetrics.get(Number(msg.turn));
+        if (rec && msg.event) {
+          rec.client[String(msg.event)] = {
+            tClient: Number(msg.tClient) || null,
+            tServerRecv: Date.now(),
+          };
+        }
+        break;
+      }
       case "mic_stats":
         // Client-side VAD telemetry (max mic RMS + frames forwarded per 5s
         // window) - the remote-diagnosis line for "Eva stopped hearing me".
@@ -382,7 +440,10 @@ class VoiceSession {
     }
     try {
       const session = new HeyGenAvatarSession();
+      const tAvatarStart = Date.now();
       const info = await session.start(avatarId);
+      // The isolated LiveAvatar spin-up hop (token + start + WS "connected").
+      log(`avatar handshake took ${Date.now() - tAvatarStart}ms (session token + start + WS connected)`);
       this.avatar = session;
       this.avatarStartedAt = Date.now();
       this.send({
@@ -424,19 +485,43 @@ class VoiceSession {
   // hand back the floor. Audio-only sessions flip immediately (the client's
   // own playback buffer is ~real-time behind generation).
   private finishSpeaking(turnId: number | null, route: HeyGenAvatarSession | null) {
+    // Instrumentation: TTS generation is done for this turn; note when the
+    // avatar's realtime playhead is expected to drain (audible speech end).
+    if (turnId !== null) {
+      const rec = this.turnMetrics.get(turnId);
+      if (rec) {
+        rec.marks.tts_generation_done = Date.now();
+        if (route) rec.marks.avatar_playhead_drain_expected = Date.now() + route.remainingSpeechMs();
+      }
+    }
     const stale = () =>
       this.closed ||
       this.state !== "speaking" ||
       (turnId !== null && this.turnCounter !== turnId);
-    if (stale()) return;
+    if (stale()) {
+      this.scheduleEmitMetrics(turnId);
+      return;
+    }
     const remaining = route ? route.remainingSpeechMs() + 600 : 0;
     if (remaining <= 0) {
       this.setState("listening");
+      if (turnId !== null) {
+        const rec = this.turnMetrics.get(turnId);
+        if (rec) rec.marks.back_to_listening = Date.now();
+      }
+      this.scheduleEmitMetrics(turnId);
       return;
     }
     if (this.listenTimer) clearTimeout(this.listenTimer);
     this.listenTimer = setTimeout(() => {
-      if (!stale()) this.setState("listening");
+      if (!stale()) {
+        this.setState("listening");
+        if (turnId !== null) {
+          const rec = this.turnMetrics.get(turnId);
+          if (rec) rec.marks.back_to_listening = Date.now();
+        }
+      }
+      this.scheduleEmitMetrics(turnId);
     }, remaining);
   }
 
@@ -456,6 +541,13 @@ class VoiceSession {
     this.speakSuppressed = false;
     this.tts?.cancel();
     const route = this.avatar;
+    // Instrumentation: system lines (greeting, silence prompt, card fallback)
+    // snapshot the route at THIS moment. A null route here with an avatar
+    // connecting moments later = audio plays locally over an idle avatar -
+    // the exact decoupling signature under investigation (Section E1).
+    log(
+      `system line via ${route ? "AVATAR" : "WS-PCM"} route at ${new Date().toISOString()}: "${text.slice(0, 48)}"`,
+    );
     this.tts = this.openTts(route);
     this.ttsChars += text.length;
     this.setState("speaking");
@@ -469,6 +561,9 @@ class VoiceSession {
   }
 
   private async runTurn(userText: string, fixedReply = false) {
+    // A new turn supersedes the previous one - flush the old turn's metrics
+    // now (its client events have had their window).
+    if (this.turnCounter > 0) this.scheduleEmitMetrics(this.turnCounter, 0);
     const turnId = ++this.turnCounter;
     const tSttFinal = Date.now();
     this.lastTurnText = userText;
@@ -477,28 +572,59 @@ class VoiceSession {
     let tFirstToken = 0;
     let tFirstAudio = 0;
 
+    // One record per turn -> one [TURN_METRICS] JSON line. All server marks
+    // share this process's clock (the /chat fetch is served in-process).
+    const metrics: any = {
+      tag: "TURN_METRICS",
+      corrId: `${this.corrPrefix}:${turnId}`,
+      turn: turnId,
+      fixedReply,
+      userText: userText.slice(0, 160),
+      toolCallCount: 0,
+      toolCalls: [],
+      routerMarks: null,
+      marks: { speech_final: tSttFinal } as Record<string, number>,
+      client: {},
+    };
+    this.turnMetrics.set(turnId, metrics);
+    // Tell the client which turn is live so its metric reports can correlate.
+    this.send({ type: "turn", turn: turnId });
+
     this.speakSuppressed = false;
     this.setState("thinking");
     this.stripper.reset();
 
     const route = this.avatar;
+    metrics.avatarActive = !!route;
+    if (route) {
+      route.onSpeakSubmitted = (t: number) => {
+        if (this.turnCounter === turnId && !metrics.marks.avatar_first_speak_submitted) {
+          metrics.marks.avatar_first_speak_submitted = t;
+        }
+      };
+    }
     this.tts?.cancel();
     this.tts = this.openTts(route);
+    metrics.marks.tts_ws_open = Date.now();
+    metrics.ttsProvider = this.ttsProvider.name;
     this.tts.onAudio((pcm) => {
       if (this.speakSuppressed || this.turnCounter !== turnId) return;
       if (!tFirstAudio) {
         tFirstAudio = Date.now();
+        metrics.marks.tts_first_audio = tFirstAudio;
         log(
           tFirstToken
             ? `turn ${turnId}: firstToken->firstAudio ${tFirstAudio - tFirstToken}ms`
             : `turn ${turnId}: sttFinal->fillerAudio ${tFirstAudio - tSttFinal}ms (filler spoke first)`,
         );
       }
+      metrics.marks.tts_last_audio = Date.now();
       this.deliverSpeech(pcm, route);
     });
 
     this.chunker = new SentenceChunker((sentence) => {
       if (this.speakSuppressed || this.turnCounter !== turnId) return;
+      if (!metrics.marks.tts_first_text_sent) metrics.marks.tts_first_text_sent = Date.now();
       this.ttsChars += sentence.length;
       this.tts?.sendText(sentence);
     });
@@ -529,6 +655,7 @@ class VoiceSession {
 
     const port = process.env.PORT || "5000";
     let done: any = null;
+    metrics.marks.router_fetch_sent = Date.now();
     try {
       const resp = await fetch(`http://127.0.0.1:${port}/api/ai-concierge/chat`, {
         method: "POST",
@@ -561,6 +688,7 @@ class VoiceSession {
         if (json.type === "token" && typeof json.delta === "string") {
           if (!tFirstToken) {
             tFirstToken = Date.now();
+            metrics.marks.first_token = tFirstToken;
             log(`turn ${turnId}: sttFinal->firstToken ${tFirstToken - tSttFinal}ms`);
             if (this.state === "thinking") this.setState("speaking");
           }
@@ -596,6 +724,14 @@ class VoiceSession {
           this.send({ type: "caption_reset" });
         } else if (json.type === "done") {
           done = json;
+          metrics.marks.router_done = Date.now();
+          // Router-side timings (layer marks + per-tool durations) attached
+          // by setupSSE's sendDone - merge them into this turn's record.
+          if (json.__turnTimings) {
+            metrics.routerMarks = json.__turnTimings.marks || null;
+            metrics.toolCalls = json.__turnTimings.toolCalls || [];
+            metrics.toolCallCount = metrics.toolCalls.length;
+          }
         } else if (json.type === "retry_needed") {
           done = { retry: true };
         } else if (json.type === "error") {
@@ -641,6 +777,9 @@ class VoiceSession {
     if (this.closed || this.turnCounter !== turnId) return;
 
     if (done?.retry || done?.error) {
+      metrics.marks.turn_errored = Date.now();
+      metrics.error = done?.error || "retry_needed";
+      this.scheduleEmitMetrics(turnId);
       this.tts?.cancel();
       this.speakSystemLine("I'm sorry, something went wrong on my end. Could you say that again?");
       return;
@@ -649,7 +788,8 @@ class VoiceSession {
     if (done) {
       if (done.sessionId && !this.chatSessionId) this.chatSessionId = done.sessionId;
       // Ship the interactive payload (cards, quick replies) to the panel.
-      const { type: _t, message: _m, ...extras } = done;
+      // __turnTimings is server-side instrumentation - never forward it.
+      const { type: _t, message: _m, __turnTimings: _tt, ...extras } = done;
       this.send({ type: "cards", payload: extras });
 
       const spokenText = this.stripper.emittedText().trim();
@@ -713,6 +853,8 @@ class VoiceSession {
   async destroy(reason: string) {
     if (this.closed) return;
     this.closed = true;
+    // Flush any pending per-turn metrics before the session record closes.
+    for (const id of [...this.turnMetrics.keys()]) this.emitMetrics(id);
     if (this.silenceTimer) clearTimeout(this.silenceTimer);
     if (this.capTimer) clearTimeout(this.capTimer);
     if (this.listenTimer) clearTimeout(this.listenTimer);

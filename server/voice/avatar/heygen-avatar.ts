@@ -45,6 +45,15 @@ export class HeyGenAvatarSession {
   private ws: WebSocket | null = null;
   private connected = false;
   private closed = false;
+  // Instrumentation: the gateway sets this per turn to timestamp the FIRST
+  // agent.speak frame actually submitted over the LiveAvatar WS ("task
+  // submitted" in latency terms - sendAudio() only buffers; this fires when
+  // bytes really leave for HeyGen). Cleared/reassigned by the gateway.
+  onSpeakSubmitted: ((tEpochMs: number, bytes: number) => void) | null = null;
+  // Instrumentation: first-seen timestamp per inbound LiveAvatar WS event
+  // type, to discover whether the protocol exposes a speech-started /
+  // first-frame callback we are currently ignoring. Logged once per type.
+  private seenEventTypes = new Map<string, number>();
   // ~400ms of 24kHz PCM per agent.speak frame - smaller frames reach the
   // avatar's lip-sync sooner (docs allow up to 1MB per packet; ~1s was the
   // recommendation, but latency matters more here).
@@ -110,6 +119,17 @@ export class HeyGenAvatarSession {
       ws.on("message", (data) => {
         try {
           const msg = JSON.parse(data.toString());
+          // Instrumentation: log each event TYPE the first time it appears
+          // (with full payload keys) - LiveAvatar may emit speech-progress
+          // events (e.g. agent.speak_started / agent.audio_end) that would
+          // give us a true "first speech frame" callback. Discovery only.
+          const evType = String(msg.type || msg.state || "unknown");
+          if (!this.seenEventTypes.has(evType)) {
+            this.seenEventTypes.set(evType, Date.now());
+            console.log(
+              `[voice][avatar-evt] first "${evType}" at ${new Date().toISOString()} keys=${Object.keys(msg).join(",")} raw=${JSON.stringify(msg).slice(0, 300)}`,
+            );
+          }
           if (
             (msg.type === "session.state_updated" && msg.state === "connected") ||
             msg.state === "connected"
@@ -179,6 +199,7 @@ export class HeyGenAvatarSession {
     const now = Date.now();
     this.playheadAt = Math.max(now, this.playheadAt) + durMs;
     this.sendJson({ type: "agent.speak", audio: frame.toString("base64") });
+    this.onSpeakSubmitted?.(now, frame.length);
   }
 
   // How much longer the avatar will keep TALKING the audio already queued

@@ -1,0 +1,204 @@
+# Voice pipeline - Session 1 findings (instrumentation only)
+
+Date: 2026-08-02. Scope: instrumentation + code-path tracing for the
+concierge-brief-v3 diagnostic. NO behavior was changed - every edit is a
+timestamp, a log line, or an additive message field.
+
+## 1. Where the Cartesia bytes actually go (Section E1 answer)
+
+The audio path is EXCLUSIVE per reply, not dual. `deliverSpeech()` in
+`server/voice/voice-gateway.ts` routes each TTS PCM chunk to exactly one of
+two destinations, chosen by a route snapshot taken ONCE at the start of each
+reply (`const route = this.avatar`):
+
+- **Avatar route** (snapshot non-null): 16kHz PCM is upsampled to 24kHz and
+  pushed over LiveAvatar's session WebSocket as base64 `agent.speak` frames
+  (`heygen-avatar.ts`). HeyGen lip-syncs it and streams synced audio+video
+  into a LiveKit room; the browser hears it via the LiveKit audio track
+  attached to an `<audio>` element in `AvatarVideo.tsx`. The raw Cartesia
+  bytes never reach the browser on this route.
+- **WS-PCM route** (snapshot null): raw PCM goes down our voice WebSocket and
+  plays through a Web Audio AudioWorklet ring buffer (`lib/voice/audio.ts`).
+  There is NO `<audio>` element on this path. The avatar - if one connects -
+  receives nothing and keeps playing its idle loop.
+
+So the brief's hypothesis ("audio played by the browser on a path that is not
+driving lip-sync") is structurally half right: it is never BOTH at once, but
+several windows put a live avatar on screen while audio plays on the WS-PCM
+path, producing exactly the idle-mouth-over-speech signature:
+
+1. **The greeting race.** The gateway sends `ready` immediately and gives the
+   avatar handshake only 3s before speaking the greeting; the route is
+   snapshotted at speak time. Our fresh smoke run reproduced this: turn 1
+   fired before the handshake finished and ran `avatarActive=false` (local
+   audio, avatar idle), turn 2 ran on the avatar route. The desktop trace's
+   7s greeting at 0.93x idle motion with r~0 matches this window exactly.
+2. **Any reply started before the avatar connects mid-session** (same
+   snapshot rule, deliberate - splitting one reply across outputs would
+   garble it), including after the auto-reconnect path, which starts a FRESH
+   avatar session while the conversation continues.
+3. **Avatar start failure fallback** (audio-only, loudly logged).
+
+For the four utterances that showed elevated-but-uncorrelated mouth motion:
+those are consistent with the avatar route + LiveKit degradation. Note
+`AvatarVideo` joins with `adaptiveStream: true` - LiveKit deliberately
+degrades/pauses the VIDEO track for small or occluded elements (the 84x120
+PiP) while the audio track keeps playing. That would also explain E2's
+framerate collapse beginning exactly at the first navigation (PiP mode) while
+steady-state fullscreen was rock solid. The new per-turn fields
+(`avatarActive`, `local_pcm_play_start` vs `livekit_audio_element_playing`)
+now disambiguate the route per utterance in one recorded session.
+
+## 2. Turn latency attribution (Section E0 instrumentation)
+
+One JSON line per voice turn is now emitted to the server log:
+`[TURN_METRICS] {...}` - grep it and load into a dataframe:
+
+```
+grep -o '\[TURN_METRICS\] {.*}' /tmp/gostork-server.log | sed 's/^\[TURN_METRICS\] //' > turns.jsonl
+```
+
+Fields (all epoch ms; gateway and router share one process/clock):
+- `corrId` (sessionPrefix:turnId), `turn`, `userText`, `avatarActive`,
+  `ttsProvider`, `fixedReply`
+- `toolCallCount` (top-level, as requested) and `toolCalls[]` with
+  `{name, tStart, tEnd, ms}` - recorded by a single wrapper around
+  `mcpClient.callTool`, covering all ~25 call sites
+- `marks{}`: `speech_final`, `router_fetch_sent`, `first_token`,
+  `tts_ws_open`, `tts_first_text_sent`, `tts_first_audio`, `tts_last_audio`,
+  `tts_generation_done`, `avatar_first_speak_submitted` (first agent.speak
+  frame actually sent - the "LiveAvatar task submitted" boundary),
+  `avatar_playhead_drain_expected`, `back_to_listening`, `router_done`
+- `routerMarks[]` from inside `/api/ai-concierge/chat` (attached to the SSE
+  done frame as `__turnTimings`, stripped before anything reaches a client):
+  `router_entry`, `context_sections_loaded`, `skip_directives_done`,
+  `bypass_served`, `prework_done_tier1|tier2`, `tier1_start/end`,
+  `tier2_start/end`, `tier2_round_N`, `done_sent`
+- `client{}`: browser-reported events (`caption_painted` via double-rAF
+  after the first caption chunk commits, `local_pcm_play_start`,
+  `livekit_audio_element_playing`, `remote_audio_first` = first audible
+  energy on the LiveKit track, the closest current proxy for "first speech
+  frame" client-side). Each carries `tClient` (browser clock) and
+  `tServerRecv` (server clock) - use `tServerRecv` for cross-boundary
+  ordering, `tClient` only for client-internal deltas.
+- `derived{}`: the headline spans precomputed (`stt_to_first_token_ms`,
+  `stt_to_first_audio_ms`, `router_total_ms`, `tools_total_ms`, ...).
+
+Deepgram `speech_final` note: the gateway's `speech_final` mark is stamped
+when the STT final callback fires (the earliest the server knows the user
+stopped) - Deepgram endpointing delay sits upstream of it and is not yet
+separately measured.
+
+**Early evidence from the smoke turns (fresh, on gostork.ngrok.app):** even a
+turn served by a deterministic bypass paid ~1.5s before its first token, of
+which ~1.1s was `context_sections_loaded` (session/profile/prompt-section
+loading) - i.e. meaningful pre-model cost exists on EVERY turn, before any
+tier or tool runs. A Tier1 turn showed prework 1.9s + Tier1 1.5s. This is
+consistent with the E0 median but the 4x spread attribution (tool calls) still
+needs the 10-15 turn run.
+
+## 3. Which router layers call tools
+
+The "4 layers" are routing ALTERNATIVES, not sequential stages - a turn is
+served by exactly one of them, after shared pre-work that every turn pays:
+
+- **Shared pre-work** (`router_entry` -> `context_sections_loaded` ->
+  `skip_directives_done` -> `prework_done_*`): session load, profile, RAG,
+  prompt assembly. No MCP tool calls, but it does DB + embedding work and is
+  1-2.5s in fresh measurements. Serialized before everything.
+- **Layer 1 - deterministic bypasses** (19 marked sites: lawyer connect,
+  review, Phase 0 Part2/PathB/Q&A, Phase 1, schedule-with-concierge, ...):
+  NO model, NO tools (rare direct card resolution aside). Fast path.
+- **Layer 2 - intake state machine**: decision logic inside pre-work/prompt
+  assembly; not a separately-timed model stage. No tools itself.
+- **Layer 3 - Tier 1 Gemini** (`callTier1Gemini`): NO tools at all - it
+  cannot call any. Streams tokens live.
+- **Layer 4 - Tier 2** (`callTier2Claude`, actually gemini-3.5-flash with
+  function calling): the ONLY tool-calling layer. Tool rounds (up to 8) run
+  BEFORE the text round; there are also post-model tool calls outside the
+  tiers (card resolution `resolve_match_card`/`resolve_provider`, whisper
+  paths) that run between `tier2_end` and `done_sent`. All are captured by
+  the callTool wrapper regardless of location.
+
+## 4. Which paths could commit to an opening sentence before tool resolution (A0)
+
+Today's streaming reality (relevant to the two-channel design):
+
+- **Tier 1 and bypasses**: stream/emit text immediately, no tools - already
+  effectively "channel 1"; nothing blocks them except shared pre-work.
+- **Tier 2, text-only turns**: TRUE streaming with an 80-char peek window
+  (`streamTurn`) - tokens reach the voice gateway (and TTS) as Gemini
+  produces them. Also already streamable.
+- **Tier 2, tool turns**: the model decides its own tool use, so NOTHING is
+  emitted until the last tool round finishes - the model text in a tool round
+  is deliberately held (the round usually opens with a functionCall). This is
+  where A0's serialization lives. Candidates that could commit to an opening
+  sentence early, because the tool result changes what Eva SHOWS, not what
+  she SAYS: pre-searched ready turns (the search result is known before the
+  model writes - an opening line like "Let me show you who I found" is
+  path-determined), and post-model card/provider resolution (text is already
+  final when those tools run - speech could start immediately; today the
+  done frame waits for them). Candidates that CANNOT stream: turns where the
+  tool result determines the sentence content (cost answers, availability,
+  knowledge-base answers) - the brief's fallback-to-blocking rule applies.
+- **Two paths mutate `finalContent` after streaming without a reset frame**
+  (the gateway logs `reply REPLACED upstream` and re-speaks) - any streaming
+  contract must fix those at the source first; they are the existing
+  known-unsafe streamers.
+
+## 5. LiveAvatar session lifecycle: hand-rolled vs LiveKit plugin
+
+We hand-roll everything: `POST /v1/sessions/token` -> `POST
+/v1/sessions/start` -> raw WS (`agent.speak` base64 frames, keep-alive every
+15s, `agent.interrupt`), playhead tracked by arithmetic
+(`remainingSpeechMs()`), teardown via socket close + best-effort
+`/v1/sessions/stop`. The browser side joins LiveKit directly with
+`livekit-client` (dynamic import), manual track attach + chroma-key canvas.
+We do NOT use LiveKit's agent-session LiveAvatar plugin - and cannot without
+an architecture change: the plugin belongs to LiveKit's Agents framework
+(a Python/Node agent process owning the session), while our gateway is a
+bespoke WS bridge inside Express. Adopting it would replace the hand-rolled
+token/start/WS/keep-alive/reconnect code but would also mean running the
+voice pipeline as a LiveKit Agent - a much bigger move than the remount fix
+(which was already solved app-side by the persistent VoiceSessionProvider).
+
+**New discovery (from the instrumentation run):** LiveAvatar's WS emits
+`agent.audio_buffer_appended`, `agent.speak_started`, `agent.speak_ended`,
+`agent.idle_started`, `agent.idle_ended` - all with task ids - and we ignore
+every one of them. `agent.speak_started` is the true "avatar began speaking"
+callback (B4's unresolved question) and `agent.speak_ended` is the exact
+playhead-drain signal that `remainingSpeechMs()` currently estimates by
+arithmetic. First-seen events are now logged as `[voice][avatar-evt]`.
+
+Measured on this host: avatar handshake (token + start + WS connected) is
+logged per session (`avatar handshake took Nms`); the smoke sessions also
+showed LiveAvatar speak_started arriving ~200ms after the first
+`agent.speak` frame - supporting the brief's "sub-second avatar hop" claim,
+to be confirmed across the 10-15 turn run.
+
+## 6. Environment / measurement-hygiene notes
+
+- All fresh numbers here were collected against `https://gostork.ngrok.app`.
+- **B5 mic-permission (~1.7s):** desktop Chrome/Safari persist mic permission
+  per origin, so on desktop this cost should now be gone (verify once in the
+  browser session of the measurement run). iOS Safari re-prompts per session
+  by OS design regardless of origin stability - on iPhone the only removal is
+  the user-side Safari AA menu -> Website Settings -> Microphone -> Allow.
+  So B5's line item splits: desktop 0, iOS unchanged-by-domain-move.
+- Client clocks are not the server clock: use `tServerRecv` for cross-machine
+  ordering (WS transit on this LAN is small but not zero).
+- Section F remains untouched per scope.
+
+## 7. Next session (the experiment)
+
+Run 10-15 voice turns of varying complexity, then:
+
+```
+grep -o '\[TURN_METRICS\] {.*}' /tmp/gostork-server.log | sed 's/^\[TURN_METRICS\] //' > turns.jsonl
+# pandas: df = pd.read_json("turns.jsonl", lines=True)
+# x = df.toolCallCount, y = df.derived.str["stt_to_first_audio_ms"]
+```
+
+A near-linear relationship confirms A0. The per-mark columns additionally
+split each slow turn into prework / tier / tool / TTS / avatar components, so
+even a non-linear result is attributable.
