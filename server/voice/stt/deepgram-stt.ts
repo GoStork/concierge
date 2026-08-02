@@ -24,8 +24,29 @@ class DeepgramStream implements SttStream {
       punctuate: "true",
       interim_results: "true",
       endpointing: "400",
-      model: "nova-2",
+      model: "nova-3",
     });
+    // Keyterm prompting (nova-3, English): boost the fertility vocabulary
+    // parents actually say. Without it, real mishearings happened - "an egg
+    // donor" transcribed as "an Angular".
+    if (language === "en") {
+      for (const term of [
+        "egg donor",
+        "sperm donor",
+        "surrogate",
+        "surrogacy",
+        "IVF",
+        "embryo",
+        "embryos",
+        "fertility clinic",
+        "egg bank",
+        "intended parent",
+        "PGT-A",
+        "GoStork",
+      ]) {
+        params.append("keyterm", term);
+      }
+    }
     this.ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, {
       headers: { Authorization: `Token ${apiKey}` },
     });

@@ -113,6 +113,15 @@ export function useVoiceSession() {
     }
     engineRef.current = engine;
 
+    // The socket is reconnectable: a server deploy or a mobile network blip
+    // closes the WS mid-conversation, and dying to text for that reads as a
+    // crash. On an unexpected close we reopen (2 attempts) with the same
+    // session - the server starts a fresh avatar session and the panel swaps
+    // in the new video. Deliberate ends (user, caps, server "ended" frames)
+    // go through stop() first, so they never reconnect.
+    let reconnects = 0;
+
+    const connectSocket = (isReconnect: boolean) => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${window.location.host}/api/voice/ws`);
     ws.binaryType = "arraybuffer";
@@ -124,7 +133,8 @@ export function useVoiceSession() {
           type: "hello",
           sessionId: opts.sessionId,
           matchmakerId: opts.matchmakerId,
-          greetingText: opts.greetingText || undefined,
+          // Never re-greet on a reconnect mid-conversation
+          greetingText: isReconnect ? undefined : opts.greetingText || undefined,
           // Phones get the persona's portrait avatar variant when one is set
           portrait: window.innerHeight > window.innerWidth,
         }),
@@ -145,6 +155,7 @@ export function useVoiceSession() {
       }
       switch (msg.type) {
         case "ready":
+          reconnects = 0;
           setStateBoth("listening");
           break;
         case "state":
@@ -189,7 +200,7 @@ export function useVoiceSession() {
     };
 
     ws.onerror = () => {
-      if (stateRef.current === "connecting") {
+      if (stateRef.current === "connecting" && !isReconnect && reconnects === 0) {
         setError("Could not connect to voice. You can keep chatting in text.");
         setStateBoth("error");
         activeRef.current = false;
@@ -198,20 +209,36 @@ export function useVoiceSession() {
       }
     };
     ws.onclose = () => {
-      if (activeRef.current) stop("connection_closed");
+      if (!activeRef.current || wsRef.current !== ws) return;
+      reconnects += 1;
+      if (reconnects <= 2) {
+        setStateBoth("connecting");
+        setTimeout(() => {
+          if (activeRef.current && wsRef.current === ws) connectSocket(true);
+        }, reconnects === 1 ? 800 : 2500);
+      } else {
+        stop("connection_closed");
+      }
     };
+    }; // end connectSocket
+
+    connectSocket(false);
 
     micStatsRef.current = { maxRms: 0, sent: 0 };
     if (statsTimerRef.current) clearInterval(statsTimerRef.current);
     statsTimerRef.current = setInterval(() => {
-      if (ws.readyState !== WebSocket.OPEN) return;
+      const sock = wsRef.current;
+      if (!sock || sock.readyState !== WebSocket.OPEN) return;
       const s = micStatsRef.current;
-      ws.send(JSON.stringify({ type: "mic_stats", maxRms: s.maxRms, sent: s.sent }));
+      sock.send(JSON.stringify({ type: "mic_stats", maxRms: s.maxRms, sent: s.sent }));
       micStatsRef.current = { maxRms: 0, sent: 0 };
     }, 5000);
 
     engine.onMicFrame((pcm, rms) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
+      // Always the CURRENT socket - after an auto-reconnect the original one
+      // is dead and frames must flow to its replacement.
+      const sock = wsRef.current;
+      if (!sock || sock.readyState !== WebSocket.OPEN) return;
       if (rms > micStatsRef.current.maxRms) micStatsRef.current.maxRms = rms;
       const now = Date.now();
       const speaking = rms > VAD_THRESHOLD;
@@ -233,15 +260,15 @@ export function useVoiceSession() {
       ) {
         bargeSentRef.current = true;
         engine.flushPlayback();
-        ws.send(JSON.stringify({ type: "barge" }));
+        sock.send(JSON.stringify({ type: "barge" }));
       }
 
       const active = now - lastVoiceAtRef.current < VAD_HANGOVER_MS;
       if (active) {
         // Replay the prebuffer so speech onset isn't clipped.
-        for (const buffered of prebufferRef.current) ws.send(buffered);
+        for (const buffered of prebufferRef.current) sock.send(buffered);
         prebufferRef.current = [];
-        ws.send(pcm);
+        sock.send(pcm);
         micStatsRef.current.sent += 1;
       } else {
         prebufferRef.current.push(pcm);
