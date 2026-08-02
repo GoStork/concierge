@@ -1,8 +1,8 @@
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import { useSharedVoiceSession } from "@/contexts/voice-session-context";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
-import { AvatarVideo } from "@/components/voice/AvatarVideo";
 import { useCornerDrag } from "@/lib/voice/use-corner-drag";
 
 // Floating FaceTime-style frame shown while a voice call is live and the chat
@@ -38,7 +38,21 @@ export function GlobalVoicePip() {
   );
 
   const active = ACTIVE_STATES.includes(voice.state);
-  if (!active || voice.panelActive) return null;
+  const visible = active && !voice.panelActive;
+  const showVideo = visible && !!voice.avatar && !voice.avatarVideoFailed;
+
+  // Claim the persistent avatar video (owned by VoiceSessionProvider) into
+  // this frame while the PiP is the visible surface - re-parents the SAME
+  // LiveKit room + <video>, no re-join, no spinner. Must run before the
+  // early return so the hook order is stable.
+  const videoHostRef = useRef<HTMLDivElement | null>(null);
+  const { registerAvatarHost } = voice;
+  useEffect(() => {
+    if (!showVideo || !videoHostRef.current) return;
+    return registerAvatarHost(videoHostRef.current);
+  }, [showVideo, registerAvatarHost]);
+
+  if (!visible) return null;
 
   const brandColor = brand?.primaryColor || "#004D4D";
   const name = voice.meta?.personaName || "AI Concierge";
@@ -51,16 +65,10 @@ export function GlobalVoicePip() {
       onPointerDown={onPointerDown}
       data-testid="global-voice-pip"
     >
-      {voice.avatar ? (
-        <AvatarVideo
-          fullBleed
-          livekitUrl={voice.avatar.livekitUrl}
-          livekitToken={voice.avatar.livekitToken}
-          brandColor={brandColor}
-          onFailed={() => {
-            /* audio keeps flowing through the session; frame shows the photo */
-          }}
-        />
+      {showVideo ? (
+        <div ref={videoHostRef} className="absolute inset-0">
+          {/* Persistent AvatarVideo portals in here - see VoiceSessionProvider */}
+        </div>
       ) : voice.meta?.avatarUrl ? (
         <img src={voice.meta.avatarUrl} alt={name} className="absolute inset-0 w-full h-full object-cover" />
       ) : (

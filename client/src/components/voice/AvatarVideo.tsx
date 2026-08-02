@@ -168,6 +168,16 @@ export function AvatarVideo({
           }
         };
         room.on(RoomEvent.TrackSubscribed, (track: any) => attach(track));
+        // A dropped room used to freeze the last frame silently (audio gone,
+        // mouth frozen). Surface it as a failure so the surfaces fall back to
+        // the static photo; `cancelled` keeps our own teardown disconnect
+        // from reporting.
+        room.on(RoomEvent.Disconnected, () => {
+          if (!cancelled) {
+            console.warn("[voice] LiveKit room disconnected unexpectedly");
+            onFailed("LiveKit room disconnected");
+          }
+        });
         await room.connect(livekitUrl, livekitToken);
         // Attach any tracks that were already published before we joined.
         for (const participant of room.remoteParticipants.values()) {

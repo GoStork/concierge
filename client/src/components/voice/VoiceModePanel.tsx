@@ -1,8 +1,8 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useCornerDrag } from "@/lib/voice/use-corner-drag";
 import { Mic, MicOff, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AvatarVideo } from "@/components/voice/AvatarVideo";
+import { useSharedVoiceSession } from "@/contexts/voice-session-context";
 import type { VoiceCardsPayload, VoiceState } from "@/hooks/use-voice-session";
 
 // Voice-first landing: shown over a brand-new session so Eva can START the
@@ -148,7 +148,10 @@ export function VoiceModePanel({
   onClose,
   renderCards,
 }: VoiceModePanelProps) {
-  const [avatarVideoFailed, setAvatarVideoFailed] = useState(false);
+  // The LiveKit room + <video> live in ONE persistent instance owned by
+  // VoiceSessionProvider; this panel only claims it into its stage element,
+  // so opening/closing the panel or navigating never re-joins the room.
+  const { avatarVideoFailed, registerAvatarHost } = useSharedVoiceSession();
   const showAvatarVideo = !!avatar && !avatarVideoFailed;
   const quickReplies: string[] = useMemo(() => {
     if (!cards?.quickReplies?.length) return [];
@@ -185,6 +188,16 @@ export function VoiceModePanel({
   // screen and the conversation continues.
   const takeover = overVideo && !!renderCards && (hasScreenCards || !!cardsPreview);
   const { ref: pipRef, corner: pipCorner, onPointerDown: onPipPointerDown } = useCornerDrag("tr");
+
+  // Claim the persistent avatar video into this panel's stage while the
+  // video is shown here. The unregister is element-guarded, so a surface
+  // that registered after us (commit ordering on route change) is never
+  // clobbered by our cleanup.
+  const stageElRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!showAvatarVideo || !stageElRef.current) return;
+    return registerAvatarHost(stageElRef.current);
+  }, [showAvatarVideo, registerAvatarHost]);
   const PIP_POS: Record<string, string> = {
     tl: "top-16 left-3",
     tr: "top-16 right-3",
@@ -203,7 +216,10 @@ export function VoiceModePanel({
               draggable PiP box during profile takeover. Only the classes
               change, so the LiveKit connection never remounts. */}
           <div
-            ref={pipRef}
+            ref={(el) => {
+              pipRef.current = el;
+              stageElRef.current = el;
+            }}
             className={
               takeover
                 ? `absolute z-30 w-28 h-40 sm:w-32 sm:h-44 rounded-[var(--radius)] overflow-hidden border-2 shadow-xl cursor-grab active:cursor-grabbing ${PIP_POS[pipCorner]}`
@@ -213,13 +229,8 @@ export function VoiceModePanel({
             onPointerDown={takeover ? onPipPointerDown : undefined}
             data-testid={takeover ? "voice-avatar-pip" : "voice-avatar-stage"}
           >
-            <AvatarVideo
-              fullBleed
-              livekitUrl={avatar!.livekitUrl}
-              livekitToken={avatar!.livekitToken}
-              brandColor={brandColor}
-              onFailed={() => setAvatarVideoFailed(true)}
-            />
+            {/* The persistent AvatarVideo portals into this element - see
+                VoiceSessionProvider. Nothing is mounted here directly. */}
           </div>
           {!takeover && (
             <>

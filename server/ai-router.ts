@@ -7955,10 +7955,22 @@ ${phase0Section}`;
           }
         }
 
-        // STEP 4: If still not resolved, whisper to agency
+        // STEP 4: Answer not in profile or KB. This used to auto-open a REAL
+        // whisper (SilentQuery + provider email/SMS) off nothing but the
+        // regex on Eva's own wording - downstream the only gates are provider
+        // resolution and the contact-info egress scan, no dedup and no
+        // rate limit, so a false positive contacted a real agency.
+        // LOG-AND-SKIP until interceptors[] fire-rate data says the trigger
+        // is trustworthy: keep the graceful rewrite, drop the outbound
+        // whisper, and make no promise Eva won't keep. Whispers the MODEL
+        // decides to send (with profile data in hand, steps 2/3) still flow
+        // through the normal whisper machinery.
         if (!resolved && ownerProviderId) {
-          console.log(`[ACCESS-FAILURE] Step 4: Answer not found in profile or KB - sending whisper to agency ${ownerProviderId}`);
-          finalContent = `Great question! I'll check with her agency on that and get back to you with the answer. In the meantime, would you like to schedule a free consultation to speak with them directly? [[WHISPER:${ownerProviderId}]] [[QUICK_REPLY:Yes, schedule a free consultation|Show me more options]]`;
+          console.warn(
+            `[ACCESS-FAILURE] Step 4 SUPPRESSED auto-whisper to provider ${ownerProviderId} (log-and-skip guard - ` +
+              `would have asked: "${(userMessage || "").slice(0, 120)}"). Re-enable once interceptors[] shows a clean fire rate.`,
+          );
+          finalContent = `Great question - that level of detail isn't in the profile I have on hand. The agency would know best: would you like to schedule a free consultation to ask them directly? [[QUICK_REPLY:Yes, schedule a free consultation|Show me more options]]`;
           resolved = true;
         }
 
@@ -8004,7 +8016,17 @@ ${phase0Section}`;
       /stand by while/i,
       /bear with me/i,
     ];
-    const hasDeadEnd = deadEndPatterns.some((p) => p.test(finalContent));
+    // DELIVERED-IN-THE-SAME-BREATH EXCLUSION: "let me pull up some matches -
+    // here she is: [[MATCH_CARD]]" kept its promise; the patterns match the
+    // phrasing anyway (no card check existed) and voice-brevity replies use
+    // exactly this conversational shape. A reply that already carries a card,
+    // calendar, or booking tag is not a dead end.
+    const deliversInSameBreath =
+      /\[\[(MATCH_CARD|DOCTOR_CARD|COMPARE_CARD|MEETING_CARD|CONSULTATION_BOOKING|LAWYER_CALENDAR|LAWYER_CONNECT|CONCIERGE_CALENDAR|BANK_CHECKOUT|CURATION)[:\]]/i.test(finalContent);
+    const hasDeadEnd = !deliversInSameBreath && deadEndPatterns.some((p) => p.test(finalContent));
+    if (deliversInSameBreath && deadEndPatterns.some((p) => p.test(finalContent))) {
+      console.log(`[DEAD-END INTERCEPT] Skipped - promise kept in the same reply (card/calendar tag present)`);
+    }
     if (hasDeadEnd && !isSkipAction && !serverBypassServed) {
       const _deT0 = Date.now();
       const _dePre = finalContent;
@@ -8661,7 +8683,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     try {
       const lastAssistantForEcho = [...chatHistory].reverse().find((m: any) => m.role === "assistant" && typeof m.content === "string");
       const echoWords = (s: string) => s.replace(/\[\[[^\]]*\]\]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
-      if (lastAssistantForEcho && finalContent) {
+      // VOICE EXEMPTION: in a call, "sorry, say that again?" is routine and
+      // the CORRECT reply is a near-verbatim repeat - which is exactly what
+      // this rule forbids (the retry prompt orders the model never to
+      // repeat). Spoken confirmations are also formulaic enough to trip 90%
+      // overlap organically. Text chat keeps the guard.
+      if (req.body.channel !== "voice" && lastAssistantForEcho && finalContent) {
         const prevW = echoWords(lastAssistantForEcho.content);
         const currW = echoWords(finalContent);
         if (currW.length > 15 && prevW.length > 15) {

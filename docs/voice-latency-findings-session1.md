@@ -355,6 +355,48 @@ in the PiP while "on" shows resolution drops/0fps windows.
   voice, no avatar) exists for harness runs; scratchpad harness synthesizes
   speech with `say` and real mid-sentence silences.
 
+## Session 3 - interceptor guards + persistent media (2026-08-02 night)
+
+**Workstream A (shipped):**
+- ACCESS-FAILURE Step 4 whisper is now LOG-AND-SKIP. What gated it before:
+  only provider resolution + the contact-info egress scan - no dedup, no rate
+  limit, no question-quality check - so a regex false positive on Eva's own
+  wording emailed/SMSed a real agency. The graceful rewrite stays (now
+  without the "I'll check with her agency" promise Eva wouldn't keep, it
+  offers the consultation instead); the suppressed whisper logs the provider
+  id + question. Model-decided whispers (steps 2/3, with profile in hand)
+  still flow normally. Revisit once interceptors[] shows the fire rate.
+- ANTI-ECHO skips entirely when channel === "voice" ("say that again" must
+  produce a near-verbatim repeat; the rule forbade exactly that).
+- DEAD-END skips when the reply already carries a delivery tag (MATCH_CARD /
+  DOCTOR_CARD / COMPARE_CARD / MEETING_CARD / CONSULTATION_BOOKING /
+  LAWYER_CALENDAR / LAWYER_CONNECT / CONCIERGE_CALENDAR / BANK_CHECKOUT /
+  CURATION) - "let me pull up some matches - here she is" kept its promise.
+
+**OWED WORK (noted, untouched):** the chat-subject context injector at
+ai-router ~5821 uses the same substring-question heuristic the QUESTION
+INTERCEPT just dropped (any mention of name/age/.../family triggers a
+pre-work profile fetch). Same structural cure applies when prioritized.
+
+**Workstream B (shipped): persistent avatar media.** The LiveKit room and
+video element now live in ONE AvatarVideo instance owned by
+VoiceSessionProvider, portaled into whichever surface is on screen
+(VoiceModePanel stage or GlobalVoicePip frame) via an element-guarded
+registerAvatarHost; with no surface registered it parks in an off-screen
+opacity-0 holder (not display:none - decode throttling). Panel<->PiP toggles
+and route changes now RE-PARENT the same DOM nodes: no Room re-join, no
+same-identity kick, no spinner, no ~1s black frame (B6), and the repeated-
+join churn suspected behind E2's progressive framerate decay is gone by
+construction. Leak audit: chroma-key rAF / fps meter / remote-level analyser
+cleanups were already sound per mount - the accumulation driver was the
+remount frequency itself; added a RoomEvent.Disconnected handler so a
+dropped room falls back to the persona photo instead of freezing the last
+frame (previously silent); use-corner-drag can leak window listeners only on
+mid-drag unmount (self-clearing on next pointerup - left as is). Failure
+state (avatarVideoFailed) moved to the provider and resets on new
+credentials. The fps telemetry now persists across navigation, so the Task 4
+adaptiveStream A/B captures the PiP transition itself.
+
 ## 7. Next session (the experiment)
 
 Run 10-15 voice turns of varying complexity, then:
