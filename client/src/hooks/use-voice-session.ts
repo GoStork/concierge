@@ -25,6 +25,21 @@ interface StartOpts {
   greetingText?: string | null;
 }
 
+// PLATFORM GATE POLICY (Commit A, session 6). The mic gate + prebuffer
+// existed to keep Eva's speaker echo out of STT. Measured 2026-08-02:
+// desktop Chrome's AEC cancels Eva at the TRACK level (silent-room control:
+// zero Deepgram tokens, 0.002-0.022 RMS residual), while iPhone Safari
+// leaks transcribable fragments that dispatched as real turns (WebKit's
+// canceller does not cover WebRTC remote audio). So: desktop streams the
+// mic CONTINUOUSLY - Deepgram sees the parent's true timeline (no VAD
+// send-gating, no echo-hold, no prebuffer, no frame drops) - while iOS
+// keeps the full gate until it has its own mechanism. Barge detection
+// stays on BOTH platforms. iPadOS masquerades as MacIntel - the
+// maxTouchPoints check catches it.
+const IS_IOS =
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 2);
+
 // RMS above this counts as speech (tuned for echo-cancelled mic input).
 const VAD_THRESHOLD = 0.015;
 // Keep forwarding this long after the last speech frame so trailing words and
@@ -52,6 +67,16 @@ let activeMetricReporter: ((event: string) => void) | null = null;
 export function reportVoiceClientMetric(event: string) {
   activeMetricReporter?.(event);
 }
+
+// AEC test-mode arming (session 6 fix): mirror ?voiceMicGate=off|on into
+// localStorage at MODULE LOAD, while the original URL is still intact - the
+// app's session redirect rewrites the query string long before the voice
+// button is tapped, so reading it at call time missed the param on iPhone.
+try {
+  const bootFlag = new URLSearchParams(window.location.search).get("voiceMicGate");
+  if (bootFlag === "off") localStorage.setItem("voiceMicGate", "off");
+  else if (bootFlag === "on") localStorage.removeItem("voiceMicGate");
+} catch { /* private mode */ }
 // Avatar video health telemetry (Task 4 A/B): AvatarVideo reports rendered
 // fps + delivered track resolution + element size every 2s; the gateway logs
 // it server-side so adaptiveStream on/off runs are comparable from one log.
@@ -281,9 +306,15 @@ export function useVoiceSession() {
         }),
       );
       // AEC audit: what the browser GRANTED for the mic (echoCancellation
-      // etc.) + whether the gate bypass is active - logged server-side.
+      // etc.) + the active gate policy - logged server-side so every
+      // baseline is attributable to a platform policy.
       ws.send(
-        JSON.stringify({ type: "mic_settings", settings: engine.micSettings, gateBypassed: micGateOff }),
+        JSON.stringify({
+          type: "mic_settings",
+          settings: engine.micSettings,
+          gateBypassed: micGateOff,
+          gatePolicy: micGateOff ? "test-bypass" : IS_IOS ? "gated-ios" : "ungated-desktop",
+        }),
       );
     };
 
@@ -496,8 +527,17 @@ export function useVoiceSession() {
         sock.send(JSON.stringify({ type: "barge" }));
       }
 
-      // While Eva is audibly speaking (and no barge yet), mic audio must NOT
-      // reach transcription - on iOS it is largely her own leaked voice and
+      // DESKTOP (AEC verified): stream every frame - Deepgram reasons over
+      // the parent's real timeline. Echo is cancelled at the track level, so
+      // there is nothing to hold back and nothing to drop.
+      if (!IS_IOS) {
+        sock.send(pcm);
+        micStatsRef.current.sent += 1;
+        return;
+      }
+      // iOS ONLY from here: WebKit's AEC does not cover the avatar's WebRTC
+      // audio, so while Eva is audibly speaking (and no barge yet), mic audio
+      // must NOT reach transcription - it is largely her own leaked voice and
       // was being transcribed as the parent. Prebuffer instead, so when a
       // barge (or the end of her reply) opens the floor, the parent's first
       // words replay into STT unclipped.

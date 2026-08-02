@@ -430,7 +430,7 @@ class VoiceSession {
       case "mic_settings":
         // AEC audit (session 5): what the browser GRANTED, verbatim.
         log(
-          `mic settings (granted): ${JSON.stringify(msg.settings || {})} gateBypassed=${msg.gateBypassed === true}`,
+          `mic settings (granted): ${JSON.stringify(msg.settings || {})} gateBypassed=${msg.gateBypassed === true} gatePolicy=${msg.gatePolicy || "unknown"}`,
         );
         // Gate-bypassed TEST sessions also log every Deepgram transcript
         // message (interims included) - never normal sessions (PII).
