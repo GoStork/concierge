@@ -189,6 +189,61 @@ to be confirmed across the 10-15 turn run.
   ordering (WS transit on this LAN is small but not zero).
 - Section F remains untouched per scope.
 
+## 6b. Session 1b addendum - caption events split + pre-work sub-marks
+
+**Caption events (replaces the conflated `caption_painted`):**
+- `user_transcript_painted` - last paint of the parent's OWN transcript,
+  captured on partial-transcript paints and reported retroactively when the
+  turn id arrives (partials precede the turn frame).
+- `agent_caption_first_painted` - first paint of Eva's caption this turn.
+- `agent_caption_full_painted` - paint after the caption completed (reported
+  on the `cards` frame, which follows the last caption chunk); carries
+  `extra.captionChunks` - 1 chunk = painted as a block, many = streamed.
+The 2ms-after-speech_final artifact in the verification turn came from the
+verification script sending a synthetic `caption_painted` at turn start; the
+real client also only had the single conflated event. Both fixed.
+
+**Pre-work sub-marks now in `routerMarks`:** span 1 is bracketed by `pw:*`
+marks (auth_user_loaded, session_resolved, user_msg_saved,
+session_flags_loaded, tier2_lookups_kickoff, history_user_tools_loaded,
+memory_block_start/done, handoff_scan_start, consult_lookup_start,
+billing_context_start, consultation_locks_start, match_gates_start,
+ip_form_start, prompt_sections_start) plus
+`prompt_sections_cache_hit` / `prompt_sections_db_fetch_start/done`.
+Span 2 has `pw2:*` marks (intercepts_evaluated, bypasses_evaluated,
+prompt_sections2_start/done, d1_carrier|dcycle|intake_costs_start/done).
+Consecutive-mark deltas attribute the whole span; conditional items
+(D1 costs) carry their own start/done pair so skipping them cannot
+mis-attribute time.
+
+**First fresh breakdown (one Tier1 intake turn):** span 1 = 1032ms was ~13
+SEQUENTIAL Supabase round trips: auth 20ms, session resolution 80ms, message
+save 27ms, session flags 23ms, history+user+matchmaker+MCP-tools Promise.all
+157ms, memory block 38ms, journey-state block (handoff scan 127ms, consult
+lookup 145ms, billing 71ms, consultation locks 110ms, gates 34ms, IP form
+18ms) = ~505ms, prompt-sections DB fetch 164ms (30s cache expired). Span 2 =
+693ms was almost entirely ONE item: `getD1CountryCosts` 671ms (agency
+discovery SQL + sequential per-agency combined-cost computations, three
+countries in parallel).
+
+Classification (analysis only - nothing changed):
+- **Genuinely per-turn:** user-message persist (~27ms); chat-history CONTENT
+  (though it is refetched in full each turn); explicit memory capture (regex-
+  gated, rare).
+- **Per-session** (stable within a session, refetched every turn today):
+  auth user, session access + account member ids, session flags, matchmaker
+  row, user record + intended-parent profile, concierge memory block, and
+  the entire journey-state block (handoffs, upcoming consult, quotes/
+  invoices/agreements, consultation locks, latest card, gates, IP form) -
+  all change on discrete events (booking, billing, capture), not per turn.
+  This is roughly 700-850ms of span 1 on a warm turn.
+- **Effectively static, redone for lack of caching:** prompt sections (admin
+  text, 30s TTL -> a ~164ms fetch every 30s, called twice per turn with the
+  second call cached); MCP tool list (5min TTL, usually free); and the D1
+  country-cost aggregate - cost sheets change on admin approval, parent
+  coverage changes per session, yet the full multi-query aggregation reruns
+  on every intake-education turn. Largest single known item in the pipeline.
+
 ## 7. Next session (the experiment)
 
 Run 10-15 voice turns of varying complexity, then:

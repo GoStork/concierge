@@ -27,7 +27,7 @@ import fs from "fs";
 import { isUserOnline } from "./online-tracker";
 import jwt from "jsonwebtoken";
 import { getNextIntakeQuestion, buildD1HasEmbryos, buildD1NoEmbryos, type D1Costs } from "./intake-questions";
-import { turnTimingStore, newTurnTimings, mark, recordToolCall, snapshotTurnTimings } from "./turn-timing";
+import { turnTimingStore, newTurnTimings, mark, recordToolCall, snapshotTurnTimings, timeSpan } from "./turn-timing";
 
 // Singleton Anthropic client - enables HTTP connection pooling across requests.
 let _anthropicClient: Anthropic | null = null;
@@ -1231,9 +1231,14 @@ function cleanTitle(title: string | null | undefined): string | null {
 let promptSectionsCache: Map<string, string> | null = null;
 let promptSectionsCacheExpiry = 0;
 async function getPromptSections(): Promise<Map<string, string> | null> {
-  if (Date.now() < promptSectionsCacheExpiry && promptSectionsCache) return promptSectionsCache;
+  if (Date.now() < promptSectionsCacheExpiry && promptSectionsCache) {
+    mark("prompt_sections_cache_hit");
+    return promptSectionsCache;
+  }
   try {
+    mark("prompt_sections_db_fetch_start");
     const sections = await prisma.conciergePromptSection.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
+    mark("prompt_sections_db_fetch_done");
     if (sections.length === 0) return null; // fallback to hardcoded
     promptSectionsCache = new Map(sections.map(s => [s.key, s.content]));
     promptSectionsCacheExpiry = Date.now() + 30 * 1000;
@@ -2438,6 +2443,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     let currentSessionId = req.body.sessionId;
 
     const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true, name: true, firstName: true, lastName: true, email: true, mobileNumber: true } });
+    mark("pw:auth_user_loaded");
     if (currentSessionId) {
       const session = await prisma.aiChatSession.findUnique({ where: { id: currentSessionId } });
       if (!session) {
@@ -2496,6 +2502,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }
     }
 
+    mark("pw:session_resolved");
     const parentNameParts = (currentUser?.firstName && currentUser?.lastName)
       ? [currentUser.firstName, currentUser.lastName]
       : (currentUser?.name || "").trim().split(/\s+/);
@@ -2589,10 +2596,12 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         .catch(() => {});
     }
 
+    mark("pw:user_msg_saved");
     const currentSession = await prisma.aiChatSession.findUnique({
       where: { id: currentSessionId },
       select: { providerJoinedAt: true, providerId: true, status: true, humanRequested: true, humanJoinedAt: true, humanConcludedAt: true, tier2Active: true, lastUploadedPhotoUrl: true, historySummary: true, subjectProfileId: true, subjectType: true, handoffCompletedAt: true },
     });
+    mark("pw:session_flags_loaded");
 
     // Kick off the Tier2-only expensive lookups (expert guidance rules,
     // answered whispers, knowledge-base RAG incl. its OpenAI embedding call)
@@ -2641,6 +2650,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           ).catch(() => [] as any[]),
         ]) as Promise<[string, any[], any[]]>)
       : Promise.resolve(["", [], []] as [string, any[], any[]]);
+    mark("pw:tier2_lookups_kickoff");
 
     // If a GoStork human concierge has joined and not yet concluded, silence the AI
     if (currentSession?.humanJoinedAt && !currentSession.humanConcludedAt) {
@@ -2898,6 +2908,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }),
       getCachedMcpTools(mcpClient),
     ]);
+    mark("pw:history_user_tools_loaded");
 
     // Detect service selection during the greeting/onboarding phase and persist it to the profile.
     // This covers two cases:
@@ -3228,7 +3239,9 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       }
       try {
         const acctIdForMemory = userRecord?.parentAccountId || userId;
+        mark("pw:memory_block_start");
         const memBlock = await memoryBlock(acctIdForMemory);
+        mark("pw:memory_block_done");
         if (memBlock) parts.push(memBlock);
         // Explicit "remember that..." capture - awaited only when the message
         // actually asks to remember (rare), so no latency for normal turns.
@@ -3429,6 +3442,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // redirected to the provider's chat.
       // Single query via the user relation - previously two sequential
       // round-trips (account member ids, then sessions).
+      mark("pw:handoff_scan_start");
       const handedOffSessions = await prisma.aiChatSession.findMany({
         where: {
           user: userRecord?.parentAccountId ? { parentAccountId: userRecord.parentAccountId } : { id: userId },
@@ -3466,6 +3480,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // so a call booked by the partner never counted; and it matched ANY
       // subtype, so a MATCH_CALL switched on CALL PREP MODE for a call that
       // needs no agency prep.
+      mark("pw:consult_lookup_start");
       const upcomingProviderConsult = await prisma.booking.findFirst({
         where: {
           parentUserId: { in: accountMemberIds },
@@ -3503,6 +3518,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         const paperAcctIds = userRecord?.parentAccountId
           ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
           : [userId];
+        mark("pw:billing_context_start");
         const [quotes, invoices, agreements] = await Promise.all([
           prisma.providerQuote.findMany({
             where: { parentUserId: { in: paperAcctIds }, supersededAt: null },
@@ -3545,6 +3561,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // The server enforces it too (calendar.controller.enforceConsultationGates);
       // this block exists so Eva never offers a calendar she cannot deliver.
       try {
+        mark("pw:consultation_locks_start");
         const open = (await listOpenConsultations(accountMemberIds)).filter((o) => o.releasedBy === "NONE");
         if (open.length > 0) {
           const lines = open.map(
@@ -3567,6 +3584,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // calendar for an agency they already work with, and narrates a match
       // call as if it were one step away when three confirmations are open.
       try {
+        mark("pw:match_gates_start");
         const latestCard = currentSessionId ? await findLatestMatchCard(currentSessionId) : null;
         const agencyId = latestCard?.ownerProviderId || null;
         if (agencyId) {
@@ -3709,6 +3727,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // (behavior text lives in the ip_form_guidance prompt section).
       try {
         const acctForIpForm = userRecord?.parentAccountId || userId;
+        mark("pw:ip_form_start");
         const ipForm = await prisma.ipFormResponse.findUnique({
           where: { parentAccountId: acctForIpForm },
           select: { status: true, promptedAt: true, hasSecondParent: true },
@@ -3728,6 +3747,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     }
 
     // Try loading prompt sections from DB (admin-editable)
+    mark("pw:prompt_sections_start");
     const dbSections = await getPromptSections();
     console.log(`[LATENCY] checkpoint context+sections loaded: ${Date.now() - tReq}ms`);
     mark("context_sections_loaded");
@@ -6068,6 +6088,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     const useTier2 = (!!(currentSession?.tier2Active) || isDonorInquiryMode) && !isSocialTurn;
     let finalContent = "";
     let needsRetry = false; // true when all AI tiers failed - tell client to silently retry
+    mark("pw2:intercepts_evaluated");
     let serverBypassServed = false; // true when a server-side hardcoded bypass served the response
     let lastSearchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
     // Mirrors blockSurrogateSearchThisTurn (computed in the Tier2 branch) for the card
@@ -6292,6 +6313,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     }
 
     if (serverBypassServed && finalContent) {
+      mark("pw2:bypasses_evaluated");
       // Canned bypass reply already streamed - skip both model tiers.
     } else if (useTier2) {
       // Tier 2: Claude Sonnet 4.6 with full prompt + caching + tools
@@ -6561,7 +6583,9 @@ Rules: Use real values from the data. The providerId = the "id" UUID field. Neve
       // Tier 1: Gemini 2.5 Flash - MINIMAL prompt, Phase 0-2 only, no matching
       // Extract only the Phase 0-2 section from conversation_flow - strip Phase 3+ (match cycles)
       // to keep the prompt small. Gemini returns soft error responses when the prompt grows too large.
+      mark("pw2:prompt_sections2_start");
       const promptSections = await getPromptSections();
+      mark("pw2:prompt_sections2_done");
       const fullConversationFlow = promptSections.get("conversation_flow") || "";
       const phase3Marker = "=== PHASE 3: PROGRESSIVE MATCH CYCLES ===";
       const phase3Idx = fullConversationFlow.indexOf(phase3Marker);
@@ -7083,7 +7107,7 @@ ${phase0Section}`;
           // Trust chat over stale profile.hasEmbryos - if user said "no embryos" this session,
           // never show the HAS_EMBRYOS variant just because a prior test left hasEmbryos=true in DB.
           const d1HasEmbryosCarrier = chatMentionsHavingEmbryos || (profile?.hasEmbryos === true && !chatMentionsNoEmbryos);
-          const d1CarrierCosts = await getD1CountryCosts(userRecord?.parentAccountId ?? null);
+          const d1CarrierCosts = await timeSpan("pw2:d1_carrier_costs", () => getD1CountryCosts(userRecord?.parentAccountId ?? null));
           const d1TextFull = d1HasEmbryosCarrier
             ? buildD1HasEmbryos(d1CarrierCosts)
             : buildD1NoEmbryos(d1CarrierCosts);
@@ -7164,7 +7188,7 @@ ${phase0Section}`;
         console.log(`[D-CYCLE BYPASS] Firing: needsClinic=${needsClinic} registeredForClinic=${registeredForClinic}`);
         // Trust chat over stale profile.hasEmbryos (see carrier bypass for same reasoning).
         const d1HasEmbryos = chatMentionsHavingEmbryos || (profile?.hasEmbryos === true && !chatMentionsNoEmbryos);
-        const d1DCycleCosts = await getD1CountryCosts(userRecord?.parentAccountId ?? null);
+        const d1DCycleCosts = await timeSpan("pw2:d1_dcycle_costs", () => getD1CountryCosts(userRecord?.parentAccountId ?? null));
         const d1Text = d1HasEmbryos
           ? buildD1HasEmbryos(d1DCycleCosts)
           : buildD1NoEmbryos(d1DCycleCosts);
@@ -7196,7 +7220,7 @@ ${phase0Section}`;
           // Pre-fetch real DB country costs in case the intake state machine
           // decides to serve the D1 international education message - the
           // builder substitutes them in.
-          const d1IntakeCosts = await getD1CountryCosts(userRecord?.parentAccountId ?? null);
+          const d1IntakeCosts = await timeSpan("pw2:d1_intake_costs", () => getD1CountryCosts(userRecord?.parentAccountId ?? null));
           const intakeQuestion = getNextIntakeQuestion({
             profile,
             chatHistory,

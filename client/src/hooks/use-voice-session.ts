@@ -96,8 +96,15 @@ export function useVoiceSession() {
   // which per-turn events were already reported (each fires once per turn).
   const currentTurnRef = useRef(0);
   const reportedMetricsRef = useRef<Set<string>>(new Set());
+  // Paint time of the parent's own transcript (updated on every partial
+  // paint). Partials arrive BEFORE the turn id exists, so the latest value is
+  // reported retroactively when the "turn" frame lands.
+  const userTranscriptPaintRef = useRef(0);
+  // eva_caption chunks received this turn - distinguishes an incrementally
+  // streamed caption (many chunks) from a single-block paint (1 chunk).
+  const captionChunksRef = useRef(0);
 
-  const reportMetric = useCallback((event: string) => {
+  const reportMetric = useCallback((event: string, opts?: { tClient?: number; extra?: Record<string, unknown> }) => {
     const turn = currentTurnRef.current;
     if (!turn) return;
     const key = `${turn}:${event}`;
@@ -105,7 +112,15 @@ export function useVoiceSession() {
     reportedMetricsRef.current.add(key);
     const sock = wsRef.current;
     if (sock?.readyState === WebSocket.OPEN) {
-      sock.send(JSON.stringify({ type: "client_metric", turn, event, tClient: Date.now() }));
+      sock.send(
+        JSON.stringify({
+          type: "client_metric",
+          turn,
+          event,
+          tClient: opts?.tClient ?? Date.now(),
+          ...(opts?.extra ? { extra: opts.extra } : {}),
+        }),
+      );
     }
   }, []);
 
@@ -221,6 +236,13 @@ export function useVoiceSession() {
           // Instrumentation: correlates client metric reports with the
           // server's per-turn record.
           currentTurnRef.current = Number(msg.turn) || 0;
+          captionChunksRef.current = 0;
+          // The user's own transcript painted before the turn id existed -
+          // report it retroactively with its real paint timestamp.
+          if (userTranscriptPaintRef.current) {
+            reportMetric("user_transcript_painted", { tClient: userTranscriptPaintRef.current });
+            userTranscriptPaintRef.current = 0;
+          }
           break;
         case "state":
           if (["listening", "thinking", "speaking"].includes(msg.state)) {
@@ -238,6 +260,11 @@ export function useVoiceSession() {
           break;
         case "partial_transcript":
           setPartialTranscript(msg.text || "");
+          // Instrumentation: track when the parent's OWN transcript last
+          // painted (reported at the next "turn" frame - see case "turn").
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => { userTranscriptPaintRef.current = Date.now(); }),
+          );
           break;
         case "final_transcript":
           setPartialTranscript("");
@@ -250,21 +277,35 @@ export function useVoiceSession() {
           break;
         case "eva_caption":
           setCaption((prev) => prev + (msg.text || ""));
-          // Instrumentation: "caption painted in the DOM" - double rAF fires
-          // after the browser commits and paints the frame containing this
-          // state update. Reported once per turn (first caption chunk).
+          // Instrumentation: first paint of the AGENT's caption this turn
+          // (double rAF fires after the browser paints the frame containing
+          // this state update). reportMetric dedupes to the first chunk.
+          captionChunksRef.current += 1;
           requestAnimationFrame(() =>
-            requestAnimationFrame(() => reportMetric("caption_painted")),
+            requestAnimationFrame(() => reportMetric("agent_caption_first_painted")),
           );
           break;
         case "caption_reset":
           setCaption("");
           setCardsPreview(false);
           break;
-        case "cards":
+        case "cards": {
           if (msg.payload && Object.keys(msg.payload).length) setCards(msg.payload);
           setCardsPreview(false);
+          // Instrumentation: "cards" follows the reply's last eva_caption
+          // chunk (sent at router done), so the caption is now complete -
+          // this paint is "agent caption fully painted". captionChunks shows
+          // whether it streamed (many) or landed as one block (1).
+          const chunks = captionChunksRef.current;
+          if (chunks > 0) {
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() =>
+                reportMetric("agent_caption_full_painted", { extra: { captionChunks: chunks } }),
+              ),
+            );
+          }
           break;
+        }
         case "avatar":
           if (msg.livekitUrl && msg.livekitToken) {
             setAvatar({ livekitUrl: msg.livekitUrl, livekitToken: msg.livekitToken });

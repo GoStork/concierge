@@ -45,6 +45,18 @@ export function recordToolCall(name: string, tStart: number, tEnd: number): void
   if (s) s.toolCalls.push({ name, tStart, tEnd, ms: tEnd - tStart });
 }
 
+// Wrap a single async call with <name>_start / <name>_done marks. For
+// conditional call sites (D1 cost lookups etc.) where surrounding-mark deltas
+// would mis-attribute time on turns that skip them.
+export async function timeSpan<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  mark(`${name}_start`);
+  try {
+    return await fn();
+  } finally {
+    mark(`${name}_done`);
+  }
+}
+
 // Snapshot for embedding in the done payload. Returns null outside a request
 // context (e.g. non-chat routes that share setupSSE-like helpers).
 export function snapshotTurnTimings(): TurnTimings | null {

@@ -366,6 +366,7 @@ class VoiceSession {
           rec.client[String(msg.event)] = {
             tClient: Number(msg.tClient) || null,
             tServerRecv: Date.now(),
+            ...(msg.extra && typeof msg.extra === "object" ? { extra: msg.extra } : {}),
           };
         }
         break;
