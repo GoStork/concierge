@@ -112,6 +112,16 @@ export interface VoiceAudioEngine {
   destroy(): void;
 }
 
+// Live-engine accounting (zombie-engine guard, session 6): more than one
+// live engine means two capture pipelines interleave into one WS - scrambled
+// PCM that makes Deepgram silently deaf. The count is reported to the
+// gateway every mic_stats window so a violation is a loud log line, never an
+// inference from doubled frame rates.
+let liveEngineCount = 0;
+export function getLiveEngineCount(): number {
+  return liveEngineCount;
+}
+
 // Must be called from a user-gesture handler.
 export async function createVoiceAudioEngine(): Promise<VoiceAudioEngine> {
   const ctx = new AudioContext();
@@ -237,6 +247,7 @@ export async function createVoiceAudioEngine(): Promise<VoiceAudioEngine> {
     outputChannelCount: [1],
   });
   playback.connect(ctx.destination);
+  liveEngineCount += 1;
 
   let micCb: ((pcm: ArrayBuffer, rms: number) => void) | null = null;
   let playCb: ((speaking: boolean) => void) | null = null;
@@ -272,7 +283,9 @@ export async function createVoiceAudioEngine(): Promise<VoiceAudioEngine> {
       muted = m;
     },
     destroy: () => {
+      if (destroyed) return;
       destroyed = true;
+      liveEngineCount = Math.max(0, liveEngineCount - 1);
       micCb = null;
       playCb = null;
       ctx.onstatechange = null;

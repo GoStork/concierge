@@ -164,6 +164,7 @@ class VoiceSession {
     m.sessionLogId = this.logId;
     m.chatSessionId = this.chatSessionId;
     m.avatarActive = m.avatarActive ?? false;
+    if (this.multiEngineSuspected) m.multiEngineSuspected = true;
     const mk = m.marks || {};
     const num = (v: any) => (typeof v === "number" ? v : null);
     const diff = (a: any, b: any) =>
@@ -251,6 +252,9 @@ class VoiceSession {
   // Transcript-level debug for gate-bypassed AEC test sessions; survives the
   // STT self-reopen path.
   private sttDebug = false;
+  // Set when mic_stats ever reports >1 live engine (or an impossible frame
+  // rate) - stamped onto every turn's metrics from then on.
+  private multiEngineSuspected = false;
   private openStt() {
     this.stt = this.sttProvider.openStream({ sampleRate: VOICE_SAMPLE_RATE });
     if (this.sttDebug) (this.stt as any)?.setDebug?.(true);
@@ -435,14 +439,29 @@ class VoiceSession {
           (this.stt as any)?.setDebug?.(true);
         }
         break;
-      case "mic_stats":
+      case "mic_stats": {
         // Client-side VAD telemetry (max mic RMS + frames forwarded per 5s
         // window) - the remote-diagnosis line for "Eva stopped hearing me".
         log(
           `mic stats: peak rms ${Number(msg.maxRms || 0).toFixed(4)}, ` +
-            `${msg.sent || 0} frames forwarded, vad ${msg.maxRms > 0.015 ? "above" : "BELOW"} threshold`,
+            `${msg.sent || 0} frames forwarded, vad ${msg.maxRms > 0.015 ? "above" : "BELOW"} threshold` +
+            (msg.liveEngines !== undefined ? `, engines ${msg.liveEngines}` : ""),
         );
+        // ZOMBIE-ENGINE ALARM: >1 live engine (or a frame rate no single
+        // 40ms-cadence engine can produce) means interleaved capture streams
+        // - scrambled PCM that makes Deepgram silently deaf. Flag on the
+        // session AND on every subsequent turn's metrics so baselines
+        // contaminated by this are identifiable in the JSONL.
+        const engines = Number(msg.liveEngines);
+        if ((Number.isFinite(engines) && engines > 1) || Number(msg.sent || 0) > 150) {
+          this.multiEngineSuspected = true;
+          log(
+            `MULTIPLE ENGINE ALARM: liveEngines=${msg.liveEngines ?? "?"} frames/5s=${msg.sent} - ` +
+              `mic capture is interleaved, STT will be unreliable (zombie-engine bug signature)`,
+          );
+        }
         break;
+      }
       case "barge":
         this.handleBarge();
         break;
@@ -728,6 +747,12 @@ class VoiceSession {
       /\b(hey|hi|hello|good (morning|afternoon|evening)|are you (there|here|with me)|can you hear( me)?|hear me|thank(s| you)?|ok(ay)?|got it)\b/i;
     const wordCount = userText.trim().split(/\s+/).length;
     const substantive = wordCount >= 4 && !(wordCount <= 8 && SOCIAL_UTTERANCE.test(userText));
+    // Conditional early filler (session 6): fires at FILLER_MS only when the
+    // first token has NOT arrived yet - fast turns never hear it, slow turns
+    // get voice ~1.1s earlier than the old 1800ms constant, and the "One
+    // moment - [immediate answer]" collision is structurally impossible
+    // because the check happens at fire time.
+    const FILLER_MS = Number(process.env.VOICE_FILLER_MS || 650);
     const fillerTimer = substantive
       ? setTimeout(() => {
           if (this.turnCounter !== turnId || this.speakSuppressed || tFirstToken) return;
@@ -736,7 +761,7 @@ class VoiceSession {
           this.setState("speaking");
           this.send({ type: "eva_caption", text: filler });
           this.tts?.sendText(filler);
-        }, 1800)
+        }, FILLER_MS)
       : null;
 
     const port = process.env.PORT || "5000";

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createVoiceAudioEngine, type VoiceAudioEngine } from "@/lib/voice/audio";
+import { createVoiceAudioEngine, getLiveEngineCount, type VoiceAudioEngine } from "@/lib/voice/audio";
 import { remoteAudioLevel } from "@/lib/voice/remote-level";
 
 // Client half of the voice gateway (server/voice/voice-gateway.ts). Owns the
@@ -98,6 +98,13 @@ export function useVoiceSession() {
   const echoKRef = useRef(1.2);
   const prebufferRef = useRef<ArrayBuffer[]>([]);
   const activeRef = useRef(false);
+  // ZOMBIE-ENGINE GUARD (session 6): start() awaits getUserMedia, which can
+  // resolve SECONDS later (the user staring at the mic prompt) - after a
+  // stop() and even after a NEW start(). Each start takes a generation
+  // ticket; any await that resumes with a stale ticket destroys its engine
+  // and exits. Without this, two engines interleaved into one WS and the
+  // scrambled PCM made Deepgram silently deaf (observed live 2026-08-02).
+  const startGenRef = useRef(0);
   // Mic telemetry: peak RMS + frames forwarded per 5s window, reported to the
   // gateway so "Eva stopped hearing me" is diagnosable from server logs alone.
   const micStatsRef = useRef({ maxRms: 0, sent: 0 });
@@ -143,6 +150,8 @@ export function useVoiceSession() {
   const stop = useCallback((reason = "user_ended") => {
     if (!activeRef.current) return;
     activeRef.current = false;
+    // Invalidate any start() still parked on getUserMedia.
+    startGenRef.current += 1;
     activeMetricReporter = null;
     activeFpsReporter = null;
     if (statsTimerRef.current) {
@@ -165,6 +174,7 @@ export function useVoiceSession() {
   const start = useCallback(async (opts: StartOpts) => {
     if (activeRef.current) return;
     activeRef.current = true;
+    const myGen = ++startGenRef.current;
     setError(null);
     setEndReason(null);
     setCards(null);
@@ -180,14 +190,28 @@ export function useVoiceSession() {
       // Must run inside the user gesture: resumes AudioContext + mic prompt.
       engine = await createVoiceAudioEngine();
     } catch (err: any) {
-      activeRef.current = false;
-      setError(
-        err?.name === "NotAllowedError"
-          ? "Microphone access was denied. You can keep chatting in text."
-          : `Could not start audio: ${err?.message || err}`,
-      );
-      setStateBoth("error");
+      if (myGen === startGenRef.current) {
+        activeRef.current = false;
+        setError(
+          err?.name === "NotAllowedError"
+            ? "Microphone access was denied. You can keep chatting in text."
+            : `Could not start audio: ${err?.message || err}`,
+        );
+        setStateBoth("error");
+      }
       return;
+    }
+    // Stale ticket = stop() (or a newer start) happened while we were parked
+    // on the mic prompt. This engine must never attach to anything.
+    if (!activeRef.current || myGen !== startGenRef.current) {
+      console.warn("[voice] zombie-engine guard: discarding engine from a superseded start()");
+      engine.destroy();
+      return;
+    }
+    // Single-owner invariant: the hook owns AT MOST one engine, ever.
+    if (engineRef.current) {
+      console.warn("[voice] zombie-engine guard: destroying orphaned previous engine");
+      engineRef.current.destroy();
     }
     engineRef.current = engine;
     currentTurnRef.current = 0;
@@ -408,7 +432,8 @@ export function useVoiceSession() {
       const sock = wsRef.current;
       if (!sock || sock.readyState !== WebSocket.OPEN) return;
       const s = micStatsRef.current;
-      sock.send(JSON.stringify({ type: "mic_stats", maxRms: s.maxRms, sent: s.sent }));
+      // liveEngines MUST be 1 - the gateway flags anything else loudly.
+      sock.send(JSON.stringify({ type: "mic_stats", maxRms: s.maxRms, sent: s.sent, liveEngines: getLiveEngineCount() }));
       micStatsRef.current = { maxRms: 0, sent: 0 };
     }, 5000);
 
