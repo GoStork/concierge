@@ -1,4 +1,10 @@
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { Mic, MicOff, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AvatarVideo } from "@/components/voice/AvatarVideo";
@@ -171,6 +177,41 @@ export function VoiceModePanel({
   // overlays it above gradient scrims.
   const overVideo = showAvatarVideo;
 
+  // Profile takeover (FaceTime screen-share style): when Eva recommends a
+  // profile, the card fills the screen and her video shrinks to a small
+  // draggable frame that snaps to a corner. Any action on the card routes
+  // through the voice session, which clears the cards - Eva returns to full
+  // screen and the conversation continues.
+  const takeover = overVideo && hasScreenCards && !!renderCards;
+  const [pipCorner, setPipCorner] = useState<"tl" | "tr" | "bl" | "br">("tr");
+  const pipRef = useRef<HTMLDivElement>(null);
+  const pipDrag = useRef({ startX: 0, startY: 0, dragging: false });
+  const PIP_POS: Record<string, string> = {
+    tl: "top-16 left-3",
+    tr: "top-16 right-3",
+    bl: "bottom-36 left-3",
+    br: "bottom-36 right-3",
+  };
+  const onPipPointerDown = (e: ReactPointerEvent) => {
+    pipDrag.current = { startX: e.clientX, startY: e.clientY, dragging: true };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPipPointerMove = (e: ReactPointerEvent) => {
+    if (!pipDrag.current.dragging || !pipRef.current) return;
+    pipRef.current.style.transform = `translate(${e.clientX - pipDrag.current.startX}px, ${e.clientY - pipDrag.current.startY}px)`;
+  };
+  const onPipPointerUp = (e: ReactPointerEvent) => {
+    if (!pipDrag.current.dragging) return;
+    pipDrag.current.dragging = false;
+    if (pipRef.current) pipRef.current.style.transform = "";
+    const rect = pipRef.current?.parentElement?.getBoundingClientRect();
+    if (rect) {
+      const left = e.clientX - rect.left < rect.width / 2;
+      const top = e.clientY - rect.top < rect.height / 2;
+      setPipCorner(top ? (left ? "tl" : "tr") : left ? "bl" : "br");
+    }
+  };
+
   return (
     <div
       className="absolute inset-0 z-40 flex flex-col bg-background"
@@ -178,20 +219,52 @@ export function VoiceModePanel({
     >
       {showAvatarVideo && (
         <>
-          <AvatarVideo
-            fullBleed
-            livekitUrl={avatar!.livekitUrl}
-            livekitToken={avatar!.livekitToken}
-            brandColor={brandColor}
-            onFailed={() => setAvatarVideoFailed(true)}
-          />
-          <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-foreground/40 to-transparent pointer-events-none" />
-          <div className="absolute inset-x-0 bottom-0 h-80 bg-gradient-to-t from-foreground/70 via-foreground/30 to-transparent pointer-events-none" />
+          {/* ONE stable container for the video - full-bleed normally, a
+              draggable PiP box during profile takeover. Only the classes
+              change, so the LiveKit connection never remounts. */}
+          <div
+            ref={pipRef}
+            className={
+              takeover
+                ? `absolute z-30 w-28 h-40 sm:w-32 sm:h-44 rounded-[var(--radius)] overflow-hidden border-2 shadow-xl cursor-grab active:cursor-grabbing ${PIP_POS[pipCorner]}`
+                : "absolute inset-0"
+            }
+            style={takeover ? { borderColor: brandColor, touchAction: "none" } : undefined}
+            onPointerDown={takeover ? onPipPointerDown : undefined}
+            onPointerMove={takeover ? onPipPointerMove : undefined}
+            onPointerUp={takeover ? onPipPointerUp : undefined}
+            data-testid={takeover ? "voice-avatar-pip" : "voice-avatar-stage"}
+          >
+            <AvatarVideo
+              fullBleed
+              livekitUrl={avatar!.livekitUrl}
+              livekitToken={avatar!.livekitToken}
+              brandColor={brandColor}
+              onFailed={() => setAvatarVideoFailed(true)}
+            />
+          </div>
+          {!takeover && (
+            <>
+              <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-foreground/40 to-transparent pointer-events-none" />
+              <div className="absolute inset-x-0 bottom-0 h-80 bg-gradient-to-t from-foreground/70 via-foreground/30 to-transparent pointer-events-none" />
+            </>
+          )}
         </>
       )}
 
+      {/* Profile takeover layer: the recommended profile fills the screen
+          while Eva watches from the PiP frame. */}
+      {takeover && (
+        <div
+          className="absolute inset-0 z-20 bg-background overflow-y-auto overscroll-contain px-4 pt-16 pb-44"
+          data-testid="voice-profile-takeover"
+        >
+          <div className="max-w-md mx-auto space-y-3">{renderCards!(cards!)}</div>
+        </div>
+      )}
+
       {/* Close */}
-      <div className="relative z-10 flex items-center justify-end px-4 pt-4 shrink-0">
+      <div className="relative z-30 flex items-center justify-end px-4 pt-4 shrink-0">
         <Button
           variant="ghost"
           size="sm"
@@ -208,7 +281,7 @@ export function VoiceModePanel({
 
       {/* Persona + state */}
       <div
-        className={`relative z-10 flex-1 flex flex-col items-center gap-5 px-6 min-h-0 ${
+        className={`relative ${takeover ? "z-30" : "z-10"} flex-1 flex flex-col items-center gap-5 px-6 min-h-0 ${
           overVideo ? "justify-end pb-2" : "justify-center"
         }`}
       >
@@ -261,6 +334,7 @@ export function VoiceModePanel({
         </div>
         )}
 
+        {!takeover && (
         <div className="flex flex-col items-center gap-1">
           <span
             className={`font-heading text-lg font-semibold ${
@@ -281,8 +355,10 @@ export function VoiceModePanel({
             {STATE_LABEL[state]}
           </span>
         </div>
+        )}
 
         {/* Captions */}
+        {(!takeover || error) && (
         <div className="w-full max-w-md min-h-16 flex flex-col items-center gap-2 text-center">
           {error ? (
             <span className="text-sm text-destructive font-ui">{error}</span>
@@ -311,18 +387,20 @@ export function VoiceModePanel({
             </>
           )}
         </div>
+        )}
 
-        {/* Interactive cards + quick replies */}
+        {/* Interactive cards + quick replies. With the avatar up, cards live
+            in the full-screen takeover layer instead of this inline box. */}
         {(quickReplies.length > 0 || hasScreenCards) && (
           <div className="w-full max-w-md flex flex-col items-center gap-2">
-            {hasScreenCards && renderCards ? (
+            {hasScreenCards && renderCards && !overVideo ? (
               <div
                 className="w-full max-h-[38vh] overflow-y-auto space-y-3 overscroll-contain"
                 data-testid="voice-cards"
               >
                 {renderCards(cards!)}
               </div>
-            ) : hasScreenCards ? (
+            ) : hasScreenCards && !takeover ? (
               <span
                 className="text-xs font-ui px-3 py-1.5 rounded-full bg-secondary text-secondary-foreground"
                 data-testid="voice-cards-notice"
@@ -354,7 +432,7 @@ export function VoiceModePanel({
       </div>
 
       {/* Controls */}
-      <div className="relative z-10 flex items-center justify-center gap-6 pb-10 pt-4 shrink-0">
+      <div className="relative z-30 flex items-center justify-center gap-6 pb-10 pt-4 shrink-0">
         <Button
           variant="outline"
           size="lg"
