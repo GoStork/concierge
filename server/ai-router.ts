@@ -27,7 +27,11 @@ import fs from "fs";
 import { isUserOnline } from "./online-tracker";
 import jwt from "jsonwebtoken";
 import { getNextIntakeQuestion, buildD1HasEmbryos, buildD1NoEmbryos, type D1Costs } from "./intake-questions";
-import { turnTimingStore, newTurnTimings, mark, recordToolCall, snapshotTurnTimings, timeSpan } from "./turn-timing";
+// Aliased: a pre-existing LOCAL boolean `looksLikeProfileQuestion` (the
+// chat-subject context injector's own substring heuristic, ~line 5821)
+// shadows the imported name inside the /chat handler scope.
+import { looksLikeProfileQuestion as isInterrogativeShaped } from "./question-shape";
+import { turnTimingStore, newTurnTimings, mark, recordToolCall, recordInterceptor, snapshotTurnTimings, timeSpan } from "./turn-timing";
 
 // Singleton Anthropic client - enables HTTP connection pooling across requests.
 let _anthropicClient: Anthropic | null = null;
@@ -1389,6 +1393,11 @@ async function claudeRetry(messages: any[]): Promise<string> {
   const userMessage = lastMsg.parts[0].text;
   const model = geminiAI.getGenerativeModel({
     model: "gemini-3.5-flash",
+    // Same thinking-disable as Tier1/Tier2: this was the LAST model path
+    // without it, and the hidden reasoning phase (~5-7s, measured 2026-07-17)
+    // was the bulk of the 9.3s/6.6s interceptor fires in the Session-2
+    // baseline. Retries are rewrite tasks, not reasoning tasks.
+    generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
     ...(systemMsg ? { systemInstruction: { parts: [{ text: systemMsg.content }] } } : {}),
   });
   const chat = model.startChat({ history: chatHistory });
@@ -7619,10 +7628,15 @@ ${phase0Section}`;
     // but the AI ignored it and showed a new match card instead.
     const isSkipAction = /not interested|show me another|skip|pass on/i.test(userMessage);
     const isFavoriteAction = /save as favorite|like .+!|❤️|favorite/i.test(userMessage);
-    const looksLikeQuestion = /\?|what|how|where|when|who|why|does she|does he|is she|is he|tell me|her\s+(weight|bmi|age|education|location|compensation|health|deliver|pregnan|baby|babies|height|diet|eye|hair|blood|ethnic|race|occupation|religio|hobby|hobbies|donat|experience|cost|eggs)/i.test(userMessage);
+    // Structure-based (question mark / sentence-leading interrogative /
+    // subject-aux inversion) - the old substring heuristic fired the
+    // expensive regeneration on declarative fragments. See question-shape.ts.
+    const looksLikeQuestion = isInterrogativeShaped(userMessage);
     const aiShowedNewMatch = /\[\[MATCH_CARD:/i.test(finalContent);
 
     if (!isSkipAction && !isFavoriteAction && looksLikeQuestion && aiShowedNewMatch && currentSessionId && mcpClient) {
+      const _qiT0 = Date.now();
+      const _qiPre = finalContent;
       console.log(`[QUESTION INTERCEPT] Parent asked a question but AI showed new match card. Intercepting to answer from profile.`);
       try {
         const foundMc = await findLatestMatchCard(currentSessionId);
@@ -7688,6 +7702,7 @@ ${phase0Section}`;
       } catch (e) {
         console.error("[QUESTION INTERCEPT] Error:", e);
       }
+      recordInterceptor("question_intercept", finalContent !== _qiPre, Date.now() - _qiT0);
     }
 
     // FAVORITE CONVERSION INTERCEPTOR: The FAVORITE flow (post_match_behavior)
@@ -7746,6 +7761,8 @@ ${phase0Section}`;
       console.log(`[FAVORITE INTERCEPT] Skipped - consultation already booked, call-prep directive owns the follow-up`);
     }
     if (isHeartButtonAction && !favoritedHandedOffOrg && !hasUpcomingProviderConsult && !proposesConsultation && currentSessionId) {
+      const _fiT0 = Date.now();
+      const _fiPre = finalContent;
       console.log(`[FAVORITE INTERCEPT] Heart action but AI reply has no consultation offer. Enforcing FAVORITE flow Step 2.`);
       try {
         const likedName = (userMessage.match(/^i like (.+?)!\s*save as favorite/i)?.[1] || "").trim();
@@ -7799,6 +7816,7 @@ ${phase0Section}`;
       } catch (e) {
         console.error("[FAVORITE INTERCEPT] Error:", e);
       }
+      recordInterceptor("favorite_intercept", finalContent !== _fiPre, Date.now() - _fiT0);
     }
 
     // ACCESS-FAILURE INTERCEPTOR: When AI admits it can't access data, follow the hierarchy:
@@ -7829,6 +7847,8 @@ ${phase0Section}`;
     ];
     const hasAccessFailure = accessFailurePatterns.some((p) => p.test(finalContent));
     if (hasAccessFailure && currentSessionId && mcpClient) {
+      const _afT0 = Date.now();
+      const _afPre = finalContent;
       console.log(`[ACCESS-FAILURE INTERCEPT] AI admitted data access failure. Starting hierarchy: profile → knowledge base → whisper.`);
       try {
         const foundMc = await findLatestMatchCard(currentSessionId);
@@ -7954,6 +7974,15 @@ ${phase0Section}`;
       } catch (e) {
         console.error("[ACCESS-FAILURE INTERCEPT] Error:", e);
       }
+      if (finalContent !== _afPre) {
+        // The rejected draft already streamed (and in voice, already spoke) -
+        // clear it and stream the replacement, same reconciliation as
+        // QUESTION INTERCEPT. Without this the client showed a stale caption
+        // until "done" and the voice gateway's backstop had to re-speak.
+        sse.sendReset();
+        sse.sendToken(finalContent);
+      }
+      recordInterceptor("access_failure_intercept", finalContent !== _afPre, Date.now() - _afT0);
     }
 
     // DEAD-END INTERCEPTOR: Catch passive/open-ended closings and force the AI to retry with an active next step
@@ -7977,6 +8006,8 @@ ${phase0Section}`;
     ];
     const hasDeadEnd = deadEndPatterns.some((p) => p.test(finalContent));
     if (hasDeadEnd && !isSkipAction && !serverBypassServed) {
+      const _deT0 = Date.now();
+      const _dePre = finalContent;
       console.log(`[DEAD-END INTERCEPT] AI used passive/open-ended closing. Forcing retry with active next step.`);
       try {
         messages.push({
@@ -8006,6 +8037,14 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       } catch (e) {
         console.error("[DEAD-END INTERCEPT] Error:", e);
       }
+      if (finalContent !== _dePre) {
+        // Both branches (retry accepted / trim-and-nudge) replace text that
+        // already streamed - reconcile the client instead of leaving a stale
+        // caption for the done-replace / voice backstop to fix.
+        sse.sendReset();
+        sse.sendToken(finalContent);
+      }
+      recordInterceptor("dead_end_intercept", finalContent !== _dePre, Date.now() - _deT0);
     }
 
     // Server-side pattern extraction: save profile fields from parent message
@@ -8629,6 +8668,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           const prevSet = new Set(prevW);
           const overlap = currW.filter((w) => prevSet.has(w)).length / currW.length;
           if (overlap > 0.9) {
+            const _aeT0 = Date.now();
+            const _aePre = finalContent;
             console.log(`[ANTI-ECHO] Reply repeats the previous assistant message (${(overlap * 100).toFixed(0)}% overlap) - retrying`);
             const hadCard = /\[\[(MATCH_CARD|DOCTOR_CARD):/i.test(finalContent);
             messages.push({
@@ -8649,6 +8690,12 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               const tags = finalContent.match(/\[\[[^\]]*\]\]/g) || [];
               finalContent = `Here's a match based on exactly what you shared - take a look: ${tags.join(" ")}`.trim();
             }
+            if (finalContent !== _aePre) {
+              // The echoed draft already streamed - swap it cleanly.
+              sse.sendReset();
+              sse.sendToken(finalContent);
+            }
+            recordInterceptor("anti_echo", finalContent !== _aePre, Date.now() - _aeT0);
           }
         }
       }
@@ -8795,6 +8842,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         else if (etype === "clinic") profileToolName = "search_clinics";
 
         if (profileToolName) {
+          const _wiT0 = Date.now();
+          const _wiPre = finalContent;
           try {
             console.log(`[WHISPER INTERCEPT] AI wanted to whisper/defer - fetching ${profileToolName} for entity ${recentEntityId} to check if answer is in profile`);
             let profileText = "";
@@ -8844,6 +8893,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           } catch (e) {
             console.error("[WHISPER INTERCEPT] Profile fetch failed:", e);
           }
+          recordInterceptor("whisper_intercept", finalContent !== _wiPre, Date.now() - _wiT0);
         }
       }
 

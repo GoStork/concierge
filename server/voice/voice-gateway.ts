@@ -772,6 +772,7 @@ class VoiceSession {
             metrics.routerMarks = json.__turnTimings.marks || null;
             metrics.toolCalls = json.__turnTimings.toolCalls || [];
             metrics.toolCallCount = metrics.toolCalls.length;
+            metrics.interceptors = json.__turnTimings.interceptors || [];
           }
         } else if (json.type === "retry_needed") {
           done = { retry: true };

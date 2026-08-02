@@ -23,6 +23,7 @@ import { AUTO_REPLY_STARTERS, AUTO_REPLY_TOKENS, autoReplyStartersFor, bodyPromi
 import { detectContactInfo } from "../shared/contact-guard";
 import { MUST_BLOCK, MUST_NOT_BLOCK } from "../shared/contact-guard-corpus";
 import { planDedupe, thumbCorrelation, worstBlockDeviation, DEDUP_CORRELATION, DEDUP_MAX_BLOCK_DEVIATION, type Fingerprint } from "../server/src/modules/providers/photo-dedup";
+import { looksLikeProfileQuestion } from "../server/question-shape";
 
 const BASE = process.env.TEST_BASE_URL || "http://localhost:5001";
 const filterId = process.argv.slice(2).find((a) => a.startsWith("--id="))?.split("=")[1];
@@ -732,6 +733,49 @@ async function ut18() {
     /never emit it in the same message as a \[\[CONSULTATION_BOOKING\]\]/i.test(releaseRule));
 }
 
+// ─── UT-19: QUESTION INTERCEPT trigger - structure, not substrings ───────────
+// The old regex matched substring PRESENCE of question words and fired the
+// multi-second regenerate-the-reply path on declarative fragments. Both
+// expensive fires in the 2026-08-02 voice baseline are in the must-NOT-match
+// list below. Real profile questions must all still match.
+async function ut19() {
+  // Observed false positives (baseline log) + declarative shapes that embed
+  // question words without being questions.
+  const MUST_NOT_MATCH = [
+    "That's what I wanted to tell you to",     // baseline turn 9 - fired 9.3s retry
+    "Okay. I want to",                          // baseline turn 14 fragment
+    "I told you, I want to see the profile again.",
+    "This is how we decided to proceed.",
+    "I know who I want.",
+    "That's why we're here.",
+    "She told me when she was younger she lived in Ohio.",
+    "I like her eyes and her education.",
+    "We found out where she lives.",
+    "I love how she describes her family.",
+  ];
+  // Real questions that MUST keep firing the interceptor.
+  const MUST_MATCH = [
+    "What's her BMI?",
+    "How many pregnancies has she had?",
+    "Does she have a college degree?",
+    "Is he open to travel?",
+    "Can I see it again?",
+    "keep the profile on the screen. Can I see it again?", // baseline turn 11 - genuine
+    "Tell me about her health history",
+    "Show me her pregnancy history",
+    "Where does she live",
+    "was she a donor before",
+    "I'm curious - has she done this before?",
+    "her age?",
+  ];
+  for (const t of MUST_NOT_MATCH) {
+    check(`no-match: "${t.slice(0, 48)}"`, !looksLikeProfileQuestion(t));
+  }
+  for (const t of MUST_MATCH) {
+    check(`match: "${t.slice(0, 48)}"`, looksLikeProfileQuestion(t));
+  }
+}
+
 const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-01", name: "Bare-id [[MATCH_CARD:<uuid>]] form is accepted", run: ut01 },
   { id: "UT-02", name: "Well-formed card JSON parses unchanged", run: ut02 },
@@ -751,6 +795,7 @@ const CASES: { id: string; name: string; run: () => Promise<void> }[] = [
   { id: "UT-16", name: "Consent card registration stays in lockstep with visibility", run: ut16 },
   { id: "UT-17", name: "A whisper-stamped Eva session never counts as a provider connection", run: ut17 },
   { id: "UT-18", name: "Every tag the prompt promises to strip is stripped before the parent sees it", run: ut18 },
+  { id: "UT-19", name: "QUESTION INTERCEPT trigger matches interrogative structure, not question-word substrings", run: ut19 },
 ];
 
 (async () => {

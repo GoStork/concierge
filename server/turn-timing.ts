@@ -20,6 +20,16 @@ export interface ToolCallTiming {
   ms: number;
 }
 
+export interface InterceptorTiming {
+  name: string;
+  // true = the interceptor REPLACED finalContent; false = its trigger
+  // condition matched and the block ran (tool fetches, retry attempts) but
+  // the original reply survived. Interceptors whose trigger never matched are
+  // not recorded at all.
+  fired: boolean;
+  ms: number;
+}
+
 export interface TurnTimings {
   reqAt: number;
   // Ordered named checkpoints: router_entry, context_sections_loaded,
@@ -27,12 +37,18 @@ export interface TurnTimings {
   // tier2_round_N, done_sent ...
   marks: Array<{ event: string; t: number }>;
   toolCalls: ToolCallTiming[];
+  interceptors: InterceptorTiming[];
 }
 
 export const turnTimingStore = new AsyncLocalStorage<TurnTimings>();
 
 export function newTurnTimings(): TurnTimings {
-  return { reqAt: Date.now(), marks: [], toolCalls: [] };
+  return { reqAt: Date.now(), marks: [], toolCalls: [], interceptors: [] };
+}
+
+export function recordInterceptor(name: string, fired: boolean, ms: number): void {
+  const s = turnTimingStore.getStore();
+  if (s) s.interceptors.push({ name, fired, ms });
 }
 
 export function mark(event: string): void {
@@ -62,5 +78,5 @@ export async function timeSpan<T>(name: string, fn: () => Promise<T>): Promise<T
 export function snapshotTurnTimings(): TurnTimings | null {
   const s = turnTimingStore.getStore();
   if (!s) return null;
-  return { reqAt: s.reqAt, marks: [...s.marks], toolCalls: [...s.toolCalls] };
+  return { reqAt: s.reqAt, marks: [...s.marks], toolCalls: [...s.toolCalls], interceptors: [...s.interceptors] };
 }
