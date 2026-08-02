@@ -118,8 +118,9 @@ interface VoiceModePanelProps {
   // Renders the pipeline's interactive cards (donor matches, doctors...)
   // INSIDE the panel, so a parent can see the profile Eva is asking about
   // without leaving the call. The chat page supplies this using its own card
-  // components - the panel never forks them.
-  renderCards?: (cards: VoiceCardsPayload) => ReactNode;
+  // components - the panel never forks them. opts.fill = size cards to the
+  // parent's height (the full-screen profile takeover) instead of 3:4.
+  renderCards?: (cards: VoiceCardsPayload, opts?: { fill?: boolean }) => ReactNode;
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -189,8 +190,8 @@ export function VoiceModePanel({
   const PIP_POS: Record<string, string> = {
     tl: "top-16 left-3",
     tr: "top-16 right-3",
-    bl: "bottom-36 left-3",
-    br: "bottom-36 right-3",
+    bl: "bottom-6 left-3",
+    br: "bottom-6 right-3",
   };
   const onPipPointerDown = (e: ReactPointerEvent) => {
     pipDrag.current = { startX: e.clientX, startY: e.clientY, dragging: true };
@@ -252,19 +253,40 @@ export function VoiceModePanel({
         </>
       )}
 
-      {/* Profile takeover layer: the recommended profile fills the screen
-          while Eva watches from the PiP frame. */}
+      {/* Profile takeover layer: the recommended profile fills the screen at
+          the marketplace card's full size while Eva watches from the PiP
+          frame. The call controls move into the top bar to give the card's
+          own action buttons the bottom of the screen. */}
       {takeover && (
         <div
-          className="absolute inset-0 z-20 bg-background overflow-y-auto overscroll-contain px-4 pt-16 pb-44"
+          className="absolute inset-0 z-20 bg-background px-3 pt-14 pb-3"
           data-testid="voice-profile-takeover"
         >
-          <div className="max-w-md mx-auto space-y-3">{renderCards!(cards!)}</div>
+          <div className="h-full max-w-md mx-auto space-y-3 overflow-y-auto overscroll-contain">
+            {renderCards!(cards!, { fill: true })}
+          </div>
         </div>
       )}
 
-      {/* Close */}
-      <div className="relative z-30 flex items-center justify-end px-4 pt-4 shrink-0">
+      {/* Top bar: close always; during profile takeover the mute control
+          moves up here so the bottom belongs to the card's action buttons. */}
+      <div className="relative z-30 flex items-center justify-end gap-2 px-4 pt-4 shrink-0">
+        {takeover && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 w-9 p-0 rounded-full border bg-background/70 backdrop-blur-sm hover:bg-background/90"
+            onClick={onToggleMute}
+            aria-label={micMuted ? "Unmute microphone" : "Mute microphone"}
+            data-testid="btn-voice-mute-top"
+          >
+            {micMuted ? (
+              <MicOff className="w-4 h-4 text-destructive" />
+            ) : (
+              <Mic className="w-4 h-4" style={{ color: brandColor }} />
+            )}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -390,8 +412,9 @@ export function VoiceModePanel({
         )}
 
         {/* Interactive cards + quick replies. With the avatar up, cards live
-            in the full-screen takeover layer instead of this inline box. */}
-        {(quickReplies.length > 0 || hasScreenCards) && (
+            in the full-screen takeover layer instead of this inline box, and
+            chips yield the floor to the card's own action buttons. */}
+        {!takeover && (quickReplies.length > 0 || hasScreenCards) && (
           <div className="w-full max-w-md flex flex-col items-center gap-2">
             {hasScreenCards && renderCards && !overVideo ? (
               <div
@@ -431,7 +454,9 @@ export function VoiceModePanel({
         )}
       </div>
 
-      {/* Controls */}
+      {/* Controls (hidden during profile takeover - mute lives in the top
+          bar there and X ends the call) */}
+      {!takeover && (
       <div className="relative z-30 flex items-center justify-center gap-6 pb-10 pt-4 shrink-0">
         <Button
           variant="outline"
@@ -459,6 +484,7 @@ export function VoiceModePanel({
           End voice chat
         </Button>
       </div>
+      )}
     </div>
   );
 }

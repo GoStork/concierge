@@ -2089,7 +2089,9 @@ function LawGroupMatchCard({ card, brandColor, onAction }: { card: MatchCard; br
   );
 }
 
-function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void }) {
+// fill: size the card to its parent's full height (the voice panel's
+// FaceTime profile takeover) instead of the chat column's 3:4 aspect box.
+function MatchCardComponent({ card, brandColor, onAction, onViewProfile, fill = false }: { card: MatchCard; brandColor: string; onAction: (text: string) => void; onViewProfile: (card: MatchCard) => void; fill?: boolean }) {
   const [profile, setProfile] = useState<any>(null);
   const [fetchFailed, setFetchFailed] = useState(false);
   const cardType = card.type || "";
@@ -2172,7 +2174,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
       );
     }
     return (
-      <div className="w-full aspect-[3/4] rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center">
+      <div className={`w-full ${fill ? "h-full" : "aspect-[3/4]"} rounded-[var(--container-radius)] overflow-hidden bg-muted animate-pulse flex items-center justify-center`}>
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -2192,7 +2194,7 @@ function MatchCardComponent({ card, brandColor, onAction, onViewProfile }: { car
 
     return (
       <div
-        className="w-full aspect-[3/4] overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]"
+        className={`w-full ${fill ? "h-full" : "aspect-[3/4]"} overflow-hidden animate-[slideUp_0.4s_ease-out_forwards]`}
         data-testid={`match-card-${card.providerId}`}
       >
         <SwipeDeckCard
@@ -4740,13 +4742,14 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             onToggleMute={() => voiceSession.setMicMuted(!voiceSession.micMuted)}
             onQuickReply={(text) => voiceSession.sendText(text, true)}
             onClose={closeVoiceMode}
-            renderCards={(c) => (
+            renderCards={(c, opts) => (
               <>
                 {(c.matchCards || []).map((card: any, ci: number) => (
                   <MatchCardComponent
                     key={`vm-${ci}`}
                     card={card}
                     brandColor={brandColor}
+                    fill={opts?.fill}
                     onAction={(text) => voiceSession.sendText(text)}
                     onViewProfile={handleViewProfile}
                   />
