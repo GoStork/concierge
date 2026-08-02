@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Mic, MicOff, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AvatarVideo } from "@/components/voice/AvatarVideo";
@@ -109,6 +109,11 @@ interface VoiceModePanelProps {
   onToggleMute: () => void;
   onQuickReply: (text: string) => void;
   onClose: () => void;
+  // Renders the pipeline's interactive cards (donor matches, doctors...)
+  // INSIDE the panel, so a parent can see the profile Eva is asking about
+  // without leaving the call. The chat page supplies this using its own card
+  // components - the panel never forks them.
+  renderCards?: (cards: VoiceCardsPayload) => ReactNode;
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -134,6 +139,7 @@ export function VoiceModePanel({
   onToggleMute,
   onQuickReply,
   onClose,
+  renderCards,
 }: VoiceModePanelProps) {
   const [avatarVideoFailed, setAvatarVideoFailed] = useState(false);
   const showAvatarVideo = !!avatar && !avatarVideoFailed;
@@ -306,17 +312,24 @@ export function VoiceModePanel({
           )}
         </div>
 
-        {/* Quick replies + card notice */}
+        {/* Interactive cards + quick replies */}
         {(quickReplies.length > 0 || hasScreenCards) && (
           <div className="w-full max-w-md flex flex-col items-center gap-2">
-            {hasScreenCards && (
+            {hasScreenCards && renderCards ? (
+              <div
+                className="w-full max-h-[38vh] overflow-y-auto space-y-3 overscroll-contain"
+                data-testid="voice-cards"
+              >
+                {renderCards(cards!)}
+              </div>
+            ) : hasScreenCards ? (
               <span
                 className="text-xs font-ui px-3 py-1.5 rounded-full bg-secondary text-secondary-foreground"
                 data-testid="voice-cards-notice"
               >
                 Matches are ready - end the voice chat to view them
               </span>
-            )}
+            ) : null}
             <div className="flex flex-wrap items-center justify-center gap-2">
               {quickReplies.map((qr) => (
                 <button

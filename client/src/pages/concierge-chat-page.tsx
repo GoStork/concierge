@@ -4740,6 +4740,27 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             onToggleMute={() => voiceSession.setMicMuted(!voiceSession.micMuted)}
             onQuickReply={(text) => voiceSession.sendText(text, true)}
             onClose={closeVoiceMode}
+            renderCards={(c) => (
+              <>
+                {(c.matchCards || []).map((card: any, ci: number) => (
+                  <MatchCardComponent
+                    key={`vm-${ci}`}
+                    card={card}
+                    brandColor={brandColor}
+                    onAction={(text) => voiceSession.sendText(text)}
+                    onViewProfile={handleViewProfile}
+                  />
+                ))}
+                {(c.doctorCards || []).map((card: any, ci: number) => (
+                  <DoctorMatchCard
+                    key={`vd-${ci}`}
+                    card={card}
+                    brandColor={brandColor}
+                    onAction={(text) => voiceSession.sendText(text)}
+                  />
+                ))}
+              </>
+            )}
           />
         )}
         {isDraggingFile && (

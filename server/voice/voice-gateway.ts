@@ -3,7 +3,7 @@ import type { Duplex } from "stream";
 import { WebSocketServer, WebSocket } from "ws";
 import passport from "passport";
 import { prisma } from "../db";
-import { StreamingTagStripper } from "./tag-stripper";
+import { StreamingTagStripper, stripTags } from "./tag-stripper";
 import { SentenceChunker } from "./sentence-chunker";
 import type { SttProvider, SttStream, TtsProvider, TtsStream } from "./providers";
 import { VOICE_SAMPLE_RATE } from "./providers";
@@ -634,11 +634,45 @@ class VoiceSession {
       const { type: _t, message: _m, ...extras } = done;
       this.send({ type: "cards", payload: extras });
 
-      const spoke = this.stripper.emittedText().trim().length > 0;
-      if (!spoke && !this.speakSuppressed) {
+      const spokenText = this.stripper.emittedText().trim();
+      const finalText =
+        typeof done.message === "string" ? stripTags(done.message).trim() : "";
+      if (!spokenText && !this.speakSuppressed) {
         const line = cardFallbackLine(done);
         if (line) {
           this.speakSystemLine(line);
+          return;
+        }
+      } else if (spokenText && finalText && !this.speakSuppressed) {
+        // The streamed draft must be a prefix of the persisted message. When
+        // it is not, an upstream interceptor replaced the reply WITHOUT
+        // emitting a reset frame - Eva just spoke words that are not in the
+        // transcript. Backstop: wipe the caption and speak the real reply
+        // (she corrects herself), and log loudly so the reset-less ai-router
+        // path can be found and fixed at the source.
+        const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+        const ns = norm(spokenText);
+        const nf = norm(finalText);
+        if (!nf.startsWith(ns.slice(0, 80))) {
+          log(
+            `turn ${turnId}: reply REPLACED upstream without reset - spoke "${ns.slice(0, 48)}..." ` +
+              `but persisted "${nf.slice(0, 48)}...". Re-speaking the real reply. ` +
+              `Root cause: an ai-router path mutates finalContent after streaming without sse.sendReset().`,
+          );
+          this.tts?.cancel();
+          route?.interrupt();
+          this.send({ type: "caption_reset" });
+          this.send({ type: "eva_caption", text: finalText });
+          this.tts = this.openTts(route);
+          this.ttsChars += finalText.length;
+          this.setState("speaking");
+          const stream = this.tts;
+          stream.onEnd(() => {
+            route?.flushSpeech();
+            this.finishSpeaking(turnId, route);
+          });
+          stream.sendText(finalText + " ");
+          stream.flush();
           return;
         }
       }
