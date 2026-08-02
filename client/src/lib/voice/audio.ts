@@ -99,6 +99,9 @@ registerProcessor("voice-playback", PlaybackProcessor);
 `;
 
 export interface VoiceAudioEngine {
+  // What the browser actually GRANTED for the mic track (echoCancellation
+  // etc.) - constraints are requests, not guarantees. Session 5 AEC audit.
+  micSettings: MediaTrackSettings;
   // Fires for every mic frame with 16kHz PCM16 bytes and the frame's RMS level.
   onMicFrame: (cb: (pcm: ArrayBuffer, rms: number) => void) => void;
   // Fires when the playback buffer drains (Eva finished being audible).
@@ -132,6 +135,9 @@ export async function createVoiceAudioEngine(): Promise<VoiceAudioEngine> {
     },
   };
   let stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+  // Report what was GRANTED, not what we asked for (AEC audit, session 5).
+  const micSettings = stream.getAudioTracks()[0]?.getSettings?.() || {};
+  console.log("[voice] mic track settings (granted):", JSON.stringify(micSettings));
 
   const capture = new AudioWorkletNode(ctx, "voice-capture", {
     numberOfInputs: 1,
@@ -249,6 +255,7 @@ export async function createVoiceAudioEngine(): Promise<VoiceAudioEngine> {
   };
 
   return {
+    micSettings,
     onMicFrame: (cb) => {
       micCb = cb;
     },

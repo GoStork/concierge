@@ -56,6 +56,15 @@ class DeepgramStream implements SttStream {
   //      utterance.
   private segments: string[] = [];
   private idleFlush: NodeJS.Timeout | null = null;
+  // AEC-audit debug (session 5): when enabled (gateway turns it on for
+  // gate-bypassed test sessions only - parent speech is PII), EVERY
+  // transcript-bearing Deepgram message is logged, interims included. "Zero
+  // dispatches" is not "zero tokens"; this shows what Deepgram actually
+  // heard.
+  private debug = false;
+  setDebug(v: boolean) {
+    this.debug = v;
+  }
   // Dispatch hold after a punctuated speech_final. Deepgram PUNCTUATES
   // fragments ("I want you to keep the profile.") so terminal punctuation
   // alone cannot prove the utterance is over, and speech_final's own timing
@@ -178,6 +187,12 @@ class DeepgramStream implements SttStream {
         const alt = msg.channel?.alternatives?.[0];
         const text = alt?.transcript?.trim();
         if (!text) return;
+        if (this.debug) {
+          console.log(
+            `[stt-debug] ${msg.is_final ? "FINAL" : "interim"}${msg.speech_final ? "+speech_final" : ""} ` +
+              `(conf=${(alt?.confidence ?? 0).toFixed(2)}): "${text.slice(0, 120)}"`,
+          );
+        }
         if (msg.is_final) {
           this.cancelHold(); // speech resumed into a new segment - not over
           this.segments.push(text);

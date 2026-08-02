@@ -193,6 +193,36 @@ export function useVoiceSession() {
     currentTurnRef.current = 0;
     reportedMetricsRef.current = new Set();
     activeMetricReporter = reportMetric;
+
+    // AEC AUDIT SWITCH (session 5): localStorage.voiceMicGate = "off" streams
+    // EVERY mic frame to STT - no VAD gate, no echo-hold, no prebuffer, and
+    // no barge signal (Eva must keep talking during the test). Used to
+    // measure what Deepgram transcribes from pure speaker echo while the
+    // parent stays silent. Read once per session start.
+    let micGateOff = false;
+    try {
+      // ?voiceMicGate=off in the URL mirrors into localStorage - the only
+      // practical way to arm the flag on iPhone Safari for the iOS AEC test.
+      const urlFlag = new URLSearchParams(window.location.search).get("voiceMicGate");
+      if (urlFlag === "off" || urlFlag === "on") {
+        if (urlFlag === "off") localStorage.setItem("voiceMicGate", "off");
+        else localStorage.removeItem("voiceMicGate");
+      }
+      micGateOff = localStorage.getItem("voiceMicGate") === "off";
+    } catch { /* private mode */ }
+    if (micGateOff) {
+      console.warn("[voice] MIC GATE BYPASSED (voiceMicGate=off) - AEC test mode");
+      // Test-mode only: lets the AEC control script make Eva speak at length
+      // with no human in the loop (silent-room control). Uses wsRef directly
+      // (sendText is declared later in the hook).
+      (window as any).__voiceSendText = (t: string) => {
+        const sock = wsRef.current;
+        if (sock?.readyState === WebSocket.OPEN) {
+          setCards(null);
+          sock.send(JSON.stringify({ type: "text", text: t, fixedReply: false }));
+        }
+      };
+    }
     activeFpsReporter = (stats) => {
       const sock = wsRef.current;
       if (sock?.readyState === WebSocket.OPEN) {
@@ -225,6 +255,11 @@ export function useVoiceSession() {
           // Phones get the persona's portrait avatar variant when one is set
           portrait: window.innerHeight > window.innerWidth,
         }),
+      );
+      // AEC audit: what the browser GRANTED for the mic (echoCancellation
+      // etc.) + whether the gate bypass is active - logged server-side.
+      ws.send(
+        JSON.stringify({ type: "mic_settings", settings: engine.micSettings, gateBypassed: micGateOff }),
       );
     };
 
@@ -383,6 +418,12 @@ export function useVoiceSession() {
       const sock = wsRef.current;
       if (!sock || sock.readyState !== WebSocket.OPEN) return;
       if (rms > micStatsRef.current.maxRms) micStatsRef.current.maxRms = rms;
+      if (micGateOff) {
+        // AEC test mode: raw pass-through, no VAD, no hold, no barge.
+        sock.send(pcm);
+        micStatsRef.current.sent += 1;
+        return;
+      }
       const now = Date.now();
       const speaking = rms > VAD_THRESHOLD;
 

@@ -248,8 +248,12 @@ class VoiceSession {
   // dispatch - held/replayed audio is the prime suspect for boundary bugs).
   private pendingSttMeta: SttUtteranceMeta | null = null;
   private lastMicFrameAt = 0;
+  // Transcript-level debug for gate-bypassed AEC test sessions; survives the
+  // STT self-reopen path.
+  private sttDebug = false;
   private openStt() {
     this.stt = this.sttProvider.openStream({ sampleRate: VOICE_SAMPLE_RATE });
+    if (this.sttDebug) (this.stt as any)?.setDebug?.(true);
     this.stt.onPartial((text) => {
       this.sttRestarts = 0;
       this.armSilenceTimer();
@@ -418,6 +422,18 @@ class VoiceSession {
           `avatar fps: ${Number(msg.fps || 0).toFixed(1)} | track ${msg.videoW}x${msg.videoH} | ` +
             `element ${msg.elemW}x${msg.elemH} | adaptiveStream=${msg.adaptive}`,
         );
+        break;
+      case "mic_settings":
+        // AEC audit (session 5): what the browser GRANTED, verbatim.
+        log(
+          `mic settings (granted): ${JSON.stringify(msg.settings || {})} gateBypassed=${msg.gateBypassed === true}`,
+        );
+        // Gate-bypassed TEST sessions also log every Deepgram transcript
+        // message (interims included) - never normal sessions (PII).
+        if (msg.gateBypassed === true) {
+          this.sttDebug = true;
+          (this.stt as any)?.setDebug?.(true);
+        }
         break;
       case "mic_stats":
         // Client-side VAD telemetry (max mic RMS + frames forwarded per 5s

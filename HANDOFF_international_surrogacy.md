@@ -174,7 +174,10 @@ There is NO cloud deploy / CI. Pushing to GitHub `main` does NOT deploy.
 ```bash
 cd /Users/eranamir/Documents/GitHub/concierge
 npm run build && lsof -ti:5001 | xargs kill -9 2>/dev/null; sleep 1
-node dist/index.cjs > /tmp/gostork-server.log 2>&1 &
+# APPEND (>>), never truncate (>): baselines/fps data live in this log and
+# have been lost to restarts twice. Rotate at ~50MB.
+[ -f /tmp/gostork-server.log ] && [ "$(stat -f%z /tmp/gostork-server.log)" -gt 52428800 ] && mv /tmp/gostork-server.log /tmp/gostork-server.log.1
+node dist/index.cjs >> /tmp/gostork-server.log 2>&1 &
 sleep 6; lsof -ti:5001 >/dev/null && echo "server up"
 ps aux | grep -i "ngrok http" | grep -v grep >/dev/null || \
   (ngrok http --url=gostork.ngrok.app 5001 > /tmp/ngrok.log 2>&1 &)
