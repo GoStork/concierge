@@ -505,15 +505,20 @@ class VoiceSession {
     // Dead-air filler: Tier2-routed turns can take ~4s to first token. If
     // nothing has streamed after 1.8s, speak a short non-persisted filler so
     // the parent is not left in silence. It rides the same TTS stream, ahead
-    // of the real reply.
-    const fillerTimer = setTimeout(() => {
-      if (this.turnCounter !== turnId || this.speakSuppressed || tFirstToken) return;
-      const filler = "One moment, let me look into that. ";
-      this.ttsChars += filler.length;
-      this.setState("speaking");
-      this.send({ type: "eva_caption", text: filler });
-      this.tts?.sendText(filler);
-    }, 1800);
+    // of the real reply. ONLY for substantive requests - after "hey" or
+    // "thanks", "let me look into that" is nonsense; short social utterances
+    // just wait the extra second in silence, like a human would.
+    const substantive = userText.trim().split(/\s+/).length >= 4;
+    const fillerTimer = substantive
+      ? setTimeout(() => {
+          if (this.turnCounter !== turnId || this.speakSuppressed || tFirstToken) return;
+          const filler = "One moment, let me look into that. ";
+          this.ttsChars += filler.length;
+          this.setState("speaking");
+          this.send({ type: "eva_caption", text: filler });
+          this.tts?.sendText(filler);
+        }, 1800)
+      : null;
 
     const port = process.env.PORT || "5000";
     let done: any = null;
@@ -610,7 +615,7 @@ class VoiceSession {
       done = { error: err?.message || "pipeline failure" };
     }
 
-    clearTimeout(fillerTimer);
+    if (fillerTimer) clearTimeout(fillerTimer);
     if (this.closed || this.turnCounter !== turnId) return;
 
     if (done?.retry || done?.error) {
