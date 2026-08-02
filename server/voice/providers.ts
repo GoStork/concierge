@@ -24,11 +24,31 @@ export interface TtsProvider {
   openStream(opts: { voiceId: string }): TtsStream;
 }
 
+// Instrumentation metadata a provider can attach to a dispatched utterance
+// (Session 4 - diagnosing turn-boundary decisions). All timestamps epoch ms.
+export interface SttUtteranceMeta {
+  // First transcript-bearing Deepgram message of this utterance.
+  tFirstInterim: number;
+  // Last message that ADDED words - the true end of speech, before any
+  // dispatch hold. last_word_to_first_audio derives from this.
+  tLastNewWords: number;
+  // Finalized segments accumulated into this utterance.
+  segments: number;
+  // Per-segment gap (ms) since the previous transcript activity - the
+  // inter-segment silences the merge decision was reasoning about.
+  segmentGapsMs: number[];
+  // Which dispatch path fired: utterance_end | speech_final_held |
+  // idle_fallback.
+  dispatchPath: string;
+}
+
 export interface SttStream {
   sendAudio(pcm: Buffer): void;
   close(): void;
   onPartial(cb: (text: string) => void): void;
-  onFinal(cb: (text: string) => void): void;
+  // meta is provided by providers that track utterance assembly (Deepgram);
+  // others (Google) omit it.
+  onFinal(cb: (text: string, meta?: SttUtteranceMeta) => void): void;
   onError(cb: (err: Error) => void): void;
 }
 

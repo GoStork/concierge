@@ -5,7 +5,7 @@ import passport from "passport";
 import { prisma } from "../db";
 import { StreamingTagStripper, stripTags } from "./tag-stripper";
 import { SentenceChunker } from "./sentence-chunker";
-import type { SttProvider, SttStream, TtsProvider, TtsStream } from "./providers";
+import type { SttProvider, SttStream, SttUtteranceMeta, TtsProvider, TtsStream } from "./providers";
 import { VOICE_SAMPLE_RATE } from "./providers";
 import { elevenLabsTts } from "./tts/elevenlabs-tts";
 import { openAiTts } from "./tts/openai-tts";
@@ -169,6 +169,10 @@ class VoiceSession {
     const diff = (a: any, b: any) =>
       num(a) !== null && num(b) !== null ? (b as number) - (a as number) : null;
     m.derived = {
+      // What the parent actually experiences: silence from their last spoken
+      // word to Eva's first audio. speech_final-anchored metrics exclude the
+      // dispatch hold (~1.2-1.5s) and understate this.
+      last_word_to_first_audio_ms: diff(mk.stt_last_new_words, mk.tts_first_audio),
       stt_to_first_token_ms: diff(mk.speech_final, mk.first_token),
       stt_to_first_audio_ms: diff(mk.speech_final, mk.tts_first_audio),
       first_token_to_first_audio_ms: diff(mk.first_token, mk.tts_first_audio),
@@ -239,6 +243,11 @@ class VoiceSession {
   }
 
   private sttRestarts = 0;
+  // Utterance telemetry from the STT provider for the NEXT turn, plus the
+  // last time a mic frame arrived (whether the client VAD gate was open at
+  // dispatch - held/replayed audio is the prime suspect for boundary bugs).
+  private pendingSttMeta: SttUtteranceMeta | null = null;
+  private lastMicFrameAt = 0;
   private openStt() {
     this.stt = this.sttProvider.openStream({ sampleRate: VOICE_SAMPLE_RATE });
     this.stt.onPartial((text) => {
@@ -246,10 +255,13 @@ class VoiceSession {
       this.armSilenceTimer();
       this.send({ type: "partial_transcript", text });
     });
-    this.stt.onFinal((text) => {
+    this.stt.onFinal((text, meta) => {
       this.sttRestarts = 0;
       this.armSilenceTimer();
       if (!text || text.length < 2) return;
+      // Stash for the runTurn this final is about to start (or merge into) -
+      // carries the utterance-assembly telemetry into [TURN_METRICS].
+      this.pendingSttMeta = meta || null;
       this.send({ type: "final_transcript", text });
       // Continuation window: a final landing while the previous turn is in
       // flight (thinking) OR just after Eva started speaking is the rest of
@@ -334,6 +346,7 @@ class VoiceSession {
     if (this.closed) return;
     if (isBinary) {
       this.sttBytes += data.length;
+      this.lastMicFrameAt = Date.now();
       // The client only forwards mic frames while the parent is actually
       // speaking (VAD-gated), so incoming audio = an active parent even if a
       // transcript hasn't landed yet. Keeps "Are you still there?" honest.
@@ -627,6 +640,22 @@ class VoiceSession {
       marks: { speech_final: tSttFinal } as Record<string, number>,
       client: {},
     };
+    // Utterance-assembly telemetry (Session 4): how this turn's text was
+    // built and which dispatch path released it. vadGateOpenAtDispatch =
+    // mic frames were still arriving when the turn fired (open gate), vs a
+    // gated/held stream whose silence Deepgram never saw.
+    const sttMeta = this.pendingSttMeta;
+    this.pendingSttMeta = null;
+    if (sttMeta && !fixedReply) {
+      if (sttMeta.tFirstInterim) metrics.marks.stt_first_interim = sttMeta.tFirstInterim;
+      if (sttMeta.tLastNewWords) metrics.marks.stt_last_new_words = sttMeta.tLastNewWords;
+      metrics.stt = {
+        segments: sttMeta.segments,
+        segmentGapsMs: sttMeta.segmentGapsMs,
+        dispatchPath: sttMeta.dispatchPath,
+        vadGateOpenAtDispatch: Date.now() - this.lastMicFrameAt < 250,
+      };
+    }
     this.turnMetrics.set(turnId, metrics);
     // Tell the client which turn is live so its metric reports can correlate.
     this.send({ type: "turn", turn: turnId });
@@ -812,6 +841,11 @@ class VoiceSession {
       }
     } catch (err: any) {
       log(`turn ${turnId}: chat pipeline failed: ${err?.message}`);
+      // Explicit mark: the /chat fetch threw or the stream broke. Before
+      // this, a turn with router_fetch_sent but no router_entry had to be
+      // diagnosed by absence (session teardown vs real failure).
+      metrics.marks.router_fetch_failed = Date.now();
+      metrics.fetchError = String(err?.message || "pipeline failure").slice(0, 200);
       done = { error: err?.message || "pipeline failure" };
     }
 
@@ -896,6 +930,15 @@ class VoiceSession {
     if (this.closed) return;
     this.closed = true;
     // Flush any pending per-turn metrics before the session record closes.
+    // A turn still awaiting its done frame is stamped with WHY it never got
+    // one - the "router_fetch_sent but no router_entry" signature previously
+    // had to be inferred (baseline turn 3g5s61:10 was exactly this: the
+    // parent hung up ~2.5s in; the router completed fine afterward).
+    for (const [, rec] of this.turnMetrics) {
+      if (!rec.marks?.router_done && !rec.marks?.router_fetch_failed) {
+        rec.sessionEndedBeforeDone = reason;
+      }
+    }
     for (const id of [...this.turnMetrics.keys()]) this.emitMetrics(id);
     if (this.silenceTimer) clearTimeout(this.silenceTimer);
     if (this.capTimer) clearTimeout(this.capTimer);

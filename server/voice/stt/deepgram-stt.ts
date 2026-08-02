@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import type { SttProvider, SttStream } from "../providers";
+import type { SttProvider, SttStream, SttUtteranceMeta } from "../providers";
 
 // Deepgram streaming STT (budget option, ~$0.008/min). linear16 16kHz mono in,
 // interim + final transcripts out. KeepAlive pings hold the socket open across
@@ -12,8 +12,33 @@ class DeepgramStream implements SttStream {
   private pending: Buffer[] = [];
   private keepAlive: NodeJS.Timeout | null = null;
   private partialCb: ((text: string) => void) | null = null;
-  private finalCb: ((text: string) => void) | null = null;
+  private finalCb: ((text: string, meta?: SttUtteranceMeta) => void) | null = null;
   private errorCb: ((err: Error) => void) | null = null;
+
+  // Utterance-assembly telemetry (Session 4): when the utterance STARTED
+  // being heard, when it last GREW (the true end of speech - dispatch holds
+  // sit after this), and the inter-segment gaps the merge logic reasoned
+  // about. Shipped with each dispatched utterance so [TURN_METRICS] can
+  // attribute over-merges and truncations to a specific path.
+  private tFirstActivity = 0;
+  private tLastGrowth = 0;
+  private tPrevActivity = 0;
+  private maxWordCount = 0;
+  private segmentGapsMs: number[] = [];
+
+  private noteActivity(candidateText: string, isSegmentPush: boolean) {
+    const now = Date.now();
+    if (!this.tFirstActivity) this.tFirstActivity = now;
+    if (isSegmentPush) {
+      this.segmentGapsMs.push(this.tPrevActivity ? now - this.tPrevActivity : 0);
+    }
+    const wc = candidateText.split(/\s+/).filter(Boolean).length;
+    if (wc > this.maxWordCount) {
+      this.maxWordCount = wc;
+      this.tLastGrowth = now;
+    }
+    this.tPrevActivity = now;
+  }
 
   // PREMATURE-ENDPOINTING FIX. Deepgram's `is_final` marks SEGMENT
   // finalization (the audio window won't be re-transcribed), NOT the end of
@@ -65,9 +90,23 @@ class DeepgramStream implements SttStream {
     this.cancelHold();
     if (this.segments.length === 0) return;
     const utterance = this.segments.join(" ");
+    const meta: SttUtteranceMeta = {
+      tFirstInterim: this.tFirstActivity,
+      tLastNewWords: this.tLastGrowth,
+      segments: this.segments.length,
+      segmentGapsMs: [...this.segmentGapsMs],
+      dispatchPath: reason,
+    };
     this.segments = [];
-    console.log(`[voice] deepgram utterance dispatched (${reason}): "${utterance.slice(0, 60)}"`);
-    this.finalCb?.(utterance);
+    this.tFirstActivity = 0;
+    this.tLastGrowth = 0;
+    this.tPrevActivity = 0;
+    this.maxWordCount = 0;
+    this.segmentGapsMs = [];
+    console.log(
+      `[voice] deepgram utterance dispatched (${reason}, ${meta.segments} seg, gaps=[${meta.segmentGapsMs.join(",")}]ms): "${utterance.slice(0, 60)}"`,
+    );
+    this.finalCb?.(utterance, meta);
   }
 
   private armIdleFlush() {
@@ -143,6 +182,7 @@ class DeepgramStream implements SttStream {
           this.cancelHold(); // speech resumed into a new segment - not over
           this.segments.push(text);
           const joined = this.segments.join(" ");
+          this.noteActivity(joined, true);
           this.partialCb?.(joined);
           // Fast-ish path: speech_final on text that reads complete starts a
           // short hold; if nothing else arrives it dispatches at +HOLD_MS.
@@ -156,7 +196,9 @@ class DeepgramStream implements SttStream {
           // Interim = the parent is talking again; cancel any pending
           // dispatch and keep accumulating. Show the whole utterance so far.
           this.cancelHold();
-          this.partialCb?.([...this.segments, text].join(" "));
+          const joined = [...this.segments, text].join(" ");
+          this.noteActivity(joined, false);
+          this.partialCb?.(joined);
           if (this.segments.length > 0) this.armIdleFlush();
         }
       } catch {
@@ -190,7 +232,7 @@ class DeepgramStream implements SttStream {
   onPartial(cb: (text: string) => void): void {
     this.partialCb = cb;
   }
-  onFinal(cb: (text: string) => void): void {
+  onFinal(cb: (text: string, meta?: SttUtteranceMeta) => void): void {
     this.finalCb = cb;
   }
   onError(cb: (err: Error) => void): void {
