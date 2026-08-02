@@ -28,8 +28,12 @@ interface StartOpts {
 // RMS above this counts as speech (tuned for echo-cancelled mic input).
 const VAD_THRESHOLD = 0.015;
 // Keep forwarding this long after the last speech frame so trailing words and
-// natural pauses reach STT.
-const VAD_HANGOVER_MS = 900;
+// natural pauses reach STT. MUST exceed Deepgram's utterance_end_ms (1200 in
+// deepgram-stt.ts): UtteranceEnd is measured on the AUDIO stream's clock, so
+// if the VAD gates frames before that much silence has been delivered, the
+// end-of-utterance event can never fire and every turn waits for the 2s
+// server-side idle fallback instead.
+const VAD_HANGOVER_MS = 1600;
 // Frames buffered while silent (or held back during Eva's speech), replayed
 // on speech onset so words are never clipped - big enough that a failed
 // interruption attempt still reaches STT once she stops talking.
@@ -47,6 +51,13 @@ const BARGE_MS = 400;
 let activeMetricReporter: ((event: string) => void) | null = null;
 export function reportVoiceClientMetric(event: string) {
   activeMetricReporter?.(event);
+}
+// Avatar video health telemetry (Task 4 A/B): AvatarVideo reports rendered
+// fps + delivered track resolution + element size every 2s; the gateway logs
+// it server-side so adaptiveStream on/off runs are comparable from one log.
+let activeFpsReporter: ((stats: Record<string, unknown>) => void) | null = null;
+export function reportVoiceFpsStats(stats: Record<string, unknown>) {
+  activeFpsReporter?.(stats);
 }
 // ---------------------------------------------------------------------------
 // Barge-in noise floor: while Eva is audible, plain VAD level is not enough -
@@ -133,6 +144,7 @@ export function useVoiceSession() {
     if (!activeRef.current) return;
     activeRef.current = false;
     activeMetricReporter = null;
+    activeFpsReporter = null;
     if (statsTimerRef.current) {
       clearInterval(statsTimerRef.current);
       statsTimerRef.current = null;
@@ -181,6 +193,12 @@ export function useVoiceSession() {
     currentTurnRef.current = 0;
     reportedMetricsRef.current = new Set();
     activeMetricReporter = reportMetric;
+    activeFpsReporter = (stats) => {
+      const sock = wsRef.current;
+      if (sock?.readyState === WebSocket.OPEN) {
+        sock.send(JSON.stringify({ type: "fps_stats", ...stats, tClient: Date.now() }));
+      }
+    };
 
     // The socket is reconnectable: a server deploy or a mobile network blip
     // closes the WS mid-conversation, and dying to text for that reads as a

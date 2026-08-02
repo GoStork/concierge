@@ -123,6 +123,9 @@ class VoiceSession {
   private turnCounter = 0;
   private lastTurnText = "";
   private lastTurnStartedAt = 0;
+  // Chip-tap turns (fixedReply) are actions, not speech - a supersede must
+  // not splice their label into the parent's next sentence.
+  private lastTurnWasFixedReply = false;
   // In avatar mode "speaking" must outlive TTS generation: the avatar plays
   // the queued audio in realtime, so the flip back to "listening" is deferred
   // until its playhead actually drains (client barge-in depends on this).
@@ -248,17 +251,41 @@ class VoiceSession {
       this.armSilenceTimer();
       if (!text || text.length < 2) return;
       this.send({ type: "final_transcript", text });
-      if (this.state === "thinking") {
-        // The parent spoke over Eva's thinking. Dropping this was the old
-        // behavior and it read as "Eva ignored me". Supersede instead: the
-        // in-flight turn keeps streaming for persistence but its speech is
-        // abandoned, and the new utterance becomes the live turn. A final
-        // landing right after the turn started is usually the tail of the
-        // SAME utterance (Google splits long sentences) - merge it.
+      // Continuation window: a final landing while the previous turn is in
+      // flight (thinking) OR just after Eva started speaking is the rest of
+      // the SAME utterance, not a reaction to a reply the parent has barely
+      // heard. Baseline turns 14/15 proved the speaking case: "Okay. I want
+      // to" was answered as its own turn and "schedule the call." became the
+      // next one. 4s covers dispatch hold + router thinking + first words.
+      const inFlight =
+        this.state === "thinking" ||
+        (this.state === "speaking" && Date.now() - this.lastTurnStartedAt < 4000);
+      if (inFlight) {
+        // The parent spoke over Eva's thinking. Supersede the in-flight turn:
+        // it keeps streaming for persistence but its speech is abandoned, and
+        // the new utterance becomes the live turn. The two texts are ALWAYS
+        // concatenated (baseline turns 7/8 proved the old 1.5s merge window
+        // silently discarded "I want you to keep the profile" and answered
+        // "while I'm talking to you" - losing the first half of what someone
+        // said is never the right outcome). Exception: a superseded CHIP turn
+        // (fixedReply) is an action, not speech - splicing its label into the
+        // parent's sentence would corrupt both; it is dropped and counted.
         const sincePrev = Date.now() - this.lastTurnStartedAt;
-        const merged =
-          sincePrev < 1500 && this.lastTurnText ? `${this.lastTurnText} ${text}` : text;
-        log(`turn superseded by new speech during thinking (${sincePrev}ms in)`);
+        const mergeable = !!this.lastTurnText && !this.lastTurnWasFixedReply;
+        const merged = mergeable ? `${this.lastTurnText} ${text}` : text;
+        log(
+          `turn ${this.turnCounter} superseded by new speech during thinking (${sincePrev}ms in, ` +
+            `${mergeable ? "merged into next" : "DISCARDED (fixedReply action)"}): "${this.lastTurnText.slice(0, 60)}"`,
+        );
+        // Count it: superseded turns previously showed up only as missing
+        // marks. The record now says so explicitly, with the discarded text.
+        const oldRec = this.turnMetrics.get(this.turnCounter);
+        if (oldRec) {
+          oldRec.superseded = true;
+          oldRec.supersededAfterMs = sincePrev;
+          oldRec.discardedText = this.lastTurnText.slice(0, 160);
+          oldRec.mergedIntoNext = mergeable;
+        }
         this.tts?.cancel();
         this.avatar?.interrupt();
         this.send({ type: "caption_reset" });
@@ -371,6 +398,14 @@ class VoiceSession {
         }
         break;
       }
+      case "fps_stats":
+        // Avatar video health (Task 4 A/B): rendered fps, delivered track
+        // resolution, element size, and whether adaptiveStream was on.
+        log(
+          `avatar fps: ${Number(msg.fps || 0).toFixed(1)} | track ${msg.videoW}x${msg.videoH} | ` +
+            `element ${msg.elemW}x${msg.elemH} | adaptiveStream=${msg.adaptive}`,
+        );
+        break;
       case "mic_stats":
         // Client-side VAD telemetry (max mic RMS + frames forwarded per 5s
         // window) - the remote-diagnosis line for "Eva stopped hearing me".
@@ -432,9 +467,13 @@ class VoiceSession {
       log("avatar enabled but LIVEAVATAR_API_KEY/HEYGEN_API_KEY missing - audio-only fallback");
       return;
     }
-    // The persona's own avatar is the source of truth; without one this
-    // session runs audio-only (loudly logged), never a surprise face.
-    const avatarId = this.personaAvatarId || this.settings.voiceDefaultAvatarId;
+    // The persona's own avatar is the SOLE source of truth; without one this
+    // session runs audio-only (loudly logged), never a surprise face. The
+    // old fallback to SiteSettings.voiceDefaultAvatarId contradicted that
+    // rule (the admin field was removed b16ae7c1) and gave persona-less
+    // sessions a face nobody chose - discovered when a no-avatar test persona
+    // still spun up a LiveAvatar session (real credits) on the site default.
+    const avatarId = this.personaAvatarId;
     if (!avatarId) {
       log("avatar enabled but persona has no video avatar - audio-only fallback");
       return;
@@ -569,6 +608,7 @@ class VoiceSession {
     const tSttFinal = Date.now();
     this.lastTurnText = userText;
     this.lastTurnStartedAt = tSttFinal;
+    this.lastTurnWasFixedReply = fixedReply;
     if (this.listenTimer) clearTimeout(this.listenTimer);
     let tFirstToken = 0;
     let tFirstAudio = 0;

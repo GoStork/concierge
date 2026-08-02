@@ -1,7 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { analyzeRemoteTrack } from "@/lib/voice/remote-level";
-import { reportVoiceClientMetric } from "@/hooks/use-voice-session";
+import { reportVoiceClientMetric, reportVoiceFpsStats } from "@/hooks/use-voice-session";
+
+// Task 4 A/B: LiveKit's adaptiveStream downgrades/pauses a subscribed video
+// track based on the rendered element's visible size - the prime suspect for
+// the PiP framerate collapse (E2). Flip it off for a comparison run with:
+//   localStorage.voiceAdaptiveStream = "off"   (then start a new call)
+// Delete the key to restore the default. Do NOT ship "off" as the default
+// without measuring the bandwidth cost - adaptive is LiveKit's congestion
+// relief valve.
+function adaptiveStreamEnabled(): boolean {
+  try {
+    return localStorage.getItem("voiceAdaptiveStream") !== "off";
+  } catch {
+    return true;
+  }
+}
 
 // Realtime avatar video: joins the LiveAvatar LiveKit room and attaches the
 // avatar's video + audio tracks. livekit-client is dynamically imported so the
@@ -93,16 +108,54 @@ export function AvatarVideo({
     let cancelled = false;
     let stopKey: (() => void) | null = null;
     let stopLevel: (() => void) | null = null;
+    let stopFps: (() => void) | null = null;
+
+    // Rendered-framerate telemetry: counts DECODED frames via
+    // requestVideoFrameCallback and reports fps + the delivered track
+    // resolution + the element's on-screen size every 2s. adaptiveStream
+    // downgrades show up as videoWidth dropping when the element shrinks
+    // (PiP); a paused track shows fps ~0 while audio continues.
+    const startFpsMeter = (video: HTMLVideoElement, adaptive: boolean) => {
+      const anyVideo = video as any;
+      if (typeof anyVideo.requestVideoFrameCallback !== "function") return () => {};
+      let stopped = false;
+      let frames = 0;
+      const onFrame = () => {
+        frames += 1;
+        if (!stopped) anyVideo.requestVideoFrameCallback(onFrame);
+      };
+      anyVideo.requestVideoFrameCallback(onFrame);
+      const timer = setInterval(() => {
+        const canvas = canvasRef.current;
+        reportVoiceFpsStats({
+          fps: frames / 2,
+          videoW: video.videoWidth,
+          videoH: video.videoHeight,
+          elemW: canvas?.clientWidth || 0,
+          elemH: canvas?.clientHeight || 0,
+          adaptive,
+        });
+        frames = 0;
+      }, 2000);
+      return () => {
+        stopped = true;
+        clearInterval(timer);
+      };
+    };
     (async () => {
       try {
         const { Room, RoomEvent, Track } = await import("livekit-client");
-        room = new Room({ adaptiveStream: true });
+        const adaptive = adaptiveStreamEnabled();
+        console.log(`[voice] LiveKit join with adaptiveStream=${adaptive}`);
+        room = new Room({ adaptiveStream: adaptive });
         const attach = (track: any) => {
           if (cancelled) return;
           if (track.kind === Track.Kind.Video && videoRef.current && canvasRef.current) {
             track.attach(videoRef.current);
             stopKey?.();
             stopKey = startChromaKey(videoRef.current, canvasRef.current);
+            stopFps?.();
+            stopFps = startFpsMeter(videoRef.current, adaptiveStreamEnabled());
             setConnected(true);
           } else if (track.kind === Track.Kind.Audio && audioRef.current) {
             track.attach(audioRef.current);
@@ -131,6 +184,7 @@ export function AvatarVideo({
       cancelled = true;
       stopKey?.();
       stopLevel?.();
+      stopFps?.();
       try {
         room?.disconnect();
       } catch {

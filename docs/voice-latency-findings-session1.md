@@ -244,6 +244,117 @@ Classification (analysis only - nothing changed):
   coverage changes per session, yet the full multi-query aggregation reruns
   on every intake-education turn. Largest single known item in the pipeline.
 
+## Session 2 - Task 3 investigation: LLM rounds (report, no implementation)
+
+**The 9.3s "gap between the 5th and 6th tool call" on turn 9 is not a tool
+round at all.** Reconstructing turn 9 from its marks: tier-2 ran 1.25s ->
+5.31s (round 1 model ~1.3s -> search_sperm_donors 267ms -> round 2 model
+~1.2s -> resolve_match_card 114ms -> text round ~1.2s, first_token at 5.15s,
+`tier2_end` at 5.31s). Everything after that is POST-PROCESSING: the
+QUESTION INTERCEPTOR (ai-router ~7584) decided the reply wrongly showed a new
+match card while the parent had asked a question, fetched the profile (the
+"5th tool call", search_sperm_donors at 5.34s), then called `claudeRetry` -
+which despite its name is **gemini-3.5-flash, NON-streaming, and without
+`thinkingBudget: 0`** - to regenerate the entire reply with full history +
+profile data. That call is the 9.3s (6.6s on turn 11). The hidden thinking
+phase this project already measured at ~7s (2026-07-17) was never disabled in
+this one code path. The "6th tool call" is just card hydration after the
+replacement. Compounding harm: the interceptor fires after the text already
+streamed (and was already SPOKEN in voice mode), so Eva audibly corrects
+herself ~7-9s later and the card waits for `done`.
+
+Both intercepted turns were triggered by endpointing fragments ("That's what
+I wanted to tell you to" matches the question regex via "what") - the Task 1
+fix removes most triggers organically.
+
+**Q1 - can independent tool calls share a round?** The observed
+search -> resolve_match_card chain is data-dependent (resolve needs the id
+from the search result), so those rounds cannot merge. When the model DOES
+emit multiple calls in one round, we execute them sequentially in a for-loop
+(callTier2Claude round loop + execCallsForReplay) - parallelizing that loop
+is safe for these read-only tools but the observed rounds carried one call
+each, so the win is small. The proven big lever is the existing ready-turn
+`preSearch` (server runs the known-required search before round 1, collapsing
+decide-then-write into one round) - extending it to more predictable turns
+removes whole rounds, which at ~1.2s of model time per round is the real
+variable cost.
+
+**Q2 - the 9.3s generation:** answered above (`claudeRetry`, thinking
+enabled, non-streaming, full-reply regeneration). Cheapest fixes when
+implementation is authorized: `thinkingBudget: 0` on `claudeRetry` (one
+line, expected to remove ~5-7s), and/or streaming the replacement.
+
+**Q3 - smaller model for tool-selection rounds?** Not feasible per-round
+inside one Gemini ChatSession: Gemini 3.x functionCall parts carry
+thought_signatures that cannot be forged or transplanted across models (the
+history-repair comment in callTier2Claude documents the 400s). Splitting
+models would require restructuring to manual-history generateContent calls.
+`TIER2_MODEL` already exists as a whole-turn A/B knob (e.g. flash-lite) and
+any change must pass the 73-test suite. Recommendation: don't split models -
+kill the claudeRetry thinking cost and reduce round count via preSearch.
+
+## Session 2 - fixes shipped (2026-08-02 evening)
+
+**Task 1 - premature endpointing: FIXED, acceptance PASS.**
+Root cause was worse than the brief's: the gateway dispatched a turn on
+Deepgram `is_final` (SEGMENT finalization), not `speech_final`/utterance end
+- every finalized segment became a turn. Baseline splits confirmed from the
+log (turn 7/8: "I want you to keep the profile" discarded, Eva answered
+"while I'm talking to you."). Fix, in layers:
+- deepgram-stt.ts accumulates finalized segments and dispatches ONE utterance
+  on the earliest of: UtteranceEnd (`utterance_end_ms=1200`, newly enabled),
+  a punctuated speech_final + 1400ms hold (`VOICE_DISPATCH_HOLD_MS`; sized
+  for Deepgram's ~300-800ms interim latency - 800ms lost the race), or a 2s
+  idle fallback (a VAD-gated mic can freeze Deepgram's audio clock).
+- Client VAD hangover 900 -> 1600ms (UtteranceEnd needs >1200ms of DELIVERED
+  silence or it can never fire).
+- Gateway supersession now ALWAYS merges spoken fragments (the 1.5s window
+  discarded first halves), covers early-`speaking` (<4s) as well as
+  `thinking`, never merges chip/fixedReply actions, and emits
+  `superseded/discardedText/mergedIntoNext` in TURN_METRICS.
+Acceptance (15 synthesized turns, real Deepgram, mid-sentence pauses
+600-1100ms): 15/15 single turns, 0 superseded, 0 apologies. Trade-off:
+dispatch now waits ~1.2-1.5s of true silence (was ~0.4s but mid-sentence);
+the filler still masks router time.
+
+**Task 2 - pre-work parallelised (call ordering only, zero caching).**
+All journey-state reads (memory block, handoffs, upcoming consult,
+quotes/invoices/agreements, consultation locks, latest-card/gates chain, IP
+form) now start together right after the user record loads and are awaited
+where consumed; prompt-sections fetch starts at handler entry; household
+expansion folded into the existing Promise.all (3 duplicate queries
+removed); D1 country costs speculatively started for non-tier2 sessions so
+intake turns overlap its ~550ms. Measured (15-turn run, intake-path turns):
+entry->context median 472ms (was 900-1130), best 283ms; entry->prework_done
+median 929ms - still D1-bound on intake turns; tier2 turns (no D1) should
+land ~450-550ms. The <300ms target is not fully met: the floor is now the
+serial auth/session chain (~130ms) + the slowest single read (full chat
+history / booking lookup, ~150-350ms on the remote pooler). Next lever would
+be caching or history-tail fetches - deliberately out of scope per the brief.
+
+**Task 4 - adaptiveStream A/B: instrumented, awaiting the manual run.**
+`localStorage.voiceAdaptiveStream = "off"` (new call) joins LiveKit with
+adaptiveStream disabled; delete the key to restore. AvatarVideo now measures
+decoded fps via requestVideoFrameCallback and reports fps + delivered track
+resolution + element size every 2s; the gateway logs it as
+`[voice] avatar fps: ... | track WxH | element WxH | adaptiveStream=...`.
+Run the navigation sequence twice (on/off) and compare those log lines; if
+adaptiveStream is the cause, the "off" run holds ~25fps and full resolution
+in the PiP while "on" shows resolution drops/0fps windows.
+
+**Found along the way:**
+- **Cartesia account out of credits** - every TTS request returns 402;
+  live voice is SILENT until the account is topped up. The 402 also broke
+  the state machine during the first acceptance attempt (states hang when
+  no audio is ever produced).
+- **Surprise-face fallback removed**: `maybeStartAvatar` fell back to
+  `SiteSettings.voiceDefaultAvatarId` when the persona had no avatar,
+  contradicting the "no persona avatar = audio-only" rule (b16ae7c1) and
+  silently consuming LiveAvatar credits; persona is now the sole source.
+- Test persona "E2E Endpointing Test" (b8eb393a..., isActive=false, Cartesia
+  voice, no avatar) exists for harness runs; scratchpad harness synthesizes
+  speech with `say` and real mid-sentence silences.
+
 ## 7. Next session (the experiment)
 
 Run 10-15 voice turns of varying complexity, then:

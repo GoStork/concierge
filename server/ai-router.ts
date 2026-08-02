@@ -2435,6 +2435,10 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
   // it from anywhere downstream, and sendDone() snapshots it into the payload.
   turnTimingStore.enterWith(newTurnTimings());
   mark("router_entry");
+  // Prompt sections depend on NOTHING request-specific (global 30s cache /
+  // one DB read) - start the fetch at the very top so a cache miss overlaps
+  // the entire auth + context assembly instead of tailing it (~200ms).
+  const promptSectionsPromise = getPromptSections();
   try {
     if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
       return res.status(401).json({ error: "Not authenticated" });
@@ -2872,7 +2876,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     // Parallelize all independent queries for performance
     const matchmakerId = req.body.matchmakerId;
-    const [chatHistory, matchmaker, userRecord, openAiTools] = await Promise.all([
+    const [chatHistory, matchmaker, userRecord, openAiTools, accountUserRows] = await Promise.all([
       prisma.aiChatMessage.findMany({
         where: { sessionId: currentSessionId },
         orderBy: { createdAt: "asc" },
@@ -2907,6 +2911,11 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         },
       }),
       getCachedMcpTools(mcpClient),
+      // Household expansion, folded into this batch (it only needs
+      // currentUser.parentAccountId, which is already loaded).
+      currentUser?.parentAccountId
+        ? prisma.user.findMany({ where: { parentAccountId: currentUser.parentAccountId }, select: { id: true } })
+        : Promise.resolve([] as { id: string }[]),
     ]);
     mark("pw:history_user_tools_loaded");
 
@@ -3221,9 +3230,100 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     // recomputed four separate times in this function and one of the copies
     // (the CALL ALREADY BOOKED lookup) was missing the expansion entirely,
     // which meant a call booked by one partner was invisible to the other.
-    const accountMemberIds: string[] = userRecord?.parentAccountId
-      ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
-      : [userId];
+    const accountMemberIds: string[] =
+      userRecord?.parentAccountId && accountUserRows.length > 0
+        ? accountUserRows.map((u) => u.id)
+        : [userId];
+
+    // PRE-WORK PARALLELIZATION (Session 2, Task 2). The journey-state reads
+    // below are independent of each other and were serialized only by code
+    // order - ~15 sequential round trips to the remote Supabase pooler,
+    // 739-1038ms of EVERY turn in the baseline. They all start HERE and each
+    // original site awaits its promise where the result is consumed, so the
+    // assembled prompt parts keep their exact order and content. This is
+    // call-ordering only - every turn still reads fresh state, nothing is
+    // cached. Failures stay per-block and loud (console.error + the same
+    // empty-value fallbacks the blocks used before).
+    const acctIdForJourney = userRecord?.parentAccountId || userId;
+    const memoryBlockPromise = memoryBlock(acctIdForJourney).catch((e: any) => {
+      console.warn(`[memory] block load failed: ${e?.message}`);
+      return "";
+    });
+    const handedOffSessionsPromise = prisma.aiChatSession.findMany({
+      where: {
+        user: userRecord?.parentAccountId ? { parentAccountId: userRecord.parentAccountId } : { id: userId },
+        handoffCompletedAt: { not: null },
+        providerId: { not: null },
+      },
+      select: { providerId: true, provider: { select: { name: true } } },
+    }).catch(() => [] as any[]);
+    const upcomingProviderConsultPromise = prisma.booking.findFirst({
+      where: {
+        parentUserId: { in: accountMemberIds },
+        meetingSubtype: null,
+        status: { in: ["PENDING", "CONFIRMED"] },
+        scheduledAt: { gte: new Date() },
+        providerUser: { providerId: { not: null } },
+      },
+      orderBy: { scheduledAt: "asc" },
+      select: {
+        id: true,
+        providerUser: {
+          select: {
+            provider: {
+              select: {
+                id: true,
+                name: true,
+                services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
+              },
+            },
+          },
+        },
+      },
+    }).catch((e: any) => {
+      console.error("[CALL-BOOKED CONTEXT] lookup failed:", e?.message);
+      return null;
+    });
+    const paperworkPromise = Promise.all([
+      prisma.providerQuote.findMany({
+        where: { parentUserId: { in: accountMemberIds }, supersededAt: null },
+        orderBy: { createdAt: "desc" }, take: 3,
+        select: { totalCostCents: true, parentAcknowledgedAt: true, createdAt: true, provider: { select: { name: true } } },
+      }).catch(() => [] as any[]),
+      prisma.invoice.findMany({
+        where: { parentUserId: { in: accountMemberIds } },
+        orderBy: { createdAt: "desc" }, take: 3,
+        select: { status: true, serviceAmount: true, providerName: true, description: true, paidAt: true },
+      }).catch(() => [] as any[]),
+      prisma.agreement.findMany({
+        where: { parentUserId: { in: accountMemberIds } },
+        orderBy: { createdAt: "desc" }, take: 3,
+        select: { status: true, signedAt: true, provider: { select: { name: true } } },
+      }).catch(() => [] as any[]),
+    ]);
+    const openConsultationsPromise = listOpenConsultations(accountMemberIds).catch((e: any) => {
+      console.error("[CONSULTATION-LOCK CONTEXT] Failed:", e?.message);
+      return [] as Awaited<ReturnType<typeof listOpenConsultations>>;
+    });
+    // Shared by the match-gates block AND the international-program block,
+    // which previously each ran their own identical query.
+    const latestCardPromise: Promise<any | null> = currentSessionId
+      ? findLatestMatchCard(currentSessionId).catch(() => null)
+      : Promise.resolve(null);
+    const ipFormPromise = prisma.ipFormResponse.findUnique({
+      where: { parentAccountId: acctIdForJourney },
+      select: { status: true, promptedAt: true, hasSecondParent: true },
+    }).catch(() => null);
+    // D1 country costs are only consumed by the intake-education paths, which
+    // never run once tier2 is active. Kicking the lookup off here overlaps
+    // its ~550ms with the rest of pre-work on intake turns; tier2 sessions
+    // never pay it. Same-turn data, no caching.
+    const d1CostsPromise: Promise<D1Costs> | null = !currentSession?.tier2Active
+      ? getD1CountryCosts(userRecord?.parentAccountId ?? null).catch(
+          () => ({ us: null, mexico: null, colombia: null }) as D1Costs,
+        )
+      : null;
+
     if (userRecord) {
       const parts: string[] = [];
 
@@ -3238,9 +3338,9 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         );
       }
       try {
-        const acctIdForMemory = userRecord?.parentAccountId || userId;
+        const acctIdForMemory = acctIdForJourney;
         mark("pw:memory_block_start");
-        const memBlock = await memoryBlock(acctIdForMemory);
+        const memBlock = await memoryBlockPromise;
         mark("pw:memory_block_done");
         if (memBlock) parts.push(memBlock);
         // Explicit "remember that..." capture - awaited only when the message
@@ -3443,14 +3543,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // Single query via the user relation - previously two sequential
       // round-trips (account member ids, then sessions).
       mark("pw:handoff_scan_start");
-      const handedOffSessions = await prisma.aiChatSession.findMany({
-        where: {
-          user: userRecord?.parentAccountId ? { parentAccountId: userRecord.parentAccountId } : { id: userId },
-          handoffCompletedAt: { not: null },
-          providerId: { not: null },
-        },
-        select: { providerId: true, provider: { select: { name: true } } },
-      }).catch(() => [] as any[]);
+      const handedOffSessions = await handedOffSessionsPromise;
       const handedOffProviders = Array.from(
         new Map(handedOffSessions.map((hs: any) => [hs.providerId, hs.provider?.name || "the provider"])).entries(),
       ) as [string, string][];
@@ -3481,30 +3574,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // subtype, so a MATCH_CALL switched on CALL PREP MODE for a call that
       // needs no agency prep.
       mark("pw:consult_lookup_start");
-      const upcomingProviderConsult = await prisma.booking.findFirst({
-        where: {
-          parentUserId: { in: accountMemberIds },
-          meetingSubtype: null,
-          status: { in: ["PENDING", "CONFIRMED"] },
-          scheduledAt: { gte: new Date() },
-          providerUser: { providerId: { not: null } },
-        },
-        orderBy: { scheduledAt: "asc" },
-        select: {
-          id: true,
-          providerUser: {
-            select: {
-              provider: {
-                select: {
-                  id: true,
-                  name: true,
-                  services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
-                },
-              },
-            },
-          },
-        },
-      });
+      const upcomingProviderConsult = await upcomingProviderConsultPromise;
       hasUpcomingProviderConsult = !!upcomingProviderConsult;
       upcomingConsultProviderId = (upcomingProviderConsult?.providerUser?.provider as any)?.id || null;
 
@@ -3515,27 +3585,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // real pending invoice existed. Give her the account's actual artifacts
       // (read-only) so she can answer truthfully or point to the right chat.
       try {
-        const paperAcctIds = userRecord?.parentAccountId
-          ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
-          : [userId];
         mark("pw:billing_context_start");
-        const [quotes, invoices, agreements] = await Promise.all([
-          prisma.providerQuote.findMany({
-            where: { parentUserId: { in: paperAcctIds }, supersededAt: null },
-            orderBy: { createdAt: "desc" }, take: 3,
-            select: { totalCostCents: true, parentAcknowledgedAt: true, createdAt: true, provider: { select: { name: true } } },
-          }).catch(() => [] as any[]),
-          prisma.invoice.findMany({
-            where: { parentUserId: { in: paperAcctIds } },
-            orderBy: { createdAt: "desc" }, take: 3,
-            select: { status: true, serviceAmount: true, providerName: true, description: true, paidAt: true },
-          }).catch(() => [] as any[]),
-          prisma.agreement.findMany({
-            where: { parentUserId: { in: paperAcctIds } },
-            orderBy: { createdAt: "desc" }, take: 3,
-            select: { status: true, signedAt: true, provider: { select: { name: true } } },
-          }).catch(() => [] as any[]),
-        ]);
+        const [quotes, invoices, agreements] = await paperworkPromise;
         const paperLines: string[] = [];
         for (const q of quotes as any[]) {
           paperLines.push(`- COST SHEET from ${q.provider?.name || "a provider"}: $${(q.totalCostCents / 100).toLocaleString("en-US")} total${q.parentAcknowledgedAt ? " (acknowledged)" : " (not yet acknowledged)"}`);
@@ -3562,7 +3613,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // this block exists so Eva never offers a calendar she cannot deliver.
       try {
         mark("pw:consultation_locks_start");
-        const open = (await listOpenConsultations(accountMemberIds)).filter((o) => o.releasedBy === "NONE");
+        const open = (await openConsultationsPromise).filter((o) => o.releasedBy === "NONE");
         if (open.length > 0) {
           const lines = open.map(
             (o) => `- ${o.providerTypeName}: ${o.providerName} (providerId: ${o.providerId}), call on ${o.scheduledAt.toISOString()}${o.subjectLabel ? ` about ${o.subjectLabel}` : ""}`,
@@ -3585,7 +3636,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // call as if it were one step away when three confirmations are open.
       try {
         mark("pw:match_gates_start");
-        const latestCard = currentSessionId ? await findLatestMatchCard(currentSessionId) : null;
+        const latestCard = await latestCardPromise;
         const agencyId = latestCard?.ownerProviderId || null;
         if (agencyId) {
           const connected = await findConnectedProviderSession(accountMemberIds, agencyId, {
@@ -3643,10 +3694,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         try {
           const bookedProvId = (upcomingProviderConsult.providerUser?.provider as any)?.id || null;
           if (bookedProvId) {
-            const acctIds = userRecord?.parentAccountId
-              ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
-              : [userId];
-            const unbooked = (await getProgramPartnerClinics(bookedProvId, acctIds)).filter((p) => !p.booked);
+            const unbooked = (await getProgramPartnerClinics(bookedProvId, accountMemberIds)).filter((p) => !p.booked);
             if (unbooked.length > 0) {
               partnerClinicPending = true;
               const list = unbooked.map((p) => `${p.name} (providerId: ${p.id})`).join("; ");
@@ -3706,12 +3754,9 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // with the right id even after the agency search scrolled out of context.
       if (currentSessionId && !hasUpcomingProviderConsult) {
         try {
-          const latestCard = await findLatestMatchCard(currentSessionId);
+          const latestCard = await latestCardPromise;
           if (latestCard?.type === "CountryProgram" && latestCard?.providerId) {
-            const acctIds = userRecord?.parentAccountId
-              ? (await prisma.user.findMany({ where: { parentAccountId: userRecord.parentAccountId }, select: { id: true } })).map((u) => u.id)
-              : [userId];
-            const unbooked = (await getProgramPartnerClinics(latestCard.providerId, acctIds)).filter((p) => !p.booked);
+            const unbooked = (await getProgramPartnerClinics(latestCard.providerId, accountMemberIds)).filter((p) => !p.booked);
             if (unbooked.length > 0) {
               const list = unbooked.map((p) => `${p.name} (providerId: ${p.id})`).join("; ");
               parts.push(`INTERNATIONAL PROGRAM - TWO CALLS: The ${latestCard.country || "international"} program the parent is looking at bundles a surrogacy agency with a partner IVF/egg-donor clinic: ${list}. This is a TWO-provider program, so when the parent moves to schedule, offer a consultation with BOTH - the surrogacy agency FIRST (agency id = ${latestCard.providerId}), then the IVF clinic. Present them ONE AT A TIME (never two booking cards in one message): confirm and book the agency, tell the parent the program also includes the IVF clinic and offer that call as the next step, and when they agree emit [[CONSULTATION_BOOKING:<the clinic providerId listed above>]] using the CLINIC's id (never the agency id).`);
@@ -3726,12 +3771,8 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // unfinished form, Eva knows about it and can nudge/answer questions
       // (behavior text lives in the ip_form_guidance prompt section).
       try {
-        const acctForIpForm = userRecord?.parentAccountId || userId;
         mark("pw:ip_form_start");
-        const ipForm = await prisma.ipFormResponse.findUnique({
-          where: { parentAccountId: acctForIpForm },
-          select: { status: true, promptedAt: true, hasSecondParent: true },
-        });
+        const ipForm = await ipFormPromise;
         if (ipForm?.promptedAt && ipForm.status === "DRAFT") {
           ipFormPending = true;
           parts.push(
@@ -3748,7 +3789,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 
     // Try loading prompt sections from DB (admin-editable)
     mark("pw:prompt_sections_start");
-    const dbSections = await getPromptSections();
+    const dbSections = await promptSectionsPromise;
     console.log(`[LATENCY] checkpoint context+sections loaded: ${Date.now() - tReq}ms`);
     mark("context_sections_loaded");
 
@@ -7107,7 +7148,7 @@ ${phase0Section}`;
           // Trust chat over stale profile.hasEmbryos - if user said "no embryos" this session,
           // never show the HAS_EMBRYOS variant just because a prior test left hasEmbryos=true in DB.
           const d1HasEmbryosCarrier = chatMentionsHavingEmbryos || (profile?.hasEmbryos === true && !chatMentionsNoEmbryos);
-          const d1CarrierCosts = await timeSpan("pw2:d1_carrier_costs", () => getD1CountryCosts(userRecord?.parentAccountId ?? null));
+          const d1CarrierCosts = await timeSpan("pw2:d1_carrier_costs", () => d1CostsPromise ?? getD1CountryCosts(userRecord?.parentAccountId ?? null));
           const d1TextFull = d1HasEmbryosCarrier
             ? buildD1HasEmbryos(d1CarrierCosts)
             : buildD1NoEmbryos(d1CarrierCosts);
@@ -7188,7 +7229,7 @@ ${phase0Section}`;
         console.log(`[D-CYCLE BYPASS] Firing: needsClinic=${needsClinic} registeredForClinic=${registeredForClinic}`);
         // Trust chat over stale profile.hasEmbryos (see carrier bypass for same reasoning).
         const d1HasEmbryos = chatMentionsHavingEmbryos || (profile?.hasEmbryos === true && !chatMentionsNoEmbryos);
-        const d1DCycleCosts = await timeSpan("pw2:d1_dcycle_costs", () => getD1CountryCosts(userRecord?.parentAccountId ?? null));
+        const d1DCycleCosts = await timeSpan("pw2:d1_dcycle_costs", () => d1CostsPromise ?? getD1CountryCosts(userRecord?.parentAccountId ?? null));
         const d1Text = d1HasEmbryos
           ? buildD1HasEmbryos(d1DCycleCosts)
           : buildD1NoEmbryos(d1DCycleCosts);
@@ -7220,7 +7261,7 @@ ${phase0Section}`;
           // Pre-fetch real DB country costs in case the intake state machine
           // decides to serve the D1 international education message - the
           // builder substitutes them in.
-          const d1IntakeCosts = await timeSpan("pw2:d1_intake_costs", () => getD1CountryCosts(userRecord?.parentAccountId ?? null));
+          const d1IntakeCosts = await timeSpan("pw2:d1_intake_costs", () => d1CostsPromise ?? getD1CountryCosts(userRecord?.parentAccountId ?? null));
           const intakeQuestion = getNextIntakeQuestion({
             profile,
             chatHistory,
