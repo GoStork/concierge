@@ -63,7 +63,7 @@ import {
 import { SubjectProfileCard, ProviderProfileCard } from "@/components/profile-cards";
 import { Loader2, Send, ArrowUp, ArrowLeft, Sparkles, Headphones, FileText, Download, Heart, Brain, Stethoscope, MessageCircle, Shield, CalendarCheck, CalendarDays, X, ExternalLink, ChevronLeft, ChevronRight, Clock, Video, Globe, Check, Paperclip, UserPlus, Plus, Maximize, Minimize, PenLine, User, CheckCircle2, ThumbsUp, Image as ImageIcon, Camera, UploadCloud, AudioLines } from "lucide-react";
 import { VoiceModePanel, VoiceStartHero } from "@/components/voice/VoiceModePanel";
-import { useVoiceSession } from "@/hooks/use-voice-session";
+import { useSharedVoiceSession } from "@/contexts/voice-session-context";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, isToday, isSameDay, isSameMonth, startOfDay } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import { parseApiError } from "@/lib/api-error";
@@ -2779,7 +2779,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
   const [voiceMode, setVoiceMode] = useState(false);
   // Voice-first landing for a brand-new session: Eva speaks the greeting when tapped
   const [voiceHeroGreeting, setVoiceHeroGreeting] = useState<string | null>(null);
-  const voiceSession = useVoiceSession();
+  const voiceSession = useSharedVoiceSession();
   const [showCuration, setShowCuration] = useState(false);
   const showCurationRef = useRef(false);
   const [pendingCurationMessage, setPendingCurationMessage] = useState<ChatMessage | null>(null);
@@ -3219,6 +3219,29 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     if (url) _lockedAvatarUrl.current = url;
     return _lockedAvatarUrl.current;
   }, [selectedMatchmaker?.avatarUrl, effectiveMatchmakerId]);
+
+  // The voice session lives at app level (VoiceSessionProvider) so navigating
+  // away never kills a call - GlobalVoicePip floats over other pages instead.
+  // Report whether the full panel is on screen, keep the PiP's display meta
+  // current, and re-open the panel when the parent returns mid-call.
+  useEffect(() => {
+    voiceSession.setPanelActive(voiceMode);
+    if (voiceMode) {
+      voiceSession.setMeta({
+        personaName: aiName,
+        avatarUrl: resolvedAvatarUrl,
+        returnTo: window.location.pathname + window.location.search,
+      });
+    }
+    return () => voiceSession.setPanelActive(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceMode, aiName, resolvedAvatarUrl]);
+  useEffect(() => {
+    if (["connecting", "listening", "thinking", "speaking"].includes(voiceSession.state)) {
+      setVoiceMode(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const brandColor = brand?.primaryColor || "#004D4D";
 

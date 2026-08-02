@@ -10,6 +10,8 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
 import { LayoutShell } from "@/components/layout-shell";
 import { ProfilePhotoTransitionProvider } from "@/components/transition/profile-photo-transition";
+import { VoiceSessionProvider } from "@/contexts/voice-session-context";
+import { GlobalVoicePip } from "@/components/voice/GlobalVoicePip";
 import { Loader2 } from "lucide-react";
 import { hasProviderRole } from "@shared/roles";
 
@@ -233,8 +235,11 @@ function App() {
             <TooltipProvider>
               <ConfirmProvider>
                 <ProfilePhotoTransitionProvider>
-                  <Toaster />
-                  <AppRoutes />
+                  <VoiceSessionProvider>
+                    <Toaster />
+                    <AppRoutes />
+                    <GlobalVoicePip />
+                  </VoiceSessionProvider>
                 </ProfilePhotoTransitionProvider>
               </ConfirmProvider>
             </TooltipProvider>
