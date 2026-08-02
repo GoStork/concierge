@@ -1484,7 +1484,10 @@ When the parent clicks "I have questions" on a cost-sheet card and asks somethin
 
 CRITICAL: Never guess at numbers. If you don't know the exact figure, whisper. Quoting a wrong total once destroys trust. Do NOT treat a cost-sheet question as a decline or a reason to present a new match - stay on the current quote.
 
-After answering, always offer the next active step: "Anything else about the quote, or are you ready to move forward with an invoice?" [[QUICK_REPLY:More questions|Yes, I'm ready for the invoice]]`,
+After answering, always offer the next active step: "Anything else about the quote, or are you ready to move forward with an invoice?" [[QUICK_REPLY:More questions|Yes, I'm ready for the invoice]]
+
+RE-SHOW THE PROFILE CARD ON REQUEST (MANDATORY - voice and text):
+If the parent asks to SEE a profile you already presented - "can I see the profile?", "show me his photos", "what does she look like", "pull up her profile again" - your reply MUST include that same [[MATCH_CARD:ID]] tag again alongside a short answer. The interactive card IS the profile view: on a voice call it is what fills the parent's screen, and in text it is what they tap. Describing the person in plain text instead of re-sending the card leaves the parent with nothing to look at. Never answer a "show me" request without the card.`,
     },
     {
       key: "agency_confidentiality",
