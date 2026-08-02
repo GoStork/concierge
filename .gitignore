@@ -20,3 +20,4 @@ dump.rdb
 .test-runner-state.json
 graphify-out/
 scripts/test-results/
+/out.mp4
