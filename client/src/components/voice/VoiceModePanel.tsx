@@ -3,6 +3,7 @@ import { useCornerDrag } from "@/lib/voice/use-corner-drag";
 import { Mic, MicOff, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSharedVoiceSession } from "@/contexts/voice-session-context";
+import { interruptVoiceSession } from "@/hooks/use-voice-session";
 import type { VoiceCardsPayload, VoiceState } from "@/hooks/use-voice-session";
 
 // Voice-first landing: shown over a brand-new session so Eva can START the
@@ -227,6 +228,10 @@ export function VoiceModePanel({
             }
             style={takeover ? { borderColor: brandColor, touchAction: "none" } : undefined}
             onPointerDown={takeover ? onPipPointerDown : undefined}
+            // Tap-to-interrupt: touching Eva while she talks cuts her off -
+            // the deterministic interrupt for platforms where acoustic barge
+            // detection struggles (iPhone speaker). No-ops when she's quiet.
+            onClick={takeover ? undefined : interruptVoiceSession}
             data-testid={takeover ? "voice-avatar-pip" : "voice-avatar-stage"}
           >
             {/* The persistent AvatarVideo portals into this element - see

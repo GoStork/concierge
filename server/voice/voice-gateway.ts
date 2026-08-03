@@ -720,6 +720,18 @@ class VoiceSession {
     this.stripper.reset();
 
     const route = this.avatar;
+    // A new turn OWNS the floor: flush any speech still queued in the avatar
+    // from the PREVIOUS turn. Observed live on iPhone 2026-08-03 (session
+    // fj7qre): a walkthrough reply queued 197 SECONDS of avatar audio, and
+    // the parent's "Ariel, stop" utterances dispatched as new turns whose
+    // replies APPENDED to that backlog - she was unstoppable for 3 minutes.
+    // With this, any dispatched parent utterance cuts the stale audio, so
+    // saying anything stops her even when acoustic barge detection misses.
+    if (route && route.remainingSpeechMs() > 400) {
+      log(`turn ${turnId}: flushing ${Math.round(route.remainingSpeechMs() / 1000)}s of stale avatar speech from the previous turn`);
+      route.interrupt();
+      this.send({ type: "caption_reset" });
+    }
     metrics.avatarActive = !!route;
     if (route) {
       route.onSpeakSubmitted = (t: number) => {

@@ -84,6 +84,13 @@ let activeMetricReporter: ((event: string) => void) | null = null;
 export function reportVoiceClientMetric(event: string) {
   activeMetricReporter?.(event);
 }
+// Tap-to-interrupt: components (the avatar stage) can cut Eva off with a
+// tap - deterministic, no acoustics involved. Registered by the active hook
+// instance; no-ops when she isn't speaking.
+let activeInterrupter: (() => void) | null = null;
+export function interruptVoiceSession() {
+  activeInterrupter?.();
+}
 
 // AEC test-mode arming (session 6 fix): mirror ?voiceMicGate=off|on into
 // localStorage at MODULE LOAD, while the original URL is still intact - the
@@ -140,6 +147,10 @@ export function useVoiceSession() {
   const captionBufRef = useRef("");
   const captionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const captionLingerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The subtitle line being built word-by-word; done = next word starts a
+  // fresh line (set on sentence end or when the line fills).
+  const captionLineRef = useRef<string[]>([]);
+  const captionLineDoneRef = useRef(false);
   // Learned echo coupling: mic RMS per unit of Eva's output RMS on THIS
   // device (headphones ~0, phone speaker can approach 1). Starts conservative
   // and converges down whenever Eva speaks over a silent parent.
@@ -184,16 +195,42 @@ export function useVoiceSession() {
       captionLingerRef.current = null;
     }
     captionBufRef.current = "";
+    captionLineRef.current = [];
+    captionLineDoneRef.current = false;
     setCaption("");
   }, [stopCaptionPacer]);
-  // She stopped talking (naturally or barged) - don't dump the un-revealed
-  // remainder; linger on the last words briefly, then clear the line.
+  // Append one whole word to the subtitle line (starting a fresh line after
+  // a sentence ended or the line filled) and paint it. Returns false when
+  // the word was pure markdown noise and nothing was painted.
+  const paintCaptionWord = useCallback((rawWord: string) => {
+    const word = rawWord.replace(/[*_`#]+/g, "");
+    if (!word) return false;
+    if (captionLineDoneRef.current) {
+      captionLineRef.current = [];
+      captionLineDoneRef.current = false;
+    }
+    captionLineRef.current.push(word);
+    if (/[.!?…]["')\]]?$/.test(word) || captionLineRef.current.length >= CAPTION_TAIL_WORDS) {
+      captionLineDoneRef.current = true;
+    }
+    setCaption(captionLineRef.current.join(" "));
+    return true;
+  }, []);
+  // She stopped talking (naturally or barged) - paint any bare tail word,
+  // linger briefly on the last line, then clear. The un-spoken remainder is
+  // dropped (the full text lives in the chat transcript).
   const endCaption = useCallback(() => {
     stopCaptionPacer();
+    const tail = captionBufRef.current.trim();
     captionBufRef.current = "";
+    if (tail && !captionLineDoneRef.current) paintCaptionWord(tail.split(/\s+/)[0]);
     if (captionLingerRef.current) clearTimeout(captionLingerRef.current);
-    captionLingerRef.current = setTimeout(() => setCaption(""), CAPTION_LINGER_MS);
-  }, [stopCaptionPacer]);
+    captionLingerRef.current = setTimeout(() => {
+      captionLineRef.current = [];
+      captionLineDoneRef.current = false;
+      setCaption("");
+    }, CAPTION_LINGER_MS);
+  }, [stopCaptionPacer, paintCaptionWord]);
   const queueCaption = useCallback((text: string) => {
     captionBufRef.current += text;
     if (captionLingerRef.current) {
@@ -217,25 +254,20 @@ export function useVoiceSession() {
       // model streams them. Audio-only sessions (no live level) free-run.
       const haveLiveLevel = Date.now() - remoteAudioLevel.updatedAt < 600;
       if (haveLiveLevel && remoteAudioLevel.rms < 0.02) return;
-      // Reveal one word per tick; if far behind (long reply), two at a time.
+      // Take only COMPLETE words - a whitespace boundary must follow. Taking
+      // a bare tail split model tokens mid-word and glued fragments across
+      // chunks (observed live: "I'mright here", "surroga" + "cy"). A
+      // trailing partial word stays buffered until its remainder arrives.
       const pendingWords = buf.split(/\s+/).filter(Boolean).length;
       const take = pendingWords > 30 ? 2 : 1;
-      let cut = 0;
       for (let i = 0; i < take; i++) {
-        const m = /^\s*\S+\s?/.exec(buf.slice(cut));
-        if (!m) { cut = buf.length; break; }
-        cut += m[0].length;
+        const m = /^(\s*)(\S+)(?=\s)/.exec(captionBufRef.current);
+        if (!m) break;
+        captionBufRef.current = captionBufRef.current.slice(m[0].length);
+        if (!paintCaptionWord(m[2])) i--; // markdown-only token - take another
       }
-      const next = buf.slice(0, cut);
-      captionBufRef.current = buf.slice(cut);
-      // Rolling window: keep only the trailing words - one line of large
-      // text, like ChatGPT's voice mode. Old words fall away.
-      setCaption((prev) => {
-        const words = (prev + next).split(/\s+/).filter(Boolean);
-        return words.slice(-CAPTION_TAIL_WORDS).join(" ");
-      });
     }, CAPTION_WORD_MS);
-  }, []);
+  }, [paintCaptionWord]);
 
   const reportMetric = useCallback((event: string, opts?: { tClient?: number; extra?: Record<string, unknown> }) => {
     const turn = currentTurnRef.current;
@@ -262,12 +294,26 @@ export function useVoiceSession() {
     setState(s);
   };
 
+  // Deterministic interrupt (tap-to-interrupt and any UI control): same
+  // effect as an acoustic barge - stop her audio, hand the parent the floor.
+  const interrupt = useCallback(() => {
+    if (stateRef.current !== "speaking" && stateRef.current !== "thinking") return;
+    if (bargeSentRef.current) return;
+    bargeSentRef.current = true;
+    engineRef.current?.flushPlayback();
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "barge" }));
+    }
+    reportMetric("barge_sent", { extra: { via: "tap" } });
+  }, [reportMetric]);
+
   const stop = useCallback((reason = "user_ended") => {
     if (!activeRef.current) return;
     activeRef.current = false;
     // Invalidate any start() still parked on getUserMedia.
     startGenRef.current += 1;
     activeMetricReporter = null;
+    activeInterrupter = null;
     activeFpsReporter = null;
     if (statsTimerRef.current) {
       clearInterval(statsTimerRef.current);
@@ -333,6 +379,7 @@ export function useVoiceSession() {
     currentTurnRef.current = 0;
     reportedMetricsRef.current = new Set();
     activeMetricReporter = reportMetric;
+    activeInterrupter = interrupt;
 
     // AEC AUDIT SWITCH (session 5): localStorage.voiceMicGate = "off" streams
     // EVERY mic frame to STT - no VAD gate, no echo-hold, no prebuffer, and
@@ -695,5 +742,6 @@ export function useVoiceSession() {
     stop,
     sendText,
     setMicMuted,
+    interrupt,
   };
 }
