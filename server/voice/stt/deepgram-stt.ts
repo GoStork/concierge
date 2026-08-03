@@ -66,22 +66,23 @@ class DeepgramStream implements SttStream {
   setDebug(v: boolean) {
     this.debug = v;
   }
-  // Dispatch hold after a punctuated speech_final. Deepgram PUNCTUATES
-  // fragments ("I want you to keep the profile.") so terminal punctuation
-  // alone cannot prove the utterance is over, and speech_final's own timing
-  // is inconsistent (some 900ms pauses fired it, some didn't - measured
-  // 2026-08-02). The hold gives resumed speech time to cancel the dispatch.
-  // CRITICAL SIZING (measured): cancellation depends on the resumed speech's
-  // first INTERIM arriving, and Deepgram's interim latency is ~300-800ms -
-  // an 800ms hold lost the race against an 800ms pause. The hold must cover
-  // max_tolerated_pause - endpointing(400) + interim_latency(~800), so 1400
-  // tolerates ~1.1s conversational pauses. In practice UtteranceEnd (1200ms
-  // of stream silence) usually fires FIRST and dispatches; the hold is the
-  // fallback for finals whose UtteranceEnd never comes. This is deliberate
-  // latency spent on correctness (Session 2 Task 1: mid-sentence splits are
-  // the most damaging behavior in the product); pauses beyond the tolerance
-  // are repaired by the gateway's supersession merge.
+  // Dispatch hold after a punctuated speech_final - GATED (iOS) SESSIONS
+  // ONLY since Commit B. On gated clients the VAD/echo-hold starves
+  // Deepgram's audio clock, so UtteranceEnd can miss and speech_final +
+  // this hold is the working dispatcher; sizing covers Deepgram's
+  // ~300-800ms interim latency (an 800ms hold lost the race against an
+  // 800ms pause - measured 2026-08-02). On UNGATED (desktop) sessions the
+  // mic streams continuously, UtteranceEnd fires reliably first, and the
+  // 2026-08-03 15-turn baseline measured this hold firing 0/29 times -
+  // dead code there, so ungated sessions skip it (speech_final simply
+  // accumulates; UtteranceEnd or the 2s idle fallback dispatches).
+  // The gateway declares the session profile via setHoldEnabled() from the
+  // client's gatePolicy handshake; default ON (safe for unknown clients).
   private static readonly HOLD_MS = Number(process.env.VOICE_DISPATCH_HOLD_MS || 1400);
+  private holdEnabled = true;
+  setHoldEnabled(v: boolean) {
+    this.holdEnabled = v;
+  }
   private holdFlush: NodeJS.Timeout | null = null;
 
   private cancelHold() {
@@ -206,10 +207,12 @@ class DeepgramStream implements SttStream {
           const joined = this.segments.join(" ");
           this.noteActivity(joined, true);
           this.partialCb?.(joined);
-          // Fast-ish path: speech_final on text that reads complete starts a
-          // short hold; if nothing else arrives it dispatches at +HOLD_MS.
-          // Unpunctuated finals wait for UtteranceEnd / the idle fallback.
-          if (msg.speech_final && /[.!?…]["')\]]?$/.test(joined)) {
+          // Gated sessions: speech_final on complete-reading text starts the
+          // hold; if nothing else arrives it dispatches at +HOLD_MS.
+          // Ungated sessions skip the hold entirely (UtteranceEnd owns
+          // dispatch; idle fallback is the safety net). Unpunctuated finals
+          // always wait for UtteranceEnd / idle fallback.
+          if (this.holdEnabled && msg.speech_final && /[.!?…]["')\]]?$/.test(joined)) {
             this.armHoldFlush();
           } else {
             this.armIdleFlush();

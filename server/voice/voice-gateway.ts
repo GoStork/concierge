@@ -252,12 +252,15 @@ class VoiceSession {
   // Transcript-level debug for gate-bypassed AEC test sessions; survives the
   // STT self-reopen path.
   private sttDebug = false;
+  // Commit B: false for ungated (desktop) sessions - survives STT reopen.
+  private sttHoldEnabled = true;
   // Set when mic_stats ever reports >1 live engine (or an impossible frame
   // rate) - stamped onto every turn's metrics from then on.
   private multiEngineSuspected = false;
   private openStt() {
     this.stt = this.sttProvider.openStream({ sampleRate: VOICE_SAMPLE_RATE });
     if (this.sttDebug) (this.stt as any)?.setDebug?.(true);
+    if (!this.sttHoldEnabled) (this.stt as any)?.setHoldEnabled?.(false);
     this.stt.onPartial((text) => {
       this.sttRestarts = 0;
       this.armSilenceTimer();
@@ -437,6 +440,14 @@ class VoiceSession {
         if (msg.gateBypassed === true) {
           this.sttDebug = true;
           (this.stt as any)?.setDebug?.(true);
+        }
+        // Commit B: ungated sessions stream the mic continuously, so
+        // UtteranceEnd is the dispatcher and the speech_final hold is dead
+        // weight (0/29 fires in the desktop baseline) - disable it. Gated
+        // (iOS) and unknown clients keep it.
+        if (msg.gatePolicy === "ungated-desktop" || msg.gatePolicy === "test-bypass") {
+          this.sttHoldEnabled = false;
+          (this.stt as any)?.setHoldEnabled?.(false);
         }
         break;
       case "mic_stats": {
