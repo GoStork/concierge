@@ -33,10 +33,19 @@ git pull origin main --rebase || echo "[run-server] git pull failed - running ex
 # restart). Dev deps must be present because this script builds, not just runs.
 npm install --include=dev || echo "[run-server] WARNING: npm install failed - build may fail below"
 
+# Skip the rebuild when dist is already fresher than the (just-pulled) HEAD -
+# an unconditional rebuild empties dist for ~12s and the site serves "Not
+# Found" to anyone browsing during a restart (observed on the MacBook
+# 2026-08-03). After a pull that brought new commits, HEAD is newer than
+# dist and the rebuild still runs.
+HEAD_TS=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+DIST_TS=$(stat -f %m dist/index.cjs 2>/dev/null || echo 0)
+if [ -f dist/public/index.html ] && [ "$DIST_TS" -ge "$HEAD_TS" ]; then
+  echo "[run-server] dist is fresh (built after HEAD) - skipping rebuild"
 # A build failure must NOT take the nightly sync offline. If a previous
 # dist/index.cjs exists, boot that (loudly degraded) instead of crash-looping;
 # the sleep keeps launchd from spinning when there is nothing to fall back to.
-if ! npm run build; then
+elif ! npm run build; then
   echo "[run-server] ERROR: npm run build FAILED - see the vite/esbuild error above."
   if [ -f dist/index.cjs ]; then
     echo "[run-server] ERROR: booting the PREVIOUS dist/index.cjs so the 2 AM sync still runs. THIS BUILD IS STALE - fix the build."
