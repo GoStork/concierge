@@ -250,7 +250,11 @@ export function VoiceModePanel({
           className="absolute inset-0 z-20 bg-background px-3 pt-14 pb-3"
           data-testid="voice-profile-takeover"
         >
-          <div className="h-full max-w-md mx-auto space-y-3 overflow-y-auto overscroll-contain">
+          <div
+            className={`h-full mx-auto space-y-3 overflow-y-auto overscroll-contain ${
+              cards?.comparisonCards?.length ? "max-w-2xl" : "max-w-md"
+            }`}
+          >
             {hasScreenCards ? (
               renderCards!(cards!, { fill: true })
             ) : (

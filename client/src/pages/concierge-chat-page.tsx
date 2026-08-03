@@ -4804,6 +4804,17 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     />
                   </div>
                 )}
+                {/* Comparison tables Eva presents mid-call - the takeover
+                    trigger list included comparisonCards but nothing rendered
+                    them, so "compare the last two donors" opened a BLANK
+                    takeover (same drift as the consultationCard bug above).
+                    ComparisonCard is w-full with its own horizontal scroll,
+                    so it fills whatever width the takeover grants. */}
+                {(c.comparisonCards || []).map((card: any, ci: number) => (
+                  <div key={`vc-${ci}`} className="w-full">
+                    <ComparisonCard card={card} brandColor={brandColor} />
+                  </div>
+                ))}
               </>
             )}
           />
