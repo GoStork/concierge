@@ -1863,8 +1863,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         alreadyConsented = !!ipp?.faceMatchConsentAt;
       }
       if (!alreadyConsented) {
-        if (consentGranted !== true) {
-          return { content: [{ type: "text", text: `CONSENT_REQUIRED: Before running a face match, briefly explain that this analyzes the facial features in their uploaded photo (biometric data) solely to find resembling profiles, is not shared, and ask for their explicit okay. Once they agree, call find_lookalike_matches again with consentGranted=true. Do NOT show any MATCH_CARD yet.` }] };
+        // Session-7 hardening: consentGranted is MODEL-attested and therefore
+        // not a control on its own - the router force-injects
+        // consentUtteranceAffirmative (the parent's OWN current message reads
+        // as an affirmative on a sound-provenance turn) and the biometric
+        // consent stamp requires BOTH. A model that skips asking, or an
+        // echo/hallucinated turn, can no longer create a consent record.
+        const routerCorroborated = (args as any)?.consentUtteranceAffirmative === true;
+        if (consentGranted !== true || !routerCorroborated) {
+          return { content: [{ type: "text", text: `CONSENT_REQUIRED: Before running a face match, briefly explain that this analyzes the facial features in their uploaded photo (biometric data) solely to find resembling profiles, is not shared, and ask for their explicit okay. Once they agree (they must answer affirmatively themselves), call find_lookalike_matches again with consentGranted=true. Do NOT show any MATCH_CARD yet.` }] };
         }
         if (parentProfileId) {
           await prisma.intendedParentProfile.update({ where: { id: parentProfileId }, data: { faceMatchConsentAt: new Date() } }).catch(() => {});

@@ -468,6 +468,11 @@ async function callTier2Claude(
   // before the first model call and handed to Gemini with its results, so the
   // usual two rounds (decide-to-search, then write) collapse into one.
   preSearch: { name: string; args: Record<string, unknown> } | null = null,
+  // Router-computed: the parent's CURRENT message reads as an affirmative on
+  // a sound-provenance turn. Force-injected into find_lookalike_matches so
+  // the biometric consent stamp requires the parent's own words, never the
+  // model's attestation alone (session 7 hardening).
+  consentAffirmative: boolean = false,
 ): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
   const hasTools = openAiTools.length > 0;
 
@@ -497,6 +502,8 @@ async function callTier2Claude(
         ...(fc.args || {}),
         ...(authUserId ? { userId: authUserId } : {}),
         ...(lookalikePhotoUrl ? { photoUrl: lookalikePhotoUrl } : {}),
+        // ALWAYS overridden - the model cannot attest consent on its own.
+        consentUtteranceAffirmative: consentAffirmative,
         // A freshly uploaded photo is a NEW search intent - return the BEST
         // matches for it, ignoring any "already shown" exclusions the model
         // carried over from earlier in this (single, persistent) session.
@@ -6139,6 +6146,34 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     let finalContent = "";
     let needsRetry = false; // true when all AI tiers failed - tell client to silently retry
     mark("pw2:intercepts_evaluated");
+    // === SIDE-EFFECT PROVENANCE GATE (session 7) ===
+    // Voice turns arrive with STT provenance from the gateway. A turn is
+    // WEAK-provenance when it looks like echo/hallucination rather than
+    // deliberate parent speech: a fragment (<3 words), a low-confidence
+    // transcript, or an idle-fallback dispatch that is ALSO short or shaky.
+    // Weak turns may still converse freely - but the side-effect tag
+    // handlers below (SAVE, WHISPER, CONSULT_RELEASE, JOURNEY_RESTART)
+    // refuse to act on them. Typed text and quick-reply chips are always
+    // deliberate and never gated. This is a CODE control, not a prompt rule:
+    // the observed failure ("S", "Delete." dispatched from iOS echo) is
+    // exactly the case where prompt instructions stop holding.
+    const sttProv: any = req.body.channel === "voice" ? req.body.sttProvenance || null : null;
+    const provWordCount = String(req.body.message || "").trim().split(/\s+/).filter(Boolean).length;
+    const provConf = typeof sttProv?.minConfidence === "number" ? sttProv.minConfidence : null;
+    const weakProvenance =
+      req.body.channel === "voice" &&
+      !req.body.fixedReply &&
+      (provWordCount < 3 ||
+        (provConf !== null && provConf < 0.75) ||
+        (sttProv?.dispatchPath === "idle_fallback" && (provWordCount < 5 || (provConf !== null && provConf < 0.9))));
+    if (weakProvenance) {
+      console.warn(
+        `[PROVENANCE] WEAK voice turn (path=${sttProv?.dispatchPath || "?"}, conf=${provConf ?? "?"}, words=${provWordCount}) - ` +
+          `side-effect tags suppressed this turn: "${String(req.body.message || "").slice(0, 80)}"`,
+      );
+      recordInterceptor("weak_provenance_turn", true, 0);
+    }
+
     let serverBypassServed = false; // true when a server-side hardcoded bypass served the response
     let lastSearchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
     // Mirrors blockSurrogateSearchThisTurn (computed in the Tier2 branch) for the card
@@ -6562,6 +6597,9 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
         currentSession?.lastUploadedPhotoUrl ?? null,
         isFreshLookalikeUpload,
         preSearchForReady,
+        // Biometric-consent corroboration: the parent's own current message
+        // must read as an affirmative, on a sound-provenance turn.
+        !weakProvenance && /\b(yes|yeah|yep|sure|ok(ay)?|i (agree|consent)|go ahead|please do|sounds good|that'?s fine)\b/i.test(userMessage || ""),
       );
       // DIAGNOSTIC: the decisive split for "expected match card, got none" -
       // did the ready turn SEARCH at all? A turn that searched can be repaired
@@ -7405,6 +7443,13 @@ ${phase0Section}`;
       // We process the SAVE tags early here so the data is not lost when the question is stripped.
       if (/will you be using your own(?: sperm)?(?:\s*or a sperm donor|,|\s*your partner)|\bfor sperm[,\s]*will you be\b|sperm.*will you be using.*own|using your own or a sperm/i.test(finalContent)) {
         const earlyMatchesSave = [...finalContent.matchAll(/\[\[SAVE:(.*?)\]\]/g)];
+        // Provenance gate: never write the biological baseline off an
+        // echo/fragment turn (see weakProvenance above).
+        if (weakProvenance && earlyMatchesSave.length > 0) {
+          console.warn(`[SAVE SUPPRESSED] early-save path, weak-provenance turn - dropping ${earlyMatchesSave.length} SAVE tag(s)`);
+          recordInterceptor("save_suppressed_weak_provenance", true, 0);
+          earlyMatchesSave.length = 0;
+        }
         for (const esm of earlyMatchesSave) {
           try {
             const earlyData = JSON.parse(esm[1]);
@@ -8549,9 +8594,35 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         }
       }
 
-      if (userRecord) {
+      if (userRecord && weakProvenance && (Object.keys(userData).length > 0 || Object.keys(profileData).length > 0)) {
+        // Provenance gate: a fragment/low-confidence/idle-fallback voice turn
+        // must never write the biological baseline. A wrong save here
+        // self-conceals (the skip logic stops re-asking) and steers all
+        // future matching - suppressing means the question simply gets asked
+        // again, which is the safe failure.
+        console.warn(
+          `[SAVE SUPPRESSED] weak-provenance voice turn - NOT saving user=[${Object.keys(userData).join(",")}] ` +
+            `profile=[${Object.keys(profileData).join(",")}] (path=${sttProv?.dispatchPath || "?"}, conf=${provConf ?? "?"}, words=${provWordCount})`,
+        );
+        recordInterceptor("save_suppressed_weak_provenance", true, 0);
+      } else if (userRecord) {
+        // AUDIT (reversible + visible): every AI-initiated write records the
+        // old and new value, the session/channel, and the STT provenance.
+        const auditProvenance = {
+          channel: req.body.channel || "text",
+          ...(sttProv ? { stt: sttProv } : {}),
+          wordCount: provWordCount,
+          utterance: String(req.body.message || "").slice(0, 160),
+        };
+        const auditRows: any[] = [];
+        const jsonSafe = (v: any) => {
+          try { return v === undefined ? null : JSON.parse(JSON.stringify(v)); } catch { return String(v); }
+        };
         if (Object.keys(userData).length > 0) {
           await prisma.user.update({ where: { id: userRecord.id }, data: userData });
+          for (const [field, v] of Object.entries(userData)) {
+            auditRows.push({ target: "user", field, oldValue: jsonSafe((userRecord as any)?.[field] ?? null), newValue: jsonSafe(v) });
+          }
         }
         if (Object.keys(profileData).length > 0) {
           clearStaleNeedsEggDonor(profileData);
@@ -8561,8 +8632,25 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             if (existing) {
               await prisma.intendedParentProfile.update({ where: { parentAccountId }, data: profileData });
               console.log(`[SAVE] Saved profile fields for account ${parentAccountId}:`, Object.keys(profileData));
+              for (const [field, v] of Object.entries(profileData)) {
+                auditRows.push({ target: "profile", field, oldValue: jsonSafe((existing as any)?.[field] ?? null), newValue: jsonSafe(v) });
+              }
             }
           }
+        }
+        if (auditRows.length > 0 && userRecord.parentAccountId) {
+          prisma.profileSaveAudit
+            .createMany({
+              data: auditRows.map((r) => ({
+                ...r,
+                parentAccountId: userRecord.parentAccountId!,
+                userId,
+                sessionId: currentSessionId || null,
+                channel: req.body.channel || "text",
+                provenance: auditProvenance,
+              })),
+            })
+            .catch((e: any) => console.error("[SAVE AUDIT] write failed:", e?.message));
         }
       }
 
@@ -8584,8 +8672,25 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     const releaseMatch = finalContent.match(/\[\[CONSULT_RELEASE:(.*?)\]\]/);
     if (releaseMatch) {
       const releaseProviderId = releaseMatch[1].trim();
+      // CODE-ENFORCED CORROBORATION (session 7): the prompt says "emit only
+      // after a yes/no confirmation" - but a prompt rule is a request, not a
+      // control. The release only executes when the PARENT'S OWN current
+      // message reads as an affirmative or an explicit moving-on intent, and
+      // the turn has sound provenance. Otherwise the tag is stripped and the
+      // lock stands - the safe failure is asking again.
+      const RELEASE_INTENT =
+        /\b(yes|yeah|yep|sure|confirm|correct|go ahead|please do|move on|moving on|release|let (them|it) go|done with|cancel|not (happy|interested)|leave|leaving|switch|other (options|agencies|providers))\b/i;
+      const releaseCorroborated = !weakProvenance && RELEASE_INTENT.test(userMessage || "");
+      if (!releaseCorroborated) {
+        console.warn(
+          `[CONSULT_RELEASE SUPPRESSED] model emitted release for ${releaseProviderId} but the parent's message ` +
+            `does not corroborate it (weakProvenance=${weakProvenance}): "${String(userMessage || "").slice(0, 80)}"`,
+        );
+        recordInterceptor("consult_release_suppressed", true, 0);
+        finalContent = finalContent.replace(/\[\[CONSULT_RELEASE:.*?\]\]/g, "").trim();
+      }
       try {
-        if (releaseProviderId) {
+        if (releaseProviderId && releaseCorroborated) {
           await releaseConsultationLock({
             parentUserId: userId,
             parentAccountId: userRecord?.parentAccountId || null,
@@ -8607,9 +8712,21 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     const hotLeadMatch = finalContent.match(/\[\[HOT_LEAD:(.*?)\]\]/);
     if (hotLeadMatch) {
       const providerId = hotLeadMatch[1].trim();
+      // PAGING COOLDOWN (session 7): the same provider re-marked hot within
+      // 24h (or a weak-provenance turn) notifies nobody - the admins already
+      // have the lead.
+      const alreadyHot =
+        profile?.hotLeadProviderId === providerId &&
+        profile?.hotLeadAt &&
+        Date.now() - new Date(profile.hotLeadAt as any).getTime() < 24 * 3600 * 1000;
+      if (weakProvenance || alreadyHot) {
+        console.warn(`[HOT_LEAD SUPPRESSED] ${weakProvenance ? "weak-provenance turn" : "already hot within 24h"} - provider=${providerId}`);
+        recordInterceptor("hot_lead_suppressed", true, 0);
+        finalContent = finalContent.replace(/\[\[HOT_LEAD:.*?\]\]/g, "").trim();
+      }
       try {
         const parentAccountId = userRecord?.parentAccountId;
-        if (parentAccountId && providerId) {
+        if (parentAccountId && providerId && !weakProvenance && !alreadyHot) {
           await prisma.intendedParentProfile.update({
             where: { parentAccountId },
             data: { hotLeadProviderId: providerId, hotLeadAt: new Date() },
@@ -8642,9 +8759,25 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       // reschedule rows use it as the post-handoff restart marker).
       const restartMatch = finalContent.match(/\[\[JOURNEY_RESTART:([a-zA-Z0-9-]+)\]\]/);
       if (restartMatch) {
+        // Same code-enforced corroboration as CONSULT_RELEASE: a journey
+        // restart is a durable accountability flip and must be backed by the
+        // parent's own words, not the model's inference.
+        const RESTART_INTENT =
+          /\b(yes|yeah|yep|confirm|fell through|didn'?t work|not (happy|working)|unhappy|leave|leaving|left|starting over|start over|new (agency|surrogate|donor|journey)|ended|over with)\b/i;
+        const restartCorroborated = !weakProvenance && RESTART_INTENT.test(userMessage || "");
+        if (!restartCorroborated) {
+          console.warn(
+            `[JOURNEY_RESTART SUPPRESSED] model emitted restart for ${restartMatch[1]} without parent corroboration ` +
+              `(weakProvenance=${weakProvenance}): "${String(userMessage || "").slice(0, 80)}"`,
+          );
+          recordInterceptor("journey_restart_suppressed", true, 0);
+          finalContent = finalContent.replace(/\[\[JOURNEY_RESTART:.*?\]\]/g, "").trim();
+        }
         try {
           const restartProviderId = restartMatch[1];
-          const providerExists = await prisma.provider.findUnique({ where: { id: restartProviderId }, select: { id: true } });
+          const providerExists = restartCorroborated
+            ? await prisma.provider.findUnique({ where: { id: restartProviderId }, select: { id: true } })
+            : null;
           if (providerExists) {
             await emitJourneyEvent({
               eventType: "JOURNEY_RESTARTED",
@@ -8767,6 +8900,23 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     let humanNeeded = false;
     if (finalContent.includes("[[HUMAN_NEEDED]]")) {
       humanNeeded = true;
+      // PAGING COOLDOWN (session 7): an echo loop can emit HUMAN_NEEDED on
+      // every hallucinated turn, and each fire pages EVERY admin by in-app,
+      // email AND SMS. The session-level humanRequested flag is the natural
+      // dedupe: once this session has escalated (and no human has concluded
+      // it), re-fires update nothing and page nobody. Weak-provenance turns
+      // never page at all.
+      const alreadyEscalated = !!(currentSession?.humanRequested && !currentSession?.humanConcludedAt);
+      if (weakProvenance || alreadyEscalated) {
+        console.warn(
+          `[HUMAN_NEEDED SUPPRESSED] ${weakProvenance ? "weak-provenance turn" : "session already escalated"} - not re-paging admins`,
+        );
+        recordInterceptor("human_needed_suppressed", true, 0);
+        finalContent = finalContent.replace(/\[\[HUMAN_NEEDED\]\]/g, "").trim();
+        humanNeeded = alreadyEscalated; // UI can still show the escalated state
+      }
+    }
+    if (humanNeeded && finalContent.includes("[[HUMAN_NEEDED]]")) {
       try {
         if (currentSessionId) {
           await prisma.aiChatSession.update({
@@ -8967,8 +9117,59 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         logContactBlock("whisper.question", outboundWhisper, { sessionId: currentSessionId, providerId: whisperProviderId, userId });
       }
 
+      // SINK HARDENING (session 7): this is the ONE funnel through which the
+      // AI contacts a real provider (email + SMS + SilentQuery), shared by
+      // model-emitted [[WHISPER]] tags and the phrase-inferred fallback. Code
+      // gates, regardless of trigger:
+      //   1. weak-provenance voice turns never whisper (echo/hallucination);
+      //   2. the outbound question must be a real question (>= 4 words);
+      //   3. duplicate of a still-PENDING question to the same provider
+      //      within 24h -> skip (the promise is already in flight);
+      //   4. >= 5 whispers per account per hour -> rate limited.
+      let whisperBlock: string | null = null;
+      if (!whisperSuppressed && whisperProviderId) {
+        // Presence/soundcheck phrases are conversation mechanics, never
+        // questions FOR a provider - found live in the DB as real whispered
+        // "questions" ("Can you hear me?", "Hey.", "Yeah.").
+        const PRESENCE_PHRASE =
+          /^(hey|hi|hello|yeah|yes|ok(ay)?|can you (hear|see) me|are you (there|here|with me)|hello\?|testing|check(ing)?( in)?|can you see i just .*)[\s!.?]*$/i;
+        if (weakProvenance) whisperBlock = "weak_provenance";
+        else if (questionText.trim().split(/\s+/).filter(Boolean).length < 4) whisperBlock = "question_too_short";
+        else if (PRESENCE_PHRASE.test(questionText.trim())) whisperBlock = "presence_phrase";
+        else {
+          try {
+            const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+            const recent = await prisma.silentQuery.findMany({
+              where: { parentUserId: { in: accountMemberIds }, createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) } },
+              select: { questionText: true, providerId: true, status: true, createdAt: true },
+              orderBy: { createdAt: "desc" },
+              take: 25,
+            });
+            const oneHourAgo = Date.now() - 3600 * 1000;
+            if (recent.filter((q) => q.createdAt.getTime() >= oneHourAgo).length >= 5) {
+              whisperBlock = "rate_limited";
+            } else if (
+              recent.some(
+                (q) => q.providerId === whisperProviderId && q.status === "PENDING" && normalize(q.questionText || "") === normalize(questionText),
+              )
+            ) {
+              whisperBlock = "duplicate_pending";
+            }
+          } catch (e: any) {
+            console.error("[WHISPER GATE] dedup/rate check failed (allowing):", e?.message);
+          }
+        }
+      }
+      if (whisperBlock) {
+        console.warn(
+          `[WHISPER SUPPRESSED:${whisperBlock}] provider=${whisperProviderId} question="${questionText.slice(0, 100)}" ` +
+            `(path=${sttProv?.dispatchPath || "n/a"}, conf=${provConf ?? "n/a"}, words=${provWordCount})`,
+        );
+        recordInterceptor(`whisper_suppressed_${whisperBlock}`, true, 0);
+      }
+
       try {
-        if (whisperProviderId && userId && currentSessionId && !whisperSuppressed) {
+        if (whisperProviderId && userId && currentSessionId && !whisperSuppressed && !whisperBlock) {
           const providerResult = await mcpClient!.callTool({
             name: "resolve_provider",
             arguments: { providerId: whisperProviderId },

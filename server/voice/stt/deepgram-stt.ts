@@ -25,6 +25,7 @@ class DeepgramStream implements SttStream {
   private tPrevActivity = 0;
   private maxWordCount = 0;
   private segmentGapsMs: number[] = [];
+  private minConfidence: number | null = null;
 
   private noteActivity(candidateText: string, isSegmentPush: boolean) {
     const now = Date.now();
@@ -105,6 +106,7 @@ class DeepgramStream implements SttStream {
       segments: this.segments.length,
       segmentGapsMs: [...this.segmentGapsMs],
       dispatchPath: reason,
+      minConfidence: this.minConfidence,
     };
     this.segments = [];
     this.tFirstActivity = 0;
@@ -112,6 +114,7 @@ class DeepgramStream implements SttStream {
     this.tPrevActivity = 0;
     this.maxWordCount = 0;
     this.segmentGapsMs = [];
+    this.minConfidence = null;
     console.log(
       `[voice] deepgram utterance dispatched (${reason}, ${meta.segments} seg, gaps=[${meta.segmentGapsMs.join(",")}]ms): "${utterance.slice(0, 60)}"`,
     );
@@ -196,6 +199,10 @@ class DeepgramStream implements SttStream {
         if (msg.is_final) {
           this.cancelHold(); // speech resumed into a new segment - not over
           this.segments.push(text);
+          const conf = alt?.confidence;
+          if (typeof conf === "number") {
+            this.minConfidence = this.minConfidence === null ? conf : Math.min(this.minConfidence, conf);
+          }
           const joined = this.segments.join(" ");
           this.noteActivity(joined, true);
           this.partialCb?.(joined);

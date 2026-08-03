@@ -3179,3 +3179,32 @@ model SurrogateVerification {
   @@index([surrogateId, requestedAt])
   @@index([providerId, respondedAt])
 }
+
+/// Audit trail for every AI-initiated profile write ([[SAVE]] tag). Makes
+/// each save reversible and forensically visible: old value, new value, which
+/// session/channel wrote it, and the STT provenance of the triggering voice
+/// turn. Born from the 2026-08-02 echo-turn blast-radius review - a wrong
+/// biological-baseline save self-conceals (skip logic stops re-asking), so
+/// the write path itself must leave evidence.
+model ProfileSaveAudit {
+  id              String    @id @default(uuid())
+  parentAccountId String
+  userId          String?
+  sessionId       String?
+  /// "voice" | "text" | null (pre-instrumentation writes have no channel)
+  channel         String?
+  /// "user" | "profile" - which table the field lives on
+  target          String
+  field           String
+  oldValue        Json?
+  newValue        Json?
+  /// STT provenance for voice turns: dispatchPath, minConfidence, segments,
+  /// wordCount, utterance excerpt
+  provenance      Json?
+  createdAt       DateTime  @default(now())
+  revertedAt      DateTime?
+  revertedBy      String?
+
+  @@index([parentAccountId, createdAt])
+  @@index([sessionId])
+}

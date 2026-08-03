@@ -688,9 +688,16 @@ class VoiceSession {
         segments: sttMeta.segments,
         segmentGapsMs: sttMeta.segmentGapsMs,
         dispatchPath: sttMeta.dispatchPath,
+        minConfidence: sttMeta.minConfidence,
         vadGateOpenAtDispatch: Date.now() - this.lastMicFrameAt < 250,
       };
     }
+    // Forwarded to /chat so side-effect gates (SAVE, whisper, releases) can
+    // refuse to act on weak-provenance turns (fragments, low confidence,
+    // idle-fallback dispatches - the echo/hallucination signature).
+    const sttProvenance = sttMeta && !fixedReply
+      ? { dispatchPath: sttMeta.dispatchPath, minConfidence: sttMeta.minConfidence, segments: sttMeta.segments }
+      : null;
     this.turnMetrics.set(turnId, metrics);
     // Tell the client which turn is live so its metric reports can correlate.
     this.send({ type: "turn", turn: turnId });
@@ -780,6 +787,7 @@ class VoiceSession {
           message: userText,
           matchmakerId: this.matchmakerId,
           channel: "voice",
+          ...(sttProvenance ? { sttProvenance } : {}),
           ...(fixedReply ? { fixedReply: userText } : {}),
         }),
       });

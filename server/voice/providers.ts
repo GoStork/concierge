@@ -40,6 +40,10 @@ export interface SttUtteranceMeta {
   // Which dispatch path fired: utterance_end | speech_final_held |
   // idle_fallback.
   dispatchPath: string;
+  // Lowest Deepgram confidence across the finalized segments - low values +
+  // fragment shapes are the echo/hallucination signature the side-effect
+  // gates key on.
+  minConfidence: number | null;
 }
 
 export interface SttStream {
