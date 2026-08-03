@@ -69,7 +69,13 @@ const BARGE_GRACE_MS = 220;
 // words on screen (old words disappear), advance only while her voice is
 // actually audible, and clear shortly after she stops. The full text still
 // lands in the chat transcript after the call.
-const CAPTION_WORD_MS = 400; // ~150 wpm, Cartesia's typical speaking rate
+// Credit-based pacing: the pacer ticks every CAPTION_TICK_MS; ticks where
+// her voice is audible add "voiced credit", and one word is revealed per
+// CAPTION_WORD_MS of credit. The first version ticked once per word and a
+// tick landing on a brief audio dip forfeited the whole word of progress -
+// captions drifted seconds behind her voice (iPhone test 2026-08-03).
+const CAPTION_TICK_MS = 100;
+const CAPTION_WORD_MS = 340; // ~175 wpm, Cartesia's actual speaking rate
 const CAPTION_TAIL_WORDS = 10; // roughly one line of large text
 const CAPTION_LINGER_MS = 900; // how long the last words stay after she stops
 
@@ -151,6 +157,8 @@ export function useVoiceSession() {
   // fresh line (set on sentence end or when the line fills).
   const captionLineRef = useRef<string[]>([]);
   const captionLineDoneRef = useRef(false);
+  // Accumulated voiced milliseconds not yet spent on revealed words.
+  const captionCreditRef = useRef(0);
   // Learned echo coupling: mic RMS per unit of Eva's output RMS on THIS
   // device (headphones ~0, phone speaker can approach 1). Starts conservative
   // and converges down whenever Eva speaks over a silent parent.
@@ -197,6 +205,7 @@ export function useVoiceSession() {
     captionBufRef.current = "";
     captionLineRef.current = [];
     captionLineDoneRef.current = false;
+    captionCreditRef.current = 0;
     setCaption("");
   }, [stopCaptionPacer]);
   // Append one whole word to the subtitle line (starting a fresh line after
@@ -221,6 +230,7 @@ export function useVoiceSession() {
   // dropped (the full text lives in the chat transcript).
   const endCaption = useCallback(() => {
     stopCaptionPacer();
+    captionCreditRef.current = 0;
     const tail = captionBufRef.current.trim();
     captionBufRef.current = "";
     if (tail && !captionLineDoneRef.current) paintCaptionWord(tail.split(/\s+/)[0]);
@@ -246,27 +256,34 @@ export function useVoiceSession() {
           clearInterval(captionTimerRef.current);
           captionTimerRef.current = null;
         }
+        captionCreditRef.current = 0;
         return;
       }
-      // Sync to her actual voice: when the avatar's remote audio level is
-      // live and currently silent (she hasn't started yet, or is pausing),
-      // hold the caption - words should appear as she says them, not as the
-      // model streams them. Audio-only sessions (no live level) free-run.
+      // Sync to her actual voice: ticks where the avatar's live audio level
+      // is silent (she hasn't started, or is pausing) earn no credit, so
+      // captions hold with her. Audio-only sessions (no live level) always
+      // earn. A brief dip only costs its own 100ms, never a whole word.
       const haveLiveLevel = Date.now() - remoteAudioLevel.updatedAt < 600;
-      if (haveLiveLevel && remoteAudioLevel.rms < 0.02) return;
+      if (!haveLiveLevel || remoteAudioLevel.rms >= 0.02) {
+        captionCreditRef.current += CAPTION_TICK_MS;
+      }
+      // When the buffer runs long (model streamed a burst), cheapen words so
+      // the line catches up gradually instead of trailing to the end.
+      const pendingWords = buf.split(/\s+/).filter(Boolean).length;
+      const wordCost = pendingWords > 25 ? CAPTION_WORD_MS / 2 : CAPTION_WORD_MS;
       // Take only COMPLETE words - a whitespace boundary must follow. Taking
       // a bare tail split model tokens mid-word and glued fragments across
       // chunks (observed live: "I'mright here", "surroga" + "cy"). A
       // trailing partial word stays buffered until its remainder arrives.
-      const pendingWords = buf.split(/\s+/).filter(Boolean).length;
-      const take = pendingWords > 30 ? 2 : 1;
-      for (let i = 0; i < take; i++) {
+      let guard = 8;
+      while (captionCreditRef.current >= wordCost && guard-- > 0) {
         const m = /^(\s*)(\S+)(?=\s)/.exec(captionBufRef.current);
         if (!m) break;
         captionBufRef.current = captionBufRef.current.slice(m[0].length);
-        if (!paintCaptionWord(m[2])) i--; // markdown-only token - take another
+        if (paintCaptionWord(m[2])) captionCreditRef.current -= wordCost;
+        // markdown-only tokens cost nothing - the loop takes the next word
       }
-    }, CAPTION_WORD_MS);
+    }, CAPTION_TICK_MS);
   }, [paintCaptionWord]);
 
   const reportMetric = useCallback((event: string, opts?: { tClient?: number; extra?: Record<string, unknown> }) => {
