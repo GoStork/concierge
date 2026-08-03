@@ -473,7 +473,7 @@ async function callTier2Claude(
   // the biometric consent stamp requires the parent's own words, never the
   // model's attestation alone (session 7 hardening).
   consentAffirmative: boolean = false,
-): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] }> {
+): Promise<{ content: string; toolCallsExecuted: boolean; searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[]; allToolResults: { toolName: string; resultText: string }[] }> {
   const hasTools = openAiTools.length > 0;
 
   // Tools whose userId arg MUST be the authenticated parent (never trust the
@@ -612,6 +612,7 @@ async function callTier2Claude(
         out.push({ functionResponse: { name: fc.name, response: { output: resultText } } });
         if (searchToolNames.includes(fc.name)) searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
         if (fc.name === "resolve_comparison") cmpToolCalls.push({ args: fc.args, resultText });
+        allToolResults.push({ toolName: fc.name, resultText: resultText.slice(0, 1500) });
       } catch (e: any) {
         out.push({ functionResponse: { name: fc.name, response: { output: `Error: ${e.message}` } } });
       }
@@ -651,6 +652,9 @@ async function callTier2Claude(
   // searchToolResults (which feeds match-card fallbacks that would misfire on
   // comparison JSON). Feeds the OWED-COMPARISON guarantee below.
   const cmpToolCalls: { args: any; resultText: string }[] = [];
+  // EVERY tool result this turn (truncated) - grounds corrective retries
+  // (PARENT-ECHO guard) so they answer from real fetched data, never invent.
+  const allToolResults: { toolName: string; resultText: string }[] = [];
   const t0 = Date.now();
   const searchToolNames = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics", "find_lookalike_matches"];
   // Per-turn cap on REPEATED calls to the same search tool. The model sometimes
@@ -1056,7 +1060,7 @@ async function callTier2Claude(
         }
         console.log(`[TIER2] DONE (no tools) in ${Date.now() - t0}ms`);
         mark("tier2_end");
-        return { content: fullText, toolCallsExecuted: false, searchToolResults };
+        return { content: fullText, toolCallsExecuted: false, searchToolResults, allToolResults };
       }
 
       // Has tools - stream the first pass; per-chunk functionCalls detection
@@ -1097,6 +1101,7 @@ async function callTier2Claude(
                 searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
               }
               if (fc.name === "resolve_comparison") cmpToolCalls.push({ args: fc.args, resultText });
+              allToolResults.push({ toolName: fc.name, resultText: resultText.slice(0, 1500) });
             } catch (e: any) {
               console.log(`[TIER2] MCP ${fc.name} FAILED in ${Date.now() - tMcp}ms: ${e.message}`);
               functionResponses.push({ functionResponse: { name: fc.name, response: { output: `Error: ${e.message}` } } });
@@ -1126,7 +1131,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
           const cand0 = (firstResponse as any)?.candidates?.[0];
           console.warn(`[TIER2] Empty no-tools response - finishReason=${cand0?.finishReason || "UNKNOWN"} safety=${JSON.stringify(cand0?.safetyRatings || null)} promptFeedback=${JSON.stringify((firstResponse as any)?.promptFeedback || null)}`);
         }
-        return { content: firstText, toolCallsExecuted: false, searchToolResults };
+        return { content: firstText, toolCallsExecuted: false, searchToolResults, allToolResults };
       }
     } else {
       // ROOT CAUSE FIX for "Stream AND response.text() both empty - Gemini produced no
@@ -1151,7 +1156,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
         if (toolRoundCount >= MAX_TOOL_ROUNDS) {
           console.warn(`[TIER2] Hit MAX_TOOL_ROUNDS=${MAX_TOOL_ROUNDS} - bailing. Attempted: ${moreFunctionCalls.map(f => f.name).join(",")}`);
           mark("tier2_end");
-          return { content: "", toolCallsExecuted: true, searchToolResults };
+          return { content: "", toolCallsExecuted: true, searchToolResults, allToolResults };
         }
         toolRoundCount += 1;
         console.log(`[TIER2] Round ${toolRoundCount}/${MAX_TOOL_ROUNDS} - model chained ${moreFunctionCalls.length} more tool call(s): ${moreFunctionCalls.map(f => f.name).join(",")}`);
@@ -1182,6 +1187,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
                 searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
               }
               if (fc.name === "resolve_comparison") cmpToolCalls.push({ args: fc.args, resultText });
+              allToolResults.push({ toolName: fc.name, resultText: resultText.slice(0, 1500) });
             } catch (e: any) {
               console.log(`[TIER2] MCP ${fc.name} FAILED in ${Date.now() - tMcp}ms: ${e.message}`);
               moreResponses.push({ functionResponse: { name: fc.name, response: { output: `Error: ${e.message}` } } });
@@ -1262,7 +1268,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
           );
         }
       }
-      return { content: fullText, toolCallsExecuted: true, searchToolResults };
+      return { content: fullText, toolCallsExecuted: true, searchToolResults, allToolResults };
     }
   }
 }
@@ -6225,6 +6231,8 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
 
     let serverBypassServed = false; // true when a server-side hardcoded bypass served the response
     let lastSearchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
+    // Every tool result this turn (truncated) - grounds corrective retries.
+    let lastAllToolResults: { toolName: string; resultText: string }[] = [];
     // Mirrors blockSurrogateSearchThisTurn (computed in the Tier2 branch) for the card
     // post-processing below: on a gate-blocked turn no surrogate card may render either -
     // otherwise the MATCH_CARD fallback manufactures one from stale tool results, the
@@ -6715,6 +6723,9 @@ Rules: Use real values from the data. The providerId = the "id" UUID field. Neve
       // Populate lastSearchToolResults from Tier2 tool calls for fallback MATCH_CARD injection
       if (tier2Result.searchToolResults.length > 0) {
         lastSearchToolResults.push(...tier2Result.searchToolResults);
+      }
+      if (tier2Result.allToolResults?.length) {
+        lastAllToolResults.push(...tier2Result.allToolResults);
       }
     } else {
       // Tier 1: Gemini 2.5 Flash - MINIMAL prompt, Phase 0-2 only, no matching
@@ -8937,6 +8948,63 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       }
     } catch (e) {
       console.error("[ANTI-ECHO] guard error:", e);
+    }
+
+    // PARENT-ECHO GUARD: distinct from ANTI-ECHO above (which catches the
+    // model repeating ITS OWN previous message, and only at 15+ words).
+    // Observed live on voice 2026-08-03 (turn k75n4k:1): the parent asked
+    // "What does the egg donation process cost in general?" and the ENTIRE
+    // reply was "How much does egg donation cost in general?" - the parent's
+    // question paraphrased back, then silence. A Gemini post-tool-call flake,
+    // sibling of the empty-reply flake the TIER2 RETRY handles.
+    // Trigger: the reply (tags stripped) is a single question whose content
+    // words nearly all come from the parent's own message, adding at most 2
+    // new content words. A genuine clarifying question always introduces
+    // alternatives ("fresh or frozen?", "what matters most - education,
+    // appearance...?") = new content words, so it survives the filter.
+    try {
+      const ECHO_STOP = new Set(
+        "a an the is are am was be do does did how much many what when where who why which in on at of for to and or it this that these those me my i you your yours we us our can could would will should please tell about hey hi hello ok okay so just really process".split(" "),
+      );
+      const contentWords = (s: string) =>
+        s.replace(/\[\[[^\]]*\]\]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w && !ECHO_STOP.has(w));
+      const strippedReply = finalContent.replace(/\[\[[^\]]*\]\]/g, "").trim();
+      const isSingleQuestion = strippedReply.endsWith("?") && !/[.!?]\s+\S/.test(strippedReply.slice(0, -1));
+      const userWordTotal = String(userMessage || "").trim().split(/\s+/).filter(Boolean).length;
+      if (!serverBypassServed && !isSkipAction && isSingleQuestion && userWordTotal >= 4) {
+        const uSet = new Set(contentWords(String(userMessage || "")));
+        const rWords = contentWords(strippedReply);
+        const newWords = rWords.filter((w) => !uSet.has(w));
+        if (rWords.length >= 2 && newWords.length <= 2) {
+          const _peT0 = Date.now();
+          const _pePre = finalContent;
+          console.warn(`[PARENT-ECHO] Reply is the parent's own question paraphrased back ("${strippedReply.slice(0, 80)}") - retrying with an answer directive`);
+          const toolDigest = lastAllToolResults.map((t) => `${t.toolName}: ${t.resultText}`).join("\n").slice(0, 2500);
+          messages.push({
+            role: "user",
+            content:
+              `SYSTEM OVERRIDE: Your reply just repeated the parent's own question back at them ("${strippedReply}") and answered NOTHING. Never do that. ANSWER the question directly now, in 2 short sentences.` +
+              (toolDigest ? ` Use ONLY this data you already fetched this turn - never invent numbers:\n${toolDigest}` : ""),
+          });
+          const peRetry = await claudeRetry(messages).catch(() => "");
+          messages.pop();
+          const retryStripped = (peRetry || "").replace(/\[\[[^\]]*\]\]/g, "").trim();
+          const retryStillEchoes =
+            !retryStripped ||
+            (retryStripped.endsWith("?") && contentWords(retryStripped).filter((w) => !uSet.has(w)).length <= 2);
+          if (!retryStillEchoes) {
+            finalContent = peRetry;
+            // The echoed draft already streamed (and spoke, on voice) - swap it.
+            sse.sendReset();
+            sse.sendToken(finalContent);
+          } else {
+            console.error("[PARENT-ECHO] retry also failed to answer - keeping the original (visible failure beats fabrication)");
+          }
+          recordInterceptor("parent_echo", finalContent !== _pePre, Date.now() - _peT0);
+        }
+      }
+    } catch (e) {
+      console.error("[PARENT-ECHO] guard error:", e);
     }
 
     // FALSE-ESCALATION GUARD: the model sometimes imitates the escalation
