@@ -27,7 +27,11 @@ export ENABLE_NIGHTLY_SCHEDULER=true
 # script died before `exec`, so launchd KeepAlive restarted it every ~2s forever
 # and the server never came up at all. That silently killed 2 nights of syncs.
 git pull origin main --rebase || echo "[run-server] git pull failed - running existing build"
-npm install || echo "[run-server] WARNING: npm install failed - build may fail below"
+# --include=dev is REQUIRED: NODE_ENV=production is exported above, which makes
+# a bare `npm install` skip AND prune devDependencies - deleting vite/esbuild
+# and guaranteeing the build below fails forever (stale-dist fallback on every
+# restart). Dev deps must be present because this script builds, not just runs.
+npm install --include=dev || echo "[run-server] WARNING: npm install failed - build may fail below"
 
 # A build failure must NOT take the nightly sync offline. If a previous
 # dist/index.cjs exists, boot that (loudly degraded) instead of crash-looping;
