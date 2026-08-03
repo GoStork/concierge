@@ -252,6 +252,8 @@ class VoiceSession {
   // Transcript-level debug for gate-bypassed AEC test sessions; survives the
   // STT self-reopen path.
   private sttDebug = false;
+  // Last filler phrase index - the rotation never repeats back-to-back.
+  private lastFillerIdx = -1;
   // Commit B: false for ungated (desktop) sessions - survives STT reopen.
   private sttHoldEnabled = true;
   // Set when mic_stats ever reports >1 live engine (or an impossible frame
@@ -765,16 +767,29 @@ class VoiceSession {
       /\b(hey|hi|hello|good (morning|afternoon|evening)|are you (there|here|with me)|can you hear( me)?|hear me|thank(s| you)?|ok(ay)?|got it)\b/i;
     const wordCount = userText.trim().split(/\s+/).length;
     const substantive = wordCount >= 4 && !(wordCount <= 8 && SOCIAL_UTTERANCE.test(userText));
-    // Conditional early filler (session 6): fires at FILLER_MS only when the
-    // first token has NOT arrived yet - fast turns never hear it, slow turns
-    // get voice ~1.1s earlier than the old 1800ms constant, and the "One
-    // moment - [immediate answer]" collision is structurally impossible
-    // because the check happens at fire time.
-    const FILLER_MS = Number(process.env.VOICE_FILLER_MS || 650);
+    // Conditional early filler: fires at FILLER_MS only when the first token
+    // has NOT arrived yet - fast turns never hear it. 650ms fired on nearly
+    // EVERY substantive turn (Tier2 first token is rarely that fast), and the
+    // fixed 8-word phrase made Eva open every answer with "One moment, let me
+    // look into that" - the single most-complained-about behavior of the
+    // 2026-08-03 live test. Now: only genuinely slow turns (>1200ms) hear a
+    // filler at all, the phrase rotates through short varied acknowledgments,
+    // and the same phrase never plays twice in a row.
+    const FILLER_MS = Number(process.env.VOICE_FILLER_MS || 1200);
+    const FILLERS = [
+      "Let me check.",
+      "Mm-hm, one sec.",
+      "Sure, let me see.",
+      "Okay, checking.",
+      "Let me pull that up.",
+    ];
     const fillerTimer = substantive
       ? setTimeout(() => {
           if (this.turnCounter !== turnId || this.speakSuppressed || tFirstToken) return;
-          const filler = "One moment, let me look into that. ";
+          let idx = Math.floor(Math.random() * FILLERS.length);
+          if (idx === this.lastFillerIdx) idx = (idx + 1) % FILLERS.length;
+          this.lastFillerIdx = idx;
+          const filler = FILLERS[idx] + " ";
           this.ttsChars += filler.length;
           this.setState("speaking");
           this.send({ type: "eva_caption", text: filler });

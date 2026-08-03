@@ -5548,7 +5548,7 @@ Before asking ANY question, check if the parent already provided the answer. If 
     // reply is spoken aloud. Keep it conversational-short; structured tags
     // still work (cards render in the voice panel / chat).
     if (req.body.channel === "voice") {
-      skipRulesPreamble = `\nVOICE MODE (this turn only): the parent is TALKING to you and your reply is spoken aloud. Keep it under 3 short sentences, warm and natural, no bullet lists, no markdown, no emoji. Never spell out URLs or IDs. Structured tags ([[QUICK_REPLY]], [[MATCH_CARD]], etc.) still work and are not spoken - use them exactly as usual.\n${skipRulesPreamble}`;
+      skipRulesPreamble = `\nVOICE MODE (this turn only): the parent is TALKING to you and your reply is spoken aloud. Keep it under 3 short sentences, warm and natural, no bullet lists, no markdown, no emoji. Never spell out URLs or IDs. Never open with a stock filler phrase ("One moment", "Let me look into that", "Great question") - answer directly, like a person mid-conversation. Structured tags ([[QUICK_REPLY]], [[MATCH_CARD]], etc.) still work and are not spoken - use them exactly as usual.\n${skipRulesPreamble}`;
     }
 
     // Collect all previously-presented match card provider IDs to prevent re-suggesting.
@@ -6158,7 +6158,10 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
 1. MATCH_CARD MANDATORY: Whenever you mention, describe, or recommend a specific donor, surrogate, or clinic - you MUST use [[MATCH_CARD:{...}]]. Plain-text-only profile descriptions (e.g., "Donor #5596 - Age 20, Brown hair...") are STRICTLY FORBIDDEN.
 2. ONE PROFILE PER MESSAGE: Never list multiple profiles in one message. ONE [[MATCH_CARD]] only, then stop and wait.
 3. CURATION BEFORE SEARCH: After collecting preferences (B1 for egg donors, D1-D3 for surrogates), you MUST send [[CURATION]] first. Only call search tools AFTER receiving "ready". If the parent already said "ready" and [[CURATION]] was already sent, call search tools immediately - do NOT send [[CURATION]] again.
-4. NEVER FABRICATE: NEVER describe a specific clinic, donor, or surrogate from your training data. You MUST call the relevant MCP search tool first. Any clinic/donor/surrogate description without a prior tool call is FORBIDDEN.`,
+4. NEVER FABRICATE: NEVER describe a specific clinic, donor, or surrogate from your training data. You MUST call the relevant MCP search tool first. Any clinic/donor/surrogate description without a prior tool call is FORBIDDEN.` +
+        (req.body.channel === "voice"
+          ? `\n5. SPOKEN LENGTH CAP (voice - overrides everything about length): your reply is SPOKEN ALOUD and the parent cannot skim it. Maximum 2 short sentences (about 30 words total). Only when the parent explicitly asked for a detailed explanation or walkthrough may you use up to 5 short sentences. Never restate what the parent said, never re-describe a profile that is already on screen, never stack pleasantries before the answer - say the ONE most useful thing and stop. A card ([[MATCH_CARD]], [[COMPARE_CARD]]) carries the details, so your sentence only introduces it.`
+          : ""),
     });
 
     // -------------------------------------------------------------------------

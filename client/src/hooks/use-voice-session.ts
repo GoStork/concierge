@@ -53,8 +53,20 @@ const VAD_HANGOVER_MS = 1600;
 // on speech onset so words are never clipped - big enough that a failed
 // interruption attempt still reaches STT once she stops talking.
 const PREBUFFER_FRAMES = 32; // ~1.3s of 40ms frames
-// Sustained speech this long while Eva talks = barge-in.
-const BARGE_MS = 400;
+// ACCUMULATED voiced time while Eva talks that counts as a barge-in. The
+// first version required 400ms of CONSECUTIVE above-threshold frames with a
+// hard reset on any single quiet frame - natural speech dips between words
+// and plosives, so real interruption attempts almost never fired (observed
+// live on iPhone 2026-08-03: "Ariel, stop talking" went through as a normal
+// turn). Voiced milliseconds now accumulate and only a real pause
+// (BARGE_GRACE_MS of continuous quiet) resets the attempt.
+const BARGE_VOICED_MS = 300;
+const BARGE_GRACE_MS = 220;
+// Caption pacing: Eva's text streams from the model far faster than she
+// speaks it, so painting chunks on arrival dumps the whole reply on screen
+// seconds before her voice gets there. Reveal word-by-word at roughly her
+// speaking rate instead; the buffer flushes whenever she stops speaking.
+const CAPTION_WORD_MS = 320;
 
 // ---------------------------------------------------------------------------
 // Instrumentation only: browser-side timing events reported to the gateway
@@ -117,6 +129,11 @@ export function useVoiceSession() {
   const speechStartRef = useRef(0);
   const bargeStartRef = useRef(0);
   const bargeSentRef = useRef(false);
+  const bargeVoicedMsRef = useRef(0);
+  const bargeLastVoiceAtRef = useRef(0);
+  // Words of Eva's caption not yet revealed (see CAPTION_WORD_MS).
+  const captionBufRef = useRef("");
+  const captionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Learned echo coupling: mic RMS per unit of Eva's output RMS on THIS
   // device (headphones ~0, phone speaker can approach 1). Starts conservative
   // and converges down whenever Eva speaks over a silent parent.
@@ -146,6 +163,54 @@ export function useVoiceSession() {
   // eva_caption chunks received this turn - distinguishes an incrementally
   // streamed caption (many chunks) from a single-block paint (1 chunk).
   const captionChunksRef = useRef(0);
+
+  // --- Caption pacing (word-by-word reveal at ~speech rate) ---
+  const stopCaptionPacer = useCallback(() => {
+    if (captionTimerRef.current) {
+      clearInterval(captionTimerRef.current);
+      captionTimerRef.current = null;
+    }
+  }, []);
+  const clearCaption = useCallback(() => {
+    stopCaptionPacer();
+    captionBufRef.current = "";
+    setCaption("");
+  }, [stopCaptionPacer]);
+  const flushCaption = useCallback(() => {
+    stopCaptionPacer();
+    const rest = captionBufRef.current;
+    captionBufRef.current = "";
+    if (rest) setCaption((prev) => prev + rest);
+  }, [stopCaptionPacer]);
+  const queueCaption = useCallback((text: string) => {
+    captionBufRef.current += text;
+    if (captionTimerRef.current) return;
+    captionTimerRef.current = setInterval(() => {
+      const buf = captionBufRef.current;
+      if (!buf) {
+        // Buffer drained - stop ticking; the next chunk restarts the pacer.
+        if (captionTimerRef.current) {
+          clearInterval(captionTimerRef.current);
+          captionTimerRef.current = null;
+        }
+        return;
+      }
+      // Reveal one word per tick; when far behind (model streamed a long
+      // reply in one burst), catch up two at a time so the tail never lags
+      // her voice by more than a few seconds.
+      const pendingWords = buf.split(/\s+/).filter(Boolean).length;
+      const take = pendingWords > 50 ? 2 : 1;
+      let cut = 0;
+      for (let i = 0; i < take; i++) {
+        const m = /^\s*\S+\s?/.exec(buf.slice(cut));
+        if (!m) { cut = buf.length; break; }
+        cut += m[0].length;
+      }
+      const next = buf.slice(0, cut);
+      captionBufRef.current = buf.slice(cut);
+      setCaption((prev) => prev + next);
+    }, CAPTION_WORD_MS);
+  }, []);
 
   const reportMetric = useCallback((event: string, opts?: { tClient?: number; extra?: Record<string, unknown> }) => {
     const turn = currentTurnRef.current;
@@ -192,9 +257,12 @@ export function useVoiceSession() {
     wsRef.current = null;
     engineRef.current?.destroy();
     engineRef.current = null;
+    // Reveal any caption words still queued in the pacer (and stop its
+    // timer) so the final transcript stays complete after hang-up.
+    flushCaption();
     setEndReason(reason);
     setStateBoth("ended");
-  }, []);
+  }, [flushCaption]);
 
   const start = useCallback(async (opts: StartOpts) => {
     if (activeRef.current) return;
@@ -203,7 +271,7 @@ export function useVoiceSession() {
     setError(null);
     setEndReason(null);
     setCards(null);
-    setCaption("");
+    clearCaption();
     setPartialTranscript("");
     setAvatar(null);
     setCardsPreview(false);
@@ -356,9 +424,13 @@ export function useVoiceSession() {
           if (["listening", "thinking", "speaking"].includes(msg.state)) {
             const wasBarge = bargeSentRef.current;
             setStateBoth(msg.state);
+            // Eva finished (or was cut off) - reveal whatever caption text
+            // is still queued so the transcript is complete on screen.
+            if (msg.state === "listening") flushCaption();
             if (msg.state !== "speaking") {
               bargeSentRef.current = false;
               bargeStartRef.current = 0;
+              bargeVoicedMsRef.current = 0;
               // Leaving "speaking" without a barge means the prebuffer holds
               // Eva's own leaked tail, not the parent - drop it. After a real
               // barge it holds the parent's interrupting words - keep those.
@@ -376,7 +448,7 @@ export function useVoiceSession() {
           break;
         case "final_transcript":
           setPartialTranscript("");
-          setCaption("");
+          clearCaption();
           setCards(null);
           setCardsPreview(false);
           break;
@@ -384,7 +456,7 @@ export function useVoiceSession() {
           setCardsPreview(true);
           break;
         case "eva_caption":
-          setCaption((prev) => prev + (msg.text || ""));
+          queueCaption(msg.text || "");
           // Instrumentation: first paint of the AGENT's caption this turn
           // (double rAF fires after the browser paints the frame containing
           // this state update). reportMetric dedupes to the first chunk.
@@ -394,7 +466,7 @@ export function useVoiceSession() {
           );
           break;
         case "caption_reset":
-          setCaption("");
+          clearCaption();
           setCardsPreview(false);
           break;
         case "cards": {
@@ -508,23 +580,38 @@ export function useVoiceSession() {
           echoKRef.current = echoKRef.current * 0.7 + ratio * 0.3;
         }
       }
+      // Margin over the learned echo level: 1.5x (was 1.8x - on a phone
+      // speaker the parent talking over Eva at normal volume sat under the
+      // stricter margin and interruptions never registered).
       const bargeVoice =
-        rms > Math.max(BARGE_MIN_RMS, remoteRms * (echoKRef.current * 1.8 + 0.05));
+        rms > Math.max(BARGE_MIN_RMS, remoteRms * (echoKRef.current * 1.5 + 0.05));
+      const frameMs = (pcm.byteLength / 2 / 16000) * 1000;
       if (evaSpeaking && bargeVoice) {
-        if (!bargeStartRef.current) bargeStartRef.current = now;
-      } else if (!bargeVoice) {
+        if (!bargeStartRef.current) {
+          bargeStartRef.current = now;
+          bargeVoicedMsRef.current = 0;
+        }
+        bargeVoicedMsRef.current += frameMs;
+        bargeLastVoiceAtRef.current = now;
+      } else if (
+        !bargeVoice &&
+        bargeStartRef.current &&
+        now - bargeLastVoiceAtRef.current > BARGE_GRACE_MS
+      ) {
+        // A real pause, not an inter-word dip - this attempt is over.
         bargeStartRef.current = 0;
+        bargeVoicedMsRef.current = 0;
       }
       if (
         evaSpeaking &&
-        bargeVoice &&
         bargeStartRef.current &&
-        now - bargeStartRef.current >= BARGE_MS &&
+        bargeVoicedMsRef.current >= BARGE_VOICED_MS &&
         !bargeSentRef.current
       ) {
         bargeSentRef.current = true;
         engine.flushPlayback();
         sock.send(JSON.stringify({ type: "barge" }));
+        reportMetric("barge_sent");
       }
 
       // DESKTOP (AEC verified): stream every frame - Deepgram reasons over
