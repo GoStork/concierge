@@ -20,9 +20,27 @@ cd "$REPO_DIR"
 export NODE_ENV=production
 export ENABLE_NIGHTLY_SCHEDULER=true
 
-# Pull latest + rebuild so the iMac always runs current code. Safe to remove
-# these two lines if you prefer to build manually before (re)starting.
+# Pull latest, install any NEW dependencies, then rebuild, so the iMac always
+# runs current code. `npm install` is NOT optional: a pull that introduces a new
+# package (e.g. livekit-client, added 2026-08-01) leaves node_modules stale, the
+# vite build then fails to resolve the import, and - because of `set -e` - this
+# script died before `exec`, so launchd KeepAlive restarted it every ~2s forever
+# and the server never came up at all. That silently killed 2 nights of syncs.
 git pull origin main --rebase || echo "[run-server] git pull failed - running existing build"
-npm run build
+npm install || echo "[run-server] WARNING: npm install failed - build may fail below"
+
+# A build failure must NOT take the nightly sync offline. If a previous
+# dist/index.cjs exists, boot that (loudly degraded) instead of crash-looping;
+# the sleep keeps launchd from spinning when there is nothing to fall back to.
+if ! npm run build; then
+  echo "[run-server] ERROR: npm run build FAILED - see the vite/esbuild error above."
+  if [ -f dist/index.cjs ]; then
+    echo "[run-server] ERROR: booting the PREVIOUS dist/index.cjs so the 2 AM sync still runs. THIS BUILD IS STALE - fix the build."
+  else
+    echo "[run-server] FATAL: no previous dist/index.cjs to fall back to. Sleeping 60s to avoid a launchd crash-loop."
+    sleep 60
+    exit 1
+  fi
+fi
 
 exec caffeinate -is node dist/index.cjs
