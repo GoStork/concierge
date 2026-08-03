@@ -611,6 +611,7 @@ async function callTier2Claude(
         }
         out.push({ functionResponse: { name: fc.name, response: { output: resultText } } });
         if (searchToolNames.includes(fc.name)) searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
+        if (fc.name === "resolve_comparison") cmpToolCalls.push({ args: fc.args, resultText });
       } catch (e: any) {
         out.push({ functionResponse: { name: fc.name, response: { output: `Error: ${e.message}` } } });
       }
@@ -646,6 +647,10 @@ async function callTier2Claude(
   // (functionCall parts + thought signatures) for the history repair.
   let lastModelContent: any = null;
   const searchToolResults: { toolName: string; resultText: string; toolArgs?: any }[] = [];
+  // resolve_comparison calls the MODEL made this turn, kept separate from
+  // searchToolResults (which feeds match-card fallbacks that would misfire on
+  // comparison JSON). Feeds the OWED-COMPARISON guarantee below.
+  const cmpToolCalls: { args: any; resultText: string }[] = [];
   const t0 = Date.now();
   const searchToolNames = ["search_surrogates", "search_egg_donors", "search_sperm_donors", "search_clinics", "find_lookalike_matches"];
   // Per-turn cap on REPEATED calls to the same search tool. The model sometimes
@@ -1091,6 +1096,7 @@ async function callTier2Claude(
               if (searchToolNames.includes(fc.name)) {
                 searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
               }
+              if (fc.name === "resolve_comparison") cmpToolCalls.push({ args: fc.args, resultText });
             } catch (e: any) {
               console.log(`[TIER2] MCP ${fc.name} FAILED in ${Date.now() - tMcp}ms: ${e.message}`);
               functionResponses.push({ functionResponse: { name: fc.name, response: { output: `Error: ${e.message}` } } });
@@ -1175,6 +1181,7 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
               if (searchToolNames.includes(fc.name)) {
                 searchToolResults.push({ toolName: fc.name, resultText, toolArgs: fc.args });
               }
+              if (fc.name === "resolve_comparison") cmpToolCalls.push({ args: fc.args, resultText });
             } catch (e: any) {
               console.log(`[TIER2] MCP ${fc.name} FAILED in ${Date.now() - tMcp}ms: ${e.message}`);
               moreResponses.push({ functionResponse: { name: fc.name, response: { output: `Error: ${e.message}` } } });
@@ -1224,6 +1231,34 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
             (rows === 0 ? "search returned ZERO results (nothing to show)"
               : rows === -1 ? `no parseable array and no id salvageable :: ${preBody.slice(0, 160).replace(/\n/g, " ")}`
               : `top result had no id (rows=${rows})`),
+          );
+        }
+      }
+      // OWED-COMPARISON GUARANTEE: the parent asked for a comparison, the model
+      // ran resolve_comparison itself and got a valid side-by-side back, but the
+      // reply carries no [[COMPARE_CARD]] tag - observed live 2026-08-02
+      // ("compare the last two donors" answered with unrelated prose and no
+      // card). Reconstruct the tag from the model's own resolve args; the outer
+      // pipeline re-resolves it with full personalization (cost subtypes,
+      // eggSource, ageGroup), so every rendered value stays DB-truth.
+      const wantsComparison =
+        /\b(compare|comparison|side[- ]by[- ]side|versus|vs\.?|head[- ]to[- ]head|stack (?:them )?up|which (?:one |of (?:them|these) )?is (?:the )?(?:better|best))\b/i.test(userMessage || "");
+      if (fullText && wantsComparison && !/\[\[COMPARE_CARD/i.test(fullText) && cmpToolCalls.length > 0) {
+        const usable = cmpToolCalls.find((c) => {
+          try {
+            const card = JSON.parse(c.resultText);
+            return card && !card.error && Array.isArray(card.entities) && card.entities.length >= 2 &&
+              Array.isArray(card.groups) && card.groups.length > 0;
+          } catch { return false; }
+        });
+        const cmpArgs: any = usable?.args || null;
+        const cmpEntities = Array.isArray(cmpArgs?.entities) ? cmpArgs.entities.map((e: any) => String(e)).filter(Boolean) : [];
+        if (cmpArgs?.entityType && cmpEntities.length >= 2) {
+          console.warn(`[TIER2] Comparison turn produced no COMPARE_CARD - appending tag for [${cmpEntities.join(", ")}] (${cmpArgs.entityType})`);
+          fullText = `${fullText.trimEnd()}\n\n[[COMPARE_CARD:${JSON.stringify({ entityType: cmpArgs.entityType, entities: cmpEntities, dimensions: cmpArgs.dimensions ?? "all" })}]]`;
+        } else {
+          console.warn(
+            `[TIER2] Comparison turn produced no COMPARE_CARD and none of the model's ${cmpToolCalls.length} resolve_comparison call(s) returned a usable card - no card this turn`,
           );
         }
       }
@@ -3326,6 +3361,25 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     const latestCardPromise: Promise<any | null> = currentSessionId
       ? findLatestMatchCard(currentSessionId).catch(() => null)
       : Promise.resolve(null);
+    // Connected-agency chain kicked off WITH the other parallel lookups: the
+    // connected-session check ran sequentially inside the context builder and
+    // was the worst pre-work gap on 13/38 turns of the 2026-08-03 desktop
+    // baseline (~280-460ms each). The chain overlaps with the rest of
+    // pre-work; only the rarely-needed evaluateMatchCallGates stays lazy.
+    const connectedAgencyPromise: Promise<{ agencyId: string; agencyName: string | null } | null> = latestCardPromise
+      .then(async (latestCard) => {
+        const agencyId = latestCard?.ownerProviderId || null;
+        if (!agencyId) return null;
+        const connected = await findConnectedProviderSession(accountMemberIds, agencyId, {
+          excludeSessionId: currentSessionId,
+        });
+        if (!connected) return null;
+        const agency = await prisma.provider
+          .findUnique({ where: { id: agencyId }, select: { name: true } })
+          .catch(() => null);
+        return { agencyId, agencyName: agency?.name ?? null };
+      })
+      .catch(() => null);
     const ipFormPromise = prisma.ipFormResponse.findUnique({
       where: { parentAccountId: acctIdForJourney },
       select: { status: true, promptedAt: true, hasSecondParent: true },
@@ -3652,39 +3706,31 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       // call as if it were one step away when three confirmations are open.
       try {
         mark("pw:match_gates_start");
-        const latestCard = await latestCardPromise;
-        const agencyId = latestCard?.ownerProviderId || null;
-        if (agencyId) {
-          const connected = await findConnectedProviderSession(accountMemberIds, agencyId, {
-            excludeSessionId: currentSessionId,
-          });
-          if (connected) {
-            const agency = await prisma.provider
-              .findUnique({ where: { id: agencyId }, select: { name: true } })
-              .catch(() => null);
-            parts.push(
-              `CONNECTED AGENCY - NO NEW CALL: the family is ALREADY connected with ${agency?.name || "the agency"} (providerId: ${agencyId}), which represents the profile currently on screen. Do NOT emit [[CONSULTATION_BOOKING:${agencyId}]] and do NOT offer a calendar for them - the system opens a dedicated thread for this profile instead. Follow the CONNECTED AGENCY - NO NEW CALL section. A match call with this specific profile is still a separate step.`,
-            );
+        const conn = await connectedAgencyPromise;
+        if (conn) {
+          const { agencyId, agencyName } = conn;
+          parts.push(
+            `CONNECTED AGENCY - NO NEW CALL: the family is ALREADY connected with ${agencyName || "the agency"} (providerId: ${agencyId}), which represents the profile currently on screen. Do NOT emit [[CONSULTATION_BOOKING:${agencyId}]] and do NOT offer a calendar for them - the system opens a dedicated thread for this profile instead. Follow the CONNECTED AGENCY - NO NEW CALL section. A match call with this specific profile is still a separate step.`,
+          );
 
-            // Only meaningful once a real thread exists - before that the
-            // gates have nowhere to render and nothing to block.
-            const gates = await evaluateMatchCallGates({
-              parentUserId: userId,
-              providerId: agencyId,
-              subjectProfileId: latestCard?.providerId || null,
-            });
-            if (!gates.allowed) {
-              const outstanding = [
-                gates.ipFormMissing ? "the Intended Parent Form is not submitted" : null,
-                gates.missing.includes("BOTH_PARENTS") ? "both parents have not confirmed they will attend" : null,
-                gates.missing.includes("DECISION_WINDOW") ? "the 24-hour decision window and deposit have not been acknowledged" : null,
-              ].filter(Boolean);
-              parts.push(
-                `MATCH CALL GATES - OUTSTANDING for ${agency?.name || "this agency"}: ${outstanding.join("; ")}. ` +
-                `A match call CANNOT be scheduled until all of these are done, and the system already posted the confirmation cards in the family's chat. ` +
-                `Follow the MATCH CALL GATES section: mention only what is actually outstanding, once, warmly. NEVER state a deposit amount yourself - the card carries the official figure.`,
-              );
-            }
+          // Only meaningful once a real thread exists - before that the
+          // gates have nowhere to render and nothing to block.
+          const gates = await evaluateMatchCallGates({
+            parentUserId: userId,
+            providerId: agencyId,
+            subjectProfileId: (await latestCardPromise)?.providerId || null,
+          });
+          if (!gates.allowed) {
+            const outstanding = [
+              gates.ipFormMissing ? "the Intended Parent Form is not submitted" : null,
+              gates.missing.includes("BOTH_PARENTS") ? "both parents have not confirmed they will attend" : null,
+              gates.missing.includes("DECISION_WINDOW") ? "the 24-hour decision window and deposit have not been acknowledged" : null,
+            ].filter(Boolean);
+            parts.push(
+              `MATCH CALL GATES - OUTSTANDING for ${agencyName || "this agency"}: ${outstanding.join("; ")}. ` +
+              `A match call CANNOT be scheduled until all of these are done, and the system already posted the confirmation cards in the family's chat. ` +
+              `Follow the MATCH CALL GATES section: mention only what is actually outstanding, once, warmly. NEVER state a deposit amount yourself - the card carries the official figure.`,
+            );
           }
         }
       } catch (e: any) {
@@ -4572,7 +4618,7 @@ HOW TO USE THESE:
       let profileIdForReuse = (currentSession as any)?.subjectProfileId || null;
       let ownerProviderIdForReuse = (currentSession as any)?.providerId || null;
       if ((!profileIdForReuse || !ownerProviderIdForReuse) && currentSessionId) {
-        const mcForReuse = await findLatestMatchCard(currentSessionId).catch(() => null);
+        const mcForReuse = await latestCardPromise;
         profileIdForReuse = profileIdForReuse || mcForReuse?.providerId || null;
         ownerProviderIdForReuse = ownerProviderIdForReuse || mcForReuse?.ownerProviderId || null;
       }
@@ -5833,7 +5879,7 @@ CRITICAL: If search_egg_donors returns results, present them with [[MATCH_CARD]]
 
     if (looksLikeProfileQuestion && isNotAction && currentSessionId && mcpClient) {
       try {
-        const mc = await findLatestMatchCard(currentSessionId);
+        const mc = await latestCardPromise;
         if (mc?.providerId && mc?.type) {
           const etype = (mc.type || "").toLowerCase();
           let profileText = "";
@@ -5922,7 +5968,7 @@ CRITICAL: If search_egg_donors returns results, present them with [[MATCH_CARD]]
     // Inject learn-more context (affirmativeIsLearnMore detected earlier, before show-more blocks)
     if (affirmativeIsLearnMore && currentSessionId) {
       try {
-        const mc = await findLatestMatchCard(currentSessionId);
+        const mc = await latestCardPromise;
         if (mc?.providerId) {
           const profileType = (mc.type || "").toLowerCase(); // e.g. "egg donor", "surrogate"
           const profileLabel = profileType === "egg donor" ? `Egg Donor #${mc.providerId}` : profileType === "surrogate" ? `Surrogate #${mc.providerId}` : `profile #${mc.providerId}`;
@@ -5946,7 +5992,7 @@ Your response should:
     const shouldTriggerScheduling = schedulingIntent || affirmativeIsScheduling;
     if (shouldTriggerScheduling && !affirmativeIsLearnMore && currentSessionId) {
       try {
-        const mc = await findLatestMatchCard(currentSessionId);
+        const mc = await latestCardPromise;
         // Skip when the parent ALREADY has an upcoming call with this exact
         // provider - the CALL ALREADY BOOKED / CALL PREP directives own that
         // case (reference the existing call, never a second calendar).
@@ -5981,7 +6027,7 @@ The parent's message was: "${userMessage}"`,
     let bankBuyDonorId: string | null = null;
     if (bankBuyIntent && currentSessionId) {
       try {
-        const mcBuy = await findLatestMatchCard(currentSessionId);
+        const mcBuy = await latestCardPromise;
         if (mcBuy?.providerId && /donor/i.test(mcBuy?.type || "")) {
           bankBuyDonorId = mcBuy.providerId;
           console.log(`[BANK BUY INTENT] Purchase intent on donor ${bankBuyDonorId} - injecting checkout override`);
@@ -8068,9 +8114,20 @@ ${phase0Section}`;
     // calendar, or booking tag is not a dead end.
     const deliversInSameBreath =
       /\[\[(MATCH_CARD|DOCTOR_CARD|COMPARE_CARD|MEETING_CARD|CONSULTATION_BOOKING|LAWYER_CALENDAR|LAWYER_CONNECT|CONCIERGE_CALENDAR|BANK_CHECKOUT|CURATION)[:\]]/i.test(finalContent);
-    const hasDeadEnd = !deliversInSameBreath && deadEndPatterns.some((p) => p.test(finalContent));
-    if (deliversInSameBreath && deadEndPatterns.some((p) => p.test(finalContent))) {
-      console.log(`[DEAD-END INTERCEPT] Skipped - promise kept in the same reply (card/calendar tag present)`);
+    // FAREWELL EXEMPTION: when the parent is signing off ("thanks, bye",
+    // "that's all for today"), a warm open-ended closing IS the right reply -
+    // forcing a retry turned goodbyes into consultation pushes (observed in
+    // the 2026-08-03 desktop voice baseline). Short explicit sign-offs only;
+    // "thanks, show me more" keeps full interception.
+    const farewellMsg = String(userMessage || "").trim();
+    const parentSaidFarewell =
+      farewellMsg.length <= 80 &&
+      /\b(good\s*bye|bye+|see you|talk (?:to you )?(?:later|soon|tomorrow)|that(?:'s| is) (?:all|it)(?: for (?:now|today))?|i(?:'m| am) (?:done|all set)(?: for (?:now|today))?|(?:gotta|got to|have to|need to) (?:go|run|hop off|jump off)|have a (?:good|great|nice) (?:day|night|evening|weekend|one)|catch you later|until (?:next time|tomorrow)|signing off|hanging up)\b/i.test(farewellMsg);
+    const hasDeadEnd = !deliversInSameBreath && !parentSaidFarewell && deadEndPatterns.some((p) => p.test(finalContent));
+    if ((deliversInSameBreath || parentSaidFarewell) && deadEndPatterns.some((p) => p.test(finalContent))) {
+      console.log(
+        `[DEAD-END INTERCEPT] Skipped - ${parentSaidFarewell ? "parent is signing off (farewell exemption)" : "promise kept in the same reply (card/calendar tag present)"}`,
+      );
     }
     if (hasDeadEnd && !isSkipAction && !serverBypassServed) {
       const _deT0 = Date.now();
@@ -8618,6 +8675,15 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         const jsonSafe = (v: any) => {
           try { return v === undefined ? null : JSON.parse(JSON.stringify(v)); } catch { return String(v); }
         };
+        // NO-OP FILTER: the model re-emits [[SAVE]] for facts already stored
+        // (journeyStage nearly every turn), which spammed the audit trail with
+        // old==new rows and burned a DB write per turn. Drop fields whose new
+        // value equals the stored value; only genuine changes write + audit.
+        const sameStored = (stored: any, next: any) =>
+          JSON.stringify(jsonSafe(stored ?? null)) === JSON.stringify(jsonSafe(next ?? null));
+        for (const [field, v] of Object.entries(userData)) {
+          if (sameStored((userRecord as any)?.[field], v)) delete (userData as any)[field];
+        }
         if (Object.keys(userData).length > 0) {
           await prisma.user.update({ where: { id: userRecord.id }, data: userData });
           for (const [field, v] of Object.entries(userData)) {
@@ -8630,10 +8696,17 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           if (parentAccountId) {
             const existing = await prisma.intendedParentProfile.findUnique({ where: { parentAccountId } });
             if (existing) {
-              await prisma.intendedParentProfile.update({ where: { parentAccountId }, data: profileData });
-              console.log(`[SAVE] Saved profile fields for account ${parentAccountId}:`, Object.keys(profileData));
               for (const [field, v] of Object.entries(profileData)) {
-                auditRows.push({ target: "profile", field, oldValue: jsonSafe((existing as any)?.[field] ?? null), newValue: jsonSafe(v) });
+                if (sameStored((existing as any)?.[field], v)) delete (profileData as any)[field];
+              }
+              if (Object.keys(profileData).length > 0) {
+                await prisma.intendedParentProfile.update({ where: { parentAccountId }, data: profileData });
+                console.log(`[SAVE] Saved profile fields for account ${parentAccountId}:`, Object.keys(profileData));
+                for (const [field, v] of Object.entries(profileData)) {
+                  auditRows.push({ target: "profile", field, oldValue: jsonSafe((existing as any)?.[field] ?? null), newValue: jsonSafe(v) });
+                }
+              } else {
+                console.log(`[SAVE] All profile fields were no-ops (already stored) - skipping write`);
               }
             }
           }
