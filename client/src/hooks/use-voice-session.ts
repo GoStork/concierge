@@ -64,9 +64,14 @@ const BARGE_VOICED_MS = 300;
 const BARGE_GRACE_MS = 220;
 // Caption pacing: Eva's text streams from the model far faster than she
 // speaks it, so painting chunks on arrival dumps the whole reply on screen
-// seconds before her voice gets there. Reveal word-by-word at roughly her
-// speaking rate instead; the buffer flushes whenever she stops speaking.
-const CAPTION_WORD_MS = 320;
+// seconds before her voice gets there. Instead: ChatGPT-voice-style rolling
+// captions - reveal word-by-word at speech rate, keep only the trailing few
+// words on screen (old words disappear), advance only while her voice is
+// actually audible, and clear shortly after she stops. The full text still
+// lands in the chat transcript after the call.
+const CAPTION_WORD_MS = 400; // ~150 wpm, Cartesia's typical speaking rate
+const CAPTION_TAIL_WORDS = 10; // roughly one line of large text
+const CAPTION_LINGER_MS = 900; // how long the last words stay after she stops
 
 // ---------------------------------------------------------------------------
 // Instrumentation only: browser-side timing events reported to the gateway
@@ -134,6 +139,7 @@ export function useVoiceSession() {
   // Words of Eva's caption not yet revealed (see CAPTION_WORD_MS).
   const captionBufRef = useRef("");
   const captionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const captionLingerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Learned echo coupling: mic RMS per unit of Eva's output RMS on THIS
   // device (headphones ~0, phone speaker can approach 1). Starts conservative
   // and converges down whenever Eva speaks over a silent parent.
@@ -173,17 +179,27 @@ export function useVoiceSession() {
   }, []);
   const clearCaption = useCallback(() => {
     stopCaptionPacer();
+    if (captionLingerRef.current) {
+      clearTimeout(captionLingerRef.current);
+      captionLingerRef.current = null;
+    }
     captionBufRef.current = "";
     setCaption("");
   }, [stopCaptionPacer]);
-  const flushCaption = useCallback(() => {
+  // She stopped talking (naturally or barged) - don't dump the un-revealed
+  // remainder; linger on the last words briefly, then clear the line.
+  const endCaption = useCallback(() => {
     stopCaptionPacer();
-    const rest = captionBufRef.current;
     captionBufRef.current = "";
-    if (rest) setCaption((prev) => prev + rest);
+    if (captionLingerRef.current) clearTimeout(captionLingerRef.current);
+    captionLingerRef.current = setTimeout(() => setCaption(""), CAPTION_LINGER_MS);
   }, [stopCaptionPacer]);
   const queueCaption = useCallback((text: string) => {
     captionBufRef.current += text;
+    if (captionLingerRef.current) {
+      clearTimeout(captionLingerRef.current);
+      captionLingerRef.current = null;
+    }
     if (captionTimerRef.current) return;
     captionTimerRef.current = setInterval(() => {
       const buf = captionBufRef.current;
@@ -195,11 +211,15 @@ export function useVoiceSession() {
         }
         return;
       }
-      // Reveal one word per tick; when far behind (model streamed a long
-      // reply in one burst), catch up two at a time so the tail never lags
-      // her voice by more than a few seconds.
+      // Sync to her actual voice: when the avatar's remote audio level is
+      // live and currently silent (she hasn't started yet, or is pausing),
+      // hold the caption - words should appear as she says them, not as the
+      // model streams them. Audio-only sessions (no live level) free-run.
+      const haveLiveLevel = Date.now() - remoteAudioLevel.updatedAt < 600;
+      if (haveLiveLevel && remoteAudioLevel.rms < 0.02) return;
+      // Reveal one word per tick; if far behind (long reply), two at a time.
       const pendingWords = buf.split(/\s+/).filter(Boolean).length;
-      const take = pendingWords > 50 ? 2 : 1;
+      const take = pendingWords > 30 ? 2 : 1;
       let cut = 0;
       for (let i = 0; i < take; i++) {
         const m = /^\s*\S+\s?/.exec(buf.slice(cut));
@@ -208,7 +228,12 @@ export function useVoiceSession() {
       }
       const next = buf.slice(0, cut);
       captionBufRef.current = buf.slice(cut);
-      setCaption((prev) => prev + next);
+      // Rolling window: keep only the trailing words - one line of large
+      // text, like ChatGPT's voice mode. Old words fall away.
+      setCaption((prev) => {
+        const words = (prev + next).split(/\s+/).filter(Boolean);
+        return words.slice(-CAPTION_TAIL_WORDS).join(" ");
+      });
     }, CAPTION_WORD_MS);
   }, []);
 
@@ -257,12 +282,10 @@ export function useVoiceSession() {
     wsRef.current = null;
     engineRef.current?.destroy();
     engineRef.current = null;
-    // Reveal any caption words still queued in the pacer (and stop its
-    // timer) so the final transcript stays complete after hang-up.
-    flushCaption();
+    clearCaption();
     setEndReason(reason);
     setStateBoth("ended");
-  }, [flushCaption]);
+  }, [clearCaption]);
 
   const start = useCallback(async (opts: StartOpts) => {
     if (activeRef.current) return;
@@ -424,9 +447,9 @@ export function useVoiceSession() {
           if (["listening", "thinking", "speaking"].includes(msg.state)) {
             const wasBarge = bargeSentRef.current;
             setStateBoth(msg.state);
-            // Eva finished (or was cut off) - reveal whatever caption text
-            // is still queued so the transcript is complete on screen.
-            if (msg.state === "listening") flushCaption();
+            // Eva finished (or was cut off) - linger on the last words, then
+            // clear the rolling caption line (full text lives in the chat).
+            if (msg.state === "listening") endCaption();
             if (msg.state !== "speaking") {
               bargeSentRef.current = false;
               bargeStartRef.current = 0;

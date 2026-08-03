@@ -390,8 +390,10 @@ export function VoiceModePanel({
             <>
               {caption && (
                 <p
-                  className={`text-base font-body leading-relaxed max-h-36 overflow-y-auto ${
-                    overVideo ? "text-background" : "text-foreground"
+                  className={`font-body leading-snug line-clamp-2 ${
+                    overVideo
+                      ? "text-2xl font-medium text-background drop-shadow-md"
+                      : "text-xl text-foreground"
                   }`}
                   data-testid="voice-eva-caption"
                 >
