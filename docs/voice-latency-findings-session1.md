@@ -410,3 +410,39 @@ grep -o '\[TURN_METRICS\] {.*}' /tmp/gostork-server.log | sed 's/^\[TURN_METRICS
 A near-linear relationship confirms A0. The per-mark columns additionally
 split each slow turn into prework / tier / tool / TTS / avatar components, so
 even a non-linear result is attributable.
+
+## 8. Session 8 (2026-08-03): Commit B + reliability batch
+
+**Commit B (fe86b0aa)**: the speech_final+1400ms dispatch hold is now
+scoped to GATED (iOS) sessions only. Evidence: the 15-turn desktop baseline
+measured 0/29 hold fires - UtteranceEnd owns dispatch when the mic streams
+continuously. The gateway forwards the client's gatePolicy handshake to the
+STT stream (setHoldEnabled, persisted across STT reopens); unknown clients
+default to hold ON. Verified by the acceptance harness against a dev server
+on port 5003: 15/15 PASS, 0 superseded, dispatch paths 12 utterance_end +
+8 idle_fallback, zero speech_final_held.
+
+**Reliability batch (37d68929)**:
+- OWED-COMPARISON GUARANTEE: mirrors OWED-CARD. When the parent asked to
+  compare, the model ran resolve_comparison successfully but emitted no
+  [[COMPARE_CARD]] (the 2026-08-02 first-ask whiff), the tag is
+  reconstructed from the model's own resolve args and re-resolved by the
+  outer pipeline with full personalization.
+- DEAD-END farewell exemption: short explicit sign-offs from the parent
+  ("that's all for today, thanks") no longer trigger the dead-end retry -
+  a warm open-ended closing IS correct there.
+- SAVE no-op filter: fields whose new value equals the stored value are
+  dropped before the write (journeyStage was re-saved nearly every turn) -
+  no DB write, no old==new audit rows.
+
+**Pre-work creep (measured from 38 baseline turns)**: median router_entry ->
+tier dispatch was 1459ms (p90 1795ms) vs 472ms right after session 2. The
+two dominant sequential gaps: (a) match_gates: latestCard ->
+findConnectedProviderSession -> provider name, worst gap on 13/38 turns at
+280-460ms - now kicked off with the other parallel lookups
+(connectedAgencyPromise); (b) prompt_sections_start -> intercepts_evaluated,
+worst on 18/38 at 370-570ms - partially addressed by pointing five pre-tier
+findLatestMatchCard call sites at the memoized latestCardPromise (each was
+a fresh DB query). Remaining attribution of gap (b) (prompt assembly CPU vs
+the conditional inquiry-mode awaits) needs sub-marks - next measurement
+pass.
