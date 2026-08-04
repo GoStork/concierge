@@ -432,7 +432,7 @@ export function VoiceModePanel({
         {/* Interactive cards + quick replies. With the avatar up, cards live
             in the full-screen takeover layer instead of this inline box, and
             chips yield the floor to the card's own action buttons. */}
-        {!takeover && (quickReplies.length > 0 || hasScreenCards) && (
+        {!takeover && ((quickReplies.length > 0 && state === "listening") || hasScreenCards) && (
           <div className="w-full max-w-md flex flex-col items-center gap-2">
             {hasScreenCards && renderCards && !overVideo ? (
               <div
@@ -449,6 +449,13 @@ export function VoiceModePanel({
                 Matches are ready - end the voice chat to view them
               </span>
             ) : null}
+            {/* Chips are ANSWER OPTIONS to the question Eva is still working
+                toward - the payload lands when the model finishes streaming,
+                seconds before her voice gets to the question (observed live:
+                "Yes, show me a California surrogate" on screen while she was
+                on step 1 of a walkthrough). Hold them until she is done
+                talking and actually listening for the answer. */}
+            {state === "listening" && (
             <div className="flex flex-wrap items-center justify-center gap-2">
               {quickReplies.map((qr) => (
                 <button
@@ -468,6 +475,7 @@ export function VoiceModePanel({
                 </button>
               ))}
             </div>
+            )}
           </div>
         )}
       </div>
