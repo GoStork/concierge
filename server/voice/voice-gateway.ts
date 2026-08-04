@@ -5,6 +5,7 @@ import passport from "passport";
 import { prisma } from "../db";
 import { StreamingTagStripper, stripTags } from "./tag-stripper";
 import { SentenceChunker } from "./sentence-chunker";
+import { SpokenBudget, normalizeSpeech } from "./spoken-budget";
 import type { SttProvider, SttStream, SttUtteranceMeta, TtsProvider, TtsStream } from "./providers";
 import { VOICE_SAMPLE_RATE } from "./providers";
 import { elevenLabsTts } from "./tts/elevenlabs-tts";
@@ -779,6 +780,15 @@ class VoiceSession {
       /\b(hey|hi|hello|good (morning|afternoon|evening)|are you (there|here|with me)|can you hear( me)?|hear me|thank(s| you)?|ok(ay)?|got it)\b/i;
     const wordCount = userText.trim().split(/\s+/).length;
     const substantive = wordCount >= 4 && !(wordCount <= 8 && SOCIAL_UTTERANCE.test(userText));
+    // CODE-ENFORCED SPOKEN CEILING (see spoken-budget.ts): the prompt caps
+    // are ignored by the model - measured 19-62s monologues. ~90 words is
+    // ~30s of speech; an explicit ask for detail earns a bigger budget. The
+    // full reply always reaches the chat transcript regardless.
+    const wantsDetail =
+      /\b(explain|walk me through|in (full )?detail|step[- ]by[- ]step|full (process|breakdown|picture)|everything (about|i need)|tell me (all|everything))\b/i.test(
+        userText,
+      );
+    const spokenBudget = new SpokenBudget(wantsDetail ? 150 : 90);
     // Conditional early filler: fires at FILLER_MS only when the first token
     // has NOT arrived yet - fast turns never hear it. 650ms fired on nearly
     // EVERY substantive turn (Tier2 first token is rarely that fast), and the
@@ -874,11 +884,17 @@ class VoiceSession {
           }
           const safe = this.stripper.push(json.delta);
           if (safe) {
-            // After a barge the reply keeps streaming for persistence, but
-            // neither audio NOR captions - captions crawling on after her
-            // voice stopped read as a crash.
-            if (!this.speakSuppressed) this.send({ type: "eva_caption", text: safe });
-            this.chunker?.push(safe);
+            // The budget releases complete NORMALIZED sentences until the
+            // word ceiling; past it, one deferral line and silence. Captions
+            // mirror speech exactly - unspoken text never paints.
+            const speak = spokenBudget.push(safe);
+            if (speak) {
+              // After a barge the reply keeps streaming for persistence, but
+              // neither audio NOR captions - captions crawling on after her
+              // voice stopped read as a crash.
+              if (!this.speakSuppressed) this.send({ type: "eva_caption", text: speak });
+              this.chunker?.push(speak);
+            }
           }
         } else if (json.type === "reset") {
           // An interceptor replaced the draft: silence what was queued and
@@ -891,6 +907,7 @@ class VoiceSession {
           });
           this.stripper.reset();
           this.chunker?.reset();
+          spokenBudget.reset();
           this.send({ type: "caption_reset" });
         } else if (json.type === "done") {
           done = json;
@@ -997,16 +1014,20 @@ class VoiceSession {
           this.tts?.cancel();
           route?.interrupt();
           this.send({ type: "caption_reset" });
-          this.send({ type: "eva_caption", text: finalText });
+          // The re-spoken reply obeys the same ceiling + normalization as the
+          // streamed path - the backstop must not reopen the monologue hole.
+          spokenBudget.reset();
+          const respeak = spokenBudget.push(finalText + " ") + spokenBudget.flush();
+          this.send({ type: "eva_caption", text: respeak });
           this.tts = this.openTts(route);
-          this.ttsChars += finalText.length;
+          this.ttsChars += respeak.length;
           this.setState("speaking");
           const stream = this.tts;
           stream.onEnd(() => {
             route?.flushSpeech();
             this.finishSpeaking(turnId, route);
           });
-          stream.sendText(finalText + " ");
+          stream.sendText(respeak + " ");
           stream.flush();
           return;
         }
@@ -1015,6 +1036,15 @@ class VoiceSession {
 
     // Flush the tail of the reply through TTS and hand back the floor.
     if (!this.speakSuppressed) {
+      const tail = spokenBudget.flush();
+      if (tail) {
+        this.send({ type: "eva_caption", text: tail });
+        this.chunker?.push(tail);
+      }
+      if (spokenBudget.truncated) {
+        metrics.spokenTruncated = true;
+        log(`turn ${turnId}: spoken ceiling hit - reply truncated to ~${wantsDetail ? 150 : 90} words (full text in chat)`);
+      }
       this.chunker?.flush();
       const stream = this.tts;
       stream?.onEnd(() => {

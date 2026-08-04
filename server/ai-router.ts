@@ -1287,6 +1287,29 @@ let promptSectionsCacheExpiry = 0;
 // this session - the corrective line escalates phrasing instead of repeating
 // one canned sentence verbatim (observed live: three identical repeats).
 const consultDropStreak = new Map<string, number>();
+
+// WHISPER PARENT APPROVAL: a whisper is a message to a THIRD PARTY (real
+// provider email + SMS), so the parent sees and approves the question before
+// it sends - the durable control the user mandated after junk whispers
+// reached a real agency ("Can you hear me?" x4, 2026-08-02). The draft waits
+// here between the ask turn and the parent's yes/no; expires after 10 min.
+// Provenance gates remain as defense-in-depth underneath.
+const pendingWhisperApprovals = new Map<
+  string,
+  { providerId: string; providerName: string; questionText: string; at: number }
+>();
+const WHISPER_APPROVE_RE =
+  /^(yes[,!. ]*(please|send( it| my question)?|go ahead|do it)?|send (it|my question)( to the agency)?|go ahead|sure[,!. ]*(send( it)?)?|please send( it)?|ask them|yes,? ask (them|the agency))[\s!.]*$/i;
+const WHISPER_DECLINE_RE =
+  /^(no+[,!. ]*(thanks|thank you|don'?t)?|don'?t (send|ask)( it| them)?|no,? don'?t ask( them)?|never ?mind|cancel( it| that)?|skip it)[\s!.]*$/i;
+// Control-flow sentinel: a freshly drafted whisper was parked for parent
+// approval - the rest of the send path (SilentQuery, provider card, email,
+// SMS) must not run this turn.
+class WhisperHeldForApproval extends Error {
+  constructor() {
+    super("whisper held for parent approval");
+  }
+}
 async function getPromptSections(): Promise<Map<string, string> | null> {
   if (Date.now() < promptSectionsCacheExpiry && promptSectionsCache) {
     mark("prompt_sections_cache_hit");
@@ -1456,6 +1479,47 @@ async function claudeRetry(messages: any[]): Promise<string> {
   const chat = model.startChat({ history: chatHistory });
   const result = await chat.sendMessage(userMessage);
   return result.response.text();
+}
+
+// Streaming variant of claudeRetry for interceptors whose replacement is
+// LIKELY to be accepted (QUESTION INTERCEPT: the 23.8s worst case measured
+// live was the parent waiting for the whole retry to generate before the
+// first replacement token reached TTS). The caller sends sse.sendReset()
+// FIRST, streams deltas through onDelta as they generate, and validates the
+// full text AFTER - on the rare invalid retry it resets again and restores
+// the original. Optimistic streaming trades a rare double-reset for several
+// seconds of dead air on every fire.
+async function claudeRetryStream(messages: any[], onDelta: (delta: string) => void): Promise<string> {
+  const systemMsg = messages.find((m: any) => m.role === "system");
+  const rawHistory = messages
+    .filter((m: any) => m.role === "user" || m.role === "assistant")
+    .map((m: any) => ({
+      role: (m.role === "assistant" ? "model" : "user") as "model" | "user",
+      parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }],
+    }));
+  const firstUserIdx = rawHistory.findIndex((m) => m.role === "user");
+  const history = firstUserIdx >= 0 ? rawHistory.slice(firstUserIdx) : rawHistory;
+  if (!history.length) return "";
+  const chatHistory = history.slice(0, -1);
+  const lastMsg = history.at(-1);
+  if (!lastMsg) return "";
+  const userMessage = lastMsg.parts[0].text;
+  const model = geminiAI.getGenerativeModel({
+    model: "gemini-3.5-flash",
+    generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
+    ...(systemMsg ? { systemInstruction: { parts: [{ text: systemMsg.content }] } } : {}),
+  });
+  const chat = model.startChat({ history: chatHistory });
+  const result = await chat.sendMessageStream(userMessage);
+  let full = "";
+  for await (const chunk of result.stream) {
+    const t = chunk.text();
+    if (t) {
+      full += t;
+      onDelta(t);
+    }
+  }
+  return full;
 }
 
 export const aiRouter = Router();
@@ -7804,18 +7868,21 @@ ${phase0Section}`;
                 content: `SYSTEM OVERRIDE: The parent asked a QUESTION about the currently presented match profile. They did NOT ask to skip or see a new match. You MUST answer their question using the profile data below. Do NOT present a new match card. Do NOT call search tools. Just answer the question.\n\nFULL PROFILE DATA:\n${profileText}\n\nParent's question: "${userMessage}"\n\nAnswer the question directly from the profile data. After answering, ask if they have more questions: "Anything else you'd like to know about ${pronounLabel}?" [[QUICK_REPLY:More questions|I like ${pronounLabel}!|Show me someone else]]`,
               });
 
-              const retryContent = await claudeRetry(messages);
+              // OPTIMISTIC STREAMING (measured 23.8s first token on this
+              // path): reset immediately and stream the retry's deltas live
+              // so TTS starts speaking the corrected answer while it is
+              // still generating. Validation happens on the full text; the
+              // rare invalid retry costs a second reset + restore.
+              sse.sendReset();
+              const retryContent = await claudeRetryStream(messages, (delta) => sse.sendToken(delta)).catch(() => "");
               if (retryContent && !/\[\[MATCH_CARD:/i.test(retryContent)) {
-                console.log(`[QUESTION INTERCEPT SUCCESS] AI answered from profile data instead of showing new match`);
+                console.log(`[QUESTION INTERCEPT SUCCESS] AI answered from profile data instead of showing new match (streamed)`);
                 finalContent = retryContent;
-                // The rejected draft (wrong match presentation) already streamed live -
-                // clear it and stream the replacement so the parent never keeps
-                // reading a paragraph about the wrong profile until "done".
+              } else {
+                console.log(`[QUESTION INTERCEPT] Retry ${retryContent ? "still showed match card" : "failed"} - restoring original response`);
+                messages.pop();
                 sse.sendReset();
                 sse.sendToken(finalContent);
-              } else {
-                console.log(`[QUESTION INTERCEPT] Retry still showed match card - using original response`);
-                messages.pop();
               }
             }
           }
@@ -9144,7 +9211,40 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       finalContent = finalContent.replace(/\[\[HUMAN_NEEDED\]\]/g, "").trim();
     }
 
+    // WHISPER APPROVAL TURN: a draft from the previous turn is waiting on
+    // the parent's yes/no. An approval synthesizes the whisper tag so the
+    // existing send path (with all its sink gates) executes with the ORIGINAL
+    // question; a decline discards the draft. Anything else leaves the draft
+    // waiting (10 min expiry) and the turn flows normally.
+    let whisperApprovedDraft: { providerId: string; providerName: string; questionText: string; at: number } | null = null;
+    if (currentSessionId && pendingWhisperApprovals.has(currentSessionId)) {
+      const draft = pendingWhisperApprovals.get(currentSessionId)!;
+      const trimmedMsg = String(userMessage || "").trim();
+      if (Date.now() - draft.at > 10 * 60 * 1000) {
+        pendingWhisperApprovals.delete(currentSessionId);
+      } else if (WHISPER_APPROVE_RE.test(trimmedMsg)) {
+        pendingWhisperApprovals.delete(currentSessionId);
+        whisperApprovedDraft = draft;
+        console.log(`[WHISPER APPROVAL] Parent approved - sending the drafted question to ${draft.providerName}`);
+      } else if (WHISPER_DECLINE_RE.test(trimmedMsg)) {
+        pendingWhisperApprovals.delete(currentSessionId);
+        finalContent = "No problem, I won't send it. What else can I help you with?";
+        sse.sendReset();
+        sse.sendToken(finalContent);
+        recordInterceptor("whisper_declined", true, 0);
+      } else {
+        // The parent moved on to something else - the ask is stale, and a
+        // "yes" to some LATER question must never fire a held send. One
+        // turn is the draft's whole life.
+        pendingWhisperApprovals.delete(currentSessionId);
+        recordInterceptor("whisper_draft_abandoned", true, 0);
+      }
+    }
+
     let whisperMatch = finalContent.match(/\[\[WHISPER:(.*?)\]\]/);
+    if (whisperApprovedDraft) {
+      whisperMatch = [`[[WHISPER:${whisperApprovedDraft.providerId}]]`, whisperApprovedDraft.providerId] as any;
+    }
     const whisperPhrasePattern = /(?:whisper|reach(?:ed|ing)?\s*out|sent\s*a\s*message|ask(?:ed|ing)?\s*the\s*(?:agency|coordinator|clinic|provider)|check\s*(?:on|with)|hold\s*on|get\s*(?:that|this|back|the)\s*(?:info|detail|answer)|find\s*(?:that|this)\s*out|look(?:ing)?\s*into\s*(?:that|this|it)|get\s*back\s*to\s*you|couldn'?t\s*(?:retrieve|locate|find|access)|don'?t\s*have\s*(?:that|this|access|the)\s*(?:specific|particular|info|detail|data)?|I'?ll\s*(?:check|find|update\s*you)|ran\s*into\s*a\s*(?:hiccup|issue|problem)|wasn'?t\s*able\s*to\s*(?:find|locate|retrieve|access)|unfortunately.*(?:don'?t|can'?t|couldn'?t)|seems\s*I\s*(?:don'?t|can'?t|couldn'?t)|issue\s*accessing|unable\s*to\s*(?:retrieve|access|find|locate|get)|there\s*was\s*(?:an?\s*)?(?:issue|problem|error)\s*(?:accessing|retrieving|fetching|getting|finding)|I'?m\s*unable\s*to\s*(?:retrieve|access|find))/i;
     const phraseMatched = !whisperMatch && whisperPhrasePattern.test(finalContent);
 
@@ -9258,6 +9358,9 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       } else {
         questionText = userMessage || finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim().slice(0, 500);
       }
+      // Approval turn: the outbound question is the DRAFT the parent just
+      // approved, never the approval utterance ("yes, send it").
+      if (whisperApprovedDraft) questionText = whisperApprovedDraft.questionText;
 
       // Guard the OUTBOUND question, not the parent's message.
       //
@@ -9336,6 +9439,29 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           });
           const providerData = JSON.parse((providerResult.content as any)?.[0]?.text || "{}");
           const providerName = providerData?.name || "Your Clinic";
+
+          // PARENT-VISIBLE APPROVAL (the durable whisper control): a NEW
+          // whisper never sends on the turn it was drafted. The parent sees
+          // the exact question and the recipient, and the send happens only
+          // on their explicit yes (the approval turn above synthesizes the
+          // tag and re-enters this block with whisperApprovedDraft set).
+          if (!whisperApprovedDraft) {
+            pendingWhisperApprovals.set(currentSessionId, {
+              providerId: whisperProviderId,
+              providerName,
+              questionText,
+              at: Date.now(),
+            });
+            if (pendingWhisperApprovals.size > 5000) pendingWhisperApprovals.clear();
+            finalContent =
+              `I don't have that detail on file, but I can ask ${providerName} directly - they won't see your name, just the question: "${questionText.slice(0, 200)}". Want me to send it? ` +
+              `[[QUICK_REPLY:Yes, send my question|No, don't ask them]]`;
+            sse.sendReset();
+            sse.sendToken(finalContent);
+            recordInterceptor("whisper_approval_requested", true, 0);
+            console.log(`[WHISPER APPROVAL] Draft held for parent approval (provider=${providerName}, q="${questionText.slice(0, 80)}")`);
+            throw new WhisperHeldForApproval();
+          }
 
           await prisma.aiChatSession.update({
             where: { id: currentSessionId },
@@ -9430,9 +9556,21 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               }).catch(e => console.error("Failed to fetch provider phones for whisper SMS:", e.message));
             }
           }
+          // The approval turn gets a deterministic confirmation - the model's
+          // organic reply to "yes, send it" has no idea the send just ran.
+          if (whisperApprovedDraft) {
+            finalContent = `Done, I've sent your question to ${providerName}. The moment they reply, I'll bring their answer straight back to you here.`;
+            sse.sendReset();
+            sse.sendToken(finalContent);
+            recordInterceptor("whisper_approved_sent", true, 0);
+          }
         }
       } catch (e) {
-        console.error("Failed to create WHISPER:", e);
+        if (e instanceof WhisperHeldForApproval) {
+          // Not an error - the draft is parked, the ask already streamed.
+        } else {
+          console.error("Failed to create WHISPER:", e);
+        }
       }
       finalContent = finalContent.replace(/\[\[WHISPER:.*?\]\]/g, "").trim();
       if (whisperSuppressed) {
