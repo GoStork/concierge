@@ -293,6 +293,36 @@ function CurationOverlay({ brandColor, onComplete }: { brandColor: string; onCom
   );
 }
 
+// One meeting/booking card - the SAME component serves the chat transcript
+// AND the voice-call takeover (extracted from the message-list JSX so voice
+// mode never forks it; slug comes from each booking's OWN provider so the
+// reschedule picker hits the right calendar).
+function MeetingBookingCard({ booking, brandColor }: { booking: any; brandColor: string }) {
+  return (
+    <div
+      className="w-full overflow-hidden border border-border bg-card"
+      style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
+    >
+      <div className="p-1.5" style={{ backgroundColor: brandColor }}>
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <CalendarCheck className="w-4 h-4 text-primary-foreground" />
+          <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
+            {`Meeting with ${booking.providerUser?.provider?.name || booking.providerUser?.name || "Provider"}`}
+          </span>
+        </div>
+      </div>
+      <div className="px-4 pb-4">
+        <InlineBookingCalendar
+          slug={booking.providerUser?.scheduleConfig?.bookingPageSlug || "__none__"}
+          memberName={booking.providerUser?.name || "Provider"}
+          brandColor={brandColor}
+          existingBooking={booking}
+        />
+      </div>
+    </div>
+  );
+}
+
 function PrepDocCard({ brandColor }: { brandColor: string }) {
   return (
     <Card
@@ -4816,6 +4846,19 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     <ComparisonCard card={card} brandColor={brandColor} />
                   </div>
                 ))}
+                {/* Meeting/booking cards ("when is my call?") - meetingCards
+                    was in the takeover trigger list but nothing rendered it,
+                    so asking about an existing meeting opened a BLANK screen.
+                    Same shared card as the chat transcript. */}
+                {(c.meetingCards || []).map((booking: any) => (
+                  <MeetingBookingCard key={`vmb-${booking.id}`} booking={booking} brandColor={brandColor} />
+                ))}
+                {/* Match-call prep guide - rendered in chat, dropped in voice. */}
+                {c.prepDoc && (
+                  <div className="w-full">
+                    <PrepDocCard brandColor={brandColor} />
+                  </div>
+                )}
               </>
             )}
           />
@@ -5338,28 +5381,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                   {!alignRight && msg.meetingCards && msg.meetingCards.length > 0 && (
                     <div className="mt-3 space-y-3 w-full" data-testid={`meeting-cards-${i}`}>
                       {msg.meetingCards.map((booking: any) => (
-                        <div
-                          key={`meeting-${booking.id}`}
-                          className="w-full overflow-hidden border border-border bg-card"
-                          style={{ borderRadius: "var(--container-radius, 0.5rem)", maxWidth: "min(100%, 420px)" }}
-                        >
-                          <div className="p-1.5" style={{ backgroundColor: brandColor }}>
-                            <div className="flex items-center gap-2 px-3 py-1.5">
-                              <CalendarCheck className="w-4 h-4 text-primary-foreground" />
-                              <span className="text-primary-foreground text-xs font-semibold uppercase tracking-wider">
-                                {`Meeting with ${booking.providerUser?.provider?.name || booking.providerUser?.name || "Provider"}`}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="px-4 pb-4">
-                            <InlineBookingCalendar
-                              slug={booking.providerUser?.scheduleConfig?.bookingPageSlug || "__none__"}
-                              memberName={booking.providerUser?.name || "Provider"}
-                              brandColor={brandColor}
-                              existingBooking={booking}
-                            />
-                          </div>
-                        </div>
+                        <MeetingBookingCard key={`meeting-${booking.id}`} booking={booking} brandColor={brandColor} />
                       ))}
                     </div>
                   )}

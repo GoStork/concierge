@@ -10530,6 +10530,20 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         if (handedOff) {
           console.log(`[CONSULTATION] Provider ${consultProviderId} journey is handed off - dropping consultation card`);
           consultProviderId = "";
+          // The reply text still PROMISES the calendar the guard just refused
+          // (observed live on voice, session stn78n: Eva announced she was
+          // pulling it up, the card was dropped here, and the parent stared
+          // at nothing - "I don't see the calendar on the screen"). Correct
+          // the words too, not just the card.
+          const _cdT0 = Date.now();
+          const promisesCalendar = /calendar|schedul|book|pull(?:ing)? (?:it |that |this )?up|time slot/i.test(finalContent);
+          if (promisesCalendar) {
+            finalContent =
+              "Actually, you're already connected with this agency, so there's no new call to book here - you can continue with them directly in your existing conversation thread. Is there anything else I can help you with in the meantime?";
+            sse.sendReset();
+            sse.sendToken(finalContent);
+          }
+          recordInterceptor("consultation_drop_promise_fix", promisesCalendar, Date.now() - _cdT0);
         }
       } catch { /* fail open - the directive still guards */ }
 

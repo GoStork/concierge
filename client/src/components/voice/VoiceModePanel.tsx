@@ -172,7 +172,8 @@ export function VoiceModePanel({
     cards?.doctorCards?.length ||
     cards?.comparisonCards?.length ||
     cards?.consultationCard ||
-    cards?.meetingCards?.length
+    cards?.meetingCards?.length ||
+    cards?.prepDoc
   );
 
   const initials = (personaName || "AI")
