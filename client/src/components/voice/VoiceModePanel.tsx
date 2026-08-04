@@ -404,7 +404,7 @@ export function VoiceModePanel({
             <>
               {caption && (
                 <p
-                  className={`font-body leading-snug line-clamp-2 ${
+                  className={`font-body leading-snug line-clamp-2 w-full text-left ${
                     overVideo
                       ? "text-2xl font-medium text-background drop-shadow-md"
                       : "text-xl text-foreground"

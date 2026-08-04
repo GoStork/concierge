@@ -215,6 +215,11 @@ export function useVoiceSession() {
   // iOS analyser runs much quieter than desktop - a fixed 0.02 read most of
   // her speech as silence and starved captions seconds behind her voice).
   const captionPeakRef = useRef(0);
+  // Speech has syllable-rate dips; sampled at 100ms they read as silence and
+  // pause the text mid-word (measured live: 148/296 ticks gated during a
+  // continuous 30s answer). A voiced tick opens this hangover window so
+  // brief dips keep earning credit; only real pauses stop the captions.
+  const captionVoicedUntilRef = useRef(0);
   // Per-turn pacing decisions, reported as the caption_pacing client metric.
   const captionStatsRef = useRef({ ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0 });
   const stopCaptionPacer = useCallback(() => {
@@ -233,9 +238,14 @@ export function useVoiceSession() {
     captionLineRef.current = [];
     captionLineDoneRef.current = false;
     captionCreditRef.current = 0;
+    // Turns that never reach "listening" (superseded/barged into the next
+    // turn) would lose their pacing report - ship it here as well; the
+    // per-turn dedupe in reportMetric prevents doubles.
+    const s = captionStatsRef.current;
+    if (s.ticks > 0) reportMetric("caption_pacing", { extra: { ...s, peak: Number(captionPeakRef.current.toFixed(4)) } });
     captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0 };
     setCaption("");
-  }, [stopCaptionPacer]);
+  }, [stopCaptionPacer, reportMetric]);
   // Append one whole word to the subtitle line (starting a fresh line after
   // a sentence ended or the line filled) and paint it. Returns false when
   // the word was pure markdown noise and nothing was painted.
@@ -305,13 +315,17 @@ export function useVoiceSession() {
       // levels, never an absolute number (see captionPeakRef).
       const stats = captionStatsRef.current;
       stats.ticks++;
-      const haveLiveLevel = Date.now() - remoteAudioLevel.updatedAt < 600;
+      const now = Date.now();
+      const haveLiveLevel = now - remoteAudioLevel.updatedAt < 600;
       if (haveLiveLevel) {
         captionPeakRef.current = Math.max(captionPeakRef.current * 0.995, remoteAudioLevel.rms);
-        const voiced =
+        if (
           captionPeakRef.current > 0.0005 &&
-          remoteAudioLevel.rms > captionPeakRef.current * 0.12;
-        if (voiced) {
+          remoteAudioLevel.rms > captionPeakRef.current * 0.08
+        ) {
+          captionVoicedUntilRef.current = now + 300;
+        }
+        if (now < captionVoicedUntilRef.current) {
           captionCreditRef.current += CAPTION_TICK_MS;
           stats.credited++;
         } else {
