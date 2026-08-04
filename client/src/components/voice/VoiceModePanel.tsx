@@ -110,6 +110,10 @@ interface VoiceModePanelProps {
   // landed yet - open the takeover immediately with a loading shell so the
   // profile appears the moment she starts presenting it.
   cardsPreview?: boolean;
+  // Eva has reached (or finished) the final line of her reply - the moment
+  // any question she asked is actually audible. Quick-reply chips wait for
+  // this instead of painting minutes early or (listening-only) never.
+  chipsReady?: boolean;
   micMuted: boolean;
   error: string | null;
   onToggleMute: () => void;
@@ -142,6 +146,7 @@ export function VoiceModePanel({
   caption,
   cards,
   cardsPreview,
+  chipsReady,
   micMuted,
   error,
   onToggleMute,
@@ -432,7 +437,7 @@ export function VoiceModePanel({
         {/* Interactive cards + quick replies. With the avatar up, cards live
             in the full-screen takeover layer instead of this inline box, and
             chips yield the floor to the card's own action buttons. */}
-        {!takeover && ((quickReplies.length > 0 && state === "listening") || hasScreenCards) && (
+        {!takeover && ((quickReplies.length > 0 && chipsReady) || hasScreenCards) && (
           <div className="w-full max-w-md flex flex-col items-center gap-2">
             {hasScreenCards && renderCards && !overVideo ? (
               <div
@@ -455,7 +460,7 @@ export function VoiceModePanel({
                 "Yes, show me a California surrogate" on screen while she was
                 on step 1 of a walkthrough). Hold them until she is done
                 talking and actually listening for the answer. */}
-            {state === "listening" && (
+            {chipsReady && (
             <div className="flex flex-wrap items-center justify-center gap-2">
               {quickReplies.map((qr) => (
                 <button

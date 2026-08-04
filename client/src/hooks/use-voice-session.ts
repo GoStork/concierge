@@ -75,7 +75,7 @@ const BARGE_GRACE_MS = 220;
 // tick landing on a brief audio dip forfeited the whole word of progress -
 // captions drifted seconds behind her voice (iPhone test 2026-08-03).
 const CAPTION_TICK_MS = 100;
-const CAPTION_WORD_MS = 340; // ~175 wpm, Cartesia's actual speaking rate
+const CAPTION_WORD_MS = 320; // ~185 wpm articulated (pauses are gated out)
 const CAPTION_TAIL_WORDS = 10; // roughly one line of large text
 const CAPTION_LINGER_MS = 900; // how long the last words stay after she stops
 
@@ -128,6 +128,12 @@ export function useVoiceSession() {
   const [state, setState] = useState<VoiceState>("ended");
   const [partialTranscript, setPartialTranscript] = useState("");
   const [caption, setCaption] = useState("");
+  // Quick-reply chips are answer options to a question that usually sits at
+  // the END of Eva's reply. True once she reaches her final line (or stops
+  // talking) - the moment the question is actually being asked. Showing them
+  // at model-done painted them minutes early; listening-only never showed
+  // them at all when the parent interjected before a monologue finished.
+  const [chipsReady, setChipsReady] = useState(false);
   const [cards, setCards] = useState<VoiceCardsPayload | null>(null);
   // Eva's stream contains a MATCH_CARD tag; the card payload lands at done.
   // This bridges the gap so the profile UI opens the moment she presents it.
@@ -157,6 +163,7 @@ export function useVoiceSession() {
   // fresh line (set on sentence end or when the line fills).
   const captionLineRef = useRef<string[]>([]);
   const captionLineDoneRef = useRef(false);
+  const chipsReadyRef = useRef(false);
   // Accumulated voiced milliseconds not yet spent on revealed words.
   const captionCreditRef = useRef(0);
   // Learned echo coupling: mic RMS per unit of Eva's output RMS on THIS
@@ -238,6 +245,8 @@ export function useVoiceSession() {
     captionLineRef.current = [];
     captionLineDoneRef.current = false;
     captionCreditRef.current = 0;
+    chipsReadyRef.current = false;
+    setChipsReady(false);
     // Turns that never reach "listening" (superseded/barged into the next
     // turn) would lose their pacing report - ship it here as well; the
     // per-turn dedupe in reportMetric prevents doubles.
@@ -335,21 +344,33 @@ export function useVoiceSession() {
         captionCreditRef.current += CAPTION_TICK_MS;
         stats.freeRun++;
       }
-      // When the buffer runs long (model streamed a burst), cheapen words so
-      // the line catches up gradually instead of trailing to the end.
-      const pendingWords = buf.split(/\s+/).filter(Boolean).length;
-      const wordCost = pendingWords > 25 ? CAPTION_WORD_MS / 2 : CAPTION_WORD_MS;
+      // NO backlog-based catch-up: the model streams the whole reply within
+      // seconds, so a large buffer is NORMAL, not a lag signal (halving the
+      // word cost on it made captions sprint ~2x ahead of her voice -
+      // measured live: 127 words revealed in 29s of voiced time). Her voice
+      // position is approximated by voiced credit alone.
       // Take only COMPLETE words - a whitespace boundary must follow. Taking
       // a bare tail split model tokens mid-word and glued fragments across
       // chunks (observed live: "I'mright here", "surroga" + "cy"). A
       // trailing partial word stays buffered until its remainder arrives.
       let guard = 8;
-      while (captionCreditRef.current >= wordCost && guard-- > 0) {
+      while (captionCreditRef.current >= CAPTION_WORD_MS && guard-- > 0) {
         const m = /^(\s*)(\S+)(?=\s)/.exec(captionBufRef.current);
         if (!m) break;
         captionBufRef.current = captionBufRef.current.slice(m[0].length);
-        if (paintCaptionWord(m[2])) captionCreditRef.current -= wordCost;
+        if (paintCaptionWord(m[2])) captionCreditRef.current -= CAPTION_WORD_MS;
         // markdown-only tokens cost nothing - the loop takes the next word
+      }
+      // She's reached her final line - the question (if any) is being asked
+      // NOW, so the answer chips may appear. The router streams the full
+      // reply well before her voice ends, so "buffer nearly drained" means
+      // the VOICE is near the end, not the text.
+      if (!chipsReadyRef.current) {
+        const left = captionBufRef.current.split(/\s+/).filter(Boolean).length;
+        if (left <= 8) {
+          chipsReadyRef.current = true;
+          setChipsReady(true);
+        }
       }
     }, CAPTION_TICK_MS);
   }, [paintCaptionWord]);
@@ -561,7 +582,14 @@ export function useVoiceSession() {
             setStateBoth(msg.state);
             // Eva finished (or was cut off) - linger on the last words, then
             // clear the rolling caption line (full text lives in the chat).
-            if (msg.state === "listening") endCaption();
+            if (msg.state === "listening") {
+              endCaption();
+              // Whatever question she asked is fully asked - chips may show.
+              if (!chipsReadyRef.current) {
+                chipsReadyRef.current = true;
+                setChipsReady(true);
+              }
+            }
             if (msg.state !== "speaking") {
               bargeSentRef.current = false;
               bargeStartRef.current = 0;
@@ -808,5 +836,6 @@ export function useVoiceSession() {
     sendText,
     setMicMuted,
     interrupt,
+    chipsReady,
   };
 }

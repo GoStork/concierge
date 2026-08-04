@@ -4761,6 +4761,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             caption={voiceSession.caption}
             cards={voiceSession.cards}
             cardsPreview={voiceSession.cardsPreview}
+            chipsReady={voiceSession.chipsReady}
             micMuted={voiceSession.micMuted}
             error={voiceSession.error}
             onToggleMute={() => voiceSession.setMicMuted(!voiceSession.micMuted)}
