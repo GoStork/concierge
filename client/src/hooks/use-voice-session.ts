@@ -189,7 +189,34 @@ export function useVoiceSession() {
   // streamed caption (many chunks) from a single-block paint (1 chunk).
   const captionChunksRef = useRef(0);
 
+  const reportMetric = useCallback((event: string, opts?: { tClient?: number; extra?: Record<string, unknown> }) => {
+    const turn = currentTurnRef.current;
+    if (!turn) return;
+    const key = `${turn}:${event}`;
+    if (reportedMetricsRef.current.has(key)) return;
+    reportedMetricsRef.current.add(key);
+    const sock = wsRef.current;
+    if (sock?.readyState === WebSocket.OPEN) {
+      sock.send(
+        JSON.stringify({
+          type: "client_metric",
+          turn,
+          event,
+          tClient: opts?.tClient ?? Date.now(),
+          ...(opts?.extra ? { extra: opts.extra } : {}),
+        }),
+      );
+    }
+  }, []);
+
   // --- Caption pacing (word-by-word reveal at ~speech rate) ---
+  // Decaying peak of the remote audio level on THIS device. Voice detection
+  // must be RELATIVE to it: absolute thresholds break across devices (the
+  // iOS analyser runs much quieter than desktop - a fixed 0.02 read most of
+  // her speech as silence and starved captions seconds behind her voice).
+  const captionPeakRef = useRef(0);
+  // Per-turn pacing decisions, reported as the caption_pacing client metric.
+  const captionStatsRef = useRef({ ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0 });
   const stopCaptionPacer = useCallback(() => {
     if (captionTimerRef.current) {
       clearInterval(captionTimerRef.current);
@@ -206,6 +233,7 @@ export function useVoiceSession() {
     captionLineRef.current = [];
     captionLineDoneRef.current = false;
     captionCreditRef.current = 0;
+    captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0 };
     setCaption("");
   }, [stopCaptionPacer]);
   // Append one whole word to the subtitle line (starting a fresh line after
@@ -219,6 +247,7 @@ export function useVoiceSession() {
       captionLineDoneRef.current = false;
     }
     captionLineRef.current.push(word);
+    captionStatsRef.current.revealed++;
     if (/[.!?…]["')\]]?$/.test(word) || captionLineRef.current.length >= CAPTION_TAIL_WORDS) {
       captionLineDoneRef.current = true;
     }
@@ -234,13 +263,22 @@ export function useVoiceSession() {
     const tail = captionBufRef.current.trim();
     captionBufRef.current = "";
     if (tail && !captionLineDoneRef.current) paintCaptionWord(tail.split(/\s+/)[0]);
+    // Ship this turn's pacing decisions into its [TURN_METRICS] line -
+    // "captions lag on device X" becomes diagnosable from the server log.
+    const s = captionStatsRef.current;
+    if (s.ticks > 0) {
+      reportMetric("caption_pacing", {
+        extra: { ...s, droppedWords: tail ? tail.split(/\s+/).length : 0, peak: Number(captionPeakRef.current.toFixed(4)) },
+      });
+      captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0 };
+    }
     if (captionLingerRef.current) clearTimeout(captionLingerRef.current);
     captionLingerRef.current = setTimeout(() => {
       captionLineRef.current = [];
       captionLineDoneRef.current = false;
       setCaption("");
     }, CAPTION_LINGER_MS);
-  }, [stopCaptionPacer, paintCaptionWord]);
+  }, [stopCaptionPacer, paintCaptionWord, reportMetric]);
   const queueCaption = useCallback((text: string) => {
     captionBufRef.current += text;
     if (captionLingerRef.current) {
@@ -263,9 +301,25 @@ export function useVoiceSession() {
       // is silent (she hasn't started, or is pausing) earn no credit, so
       // captions hold with her. Audio-only sessions (no live level) always
       // earn. A brief dip only costs its own 100ms, never a whole word.
+      // "Voiced" is judged against a decaying peak of this device's own
+      // levels, never an absolute number (see captionPeakRef).
+      const stats = captionStatsRef.current;
+      stats.ticks++;
       const haveLiveLevel = Date.now() - remoteAudioLevel.updatedAt < 600;
-      if (!haveLiveLevel || remoteAudioLevel.rms >= 0.02) {
+      if (haveLiveLevel) {
+        captionPeakRef.current = Math.max(captionPeakRef.current * 0.995, remoteAudioLevel.rms);
+        const voiced =
+          captionPeakRef.current > 0.0005 &&
+          remoteAudioLevel.rms > captionPeakRef.current * 0.12;
+        if (voiced) {
+          captionCreditRef.current += CAPTION_TICK_MS;
+          stats.credited++;
+        } else {
+          stats.gated++;
+        }
+      } else {
         captionCreditRef.current += CAPTION_TICK_MS;
+        stats.freeRun++;
       }
       // When the buffer runs long (model streamed a burst), cheapen words so
       // the line catches up gradually instead of trailing to the end.
@@ -285,26 +339,6 @@ export function useVoiceSession() {
       }
     }, CAPTION_TICK_MS);
   }, [paintCaptionWord]);
-
-  const reportMetric = useCallback((event: string, opts?: { tClient?: number; extra?: Record<string, unknown> }) => {
-    const turn = currentTurnRef.current;
-    if (!turn) return;
-    const key = `${turn}:${event}`;
-    if (reportedMetricsRef.current.has(key)) return;
-    reportedMetricsRef.current.add(key);
-    const sock = wsRef.current;
-    if (sock?.readyState === WebSocket.OPEN) {
-      sock.send(
-        JSON.stringify({
-          type: "client_metric",
-          turn,
-          event,
-          tClient: opts?.tClient ?? Date.now(),
-          ...(opts?.extra ? { extra: opts.extra } : {}),
-        }),
-      );
-    }
-  }, []);
 
   const setStateBoth = (s: VoiceState) => {
     stateRef.current = s;

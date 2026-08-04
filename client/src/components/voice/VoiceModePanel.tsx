@@ -313,6 +313,15 @@ export function VoiceModePanel({
         className={`relative z-10 flex-1 flex flex-col items-center gap-5 px-6 min-h-0 ${
           overVideo ? "justify-end pb-2" : "justify-center"
         }`}
+        // Tap-to-interrupt lives HERE, not (only) on the video stage: this
+        // full-height layer sits ABOVE the stage and swallows every tap on
+        // Eva's face (same trap the takeover comment below describes -
+        // observed live on iPhone: "I'm trying to tap on your screen").
+        // Buttons/chips/cards keep their own behavior.
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("button,a,[role=button]")) return;
+          interruptVoiceSession();
+        }}
       >
         {!showAvatarVideo && (
         <div className="relative flex items-center justify-center">
