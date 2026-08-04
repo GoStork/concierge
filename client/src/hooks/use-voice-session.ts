@@ -43,12 +43,12 @@ const IS_IOS =
 // RMS above this counts as speech (tuned for echo-cancelled mic input).
 const VAD_THRESHOLD = 0.015;
 // Keep forwarding this long after the last speech frame so trailing words and
-// natural pauses reach STT. MUST exceed Deepgram's utterance_end_ms (1200 in
+// natural pauses reach STT. MUST exceed Deepgram's utterance_end_ms (1500 in
 // deepgram-stt.ts): UtteranceEnd is measured on the AUDIO stream's clock, so
 // if the VAD gates frames before that much silence has been delivered, the
 // end-of-utterance event can never fire and every turn waits for the 2s
 // server-side idle fallback instead.
-const VAD_HANGOVER_MS = 1600;
+const VAD_HANGOVER_MS = 1900;
 // Frames buffered while silent (or held back during Eva's speech), replayed
 // on speech onset so words are never clipped - big enough that a failed
 // interruption attempt still reaches STT once she stops talking.
@@ -164,6 +164,11 @@ export function useVoiceSession() {
   const captionLineRef = useRef<string[]>([]);
   const captionLineDoneRef = useRef(false);
   const chipsReadyRef = useRef(false);
+  // The reply's card/chip payload has landed (router done) - only from then
+  // on does a nearly-drained caption buffer mean "she is on her final line".
+  // Before that, the FILLER chunk drains the buffer in the first seconds and
+  // armed the chips at the very start of a long reply (observed live).
+  const captionPayloadDoneRef = useRef(false);
   // Accumulated voiced milliseconds not yet spent on revealed words.
   const captionCreditRef = useRef(0);
   // Learned echo coupling: mic RMS per unit of Eva's output RMS on THIS
@@ -246,6 +251,7 @@ export function useVoiceSession() {
     captionLineDoneRef.current = false;
     captionCreditRef.current = 0;
     chipsReadyRef.current = false;
+    captionPayloadDoneRef.current = false;
     setChipsReady(false);
     // Turns that never reach "listening" (superseded/barged into the next
     // turn) would lose their pacing report - ship it here as well; the
@@ -365,7 +371,7 @@ export function useVoiceSession() {
       // NOW, so the answer chips may appear. The router streams the full
       // reply well before her voice ends, so "buffer nearly drained" means
       // the VOICE is near the end, not the text.
-      if (!chipsReadyRef.current) {
+      if (!chipsReadyRef.current && captionPayloadDoneRef.current) {
         const left = captionBufRef.current.split(/\s+/).filter(Boolean).length;
         if (left <= 8) {
           chipsReadyRef.current = true;
@@ -635,6 +641,9 @@ export function useVoiceSession() {
         case "cards": {
           if (msg.payload && Object.keys(msg.payload).length) setCards(msg.payload);
           setCardsPreview(false);
+          // Router done - the caption buffer now holds the reply's true tail,
+          // so the chips' final-line check may start watching it.
+          captionPayloadDoneRef.current = true;
           // Instrumentation: "cards" follows the reply's last eva_caption
           // chunk (sent at router done), so the caption is now complete -
           // this paint is "agent caption fully painted". captionChunks shows

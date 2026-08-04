@@ -140,8 +140,12 @@ class DeepgramStream implements SttStream {
       endpointing: "400",
       // UtteranceEnd fires after this much silence between finalized words in
       // the AUDIO stream - the real end-of-utterance signal. Pauses shorter
-      // than this stay inside one turn.
-      utterance_end_ms: "1200",
+      // than this stay inside one turn. 1200 -> 1500 (2026-08-04): with the
+      // stale-speech flush live, a mid-thought pause split ("Tell me about
+      // the surrogacy process... [beat] I want to know...") audibly CUTS her
+      // first reply mid-word - the deferred 1200-vs-1500 decision got its
+      // lived-usage answer. Client VAD_HANGOVER_MS must stay above this.
+      utterance_end_ms: "1500",
       model: "nova-3",
     });
     // Keyterm prompting (nova-3, English): boost the fertility vocabulary
