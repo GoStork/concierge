@@ -3725,23 +3725,34 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           );
 
           // Only meaningful once a real thread exists - before that the
-          // gates have nowhere to render and nothing to block.
-          const gates = await evaluateMatchCallGates({
-            parentUserId: userId,
-            providerId: agencyId,
-            subjectProfileId: (await latestCardPromise)?.providerId || null,
-          });
-          if (!gates.allowed) {
-            const outstanding = [
-              gates.ipFormMissing ? "the Intended Parent Form is not submitted" : null,
-              gates.missing.includes("BOTH_PARENTS") ? "both parents have not confirmed they will attend" : null,
-              gates.missing.includes("DECISION_WINDOW") ? "the 24-hour decision window and deposit have not been acknowledged" : null,
-            ].filter(Boolean);
-            parts.push(
-              `MATCH CALL GATES - OUTSTANDING for ${agencyName || "this agency"}: ${outstanding.join("; ")}. ` +
-              `A match call CANNOT be scheduled until all of these are done, and the system already posted the confirmation cards in the family's chat. ` +
-              `Follow the MATCH CALL GATES section: mention only what is actually outstanding, once, warmly. NEVER state a deposit amount yourself - the card carries the official figure.`,
-            );
+          // gates have nowhere to render and nothing to block. SURROGATE
+          // SUBJECTS ONLY: the IP form + deposit gates exist for surrogate
+          // MATCH CALLS. With an egg-donor card on screen the model applied
+          // them to an egg-donor agency call anyway (observed live, session
+          // mnyo9j: "two quick things pending... intended parent form...
+          // first payment deposit" for an egg donor - the parent correctly
+          // objected that the IP form is a surrogacy requirement).
+          const gateSubject = await latestCardPromise;
+          const gateSubjectType = String(gateSubject?.type || "").toLowerCase();
+          if (gateSubjectType.includes("surrogate")) {
+            const gates = await evaluateMatchCallGates({
+              parentUserId: userId,
+              providerId: agencyId,
+              subjectProfileId: gateSubject?.providerId || null,
+            });
+            if (!gates.allowed) {
+              const outstanding = [
+                gates.ipFormMissing ? "the Intended Parent Form is not submitted" : null,
+                gates.missing.includes("BOTH_PARENTS") ? "both parents have not confirmed they will attend" : null,
+                gates.missing.includes("DECISION_WINDOW") ? "the 24-hour decision window and deposit have not been acknowledged" : null,
+              ].filter(Boolean);
+              parts.push(
+                `MATCH CALL GATES - OUTSTANDING for ${agencyName || "this agency"}: ${outstanding.join("; ")}. ` +
+                `A SURROGATE match call CANNOT be scheduled until all of these are done, and the system already posted the confirmation cards in the family's chat. ` +
+                `These gates apply ONLY to surrogate match calls - NEVER tell the parent they block an egg donor, sperm donor, clinic, or any other call. ` +
+                `Follow the MATCH CALL GATES section: mention only what is actually outstanding, once, warmly. NEVER state a deposit amount yourself - the card carries the official figure.`,
+              );
+            }
           }
         }
       } catch (e: any) {
@@ -10998,6 +11009,70 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         console.error("Failed to process MEETING_CARD:", e);
       }
       finalContent = finalContent.replace(/\[\[MEETING_CARD:[\s\S]*?\]\]/g, "").trim();
+    }
+
+    // OWED-MEETINGS GUARANTEE: the parent asked about their scheduled calls
+    // and no meeting card rendered. Observed live (mnyo9j turn 2): "I don't
+    // see any upcoming consultation calls on file" while THREE confirmed
+    // bookings existed - the model answered without calling
+    // get_parent_meetings, then listed all three a turn later. The DB is one
+    // query away; check it directly. When bookings exist: attach the real
+    // cards, and if the reply DENIED their existence, replace the denial
+    // with one pointing sentence (cards carry the details).
+    const asksAboutMeetings =
+      /\b(when|what time|do i have|do we have|any)\b.{0,40}\b(calls?|meetings?|consultations?|appointments?)\b|\bmy (next|upcoming) (call|meeting|consultation|appointment)\b/i.test(
+        String(userMessage || ""),
+      );
+    if (asksAboutMeetings && meetingCards.length === 0) {
+      try {
+        const meAcct2 = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+        const memberIds2 = meAcct2?.parentAccountId
+          ? (await prisma.user.findMany({
+              where: { parentAccountId: meAcct2.parentAccountId, isDisabled: false },
+              select: { id: true },
+            })).map((u) => u.id)
+          : [userId];
+        const upcoming = await prisma.booking.findMany({
+          where: {
+            parentUserId: { in: memberIds2 },
+            status: { notIn: ["CANCELLED", "RESCHEDULED", "EXPIRED"] },
+            scheduledAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+          },
+          orderBy: { scheduledAt: "asc" },
+          take: 3,
+          include: {
+            providerUser: {
+              select: {
+                id: true, name: true, email: true, photoUrl: true, dailyRoomUrl: true,
+                provider: { select: { id: true, name: true, logoUrl: true } },
+                scheduleConfig: { select: { bookingPageSlug: true } },
+              },
+            },
+            parentUser: { select: { id: true, name: true, email: true, photoUrl: true, parentAccountId: true } },
+          },
+        });
+        if (upcoming.length > 0) {
+          meetingCards = upcoming.map((b) => JSON.parse(JSON.stringify(b)));
+          const deniedMeetings =
+            /don'?t see|do not see|no upcoming|nothing (?:scheduled|booked|on file)|not seeing any|no (?:calls?|meetings?|consultations?) (?:on file|scheduled|booked)/i.test(
+              finalContent,
+            );
+          console.warn(
+            `[OWED-MEETINGS] Parent asked about their calls, ${upcoming.length} upcoming booking(s) exist, no MEETING_CARD emitted${deniedMeetings ? " and the reply DENIED they exist" : ""} - attaching real cards`,
+          );
+          if (deniedMeetings) {
+            finalContent =
+              upcoming.length === 1
+                ? "You have one upcoming call - here it is on your screen."
+                : `You have ${upcoming.length} upcoming calls - here they are on your screen.`;
+            sse.sendReset();
+            sse.sendToken(finalContent);
+          }
+          recordInterceptor("owed_meetings", true, 0);
+        }
+      } catch (e) {
+        console.error("[OWED-MEETINGS] check failed:", e);
+      }
     }
 
     // If all AI tiers failed, tell the client to silently retry rather than saving an error message
