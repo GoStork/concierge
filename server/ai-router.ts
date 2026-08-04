@@ -1282,6 +1282,11 @@ function cleanTitle(title: string | null | undefined): string | null {
 // Load prompt sections from DB (cached 2 min), fallback to null if empty
 let promptSectionsCache: Map<string, string> | null = null;
 let promptSectionsCacheExpiry = 0;
+
+// How many times the handed-off-consultation guard has replaced a reply in
+// this session - the corrective line escalates phrasing instead of repeating
+// one canned sentence verbatim (observed live: three identical repeats).
+const consultDropStreak = new Map<string, number>();
 async function getPromptSections(): Promise<Map<string, string> | null> {
   if (Date.now() < promptSectionsCacheExpiry && promptSectionsCache) {
     mark("prompt_sections_cache_hit");
@@ -5554,7 +5559,7 @@ Before asking ANY question, check if the parent already provided the answer. If 
     // reply is spoken aloud. Keep it conversational-short; structured tags
     // still work (cards render in the voice panel / chat).
     if (req.body.channel === "voice") {
-      skipRulesPreamble = `\nVOICE MODE (this turn only): the parent is TALKING to you and your reply is spoken aloud. Keep it under 3 short sentences, warm and natural, no bullet lists, no markdown, no emoji. Never spell out URLs or IDs. Never open with a stock filler phrase ("One moment", "Let me look into that", "Great question") - answer directly, like a person mid-conversation. Structured tags ([[QUICK_REPLY]], [[MATCH_CARD]], etc.) still work and are not spoken - use them exactly as usual.\n${skipRulesPreamble}`;
+      skipRulesPreamble = `\nVOICE MODE (this turn only): the parent is TALKING to you and your reply is spoken aloud. Keep it under 3 short sentences, warm and natural, no bullet lists, no markdown, no emoji. Never spell out URLs or IDs. Never open with a stock filler phrase ("One moment", "Let me look into that", "Great question") - answer directly, like a person mid-conversation. CARDS CARRY THE DETAILS: when a card, calendar, meeting list, or comparison renders on screen, say ONE short sentence pointing at it ("Here are your upcoming calls - they're on your screen now") and NEVER read out its contents - no dates, no times, no lists, no numbers spoken aloud. Structured tags ([[QUICK_REPLY]], [[MATCH_CARD]], etc.) still work and are not spoken - use them exactly as usual.\n${skipRulesPreamble}`;
     }
 
     // Collect all previously-presented match card provider IDs to prevent re-suggesting.
@@ -10529,20 +10534,43 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         });
         if (handedOff) {
           console.log(`[CONSULTATION] Provider ${consultProviderId} journey is handed off - dropping consultation card`);
-          consultProviderId = "";
           // The reply text still PROMISES the calendar the guard just refused
           // (observed live on voice, session stn78n: Eva announced she was
           // pulling it up, the card was dropped here, and the parent stared
           // at nothing - "I don't see the calendar on the screen"). Correct
-          // the words too, not just the card.
+          // the words too, not just the card. Session mnyo9j then showed the
+          // FIRST version of this fix repeating one canned sentence verbatim
+          // three times, once against an explicit "a DIFFERENT agency" ask -
+          // the line must name the agency, never repeat itself back to back,
+          // acknowledge a different-agency ask, and hand the parent a pivot.
           const _cdT0 = Date.now();
           const promisesCalendar = /calendar|schedul|book|pull(?:ing)? (?:it |that |this )?up|time slot/i.test(finalContent);
           if (promisesCalendar) {
-            finalContent =
-              "Actually, you're already connected with this agency, so there's no new call to book here - you can continue with them directly in your existing conversation thread. Is there anything else I can help you with in the meantime?";
+            const provName =
+              (await prisma.provider
+                .findUnique({ where: { id: consultProviderId }, select: { name: true } })
+                .catch(() => null))?.name || "this agency";
+            const streakKey = `${currentSessionId || userId}`;
+            const streak = (consultDropStreak.get(streakKey) || 0) + 1;
+            consultDropStreak.set(streakKey, streak);
+            if (consultDropStreak.size > 5000) consultDropStreak.clear();
+            const askedDifferent = /\b(different|another|other|new)\b.{0,24}\b(agency|agencies|provider)\b|\bnot connected\b/i.test(
+              String(userMessage || ""),
+            );
+            if (askedDifferent) {
+              finalContent = `You're right, you asked about a different agency. This donor is represented by ${provName}, which you're already working with, and that's why no new intro call is needed there. Let me find you donors from agencies you're not connected with yet.`;
+              quickReplies = [`Show me donors from other agencies`, `Stay with ${provName}`];
+            } else if (streak <= 1) {
+              finalContent = `Quick heads up: this donor is represented by ${provName}, the agency you're already working with, so there's no new intro call to book. You can message them any time in your shared thread, and they can discuss her with you directly. Want me to look at other agencies too?`;
+              quickReplies = [`Show me donors from other agencies`, `I have a question for ${provName}`];
+            } else {
+              finalContent = `Same situation as before: she's also with ${provName}, your current agency, so booking a new intro call isn't possible. I can pull up donors from agencies you're not connected with, or pass ${provName} a question about her in your thread.`;
+              quickReplies = [`Show me donors from other agencies`, `Ask ${provName} about her`];
+            }
             sse.sendReset();
             sse.sendToken(finalContent);
           }
+          consultProviderId = "";
           recordInterceptor("consultation_drop_promise_fix", promisesCalendar, Date.now() - _cdT0);
         }
       } catch { /* fail open - the directive still guards */ }
