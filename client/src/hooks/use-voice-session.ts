@@ -75,7 +75,11 @@ const BARGE_GRACE_MS = 220;
 // tick landing on a brief audio dip forfeited the whole word of progress -
 // captions drifted seconds behind her voice (iPhone test 2026-08-03).
 const CAPTION_TICK_MS = 100;
-const CAPTION_WORD_MS = 320; // ~185 wpm articulated (pauses are gated out)
+// Slightly FASTER than her articulated rate on purpose: subtitles that run a
+// touch ahead read naturally; trailing behind reads as lag (telemetry showed
+// 21-34 words still unrevealed at turn end at 320ms). The voiced gate keeps
+// the run-ahead bounded - credit only accrues while her voice is audible.
+const CAPTION_WORD_MS = 280;
 const CAPTION_TAIL_WORDS = 10; // roughly one line of large text
 const CAPTION_LINGER_MS = 900; // how long the last words stay after she stops
 

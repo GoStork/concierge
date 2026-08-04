@@ -808,6 +808,19 @@ class VoiceSession {
           this.tts?.sendText(filler);
         }, FILLER_MS)
       : null;
+    // DEAD-AIR CHECK-IN: observed live (turn stn78n:8) - filler at 1.4s,
+    // then 18 seconds of SILENCE while the model hung; the parent gave up
+    // and ended the call. One more short line at +8s keeps the call alive;
+    // the root latency belongs to the model round, not this stopgap.
+    const stillWorkingTimer = substantive
+      ? setTimeout(() => {
+          if (this.turnCounter !== turnId || this.speakSuppressed || tFirstToken) return;
+          const line = "Sorry, this one's taking me a little longer. Almost there. ";
+          this.ttsChars += line.length;
+          this.send({ type: "eva_caption", text: line });
+          this.tts?.sendText(line);
+        }, FILLER_MS + 8000)
+      : null;
 
     const port = process.env.PORT || "5000";
     let done: any = null;
@@ -937,6 +950,7 @@ class VoiceSession {
     }
 
     if (fillerTimer) clearTimeout(fillerTimer);
+    if (stillWorkingTimer) clearTimeout(stillWorkingTimer);
     if (this.closed || this.turnCounter !== turnId) return;
 
     if (done?.retry || done?.error) {
