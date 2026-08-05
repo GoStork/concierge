@@ -6164,6 +6164,56 @@ export function getNightlySyncStatus() {
 const NIGHTLY_LOCK_ID = 1;
 const NIGHTLY_CLAIM_TTL_MS = 2 * 60 * 60 * 1000;
 
+// The nightly "period" runs from one 2 AM ET slot to the next. Both the dedup
+// gate below and the boot catch-up in nightly-sync.scheduler.ts anchor to this
+// boundary instead of a rolling hour window - see the dedup comment for why a
+// rolling window deadlocks.
+const NIGHTLY_TZ = "America/New_York";
+const NIGHTLY_HOUR_ET = 2;
+
+/** Wall-clock Y/M/D h:m:s of `d` as read in America/New_York. */
+function etWallClock(d: Date) {
+  const p: Record<string, number> = {};
+  for (const part of new Intl.DateTimeFormat("en-US", {
+    timeZone: NIGHTLY_TZ,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }).formatToParts(d)) {
+    if (part.type !== "literal") p[part.type] = Number(part.value);
+  }
+  // Some ICU builds render midnight as hour 24 under hour12:false.
+  return { year: p.year, month: p.month, day: p.day, hour: p.hour % 24, minute: p.minute, second: p.second };
+}
+
+/** ms to add to an ET wall-clock reading to get back to the true UTC instant. */
+function etOffsetMs(d: Date): number {
+  const w = etWallClock(d);
+  return Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second) - Math.floor(d.getTime() / 1000) * 1000;
+}
+
+/**
+ * The most recent 2:00 AM ET instant at or before `now`. A nightly that started
+ * at or after this boundary has already satisfied the current period.
+ */
+export function lastNightlySlotStart(now: Date = new Date()): Date {
+  const build = (year: number, month: number, day: number) => {
+    const wallUtc = Date.UTC(year, month - 1, day, NIGHTLY_HOUR_ET, 0, 0);
+    // Second pass re-reads the offset at the candidate instant so the boundary
+    // stays correct on the two DST-change days, where the offset at `now` and
+    // at 2 AM differ by an hour.
+    const first = new Date(wallUtc - etOffsetMs(now));
+    return new Date(wallUtc - etOffsetMs(first));
+  };
+
+  const today = etWallClock(now);
+  const slot = build(today.year, today.month, today.day);
+  if (slot.getTime() <= now.getTime()) return slot;
+
+  const yesterday = etWallClock(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+  return build(yesterday.year, yesterday.month, yesterday.day);
+}
+
 export async function runNightlySync(
   prisma: PrismaService,
   storageService?: StorageService | null,
@@ -6201,24 +6251,40 @@ export async function runNightlySync(
       }
       claimed = true;
 
-      // 2) Daily dedup. Even with one container, several triggers fire per day
-      //    (in-process cron + GitHub Actions pinger + startup catch-up). Skip if
-      //    a nightly that actually did work (`total > 0`) completed in the last
-      //    20h - a 0-found empty run must NOT anchor the dedup, or one broken
-      //    provider silently blocks the whole next nightly. {force:true}
-      //    (admin "Trigger nightly") overrides both gates.
+      // 2) Daily dedup, anchored to the 2 AM ET slot rather than a rolling
+      //    window. Several triggers fire per day (in-process cron + startup
+      //    catch-up), so one of them must win and the rest must bail.
+      //
+      //    This USED to be a rolling 20h window, which deadlocked: a catch-up
+      //    that ran mid-morning poisoned the NEXT 2 AM cron, because 02:00 is
+      //    only ~18h after a ~08:00 catch-up. Proven Aug 4 2026 - the cron
+      //    fired dead on time at 06:00:00Z and logged "Skip - last successful
+      //    nightly was 2026-08-03T12:21:29Z". The catch-up's own staleness gate
+      //    then skipped the following morning too (<25h), so a full day was
+      //    lost, the gap eventually re-crossed 25h, another mid-morning
+      //    catch-up fired, and the cycle repeated - a self-perpetuating sawtooth
+      //    that never let the 2 AM slot re-establish itself.
+      //
+      //    Anchoring to the slot makes every 2 AM run a NEW period, so only a
+      //    nightly that already ran *within the current period* can dedup it.
+      //    A 0-found empty run must NOT anchor the dedup (`total > 0`), or one
+      //    broken provider silently blocks the whole next nightly.
+      //    {force:true} (admin "Trigger nightly") overrides both gates.
+      const slotStart = lastNightlySlotStart();
       const recent = await prisma.syncLog.findFirst({
         where: {
           source: "nightly",
           status: { in: ["completed", "partial"] },
           total: { gt: 0 },
-          startedAt: { gt: new Date(Date.now() - 20 * 60 * 60 * 1000) },
+          startedAt: { gte: slotStart },
         },
         orderBy: { startedAt: "desc" },
         select: { startedAt: true, status: true },
       });
       if (recent) {
-        console.log(`[nightly-sync] Skip - last successful nightly was ${recent.startedAt.toISOString()} (${recent.status})`);
+        console.log(
+          `[nightly-sync] Skip - nightly already ran at ${recent.startedAt.toISOString()} (${recent.status}) in the period since ${slotStart.toISOString()}`,
+        );
         return;
       }
     }
