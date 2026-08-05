@@ -260,6 +260,34 @@ class VoiceSession {
   // Set when mic_stats ever reports >1 live engine (or an impossible frame
   // rate) - stamped onto every turn's metrics from then on.
   private multiEngineSuspected = false;
+  // CONTENT-BASED ECHO/BARGE (session 10): every word Eva speaks, normalized,
+  // ring-buffered. The mic now streams continuously on EVERY platform - her
+  // speaker echo transcribes as words she just said, the parent's speech as
+  // words she did not. Levels cannot separate parent from echo on an iPhone
+  // speaker (echo at the mic is often LOUDER than the parent); words can.
+  private recentSpoken: string[] = [];
+  private noteSpoken(text: string) {
+    for (const w of text.toLowerCase().replace(/[^a-z0-9\s']/g, " ").split(/\s+/)) {
+      if (w.length >= 2) this.recentSpoken.push(w);
+    }
+    // ~2+ minutes of speech - must outlive the longest monologue, because
+    // echo segments can accumulate for its entire duration before dispatch.
+    if (this.recentSpoken.length > 400) this.recentSpoken.splice(0, this.recentSpoken.length - 400);
+  }
+  // Alphabetic words only (>= 3 chars): TTS/STT orthography drift on numbers
+  // and IDs ("23899" vs "two three eight...") would fake novelty from pure
+  // echo and stop her mid-sentence for no reason.
+  private novelWordInfo(text: string): { novel: number; total: number } {
+    const spoken = new Set(this.recentSpoken);
+    let novel = 0;
+    let total = 0;
+    for (const w of text.toLowerCase().replace(/[^a-z\s']/g, " ").split(/\s+/)) {
+      if (w.length < 3) continue;
+      total++;
+      if (!spoken.has(w)) novel++;
+    }
+    return { novel, total };
+  }
   private openStt() {
     this.stt = this.sttProvider.openStream({ sampleRate: VOICE_SAMPLE_RATE });
     if (this.sttDebug) (this.stt as any)?.setDebug?.(true);
@@ -267,12 +295,35 @@ class VoiceSession {
     this.stt.onPartial((text) => {
       this.sttRestarts = 0;
       this.armSilenceTimer();
+      // INSTANT CONTENT BARGE: while Eva is audibly speaking, an interim
+      // carrying words she did NOT recently say is the parent talking over
+      // her - stop her the moment it appears, like a human would. (During
+      // "thinking" nothing is playing; the supersession/merge machinery owns
+      // that case.)
+      if (this.state === "speaking" && text && this.recentSpoken.length > 0) {
+        const nov = this.novelWordInfo(text);
+        if (nov.novel >= 2) {
+          log(`content barge: interim carries ${nov.novel} non-echo word(s): "${text.slice(0, 60)}"`);
+          this.handleBarge();
+        }
+      }
       this.send({ type: "partial_transcript", text });
     });
     this.stt.onFinal((text, meta) => {
       this.sttRestarts = 0;
       this.armSilenceTimer();
       if (!text || text.length < 2) return;
+      // ECHO-UTTERANCE FILTER: with the mic always streaming, Eva's own
+      // speaker echo reaches STT on iOS and dispatches as parent turns (the
+      // junk-whisper incident). An utterance whose words are nearly all
+      // words she recently spoke is her own voice - drop it. Single-word
+      // and mostly-novel utterances always pass.
+      const nov = this.novelWordInfo(text);
+      if (this.recentSpoken.length > 0 && nov.total >= 2 && nov.novel / nov.total < 0.3) {
+        log(`echo utterance suppressed (${nov.novel}/${nov.total} novel words): "${text.slice(0, 80)}"`);
+        this.send({ type: "partial_transcript", text: "" });
+        return;
+      }
       // Stash for the runTurn this final is about to start (or merge into) -
       // carries the utterance-assembly telemetry into [TURN_METRICS].
       this.pendingSttMeta = meta || null;
@@ -448,7 +499,7 @@ class VoiceSession {
         // UtteranceEnd is the dispatcher and the speech_final hold is dead
         // weight (0/29 fires in the desktop baseline) - disable it. Gated
         // (iOS) and unknown clients keep it.
-        if (msg.gatePolicy === "ungated-desktop" || msg.gatePolicy === "test-bypass") {
+        if (msg.gatePolicy === "ungated-desktop" || msg.gatePolicy === "ungated-ios" || msg.gatePolicy === "test-bypass") {
           this.sttHoldEnabled = false;
           (this.stt as any)?.setHoldEnabled?.(false);
         }
@@ -658,6 +709,7 @@ class VoiceSession {
       route?.flushSpeech();
       this.finishSpeaking(null, route);
     });
+    this.noteSpoken(text);
     this.tts.sendText(text + " ");
     this.tts.flush();
   }
@@ -764,6 +816,7 @@ class VoiceSession {
       if (this.speakSuppressed || this.turnCounter !== turnId) return;
       if (!metrics.marks.tts_first_text_sent) metrics.marks.tts_first_text_sent = Date.now();
       this.ttsChars += sentence.length;
+      this.noteSpoken(sentence);
       this.tts?.sendText(sentence);
     });
 
@@ -818,6 +871,7 @@ class VoiceSession {
           this.ttsChars += filler.length;
           this.setState("speaking");
           this.send({ type: "eva_caption", text: filler });
+          this.noteSpoken(filler);
           this.tts?.sendText(filler);
         }, FILLER_MS)
       : null;
@@ -831,6 +885,7 @@ class VoiceSession {
           const line = "Sorry, this one's taking me a little longer. Almost there. ";
           this.ttsChars += line.length;
           this.send({ type: "eva_caption", text: line });
+          this.noteSpoken(line);
           this.tts?.sendText(line);
         }, FILLER_MS + 8000)
       : null;
@@ -1030,6 +1085,7 @@ class VoiceSession {
             route?.flushSpeech();
             this.finishSpeaking(turnId, route);
           });
+          this.noteSpoken(respeak);
           stream.sendText(respeak + " ");
           stream.flush();
           return;

@@ -547,7 +547,10 @@ export function useVoiceSession() {
           type: "mic_settings",
           settings: engine.micSettings,
           gateBypassed: micGateOff,
-          gatePolicy: micGateOff ? "test-bypass" : IS_IOS ? "gated-ios" : "ungated-desktop",
+          // Session 10: iOS is ungated too - the gateway's content-based
+          // echo filter replaced the mic hold, so UtteranceEnd owns dispatch
+          // on every platform and the speech_final hold is dead everywhere.
+          gatePolicy: micGateOff ? "test-bypass" : IS_IOS ? "ungated-ios" : "ungated-desktop",
         }),
       );
     };
@@ -790,32 +793,15 @@ export function useVoiceSession() {
         reportMetric("barge_sent");
       }
 
-      // DESKTOP (AEC verified): stream every frame - Deepgram reasons over
-      // the parent's real timeline. Echo is cancelled at the track level, so
-      // there is nothing to hold back and nothing to drop.
-      if (!IS_IOS) {
-        sock.send(pcm);
-        micStatsRef.current.sent += 1;
-        return;
-      }
-      // iOS ONLY from here: WebKit's AEC does not cover the avatar's WebRTC
-      // audio, so while Eva is audibly speaking (and no barge yet), mic audio
-      // must NOT reach transcription - it is largely her own leaked voice and
-      // was being transcribed as the parent. Prebuffer instead, so when a
-      // barge (or the end of her reply) opens the floor, the parent's first
-      // words replay into STT unclipped.
-      const holdForEcho = evaSpeaking && !bargeSentRef.current;
-      const active = now - lastVoiceAtRef.current < VAD_HANGOVER_MS;
-      if (active && !holdForEcho) {
-        // Replay the prebuffer so speech onset isn't clipped.
-        for (const buffered of prebufferRef.current) sock.send(buffered);
-        prebufferRef.current = [];
-        sock.send(pcm);
-        micStatsRef.current.sent += 1;
-      } else {
-        prebufferRef.current.push(pcm);
-        if (prebufferRef.current.length > PREBUFFER_FRAMES) prebufferRef.current.shift();
-      }
+      // EVERY PLATFORM streams every frame (session 10). Desktop Chrome's
+      // AEC cancels Eva at the track level; iOS Safari leaks her speaker
+      // audio into the mic, but the GATEWAY now separates parent from echo
+      // by CONTENT (it knows every word she spoke - non-echo words barge her
+      // instantly, all-echo utterances are dropped before dispatch). The old
+      // iOS hold/prebuffer gate made her un-interruptible by voice - the
+      // exact opposite of a human conversation.
+      sock.send(pcm);
+      micStatsRef.current.sent += 1;
     });
   }, [stop]);
 
