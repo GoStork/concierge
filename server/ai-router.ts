@@ -689,12 +689,22 @@ async function callTier2Claude(
         ? `STOP calling resolve_comparison. Emit the [[COMPARE_CARD:{"entityType":...,"entities":[...],"dimensions":...}]] tag with the ids you already have - the server resolves the data and renders the card.`
         : `STOP: the parent did NOT ask for a comparison this turn. Ignore any earlier comparison thread completely and answer their ACTUAL current question now: "${String(userMessage || "").slice(0, 200)}"`;
     }
-    if (!searchToolNames.includes(fc.name)) return null;
+    if (searchToolNames.includes(fc.name)) {
+      const n = (searchCallCounts.get(fc.name) || 0) + 1;
+      searchCallCounts.set(fc.name, n);
+      if (n <= 2) return null;
+      console.log(`[TIER2] ${fc.name} call #${n} this turn - short-circuited (present from prior results)`);
+      return `SEARCH LIMIT REACHED for this turn. You have already called ${fc.name} twice - do NOT search again. The tool already relaxed filters automatically, so a repeat search will not surface different results. Present the best match from the results you ALREADY received above using ONE [[MATCH_CARD]] now, and be transparent with the parent about any preference that could not be fully matched.`;
+    }
+    // GENERIC repeat cap (observed live uxkp9b: search_knowledge_base called
+    // 8x in a row, each returning empty, until MAX_TOOL_ROUNDS bailed the
+    // whole turn into "something went wrong" - the same fixation-loop
+    // disease as resolve_comparison, so the cap must cover EVERY tool).
     const n = (searchCallCounts.get(fc.name) || 0) + 1;
     searchCallCounts.set(fc.name, n);
-    if (n <= 2) return null;
-    console.log(`[TIER2] ${fc.name} call #${n} this turn - short-circuited (present from prior results)`);
-    return `SEARCH LIMIT REACHED for this turn. You have already called ${fc.name} twice - do NOT search again. The tool already relaxed filters automatically, so a repeat search will not surface different results. Present the best match from the results you ALREADY received above using ONE [[MATCH_CARD]] now, and be transparent with the parent about any preference that could not be fully matched.`;
+    if (n <= 3) return null;
+    console.log(`[TIER2] ${fc.name} call #${n} this turn - generic repeat cap engaged`);
+    return `TOOL LOOP STOPPED: you have already called ${fc.name} ${n - 1} times this turn - calling it again will NOT change the result. Do NOT call any more tools. Using what you already have (and your own knowledge for general fertility questions), answer the parent's current question NOW in plain language: "${String(userMessage || "").slice(0, 200)}"`;
   };
   console.log(`[TIER2] start: history=${chatHistory.length} turns, system=${fullSystem.length} chars, tools=${openAiTools.length}`);
   mark("tier2_start");
@@ -1178,7 +1188,28 @@ Call the correct search tool NOW, then present the FIRST result with ONE [[MATCH
 
       if (moreFunctionCalls.length > 0) {
         if (toolRoundCount >= MAX_TOOL_ROUNDS) {
-          console.warn(`[TIER2] Hit MAX_TOOL_ROUNDS=${MAX_TOOL_ROUNDS} - bailing. Attempted: ${moreFunctionCalls.map(f => f.name).join(",")}`);
+          console.warn(`[TIER2] Hit MAX_TOOL_ROUNDS=${MAX_TOOL_ROUNDS} - forcing a final no-tools answer. Attempted: ${moreFunctionCalls.map(f => f.name).join(",")}`);
+          // Bailing with empty content turned a tool loop into a spoken
+          // "something went wrong" (observed live uxkp9b). The model has a
+          // turn's worth of tool results and a direct question - force one
+          // last generation with NO tools instead of giving up.
+          try {
+            const forced = await claudeRetry([
+              ...messages,
+              {
+                role: "user",
+                content: `SYSTEM OVERRIDE: You have used all your tool calls for this turn. Do NOT request any more tools. Answer the parent's question NOW in plain language using the tool results you already received and your own general fertility knowledge: "${String(userMessage || "").slice(0, 200)}"`,
+              },
+            ]);
+            if (forced && forced.trim()) {
+              console.log(`[TIER2] Forced no-tools answer produced ${forced.length} chars`);
+              sse.sendToken(forced);
+              mark("tier2_end");
+              return { content: forced, toolCallsExecuted: true, searchToolResults, allToolResults };
+            }
+          } catch (e: any) {
+            console.error(`[TIER2] Forced no-tools answer failed: ${e?.message}`);
+          }
           mark("tier2_end");
           return { content: "", toolCallsExecuted: true, searchToolResults, allToolResults };
         }
