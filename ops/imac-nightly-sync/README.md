@@ -41,15 +41,17 @@ Then follow the install steps below.
 
 ## One-time install on the iMac (LaunchDaemon)
 
-> The iMac's actual working clone is **`~/Documents/GitHub-iMac/concierge`**, not
-> `~/Documents/GitHub/concierge`. The committed plist + `run-server.sh` already
-> point at `GitHub-iMac`. The notes below are the steps that actually worked on
-> Jun 21 2026 - the earlier "happy path" missed four macOS specifics (TCC, PATH,
-> which plist copy to edit, port 5001).
+> The iMac's actual working clone is **`~/GitHub-iMac/concierge`** (verified
+> Aug 5 2026 against the installed plist's `GOSTORK_REPO_DIR`) - NOT
+> `~/Documents/GitHub/concierge`, and NOT under `~/Documents` at all. The
+> committed plist + `run-server.sh` point at it via an absolute path. The notes
+> below are the steps that actually worked on Jun 21 2026 - the earlier "happy
+> path" missed four macOS specifics (TCC, PATH, which plist copy to edit, port
+> 5001).
 
 1. Make sure the clone is current and the env is set:
    ```bash
-   cd ~/Documents/GitHub-iMac/concierge
+   cd ~/GitHub-iMac/concierge
    git pull origin main --ff-only   # safe fast-forward; refuses rather than clobbers
    ```
    This clone doubles as the dev workspace, so do NOT `git reset --hard` here - it
@@ -119,9 +121,25 @@ process is always running, so the iMac will not idle-sleep and the 2 AM cron
 fires. (Lid-closed clamshell sleep on a desktop iMac is not a factor; if this
 ever moves to a laptop, also set `pmset -c sleep 0` on AC power.)
 
-If the machine is off/asleep across 2 AM for any reason, the boot-time
-`runCatchUpIfStale` fires a catch-up run ~30s after the server next starts, as
-long as the last successful nightly is older than 25h.
+If the 2 AM run is missed for any reason, the boot-time `runCatchUpIfStale`
+fires a catch-up ~30s after the server next starts, whenever the **current 2 AM
+ET period** still has no successful nightly (`total > 0`). It shares the
+`lastNightlySlotStart()` boundary with the dedup gate in `runNightlySync`, so
+the two can never disagree about whether a period has been satisfied.
+
+> **Do not reintroduce rolling-hour windows here.** Until Aug 5 2026 the dedup
+> used "last 20h" and the catch-up used ">25h", and the 5-hour gap between them
+> deadlocked: a catch-up that ran mid-morning was <20h before the next 2 AM cron
+> (so the cron skipped) and <25h at the next morning's boot (so the catch-up
+> skipped too), losing a full day, then repeating. Aug 2 and Aug 5 2026 ran not
+> at all; Aug 3 and Aug 4 ran at 08:13 and 11:20 ET instead of 02:00.
+
+Note the cron can also miss its tick while the process is alive: on Aug 5 2026
+node-cron logged `missed execution ... Possible blocking IO or high CPU` for
+several slots, including 02:00. The iMac also hosts the `nutrition-planner`
+(port 5002, launchd `com.nutrition-planner.server`) and `AI-Health` servers, so
+event-loop pressure is real. The catch-up now covers a missed tick same-day,
+but if `missed execution` warnings become frequent, reduce what else runs here.
 
 ## Operating
 
