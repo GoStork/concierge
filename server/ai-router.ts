@@ -664,7 +664,31 @@ async function callTier2Claude(
   // search rarely returns anything new - after 2 calls the model is told to
   // present from what it already has.
   const searchCallCounts = new Map<string, number>();
+  // Does the CURRENT message ask for a comparison? Guards resolve_comparison
+  // below against stale-thread fixation.
+  const turnWantsComparison =
+    /\b(compare|comparison|side[- ]by[- ]side|versus|vs\.?|head[- ]to[- ]head|stack (?:them )?up|which (?:one |of (?:them|these) )?is (?:the )?(?:better|best))\b/i.test(
+      userMessage || "",
+    );
   const overSearchLimit = (fc: { name: string }): string | null => {
+    // resolve_comparison derailment cap (observed live wczwl7:1): asked about
+    // the surrogacy process, the model fixated on the PREVIOUS session's
+    // dangling comparison, called resolve_comparison 3x (all errors), burned
+    // 7s, then answered the stale question instead of the parent's. The
+    // sanctioned flow is emitting [[COMPARE_CARD]] (the SERVER resolves it) -
+    // so when the current message doesn't ask for a comparison the tool is
+    // refused outright with a redirect to the actual question; when it does,
+    // two attempts are allowed.
+    if (fc.name === "resolve_comparison") {
+      const n = (searchCallCounts.get(fc.name) || 0) + 1;
+      searchCallCounts.set(fc.name, n);
+      const limit = turnWantsComparison ? 2 : 0;
+      if (n <= limit) return null;
+      console.log(`[TIER2] resolve_comparison call #${n} refused (wantsComparison=${turnWantsComparison})`);
+      return turnWantsComparison
+        ? `STOP calling resolve_comparison. Emit the [[COMPARE_CARD:{"entityType":...,"entities":[...],"dimensions":...}]] tag with the ids you already have - the server resolves the data and renders the card.`
+        : `STOP: the parent did NOT ask for a comparison this turn. Ignore any earlier comparison thread completely and answer their ACTUAL current question now: "${String(userMessage || "").slice(0, 200)}"`;
+    }
     if (!searchToolNames.includes(fc.name)) return null;
     const n = (searchCallCounts.get(fc.name) || 0) + 1;
     searchCallCounts.set(fc.name, n);

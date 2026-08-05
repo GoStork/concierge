@@ -788,7 +788,10 @@ class VoiceSession {
       /\b(explain|walk me through|in (full )?detail|step[- ]by[- ]step|full (process|breakdown|picture)|everything (about|i need)|tell me (all|everything))\b/i.test(
         userText,
       );
-    const spokenBudget = new SpokenBudget(wantsDetail ? 150 : 90);
+    // 75 base: 90 measured ~40s worst case once the overshoot sentence,
+    // filler, and the +8s check-in line stack on top - 75 lands near the 30s
+    // target the master test script promises.
+    const spokenBudget = new SpokenBudget(wantsDetail ? 150 : 75);
     // Conditional early filler: fires at FILLER_MS only when the first token
     // has NOT arrived yet - fast turns never hear it. 650ms fired on nearly
     // EVERY substantive turn (Tier2 first token is rarely that fast), and the
