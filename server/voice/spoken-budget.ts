@@ -1,13 +1,16 @@
-// Server-side spoken-length ceiling + speech normalization for voice turns.
+// Per-sentence speech buffer + normalization for voice turns.
 //
-// The VOICE MODE prompt caps ("2 short sentences") are requests to a language
-// model - measured live being ignored: 19-62 second monologues, one 197s
-// (sessions fj7qre, mnyo9j). This is the CODE control: complete sentences
-// pass through until the word budget is spent; the first sentence past the
-// budget becomes a short deferral line and the remainder is dropped from
-// SPEECH ONLY. The router persists the full reply to the chat transcript
-// regardless of what the gateway speaks, so nothing is lost - it just is not
-// read aloud.
+// HISTORY: this started as a spoken-length ceiling (complete sentences pass
+// until the word budget is spent, then a deferral line). Live feedback
+// killed the ceiling (2026-08-05, session 6syttk): it cut a five-step answer
+// after step two, which reads as broken, not brief - "do not stop her in the
+// middle of what she needs to say". The gateway now instantiates this with
+// an Infinite limit, so the class serves as the sentence-boundary buffer
+// that (a) applies normalizeSpeech per complete sentence (the ordinal
+// rewrite needs sentence context) and (b) feeds the content-barge echo
+// vocabulary. The budget machinery is kept intact should a ceiling ever be
+// wanted again; length pressure otherwise lives in the prompt and in how
+// easily the parent can interrupt.
 
 const ORDINAL_WORDS: Record<string, string> = {
   "1": "First",

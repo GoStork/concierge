@@ -860,18 +860,14 @@ class VoiceSession {
       /\b(hey|hi|hello|good (morning|afternoon|evening)|are you (there|here|with me)|can you hear( me)?|hear me|thank(s| you)?|ok(ay)?|got it)\b/i;
     const wordCount = userText.trim().split(/\s+/).length;
     const substantive = wordCount >= 4 && !(wordCount <= 8 && SOCIAL_UTTERANCE.test(userText));
-    // CODE-ENFORCED SPOKEN CEILING (see spoken-budget.ts): the prompt caps
-    // are ignored by the model - measured 19-62s monologues. ~90 words is
-    // ~30s of speech; an explicit ask for detail earns a bigger budget. The
-    // full reply always reaches the chat transcript regardless.
-    const wantsDetail =
-      /\b(explain|walk me through|in (full )?detail|step[- ]by[- ]step|full (process|breakdown|picture)|everything (about|i need)|tell me (all|everything))\b/i.test(
-        userText,
-      );
-    // 75 base: 90 measured ~40s worst case once the overshoot sentence,
-    // filler, and the +8s check-in line stack on top - 75 lands near the 30s
-    // target the master test script promises.
-    const spokenBudget = new SpokenBudget(wantsDetail ? 150 : 75);
+    // SPOKEN CEILING REMOVED (live feedback 2026-08-05, session 6syttk): the
+    // cut landed mid-LIST - "First... Second... I've put the full details in
+    // our chat" with three steps unsaid - which reads as broken, not brief
+    // ("do not stop her in the middle of what she needs to say"). Length
+    // pressure lives in the prompt (rule 5) and in how easy interrupting now
+    // is (content barge); the budget survives ONLY as the per-sentence
+    // buffer that feeds the speech normalizer and the echo vocabulary.
+    const spokenBudget = new SpokenBudget(Number.POSITIVE_INFINITY);
     // Conditional early filler: fires at FILLER_MS only when the first token
     // has NOT arrived yet - fast turns never hear it. 650ms fired on nearly
     // EVERY substantive turn (Tier2 first token is rarely that fast), and the
@@ -1126,10 +1122,6 @@ class VoiceSession {
       if (tail) {
         this.send({ type: "eva_caption", text: tail });
         this.chunker?.push(tail);
-      }
-      if (spokenBudget.truncated) {
-        metrics.spokenTruncated = true;
-        log(`turn ${turnId}: spoken ceiling hit - reply truncated to ~${wantsDetail ? 150 : 90} words (full text in chat)`);
       }
       this.chunker?.flush();
       const stream = this.tts;
