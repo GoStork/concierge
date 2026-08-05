@@ -237,7 +237,12 @@ export function VoiceModePanel({
             // Tap-to-interrupt: touching Eva while she talks cuts her off -
             // the deterministic interrupt for platforms where acoustic barge
             // detection struggles (iPhone speaker). No-ops when she's quiet.
-            onClick={takeover ? undefined : interruptVoiceSession}
+            // ALSO in takeover: with cards full-screen her face IS the PiP,
+            // and disabling the tap there left no interrupt surface at all
+            // during card-heavy monologues (observed live, session 3xympn -
+            // "she wouldn't stop talking"). A click after a PiP drag still
+            // interrupting is acceptable: the parent is touching Eva either way.
+            onClick={interruptVoiceSession}
             data-testid={takeover ? "voice-avatar-pip" : "voice-avatar-stage"}
           >
             {/* The persistent AvatarVideo portals into this element - see

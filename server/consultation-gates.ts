@@ -679,6 +679,51 @@ export async function evaluateMatchCallGates(input: {
   client?: any;
 }): Promise<MatchCallGateResult> {
   const prisma = await db(input.client);
+
+  // MATCH-CALL GATES ARE A SURROGACY CONCEPT: the IP form (the family story
+  // an agency shows to surrogates), the both-parents attendance confirmation,
+  // and the decision-window/deposit acknowledgement exist for SURROGATE match
+  // calls. Observed live (session 3xympn): an egg-donor call was 409'd with a
+  // confirm-something + IP-form demand - nothing to confirm on screen, and
+  // the form does not apply to egg donation (the parent said exactly that).
+  // When the subject profile resolves to a known egg/sperm donor, every gate
+  // passes. A known surrogate, an unknown id, or no subject at all keeps the
+  // full gate set (conservative default - a generic match call with a
+  // connected surrogacy agency is still a surrogacy match call).
+  if (input.subjectProfileId) {
+    const sid = String(input.subjectProfileId);
+    try {
+      const [isSurrogate, isEggDonor, isSpermDonor] = await Promise.all([
+        prisma.surrogate.findFirst({ where: { OR: [{ id: sid }, { externalId: sid }] }, select: { id: true } }).catch(() => null),
+        prisma.eggDonor.findFirst({ where: { OR: [{ id: sid }, { externalId: sid }] }, select: { id: true } }).catch(() => null),
+        prisma.spermDonor.findFirst({ where: { OR: [{ id: sid }, { externalId: sid }] }, select: { id: true } }).catch(() => null),
+      ]);
+      if (!isSurrogate && (isEggDonor || isSpermDonor)) {
+        return {
+          allowed: true,
+          code: null,
+          message: "",
+          missing: [],
+          ipFormMissing: false,
+          deposit: {
+            source: "NONE",
+            label: null,
+            minCents: null,
+            maxCents: null,
+            triggerLabel: null,
+            payToLabel: null,
+            isRefundable: null,
+            refundNote: null,
+            depositAtClearance: false,
+          },
+          bothParents: { required: false, reason: null, partnerFirstName: null },
+        };
+      }
+    } catch {
+      /* fail closed into the normal gate evaluation below */
+    }
+  }
+
   const memberIds = await expandParentAccount(input.parentUserId, input.client);
   const accountId = await resolveParentAccountId(input.parentUserId, input.client);
 
