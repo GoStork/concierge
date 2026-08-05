@@ -266,6 +266,7 @@ class VoiceSession {
   // words she did not. Levels cannot separate parent from echo on an iPhone
   // speaker (echo at the mic is often LOUDER than the parent); words can.
   private recentSpoken: string[] = [];
+  private lastBargeAt = 0;
   private noteSpoken(text: string) {
     for (const w of text.toLowerCase().replace(/[^a-z0-9\s']/g, " ").split(/\s+/)) {
       if (w.length >= 2) this.recentSpoken.push(w);
@@ -277,17 +278,30 @@ class VoiceSession {
   // Alphabetic words only (>= 3 chars): TTS/STT orthography drift on numbers
   // and IDs ("23899" vs "two three eight...") would fake novelty from pure
   // echo and stop her mid-sentence for no reason.
-  private novelWordInfo(text: string): { novel: number; total: number } {
+  private novelWordInfo(text: string): { novel: number; total: number; novelWords: string[] } {
     const spoken = new Set(this.recentSpoken);
-    let novel = 0;
+    const novelWords: string[] = [];
     let total = 0;
     for (const w of text.toLowerCase().replace(/[^a-z\s']/g, " ").split(/\s+/)) {
       if (w.length < 3) continue;
       total++;
-      if (!spoken.has(w)) novel++;
+      if (!spoken.has(w)) novelWords.push(w);
     }
-    return { novel, total };
+    return { novel: novelWords.length, total, novelWords };
   }
+  // Interjection command words: ONE of these (novel) is enough to barge -
+  // parents open interruptions with a command or her name, and waiting for a
+  // second word means she talks over their first ("didn't stop on my first
+  // word" - live feedback). Persona names included; she almost never says
+  // them herself, so novelty holds.
+  private static readonly BARGE_HOTWORDS = new Set([
+    "stop", "wait", "hold", "pause", "shush", "excuse", "sorry", "ariel", "eva",
+  ]);
+  // A pure stop-command has NO content to answer. She stops (the barge
+  // already did that) and stays SILENT - replying "I am completely silent
+  // and listening" is not how humans take an interruption (live feedback).
+  private static readonly PURE_STOP_RE =
+    /^(?:(?:hey|hi)[,!. ]+)?(?:(?:ariel|eva)[,!. ]+)?(?:please[,!. ]+)?(?:stop|wait|hold on|pause|shh+|shush|quiet|be quiet|one (?:sec|second|moment)|give me a (?:sec|second|minute|moment))(?:[,!. ]+(?:please|for a (?:sec|second|minute|moment)|a (?:sec|second|minute|moment)|right now|now|talking))*[\s!.,]*$/i;
   private openStt() {
     this.stt = this.sttProvider.openStream({ sampleRate: VOICE_SAMPLE_RATE });
     if (this.sttDebug) (this.stt as any)?.setDebug?.(true);
@@ -302,8 +316,9 @@ class VoiceSession {
       // that case.)
       if (this.state === "speaking" && text && this.recentSpoken.length > 0) {
         const nov = this.novelWordInfo(text);
-        if (nov.novel >= 2) {
-          log(`content barge: interim carries ${nov.novel} non-echo word(s): "${text.slice(0, 60)}"`);
+        const hotWord = nov.novelWords.find((w) => VoiceSession.BARGE_HOTWORDS.has(w));
+        if (nov.novel >= 2 || hotWord) {
+          log(`content barge: ${hotWord ? `hot word "${hotWord}"` : `${nov.novel} non-echo words`}: "${text.slice(0, 60)}"`);
           this.handleBarge();
         }
       }
@@ -321,6 +336,17 @@ class VoiceSession {
       const nov = this.novelWordInfo(text);
       if (this.recentSpoken.length > 0 && nov.total >= 2 && nov.novel / nov.total < 0.3) {
         log(`echo utterance suppressed (${nov.novel}/${nov.total} novel words): "${text.slice(0, 80)}"`);
+        this.send({ type: "partial_transcript", text: "" });
+        return;
+      }
+      // A pure stop-command right after a barge (or while she was talking)
+      // carries no content - she has already stopped, so she simply LISTENS.
+      // No turn, no reply, no "I am completely silent" meta-speech. The
+      // parent's next real utterance becomes a normal fresh turn.
+      const stopContext = this.state === "speaking" || Date.now() - this.lastBargeAt < 5000;
+      if (stopContext && VoiceSession.PURE_STOP_RE.test(text.trim())) {
+        log(`pure stop-command absorbed silently: "${text.slice(0, 60)}"`);
+        this.setState("listening");
         this.send({ type: "partial_transcript", text: "" });
         return;
       }
@@ -622,6 +648,7 @@ class VoiceSession {
 
   private handleBarge() {
     if (this.state !== "speaking" && this.state !== "thinking") return;
+    this.lastBargeAt = Date.now();
     log(`barge-in (turn ${this.turnCounter}, was ${this.state})`);
     this.speakSuppressed = true;
     if (this.listenTimer) clearTimeout(this.listenTimer);

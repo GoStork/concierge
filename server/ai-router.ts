@@ -6305,6 +6305,17 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
           : ""),
     });
 
+    // CURRENT-QUESTION ANCHOR - the very last thing the model reads.
+    // Observed live twice (wczwl7, nx2duo): a fresh session opener ("tell me
+    // about the surrogacy process") was answered by RESUMING the previous
+    // call's unresolved thread (a dangling comparison; an IP-form dispute).
+    // Lifetime history makes stale threads magnetic; this pins the reply to
+    // the message actually asked.
+    messages.push({
+      role: "system" as const,
+      content: `THE PARENT'S CURRENT MESSAGE IS: "${String(req.body.message || "").slice(0, 300)}"\nAnswer THIS message, directly, first. Do NOT resume an earlier unresolved topic (an old comparison, a form discussion, a pending promise) unless the current message itself asks about it.`,
+    });
+
     // -------------------------------------------------------------------------
     // TIER ROUTING: Tier 1 (Gemini 2.5 Flash) for early turns, Tier 2 (Claude
     // Sonnet 4.6) once [[CURATION]] fires or for all tool-calling turns.
