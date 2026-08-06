@@ -22,7 +22,7 @@
  * or every note would appear twice: once with its body and once as a bare
  * "Note added".
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { useNavigate } from "react-router-dom";
@@ -481,8 +481,25 @@ function MessageDetail({ detail, parentUserId }: {
   detail: Extract<ActivityDetail, { type: "message" }>;
   parentUserId: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
   const failed = detail.status && detail.status !== "sent" && detail.status !== "delivered";
+
+  // Only fetch the email once its card is actually on screen. The timeline can
+  // hold dozens of messages, and eagerly pulling every rendered document would
+  // make opening a record download a few megabytes nobody scrolled to.
+  useEffect(() => {
+    if (!detail.hasHtml || visible || !ref.current) return;
+    const el = ref.current;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setVisible(true);
+        io.disconnect();
+      }
+    }, { rootMargin: "300px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [detail.hasHtml, visible]);
 
   const full = useQuery<{ subject: string | null; bodyHtml: string | null; bodyText: string | null }>({
     queryKey: ["parent-message", parentUserId, detail.notificationId],
@@ -491,11 +508,12 @@ function MessageDetail({ detail, parentUserId }: {
       if (!res.ok) throw new Error("Could not load the message");
       return res.json();
     },
-    enabled: open,
+    enabled: visible,
+    staleTime: Infinity,
   });
 
   return (
-    <div className="mt-2 rounded-[var(--radius)] border bg-secondary/40 p-3 space-y-1.5" data-testid={`detail-message-${detail.notificationId}`}>
+    <div ref={ref} className="mt-2 rounded-[var(--radius)] border bg-secondary/40 p-3 space-y-1.5" data-testid={`detail-message-${detail.notificationId}`}>
       <Row label="To">{detail.recipient}</Row>
       {detail.subject && <Row label="Subject">{detail.subject}</Row>}
       <Row label="Kind">{detail.kind.replace(/_/g, " ")}</Row>
@@ -503,7 +521,10 @@ function MessageDetail({ detail, parentUserId }: {
         <span style={failed ? { color: "hsl(var(--brand-warning))" } : undefined}>{detail.status}</span>
       </Row>
 
-      {detail.bodyPreview && (
+      {/* An email shows the email. The plain-text version was a worse copy of
+          the thing sitting right beneath it, so only messages with NO rendered
+          document (SMS) fall back to text. */}
+      {!detail.hasHtml && detail.bodyPreview && (
         <p className="text-sm whitespace-pre-wrap break-words pt-1">{detail.bodyPreview}</p>
       )}
 
@@ -515,28 +536,21 @@ function MessageDetail({ detail, parentUserId }: {
       )}
 
       {detail.hasHtml && (
-        <>
-          <Button size="sm" variant="outline" className="mt-1" onClick={() => setOpen((v) => !v)} data-testid={`btn-view-message-${detail.notificationId}`}>
-            <Mail className="w-3.5 h-3.5 mr-1.5" /> {open ? "Hide email" : "View the email"}
-          </Button>
-          {open && (
-            <div className="mt-2 rounded-[var(--radius)] border bg-card overflow-hidden">
-              {full.isLoading && <p className="t-helper p-3">Loading the email...</p>}
-              {full.isError && <p className="t-helper p-3">Could not load this email.</p>}
-              {full.data?.bodyHtml && (
-                <iframe
-                  title={full.data.subject || "Sent email"}
-                  // No scripts, no forms, no same-origin: mail HTML is not
-                  // trusted just because we sent it.
-                  sandbox=""
-                  srcDoc={full.data.bodyHtml}
-                  className="w-full h-[420px] bg-white"
-                  data-testid={`iframe-message-${detail.notificationId}`}
-                />
-              )}
-            </div>
+        <div className="mt-1 rounded-[var(--radius)] border bg-card overflow-hidden">
+          {full.isLoading && <p className="t-helper p-3">Loading the email...</p>}
+          {full.isError && <p className="t-helper p-3">Could not load this email.</p>}
+          {full.data?.bodyHtml && (
+            <iframe
+              title={full.data.subject || "Sent email"}
+              // No scripts, no forms, no same-origin: mail HTML is not trusted
+              // just because we sent it.
+              sandbox=""
+              srcDoc={full.data.bodyHtml}
+              className="w-full h-[420px] bg-white"
+              data-testid={`iframe-message-${detail.notificationId}`}
+            />
           )}
-        </>
+        </div>
       )}
     </div>
   );

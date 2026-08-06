@@ -243,6 +243,36 @@ const ALLOWED_FIELDS = [
   ...CONTENT_TYPOGRAPHY_FIELDS,
 ];
 
+// Columns that actually exist on the ProviderBrandSettings model. The
+// provider PUT must never pass other ALLOWED_FIELDS (enableAiConcierge,
+// voice, content typography, ...) to Prisma - those are platform-global
+// and live only on SiteSettings.
+const PROVIDER_BRAND_COLUMNS = new Set([
+  "logoUrl", "faviconUrl", "darkLogoUrl", "logoWithNameUrl", "darkLogoWithNameUrl", "companyName",
+  "primaryColor", "secondaryColor", "accentColor", "successColor", "warningColor", "errorColor",
+  "headingFont", "bodyFont", "nativeBodyFont", "baseFontSize", "lineHeight",
+  "typeScaleRatio", "smallTextSize", "baseBodyWeight", "headingWeight", "uiButtonWeight",
+  "bodyLineHeight", "headingLineHeight", "letterSpacing", "buttonTextCase", "linkDecoration",
+  "backgroundColor", "foregroundColor", "cardColor", "cardForegroundColor",
+  "mutedColor", "mutedForegroundColor", "borderColor", "inputColor", "ringColor",
+  "popoverColor", "popoverForegroundColor", "primaryForegroundColor", "secondaryForegroundColor",
+  "accentForegroundColor", "destructiveForegroundColor",
+  "borderRadius", "containerRadius",
+  "bottomNavRadius", "bottomNavBgColor", "bottomNavSafeAreaColor", "bottomNavFgColor", "bottomNavActiveFgColor", "bottomNavStyle",
+  "tabColor", "tabHoverColor", "tabActiveColor", "headerNavStyle",
+  "swipePassColor", "swipeSaveColor", "swipeUndoColor", "swipeChatColor", "swipeCompareColor",
+  "cardTitleSize", "cardOverlaySize", "filterLabelSize", "badgeTextSize", "drawerMinHeight",
+  "drawerTitleSize", "drawerBodySize", "drawerHandleWidth", "sliderValueSize", "sliderThumbSize",
+  "chatBubbleFontSize", "chatBubbleFontSizeDesktop", "chatBubbleLineHeight",
+  "chatBubblePaddingX", "chatBubblePaddingY", "chatBubbleMaxWidth", "chatBubbleRadius",
+  "chatTimestampFontSize", "chatTimestampOpacity", "chatInputFontSize", "chatInputFontSizeDesktop", "chatInputHeight",
+  "chatBubbleOwnColor", "chatBubbleAiColor", "chatBubbleProviderColor", "chatBubbleParentColor",
+  "chatBubbleOwnTextColor", "chatBubbleAiTextColor", "chatBubbleProviderTextColor", "chatBubbleParentTextColor",
+  "chatBubbleOwnBorderColor", "chatBubbleAiBorderColor", "chatBubbleProviderBorderColor", "chatBubbleParentBorderColor",
+  "quickReplyFontSize", "quickReplyRadius", "quickReplyPaddingX", "quickReplyPaddingY",
+  "quickReplyColorStyle", "quickReplyDeclineStyle", "quickReplyMultiStyle", "quickReplyShowBorder",
+]);
+
 function validateBrandBody(body: any) {
   const hexRegex = /^#[0-9a-fA-F]{6}$/;
   const requiredColorFields = ["primaryColor", "secondaryColor", "accentColor", "successColor", "warningColor", "errorColor"];
@@ -631,19 +661,31 @@ export class BrandController {
   async getProviderSettings(@Req() req: any, @Param("providerId") providerId: string) {
     await this.assertProviderAccess(req, providerId);
 
-    const settings = await this.prisma.providerBrandSettings.findUnique({
-      where: { providerId },
-    });
+    const [settings, provider, global] = await Promise.all([
+      this.prisma.providerBrandSettings.findUnique({ where: { providerId } }),
+      this.prisma.provider.findUnique({
+        where: { id: providerId },
+        select: { brandingEnabled: true },
+      }),
+      this.prisma.siteSettings.findFirst(),
+    ]);
 
-    const provider = await this.prisma.provider.findUnique({
-      where: { id: providerId },
-      select: { brandingEnabled: true },
-    });
-
-    if (!settings) {
-      return { ...DEFAULTS, id: null, providerId, brandingEnabled: provider?.brandingEnabled ?? false };
+    // A provider inherits the live global brand; only non-null fields on the
+    // provider row are overrides. Return the merged effective view so the
+    // branding form always shows what parents actually see.
+    const merged: Record<string, any> = { ...DEFAULTS };
+    for (const field of ALLOWED_FIELDS) {
+      if (global && (global as any)[field] != null) {
+        merged[field] = (global as any)[field];
+      }
+      if (settings && (settings as any)[field] != null) {
+        merged[field] = (settings as any)[field];
+      }
     }
-    return { ...settings, brandingEnabled: provider?.brandingEnabled ?? false };
+    merged.id = settings?.id ?? null;
+    merged.providerId = providerId;
+    merged.brandingEnabled = provider?.brandingEnabled ?? false;
+    return merged;
   }
 
   @Put("provider/:providerId")
@@ -659,19 +701,39 @@ export class BrandController {
 
     const data = validateBrandBody(body);
 
+    // Only fields that exist on ProviderBrandSettings can be stored; the
+    // form posts the full merged brand object, which includes global-only
+    // fields that would make Prisma throw.
+    for (const key of Object.keys(data)) {
+      if (!PROVIDER_BRAND_COLUMNS.has(key)) delete data[key];
+    }
+
+    // Inheritance rule: a submitted value equal to the effective global
+    // value is not an override - store null so the provider keeps tracking
+    // future platform rebrands. Only true deviations are persisted.
+    const global = await this.prisma.siteSettings.findFirst();
+    for (const key of Object.keys(data)) {
+      const globalVal = global && (global as any)[key] != null ? (global as any)[key] : (DEFAULTS as any)[key];
+      if (data[key] != null && globalVal != null && data[key] === globalVal) {
+        data[key] = null;
+      }
+    }
+
     const existing = await this.prisma.providerBrandSettings.findUnique({
       where: { providerId },
     });
     if (existing) {
-      return this.prisma.providerBrandSettings.update({
+      await this.prisma.providerBrandSettings.update({
         where: { providerId },
         data,
       });
     } else {
-      return this.prisma.providerBrandSettings.create({
+      await this.prisma.providerBrandSettings.create({
         data: { ...data, providerId },
       });
     }
+    // Return the merged effective view, same shape as GET.
+    return this.getProviderSettings(req, providerId);
   }
 
   @Post("provider/:providerId/reset")

@@ -1680,27 +1680,30 @@ model ProviderBrandSettings {
   logoUrl                    String?
   faviconUrl                 String?
   darkLogoUrl                String?
-  primaryColor               String   @default("#004D4D")
-  secondaryColor             String   @default("#F0FAF5")
-  accentColor                String   @default("#0DA4EA")
-  successColor               String   @default("#16a34a")
-  warningColor               String   @default("#f59e0b")
-  errorColor                 String   @default("#ef4444")
-  headingFont                String   @default("Playfair Display")
-  bodyFont                   String   @default("DM Sans")
-  baseFontSize               Int      @default(16)
-  lineHeight                 Float    @default(1.5)
+  // null on any of these fields = inherit the live global SiteSettings value.
+  // Never re-add DB defaults here: defaults snapshot the palette at row
+  // creation and permanently break inheritance (the frozen-#004D4D bug).
+  primaryColor               String?
+  secondaryColor             String?
+  accentColor                String?
+  successColor               String?
+  warningColor               String?
+  errorColor                 String?
+  headingFont                String?
+  bodyFont                   String?
+  baseFontSize               Int?
+  lineHeight                 Float?
   nativeBodyFont             String?
-  typeScaleRatio             Float    @default(1.25)
-  smallTextSize              Int      @default(14)
-  baseBodyWeight             String   @default("400")
-  headingWeight              String   @default("700")
-  uiButtonWeight             String   @default("500")
-  bodyLineHeight             Float    @default(1.6)
-  headingLineHeight          Float    @default(1.2)
-  letterSpacing              String   @default("normal")
-  buttonTextCase             String   @default("normal")
-  linkDecoration             String   @default("hover")
+  typeScaleRatio             Float?
+  smallTextSize              Int?
+  baseBodyWeight             String?
+  headingWeight              String?
+  uiButtonWeight             String?
+  bodyLineHeight             Float?
+  headingLineHeight          Float?
+  letterSpacing              String?
+  buttonTextCase             String?
+  linkDecoration             String?
   updatedAt                  DateTime @updatedAt
   companyName                String?
   logoWithNameUrl            String?
