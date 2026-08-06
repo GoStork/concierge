@@ -6306,14 +6306,25 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     });
 
     // CURRENT-QUESTION ANCHOR - the very last thing the model reads.
-    // Observed live twice (wczwl7, nx2duo): a fresh session opener ("tell me
-    // about the surrogacy process") was answered by RESUMING the previous
-    // call's unresolved thread (a dangling comparison; an IP-form dispute).
-    // Lifetime history makes stale threads magnetic; this pins the reply to
-    // the message actually asked.
+    // Observed live three times (wczwl7, nx2duo, weauhy): a fresh session
+    // opener ("tell me about the surrogacy process") was answered by
+    // RESUMING the previous call's unresolved thread (a dangling comparison;
+    // an IP-form dispute; the model's OWN pending "let me know when you can
+    // hear me" troubleshooting request). Lifetime history makes stale
+    // threads magnetic; this pins the reply to the message actually asked,
+    // and after a real time gap it explicitly EXPIRES the model's own open
+    // requests - the strongest observed magnet.
+    const lastAssistantMsg = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
+    const minutesSinceLast = lastAssistantMsg?.createdAt
+      ? (Date.now() - new Date(lastAssistantMsg.createdAt).getTime()) / 60000
+      : null;
+    const resumeExpiry =
+      minutesSinceLast !== null && minutesSinceLast > 10
+        ? `\nTIME GAP: your previous reply was ${Math.round(minutesSinceLast)} minutes ago - this is a FRESH conversation opening. Anything YOU asked or suggested back then ("let me know when...", "try refreshing...", a question you were waiting on) is EXPIRED - do not continue it, do not follow it up, do not reference the old problem. Just answer the current message.`
+        : "";
     messages.push({
       role: "system" as const,
-      content: `THE PARENT'S CURRENT MESSAGE IS: "${String(req.body.message || "").slice(0, 300)}"\nAnswer THIS message, directly, first. Do NOT resume an earlier unresolved topic (an old comparison, a form discussion, a pending promise) unless the current message itself asks about it.`,
+      content: `THE PARENT'S CURRENT MESSAGE IS: "${String(req.body.message || "").slice(0, 300)}"\nAnswer THIS message, directly, first. Do NOT resume an earlier unresolved topic (an old comparison, a form discussion, a pending promise, YOUR OWN earlier request) unless the current message itself asks about it.${resumeExpiry}`,
     });
 
     // -------------------------------------------------------------------------
