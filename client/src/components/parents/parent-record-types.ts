@@ -146,6 +146,9 @@ export interface ActivityEntry {
   providerId: string | null;
   providerName: string | null;
   sessionId: string | null;
+  /** The concierge persona this family talks to - see buildActivity. */
+  aiName: string | null;
+  aiAvatarUrl: string | null;
   detail: ActivityDetail | null;
 }
 

@@ -196,7 +196,7 @@ async function buildActivity(ctx: {
   const scoped = scopeProviderId ? { providerId: scopeProviderId } : {};
 
   const bookings = ctx.bookings;
-  const [events, reviews, notifications] = await Promise.all([
+  const [events, reviews, notifications, matchmakers] = await Promise.all([
     prisma.journeyEvent.findMany({
       where: { parentAccountId: accountKey, ...scoped },
       orderBy: { createdAt: "desc" },
@@ -215,7 +215,15 @@ async function buildActivity(ctx: {
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
+    prisma.matchmaker.findMany({ where: { isActive: true }, select: { id: true, name: true, avatarUrl: true } }),
   ]);
+
+  const sessionPersonaId = (await prisma.aiChatSession.findFirst({
+    where: { userId: { in: memberIds }, matchmakerId: { not: null } },
+    orderBy: { updatedAt: "desc" },
+    select: { matchmakerId: true },
+  }))?.matchmakerId ?? null;
+  const persona = matchmakers.find((m: any) => m.id === sessionPersonaId) || matchmakers[0] || null;
 
   const bookingById = new Map<string, any>(bookings.map((b: any) => [b.id, b]));
   const invoiceById = new Map<string, any>(ctx.invoices.map((i: any) => [i.id, i]));
@@ -244,6 +252,8 @@ async function buildActivity(ctx: {
       providerId: ev.providerId,
       providerName: org?.name ?? null,
       sessionId: ev.sessionId,
+      aiName: persona?.name ?? null,
+      aiAvatarUrl: persona?.avatarUrl ?? null,
       detail: null as any,
     };
 
@@ -364,6 +374,8 @@ async function buildActivity(ctx: {
       providerId: b?.providerId ?? null,
       providerName: null,
       sessionId: null,
+      aiName: persona?.name ?? null,
+      aiAvatarUrl: persona?.avatarUrl ?? null,
       detail: {
         type: "message",
         notificationId: n.id,

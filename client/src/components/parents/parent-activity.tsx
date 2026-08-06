@@ -216,6 +216,9 @@ interface Entry {
   detail?: ActivityDetail | null;
   /** Raw event type, so the card can pick an icon for what actually happened. */
   eventType?: string;
+  /** Concierge persona, for the avatar on an AI Activity card. */
+  aiName?: string | null;
+  aiAvatarUrl?: string | null;
 }
 
 function fmt(iso: string): string {
@@ -294,6 +297,8 @@ function buildEntries(record: ParentRecord): Entry[] {
       org: ev.providerName,
       detail: ev.detail,
       eventType: ev.eventType,
+      aiName: ev.aiName,
+      aiAvatarUrl: ev.aiAvatarUrl,
     });
   }
 
@@ -470,7 +475,15 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl }: {
   return (
     <div className="rounded-[var(--radius)] border bg-card p-3" data-testid={`activity-${entry.id}`}>
       <div className="flex items-start gap-2.5">
-        {entry.kind === "parent" ? (
+        {entry.kind === "ai" && entry.aiAvatarUrl ? (
+          // Eva sent this, so it wears Eva's face - the same reason a parent
+          // action shows the parent and a note shows its author.
+          <img
+            src={getPhotoSrc(entry.aiAvatarUrl) || undefined}
+            alt={entry.aiName || "Concierge"}
+            className="w-7 h-7 rounded-full object-cover object-top shrink-0 mt-0.5"
+          />
+        ) : entry.kind === "parent" ? (
           // The family did this, so show the family - the same reason a note
           // carries its author's name.
           parentPhotoUrl
