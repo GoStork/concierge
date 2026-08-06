@@ -6314,9 +6314,9 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     // threads magnetic; this pins the reply to the message actually asked,
     // and after a real time gap it explicitly EXPIRES the model's own open
     // requests - the strongest observed magnet.
-    const lastAssistantMsg = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
-    const minutesSinceLast = lastAssistantMsg?.createdAt
-      ? (Date.now() - new Date(lastAssistantMsg.createdAt).getTime()) / 60000
+    const lastAiReplyForAnchor = [...chatHistory].reverse().find((m: any) => m.role === "assistant");
+    const minutesSinceLast = lastAiReplyForAnchor?.createdAt
+      ? (Date.now() - new Date(lastAiReplyForAnchor.createdAt).getTime()) / 60000
       : null;
     const resumeExpiry =
       minutesSinceLast !== null && minutesSinceLast > 10
