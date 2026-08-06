@@ -246,17 +246,23 @@ export function ParentRecordHeader({
         ) : (
           <DoctorMonogram name={record.parent.name || "Parent"} size={48} rounded="var(--radius)" />
         )}
-        {/* The name is the page title now, so it is not repeated here. */}
-        <div className="min-w-0 flex items-center gap-2 flex-wrap">
-          <MatchStatusBadge status={record.matchStatus} />
-          {/* No ServiceChips here: the profile card's Journey "Interested In"
-              row below shows the same interestedServices data. Chips stay in
-              the Parents table, where row-scanning justifies them. */}
-          <HouseholdBadge
-            memberNames={record.accountMembers.map((m) => m.name || "")}
-            selfName={record.parent.name}
-            testId="record-household"
-          />
+        <div className="min-w-0 space-y-1">
+          {/* The page title also carries the name, but inside the card the
+              avatar reads as anonymous without it. */}
+          {record.parent.name && (
+            <p className="font-heading text-sm truncate" data-testid="record-parent-name">{record.parent.name}</p>
+          )}
+          <div className="min-w-0 flex items-center gap-2 flex-wrap">
+            <MatchStatusBadge status={record.matchStatus} />
+            {/* No ServiceChips here: the profile card's Journey "Interested In"
+                row below shows the same interestedServices data. Chips stay in
+                the Parents table, where row-scanning justifies them. */}
+            <HouseholdBadge
+              memberNames={record.accountMembers.map((m) => m.name || "")}
+              selfName={record.parent.name}
+              testId="record-household"
+            />
+          </div>
         </div>
       </div>
       {/* Full width, NOT beside the avatar. Sharing the row with a 48px
