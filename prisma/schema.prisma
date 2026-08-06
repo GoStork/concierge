@@ -1049,6 +1049,14 @@ model Notification {
   scheduledFor DateTime?
   status       String    @default("pending")
   recipient    String
+  // What was actually sent. Written at dispatch, where the rendered message
+  // is in hand - nothing reconstructs it afterwards, because buildBrandedEmail
+  // resolves brand settings, links and tokens at send time and those change.
+  // Null on every row written before this existed; the UI says so rather than
+  // inventing a body.
+  subject      String?
+  bodyHtml     String?   @db.Text
+  bodyText     String?   @db.Text
   createdAt    DateTime  @default(now())
   booking      Booking?  @relation(fields: [bookingId], references: [id])
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)

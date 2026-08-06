@@ -171,13 +171,11 @@ export interface BuildOpts {
  *    side of the wire, and a detail payload is exactly the thing that must
  *    not leak across it.
  *
- * WHAT IS NOT HERE: the body of a sent email or SMS. `Notification` records
- * that a message went out - type, channel, recipient, status - and nothing
- * more; the rendered email is built at dispatch and handed to SendGrid
- * without being stored. So those cards report delivery and say plainly that
- * the content was not kept, rather than inventing a plausible body. Capturing
- * it needs a schema change on Notification plus a write at dispatch, and it
- * would only ever populate messages sent AFTER that change.
+ * MESSAGE CONTENT: Notification now stores the subject, the rendered HTML and
+ * a plain-text version, captured at dispatch. Rows written before those
+ * columns existed have none, and cannot get any - buildBrandedEmail resolves
+ * brand settings, links and one-time tokens at send time, so an old row
+ * cannot be faithfully re-rendered. Those cards say so instead of guessing.
  */
 async function buildActivity(ctx: {
   prisma: any;
@@ -390,9 +388,14 @@ async function buildActivity(ctx: {
         status: n.status,
         sentAt: n.sentAt,
         bookingId: n.bookingId ?? null,
-        // Notification keeps no subject and no body - see the note on
-        // buildActivity. Stated on the card rather than faked.
-        contentStored: false,
+        subject: n.subject ?? null,
+        // A preview only - the full HTML is served by the preview route, so a
+        // record with 100 emails does not ship 100 rendered documents.
+        bodyPreview: n.bodyText ? String(n.bodyText).slice(0, 400) : null,
+        hasHtml: !!n.bodyHtml,
+        // False on every row written before the content columns existed. The
+        // card says so rather than inventing a body.
+        contentStored: !!(n.subject || n.bodyText || n.bodyHtml),
       },
     });
   }

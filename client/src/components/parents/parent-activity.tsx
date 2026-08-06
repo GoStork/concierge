@@ -23,7 +23,7 @@
  * "Note added".
  */
 import { useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { useNavigate } from "react-router-dom";
 import {
@@ -390,20 +390,7 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
   }
 
   if (detail.type === "message") {
-    const failed = detail.status && detail.status !== "sent" && detail.status !== "delivered";
-    return (
-      <div className={shell} data-testid={`detail-message-${detail.notificationId}`}>
-        <Row label="To">{detail.recipient}</Row>
-        <Row label="Kind">{detail.kind.replace(/_/g, " ")}</Row>
-        <Row label="Delivery">
-          <span style={failed ? { color: "hsl(var(--brand-warning))" } : undefined}>{detail.status}</span>
-        </Row>
-        {/* Said plainly rather than faked: Notification records that a message
-            went out and nothing about what it said. Giving this card a real
-            body needs a column on Notification plus a write at dispatch. */}
-        <p className="t-helper">The message text was not stored, so it cannot be shown here.</p>
-      </div>
-    );
+    return <MessageDetail detail={detail} parentUserId={parentUserId} />;
   }
 
   if (detail.type === "invoice") {
@@ -479,6 +466,80 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
   }
 
   return null;
+}
+
+
+/**
+ * A sent email or SMS: what it said, and the real thing behind it.
+ *
+ * The full HTML is fetched on demand rather than shipped with the record - a
+ * family with a hundred emails would otherwise carry a hundred rendered
+ * documents on every page load. It renders in a SANDBOXED iframe: this is
+ * mail HTML, and it gets no script, no forms and no same-origin access.
+ */
+function MessageDetail({ detail, parentUserId }: {
+  detail: Extract<ActivityDetail, { type: "message" }>;
+  parentUserId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const failed = detail.status && detail.status !== "sent" && detail.status !== "delivered";
+
+  const full = useQuery<{ subject: string | null; bodyHtml: string | null; bodyText: string | null }>({
+    queryKey: ["parent-message", parentUserId, detail.notificationId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parents/${parentUserId}/messages/${detail.notificationId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Could not load the message");
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  return (
+    <div className="mt-2 rounded-[var(--radius)] border bg-secondary/40 p-3 space-y-1.5" data-testid={`detail-message-${detail.notificationId}`}>
+      <Row label="To">{detail.recipient}</Row>
+      {detail.subject && <Row label="Subject">{detail.subject}</Row>}
+      <Row label="Kind">{detail.kind.replace(/_/g, " ")}</Row>
+      <Row label="Delivery">
+        <span style={failed ? { color: "hsl(var(--brand-warning))" } : undefined}>{detail.status}</span>
+      </Row>
+
+      {detail.bodyPreview && (
+        <p className="text-sm whitespace-pre-wrap break-words pt-1">{detail.bodyPreview}</p>
+      )}
+
+      {!detail.contentStored && (
+        // Only true of messages sent before the content columns existed. They
+        // cannot be recovered - the rendered email resolves brand settings and
+        // one-time links at send time - so this says so instead of guessing.
+        <p className="t-helper">This message was sent before GoStork began recording message content.</p>
+      )}
+
+      {detail.hasHtml && (
+        <>
+          <Button size="sm" variant="outline" className="mt-1" onClick={() => setOpen((v) => !v)} data-testid={`btn-view-message-${detail.notificationId}`}>
+            <Mail className="w-3.5 h-3.5 mr-1.5" /> {open ? "Hide email" : "View the email"}
+          </Button>
+          {open && (
+            <div className="mt-2 rounded-[var(--radius)] border bg-card overflow-hidden">
+              {full.isLoading && <p className="t-helper p-3">Loading the email...</p>}
+              {full.isError && <p className="t-helper p-3">Could not load this email.</p>}
+              {full.data?.bodyHtml && (
+                <iframe
+                  title={full.data.subject || "Sent email"}
+                  // No scripts, no forms, no same-origin: mail HTML is not
+                  // trusted just because we sent it.
+                  sandbox=""
+                  srcDoc={full.data.bodyHtml}
+                  className="w-full h-[420px] bg-white"
+                  data-testid={`iframe-message-${detail.notificationId}`}
+                />
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole, onChanged }: {

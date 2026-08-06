@@ -169,7 +169,10 @@ export type ActivityDetail =
       notificationId: string; channel: string; kind: string;
       recipient: string; status: string; sentAt: string | null;
       bookingId: string | null;
-      /** Always false: Notification keeps no subject and no body. */
+      subject: string | null;
+      bodyPreview: string | null;
+      hasHtml: boolean;
+      /** False for messages sent before the content columns existed. */
       contentStored: boolean;
     }
   | { type: "invoice"; invoiceId: string; status: string; amountCents: number | null; dueAt: string | null; paymentUrl: string | null; description: string | null }

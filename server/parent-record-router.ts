@@ -77,6 +77,55 @@ parentRecordRouter.get("/api/parents/:id/record", requireAuth, async (req, res) 
 
 // ─── Notes ──────────────────────────────────────────────────────────────────
 
+/**
+ * The exact email we sent, as it was sent.
+ *
+ * Served rather than embedded in the record payload: a family with a hundred
+ * emails would otherwise ship a hundred rendered documents on every page load.
+ *
+ * ACCESS: reuses buildParentRecord's own check. If the caller cannot build
+ * this parent's record they cannot read their mail either, so there is one
+ * access rule here and not a second one to keep in sync. Rendered inside a
+ * sandboxed iframe on the client - this is third-party-ish HTML that has
+ * already been through a mail client once.
+ */
+parentRecordRouter.get("/api/parents/:id/messages/:notificationId", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    // Throws 403/404 exactly as the record endpoint would.
+    await buildParentRecord(user, String(req.params.id), { sections: ["identity"] });
+
+    const parent = await prisma.user.findUnique({
+      where: { id: String(req.params.id) },
+      select: { id: true, parentAccountId: true },
+    });
+    if (!parent) return res.status(404).json({ message: "Parent not found" });
+
+    const memberIds = (await prisma.user.findMany({
+      where: parent.parentAccountId
+        ? { parentAccountId: parent.parentAccountId }
+        : { id: parent.id },
+      select: { id: true },
+    })).map((u) => u.id);
+
+    const row = await prisma.notification.findFirst({
+      // userId scoping is the point: a notification id alone must not fetch
+      // somebody else's mail.
+      where: { id: String(req.params.notificationId), userId: { in: memberIds } },
+      select: { id: true, subject: true, bodyHtml: true, bodyText: true, sentAt: true, recipient: true, type: true },
+    });
+    if (!row) return res.status(404).json({ message: "Message not found" });
+    if (!row.bodyHtml && !row.bodyText) {
+      return res.status(404).json({ message: "This message was sent before its content was recorded." });
+    }
+    res.json(row);
+  } catch (e: any) {
+    if (e instanceof ParentRecordError) return res.status(e.status).json({ message: e.message });
+    console.error("[parent-record] message fetch failed:", e?.message);
+    res.status(500).json({ message: "Failed to load message" });
+  }
+});
+
 parentRecordRouter.get("/api/parents/:id/notes", requireAuth, async (req, res) => {
   try {
     const viewer = resolveCrmViewer(req.user as any);

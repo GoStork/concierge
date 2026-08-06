@@ -96,6 +96,43 @@ function getFirstName(fullName?: string | null): string {
   return fullName.split(" ")[0];
 }
 
+
+/**
+ * A readable plain-text version of an email, for the activity timeline's
+ * preview line. Not a full HTML-to-text renderer - it strips tags and
+ * collapses whitespace, which is all a two-line preview needs. The exact
+ * HTML is kept alongside it in bodyHtml.
+ */
+function htmlToText(html: string | null | undefined): string | null {
+  if (!html) return null;
+  const text = html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text || null;
+}
+
+/**
+ * Twilio renders the final SMS from a Content Template on their side, so we
+ * never hold the sent string. Record the template and the variables we
+ * supplied - the truthful thing we DO have - rather than guessing at wording.
+ */
+function summarizeSmsTemplate(contentSid: string, vars: Record<string, string>): string {
+  const parts = Object.entries(vars)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([k, v]) => `{{${k}}} ${v}`);
+  return `Template ${contentSid}\n${parts.join("\n")}`;
+}
+
 @Injectable()
 export class NotificationService implements OnModuleInit {
   private readonly logger = new Logger(NotificationService.name);
@@ -1717,6 +1754,9 @@ export class NotificationService implements OnModuleInit {
         continue;
       }
 
+      let sentSubject: string | null = null;
+      let sentHtml: string | null = null;
+      let sentSmsText: string | null = null;
       try {
         const booking = reminder.booking;
         const scheduledAt = new Date(booking.scheduledAt);
@@ -1786,23 +1826,29 @@ export class NotificationService implements OnModuleInit {
           }
 
           await this.sendRawEmail(reminder.recipient, subject, html);
+          sentSubject = subject;
+          sentHtml = html;
         } else if (reminder.type === "SMS") {
           const otherPartyName = isProvider ? attendeeName : providerName;
-          await this.sendSmsWithTemplate(
-            reminder.recipient,
-            TWILIO_TEMPLATES.BOOKING_REMINDER,
-            {
+          const reminderVars = {
               "1": getFirstName(isProvider ? booking.providerUser?.name : attendeeName),
               "2": otherPartyName,
               "3": reminderLabel,
-              "4": isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl : `${base}/room/${booking.id}`,
-            },
-          );
+            "4": isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl : `${base}/room/${booking.id}`,
+          };
+          await this.sendSmsWithTemplate(reminder.recipient, TWILIO_TEMPLATES.BOOKING_REMINDER, reminderVars);
+          sentSmsText = summarizeSmsTemplate(TWILIO_TEMPLATES.BOOKING_REMINDER, reminderVars);
         }
 
         await this.prisma.notification.update({
           where: { id: reminder.id },
-          data: { status: "sent", sentAt: new Date() },
+          data: {
+            status: "sent",
+            sentAt: new Date(),
+            subject: sentSubject,
+            bodyHtml: sentHtml,
+            bodyText: sentHtml ? htmlToText(sentHtml) : sentSmsText,
+          },
         });
         processed++;
       } catch (error: any) {
@@ -1848,7 +1894,16 @@ export class NotificationService implements OnModuleInit {
 
       await this.prisma.notification.update({
         where: { id: notification.id },
-        data: { status: "sent", sentAt: new Date() },
+        // Store what was sent, here, where it is in hand. Nothing can
+        // reconstruct it later - buildBrandedEmail resolves brand settings,
+        // links and one-time tokens at send time.
+        data: {
+          status: "sent",
+          sentAt: new Date(),
+          subject: params.subject || null,
+          bodyHtml: params.body || null,
+          bodyText: htmlToText(params.body),
+        },
       });
     } catch (error: any) {
       this.logger.warn(`Notification dispatch failed for ${params.type} to ${params.recipient}: ${error.message}`);
@@ -1882,7 +1937,14 @@ export class NotificationService implements OnModuleInit {
       await this.sendSmsWithTemplate(params.recipient, params.contentSid, params.contentVars);
       await this.prisma.notification.update({
         where: { id: notification.id },
-        data: { status: "sent", sentAt: new Date() },
+        // Twilio renders the final text from a Content Template on their side,
+        // so the closest faithful record is the template id plus the variables
+        // we supplied. Storing an invented sentence would be worse than this.
+        data: {
+          status: "sent",
+          sentAt: new Date(),
+          bodyText: summarizeSmsTemplate(params.contentSid, params.contentVars),
+        },
       });
     } catch (error: any) {
       this.logger.warn(`SMS dispatch failed to ${params.recipient}: ${error.message}`);
