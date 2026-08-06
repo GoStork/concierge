@@ -941,6 +941,16 @@ class VoiceSession {
           this.send({ type: "eva_caption", text: filler });
           this.noteSpoken(filler);
           this.tts?.sendText(filler);
+          // Close the filler as its OWN complete utterance: sonic-3 holds
+          // back the tail of an open context until more text arrives, so
+          // "Let me check." played as "Let me" ... [seconds] ... "check"
+          // glued to the reply (live report). The reply streams on a fresh
+          // context; the old stream finishes generating the filler and dies.
+          this.tts?.flush();
+          this.tts = this.openTts(route);
+          this.tts.onAudio((pcm) => {
+            if (!this.speakSuppressed && this.turnCounter === turnId) this.deliverSpeech(pcm, route);
+          });
         }, FILLER_MS)
       : null;
     // DEAD-AIR CHECK-IN: observed live (turn stn78n:8) - filler at 1.4s,
@@ -955,6 +965,12 @@ class VoiceSession {
           this.send({ type: "eva_caption", text: line });
           this.noteSpoken(line);
           this.tts?.sendText(line);
+          // Same complete-utterance treatment as the filler above.
+          this.tts?.flush();
+          this.tts = this.openTts(route);
+          this.tts.onAudio((pcm) => {
+            if (!this.speakSuppressed && this.turnCounter === turnId) this.deliverSpeech(pcm, route);
+          });
         }, FILLER_MS + 8000)
       : null;
 

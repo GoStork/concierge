@@ -60,10 +60,12 @@ export class HeyGenAvatarSession {
   private buf: Buffer[] = [];
   private bufBytes = 0;
   private static readonly FRAME_BYTES = Math.floor(24000 * 0.4) * 2;
-  // The very first frame after an interrupt/flush ships at ~120ms so the
-  // avatar's lip-sync starts as early as possible; later frames use the
-  // normal size.
-  private static readonly FIRST_FRAME_BYTES = Math.floor(24000 * 0.12) * 2;
+  // The very first frame after an interrupt/flush ships at ~300ms so the
+  // avatar has a real runway before its playhead starts. 120ms started her
+  // lips almost instantly but STARVED right after (audible stutter on the
+  // opening words + video_starvation warnings) - trading ~180ms of latency
+  // for a clean start.
+  private static readonly FIRST_FRAME_BYTES = Math.floor(24000 * 0.3) * 2;
   private sentSinceReset = false;
   // Epoch ms when the audio queued into the avatar finishes PLAYING. The
   // avatar renders in realtime, so this trails TTS generation by seconds on a

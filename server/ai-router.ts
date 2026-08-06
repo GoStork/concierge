@@ -3979,7 +3979,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         if (ipForm?.promptedAt && ipForm.status === "DRAFT") {
           ipFormPending = true;
           parts.push(
-            `IP FORM PENDING: This family was asked to complete their Intended Parent Form (at /ip-form) and has NOT submitted it yet. The surrogacy agency shares this form (with photos and their letter) with potential surrogates - a MATCH CALL CANNOT BE SCHEDULED until it is submitted. Follow the INTENDED PARENT FORM section: remind them naturally when relevant, answer questions about it, and point them to the form page. Do not nag on every message.`,
+            `IP FORM PENDING: This family was asked to complete their Intended Parent Form (at /ip-form) and has NOT submitted it yet. The surrogacy agency shares this form (with photos and their letter) with potential surrogates - a SURROGATE MATCH CALL cannot be scheduled until it is submitted. THIS IS A SURROGACY-ONLY REQUIREMENT: it NEVER blocks egg donor, sperm donor, clinic, or lawyer calls, and if the parent asks you MUST confirm it applies only to surrogacy - never claim it is needed "for both" (observed failure: the parent was told to fill it for an egg-donor agency call, objected correctly, and the model wrongly insisted). Follow the INTENDED PARENT FORM section: remind them naturally when a SURROGACY step is relevant, answer questions about it, and point them to the form page. Do not nag on every message.`,
           );
         } else if (ipForm?.status === "SUBMITTED") {
           ipFormSubmitted = true;
