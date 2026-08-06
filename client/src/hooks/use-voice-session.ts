@@ -237,7 +237,17 @@ export function useVoiceSession() {
   // brief dips keep earning credit; only real pauses stop the captions.
   const captionVoicedUntilRef = useRef(0);
   // Per-turn pacing decisions, reported as the caption_pacing client metric.
-  const captionStatsRef = useRef({ ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0 });
+  // timeline: one snapshot every ~5s of {credited, revealed, pending words} -
+  // aggregates could not localize WHEN a drift starts ("fine for seconds,
+  // then lags"); the series shows the drift second by second.
+  const captionStatsRef = useRef({
+    ticks: 0,
+    credited: 0,
+    gated: 0,
+    freeRun: 0,
+    revealed: 0,
+    timeline: [] as { s: number; c: number; r: number; p: number }[],
+  });
   const stopCaptionPacer = useCallback(() => {
     if (captionTimerRef.current) {
       clearInterval(captionTimerRef.current);
@@ -262,7 +272,7 @@ export function useVoiceSession() {
     // per-turn dedupe in reportMetric prevents doubles.
     const s = captionStatsRef.current;
     if (s.ticks > 0) reportMetric("caption_pacing", { extra: { ...s, peak: Number(captionPeakRef.current.toFixed(4)) } });
-    captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0 };
+    captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0, timeline: [] };
     setCaption("");
   }, [stopCaptionPacer, reportMetric]);
   // Append one whole word to the subtitle line (starting a fresh line after
@@ -299,7 +309,7 @@ export function useVoiceSession() {
       reportMetric("caption_pacing", {
         extra: { ...s, droppedWords: tail ? tail.split(/\s+/).length : 0, peak: Number(captionPeakRef.current.toFixed(4)) },
       });
-      captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0 };
+      captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0, timeline: [] };
     }
     if (captionLingerRef.current) clearTimeout(captionLingerRef.current);
     captionLingerRef.current = setTimeout(() => {
@@ -353,6 +363,15 @@ export function useVoiceSession() {
       } else {
         captionCreditRef.current += CAPTION_TICK_MS;
         stats.freeRun++;
+      }
+      // ~5s sync snapshots for the caption_pacing timeline.
+      if (stats.ticks % 50 === 0 && stats.timeline.length < 30) {
+        stats.timeline.push({
+          s: Math.round((stats.ticks * CAPTION_TICK_MS) / 1000),
+          c: stats.credited,
+          r: stats.revealed,
+          p: captionBufRef.current.split(/\s+/).filter(Boolean).length,
+        });
       }
       // NO backlog-based catch-up: the model streams the whole reply within
       // seconds, so a large buffer is NORMAL, not a lag signal (halving the
