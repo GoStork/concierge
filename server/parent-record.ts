@@ -91,14 +91,27 @@ function serviceTypeFor(kind: SubjectKind): string | null {
  * Verified against client/src/App.tsx: donors carry the provider in the path,
  * clinics and agencies are /providers/:id, doctors are /doctors/:slug.
  */
-function profileUrlFor(kind: SubjectKind, providerId: string | null, profileId: string | null, slug?: string | null): string | null {
+function profileUrlFor(
+  kind: SubjectKind,
+  providerId: string | null,
+  profileId: string | null,
+  slug?: string | null,
+  // Admins get the internal provider page, which carries every tab (services,
+  // staff, cost sheets, settings) rather than the public marketing profile.
+  isAdmin = false,
+): string | null {
+  const org = (id: string) => (isAdmin ? `/admin/providers/${id}` : `/providers/${id}`);
   switch (kind) {
     case "egg-donor": return providerId && profileId ? `/eggdonor/${providerId}/${profileId}` : null;
     case "surrogate": return providerId && profileId ? `/surrogate/${providerId}/${profileId}` : null;
     case "sperm-donor": return providerId && profileId ? `/spermdonor/${providerId}/${profileId}` : null;
-    case "clinic": case "agency": return providerId ? `/providers/${providerId}` : null;
+    case "clinic": case "agency": return providerId ? org(providerId) : null;
     case "doctor": return slug ? `/doctors/${slug}` : null;
-    default: return null;
+    default:
+      // A concierge thread has no subject profile, but it still belongs to an
+      // org - IFLG and Bioetica rendered with no Profile link at all because
+      // this returned null. The row IS about that provider, so link to them.
+      return providerId ? org(providerId) : null;
   }
 }
 
@@ -383,6 +396,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         prof?.providerId ?? s.providerId,
         s.subjectProfileId,
         resolvedKind === "doctor" ? s.subjectProfileId : null,
+        isAdmin,
       ),
       serviceType: serviceTypeFor(resolvedKind),
       matchStatus: sessionStatus(s),
@@ -419,7 +433,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       providerName: org?.name ?? null,
       savedByUserId: row.userId,
       savedAt: row.createdAt,
-      profileUrl: profileUrlFor(prof.kind, prof.providerId, prof.id, null),
+      profileUrl: profileUrlFor(prof.kind, prof.providerId, prof.id, null, isAdmin),
     });
   }
   for (const row of savedProfileRows) {
@@ -439,7 +453,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       providerName: org?.name ?? null,
       savedByUserId: row.userId,
       savedAt: row.createdAt,
-      profileUrl: profileUrlFor(kind, orgId, row.entityId, kind === "doctor" ? row.entityId : null),
+      profileUrl: profileUrlFor(kind, orgId, row.entityId, kind === "doctor" ? row.entityId : null, isAdmin),
     });
   }
 

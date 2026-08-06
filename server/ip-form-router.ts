@@ -936,7 +936,12 @@ ipFormRouter.get("/api/provider/ip-forms/:responseId/pdf", requireAuth, async (r
     // Sections the DOWNLOADING provider sees: their program types (surrogacy
     // agency -> surrogacy sections; IVF clinic -> core + ivf). Admin: everything.
     let programTypes: string[] | null = null;
-    if (!isAdmin(user) || providerId) {
+    // Admins are never gated by tenant connection - the condition used to be
+    // `!isAdmin(user) || providerId`, which sent any admin who ALSO carries a
+    // providerId (several do) down the provider path and 403'd them on every
+    // family their org is not connected to. Branding still follows their org
+    // if they have one; only the gate is skipped.
+    if (!isAdmin(user)) {
       const memberIds = (
         await prisma.user.findMany({
           where: { OR: [{ parentAccountId: response.parentAccountId }, { id: response.parentAccountId }] },
