@@ -23,24 +23,17 @@
  * "Note added".
  */
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, CalendarClock, ChevronDown, Loader2, MessageSquare,
+  AlertTriangle, CalendarClock, ChevronDown, ExternalLink, FileText, MessageSquare,
   Sparkles, StickyNote, Tag as TagIcon, TrendingUp, User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { NoteComposer, ParentFollowUpPanel } from "./parent-crm-ui";
-import type { ParentRecord } from "./parent-record-types";
+import type { ActivityDetail, ParentRecord } from "./parent-record-types";
 
-interface JourneyEventRow {
-  id: string;
-  eventType: string;
-  actorRole: string | null;
-  metadata: Record<string, any> | null;
-  createdAt: string;
-  providerId: string | null;
-}
+
 
 /**
  * How an entry is badged.
@@ -96,7 +89,7 @@ const PARENT_EVENTS = new Set([
  * Activity bucket. actorRole wins when it says the parent acted, because the
  * row knows better than a static list.
  */
-function kindForEvent(ev: JourneyEventRow): ActivityKind {
+function kindForEvent(ev: { eventType: string; actorRole: string | null }): ActivityKind {
   if (ev.actorRole === "parent" || PARENT_EVENTS.has(ev.eventType)) return "parent";
   if (DEAL_EVENTS.has(ev.eventType)) return "deal";
   return "ai";
@@ -183,6 +176,8 @@ interface Entry {
   org?: string | null;
   /** Rendered under the body - a due date, a scope chip. */
   extra?: React.ReactNode;
+  /** The joined object this entry is about. Renders as a detail block. */
+  detail?: ActivityDetail | null;
 }
 
 function fmt(iso: string): string {
@@ -192,7 +187,7 @@ function fmt(iso: string): string {
   });
 }
 
-function buildEntries(record: ParentRecord, events: JourneyEventRow[]): Entry[] {
+function buildEntries(record: ParentRecord): Entry[] {
   const out: Entry[] = [];
 
   for (const n of record.crm.notes) {
@@ -251,22 +246,158 @@ function buildEntries(record: ParentRecord, events: JourneyEventRow[]): Entry[] 
     });
   }
 
-  for (const ev of events) {
+  for (const ev of record.activity || []) {
     if (SUPERSEDED_BY_PAYLOAD.has(ev.eventType)) continue;
-    const org = record.providerOrgs.find((o) => o.providerId === ev.providerId);
     out.push({
       id: `ev-${ev.id}`,
       kind: kindForEvent(ev),
-      at: ev.createdAt,
+      at: ev.at,
       title: EVENT_LABELS[ev.eventType] || ev.eventType.toLowerCase().replace(/_/g, " "),
-      org: org?.providerName || null,
+      org: ev.providerName,
+      detail: ev.detail,
     });
   }
 
   return out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 }
 
-function EntryCard({ entry }: { entry: Entry }) {
+
+const money = (cents: number | null) =>
+  cents == null ? null : `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+/** A labelled row inside a detail block. */
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-2 min-w-0">
+      <span className="t-micro-label shrink-0">{label}</span>
+      <span className="t-micro-value min-w-0 break-words">{children}</span>
+    </div>
+  );
+}
+
+/**
+ * The card's payload: whatever the entry is actually ABOUT.
+ *
+ * A timeline that only says "Invoice sent" makes you leave it to find out
+ * which invoice. Everything here is joined server-side (buildActivity), so
+ * this only renders - it never fetches, and there is nothing here a provider
+ * was not already allowed to see.
+ */
+function DetailBlock({ detail, parentUserId }: { detail: ActivityDetail; parentUserId: string }) {
+  const navigate = useNavigate();
+  const shell = "mt-2 rounded-[var(--radius)] bg-secondary p-3 space-y-1.5";
+
+  if (detail.type === "booking") {
+    const when = new Date(detail.scheduledAt);
+    const undelivered = detail.notifications.filter((n) => n.status && n.status !== "sent" && n.status !== "delivered");
+    return (
+      <div className={shell} data-testid={`detail-booking-${detail.bookingId}`}>
+        <Row label="When">
+          {when.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+          {detail.timezone ? ` (${detail.timezone})` : ""}
+        </Row>
+        {detail.durationMinutes != null && <Row label="Duration">{detail.durationMinutes} minutes</Row>}
+        <Row label="Status">{detail.status}{detail.outcome ? ` - ${detail.outcome}` : ""}</Row>
+        {detail.meetingSubtype && <Row label="Type">{detail.meetingSubtype.replace(/_/g, " ").toLowerCase()}</Row>}
+        {detail.notes && <Row label="Notes">{detail.notes}</Row>}
+        {detail.notifications.length > 0 && (
+          <Row label="Invites">
+            {detail.notifications.length} sent ({Array.from(new Set(detail.notifications.map((n) => n.channel))).join(", ")})
+            {undelivered.length > 0 ? ` - ${undelivered.length} not delivered` : ""}
+            {/* Stated, not hidden: Notification stores no body. */}
+            <span className="t-helper block">Message content is not stored.</span>
+          </Row>
+        )}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {detail.meetingUrl && (
+            <Button size="sm" variant="outline" onClick={() => window.open(detail.meetingUrl as string, "_blank", "noopener,noreferrer")} data-testid={`btn-join-${detail.bookingId}`}>
+              <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Join call
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => navigate(`/calendar?booking=${detail.bookingId}`)} data-testid={`btn-booking-${detail.bookingId}`}>
+            <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Open in calendar
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (detail.type === "invoice") {
+    return (
+      <div className={shell} data-testid={`detail-invoice-${detail.invoiceId}`}>
+        {detail.description && <Row label="For">{detail.description}</Row>}
+        {money(detail.amountCents) && <Row label="Amount">{money(detail.amountCents)}</Row>}
+        <Row label="Status">{detail.status}</Row>
+        {detail.dueAt && <Row label="Due">{new Date(detail.dueAt).toLocaleDateString()}</Row>}
+        {detail.paymentUrl && (
+          <Button size="sm" variant="outline" className="mt-1" onClick={() => window.open(detail.paymentUrl as string, "_blank", "noopener,noreferrer")} data-testid={`btn-invoice-${detail.invoiceId}`}>
+            <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open invoice
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (detail.type === "agreement") {
+    return (
+      <div className={shell} data-testid={`detail-agreement-${detail.agreementId}`}>
+        <Row label="Status">{detail.status}</Row>
+        {detail.documentUrl && (
+          <Button size="sm" variant="outline" className="mt-1" onClick={() => window.open(detail.documentUrl as string, "_blank", "noopener,noreferrer")} data-testid={`btn-agreement-${detail.agreementId}`}>
+            <FileText className="w-3.5 h-3.5 mr-1.5" /> Open agreement
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (detail.type === "cost_sheet") {
+    return (
+      <div className={shell} data-testid={`detail-cost-sheet-${detail.quoteId}`}>
+        {money(detail.totalCostCents) && <Row label="Total">{money(detail.totalCostCents)}</Row>}
+        {detail.notes && <Row label="Notes">{detail.notes}</Row>}
+        {detail.fileUrl && (
+          <Button size="sm" variant="outline" className="mt-1" onClick={() => window.open(detail.fileUrl as string, "_blank", "noopener,noreferrer")} data-testid={`btn-cost-sheet-${detail.quoteId}`}>
+            <FileText className="w-3.5 h-3.5 mr-1.5" /> {detail.fileName || "Open cost sheet"}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (detail.type === "review") {
+    return (
+      <div className={shell} data-testid={`detail-review-${detail.reviewId}`}>
+        <Row label="Rating">
+          {detail.rating != null ? `${detail.rating} / 5` : detail.recommendation.replace(/_/g, " ").toLowerCase()}
+        </Row>
+        {detail.bodyText && <p className="text-sm whitespace-pre-wrap break-words">{detail.bodyText}</p>}
+        {detail.hasResponse ? (
+          <Row label="Your reply">{detail.responseText}</Row>
+        ) : (
+          <Button size="sm" variant="outline" className="mt-1" onClick={() => navigate(`/providers/${detail.providerId}?tab=reviews&review=${detail.reviewId}`)} data-testid={`btn-review-reply-${detail.reviewId}`}>
+            <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Reply to review
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (detail.type === "ip_form") {
+    return (
+      <div className={shell} data-testid={`detail-ip-form-${detail.responseId}`}>
+        {detail.submittedAt && <Row label="Submitted">{new Date(detail.submittedAt).toLocaleDateString()}</Row>}
+        <Button size="sm" variant="outline" className="mt-1" onClick={() => window.open(`/api/provider/ip-forms/${detail.responseId}/pdf?variant=full`, "_blank", "noopener,noreferrer")} data-testid={`btn-ip-form-${detail.responseId}`}>
+          <FileText className="w-3.5 h-3.5 mr-1.5" /> Open Parent Form
+        </Button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function EntryCard({ entry, parentUserId }: { entry: Entry; parentUserId: string }) {
   const meta = KIND_META[entry.kind];
   const Icon = meta.icon;
   const tint =
@@ -291,6 +422,7 @@ function EntryCard({ entry }: { entry: Entry }) {
           </div>
           {entry.body && <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>}
           {entry.extra}
+          {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} />}
           <p className="t-helper">{meta.label}</p>
         </div>
       </div>
@@ -303,20 +435,7 @@ type Composer = "note" | "next_step" | null;
 export function ParentActivitySection({ record }: { record: ParentRecord }) {
   const [composer, setComposer] = useState<Composer>(null);
 
-  const eventsQuery = useQuery<{ events: JourneyEventRow[] }>({
-    queryKey: ["journey-events-feed", record.parent.id, record.viewer.providerId || "all"],
-    queryFn: async () => {
-      const p = new URLSearchParams({ parentUserId: record.parent.id, limit: "50" });
-      const res = await fetch(`/api/journey/events?${p}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load activity");
-      return res.json();
-    },
-  });
-
-  const entries = useMemo(
-    () => buildEntries(record, eventsQuery.data?.events || []),
-    [record, eventsQuery.data],
-  );
+  const entries = useMemo(() => buildEntries(record), [record]);
 
   const toggle = (c: Exclude<Composer, null>) => setComposer((prev) => (prev === c ? null : c));
 
@@ -357,29 +476,16 @@ export function ParentActivitySection({ record }: { record: ParentRecord }) {
         </div>
       )}
 
-      {eventsQuery.isLoading && (
-        <div className="flex items-center gap-2 py-4">
-          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-          <span className="t-helper">Loading activity...</span>
-        </div>
-      )}
-
-      {!eventsQuery.isLoading && entries.length === 0 && (
+      {entries.length === 0 && (
         <div className="rounded-[var(--radius)] bg-secondary p-4">
           <p className="t-helper">Nothing has happened yet. The first note is usually why this family came in.</p>
         </div>
       )}
 
       <div className="space-y-2" data-testid="activity-feed">
-        {entries.map((e) => <EntryCard key={e.id} entry={e} />)}
+        {entries.map((e) => <EntryCard key={e.id} entry={e} parentUserId={record.parent.id} />)}
       </div>
 
-      {eventsQuery.isError && (
-        <div className="flex items-center gap-2">
-          <MessageSquare className="w-3.5 h-3.5 text-destructive" />
-          <span className="t-helper">Could not load the event history. Notes and next steps above are complete.</span>
-        </div>
-      )}
     </div>
   );
 }

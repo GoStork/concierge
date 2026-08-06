@@ -134,6 +134,41 @@ export interface MoneyGroup {
   totals: { quotedCents: number; invoicedCents: number; paidCents: number };
 }
 
+/**
+ * One enriched timeline entry. `detail` is the object the event refers to,
+ * joined server-side - see buildActivity in server/parent-record.ts.
+ */
+export interface ActivityEntry {
+  id: string;
+  at: string;
+  eventType: string;
+  actorRole: string | null;
+  providerId: string | null;
+  providerName: string | null;
+  sessionId: string | null;
+  detail: ActivityDetail | null;
+}
+
+export type ActivityDetail =
+  | {
+      type: "booking";
+      bookingId: string; scheduledAt: string; durationMinutes: number | null;
+      status: string; outcome: string | null; meetingType: string;
+      meetingSubtype: string | null; meetingUrl: string | null;
+      timezone: string | null; notes: string | null;
+      notifications: {
+        id: string; type: string; channel: string; status: string;
+        sentAt: string | null; recipient: string;
+        /** Always false: see buildActivity - we never stored the body. */
+        contentStored: boolean;
+      }[];
+    }
+  | { type: "invoice"; invoiceId: string; status: string; amountCents: number | null; dueAt: string | null; paymentUrl: string | null; description: string | null }
+  | { type: "agreement"; agreementId: string; status: string; documentUrl: string | null; signerStatus: any }
+  | { type: "cost_sheet"; quoteId: string; totalCostCents: number | null; fileUrl: string | null; fileName: string | null; notes: string | null }
+  | { type: "review"; reviewId: string; rating: number | null; recommendation: string; bodyText: string | null; providerId: string; memberId: string | null; hasResponse: boolean; responseText: string | null }
+  | { type: "ip_form"; responseId: string; submittedAt: string | null };
+
 export interface ParentRecord {
   viewer: { role: "admin" | "provider"; providerId: string | null };
   accountKey: string;
@@ -158,6 +193,7 @@ export interface ParentRecord {
     profilesViewed: number | null;
     lastBrowsedAt: string | null;
   };
+  activity: ActivityEntry[];
   money: { byProvider: MoneyGroup[] };
   crm: {
     notes: CrmNote[];

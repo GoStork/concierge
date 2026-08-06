@@ -156,6 +156,193 @@ export interface BuildOpts {
 /**
  * Build the record. Throws ParentRecordError(403 / 404); the router maps it.
  */
+
+/**
+ * One enriched entry per thing that happened to this family.
+ *
+ * Journey events are the spine - they are the only append-only record of the
+ * order things happened in - but they carry IDs, not content. A card that
+ * says "Invoice sent" without saying which invoice, for how much, or linking
+ * to it is a card nobody can act on. So each event is joined to the object it
+ * refers to here, server-side, for two reasons:
+ *
+ *  - a client-side join would be one fetch per card;
+ *  - the scoping that keeps a provider inside their own org lives on this
+ *    side of the wire, and a detail payload is exactly the thing that must
+ *    not leak across it.
+ *
+ * WHAT IS NOT HERE: the body of a sent email or SMS. `Notification` records
+ * that a message went out - type, channel, recipient, status - and nothing
+ * more; the rendered email is built at dispatch and handed to SendGrid
+ * without being stored. So those cards report delivery and say plainly that
+ * the content was not kept, rather than inventing a plausible body. Capturing
+ * it needs a schema change on Notification plus a write at dispatch, and it
+ * would only ever populate messages sent AFTER that change.
+ */
+async function buildActivity(ctx: {
+  prisma: any;
+  accountKey: string;
+  memberIds: string[];
+  isAdmin: boolean;
+  scopeProviderId: string | null;
+  orgById: Map<string, any>;
+  invoices: any[];
+  agreements: any[];
+  quotes: any[];
+  ipFormRow: any;
+  bookings: any[];
+}): Promise<any[]> {
+  const { prisma, accountKey, memberIds, isAdmin, scopeProviderId, orgById } = ctx;
+  const scoped = scopeProviderId ? { providerId: scopeProviderId } : {};
+
+  const bookings = ctx.bookings;
+  const [events, reviews, notifications] = await Promise.all([
+    prisma.journeyEvent.findMany({
+      where: { parentAccountId: accountKey, ...scoped },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+    prisma.providerReview.findMany({
+      where: {
+        OR: [{ parentAccountId: accountKey }, { authorUserId: { in: memberIds } }],
+        ...scoped,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    prisma.notification.findMany({
+      where: { userId: { in: memberIds } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+  ]);
+
+  const bookingById = new Map<string, any>(bookings.map((b: any) => [b.id, b]));
+  const invoiceById = new Map<string, any>(ctx.invoices.map((i: any) => [i.id, i]));
+  const agreementById = new Map<string, any>(ctx.agreements.map((a: any) => [a.id, a]));
+  const quoteById = new Map<string, any>(ctx.quotes.map((q: any) => [q.id, q]));
+  const notifByBooking = new Map<string, any[]>();
+  for (const n of notifications) {
+    if (!n.bookingId || !bookingById.has(n.bookingId)) continue;
+    const list = notifByBooking.get(n.bookingId) || [];
+    list.push(n);
+    notifByBooking.set(n.bookingId, list);
+  }
+
+  const money = (m: any) => (typeof m === "number" ? m : null);
+
+  const out: any[] = [];
+
+  for (const ev of events) {
+    const meta = (ev.metadata || {}) as Record<string, any>;
+    const org = ev.providerId ? orgById.get(ev.providerId) : null;
+    const entry: any = {
+      id: ev.id,
+      at: ev.createdAt,
+      eventType: ev.eventType,
+      actorRole: ev.actorRole,
+      providerId: ev.providerId,
+      providerName: org?.name ?? null,
+      sessionId: ev.sessionId,
+      detail: null as any,
+    };
+
+    // Meeting: the whole booking, so the card can carry the same actions the
+    // booking widget offers everywhere else.
+    const booking = ev.bookingId ? bookingById.get(ev.bookingId) : null;
+    if (booking) {
+      entry.detail = {
+        type: "booking",
+        bookingId: booking.id,
+        scheduledAt: booking.scheduledAt,
+        durationMinutes: booking.duration ?? null,
+        status: booking.status,
+        outcome: booking.outcome ?? null,
+        meetingType: booking.meetingType,
+        meetingSubtype: booking.meetingSubtype ?? null,
+        meetingUrl: booking.meetingUrl ?? null,
+        timezone: booking.bookerTimezone ?? null,
+        notes: booking.notes ?? null,
+        // Delivery of the invites/reminders for THIS meeting - the only place
+        // notification rows can be attributed to something specific.
+        notifications: (notifByBooking.get(booking.id) || []).map((n: any) => ({
+          id: n.id, type: n.type, channel: n.channel, status: n.status,
+          sentAt: n.sentAt, recipient: n.recipient, contentStored: false,
+        })),
+      };
+    }
+
+    const invoice = meta.invoiceId ? invoiceById.get(meta.invoiceId) : null;
+    if (invoice) {
+      entry.detail = {
+        type: "invoice",
+        invoiceId: invoice.id,
+        status: invoice.status,
+        amountCents: money(invoice.serviceAmount),
+        dueAt: invoice.dueAt ?? null,
+        paymentUrl: invoice.paymentToken ? `/pay/${invoice.paymentToken}` : null,
+        description: invoice.description ?? null,
+      };
+    }
+
+    const agreement = meta.agreementId ? agreementById.get(meta.agreementId) : null;
+    if (agreement) {
+      entry.detail = {
+        type: "agreement",
+        agreementId: agreement.id,
+        status: agreement.status,
+        // pandaDocViewUrl is the signer-facing document; there is no separate
+        // stored PDF url on this model.
+        documentUrl: agreement.pandaDocViewUrl ?? null,
+        signerStatus: agreement.signerStatus ?? null,
+      };
+    }
+
+    const quote = meta.quoteId || meta.costSheetId
+      ? quoteById.get(meta.quoteId || meta.costSheetId)
+      : null;
+    if (quote) {
+      entry.detail = {
+        type: "cost_sheet",
+        quoteId: quote.id,
+        totalCostCents: money(quote.totalCostCents),
+        fileUrl: quote.costSheetFileUrl ?? null,
+        fileName: quote.costSheetFileName ?? null,
+        notes: quote.notes ?? null,
+      };
+    }
+
+    if (ev.eventType === "REVIEW_SUBMITTED" || ev.eventType === "REVIEW_UPDATED") {
+      const r = reviews.find((x: any) => x.id === meta.reviewId) || reviews[0] || null;
+      if (r) {
+        entry.detail = {
+          type: "review",
+          reviewId: r.id,
+          rating: r.rating ?? null,
+          recommendation: r.recommendation,
+          bodyText: r.bodyText ?? null,
+          providerId: r.providerId,
+          memberId: r.memberId ?? null,
+          hasResponse: !!r.providerReply,
+          responseText: r.providerReply ?? null,
+        };
+      }
+    }
+
+    if (ev.eventType === "IP_FORM_SUBMITTED" && ctx.ipFormRow) {
+      entry.detail = {
+        type: "ip_form",
+        responseId: ctx.ipFormRow.id,
+        submittedAt: ctx.ipFormRow.submittedAt,
+      };
+    }
+
+    out.push(entry);
+  }
+
+  return out;
+}
+
 export async function buildParentRecord(user: any, parentUserId: string, opts: BuildOpts = {}) {
   const sections = new Set(opts.sections?.length ? opts.sections : ALL_SECTIONS);
   const isAdmin = isGostorkStaff(user);
@@ -651,6 +838,20 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         (parent as any).parentAccount?.intendedParentProfile?.interestedServices as string[] | undefined,
       );
 
+  // ── Activity: one enriched entry per thing that happened ────────
+  //
+  // The timeline card for "Invoice sent" is useless if it cannot show WHICH
+  // invoice, for how much, and link to it. Journey events carry ids only, so
+  // the detail is joined HERE rather than by the client - a client-side join
+  // would be one fetch per card, and the scoping rules that keep a provider
+  // inside their own org live on this side of the wire.
+  //
+  // Everything below is batched: four findMany calls, no query in a loop.
+  const activity = await buildActivity({
+    prisma, accountKey, memberIds, isAdmin, scopeProviderId,
+    orgById, invoices, agreements, quotes, ipFormRow, bookings,
+  });
+
   return {
     viewer: { role: isAdmin ? "admin" : "provider", providerId: scopeProviderId },
     accountKey,
@@ -675,6 +876,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     conversations,
     savedProfiles,
     engagement,
+    activity,
     money,
     crm: {
       notes,
