@@ -23,6 +23,8 @@
  * "Note added".
  */
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, CalendarCheck, CalendarClock, CalendarX, ChevronDown, ExternalLink,
@@ -327,7 +329,12 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
  * this only renders - it never fetches, and there is nothing here a provider
  * was not already allowed to see.
  */
-function DetailBlock({ detail, parentUserId }: { detail: ActivityDetail; parentUserId: string }) {
+function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
+  detail: ActivityDetail;
+  parentUserId: string;
+  viewerRole: "provider" | "admin";
+  onChanged: () => void;
+}) {
   const navigate = useNavigate();
   // bg-secondary/40 is exactly what the Home journey cards use. At full
   // strength this token is a visible mint, which read as a different surface
@@ -335,6 +342,24 @@ function DetailBlock({ detail, parentUserId }: { detail: ActivityDetail; parentU
   const shell = "mt-2 rounded-[var(--radius)] border bg-secondary/40 p-3 space-y-1.5";
 
   if (detail.type === "booking") {
+    // The shared widget every chat surface already uses - same layout, same
+    // actions (confirm, decline, reschedule, suggest a time, join), scoped by
+    // viewerRole. Mounting it here rather than hand-rolling a second set of
+    // buttons is the whole point of it being shared. `embedded` drops its own
+    // card chrome so this block keeps supplying the wrapper.
+    if (detail.booking) {
+      return (
+        <div className={shell} data-testid={`detail-booking-${detail.bookingId}`}>
+          <InlineBookingNotification
+            booking={detail.booking}
+            brandColor="hsl(var(--primary))"
+            viewerRole={viewerRole}
+            embedded
+            onUpdate={onChanged}
+          />
+        </div>
+      );
+    }
     const when = new Date(detail.scheduledAt);
     return (
       <div className={shell} data-testid={`detail-booking-${detail.bookingId}`}>
@@ -456,8 +481,9 @@ function DetailBlock({ detail, parentUserId }: { detail: ActivityDetail; parentU
   return null;
 }
 
-function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl }: {
+function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole, onChanged }: {
   entry: Entry; parentUserId: string; parentName: string | null; parentPhotoUrl: string | null;
+  viewerRole: "provider" | "admin"; onChanged: () => void;
 }) {
   const meta = KIND_META[entry.kind];
   const isSms = entry.detail?.type === "message" && entry.detail.channel === "SMS";
@@ -513,7 +539,7 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl }: {
           </div>
           {entry.body && <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>}
           {entry.extra}
-          {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} />}
+          {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} viewerRole={viewerRole} onChanged={onChanged} />}
           <p className="t-helper">{meta.label}</p>
         </div>
       </div>
@@ -525,6 +551,12 @@ type Composer = "note" | "next_step" | null;
 
 export function ParentActivitySection({ record }: { record: ParentRecord }) {
   const [composer, setComposer] = useState<Composer>(null);
+  const qc = useQueryClient();
+  // Confirming or declining from a card changes the record, so pull it again.
+  const refetchRecord = () => {
+    qc.invalidateQueries({ queryKey: ["/api/parents", record.parent.id, "record"] });
+    qc.invalidateQueries({ queryKey: ["journey-timeline"] });
+  };
 
   const entries = useMemo(() => buildEntries(record), [record]);
 
@@ -581,6 +613,8 @@ export function ParentActivitySection({ record }: { record: ParentRecord }) {
             parentUserId={record.parent.id}
             parentName={record.parent.name ?? null}
             parentPhotoUrl={record.parent.photoUrl ?? null}
+            viewerRole={record.viewer.role}
+            onChanged={refetchRecord}
           />
         ))}
       </div>

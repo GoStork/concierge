@@ -161,6 +161,8 @@ export type ActivityDetail =
       timezone: string | null; notes: string | null;
       /** True only on this booking's most recent event - see buildActivity. */
       isCurrentState?: boolean;
+      /** The full row, for the shared InlineBookingNotification widget. */
+      booking?: any;
     }
   | {
       type: "message";

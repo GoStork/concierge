@@ -273,6 +273,11 @@ async function buildActivity(ctx: {
         meetingUrl: booking.meetingUrl ?? null,
         timezone: booking.bookerTimezone ?? null,
         notes: booking.notes ?? null,
+        // The whole row, so the record can mount the SAME booking widget the
+        // chats use rather than growing a second one with its own subset of
+        // the actions. Already scoped to this viewer's org by the query that
+        // loaded it - see the bookings fetch in buildParentRecord.
+        booking,
       };
     }
 
@@ -454,9 +459,25 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         parentUserId: { in: memberIds },
         ...(scopeProviderId ? { providerUser: { providerId: scopeProviderId } } : {}),
       },
+      // Wide enough for the shared booking widget the activity timeline mounts
+      // (InlineBookingNotification): it renders duration, subject, the meeting
+      // link and both participants, and a thinner row made it print
+      // "undefined min" next to two people called "Parent" and "Provider".
+      //
+      // parentUser.email is deliberately NOT selected. It is Gate B data that
+      // redactParentContact withholds elsewhere on this very payload; putting
+      // it back through a booking relation would route around the gate.
       select: {
-        id: true, meetingSubtype: true, status: true, outcome: true, scheduledAt: true, sessionId: true,
-        providerUser: { select: { providerId: true } },
+        id: true, meetingSubtype: true, meetingType: true, status: true, outcome: true,
+        scheduledAt: true, duration: true, sessionId: true, subject: true, notes: true,
+        meetingUrl: true, publicToken: true, bookerTimezone: true, createdAt: true,
+        providerUser: {
+          select: {
+            id: true, name: true, photoUrl: true, providerId: true, dailyRoomUrl: true,
+            provider: { select: { id: true, name: true } },
+          },
+        },
+        parentUser: { select: { id: true, name: true } },
       },
       orderBy: { scheduledAt: "desc" },
     }),
