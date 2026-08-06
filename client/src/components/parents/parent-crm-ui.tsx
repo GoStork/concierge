@@ -113,16 +113,16 @@ function NotesFeed({ record, isAdmin }: { record: ParentRecord; isAdmin: boolean
             testIdPrefix="pill-note-scope"
           />
         ) : (
-          <div className="space-y-1">
-            <span
-              className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
-              style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
-              data-testid="chip-note-scope-locked"
-            >
-              {chosen?.label}
-            </span>
-            <p className="t-helper">GoStork can see notes you write here.</p>
-          </div>
+          // A provider has only one audience, so there is nothing to pick - the
+          // pills collapse to a chip that names it. The chip IS the disclosure
+          // that GoStork reads these; do not add a second sentence saying so.
+          <span
+            className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
+            style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
+            data-testid="chip-note-scope-locked"
+          >
+            {chosen?.label}
+          </span>
         )}
         <Button
           size="sm"
