@@ -5,7 +5,7 @@ import passport from "passport";
 import { prisma } from "../db";
 import { StreamingTagStripper, stripTags } from "./tag-stripper";
 import { SentenceChunker } from "./sentence-chunker";
-import { SpokenBudget, normalizeSpeech } from "./spoken-budget";
+import { SpokenBudget, normalizeSpeech, forTts } from "./spoken-budget";
 import type { SttProvider, SttStream, SttUtteranceMeta, TtsProvider, TtsStream } from "./providers";
 import { VOICE_SAMPLE_RATE } from "./providers";
 import { elevenLabsTts } from "./tts/elevenlabs-tts";
@@ -736,8 +736,8 @@ class VoiceSession {
       route?.flushSpeech();
       this.finishSpeaking(null, route);
     });
-    this.noteSpoken(text);
-    this.tts.sendText(text + " ");
+    this.noteSpoken(forTts(text));
+    this.tts.sendText(forTts(text) + " ");
     this.tts.flush();
   }
 
@@ -842,9 +842,13 @@ class VoiceSession {
     this.chunker = new SentenceChunker((sentence) => {
       if (this.speakSuppressed || this.turnCounter !== turnId) return;
       if (!metrics.marks.tts_first_text_sent) metrics.marks.tts_first_text_sent = Date.now();
-      this.ttsChars += sentence.length;
-      this.noteSpoken(sentence);
-      this.tts?.sendText(sentence);
+      // Pronunciation rewrites apply HERE only - captions upstream keep the
+      // written form ("GoStork"). The echo vocabulary records the TTS
+      // variant, because that is what Deepgram will hear coming back.
+      const spoken = forTts(sentence);
+      this.ttsChars += spoken.length;
+      this.noteSpoken(spoken);
+      this.tts?.sendText(spoken);
     });
 
     // Dead-air filler: Tier2-routed turns can take ~4s to first token. If
@@ -1108,8 +1112,8 @@ class VoiceSession {
             route?.flushSpeech();
             this.finishSpeaking(turnId, route);
           });
-          this.noteSpoken(respeak);
-          stream.sendText(respeak + " ");
+          this.noteSpoken(forTts(respeak));
+          stream.sendText(forTts(respeak) + " ");
           stream.flush();
           return;
         }

@@ -175,6 +175,12 @@ export function useVoiceSession() {
   const captionPayloadDoneRef = useRef(false);
   // Accumulated voiced milliseconds not yet spent on revealed words.
   const captionCreditRef = useRef(0);
+  // Wall-clock of the previous pacer tick. Credit MUST come from real
+  // elapsed time, not tick counts: iOS Safari throttles setInterval under
+  // main-thread load (LiveKit video + React), and counting a late tick as
+  // 100ms silently loses the difference - captions revealed at ~2/3 speed
+  // and drifted sentences behind her voice (live report 2026-08-06).
+  const captionLastTickRef = useRef(0);
   // Learned echo coupling: mic RMS per unit of Eva's output RMS on THIS
   // device (headphones ~0, phone speaker can approach 1). Starts conservative
   // and converges down whenever Eva speaks over a silent parent.
@@ -246,7 +252,10 @@ export function useVoiceSession() {
     gated: 0,
     freeRun: 0,
     revealed: 0,
-    timeline: [] as { s: number; c: number; r: number; p: number }[],
+    t0: 0,
+    // s = seconds by TICK COUNT, w = seconds by WALL CLOCK. A widening gap
+    // between them is timer throttling caught red-handed.
+    timeline: [] as { s: number; w: number; c: number; r: number; p: number }[],
   });
   const stopCaptionPacer = useCallback(() => {
     if (captionTimerRef.current) {
@@ -272,7 +281,7 @@ export function useVoiceSession() {
     // per-turn dedupe in reportMetric prevents doubles.
     const s = captionStatsRef.current;
     if (s.ticks > 0) reportMetric("caption_pacing", { extra: { ...s, peak: Number(captionPeakRef.current.toFixed(4)) } });
-    captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0, timeline: [] };
+    captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0, t0: 0, timeline: [] };
     setCaption("");
   }, [stopCaptionPacer, reportMetric]);
   // Append one whole word to the subtitle line (starting a fresh line after
@@ -309,7 +318,7 @@ export function useVoiceSession() {
       reportMetric("caption_pacing", {
         extra: { ...s, droppedWords: tail ? tail.split(/\s+/).length : 0, peak: Number(captionPeakRef.current.toFixed(4)) },
       });
-      captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0, timeline: [] };
+      captionStatsRef.current = { ticks: 0, credited: 0, gated: 0, freeRun: 0, revealed: 0, t0: 0, timeline: [] };
     }
     if (captionLingerRef.current) clearTimeout(captionLingerRef.current);
     captionLingerRef.current = setTimeout(() => {
@@ -325,15 +334,20 @@ export function useVoiceSession() {
       captionLingerRef.current = null;
     }
     if (captionTimerRef.current) return;
+    if (!captionLastTickRef.current) captionLastTickRef.current = Date.now();
     captionTimerRef.current = setInterval(() => {
       const buf = captionBufRef.current;
       if (!buf) {
         // Buffer drained - stop ticking; the next chunk restarts the pacer.
+        // Keep at most one word of carryover credit: zeroing it here (the
+        // old behavior) discarded voiced time whenever the model's token
+        // stream briefly starved the buffer, adding to the drift.
         if (captionTimerRef.current) {
           clearInterval(captionTimerRef.current);
           captionTimerRef.current = null;
         }
-        captionCreditRef.current = 0;
+        captionCreditRef.current = Math.min(captionCreditRef.current, CAPTION_WORD_MS);
+        captionLastTickRef.current = 0;
         return;
       }
       // Sync to her actual voice: ticks where the avatar's live audio level
@@ -345,6 +359,11 @@ export function useVoiceSession() {
       const stats = captionStatsRef.current;
       stats.ticks++;
       const now = Date.now();
+      if (!stats.t0) stats.t0 = now;
+      // Real elapsed time since the last tick (clamped: a backgrounded tab
+      // waking up must not dump minutes of credit at once).
+      const elapsed = Math.min(now - (captionLastTickRef.current || now), 500);
+      captionLastTickRef.current = now;
       const haveLiveLevel = now - remoteAudioLevel.updatedAt < 600;
       if (haveLiveLevel) {
         captionPeakRef.current = Math.max(captionPeakRef.current * 0.995, remoteAudioLevel.rms);
@@ -355,19 +374,20 @@ export function useVoiceSession() {
           captionVoicedUntilRef.current = now + 300;
         }
         if (now < captionVoicedUntilRef.current) {
-          captionCreditRef.current += CAPTION_TICK_MS;
+          captionCreditRef.current += elapsed;
           stats.credited++;
         } else {
           stats.gated++;
         }
       } else {
-        captionCreditRef.current += CAPTION_TICK_MS;
+        captionCreditRef.current += elapsed;
         stats.freeRun++;
       }
       // ~5s sync snapshots for the caption_pacing timeline.
       if (stats.ticks % 50 === 0 && stats.timeline.length < 30) {
         stats.timeline.push({
           s: Math.round((stats.ticks * CAPTION_TICK_MS) / 1000),
+          w: Math.round((now - stats.t0) / 1000),
           c: stats.credited,
           r: stats.revealed,
           p: captionBufRef.current.split(/\s+/).filter(Boolean).length,
@@ -434,6 +454,11 @@ export function useVoiceSession() {
       clearInterval(statsTimerRef.current);
       statsTimerRef.current = null;
     }
+    // BEFORE the socket closes: clearCaption ships this turn's caption_pacing
+    // report, and a hang-up mid-monologue is exactly the turn whose pacing we
+    // most need to see. With the old order (close first) those reports were
+    // silently lost - the 2026-08-06 lag retest produced no telemetry at all.
+    clearCaption();
     try {
       wsRef.current?.send(JSON.stringify({ type: "end" }));
     } catch {
@@ -443,7 +468,6 @@ export function useVoiceSession() {
     wsRef.current = null;
     engineRef.current?.destroy();
     engineRef.current = null;
-    clearCaption();
     setEndReason(reason);
     setStateBoth("ended");
   }, [clearCaption]);

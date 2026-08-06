@@ -40,9 +40,16 @@ export function normalizeSpeech(text: string): string {
         /(^|[.!?:…]["')\]]?\s+)(\d{1,2})\.\s+/g,
         (_m, pre: string, n: string) => `${pre}${ORDINAL_WORDS[n] || "Next"}, `,
       )
-      // force the two-word reading
-      .replace(/\bGoStork\b/g, "Go Stork")
   );
+}
+
+// Pronunciation-only rewrites, applied at the TTS BOUNDARY and nowhere else:
+// Cartesia pronounced "GoStork" as something like "GhostOrg", but the fix
+// leaked into the on-screen captions as "Go Stork" (live report 2026-08-06) -
+// the brand is ONE word everywhere a human reads it, and two words only in
+// the string the voice engine receives.
+export function forTts(text: string): string {
+  return text.replace(/\bGoStork\b/g, "Go Stork");
 }
 
 export class SpokenBudget {
