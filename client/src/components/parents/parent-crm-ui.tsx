@@ -291,23 +291,25 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
   const filtered = options.filter((u) => !q || (u.name || "").toLowerCase().includes(q.toLowerCase()));
 
   return (
-    // A labelled value on one line, the same shape as "EMAIL foo@bar.com" and
-    // "LOCATION New York" elsewhere on this record - not a block of its own.
     <div data-testid={`owner-${choice.key}`}>
       {!open ? (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="t-micro-label">Lead owner</span>
-          {current ? (
-            <span className="flex items-center gap-1.5 text-sm">
-              <DoctorAvatar name={current.ownerName || "?"} photoUrl={(current as any).ownerPhotoUrl} size={22} rounded="999px" />
-              {current.ownerName || "Assigned"}
-            </span>
-          ) : (
-            <span className="t-helper">Unassigned</span>
-          )}
-          <Button variant="outline" size="sm" onClick={() => setOpen(true)} data-testid={`btn-owner-${choice.key}`}>
-            {current ? "Change" : "Assign"}
-          </Button>
+        // Label above, then the person and the button together on one line -
+        // the button belongs beside the name it acts on, not stranded under it.
+        <div className="space-y-1">
+          <p className="t-micro-label">Lead owner</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {current ? (
+              <span className="flex items-center gap-1.5 text-sm min-w-0">
+                <DoctorAvatar name={current.ownerName || "?"} photoUrl={(current as any).ownerPhotoUrl} size={22} rounded="999px" />
+                <span className="truncate">{current.ownerName || "Assigned"}</span>
+              </span>
+            ) : (
+              <span className="t-helper">Unassigned</span>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setOpen(true)} data-testid={`btn-owner-${choice.key}`}>
+              {current ? "Change" : "Assign"}
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="space-y-2 rounded-[var(--radius)] border bg-card p-2">
