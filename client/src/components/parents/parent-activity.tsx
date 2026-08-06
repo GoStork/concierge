@@ -371,9 +371,9 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
         {detail.isCurrentState && (
           // Only on this booking's newest event: the current status is not a
           // fact about an earlier moment in its history.
-          <Row label="Status now">{detail.status}{detail.outcome ? ` - ${detail.outcome}` : ""}</Row>
+          <Row label="Status now">{titleCaseWords(detail.status)}{detail.outcome ? ` - ${titleCaseWords(detail.outcome)}` : ""}</Row>
         )}
-        {detail.meetingSubtype && <Row label="Type">{detail.meetingSubtype.replace(/_/g, " ").toLowerCase()}</Row>}
+        {detail.meetingSubtype && <Row label="Type">{titleCaseWords(detail.meetingSubtype.toLowerCase())}</Row>}
         {detail.notes && <Row label="Notes">{detail.notes}</Row>}
         <div className="flex flex-wrap gap-2 pt-1">
           {detail.meetingUrl && (
@@ -398,7 +398,7 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
       <div className={shell} data-testid={`detail-invoice-${detail.invoiceId}`}>
         {detail.description && <Row label="For">{detail.description}</Row>}
         {money(detail.amountCents) && <Row label="Amount">{money(detail.amountCents)}</Row>}
-        <Row label="Status">{detail.status}</Row>
+        <Row label="Status">{titleCaseWords(detail.status)}</Row>
         {detail.dueAt && <Row label="Due">{new Date(detail.dueAt).toLocaleDateString()}</Row>}
         {detail.paymentUrl && (
           <Button size="sm" variant="outline" className="mt-1" onClick={() => window.open(detail.paymentUrl as string, "_blank", "noopener,noreferrer")} data-testid={`btn-invoice-${detail.invoiceId}`}>
@@ -412,7 +412,7 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
   if (detail.type === "agreement") {
     return (
       <div className={shell} data-testid={`detail-agreement-${detail.agreementId}`}>
-        <Row label="Status">{detail.status}</Row>
+        <Row label="Status">{titleCaseWords(detail.status)}</Row>
         {detail.documentUrl && (
           <Button size="sm" variant="outline" className="mt-1" onClick={() => window.open(detail.documentUrl as string, "_blank", "noopener,noreferrer")} data-testid={`btn-agreement-${detail.agreementId}`}>
             <FileText className="w-3.5 h-3.5 mr-1.5" /> Open agreement
@@ -477,6 +477,18 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
  * documents on every page load. It renders in a SANDBOXED iframe: this is
  * mail HTML, and it gets no script, no forms and no same-origin access.
  */
+
+
+/** "booking reminder" -> "Booking Reminder". Stored values are lowercase
+ *  identifiers; a card should read as a label, not as a database value. */
+function titleCaseWords(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 /**
  * A sent email, rendered at its full height - no inner scrollbar.
@@ -573,9 +585,9 @@ function MessageDetail({ detail, parentUserId }: {
     <div ref={ref} className="mt-2 rounded-[var(--radius)] border bg-secondary/40 p-3 space-y-1.5" data-testid={`detail-message-${detail.notificationId}`}>
       <Row label="To">{detail.recipient}</Row>
       {detail.subject && <Row label="Subject">{detail.subject}</Row>}
-      <Row label="Kind">{detail.kind.replace(/_/g, " ")}</Row>
+      <Row label="Kind">{titleCaseWords(detail.kind)}</Row>
       <Row label="Delivery">
-        <span style={failed ? { color: "hsl(var(--brand-warning))" } : undefined}>{detail.status}</span>
+        <span style={failed ? { color: "hsl(var(--brand-warning))" } : undefined}>{titleCaseWords(detail.status)}</span>
       </Row>
 
       {/* An email shows the email. The plain-text version was a worse copy of
