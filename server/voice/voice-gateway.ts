@@ -639,6 +639,17 @@ class VoiceSession {
       log(`avatar handshake took ${Date.now() - tAvatarStart}ms (session token + start + WS connected)`);
       this.avatar = session;
       this.avatarStartedAt = Date.now();
+      // Mid-session avatar death (HeyGen limit/credits/upstream): clear the
+      // route so speech falls back to WS-PCM audio IMMEDIATELY, and tell the
+      // client to drop to the persona photo. Without this the gateway spoke
+      // into the dead session while the parent watched captions in silence.
+      session.onDied = (reason: string) => {
+        if (this.closed || this.avatar !== session) return;
+        log(`AVATAR DIED mid-session (${reason}) - falling back to audio-only`);
+        this.avatar = null;
+        this.send({ type: "avatar_failed" });
+        session.end().catch(() => {});
+      };
       this.send({
         type: "avatar",
         livekitUrl: info.livekitUrl,
@@ -656,7 +667,11 @@ class VoiceSession {
   // reply is mid-flight, that reply finishes on the WS path (splitting one
   // reply across both outputs would garble it) and the next one is lip-synced.
   private deliverSpeech(pcm: Buffer, route: HeyGenAvatarSession | null) {
-    if (route) route.sendAudio(pcm);
+    // A reply snapshots its route at turn start - if the avatar died since,
+    // the snapshot is stale and audio must fall back to the WS-PCM path
+    // mid-reply (better a voice without lips than lips without a voice).
+    const live = route && route === this.avatar ? route : null;
+    if (live) live.sendAudio(pcm);
     else this.sendAudio(pcm);
   }
 

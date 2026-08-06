@@ -713,6 +713,13 @@ export function useVoiceSession() {
             setAvatar({ livekitUrl: msg.livekitUrl, livekitToken: msg.livekitToken });
           }
           break;
+        case "avatar_failed":
+          // The avatar session died mid-call (HeyGen limit/credits/upstream).
+          // The server already rerouted her speech to WS-PCM frames, which
+          // the audio engine plays automatically - dropping to the persona
+          // photo here keeps the call fully alive, just without lips.
+          setAvatar(null);
+          break;
         case "ended":
           stop(msg.reason || "server_ended");
           if (msg.reason === "voice_not_configured") {

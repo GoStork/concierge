@@ -147,11 +147,29 @@ export class HeyGenAvatarSession {
       ws.on("error", (err) => {
         clearTimeout(timeout);
         if (!this.connected) reject(err as Error);
+        else this.fireDied(`ws error: ${(err as Error)?.message}`);
       });
-      ws.on("close", () => {
+      ws.on("close", (code) => {
+        const wasConnected = this.connected;
         this.connected = false;
+        // An UNREQUESTED close mid-session = the avatar died under us
+        // (HeyGen session limit, credits, upstream failure). Without this
+        // callback the gateway kept routing speech into the dead session -
+        // the parent saw captions scroll while hearing and seeing nothing
+        // (observed live, session 9vgb82: "I cannot hear you or see you
+        // anymore. I can only see the text.").
+        if (wasConnected && !this.closed) this.fireDied(`ws closed (code ${code})`);
       });
     });
+  }
+
+  // Fired ONCE when the session dies without end() being called.
+  onDied: ((reason: string) => void) | null = null;
+  private diedFired = false;
+  private fireDied(reason: string) {
+    if (this.diedFired || this.closed) return;
+    this.diedFired = true;
+    this.onDied?.(reason);
   }
 
   private sendJson(obj: object) {
