@@ -876,9 +876,35 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   if (owners.length) {
     const ownerUsers = await prisma.user.findMany({
       where: { id: { in: Array.from(new Set(owners.map((o: any) => o.ownerUserId))) } },
-      select: { id: true, photoUrl: true },
+      select: { id: true, photoUrl: true, name: true, providerId: true },
     });
     for (const u of ownerUsers) ownerPhotoById.set(u.id, u.photoUrl);
+
+    // Clinic staff are often a User with no photo AND a ProviderMember (their
+    // doctor profile) that has one - Vicken Sahakian is a User with photoUrl
+    // null and a member row carrying his headshot. Fall back to it so an owner
+    // chip does not show initials for someone whose face is already on the
+    // platform.
+    //
+    // Matched on exact name within the same org because that is the ONLY link
+    // that exists: ProviderMember has no userId and no email. Exact, not
+    // fuzzy, and org-scoped - "Vicken Sahakian" and "Dr. Vicken Sepilian" are
+    // two different doctors at the same clinic, and a loose match would put
+    // one man's face on the other's name.
+    const needsPhoto = ownerUsers.filter((u: any) => !u.photoUrl && u.name && u.providerId);
+    if (needsPhoto.length) {
+      const members = await prisma.providerMember.findMany({
+        where: {
+          OR: needsPhoto.map((u: any) => ({ providerId: u.providerId, name: u.name })),
+          photoUrl: { not: null },
+        },
+        select: { name: true, providerId: true, photoUrl: true },
+      });
+      for (const u of needsPhoto) {
+        const m = members.find((x: any) => x.providerId === u.providerId && x.name === u.name);
+        if (m?.photoUrl) ownerPhotoById.set(u.id, m.photoUrl);
+      }
+    }
   }
   const ownersWithPhoto = owners.map((o: any) => ({ ...o, ownerPhotoUrl: ownerPhotoById.get(o.ownerUserId) ?? null }));
 
