@@ -67,11 +67,15 @@ export function ParentsTable({
   // checkbox + 12 shared + optional actions
   const colSpan = 12 + (selectable ? 1 : 0) + (rowActions ? 1 : 0);
 
-  // Thirteen columns do not fit a laptop, and the admin view adds two more, so
-  // this table scrolls sideways by design with both edges pinned. The scroll
-  // container is the Table's OWN wrapper, not the Card: the wrapper clips
-  // first, so overflow-x on any ancestor is dead weight and the columns past
-  // the edge were simply being cut off with no scrollbar to reach them.
+  // Cost Sheets and Agreements now appear only at 2xl. They were the two
+  // columns most often empty, and dropping them below 1536px is what lets the
+  // rest fit a laptop without sideways scrolling - the thing that made the
+  // email look permanently truncated. Invoices stays: it is the money column
+  // people actually scan.
+  //
+  // The scroll container is the Table's OWN wrapper, not the Card: the wrapper
+  // clips first, so overflow-x on any ancestor is dead weight and the columns
+  // past the edge were simply cut off with no scrollbar to reach them.
   //
   // Only the RIGHT edge is pinned. Name used to be pinned too, and the cost was
   // the email: the moment the table scrolled a few pixels the email slid under
@@ -131,9 +135,9 @@ export function ParentsTable({
             <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-mobile" />
             <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
             <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
-            <SortableTableHead label="Cost Sheets" sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-cost-sheets" />
+            <SortableTableHead label="Cost Sheets" sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-cost-sheets" />
             <SortableTableHead label="Invoices" sortKey="invoices" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-invoices" />
-            <SortableTableHead label="Agreements" sortKey="agreements" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-agreements" />
+            <SortableTableHead label="Agreements" sortKey="agreements" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-agreements" />
             <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-created" />
             <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
             <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
@@ -256,7 +260,7 @@ export function ParentsTable({
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
                   <MatchStatusBadge status={row.matchStatus} />
                 </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                <TableCell className="hidden 2xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentCostSheetsCell
                     costSheets={row.costSheets || []}
                     sessionId={row.sessionId}
@@ -268,7 +272,7 @@ export function ParentsTable({
                 <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentInvoicesCell invoices={row.invoices || []} limit={1} />
                 </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                <TableCell className="hidden 2xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentAgreementsCell agreements={row.agreements || []} limit={1} />
                 </TableCell>
                 <TableCell className="hidden 2xl:table-cell" data-testid={`text-created-${row.id}`}>

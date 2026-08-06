@@ -486,7 +486,9 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
     // did nothing at all, and email and mobile were missing outright.
     (p: any, key: string) => parentSortValue(key, {
       name: p.name, email: p.email, mobile: p.mobileNumber,
-      services: p.serviceType ? [p.serviceType] : [],
+      // Thread subject first, the family's own stated services as fallback -
+      // a CountryProgram thread has no subject-derived service.
+      services: p.serviceType ? [p.serviceType] : (p.profileServiceKeys || []),
       matchStatus: p.matchStatus,
       createdAt: p.sessionCreatedAt, updatedAt: p.sessionUpdatedAt,
       costSheets: p.costSheets, invoices: p.invoices, agreements: p.agreements,
@@ -531,7 +533,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           members: row.members || [],
           householdNames: (row.members || []).length > 1 ? (row.members || []).map((m: any) => m.name) : undefined,
           contactReleased: !!row.contactReleased,
-          services: row.serviceType ? [row.serviceType] : [],
+          services: row.serviceType ? [row.serviceType] : (row.profileServiceKeys || []),
           matchStatus: row.matchStatus ?? null,
           costSheets: row.costSheets || [],
           invoices: row.invoices || [],

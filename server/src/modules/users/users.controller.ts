@@ -1491,6 +1491,33 @@ export class UsersController {
         .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
         .filter(Boolean),
     );
+    // The family's own stated services, so a thread whose subject yields
+    // nothing (a CountryProgram, a plain concierge thread) still shows what
+    // they are here for. The admin table has always done this; the provider
+    // one did not, so the same family read differently by role.
+    const profileServiceKeys = new Map<string, string[]>();
+    {
+      const keys = Array.from(new Set(chatSessions.map((cs: any) => cs.userId).filter(Boolean).map((id: string) => accountKey(id))));
+      if (keys.length) {
+        const profs = await this.prisma.intendedParentProfile.findMany({
+          where: { parentAccountId: { in: keys } },
+          select: { parentAccountId: true, interestedServices: true },
+        });
+        const KEY_BY_LABEL: [RegExp, string][] = [
+          [/egg/i, "EGG_DONATION"], [/surrog/i, "SURROGACY"],
+          [/sperm/i, "SPERM_DONATION"], [/ivf|clinic|doctor/i, "IVF_CLINIC"],
+        ];
+        for (const pr of profs) {
+          const keysOut = Array.from(new Set(
+            ((pr.interestedServices as string[]) || [])
+              .map((l) => KEY_BY_LABEL.find(([re]) => re.test(l))?.[1])
+              .filter(Boolean) as string[],
+          ));
+          if (keysOut.length) profileServiceKeys.set(pr.parentAccountId, keysOut);
+        }
+      }
+    }
+
     // Scoped to the accounts on this page rather than every submitted form.
     const ipFormKeys = Array.from(new Set(chatSessions.map((cs: any) => cs.userId).filter(Boolean).map((id: string) => accountKey(id))));
     const ipFormSubmittedAccounts = new Set(
@@ -1662,7 +1689,9 @@ export class UsersController {
         invoices: invoicesBySession.get(cs.id) || [],
         agreements: agreementsBySession.get(cs.id) || [],
         costSheets: costSheetsBySession.get(cs.id) || [],
-        // The service this match/session is about (from the session subject)
+        // What this thread is about, falling back to what the family says
+        // they want. A CountryProgram subject matches none of these patterns,
+        // which is why an international-programme row showed a blank column.
         serviceType: (() => {
           const st = (cs.subjectType || "").toLowerCase();
           if (st.includes("egg")) return "EGG_DONATION";
@@ -1671,6 +1700,7 @@ export class UsersController {
           if (st.includes("ivf") || st.includes("clinic") || st.includes("doctor")) return "IVF_CLINIC";
           return null;
         })(),
+        profileServiceKeys: profileServiceKeys.get(key) || [],
         sessionCreatedAt: cs.createdAt,
         sessionUpdatedAt: cs.updatedAt,
       });

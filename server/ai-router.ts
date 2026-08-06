@@ -2212,7 +2212,7 @@ aiRouter.get("/session/:sessionId/messages", async (req: Request, res: Response)
   try {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ message: "Unauthorized" });
-    const { sessionId } = req.params;
+    const sessionId = String(req.params.sessionId);
     const after = req.query.after as string | undefined;
     const session = await prisma.aiChatSession.findUnique({
       where: { id: sessionId },

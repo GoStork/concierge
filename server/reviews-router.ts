@@ -216,7 +216,7 @@ async function listPublished(where: any) {
 
 reviewsRouter.get("/api/reviews/provider/:providerId", requireAuth, async (req, res) => {
   try {
-    res.json(await listPublished({ providerId: req.params.providerId, memberId: null }));
+    res.json(await listPublished({ providerId: String(req.params.providerId), memberId: null }));
   } catch (e: any) {
     console.error("[reviews] provider list failed:", e?.message);
     res.status(500).json({ message: "Failed to load reviews" });
@@ -225,7 +225,7 @@ reviewsRouter.get("/api/reviews/provider/:providerId", requireAuth, async (req, 
 
 reviewsRouter.get("/api/reviews/member/:memberId", requireAuth, async (req, res) => {
   try {
-    res.json(await listPublished({ memberId: req.params.memberId }));
+    res.json(await listPublished({ memberId: String(req.params.memberId) }));
   } catch (e: any) {
     console.error("[reviews] member list failed:", e?.message);
     res.status(500).json({ message: "Failed to load reviews" });
@@ -421,12 +421,12 @@ reviewsRouter.post("/api/reviews/:id/reply", requireAuth, async (req, res) => {
     // deterministic guard first - it is free and it catches the obfuscated
     // forms the model tends to wave through - then fall through to the same
     // AI screen the body gets.
-    if (blockContactInfo(res, text, "review.provider-reply", { reviewId: req.params.id, providerId: user.providerId })) return;
+    if (blockContactInfo(res, text, "review.provider-reply", { reviewId: String(req.params.id), providerId: user.providerId })) return;
     const replyScreen = await aiScreenReview(text);
     if (!replyScreen.ok) {
       return res.status(422).json({ message: "This reply cannot be posted publicly. Please remove any contact details or personal information and try again." });
     }
-    const review = await prisma.providerReview.findUnique({ where: { id: req.params.id } });
+    const review = await prisma.providerReview.findUnique({ where: { id: String(req.params.id) } });
     if (!review || review.providerId !== user.providerId) return res.status(404).json({ message: "Review not found" });
     if (review.visibility !== "PUBLIC") return res.status(403).json({ message: "Not repliable" });
     await prisma.providerReview.update({
@@ -452,7 +452,7 @@ reviewsRouter.post("/api/reviews/:id/flag", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     if (!user.providerId) return res.status(403).json({ message: "Providers only" });
-    const review = await prisma.providerReview.findUnique({ where: { id: req.params.id } });
+    const review = await prisma.providerReview.findUnique({ where: { id: String(req.params.id) } });
     if (!review || review.providerId !== user.providerId) return res.status(404).json({ message: "Review not found" });
     await prisma.providerReview.update({
       where: { id: review.id },
@@ -573,7 +573,7 @@ reviewsRouter.post("/api/admin/reviews/:id/remove", requireAuth, async (req, res
   try {
     const user = (req as any).user;
     if (!isAdmin(user)) return res.status(403).json({ message: "Admins only" });
-    const review = await prisma.providerReview.findUnique({ where: { id: req.params.id } });
+    const review = await prisma.providerReview.findUnique({ where: { id: String(req.params.id) } });
     if (!review) return res.status(404).json({ message: "Review not found" });
     await prisma.providerReview.update({
       where: { id: review.id },
@@ -602,7 +602,7 @@ reviewsRouter.post("/api/admin/reviews/:id/restore", requireAuth, async (req, re
   try {
     const user = (req as any).user;
     if (!isAdmin(user)) return res.status(403).json({ message: "Admins only" });
-    const review = await prisma.providerReview.findUnique({ where: { id: req.params.id } });
+    const review = await prisma.providerReview.findUnique({ where: { id: String(req.params.id) } });
     if (!review) return res.status(404).json({ message: "Review not found" });
     await prisma.providerReview.update({
       where: { id: review.id },

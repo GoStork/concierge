@@ -412,12 +412,17 @@ export const matchesMultiAny = (selected: string[], values: string[] | null | un
  */
 export function matchesIpForm(filter: string, status: string | null | undefined): boolean {
   if (filter === "all" || !filter) return true;
-  const submitted = status === "SUBMITTED";
-  return filter === "submitted" ? submitted : !submitted;
+  if (filter === "submitted") return status === "SUBMITTED";
+  // A started-but-unsigned form is its own thing: the family has engaged and
+  // needs a nudge, not a first ask. Lumping it in with "never started" hid
+  // exactly the group worth chasing.
+  if (filter === "draft") return status === "DRAFT";
+  return status !== "SUBMITTED";   // not submitted: draft or no form at all
 }
 
 export const IP_FORM_FILTER_LABELS: Record<string, string> = {
   submitted: "Form submitted",
+  draft: "Form started, not signed",
   missing: "Form not submitted",
 };
 

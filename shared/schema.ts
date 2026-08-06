@@ -1,17 +1,16 @@
 import { z } from "zod";
+import type { Provider as PrismaProvider } from "@prisma/client";
 
-export type Provider = {
-  id: string;
-  name: string;
-  about: string | null;
-  logoUrl: string | null;
-  websiteUrl: string | null;
-  email: string | null;
-  phone: string | null;
-  yearFounded: number | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
+/**
+ * Derived from Prisma, not hand-maintained. The hand-written version listed
+ * about ten fields while the model has over a hundred, so every page reading a
+ * newer column (consultationBookingUrl, lgbtqCare, the whole ivf* family) got
+ * "Property does not exist" - 46 errors in company-tab alone. `import type` is
+ * erased at compile time, so this pulls no Prisma runtime into the browser
+ * bundle.
+ */
+export type Provider = PrismaProvider;
+
 
 export type ProviderType = {
   id: string;

@@ -578,7 +578,7 @@ chatRouter.post("/api/chat-sessions/:id/read", requireAuth, async (req, res) => 
   const user = req.user as any;
   try {
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       select: { userId: true, providerId: true },
     });
     if (!session) return res.status(404).json({ message: "Not found" });
@@ -602,7 +602,7 @@ chatRouter.post("/api/chat-sessions/:id/read", requireAuth, async (req, res) => 
     // For parents: mark provider/AI/human messages as read
     const updated = await prisma.aiChatMessage.updateMany({
       where: {
-        sessionId: req.params.id,
+        sessionId: String(req.params.id),
         readAt: null,
         ...(isProvider
           ? { senderType: { not: "provider" } }
@@ -716,7 +716,7 @@ chatRouter.delete("/api/admin/contact-releases/:id", requireAuth, async (req, re
   const user = req.user as any;
   if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    const row = await prisma.parentContactRelease.findUnique({ where: { id: req.params.id } });
+    const row = await prisma.parentContactRelease.findUnique({ where: { id: String(req.params.id) } });
     if (!row) return res.status(404).json({ message: "Release not found" });
     // A system release records a FACT: the provider already holds an invoice, a
     // sent agreement or a downloaded PDF with the address printed on it.
@@ -885,7 +885,7 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
   if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       include: {
         user: {
           select: {
@@ -931,7 +931,7 @@ chatRouter.post("/api/admin/concierge-sessions/:id/join", requireAuth, async (re
   const user = req.user as any;
   if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    const session = await prisma.aiChatSession.findUnique({ where: { id: String(req.params.id) } });
     if (!session) return res.status(404).json({ message: "Session not found" });
     // Block re-join only if already joined AND not yet concluded (active session)
     console.log(`[join] humanJoinedAt=${session.humanJoinedAt}, humanConcludedAt=${(session as any).humanConcludedAt}, humanRequested=${session.humanRequested}`);
@@ -988,7 +988,7 @@ chatRouter.post("/api/admin/concierge-sessions/:id/exit-human", requireAuth, asy
   const user = req.user as any;
   if (!isAdminOrConcierge(user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    const session = await prisma.aiChatSession.findUnique({ where: { id: String(req.params.id) } });
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const expertFirstName = (user.name || "GoStork Expert").split(" ")[0];
@@ -1052,7 +1052,7 @@ chatRouter.post("/api/admin/concierge-sessions/:id/exit-human", requireAuth, asy
 chatRouter.post("/api/chat-sessions/:id/request-human", requireAuth, async (req, res) => {
   const user = req.user as any;
   try {
-    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    const session = await prisma.aiChatSession.findUnique({ where: { id: String(req.params.id) } });
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     // Verify access: must be session owner or account member
@@ -1148,7 +1148,7 @@ chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async 
     return res.status(400).json({ message: "Content is required" });
   }
   try {
-    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    const session = await prisma.aiChatSession.findUnique({ where: { id: String(req.params.id) } });
     if (!session) return res.status(404).json({ message: "Session not found" });
 
     const message = await prisma.aiChatMessage.create({
@@ -1605,7 +1605,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       include: {
         user: {
           select: {
@@ -1788,7 +1788,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id/pending-whispers", requireA
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       select: { id: true, providerId: true, subjectType: true, subjectProfileId: true, userId: true, user: { select: { parentAccountId: true } } },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
@@ -2094,7 +2094,7 @@ chatRouter.post("/api/provider/concierge-assistant/message", requireAuth, async 
 chatRouter.get("/api/provider/parents/:id", requireAuth, async (req, res) => {
   try {
     const { buildParentRecord } = await import("./parent-record");
-    const rec = await buildParentRecord(req.user as any, req.params.id, { sections: ["identity"] });
+    const rec = await buildParentRecord(req.user as any, String(req.params.id), { sections: ["identity"] });
     res.json({
       ...(rec.parent as any),
       accountMembers: rec.accountMembers,
@@ -2118,7 +2118,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
     return res.status(400).json({ message: "Content is required" });
   }
   try {
-    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    const session = await prisma.aiChatSession.findUnique({ where: { id: String(req.params.id) } });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
 
@@ -2545,7 +2545,7 @@ chatRouter.post("/api/provider/concierge-sessions/:id/consultation-status", requ
   }
   try {
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       include: { provider: { select: { name: true } } },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
@@ -2673,7 +2673,7 @@ chatRouter.get("/api/chat-session/:id/schedulable-hosts", requireAuth, async (re
   try {
     const user = req.user as any;
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       select: { providerId: true },
     });
     if (!session?.providerId) return res.status(404).json({ message: "Session has no provider" });
@@ -2723,7 +2723,7 @@ chatRouter.get("/api/chat-session/:id/schedulable-hosts", requireAuth, async (re
       defaultHostUserId = selfHost.userId;
     } else {
       const fullSession = await prisma.aiChatSession.findUnique({
-        where: { id: req.params.id },
+        where: { id: String(req.params.id) },
         select: { userId: true },
       });
       if (fullSession) {
@@ -2836,7 +2836,7 @@ chatRouter.post("/api/chat-session/:id/propose-call-times", requireAuth, async (
     const subtype = ["MATCH_CALL", "DOCTOR_CONSULTATION"].includes(meetingSubtype) ? meetingSubtype : null;
 
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       select: MATCH_CALL_SESSION_SELECT,
     });
     if (!session?.providerId) return res.status(404).json({ message: "Session has no provider" });
@@ -2928,7 +2928,7 @@ chatRouter.post("/api/chat-session/:id/proposed-times/:messageId/accept", requir
     const user = req.user as any;
     const { slot } = req.body || {};
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       select: MATCH_CALL_SESSION_SELECT,
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
@@ -2939,7 +2939,7 @@ chatRouter.post("/api/chat-session/:id/proposed-times/:messageId/accept", requir
     }
     if (!isParent) return res.status(403).json({ message: "Only the parent can pick a time" });
 
-    const msg = await prisma.aiChatMessage.findUnique({ where: { id: req.params.messageId } });
+    const msg = await prisma.aiChatMessage.findUnique({ where: { id: String(req.params.messageId) } });
     if (!msg || msg.sessionId !== session.id || msg.uiCardType !== "proposed_times") {
       return res.status(404).json({ message: "Time options not found" });
     }
@@ -3104,7 +3104,7 @@ chatRouter.post("/api/chat-session/:id/schedule-call", requireAuth, async (req, 
     const subtype = ["MATCH_CALL", "DOCTOR_CONSULTATION"].includes(meetingSubtype) ? meetingSubtype : null;
 
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       select: MATCH_CALL_SESSION_SELECT,
     });
     if (!session?.providerId) return res.status(404).json({ message: "Session has no provider" });
@@ -3233,7 +3233,7 @@ chatRouter.get("/api/chat-session/:id/provider-calendar-slug", requireAuth, asyn
   try {
     const user = req.user as any;
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       select: { providerId: true, userId: true },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
@@ -3286,9 +3286,9 @@ chatRouter.post("/api/chat-session/:id/message", requireAuth, async (req, res) =
   // This endpoint only ever posts into a thread the provider reads, so the
   // guard applies unconditionally here (unlike the Eva path, where the parent
   // is often just answering an intake question about their own contact info).
-  if (blockContactInfo(res, content, "parent.direct-message", { sessionId: req.params.id, userId: user.id })) return;
+  if (blockContactInfo(res, content, "parent.direct-message", { sessionId: String(req.params.id), userId: user.id })) return;
   try {
-    const session = await prisma.aiChatSession.findUnique({ where: { id: req.params.id } });
+    const session = await prisma.aiChatSession.findUnique({ where: { id: String(req.params.id) } });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.userId !== user.id) {
       let allowed = false;
@@ -3385,7 +3385,7 @@ chatRouter.post("/api/chat-upload", requireAuth, (req, res, next) => {
 
 // Public endpoint to fetch a single donor/surrogate profile by type and ID (used by match cards in AI concierge)
 chatRouter.get("/api/marketplace/profile/:type/:id", requireAuth, async (req, res) => {
-  const { type, id } = req.params;
+  const type = String(req.params.type); const id = String(req.params.id);
   const t = (type || "").toLowerCase();
   try {
     if (t === "egg-donor" || t === "egg donor") {
@@ -3744,7 +3744,7 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
 
   try {
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       select: { id: true, userId: true, providerId: true, humanAgentId: true },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
@@ -4068,7 +4068,7 @@ chatRouter.patch("/api/admin/chat-sessions/:id/test-flag", requireAuth, async (r
   if (typeof isTestData !== "boolean") return res.status(400).json({ message: "isTestData must be a boolean" });
   try {
     const session = await prisma.aiChatSession.update({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       data: { isTestData },
       select: { id: true, isTestData: true },
     });
@@ -4083,7 +4083,7 @@ chatRouter.put("/api/admin/concierge-prompts/:id", requireAuth, async (req, res)
   try {
     const { content, isActive } = req.body;
     const updated = await prisma.conciergePromptSection.update({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       data: {
         ...(content !== undefined ? { content } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
@@ -4141,7 +4141,7 @@ chatRouter.get("/api/agreements/template-preview/:sessionId", requireAuth, async
   const user = req.user as any;
   try {
     const session = await prisma.aiChatSession.findUnique({
-      where: { id: req.params.sessionId },
+      where: { id: String(req.params.sessionId) },
       select: { id: true, userId: true, providerId: true, user: { select: { parentAccountId: true } } },
     });
     if (!session?.providerId) return res.status(404).json({ message: "Session not found" });
@@ -5185,7 +5185,7 @@ chatRouter.get("/api/agreements/templates", requireAuth, async (req, res) => {
 chatRouter.put("/api/agreements/templates/:serviceType", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
-  const serviceType = req.params.serviceType;
+  const serviceType = String(req.params.serviceType);
   const VALID = ["SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC", "OTHER"];
   if (!VALID.includes(serviceType)) return res.status(400).json({ message: "Invalid serviceType" });
   const { agreementTemplateUrl, agreementTemplateOriginalName } = req.body || {};
@@ -5303,7 +5303,7 @@ chatRouter.post("/api/agreements/generate-from-template", requireAuth, async (re
 // Public guest signing session - no auth required, validated by one-time token
 chatRouter.get("/api/agreements/guest/:token/signing-session", async (req, res) => {
   try {
-    const { token } = req.params;
+    const token = String(req.params.token);
     if (!token) return res.status(400).json({ message: "Missing token" });
 
     // Find the agreement that owns this token
@@ -5342,7 +5342,7 @@ chatRouter.get("/api/agreements/:id/signing-session", requireAuth, async (req, r
     const adminRoles: string[] = user?.roles || [];
     if (adminRoles.includes("GOSTORK_ADMIN") || adminRoles.includes("GOSTORK_CONCIERGE")) {
       const agr = await prisma.agreement.findUnique({
-        where: { id: req.params.id as string },
+        where: { id: String(req.params.id) as string },
         select: { id: true, providerId: true, status: true, sessionId: true, signerStatus: true },
       });
       if (!agr) return res.status(404).json({ message: "Agreement not found" });
@@ -5352,7 +5352,7 @@ chatRouter.get("/api/agreements/:id/signing-session", requireAuth, async (req, r
     // Providers don't sign - return a completion view response instead
     if (isProviderUser(user)) {
       const agr = await prisma.agreement.findUnique({
-        where: { id: req.params.id as string },
+        where: { id: String(req.params.id) as string },
         select: { id: true, providerId: true, status: true, sessionId: true, signerStatus: true },
       });
       if (!agr) return res.status(404).json({ message: "Agreement not found" });
@@ -5360,11 +5360,11 @@ chatRouter.get("/api/agreements/:id/signing-session", requireAuth, async (req, r
       return res.json({ isProviderView: true, status: agr.status, agreementId: agr.id, sessionId: agr.sessionId, providerId: user.providerId });
     }
 
-    const result = await getAgreementSigningSession(req.params.id, user.id);
+    const result = await getAgreementSigningSession(String(req.params.id), user.id);
     res.json(result);
 
     // Track that this signer has opened/viewed the agreement (fire-and-forget)
-    const _agreementId = req.params.id as string;
+    const _agreementId = String(req.params.id) as string;
     Promise.all([
       prisma.agreement.findUnique({ where: { id: _agreementId }, select: { signerStatus: true, status: true } }),
       prisma.user.findUnique({ where: { id: user.id as string }, select: { firstName: true, lastName: true, name: true } }),
@@ -5404,7 +5404,7 @@ chatRouter.get("/api/agreements/:id/signing-session", requireAuth, async (req, r
 chatRouter.post("/api/agreements/:id/sync-status", requireAuth, async (req, res) => {
   try {
     const agreement = await prisma.agreement.findUnique({
-      where: { id: req.params.id as string },
+      where: { id: String(req.params.id) as string },
       select: { providerId: true, parentUserId: true },
     });
     if (!agreement) return res.status(404).json({ message: "Not found" });
@@ -5413,7 +5413,7 @@ chatRouter.post("/api/agreements/:id/sync-status", requireAuth, async (req, res)
     if (user.providerId !== agreement.providerId && user.id !== agreement.parentUserId) {
       return res.status(403).json({ message: "Forbidden" });
     }
-    const result = await syncAgreementStatus(req.params.id as string);
+    const result = await syncAgreementStatus(String(req.params.id) as string);
     res.json(result);
   } catch (e: any) {
     console.error("[Agreement sync]", e.message);
@@ -5426,7 +5426,7 @@ chatRouter.get("/api/agreements/:id/download", requireAuth, async (req, res) => 
   try {
     const user = req.user as any;
     const agreement = await prisma.agreement.findUnique({
-      where: { id: req.params.id as string },
+      where: { id: String(req.params.id) as string },
       select: { providerId: true, parentUserId: true, pandaDocDocumentId: true, status: true },
     });
     if (!agreement) return res.status(404).json({ message: "Agreement not found" });
