@@ -477,6 +477,63 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
  * documents on every page load. It renders in a SANDBOXED iframe: this is
  * mail HTML, and it gets no script, no forms and no same-origin access.
  */
+
+/**
+ * A sent email, rendered at its full height - no inner scrollbar.
+ *
+ * Sizing needs to read the document inside the frame, which needs
+ * allow-same-origin. That is safe here precisely BECAUSE allow-scripts is
+ * withheld: with no JS able to run, same-origin access is a privilege nothing
+ * inside the frame can use. Granting both together would be the mistake.
+ *
+ * Height is re-measured as images arrive, since an email is mostly images and
+ * the first measurement lands before they have loaded.
+ */
+function EmailFrame({ html, title, testId }: { html: string; title: string; testId: string }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(320);
+
+  const measure = () => {
+    const doc = ref.current?.contentDocument;
+    if (!doc?.documentElement) return;
+    const h = Math.max(doc.documentElement.scrollHeight, doc.body?.scrollHeight || 0);
+    if (h > 0) setHeight(h);
+  };
+
+  useEffect(() => {
+    const frame = ref.current;
+    if (!frame) return;
+    const onLoad = () => {
+      measure();
+      const doc = frame.contentDocument;
+      if (!doc) return;
+      // Images finish after load and change the height; so can a late webfont.
+      doc.querySelectorAll("img").forEach((img) => img.addEventListener("load", measure));
+      const ro = new ResizeObserver(measure);
+      if (doc.documentElement) ro.observe(doc.documentElement);
+      (frame as any).__ro = ro;
+    };
+    frame.addEventListener("load", onLoad);
+    return () => {
+      frame.removeEventListener("load", onLoad);
+      (frame as any).__ro?.disconnect();
+    };
+  }, [html]);
+
+  return (
+    <iframe
+      ref={ref}
+      title={title}
+      sandbox="allow-same-origin"
+      srcDoc={html}
+      style={{ height }}
+      className="w-full bg-white block"
+      scrolling="no"
+      data-testid={testId}
+    />
+  );
+}
+
 function MessageDetail({ detail, parentUserId }: {
   detail: Extract<ActivityDetail, { type: "message" }>;
   parentUserId: string;
@@ -540,14 +597,10 @@ function MessageDetail({ detail, parentUserId }: {
           {full.isLoading && <p className="t-helper p-3">Loading the email...</p>}
           {full.isError && <p className="t-helper p-3">Could not load this email.</p>}
           {full.data?.bodyHtml && (
-            <iframe
+            <EmailFrame
+              html={full.data.bodyHtml}
               title={full.data.subject || "Sent email"}
-              // No scripts, no forms, no same-origin: mail HTML is not trusted
-              // just because we sent it.
-              sandbox=""
-              srcDoc={full.data.bodyHtml}
-              className="w-full h-[420px] bg-white"
-              data-testid={`iframe-message-${detail.notificationId}`}
+              testId={`iframe-message-${detail.notificationId}`}
             />
           )}
         </div>
