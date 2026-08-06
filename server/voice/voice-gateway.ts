@@ -357,6 +357,18 @@ class VoiceSession {
       // carries no content - she has already stopped, so she simply LISTENS.
       // No turn, no reply, no "I am completely silent" meta-speech. The
       // parent's next real utterance becomes a normal fresh turn.
+      // While she is SPEAKING, a real interruption barges FIRST (hot word or
+      // 2+ novel interim words stop her before the utterance finalizes). A
+      // final that lands mid-speech WITHOUT having barged and with fewer
+      // than 2 novel words is echo/mishear debris - observed live (jzpw4j):
+      // "I pulled that up." materialized 1s into her correct answer, cut it
+      // via the stale-speech flush, and she replied to the phantom ("I'm
+      // glad you have that pulled up on your screen!"). Drop it.
+      if (this.state === "speaking" && nov.novel < 2 && !nov.novelWords.some((w) => VoiceSession.BARGE_HOTWORDS.has(w))) {
+        log(`low-novelty mid-speech utterance suppressed (${nov.novel}/${nov.total} novel): "${text.slice(0, 60)}"`);
+        this.send({ type: "partial_transcript", text: "" });
+        return;
+      }
       const stopContext = this.state === "speaking" || Date.now() - this.lastBargeAt < 5000;
       if (stopContext && VoiceSession.PURE_STOP_RE.test(text.trim())) {
         log(`pure stop-command absorbed silently: "${text.slice(0, 60)}"`);
