@@ -25,8 +25,9 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, CalendarClock, ChevronDown, ExternalLink, FileText, Mail, MessageSquare,
-  Sparkles, StickyNote, Tag as TagIcon, TrendingUp, User,
+  AlertTriangle, CalendarCheck, CalendarClock, CalendarX, ChevronDown, ExternalLink,
+  FileText, Mail, MessageSquare,
+  Sparkles, StickyNote, Tag as TagIcon, TrendingUp, User, Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -164,6 +165,35 @@ const EVENT_LABELS: Record<string, string> = {
   CRM_OWNER_ASSIGNED: "Lead owner assigned",
 };
 
+
+/**
+ * Call events get an icon for what the event IS, not for the bucket it sits
+ * in - booking one is a calendar act, holding it is a video call.
+ *
+ * Keyed on the event type rather than the booking's meetingType: the record's
+ * booking query selects a narrow set of columns and meetingType is not among
+ * them, so a check on it silently never matched. The event name is always
+ * present.
+ */
+const CALL_ICONS: Record<string, typeof CalendarClock> = {
+  CONSULTATION_SCHEDULED: CalendarClock,
+  CONSULTATION_CONFIRMED: CalendarCheck,
+  CONSULTATION_RESCHEDULED: CalendarClock,
+  CONSULTATION_CANCELED: CalendarX,
+  CONSULTATION_COMPLETED: Video,
+  CONSULTATION_NO_SHOW_PARENT: CalendarX,
+  CONSULTATION_NO_SHOW_PROVIDER: CalendarX,
+  CONSULTATION_NO_SHOW_BOTH: CalendarX,
+  MATCH_CALL_SCHEDULED: CalendarClock,
+  MATCH_CALL_CONFIRMED: CalendarCheck,
+  MATCH_CALL_RESCHEDULED: CalendarClock,
+  MATCH_CALL_CANCELED: CalendarX,
+  MATCH_CALL_COMPLETED: Video,
+  MATCH_CALL_NO_SHOW_PARENT: CalendarX,
+  MATCH_CALL_NO_SHOW_PROVIDER: CalendarX,
+  MATCH_CALL_NO_SHOW_BOTH: CalendarX,
+};
+
 /** These arrive with their real text from the record payload instead. */
 const SUPERSEDED_BY_PAYLOAD = new Set([
   "CRM_NOTE_ADDED", "CRM_NOTE_SHARED_WITH_PROVIDER",
@@ -184,6 +214,8 @@ interface Entry {
   extra?: React.ReactNode;
   /** The joined object this entry is about. Renders as a detail block. */
   detail?: ActivityDetail | null;
+  /** Raw event type, so the card can pick an icon for what actually happened. */
+  eventType?: string;
 }
 
 function fmt(iso: string): string {
@@ -261,6 +293,7 @@ function buildEntries(record: ParentRecord): Entry[] {
       title: EVENT_LABELS[ev.eventType] || ev.eventType.toLowerCase().replace(/_/g, " "),
       org: ev.providerName,
       detail: ev.detail,
+      eventType: ev.eventType,
     });
   }
 
@@ -425,7 +458,7 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl }: {
   const isSms = entry.detail?.type === "message" && entry.detail.channel === "SMS";
   // An SMS card was showing an envelope. The icon follows the channel, not
   // the bucket the two share.
-  const Icon = isSms ? MessageSquare : meta.icon;
+  const Icon = isSms ? MessageSquare : (CALL_ICONS[entry.eventType || ""] || meta.icon);
   const tint =
     // A text message reads as a text message at a glance - green, the way
     // every messaging app has trained people to expect. --brand-success
