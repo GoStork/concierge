@@ -56,6 +56,7 @@ export function SaveBar({
         <span className="text-sm text-foreground">{message}</span>
         <div className="flex items-center gap-2">
           <Button
+            type="button"
             variant="ghost"
             size="sm"
             onClick={onDiscard}
@@ -66,6 +67,7 @@ export function SaveBar({
           </Button>
           {extraActions}
           <Button
+            type="button"
             size="sm"
             onClick={onSave}
             disabled={saving || saveDisabled}

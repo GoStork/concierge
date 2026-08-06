@@ -472,6 +472,7 @@ export default function AdminUserEditPage() {
                   <Input
                     id="edit-password"
                     type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="Leave blank to keep current"
@@ -496,6 +497,7 @@ export default function AdminUserEditPage() {
                     <Input
                       id="edit-confirm-password"
                       type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
                       value={confirmPassword}
                       onChange={e => setConfirmPassword(e.target.value)}
                       placeholder="Re-enter new password"
