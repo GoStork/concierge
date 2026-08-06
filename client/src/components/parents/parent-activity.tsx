@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
+import { getPhotoSrc } from "@/lib/profile-utils";
 import { NoteComposer, ParentFollowUpPanel } from "./parent-crm-ui";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
 
@@ -92,8 +94,8 @@ const PARENT_EVENTS = new Set([
  */
 function kindForEvent(ev: { eventType: string; actorRole: string | null }): ActivityKind {
   if (ev.eventType === "MESSAGE_EMAIL" || ev.eventType === "MESSAGE_SMS") return "message";
-  if (ev.actorRole === "parent" || PARENT_EVENTS.has(ev.eventType)) return "parent";
   if (DEAL_EVENTS.has(ev.eventType)) return "deal";
+  if (ev.actorRole === "parent" || PARENT_EVENTS.has(ev.eventType)) return "parent";
   return "ai";
 }
 
@@ -289,7 +291,10 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
  */
 function DetailBlock({ detail, parentUserId }: { detail: ActivityDetail; parentUserId: string }) {
   const navigate = useNavigate();
-  const shell = "mt-2 rounded-[var(--radius)] bg-secondary p-3 space-y-1.5";
+  // bg-secondary/40 is exactly what the Home journey cards use. At full
+  // strength this token is a visible mint, which read as a different surface
+  // from every other card in the product.
+  const shell = "mt-2 rounded-[var(--radius)] border bg-secondary/40 p-3 space-y-1.5";
 
   if (detail.type === "booking") {
     const when = new Date(detail.scheduledAt);
@@ -413,9 +418,15 @@ function DetailBlock({ detail, parentUserId }: { detail: ActivityDetail; parentU
   return null;
 }
 
-function EntryCard({ entry, parentUserId }: { entry: Entry; parentUserId: string }) {
+function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl }: {
+  entry: Entry; parentUserId: string; parentName: string | null; parentPhotoUrl: string | null;
+}) {
   const meta = KIND_META[entry.kind];
-  const Icon = meta.icon;
+  // An SMS card was showing an envelope. The icon follows the channel, not
+  // the bucket the two share.
+  const Icon = entry.detail?.type === "message" && entry.detail.channel === "SMS"
+    ? MessageSquare
+    : meta.icon;
   const tint =
     meta.tone === "accent" ? "hsl(var(--accent))"
     : meta.tone === "primary" ? "hsl(var(--primary))"
@@ -423,12 +434,20 @@ function EntryCard({ entry, parentUserId }: { entry: Entry; parentUserId: string
   return (
     <div className="rounded-[var(--radius)] border bg-card p-3" data-testid={`activity-${entry.id}`}>
       <div className="flex items-start gap-2.5">
-        <span
-          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
-          style={{ background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint }}
-        >
-          <Icon className="w-3.5 h-3.5" />
-        </span>
+        {entry.kind === "parent" ? (
+          // The family did this, so show the family - the same reason a note
+          // carries its author's name.
+          parentPhotoUrl
+            ? <img src={getPhotoSrc(parentPhotoUrl) || undefined} alt={parentName || "Parent"} className="w-7 h-7 rounded-full object-cover object-top shrink-0 mt-0.5" />
+            : <DoctorMonogram name={parentName || "Parent"} size={28} rounded="9999px" />
+        ) : (
+          <span
+            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+            style={{ background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint }}
+          >
+            <Icon className="w-3.5 h-3.5" />
+          </span>
+        )}
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
             <span className="text-sm font-medium font-ui">{entry.title}</span>
@@ -482,24 +501,32 @@ export function ParentActivitySection({ record }: { record: ParentRecord }) {
       </div>
 
       {composer === "note" && (
-        <div className="rounded-[var(--radius)] bg-secondary p-3" data-testid="panel-activity-note">
+        <div className="rounded-[var(--radius)] border bg-secondary/40 p-3" data-testid="panel-activity-note">
           <NoteComposer record={record} onPosted={() => setComposer(null)} />
         </div>
       )}
       {composer === "next_step" && (
-        <div className="rounded-[var(--radius)] bg-secondary p-3" data-testid="panel-activity-next-step">
+        <div className="rounded-[var(--radius)] border bg-secondary/40 p-3" data-testid="panel-activity-next-step">
           <ParentFollowUpPanel record={record} />
         </div>
       )}
 
       {entries.length === 0 && (
-        <div className="rounded-[var(--radius)] bg-secondary p-4">
+        <div className="rounded-[var(--radius)] border bg-secondary/40 p-4">
           <p className="t-helper">Nothing has happened yet. The first note is usually why this family came in.</p>
         </div>
       )}
 
       <div className="space-y-2" data-testid="activity-feed">
-        {entries.map((e) => <EntryCard key={e.id} entry={e} parentUserId={record.parent.id} />)}
+        {entries.map((e) => (
+          <EntryCard
+            key={e.id}
+            entry={e}
+            parentUserId={record.parent.id}
+            parentName={record.parent.name ?? null}
+            parentPhotoUrl={record.parent.photoUrl ?? null}
+          />
+        ))}
       </div>
 
     </div>

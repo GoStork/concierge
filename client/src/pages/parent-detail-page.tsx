@@ -181,6 +181,10 @@ export default function ParentDetailPage() {
                     {/* No sessionId: the record is the full relationship view,
                         which is exactly what this card's own docs say to omit
                         it for. */}
+                    {/* Same surface the Home journey cards sit on, so the
+                        ladder does not float on bare white while every other
+                        block on the page has a card under it. */}
+                    <div className="rounded-[var(--radius)] border bg-secondary/40 p-4">
                     <JourneyTimelineCard
                       parentUserId={record.parent.id}
                       providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
@@ -194,6 +198,7 @@ export default function ParentDetailPage() {
                       orientation={isWide ? "horizontal" : "vertical"}
                       testId="record-journey"
                     />
+                    </div>
                   </RecordSection>
                 </div>
 
