@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { OptionPills } from "@/components/ui/option-pills";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
-import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-monogram";
+import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { useToast } from "@/hooks/use-toast";
 import type { CrmScope, ParentRecord, ProviderOrg } from "./parent-record-types";
 
@@ -327,7 +327,11 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
                 })}
                 data-testid={`option-owner-${u.id}`}
               >
-                <DoctorMonogram name={u.name || "?"} size={22} rounded="999px" />
+                {/* DoctorAvatar, not DoctorMonogram: the endpoint returns
+                    photoUrl and the collapsed chip already shows it, so the
+                    list this chip is chosen FROM was the one place still
+                    drawing initials for someone with a photo. */}
+                <DoctorAvatar name={u.name || "?"} photoUrl={u.photoUrl} size={22} rounded="999px" />
                 <span className="flex-1 truncate">{u.name || "Unnamed"}</span>
                 {current?.ownerUserId === u.id && <Check className="w-3.5 h-3.5" />}
               </button>
