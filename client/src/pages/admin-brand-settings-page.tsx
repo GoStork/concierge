@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { BrandSettings, BRAND_DEFAULTS, applyBrandPreview, applyBrandToDocument, pickReadableFg } from "@/hooks/use-brand-settings";
+import { BrandSettings, BRAND_DEFAULTS, applyBrandPreview, applyBrandToDocument, pickReadableFg, hexToHsl } from "@/hooks/use-brand-settings";
 import { deriveChatPalette, hslString } from "@/lib/chat-palette";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import ImageUploader from "@/components/image-uploader";
@@ -3316,7 +3316,23 @@ export function BrandSettingsForm({
         </div>
 
         <div className="space-y-6">
-          <Card className="rounded-[var(--container-radius)] p-6 space-y-5 lg:sticky lg:top-20">
+          <Card
+            className="rounded-[var(--container-radius)] p-6 space-y-5 lg:sticky lg:top-20"
+            style={{
+              // Scope the theme tokens to the form's values. Without this the
+              // preview's Button/Input/Badge components read the viewer's
+              // document-wide brand (the admin sees GoStork's colors while
+              // editing a provider's brand) instead of the config being edited.
+              "--primary": hexToHsl(form.primaryColor || BRAND_DEFAULTS.primaryColor),
+              "--primary-foreground": hexToHsl(form.primaryForegroundColor || pickReadableFg(form.primaryColor || BRAND_DEFAULTS.primaryColor)),
+              "--secondary": hexToHsl(form.secondaryColor || BRAND_DEFAULTS.secondaryColor),
+              "--secondary-foreground": hexToHsl(form.secondaryForegroundColor || pickReadableFg(form.secondaryColor || BRAND_DEFAULTS.secondaryColor)),
+              "--accent": hexToHsl(form.accentColor || BRAND_DEFAULTS.accentColor),
+              "--accent-foreground": hexToHsl(form.accentForegroundColor || pickReadableFg(form.accentColor || BRAND_DEFAULTS.accentColor)),
+              "--destructive": hexToHsl(form.errorColor || BRAND_DEFAULTS.errorColor),
+              "--radius": `${form.borderRadius ?? 0.5}rem`,
+            } as React.CSSProperties}
+          >
             <h3 className="font-display text-base font-semibold">Theme Preview</h3>
 
             <div className="space-y-3">

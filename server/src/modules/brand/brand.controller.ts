@@ -743,16 +743,16 @@ export class BrandController {
   async resetProviderSettings(@Req() req: any, @Param("providerId") providerId: string) {
     await this.assertProviderAccess(req, providerId);
 
+    // Reset = remove every override (including logos) so the provider fully
+    // re-inherits the live global brand. Deleting the row is the cleanest
+    // "no overrides" state; effective settings fall back to SiteSettings.
     const existing = await this.prisma.providerBrandSettings.findUnique({
       where: { providerId },
     });
     if (existing) {
-      return this.prisma.providerBrandSettings.update({
-        where: { providerId },
-        data: DEFAULTS,
-      });
+      await this.prisma.providerBrandSettings.delete({ where: { providerId } });
     }
-    return { ...DEFAULTS, id: null, providerId };
+    return this.getProviderSettings(req, providerId);
   }
 
   @Put("provider/:providerId/toggle")
