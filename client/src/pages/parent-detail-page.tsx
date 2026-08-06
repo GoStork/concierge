@@ -13,6 +13,7 @@
  */
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useMediaQuery } from "@/hooks/use-mobile";
 import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -68,6 +69,10 @@ export default function ParentDetailPage() {
       next.set("col", key);
       return next;
     }, { replace: true });
+
+  // Matches the `lg:` the three-column grid uses, so there is one breakpoint
+  // on this page rather than two that can disagree.
+  const isWide = useMediaQuery("(min-width: 1024px)");
 
   /** Hidden on a phone unless it is the open tab; always shown from lg up. */
   const colClass = (key: ColumnKey) =>
@@ -166,6 +171,31 @@ export default function ParentDetailPage() {
               {/* items-start so a short column does not stretch to the height
                   of the tallest one and leave a long empty card. */}
               <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)_minmax(0,340px)]">
+                {/* ── Full-width band: where this family is in the journey ──
+                    Spans all three columns so the twelve rungs get the whole
+                    page width and land on ONE row. Inside the middle column it
+                    only had ~690px and had to wrap onto four. It is still part
+                    of the Activity tab on a phone - same section, hoisted, not
+                    duplicated. */}
+                <div className={cn("lg:col-span-3", colClass("activity"))} data-testid="record-band-journey">
+                  <RecordSection id="journey" title="Activity" open={isOpen("journey")} onToggle={toggle}>
+                    {/* No sessionId: the record is the full relationship view,
+                        which is exactly what this card's own docs say to omit
+                        it for. */}
+                    <JourneyTimelineCard
+                      parentUserId={record.parent.id}
+                      providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
+                      showEvents
+                      variant="sidebar"
+                      // Horizontal only where there is a full page width to
+                      // spend. Below lg the rungs would be ~30px apart, so it
+                      // stays the vertical ladder it was drawn as.
+                      orientation={isWide ? "horizontal" : "vertical"}
+                      testId="record-journey"
+                    />
+                  </RecordSection>
+                </div>
+
                 {/* ── Left: who this family is ───────────────────────────── */}
                 <DenseColumn>
                   <div className={colClass("contact")} data-testid="record-col-contact">
@@ -188,24 +218,6 @@ export default function ParentDetailPage() {
 
                 {/* ── Middle: what happened, and what was said about it ──── */}
                 <div className={colClass("activity")} data-testid="record-col-activity">
-                  <RecordSection id="journey" title="Activity" open={isOpen("journey")} onToggle={toggle}>
-                    {/* No sessionId: the record is the full relationship view,
-                        which is exactly what this card's own docs say to omit
-                        it for. The wrapper is a plain bordered div, never a
-                        Card - Card's overflow-hidden clips the timeline. */}
-                    <JourneyTimelineCard
-                      parentUserId={record.parent.id}
-                      providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
-                      showEvents
-                      variant="sidebar"
-                      // Wide-and-short column, so the ladder runs left to
-                      // right; the vertical one was drawn for a narrow rail
-                      // and left this column mostly empty space.
-                      orientation="horizontal"
-                      testId="record-journey"
-                    />
-                  </RecordSection>
-
                   <RecordSection id="crm" title="Notes" open={isOpen("crm")} onToggle={toggle}>
                     <ParentNotesPanel record={record} />
                   </RecordSection>

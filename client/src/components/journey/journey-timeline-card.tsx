@@ -153,9 +153,12 @@ function stageLabelClass(stage: StageOut): string {
 /**
  * One rung of the horizontal ladder: dot on a rail, label and date beneath.
  *
- * Twelve rungs will not fit legibly across any column we have, so the track
- * scrolls sideways and each rung holds a fixed width. Squeezing them to fit
- * would put "Consultation Completed" on four lines of two characters.
+ * Rungs SHARE the row rather than holding a fixed width, so the whole ladder
+ * is always exactly one row however many stages a journey has. It got a fixed
+ * width first, which meant twelve rungs needed ~1250px and wrapped onto four
+ * rows inside a column - a ladder you have to read in a boustrophedon is not
+ * a ladder. The caller's job is to give this enough room; below `lg` the
+ * record page switches to the vertical ladder instead of squeezing.
  */
 function StageColumn({ stage, isFirst, isLast, branch }: {
   stage: StageOut;
@@ -168,7 +171,9 @@ function StageColumn({ stage, isFirst, isLast, branch }: {
   // absolute positioning, and it survives any column width.
   const rail = "h-px flex-1 bg-primary/50";
   return (
-    <div className="w-[104px] shrink-0" data-testid={`journey-stage-${stage.id}`}>
+    // basis-0 + flex-1: every rung gets an equal share of the row, and
+    // min-w-0 lets a long label wrap under its dot instead of widening it.
+    <div className="flex-1 basis-0 min-w-0" data-testid={`journey-stage-${stage.id}`}>
       <div className="flex items-center">
         <div className={isFirst ? "flex-1" : rail} />
         <StageMark stage={stage} />
@@ -270,14 +275,10 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
         </div>
       )}
       {horizontal ? (
-        // Wraps onto as many rows as it needs rather than compressing or
-        // scrolling. Twelve legible rungs are wider than any column here, and
-        // a scroll track hid two thirds of the journey behind an affordance
-        // nobody sees - the rails run to the row edge and pick up again on the
-        // next row, which reads as the continuation it is. items-start so a
-        // rung with a branch hanging under it does not stretch its neighbours.
+        // One row, always. items-start so a rung with a branch hanging under
+        // it does not stretch its neighbours to match.
         <div className="pb-1">
-          <div className="flex flex-wrap items-start gap-y-3">
+          <div className="flex items-start">
             {mainStages.map((st, i) => (
               <StageColumn
                 key={st.id}
