@@ -22,7 +22,7 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { cn } from "@/lib/utils";
 import { MatchStatusBadge, chatDeepLink } from "./parent-cells";
 import { useDense } from "./record-density";
-import type { ConversationRow, ParentRecord, SavedProfileRow } from "./parent-record-types";
+import type { ConversationRow, ParentRecord, SavedProfileRow, SubjectKind } from "./parent-record-types";
 
 const KIND_LABEL: Record<string, string> = {
   "egg-donor": "Egg donor",
@@ -34,12 +34,26 @@ const KIND_LABEL: Record<string, string> = {
   none: "Concierge",
 };
 
-function Avatar({ photoUrl, name, status }: { photoUrl: string | null; name: string; status?: string | null }) {
+function Avatar({ photoUrl, name, status, kind }: {
+  photoUrl: string | null; name: string; status?: string | null; kind?: SubjectKind;
+}) {
   const src = photoUrl ? getPhotoSrc(photoUrl) : null;
+  // A clinic or agency row shows a LOGO, not a face. object-cover crops it to
+  // a square - PFCLA's wordmark came out as a fragment of a yellow squiggle.
+  // Logos are letterboxed on a neutral tile; people keep object-top, which is
+  // what keeps a head in frame.
+  const isLogo = kind === "clinic" || kind === "agency";
   return (
     <div className="relative w-10 h-10 shrink-0">
       {src ? (
-        <img src={src} alt={name} className="w-10 h-10 rounded-[var(--radius)] object-cover object-top" />
+        <img
+          src={src}
+          alt={name}
+          className={cn(
+            "w-10 h-10 rounded-[var(--radius)]",
+            isLogo ? "object-contain bg-secondary/40 p-0.5" : "object-cover object-top",
+          )}
+        />
       ) : (
         <DoctorMonogram name={name} size={40} rounded="var(--radius)" />
       )}
@@ -84,7 +98,7 @@ export function ConversationRowCard({
       data-testid={`row-conversation-${row.sessionId}`}
     >
       <div className="flex items-start gap-3 min-w-0 flex-1">
-      <Avatar photoUrl={row.photoUrl} name={row.displayName} status={row.profileStatus} />
+      <Avatar photoUrl={row.photoUrl} name={row.displayName} status={row.profileStatus} kind={row.subjectKind} />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium truncate">{row.displayName}</span>
@@ -139,7 +153,7 @@ function SavedRowCard({ row }: { row: SavedProfileRow }) {
       data-testid={`row-saved-${row.profileId}`}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
-      <Avatar photoUrl={row.photoUrl} name={row.displayName} status={row.profileStatus} />
+      <Avatar photoUrl={row.photoUrl} name={row.displayName} status={row.profileStatus} kind={row.subjectKind} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium truncate">{row.displayName}</p>
         {/* break-words: a provider like "Sperm Bank California | Fertility

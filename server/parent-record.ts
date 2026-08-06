@@ -669,8 +669,35 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   // ── Conversations ────────────────────────────────────────────────────────
   const conversations = sessions.map((s) => {
     const kind = classifySubject(s.subjectType);
-    const prof = s.subjectProfileId ? profileById.get(s.subjectProfileId) : null;
+    const rawProf = s.subjectProfileId ? profileById.get(s.subjectProfileId) : null;
     const org = s.providerId ? orgById.get(s.providerId) : null;
+
+    // LEAK GUARD: a session's providerId and its SUBJECT can belong to
+    // different orgs. A live example: an AiChatSession stamped to Pacific
+    // Fertility Center (an IVF clinic) whose subject is a surrogate owned by
+    // Family Creations - so the clinic was being shown another agency's
+    // roster profile, with name, photo and a link to it.
+    //
+    // The saved-profiles list has had this check since it was written; the
+    // conversation list never did, because a thread's own providerId looked
+    // like scoping enough. It is not - that field says who the THREAD is
+    // with, not who owns what it is about.
+    //
+    // The thread itself is not hidden: it genuinely belongs to this provider
+    // and dropping it would silently lose a row they can see elsewhere. Only
+    // the foreign subject is withheld, and the mis-stamp is logged so the
+    // cause stays visible instead of being papered over here.
+    const foreignSubject = !!(
+      scopeProviderId && rawProf && rawProf.providerId && rawProf.providerId !== scopeProviderId
+    );
+    if (foreignSubject) {
+      console.warn(
+        `[parent-record] session ${s.id} is stamped providerId=${s.providerId} but its subject ` +
+        `${s.subjectProfileId} belongs to ${rawProf!.providerId} - subject withheld from the ` +
+        `scoped viewer. The session stamp is probably wrong.`,
+      );
+    }
+    const prof = foreignSubject ? null : rawProf;
     const resolvedKind: SubjectKind = prof ? prof.kind : kind;
     const doc = resolvedKind === "doctor" && s.subjectProfileId
       ? doctorBySlug.get(s.subjectProfileId)
@@ -687,15 +714,15 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       providerId: s.providerId,
       providerName: org?.name ?? null,
       providerLogoUrl: org?.logoUrl ?? null,
-      subjectKind: resolvedKind,
-      subjectProfileId: s.subjectProfileId,
+      subjectKind: foreignSubject ? "none" as SubjectKind : resolvedKind,
+      subjectProfileId: foreignSubject ? null : s.subjectProfileId,
       displayName,
       photoUrl: prof?.photo ?? doc?.photoUrl ?? org?.logoUrl ?? null,
       profileStatus: prof?.status ?? null,
       // A doctor's subjectProfileId is a SLUG, not a uuid - /doctors/:slug is
       // keyed that way. Passing null here meant every doctor thread rendered
       // with no Profile link at all.
-      profileUrl: profileUrlFor(
+      profileUrl: foreignSubject ? null : profileUrlFor(
         resolvedKind,
         prof?.providerId ?? s.providerId,
         s.subjectProfileId,
