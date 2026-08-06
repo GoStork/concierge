@@ -170,7 +170,7 @@ export default function ParentDetailPage() {
 
               {/* items-start so a short column does not stretch to the height
                   of the tallest one and leave a long empty card. */}
-              <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)_minmax(0,340px)]">
+              <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)_minmax(0,340px)]">
                 {/* ── Full-width band: where this family is in the journey ──
                     Spans all three columns so the twelve rungs get the whole
                     page width and land on ONE row. Inside the middle column it
@@ -206,7 +206,7 @@ export default function ParentDetailPage() {
                     <ParentRecordHeader
                       record={record}
                       isAdmin={!!isAdmin}
-                      onJumpToCrm={() => { setCol("related"); toggle("followup", true); }}
+                      onJumpToCrm={() => { setCol("activity"); toggle("followup", true); }}
                       ownerSlot={<ParentLeadOwner record={record} />}
                       open={isOpen("identity")}
                       onToggle={() => toggle("identity")}
@@ -221,15 +221,18 @@ export default function ParentDetailPage() {
                   <RecordSection id="crm" title="Notes" open={isOpen("crm")} onToggle={toggle}>
                     <ParentNotesPanel record={record} />
                   </RecordSection>
+
+                  {/* Beside the notes, not off in the related rail: a note and
+                      a next step are both "what we are doing about this
+                      family", as opposed to the records attached to them. */}
+                  <RecordSection id="followup" title="Next step and tags" open={isOpen("followup")} onToggle={toggle}>
+                    <ParentFollowUpPanel record={record} />
+                  </RecordSection>
                 </div>
 
                 {/* ── Right: everything else attached to this family ─────── */}
                 <DenseColumn>
                   <div className={colClass("related")} data-testid="record-col-related">
-                    <RecordSection id="followup" title="Next step and tags" open={isOpen("followup")} onToggle={toggle}>
-                      <ParentFollowUpPanel record={record} />
-                    </RecordSection>
-
                     <RecordSection
                       id="interested"
                       title="Interested profiles"
@@ -242,7 +245,7 @@ export default function ParentDetailPage() {
 
                     <RecordSection
                       id="money"
-                      title="Cost sheets, invoices and agreements"
+                      title="Documents"
                       count={record.money.byProvider.length}
                       open={isOpen("money")}
                       onToggle={toggle}

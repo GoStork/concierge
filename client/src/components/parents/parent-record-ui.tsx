@@ -173,7 +173,7 @@ function ContactLine({ record }: { record: ParentRecord }) {
           // button instead of wrapping.
           <span key={m.id} className="flex items-start gap-1 min-w-0 max-w-full t-micro-value" data-testid={`record-email-${m.id}`}>
             <span className="t-micro-label shrink-0">Email</span>
-            <span className="min-w-0 break-all">{m.email}</span>
+            <span className="min-w-0 truncate" title={m.email as string}>{m.email}</span>
             <CopyButton value={m.email as string} testId={`btn-copy-record-email-${m.id}`} />
           </span>
         ))}
@@ -248,19 +248,20 @@ export function ParentRecordHeader({
           <DoctorMonogram name={record.parent.name || "Parent"} size={48} rounded="var(--radius)" />
         )}
         {/* The name is the page title now, so it is not repeated here. */}
-        <div className="min-w-0 space-y-1.5">
-          <div className="flex items-center gap-2 flex-wrap">
-            <MatchStatusBadge status={record.matchStatus} />
-            <ServiceChips services={record.services} limit={0} testId="record-services" />
-            <HouseholdBadge
-              memberNames={record.accountMembers.map((m) => m.name || "")}
-              selfName={record.parent.name}
-              testId="record-household"
-            />
-          </div>
-          <ContactLine record={record} />
+        <div className="min-w-0 flex items-center gap-2 flex-wrap">
+          <MatchStatusBadge status={record.matchStatus} />
+          <ServiceChips services={record.services} limit={0} testId="record-services" />
+          <HouseholdBadge
+            memberNames={record.accountMembers.map((m) => m.name || "")}
+            selfName={record.parent.name}
+            testId="record-household"
+          />
         </div>
       </div>
+      {/* Full width, NOT beside the avatar. Sharing the row with a 48px
+          avatar left an address 220px when it needed 223, so it broke onto a
+          second line three pixels short. */}
+      <ContactLine record={record} />
 
       {/* Read-only mirror of the CRM state, so "what is next" is answerable
           without opening the notes panel. Clicking opens it. */}
@@ -355,56 +356,6 @@ export function ParentIdentitySection({ record }: { record: ParentRecord }) {
         </div>
       )}
 
-      {ip && (
-        <div className="rounded-[var(--radius)] border p-4" data-testid="record-ipform">
-          <div className="flex items-center gap-2 mb-2">
-            <ClipboardList className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium font-ui">Intended Parent Form</span>
-          </div>
-          {ip.status === "SUBMITTED" && ip.responseId ? (
-            <div className="space-y-2">
-              <p className="t-helper">
-                Submitted{ip.submittedAt ? ` on ${new Date(ip.submittedAt).toLocaleDateString()}` : ""} - download it with your branding.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open(`/api/provider/ip-forms/${ip.responseId}/pdf?variant=full`, "_blank", "noopener,noreferrer")}
-                  data-testid="record-ipform-full"
-                >
-                  <Download className="w-3.5 h-3.5 mr-1.5" /> Full PDF
-                </Button>
-                {ip.surrogateAvailable && (
-                  <Button
-                    size="sm"
-                    onClick={() => window.open(`/api/provider/ip-forms/${ip.responseId}/pdf?variant=surrogate`, "_blank", "noopener,noreferrer")}
-                    data-testid="record-ipform-surrogate"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Surrogate Version
-                  </Button>
-                )}
-              </div>
-            </div>
-          ) : submittedButLocked ? (
-            // The responseId is withheld behind Gate B. Saying "not submitted
-            // yet" here was a flat lie about a form the family did complete.
-            <p className="t-helper" data-testid="record-ipform-locked">
-              Submitted{ip.submittedAt ? ` on ${new Date(ip.submittedAt).toLocaleDateString()}` : ""}. The PDF unlocks once this
-              family shares their contact details with you - sending an invoice or an agreement does it.
-            </p>
-          ) : (
-            <p className="t-helper">
-              Not submitted yet
-              {ip.surrogateAvailable
-                ? " - a match call cannot be scheduled until the family completes and signs their form."
-                : " - it becomes available to download here once the family completes and signs it."}
-              {ip.promptedAt ? " They have been asked and receive reminders." : ""}
-            </p>
-          )}
-        </div>
-      )}
-
       {/* hideIdentity: the header directly above already shows the photo,
           name, email and phone. Repeating them here is what made the page
           read as two separate Profile blocks. */}
@@ -416,6 +367,70 @@ export function ParentIdentitySection({ record }: { record: ParentRecord }) {
   );
 }
 
+
+/**
+ * The Intended Parent Form card.
+ *
+ * Used to sit between the phone number and the location, splitting the
+ * family's basic details in half with a bordered card and two download
+ * buttons. It is paperwork, so it lives with the rest of the paperwork now -
+ * rendered at the top of ParentMoneySection.
+ */
+export function ParentIpFormCard({ record }: { record: ParentRecord }) {
+  const ip = record.ipForm;
+  if (!ip) return null;
+  const submittedButLocked = ip.status === "SUBMITTED" && !ip.responseId;
+  return (
+    <div className="rounded-[var(--radius)] border p-4" data-testid="record-ipform">
+      <div className="flex items-center gap-2 mb-2">
+        <ClipboardList className="w-4 h-4 text-primary" />
+        <span className="text-sm font-medium font-ui">Intended Parent Form</span>
+      </div>
+      {ip.status === "SUBMITTED" && ip.responseId ? (
+        <div className="space-y-2">
+          <p className="t-helper">
+            Submitted{ip.submittedAt ? ` on ${new Date(ip.submittedAt).toLocaleDateString()}` : ""} - download it with your branding.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(`/api/provider/ip-forms/${ip.responseId}/pdf?variant=full`, "_blank", "noopener,noreferrer")}
+              data-testid="record-ipform-full"
+            >
+              <Download className="w-3.5 h-3.5 mr-1.5" /> Full PDF
+            </Button>
+            {ip.surrogateAvailable && (
+              <Button
+                size="sm"
+                onClick={() => window.open(`/api/provider/ip-forms/${ip.responseId}/pdf?variant=surrogate`, "_blank", "noopener,noreferrer")}
+                data-testid="record-ipform-surrogate"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> Surrogate Version
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : submittedButLocked ? (
+        // The responseId is withheld behind Gate B. Saying "not submitted
+        // yet" here was a flat lie about a form the family did complete.
+        <p className="t-helper" data-testid="record-ipform-locked">
+          Submitted{ip.submittedAt ? ` on ${new Date(ip.submittedAt).toLocaleDateString()}` : ""}. The PDF unlocks once this
+          family shares their contact details with you - sending an invoice or an agreement does it.
+        </p>
+      ) : (
+        <p className="t-helper">
+          Not submitted yet
+          {ip.surrogateAvailable
+            ? " - a match call cannot be scheduled until the family completes and signs their form."
+            : " - it becomes available to download here once the family completes and signs it."}
+          {ip.promptedAt ? " They have been asked and receive reminders." : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── Money ──────────────────────────────────────────────────────────────────
 
 export function ParentMoneySection({
@@ -423,16 +438,15 @@ export function ParentMoneySection({
 }: { record: ParentRecord; showProviderName: boolean }) {
   const dense = useDense();
   const groups = record.money.byProvider;
-  if (groups.length === 0) {
-    return (
-      <div className="rounded-[var(--radius)] bg-secondary p-4">
-        <p className="t-helper">No cost sheets, invoices or agreements yet.</p>
-      </div>
-    );
-  }
   const isAdmin = record.viewer.role === "admin";
   return (
     <div className="space-y-5">
+      <ParentIpFormCard record={record} />
+      {groups.length === 0 && (
+        <div className="rounded-[var(--radius)] bg-secondary p-4">
+          <p className="t-helper">No cost sheets, invoices or agreements yet.</p>
+        </div>
+      )}
       {groups.map((g) => (
         <div key={g.providerId} data-testid={`money-group-${g.providerId}`}>
           {showProviderName && (
