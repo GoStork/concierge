@@ -206,31 +206,31 @@ export function InlineBookingNotification({
               </>
             ) : isParentNoShow ? (
               <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-muted-foreground" />
+                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-[hsl(var(--brand-warning))]" />
                 </div>
                 <p className="font-bold text-sm">Parent No Show</p>
-                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]">
                   Parent No Show
                 </span>
               </>
             ) : isProviderNoShow ? (
               <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-muted-foreground" />
+                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-[hsl(var(--brand-warning))]" />
                 </div>
                 <p className="font-bold text-sm">Provider No Show</p>
-                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]">
                   Provider No Show
                 </span>
               </>
             ) : isNoShow ? (
               <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-muted-foreground" />
+                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-[hsl(var(--brand-warning))]" />
                 </div>
                 <p className="font-bold text-sm">No Show</p>
-                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
+                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]">
                   No Show
                 </span>
               </>

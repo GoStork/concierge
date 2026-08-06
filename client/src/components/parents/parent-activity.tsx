@@ -28,7 +28,7 @@ import { InlineBookingNotification } from "@/components/chat/inline-booking-noti
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, CalendarCheck, CalendarClock, CalendarX, ChevronDown, ExternalLink,
-  FileText, Mail, MessageSquare,
+  Clock, FileText, Mail, MessageSquare,
   Sparkles, StickyNote, Tag as TagIcon, TrendingUp, User, Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -183,17 +183,17 @@ const CALL_ICONS: Record<string, typeof CalendarClock> = {
   CONSULTATION_RESCHEDULED: CalendarClock,
   CONSULTATION_CANCELED: CalendarX,
   CONSULTATION_COMPLETED: Video,
-  CONSULTATION_NO_SHOW_PARENT: CalendarX,
-  CONSULTATION_NO_SHOW_PROVIDER: CalendarX,
-  CONSULTATION_NO_SHOW_BOTH: CalendarX,
+  CONSULTATION_NO_SHOW_PARENT: Clock,
+  CONSULTATION_NO_SHOW_PROVIDER: Clock,
+  CONSULTATION_NO_SHOW_BOTH: Clock,
   MATCH_CALL_SCHEDULED: CalendarClock,
   MATCH_CALL_CONFIRMED: CalendarCheck,
   MATCH_CALL_RESCHEDULED: CalendarClock,
   MATCH_CALL_CANCELED: CalendarX,
   MATCH_CALL_COMPLETED: Video,
-  MATCH_CALL_NO_SHOW_PARENT: CalendarX,
-  MATCH_CALL_NO_SHOW_PROVIDER: CalendarX,
-  MATCH_CALL_NO_SHOW_BOTH: CalendarX,
+  MATCH_CALL_NO_SHOW_PARENT: Clock,
+  MATCH_CALL_NO_SHOW_PROVIDER: Clock,
+  MATCH_CALL_NO_SHOW_BOTH: Clock,
 };
 
 /** These arrive with their real text from the record payload instead. */
@@ -549,6 +549,7 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
   const meta = KIND_META[entry.kind];
   const isSms = entry.detail?.type === "message" && entry.detail.channel === "SMS";
   const callIcon = CALL_ICONS[entry.eventType || ""];
+  const isNoShow = /NO_SHOW/.test(entry.eventType || "");
   // An SMS card was showing an envelope. The icon follows the channel, not
   // the bucket the two share.
   const Icon = isSms ? MessageSquare : (callIcon || meta.icon);
@@ -557,6 +558,10 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
     // every messaging app has trained people to expect. --brand-success
     // rather than iMessage's literal hex, per the no-hardcoded-colour rule.
     isSms ? "hsl(var(--brand-success))"
+    // A missed call is not a cancelled one: nobody decided anything, it just
+    // needs chasing. Warning tone, matching the booking widget everywhere
+    // else in the product.
+    : isNoShow ? "hsl(var(--brand-warning))"
     // Calendar red, the way every calendar app has trained people to expect.
     // --destructive is the brand's red and is used here for its COLOUR, not
     // its "danger" meaning - a booked consultation is good news. The camera

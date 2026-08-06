@@ -236,7 +236,11 @@ export function BookingDetailDialog({ booking, open, onClose }: { booking: any; 
               booking.status === "CANCELLED" ? "bg-destructive/15 text-destructive" :
               booking.status === "RESCHEDULED" ? "bg-muted text-muted-foreground" :
               booking.status === "EXPIRED" ? "bg-muted text-muted-foreground" :
-              wasCompleted || isParentNoShow || isProviderNoShow || isNoShow ? "bg-muted text-muted-foreground" :
+              // A no-show is not the same as a completed meeting: one is done,
+              // the other needs chasing. Warning tone, matching the booking
+              // widget everywhere else in the product.
+              isParentNoShow || isProviderNoShow || isNoShow ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]" :
+              wasCompleted ? "bg-muted text-muted-foreground" :
               booking.status === "CONFIRMED" ? "bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]" :
               booking.status === "PENDING" ? "bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]" :
               "bg-muted text-foreground"
