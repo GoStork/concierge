@@ -51,6 +51,39 @@ function nonEmpty(val: string | null | undefined): string | null {
   return val.trim();
 }
 
+
+/**
+ * Onboarding stores what the parent picked, in the first person the question
+ * was asked in - "I'm a man", "I'm a woman". That reads as an answer, not a
+ * value, when it is sitting next to a GENDER IDENTITY label. Same idea for
+ * the multi-select fields, which store a lowercase comma-joined string:
+ * "married,single,partnered" is a serialization format, not a sentence.
+ */
+const ANSWER_LABELS: Record<string, string> = {
+  "i'm a man": "Man",
+  "i'm a woman": "Woman",
+  "i'm non-binary": "Non-binary",
+  "i'm transgender": "Transgender",
+  "prefer not to say": "Prefer not to say",
+};
+
+function titleCase(word: string): string {
+  return word.length ? word[0].toUpperCase() + word.slice(1) : word;
+}
+
+/** Display form for a stored answer: mapped label, or a title-cased list. */
+function displayValue(raw: string): string {
+  const mapped = ANSWER_LABELS[raw.trim().toLowerCase()];
+  if (mapped) return mapped;
+  if (!raw.includes(",")) return raw;
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => (ANSWER_LABELS[part.toLowerCase()] || titleCase(part)))
+    .join(", ");
+}
+
 interface ProfileRow { label: string; value: string }
 interface ProfileSection { title: string; rows: ProfileRow[] }
 
@@ -68,7 +101,7 @@ const fmtMoney = (n: number) => `$${n.toLocaleString("en-US")}`;
 const fmtHeight = (in_: number) => { const ft = Math.floor(in_ / 12); return `${ft}'${in_ % 12}"`; };
 
 function pushText(rows: ProfileRow[], label: string, val: string | null | undefined) {
-  if (nonEmpty(val)) rows.push({ label, value: val!.trim() });
+  if (nonEmpty(val)) rows.push({ label, value: displayValue(val!.trim()) });
 }
 function pushBool(rows: ProfileRow[], label: string, val: boolean | null | undefined) {
   const v = boolLabel(val);
@@ -277,13 +310,13 @@ export function ParentProfileCard({ user, isOnline, layout = "rail", hideIdentit
         )}
         {!hideIdentity && basics.phone && <div className="t-micro-value"><span className="t-micro-label">Phone</span> {basics.phone}</div>}
         {basics.age && <div className="t-micro-value"><span className="t-micro-label">Age</span> {basics.age}</div>}
-        {basics.gender && <div className="t-micro-value"><span className="t-micro-label">Gender identity</span> {basics.gender}</div>}
+        {basics.gender && <div className="t-micro-value"><span className="t-micro-label">Gender identity</span> {displayValue(basics.gender)}</div>}
         {basics.sexualOrientation && (
           <div className="t-micro-value"><span className="t-micro-label">Sexual orientation</span> {basics.sexualOrientation}</div>
         )}
         {basics.lgbtqFamily && <div className="t-micro-value"><span className="t-micro-label">LGBTQ+ family</span> {basics.lgbtqFamily}</div>}
         {basics.relationshipStatus && (
-          <div className="t-micro-value"><span className="t-micro-label">Relationship status</span> {basics.relationshipStatus}</div>
+          <div className="t-micro-value"><span className="t-micro-label">Relationship status</span> {displayValue(basics.relationshipStatus)}</div>
         )}
         {basics.partnerName && <div className="t-micro-value"><span className="t-micro-label">Partner name</span> {basics.partnerName}</div>}
         {basics.partnerAge && <div className="t-micro-value"><span className="t-micro-label">Partner's age</span> {basics.partnerAge}</div>}
@@ -293,7 +326,9 @@ export function ParentProfileCard({ user, isOnline, layout = "rail", hideIdentit
       <div className={wide ? "columns-1 md:columns-2 lg:columns-3 gap-x-8 [&>div]:break-inside-avoid" : undefined}>
         {sections.map((section) => (
           <div key={section.title} className="border-t pt-3 mt-3">
-            <p className="t-micro-label mb-2">{section.title}</p>
+            {/* Not t-micro-label: that is the token every LABEL below uses, so
+              the heading disappeared into the list it was heading. */}
+          <p className="text-xs font-semibold uppercase tracking-wide text-foreground mb-2 font-ui">{section.title}</p>
             <div className="space-y-1.5">
               {section.rows.map((row) => (
                 <div key={row.label} className="t-micro-value">

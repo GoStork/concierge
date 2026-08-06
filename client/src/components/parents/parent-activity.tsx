@@ -25,7 +25,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, CalendarClock, ChevronDown, ExternalLink, FileText, MessageSquare,
+  AlertTriangle, CalendarClock, ChevronDown, ExternalLink, FileText, Mail, MessageSquare,
   Sparkles, StickyNote, Tag as TagIcon, TrendingUp, User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,9 +44,10 @@ import type { ActivityDetail, ParentRecord } from "./parent-record-types";
  * change nor something we sent, and filing it under either would be a lie
  * about who acted.
  */
-type ActivityKind = "note" | "next_step" | "tag" | "deal" | "ai" | "parent";
+type ActivityKind = "note" | "next_step" | "tag" | "deal" | "ai" | "parent" | "message";
 
 const KIND_META: Record<ActivityKind, { label: string; icon: typeof StickyNote; tone: "accent" | "primary" | "muted" }> = {
+  message: { label: "AI Activity", icon: Mail, tone: "accent" },
   note: { label: "Note", icon: StickyNote, tone: "accent" },
   next_step: { label: "Next step", icon: CalendarClock, tone: "primary" },
   tag: { label: "Tag", icon: TagIcon, tone: "accent" },
@@ -90,6 +91,7 @@ const PARENT_EVENTS = new Set([
  * row knows better than a static list.
  */
 function kindForEvent(ev: { eventType: string; actorRole: string | null }): ActivityKind {
+  if (ev.eventType === "MESSAGE_EMAIL" || ev.eventType === "MESSAGE_SMS") return "message";
   if (ev.actorRole === "parent" || PARENT_EVENTS.has(ev.eventType)) return "parent";
   if (DEAL_EVENTS.has(ev.eventType)) return "deal";
   return "ai";
@@ -149,6 +151,8 @@ const EVENT_LABELS: Record<string, string> = {
   REVIEW_PROMPTED: "Review requested",
   REVIEW_SUBMITTED: "Review submitted",
   REVIEW_UPDATED: "Review updated",
+  MESSAGE_EMAIL: "Email sent",
+  MESSAGE_SMS: "Text message sent",
   IP_FORM_PROMPTED: "Parent Form requested",
   IP_FORM_SUBMITTED: "Parent Form submitted",
   CONSULT_PRELIM_ACKNOWLEDGED: "Acknowledged the pre-call notice",
@@ -289,7 +293,6 @@ function DetailBlock({ detail, parentUserId }: { detail: ActivityDetail; parentU
 
   if (detail.type === "booking") {
     const when = new Date(detail.scheduledAt);
-    const undelivered = detail.notifications.filter((n) => n.status && n.status !== "sent" && n.status !== "delivered");
     return (
       <div className={shell} data-testid={`detail-booking-${detail.bookingId}`}>
         <Row label="When">
@@ -297,27 +300,40 @@ function DetailBlock({ detail, parentUserId }: { detail: ActivityDetail; parentU
           {detail.timezone ? ` (${detail.timezone})` : ""}
         </Row>
         {detail.durationMinutes != null && <Row label="Duration">{detail.durationMinutes} minutes</Row>}
-        <Row label="Status">{detail.status}{detail.outcome ? ` - ${detail.outcome}` : ""}</Row>
+        {detail.isCurrentState && (
+          // Only on this booking's newest event: the current status is not a
+          // fact about an earlier moment in its history.
+          <Row label="Status now">{detail.status}{detail.outcome ? ` - ${detail.outcome}` : ""}</Row>
+        )}
         {detail.meetingSubtype && <Row label="Type">{detail.meetingSubtype.replace(/_/g, " ").toLowerCase()}</Row>}
         {detail.notes && <Row label="Notes">{detail.notes}</Row>}
-        {detail.notifications.length > 0 && (
-          <Row label="Invites">
-            {detail.notifications.length} sent ({Array.from(new Set(detail.notifications.map((n) => n.channel))).join(", ")})
-            {undelivered.length > 0 ? ` - ${undelivered.length} not delivered` : ""}
-            {/* Stated, not hidden: Notification stores no body. */}
-            <span className="t-helper block">Message content is not stored.</span>
-          </Row>
-        )}
         <div className="flex flex-wrap gap-2 pt-1">
           {detail.meetingUrl && (
             <Button size="sm" variant="outline" onClick={() => window.open(detail.meetingUrl as string, "_blank", "noopener,noreferrer")} data-testid={`btn-join-${detail.bookingId}`}>
               <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Join call
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => navigate(`/calendar?booking=${detail.bookingId}`)} data-testid={`btn-booking-${detail.bookingId}`}>
+          <Button size="sm" variant="ghost" onClick={() => navigate(`/calendar?bookingId=${detail.bookingId}`)} data-testid={`btn-booking-${detail.bookingId}`}>
             <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Open in calendar
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  if (detail.type === "message") {
+    const failed = detail.status && detail.status !== "sent" && detail.status !== "delivered";
+    return (
+      <div className={shell} data-testid={`detail-message-${detail.notificationId}`}>
+        <Row label="To">{detail.recipient}</Row>
+        <Row label="Kind">{detail.kind.replace(/_/g, " ")}</Row>
+        <Row label="Delivery">
+          <span style={failed ? { color: "hsl(var(--brand-warning))" } : undefined}>{detail.status}</span>
+        </Row>
+        {/* Said plainly rather than faked: Notification records that a message
+            went out and nothing about what it said. Giving this card a real
+            body needs a column on Notification plus a write at dispatch. */}
+        <p className="t-helper">The message text was not stored, so it cannot be shown here.</p>
       </div>
     );
   }

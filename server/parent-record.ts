@@ -263,12 +263,6 @@ async function buildActivity(ctx: {
         meetingUrl: booking.meetingUrl ?? null,
         timezone: booking.bookerTimezone ?? null,
         notes: booking.notes ?? null,
-        // Delivery of the invites/reminders for THIS meeting - the only place
-        // notification rows can be attributed to something specific.
-        notifications: (notifByBooking.get(booking.id) || []).map((n: any) => ({
-          id: n.id, type: n.type, channel: n.channel, status: n.status,
-          sentAt: n.sentAt, recipient: n.recipient, contentStored: false,
-        })),
       };
     }
 
@@ -340,7 +334,53 @@ async function buildActivity(ctx: {
     out.push(entry);
   }
 
-  return out;
+  // The booking's CURRENT status is only true of its most recent event. Shown
+  // on every one, a "Consultation scheduled" card read "CONFIRMED -
+  // COMPLETED", which is both wrong about that moment and made two genuinely
+  // different cards look like the same card twice.
+  const newestEventPerBooking = new Set<string>();
+  for (const e of out) {
+    const d = e.detail;
+    if (d?.type !== "booking") continue;
+    if (newestEventPerBooking.has(d.bookingId)) {
+      d.isCurrentState = false;
+    } else {
+      newestEventPerBooking.add(d.bookingId);
+      d.isCurrentState = true;
+    }
+  }
+
+  // Every message that went out is its own entry. Folded into the meeting card
+  // as "10 sent (four kinds)" it was a number nobody could act on; as rows it
+  // is a delivery log you can scan.
+  for (const n of notifications) {
+    if (n.bookingId && !bookingById.has(n.bookingId)) continue;   // out of scope
+    const b = n.bookingId ? bookingById.get(n.bookingId) : null;
+    out.push({
+      id: `notif-${n.id}`,
+      at: n.sentAt || n.createdAt,
+      eventType: n.channel === "SMS" || n.type === "SMS" ? "MESSAGE_SMS" : "MESSAGE_EMAIL",
+      actorRole: "system",
+      providerId: b?.providerId ?? null,
+      providerName: null,
+      sessionId: null,
+      detail: {
+        type: "message",
+        notificationId: n.id,
+        channel: n.type,
+        kind: n.channel,
+        recipient: n.recipient,
+        status: n.status,
+        sentAt: n.sentAt,
+        bookingId: n.bookingId ?? null,
+        // Notification keeps no subject and no body - see the note on
+        // buildActivity. Stated on the card rather than faked.
+        contentStored: false,
+      },
+    });
+  }
+
+  return out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 }
 
 export async function buildParentRecord(user: any, parentUserId: string, opts: BuildOpts = {}) {

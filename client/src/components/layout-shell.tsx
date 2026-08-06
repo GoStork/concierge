@@ -1224,7 +1224,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
       {showCalendarBanner && (
         <div className="fixed top-16 left-0 right-0 z-40 hidden md:block">
-          <div className="border-b border-[hsl(var(--brand-warning)/0.4)] bg-[hsl(var(--brand-warning)/0.1)] px-4 py-2.5">
+          {/* bg-card UNDER the tint: the warning colour at 10% is 90%
+              transparent, so the page scrolled visibly through this fixed
+              banner. The tint is a wash over an opaque surface, not the
+              surface itself. */}
+          <div className="border-b border-[hsl(var(--brand-warning)/0.4)] bg-card px-4 py-2.5 relative">
+            <div className="absolute inset-0 bg-[hsl(var(--brand-warning)/0.1)] pointer-events-none" />
+            <div className="relative">
             <div className="max-w-[1800px] mx-auto flex items-center gap-3 flex-wrap">
               <AlertTriangle className="w-4 h-4 text-[hsl(var(--brand-warning))] shrink-0" />
               <p className="text-sm font-ui text-foreground flex-1 min-w-0">
@@ -1273,6 +1279,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           </div>
+            </div>
         </div>
       )}
 

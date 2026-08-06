@@ -156,12 +156,16 @@ export type ActivityDetail =
       status: string; outcome: string | null; meetingType: string;
       meetingSubtype: string | null; meetingUrl: string | null;
       timezone: string | null; notes: string | null;
-      notifications: {
-        id: string; type: string; channel: string; status: string;
-        sentAt: string | null; recipient: string;
-        /** Always false: see buildActivity - we never stored the body. */
-        contentStored: boolean;
-      }[];
+      /** True only on this booking's most recent event - see buildActivity. */
+      isCurrentState?: boolean;
+    }
+  | {
+      type: "message";
+      notificationId: string; channel: string; kind: string;
+      recipient: string; status: string; sentAt: string | null;
+      bookingId: string | null;
+      /** Always false: Notification keeps no subject and no body. */
+      contentStored: boolean;
     }
   | { type: "invoice"; invoiceId: string; status: string; amountCents: number | null; dueAt: string | null; paymentUrl: string | null; description: string | null }
   | { type: "agreement"; agreementId: string; status: string; documentUrl: string | null; signerStatus: any }
