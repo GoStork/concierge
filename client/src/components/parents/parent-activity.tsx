@@ -461,14 +461,21 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl }: {
 }) {
   const meta = KIND_META[entry.kind];
   const isSms = entry.detail?.type === "message" && entry.detail.channel === "SMS";
+  const callIcon = CALL_ICONS[entry.eventType || ""];
   // An SMS card was showing an envelope. The icon follows the channel, not
   // the bucket the two share.
-  const Icon = isSms ? MessageSquare : (CALL_ICONS[entry.eventType || ""] || meta.icon);
+  const Icon = isSms ? MessageSquare : (callIcon || meta.icon);
   const tint =
     // A text message reads as a text message at a glance - green, the way
     // every messaging app has trained people to expect. --brand-success
     // rather than iMessage's literal hex, per the no-hardcoded-colour rule.
     isSms ? "hsl(var(--brand-success))"
+    // Calendar red, the way every calendar app has trained people to expect.
+    // --destructive is the brand's red and is used here for its COLOUR, not
+    // its "danger" meaning - a booked consultation is good news. The camera
+    // on a completed call is deliberately excluded, so it keeps reading as a
+    // call rather than as another calendar entry.
+    : callIcon && callIcon !== Video ? "hsl(var(--destructive))"
     : meta.tone === "accent" ? "hsl(var(--accent))"
     : meta.tone === "primary" ? "hsl(var(--primary))"
     : "hsl(var(--muted-foreground))";
