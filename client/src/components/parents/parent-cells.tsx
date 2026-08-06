@@ -377,6 +377,24 @@ export const matchesMultiAny = (selected: string[], values: string[] | null | un
   selected.length === 0 || (values || []).some((v) => selected.includes(v));
 
 /**
+ * Intended Parent form filter.
+ *
+ * "Submitted" is the only state that unblocks a match call, so a DRAFT counts
+ * as not filled in - same as having no row at all. Both tables ask this the
+ * same way.
+ */
+export function matchesIpForm(filter: string, status: string | null | undefined): boolean {
+  if (filter === "all" || !filter) return true;
+  const submitted = status === "SUBMITTED";
+  return filter === "submitted" ? submitted : !submitted;
+}
+
+export const IP_FORM_FILTER_LABELS: Record<string, string> = {
+  submitted: "Form submitted",
+  missing: "Form not submitted",
+};
+
+/**
  * The CRM filter predicates, shared by both parents tables.
  *
  * Written once so "overdue" cannot come to mean two different things depending

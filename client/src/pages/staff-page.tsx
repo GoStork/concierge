@@ -11,6 +11,7 @@ import { useTableSort } from "@/components/sortable-table-head";
 import MembersTable from "@/components/members-table";
 import {
   matchesCrmFilters,
+  matchesIpForm,
   matchesMulti,
   matchesMultiAny,
   parentSortValue,
@@ -112,6 +113,7 @@ function GostorkAdminUsersView() {
   const ownerFilter = searchParams.get("owner") || "all";
   const nextFilter = searchParams.get("next") || "all";
   const tagFilter = searchParams.get("tag") || "all";
+  const formFilter = searchParams.get("form") || "all";
   const setParams = useCallback((entries: Record<string, string>) => {
     // One atomic update: successive single writes each build from the same
     // stale params, so only the last one survives.
@@ -149,7 +151,7 @@ function GostorkAdminUsersView() {
     staleTime: 15_000,
   });
 
-  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter.length > 0 || statusFilter.length > 0 || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all";
+  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter.length > 0 || statusFilter.length > 0 || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all" || formFilter !== "all";
 
   const filteredUsers = parentUsers.filter(member => {
     // Equality on enum keys, exactly like the provider table. This used to be a
@@ -157,6 +159,7 @@ function GostorkAdminUsersView() {
     // differently depending on which role was looking at it.
     if (!matchesMultiAny(serviceFilter, overview[member.id]?.serviceKeys)) return false;
     if (!matchesMulti(statusFilter, overview[member.id]?.matchStatus)) return false;
+    if (!matchesIpForm(formFilter, overview[member.id]?.ipFormStatus)) return false;
     if (!matchesCrmFilters(overview[member.id] || {}, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -186,7 +189,7 @@ function GostorkAdminUsersView() {
     // (each built from the same stale params), so only the last key cleared.
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      for (const key of ["q", "from", "to", "svc", "status", "owner", "next", "tag"]) next.delete(key);
+      for (const key of ["q", "from", "to", "svc", "status", "owner", "next", "tag", "form"]) next.delete(key);
       return next;
     }, { replace: true });
   }
@@ -313,7 +316,7 @@ function GostorkAdminUsersView() {
       </div>
 
       <ParentsFilterBar
-        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, tag: tagFilter, owner: ownerFilter, next: nextFilter }}
+        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, tag: tagFilter, owner: ownerFilter, next: nextFilter, form: formFilter }}
         setParam={updateUsersParam}
         setParams={setParams}
         onClear={clearFilters}
@@ -443,11 +446,12 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const ownerFilter = searchParams.get("owner") || "all";
   const nextFilter = searchParams.get("next") || "all";
   const tagFilter = searchParams.get("tag") || "all";
-  const hasActiveFilters = !!(searchQuery || serviceFilter.length || statusFilter.length || dateFrom || dateTo || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all");
+  const formFilter = searchParams.get("form") || "all";
+  const hasActiveFilters = !!(searchQuery || serviceFilter.length || statusFilter.length || dateFrom || dateTo || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all" || formFilter !== "all");
   const clearFilters = () => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      ["q", "svc", "status", "from", "to", "owner", "next", "tag"].forEach(k => next.delete(k));
+      ["q", "svc", "status", "from", "to", "owner", "next", "tag", "form"].forEach(k => next.delete(k));
       return next;
     }, { replace: true });
   };
@@ -467,6 +471,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
     (parents || []).filter(p => {
       if (!matchesMulti(serviceFilter, p.serviceType)) return false;
       if (!matchesMulti(statusFilter, p.matchStatus)) return false;
+      if (!matchesIpForm(formFilter, p.ipFormStatus)) return false;
       if (!matchesCrmFilters(p, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
       if (dateFrom && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) < new Date(`${dateFrom}T00:00:00`))) return false;
       if (dateTo && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) > new Date(`${dateTo}T23:59:59`))) return false;
@@ -499,7 +504,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       </div>
 
       <ParentsFilterBar
-        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, tag: tagFilter, owner: ownerFilter, next: nextFilter }}
+        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, tag: tagFilter, owner: ownerFilter, next: nextFilter, form: formFilter }}
         setParam={setParam}
         setParams={setParams}
         onClear={clearFilters}

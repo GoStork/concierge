@@ -1142,7 +1142,7 @@ export class UsersController {
     // array would have queried garbage while narrowing this one would silently
     // render every solo parent as unassigned.
     const crmKeys = Array.from(new Set(parents.map(p => p.parentAccountId || p.id)));
-    const [crmOwners, crmFollowUps, crmTags] = crmKeys.length
+    const [crmOwners, crmFollowUps, crmTags, ipForms] = crmKeys.length
       ? await Promise.all([
           this.prisma.parentOwner.findMany({
             where: { parentAccountId: { in: crmKeys } },
@@ -1160,8 +1160,15 @@ export class UsersController {
               tag: { select: { label: true, colorToken: true } },
             },
           }),
+          // Whether the family completed their Intended Parent form. Keyed on
+          // parentAccountId, the same parentAccountKey the CRM tables use.
+          this.prisma.ipFormResponse.findMany({
+            where: { parentAccountId: { in: crmKeys } },
+            select: { parentAccountId: true, status: true },
+          }),
         ])
-      : [[], [], []];
+      : [[], [], [], []];
+    const ipFormByKey = new Map((ipForms as any[]).map((f: any) => [f.parentAccountId, f.status]));
 
     // The owner row snapshots the name (so a rename never blanks a byline) but
     // not the photo - a photo snapshot goes stale the moment someone changes
@@ -1206,6 +1213,7 @@ export class UsersController {
         agreements: [],
         updatedAt: lastActivityByUser.get(parent.id) || null,
         matchStatus: statusByUser.get(parent.id) || null,
+        ipFormStatus: ipFormByKey.get(crmKey) ?? null,
         owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
         nextStep: step
           ? { id: step.id, body: step.body, dueAt: step.dueAt, overdue: new Date(step.dueAt).getTime() < nowMs }
@@ -1688,7 +1696,7 @@ export class UsersController {
     // CRM state for this org only. Scoped in the WHERE clause, and read AFTER
     // the gate batch so it is keyed on exactly the same gateKeys - a row the
     // drop-filter below removes never gets its tags built at all.
-    const [crmOwners, crmFollowUps, crmTags] = gateKeys.length
+    const [crmOwners, crmFollowUps, crmTags, ipForms] = gateKeys.length
       ? await Promise.all([
           this.prisma.parentOwner.findMany({
             where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId },
@@ -1703,8 +1711,16 @@ export class UsersController {
             where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId },
             select: { parentAccountId: true, tagId: true, tag: { select: { label: true, colorToken: true } } },
           }),
+          // Not gated: whether a form exists is a workflow fact the agency
+          // needs (a match call cannot be booked without it). The form's
+          // CONTENTS stay behind Gate B - only the status travels here.
+          this.prisma.ipFormResponse.findMany({
+            where: { parentAccountId: { in: gateKeys } },
+            select: { parentAccountId: true, status: true },
+          }),
         ])
-      : [[], [], []];
+      : [[], [], [], []];
+    const ipFormByKey = new Map((ipForms as any[]).map((f: any) => [f.parentAccountId, f.status]));
     // The partial unique indexes guarantee at most one owner and one OPEN
     // follow-up per key, so these are plain Maps with no dedup pass.
     // Same as the admin list: resolve the owner photo live rather than storing
@@ -1744,6 +1760,7 @@ export class UsersController {
           contactReleaseReason: g.contactReason,
           // Staff data about the parent, not parent PII, so it sits outside
           // redactParentContact - but still only on rows that survive Gate A.
+          ipFormStatus: ipFormByKey.get(crmKey) ?? null,
           owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
           nextStep: step
             ? { id: step.id, body: step.body, dueAt: step.dueAt, overdue: new Date(step.dueAt).getTime() < nowMs }

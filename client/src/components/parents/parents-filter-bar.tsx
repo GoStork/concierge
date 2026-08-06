@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
-import { SERVICE_LABELS, JOURNEY_STATUS_LABELS, toDateParam } from "./parent-cells";
+import { SERVICE_LABELS, JOURNEY_STATUS_LABELS, IP_FORM_FILTER_LABELS, toDateParam } from "./parent-cells";
 
 /**
  * The one filter control, for all four dropdowns.
@@ -158,6 +158,8 @@ export interface ParentsFilterState {
   tag: string;
   owner: string;
   next: string;
+  /** "submitted" | "missing" | "all" - Intended Parent form state. */
+  form: string;
 }
 
 export function ParentsFilterBar({
@@ -174,7 +176,8 @@ export function ParentsFilterBar({
   testIdPrefix: string;
 }) {
   const hasActive = !!(state.q.trim() || state.from || state.to || state.services.length
-    || state.statuses.length || state.tag !== "all" || state.owner !== "all" || state.next !== "all");
+    || state.statuses.length || state.tag !== "all" || state.owner !== "all" || state.next !== "all"
+    || state.form !== "all");
 
   // "My leads" and "No owner" are owner+next-step combinations, and they used to
   // sit BOTH here as pills and inside the owners dropdown, which read as two
@@ -220,6 +223,14 @@ export function ParentsFilterBar({
             selected={state.statuses}
             onChange={(next) => setParam("status", next.join(","))}
             testId={`${testIdPrefix}-status-filter`}
+          />
+          <FilterDropdown
+            single
+            label="IP form"
+            options={Object.entries(IP_FORM_FILTER_LABELS)}
+            selected={state.form === "all" ? [] : [state.form]}
+            onChange={(next) => setParam("form", next[0] || "")}
+            testId={`${testIdPrefix}-form-filter`}
           />
           <FilterDropdown
             single
