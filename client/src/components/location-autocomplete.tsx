@@ -11,10 +11,24 @@ type LocationResult = {
   display: string;
 };
 
+/** What the picker emits: every part resolved to a string. */
 type LocationValue = { address: string; city: string; state: string; zip: string; country: string };
 
+/**
+ * What it accepts. Looser on purpose: `ProviderLocation` has no country column
+ * at all, and its address parts are nullable, so a provider location can never
+ * satisfy LocationValue. Every read below already guards with `|| ""`.
+ */
+type LocationInput = {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  country?: string | null;
+};
+
 type Props = {
-  value: LocationValue;
+  value: LocationInput;
   onChange: (loc: LocationValue) => void;
   placeholder?: string;
   className?: string;
@@ -35,7 +49,7 @@ function parseNominatimAddress(a: any) {
   return { address: streetAddr, city, state, zip, country };
 }
 
-function buildDisplayQuery(value: LocationValue, isOnboarding: boolean): string {
+function buildDisplayQuery(value: LocationInput, isOnboarding: boolean): string {
   if (isOnboarding) {
     return [value.city, value.state, value.country].filter(Boolean).join(", ");
   }

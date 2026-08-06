@@ -202,9 +202,11 @@ export default function VideoRoomPage() {
         } else {
           apiRequest("POST", "/api/video/participant-joined", { bookingId }).catch(() => {});
           if (isProviderOrAdmin && consentStep === "consented") {
-            callFrame.startRecording({ layout: { preset: "active-participant" } }).catch((err: any) => {
+            try {
+              callFrame.startRecording({ layout: { preset: "active-participant" } });
+            } catch (err: any) {
               console.warn("Auto-start recording failed:", err?.message || err);
-            });
+            }
           }
         }
       });
@@ -217,7 +219,7 @@ export default function VideoRoomPage() {
       });
 
       callFrame.on("left-meeting", async () => {
-        try { callFrame.stopRecording().catch(() => {}); } catch {}
+        try { callFrame.stopRecording(); } catch {}
         callFrame.destroy();
         callFrameRef.current = null;
         joiningRef.current = false;

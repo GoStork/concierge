@@ -1404,12 +1404,9 @@ function AccountTab() {
   );
 }
 
-type ProfileFieldDef = {
+type ProfileFieldCommon = {
   label: string;
   key: string;
-  value: string;
-  setter: (v: string) => void;
-  type: "text" | "textarea" | "number" | "yesno" | "select" | "multiselect" | "range" | "singleslider";
   options?: string[];
   // for range / singleslider types
   rangeMin?: number;
@@ -1420,6 +1417,24 @@ type ProfileFieldDef = {
   display?: (v: any, data?: any) => string | null;
   showIf?: boolean;
 };
+
+/**
+ * Every field type stores a plain string - multiselect keeps a comma-joined
+ * list - except "insurance", which is backed by InsurancePicker and holds a
+ * real array. That difference was live in the code long before it was in the
+ * types, so the def is a union rather than a widened `any`.
+ */
+type ProfileFieldDef =
+  | (ProfileFieldCommon & {
+      type: "text" | "textarea" | "number" | "yesno" | "select" | "multiselect" | "range" | "singleslider";
+      value: string;
+      setter: (v: string) => void;
+    })
+  | (ProfileFieldCommon & {
+      type: "insurance";
+      value: string[];
+      setter: (v: string[]) => void;
+    });
 
 function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSave, onCancel, saving }: {
   title: string;
@@ -1468,6 +1483,22 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
           const raw = data?.[f.key];
           const isDisabled = !editing;
 
+          // Narrow the union before anything below treats f.value as a string.
+          if (f.type === "insurance") {
+            if (isDisabled && !forceShow && (raw == null || raw === "")) return null;
+            const arr: string[] = editing ? (f.value || []) : (raw ? [raw] : []);
+            return (
+              <div key={f.key} className="space-y-2 md:col-span-2">
+                <Label>{f.label}</Label>
+                {editing ? (
+                  <InsurancePicker value={arr} onChange={f.setter} mode="single" />
+                ) : (
+                  <p className="t-helper">{raw || "Not set"}</p>
+                )}
+              </div>
+            );
+          }
+
           // Unified value: f.value when editing, raw data converted to string when viewing
           const effectiveValue = editing
             ? f.value
@@ -1481,19 +1512,6 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
           // In view mode, skip fields with no value unless forceShow is set
           if (isDisabled && !forceShow && (effectiveValue === "" || effectiveValue == null)) return null;
 
-          if (f.type === "insurance") {
-            const arr: string[] = editing ? (f.value || []) : (raw ? [raw] : []);
-            return (
-              <div key={f.key} className="space-y-2 md:col-span-2">
-                <Label>{f.label}</Label>
-                {editing ? (
-                  <InsurancePicker value={arr} onChange={f.setter} mode="single" />
-                ) : (
-                  <p className="t-helper">{raw || "Not set"}</p>
-                )}
-              </div>
-            );
-          }
           if (f.type === "yesno") {
             return (
               <div key={f.key} className="space-y-2">

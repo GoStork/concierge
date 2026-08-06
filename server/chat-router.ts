@@ -1681,7 +1681,7 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
         // parity. Anonymous siblings (whisper phase) stay on the strict
         // whisper-safe subset - the parent's private Eva content never crosses.
         const sibRevealed = sib.status === "CONSULTATION_BOOKED" || sib.status === "PROVIDER_CONNECTED";
-        return sib.messages.filter(m =>
+        return sib.messages.filter((m: any) =>
           (sibRevealed || m.senderType === "system" || m.senderType === "provider")
           && !crossoverHidden.has(m.uiCardType || "")
         );
@@ -3458,6 +3458,11 @@ chatRouter.post("/api/agreements/generate", requireAuth, async (req, res) => {
       parentUserId: session.userId,
       sessionId: session.id,
     });
+    // generateAgreement returns null when PandaDoc has nothing to build from;
+    // the card below read .id straight off it and threw.
+    if (!agreement) {
+      return res.status(502).json({ message: "Could not generate the agreement - please try again." });
+    }
 
     await prisma.aiChatMessage.create({
       data: {

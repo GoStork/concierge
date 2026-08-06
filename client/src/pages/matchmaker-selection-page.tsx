@@ -29,9 +29,9 @@ export default function MatchmakerSelectionPage() {
 
   // Persist resolved avatar URLs in sessionStorage so they survive page refreshes.
   // useRef is seeded from sessionStorage on mount — first render already has the URLs.
-  const _lockedAvatars = useRef<Record<string, string>>(() => {
+  const _lockedAvatars = useRef<Record<string, string>>((() => {
     try { return JSON.parse(sessionStorage.getItem("gostork_persona_avatars") || "{}"); } catch { return {}; }
-  });
+  })());
   matchmakers.forEach(m => {
     if (_lockedAvatars.current[m.id]) return;
     const url = m.avatarUrl ? (getPhotoSrc(m.avatarUrl) || m.avatarUrl) : null;

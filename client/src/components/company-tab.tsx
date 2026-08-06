@@ -46,6 +46,15 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { getPhotoSrc } from "@/lib/profile-utils";
 
+/**
+ * Prisma hands back `Json?` columns as JsonValue, which is anything. These
+ * three are string lists everywhere they are written; coerce on read rather
+ * than let an unexpected shape reach a .map() in the render.
+ */
+function toStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
 type LocationData = {
   id?: string;
   _sortId?: string;
@@ -272,12 +281,19 @@ export default function CompanyTab() {
       setIvfMaxAgeIp1(provider.ivfMaxAgeIp1 != null ? String(provider.ivfMaxAgeIp1) : "");
       setIvfMaxAgeIp2(provider.ivfMaxAgeIp2 != null ? String(provider.ivfMaxAgeIp2) : "");
       setIvfBiologicalConnection(provider.ivfBiologicalConnection || "");
-      setIvfAcceptingPatients(provider.ivfAcceptingPatients || []);
+      setIvfAcceptingPatients(toStringArray(provider.ivfAcceptingPatients));
       setIvfEggDonorType(provider.ivfEggDonorType || "");
-      setSurrogacyCitizensNotAllowed(provider.surrogacyCitizensNotAllowed || []);
+      setSurrogacyCitizensNotAllowed(toStringArray(provider.surrogacyCitizensNotAllowed));
       setSurrogacyTwinsAllowed(provider.surrogacyTwinsAllowed ?? false);
       setSurrogacyStayAfterBirthMonths(provider.surrogacyStayAfterBirthMonths != null ? String(provider.surrogacyStayAfterBirthMonths) : "");
-      setSurrogacyBirthCertificateListing(Array.isArray(provider.surrogacyBirthCertificateListing) ? provider.surrogacyBirthCertificateListing : (provider.surrogacyBirthCertificateListing ? [provider.surrogacyBirthCertificateListing as string] : []));
+      // Legacy rows stored a single string here before it became a list.
+      setSurrogacyBirthCertificateListing(
+        Array.isArray(provider.surrogacyBirthCertificateListing)
+          ? toStringArray(provider.surrogacyBirthCertificateListing)
+          : typeof provider.surrogacyBirthCertificateListing === "string" && provider.surrogacyBirthCertificateListing
+            ? [provider.surrogacyBirthCertificateListing]
+            : []
+      );
       setSurrogacySurrogateRemovableFromCert(provider.surrogacySurrogateRemovableFromCert === true);
       // IVF Surrogate Matching Requirements
       setIvfSurrogateAgeRange([provider.ivfSurrogateMinAge ?? 18, provider.ivfSurrogateMaxAge ?? 45]);

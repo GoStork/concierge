@@ -90,7 +90,7 @@ export class KnowledgeService {
     if (fileName.toLowerCase().endsWith(".pdf")) {
       const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: fileBuffer });
-      await parser.load();
+      // getText() loads on demand; load() is private API.
       const textResult = await parser.getText();
       text = (typeof textResult === "string" ? textResult : textResult?.text) || "";
     } else if (
@@ -119,7 +119,9 @@ export class KnowledgeService {
     });
 
     const chunks = await this.ingestText(text, {
-      providerId,
+      // ingestDocument takes providerId as nullable (GoStork-wide docs have
+      // none); ingestText's option is optional, so normalise here.
+      providerId: providerId ?? undefined,
       sourceTier,
       sourceType: "DOCUMENT",
       sourceFileName: fileName,
@@ -200,7 +202,9 @@ export class KnowledgeService {
     });
 
     const chunks = await this.ingestText(text, {
-      providerId,
+      // ingestDocument takes providerId as nullable (GoStork-wide docs have
+      // none); ingestText's option is optional, so normalise here.
+      providerId: providerId ?? undefined,
       sourceTier: 1,
       sourceType: "WEBSITE",
       sourceUrl: url,

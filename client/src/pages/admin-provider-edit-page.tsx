@@ -438,7 +438,7 @@ export default function AdminProviderEditPage() {
       const existingLocIds = new Set((provider.locations || []).map((l: any) => l.id));
       const currentLocIds = new Set(editLocations.filter(l => l.id).map(l => l.id));
 
-      const locPromises: Promise<void>[] = [];
+      const locPromises: Promise<unknown>[] = [];
       for (const loc of provider.locations || []) {
         if (!currentLocIds.has(loc.id)) {
           locPromises.push(apiRequest("DELETE", `/api/providers/${provider.id}/locations/${loc.id}`).catch((e: any) => { errors.push(`Delete location: ${e.message}`); }));
@@ -456,7 +456,7 @@ export default function AdminProviderEditPage() {
       const existingMemberIds = new Set((provider.members || []).map((d: any) => d.id));
       const currentMemberIds = new Set(editTeamMembers.filter((m: any) => m.id).map((m: any) => m.id));
 
-      const memberPromises: Promise<void>[] = [];
+      const memberPromises: Promise<unknown>[] = [];
       for (const doc of provider.members || []) {
         if (!currentMemberIds.has(doc.id)) {
           memberPromises.push(apiRequest("DELETE", `/api/providers/${provider.id}/members/${doc.id}`).catch((e: any) => { errors.push(`Delete member: ${e.message}`); }));

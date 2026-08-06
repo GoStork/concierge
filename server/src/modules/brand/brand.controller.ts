@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import {
   Controller,
   Get,
@@ -720,7 +721,7 @@ export class BrandController {
         where: { providerId },
       });
       if (!existing) {
-        const data: Record<string, any> = { providerId };
+        const data: Prisma.ProviderBrandSettingsUncheckedCreateInput = { providerId };
         if (provider.logoUrl) data.logoUrl = provider.logoUrl;
         if (provider.name) data.companyName = provider.name;
         await this.prisma.providerBrandSettings.create({ data });

@@ -1,3 +1,4 @@
+import { asJson } from "../../../../shared/prisma-json";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
@@ -476,7 +477,7 @@ export class CostSheetAutoDraftService {
             senderType: "system",
             senderName: "GoStork",
             uiCardType: "cost_sheet_draft_approval",
-            uiCardData: {
+            uiCardData: asJson({
               sourceCostSheetId: sheet.id,
               sourceCostSheetCategory: sheet.category || null,
               sourceCostSheetSubType: cardSubType,
@@ -502,7 +503,7 @@ export class CostSheetAutoDraftService {
               autoDraftedAt: new Date().toISOString(),
               resolvedAt: null,
               resolvedAs: null,
-            },
+            }),
           },
         });
         draftedIds.push(card.id);

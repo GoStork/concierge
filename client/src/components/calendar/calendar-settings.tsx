@@ -100,6 +100,9 @@ type CalendarConnectionType = {
   isBookingCalendar: boolean;
   color: string;
   connected: boolean;
+  // Cleared by the calendar-health scheduler when a refresh token stops
+  // working, which is what drives the "Connection expired" banner.
+  tokenValid: boolean;
 };
 
 export function CalendarSettings() {
@@ -652,7 +655,7 @@ export function CalendarSettings() {
                         <AlertTriangle className="w-3.5 h-3.5 text-[hsl(var(--brand-warning))] shrink-0" />
                         <span className="text-xs text-[hsl(var(--brand-warning))] font-ui">Connection expired</span>
                         <Button
-                          variant="link"
+                          variant="ghost"
                           size="sm"
                           className="h-auto p-0 text-xs text-[hsl(var(--brand-warning))] hover:text-[hsl(var(--brand-warning))] underline"
                           onClick={async () => {

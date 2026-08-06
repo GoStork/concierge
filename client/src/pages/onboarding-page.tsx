@@ -403,7 +403,7 @@ export default function OnboardingPage() {
   const totalVisibleSteps = lastStep - 1;
   const progress = totalVisibleSteps > 0 ? (stepsCompleted / totalVisibleSteps) * 100 : 0;
 
-  const brandName = brand?.siteName || "GoStork";
+  const brandName = brand?.companyName || "GoStork";
 
   if (isLoading) {
     return (

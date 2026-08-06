@@ -1,3 +1,4 @@
+import { asJson } from "../../../../shared/prisma-json";
 import {
   Body,
   Controller,
@@ -185,7 +186,7 @@ export class CostSheetAutoDraftController {
         senderType: "system",
         senderName: session.provider?.name || "Provider",
         uiCardType: "cost_sheet",
-        uiCardData: {
+        uiCardData: asJson({
           quoteId: quote.id,
           providerName: session.provider?.name || null,
           totalCostCents,
@@ -205,7 +206,7 @@ export class CostSheetAutoDraftController {
               ? `, with a ${paymentScheduleSnapshot.tranches.length}-payment schedule attached.`
               : "."
           }`,
-        },
+        }),
       },
     });
 

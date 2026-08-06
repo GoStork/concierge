@@ -76,7 +76,7 @@ export default function ProviderKnowledgeTab() {
       const res = await apiRequest("POST", `/api/knowledge/whispers/${id}/answer`, { answer });
       return res.json();
     },
-    onSuccess: (_data: any, variables: { id: string }) => {
+    onSuccess: (_data: any, variables) => {
       toast({ title: "Answer Sent", description: "Your answer has been sent to the AI and the parent has been notified." });
       setAnswerInputs((prev) => {
         const next = { ...prev };

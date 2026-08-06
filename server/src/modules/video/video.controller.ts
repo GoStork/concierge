@@ -990,7 +990,9 @@ export class VideoController {
     // Get the booking with meetingSubtype to determine if this is a decision call
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
-      select: { meetingSubtype: true },
+      // providerUserId and bookerTimezone are read further down for the hold
+      // message's timezone - omitted here they were silently undefined.
+      select: { meetingSubtype: true, providerUserId: true, bookerTimezone: true },
     });
 
     // Get provider type and deposit milestone (fee config not required - readiness prompt

@@ -356,7 +356,7 @@ export class GoogleCalendarService {
     for (const conn of connections) {
       const email = conn.email || "__default__";
       if (!emailGroups[email]) emailGroups[email] = [];
-      emailGroups[email].push(conn.calendarId);
+      if (conn.calendarId) emailGroups[email].push(conn.calendarId);
     }
 
     let mergedCalendars: Record<string, any> = {};

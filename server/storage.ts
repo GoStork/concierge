@@ -6,6 +6,22 @@ import type {
   UserWithProvider, ProviderWithRelations,
   InsertProviderType,
 } from "@shared/schema";
+import { normalizeJsonNulls } from "@shared/prisma-json";
+
+/**
+ * Provider's `Json?` columns. A cleared field arrives from the form as null,
+ * which Prisma will not accept for a Json column - see normalizeJsonNulls.
+ */
+const PROVIDER_JSON_FIELDS = [
+  "cdcServices",
+  "cdcExperience",
+  "cdcCycleStats",
+  "autoFeaturesEnabled",
+  "ivfAcceptingPatients",
+  "partnerProviderIds",
+  "surrogacyCitizensNotAllowed",
+  "surrogacyBirthCertificateListing",
+] as const;
 
 export interface IStorage {
   getUser(id: string): Promise<User | null>;
@@ -81,11 +97,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createProvider(provider: InsertProvider): Promise<Provider> {
-    return prisma.provider.create({ data: provider });
+    return prisma.provider.create({ data: normalizeJsonNulls(provider, PROVIDER_JSON_FIELDS) });
   }
 
   async updateProvider(id: string, updates: UpdateProviderRequest): Promise<Provider> {
-    return prisma.provider.update({ where: { id }, data: updates });
+    return prisma.provider.update({ where: { id }, data: normalizeJsonNulls(updates, PROVIDER_JSON_FIELDS) });
   }
 
   async getProviderType(id: string): Promise<ProviderType | null> {

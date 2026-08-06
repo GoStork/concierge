@@ -1,3 +1,5 @@
+import { asJson } from "../../../../shared/prisma-json";
+import { Prisma } from "@prisma/client";
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { emitJourneyEvent, emitInvoiceJourneyEvent } from "../../../journey-events";
 import {
@@ -1442,13 +1444,13 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
           senderType: "system",
           senderName: "GoStork",
           uiCardType: reminderType === "expired" ? "text" : "invoice",
-          uiCardData: reminderType !== "expired" ? {
+          uiCardData: reminderType !== "expired" ? asJson({
             invoiceId: invoice.id,
             paymentToken: invoice.paymentToken,
             paymentUrl,
             status: invoice.status,
             dueAt: invoice.dueAt?.toISOString() || null,
-          } : null,
+          }) : Prisma.DbNull,
         },
       });
 
@@ -2416,7 +2418,7 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
             senderType: "system",
             senderName: "GoStork",
             uiCardType: "text",
-            uiCardData: null,
+            uiCardData: Prisma.DbNull,
           },
         });
       } catch (e: any) {

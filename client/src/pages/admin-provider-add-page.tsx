@@ -631,7 +631,11 @@ export default function AdminProviderAddPage() {
             const locs = scrapedData.locations || [];
             if (locs.length > 0) {
               const existingKeys = new Set(previewLocations.map(l => `${l.address}|${l.city}|${l.state}`));
-              const newLocs = locs.filter(l => !existingKeys.has(`${l.address}|${l.city}|${l.state}`));
+              // The scraper never returns a country - ProviderLocation has no
+              // such column - so default it rather than leave the field absent.
+              const newLocs = locs
+                .filter(l => !existingKeys.has(`${l.address}|${l.city}|${l.state}`))
+                .map(l => ({ ...l, country: "" }));
               if (newLocs.length > 0) setPreviewLocations([...previewLocations, ...newLocs]);
             }
             if (scrapedData.suggestedServices && scrapedData.suggestedServices.length > 0) {
@@ -740,7 +744,7 @@ export default function AdminProviderAddPage() {
             <h3 className="text-lg font-heading flex items-center gap-2">
               <MapPin className="w-5 h-5 text-primary" /> Locations ({previewLocations.length})
             </h3>
-            <Button type="button" variant="outline" size="sm" onClick={() => setPreviewLocations([...previewLocations, { address: "", city: "", state: "", zip: "" }])} data-testid="button-add-preview-location">
+            <Button type="button" variant="outline" size="sm" onClick={() => setPreviewLocations([...previewLocations, { address: "", city: "", state: "", zip: "", country: "" }])} data-testid="button-add-preview-location">
               <Plus className="w-3 h-3 mr-1" /> Add
             </Button>
           </div>

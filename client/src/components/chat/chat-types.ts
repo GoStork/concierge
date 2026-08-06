@@ -96,6 +96,7 @@ export interface SessionDetail {
   humanAgentId?: string | null;
   matchmakerId?: string | null;
   matchmakerName?: string | null;
+  matchmakerAvatar?: string | null;
   user: SessionUser;
   title?: string | null;
   messages: SessionMessage[];

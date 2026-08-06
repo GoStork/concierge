@@ -11,7 +11,7 @@ import React from "react";
  * "Something went wrong" panel with a Reload button and the raw error
  * message. Uses the brand CSS variables per project rules.
  */
-type State = { error: Error | null; info: { componentStack?: string } | null };
+type State = { error: Error | null; info: { componentStack?: string | null } | null };
 
 export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
   state: State = { error: null, info: null };

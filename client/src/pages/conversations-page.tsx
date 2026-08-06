@@ -628,6 +628,7 @@ function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVideo }: 
       <div className="mt-1">
         <ReadinessPromptCard
           data={data}
+          messageId={msg.id || ""}
           sessionId={msg.sessionId}
           messageContent={msg.content}
           isParent={viewerRole === "parent"}

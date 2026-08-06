@@ -1343,7 +1343,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const clinic = await prisma.provider.findFirst({
           where: {
             name: { contains: parentClinicName, mode: "insensitive" },
-            type: { in: ["IVF_CLINIC", "FERTILITY_CLINIC"] },
+            // Provider has no `type` column - types are ProviderService rows.
+            // Prisma rejected the whole query, so this clinic was never found.
+            services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
           },
           select: {
             name: true,

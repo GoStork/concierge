@@ -257,7 +257,7 @@ export class UsersController {
       data: { hotLeadProviderId: providerId, hotLeadAt: new Date() },
     });
 
-    const admins = await this.prisma.user.findMany({ where: { role: "ADMIN" }, select: { id: true } });
+    const admins = await this.prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true } });
     const parentName = user.name || `${user.firstName || ""} ${user.lastName || ""}`.trim();
     for (const admin of admins) {
       await this.prisma.inAppNotification.create({
@@ -640,7 +640,7 @@ export class UsersController {
     });
 
     const enriched = await this.authService.getUserWithProvider(user.id);
-    const result = enriched || {};
+    const result: any = enriched || {};
     const { password: _, ...safe } = result;
 
     // Notify all providers with active sessions + GoStork admins so open chat views refresh
@@ -1447,6 +1447,24 @@ export class UsersController {
       const acctId = accountIdByUser.get(userId);
       return acctId ? `acct-${acctId}` : `user-${userId}`;
     };
+    /**
+     * The key CRM and account-scoped tables actually store: `parentAccountKey`
+     * = parentAccountId ?? userId, a bare uuid.
+     *
+     * NOT interchangeable with accountKey() above, which returns a PREFIXED
+     * grouping key (`acct-<id>`). Feeding a prefixed key to a `where` clause
+     * matches nothing and fails silently - which is exactly what happened to
+     * both the IP-form and interested-services lookups below: the provider
+     * table showed an empty Services column and could never reach the
+     * "Parent Form Submitted" rung, while the admin table (which keys
+     * correctly) showed both.
+     */
+    const dbAccountKey = (userId: string) => accountIdByUser.get(userId) || userId;
+    /** Bare DB key -> the prefixed grouping key the row maps are built on. */
+    const groupKeyForDbKey = new Map<string, string>();
+    for (const cs of chatSessions as any[]) {
+      if (cs.userId) groupKeyForDbKey.set(dbAccountKey(cs.userId), accountKey(cs.userId));
+    }
     // All logins on the row's account, primary (the one the row's session
     // or booking belongs to) first so the spread `...primary` fields and
     // the /parents/:id navigation target stay stable.
@@ -1497,7 +1515,7 @@ export class UsersController {
     // one did not, so the same family read differently by role.
     const profileServiceKeys = new Map<string, string[]>();
     {
-      const keys = Array.from(new Set(chatSessions.map((cs: any) => cs.userId).filter(Boolean).map((id: string) => accountKey(id))));
+      const keys = Array.from(new Set(chatSessions.map((cs: any) => cs.userId).filter(Boolean).map((id: string) => dbAccountKey(id))));
       if (keys.length) {
         const profs = await this.prisma.intendedParentProfile.findMany({
           where: { parentAccountId: { in: keys } },
@@ -1513,19 +1531,28 @@ export class UsersController {
               .map((l) => KEY_BY_LABEL.find(([re]) => re.test(l))?.[1])
               .filter(Boolean) as string[],
           ));
-          if (keysOut.length) profileServiceKeys.set(pr.parentAccountId, keysOut);
+          // Store under the grouping key, since that is what the row loop
+          // below looks it up by.
+          const gk = groupKeyForDbKey.get(pr.parentAccountId);
+          if (keysOut.length && gk) profileServiceKeys.set(gk, keysOut);
         }
       }
     }
 
     // Scoped to the accounts on this page rather than every submitted form.
-    const ipFormKeys = Array.from(new Set(chatSessions.map((cs: any) => cs.userId).filter(Boolean).map((id: string) => accountKey(id))));
+    // Query on the bare DB key, then translate back to the grouping key the
+    // row loop uses - see dbAccountKey above.
+    const ipFormKeys = Array.from(new Set(
+      chatSessions.map((cs: any) => cs.userId).filter(Boolean).map((id: string) => dbAccountKey(id)),
+    ));
     const ipFormSubmittedAccounts = new Set(
       ipFormKeys.length
         ? (await this.prisma.ipFormResponse.findMany({
             where: { parentAccountId: { in: ipFormKeys }, status: "SUBMITTED" },
             select: { parentAccountId: true },
-          })).map((f: any) => f.parentAccountId)
+          }))
+            .map((f: any) => groupKeyForDbKey.get(f.parentAccountId))
+            .filter(Boolean)
         : [],
     );
 

@@ -37,7 +37,7 @@ async function fastJson(system: string, user: string, maxTokens = 500): Promise<
   try {
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
-      systemInstruction: { parts: [{ text: system }] },
+      systemInstruction: system,
       generationConfig: { temperature: 0, maxOutputTokens: maxTokens, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } } as any,
     });
     const out = (await model.generateContent(user)).response.text().trim();
@@ -65,7 +65,7 @@ async function fastText(system: string, user: string, maxTokens = 600): Promise<
   try {
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
-      systemInstruction: { parts: [{ text: system }] },
+      systemInstruction: system,
       generationConfig: { temperature: 0, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } } as any,
     });
     return (await model.generateContent(user)).response.text().trim();

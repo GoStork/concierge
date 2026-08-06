@@ -9,6 +9,11 @@ import { parentAccountKey, resolveParentGates } from "../../../parent-privacy";
 import { type NightlySyncResult } from "../providers/profile-sync.service";
 
 export type NotificationChannel =
+  // These four are dispatched in this file but were missing from the union.
+  | "winback_nudge"
+  | "invoice_processing"
+  | "wire_instructions"
+  | "whisper_pending"
   | "booking_submitted"
   | "booking_request"
   | "booking_confirmation"

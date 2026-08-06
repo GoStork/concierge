@@ -95,7 +95,8 @@ export class CaldavCalendarService {
     const calendars = await client.fetchCalendars();
     return calendars.map((cal: DAVCalendar) => ({
       id: cal.url,
-      name: cal.displayName || "Calendar",
+      // displayName is typed loosely by tsdav and some servers return an object
+      name: typeof cal.displayName === "string" ? cal.displayName : "Calendar",
       color: (cal as any).calendarColor || "#6b7280",
       url: cal.url,
     }));

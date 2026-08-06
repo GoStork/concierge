@@ -349,15 +349,17 @@ export async function recalcAndPersistSingleDonorCost(
   } else if (donorType === "surrogate") {
     await prisma.surrogate.update({
       where: { id: donorId },
+      // The egg-donor branch above guards this; the surrogate branch did not,
+      // so a provider with no approved cost sheet threw here.
       data: {
-        totalCostMin: calculatedTotalCost.min,
-        totalCostMax: calculatedTotalCost.max,
+        totalCostMin: calculatedTotalCost ? calculatedTotalCost.min : null,
+        totalCostMax: calculatedTotalCost ? calculatedTotalCost.max : null,
       },
     });
   } else if (donorType === "sperm-donor") {
     await prisma.spermDonor.update({
       where: { id: donorId },
-      data: { totalCost: Math.round(calculatedTotalCost.min) },
+      data: { totalCost: calculatedTotalCost ? Math.round(calculatedTotalCost.min) : null },
     });
   }
 }

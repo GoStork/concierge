@@ -22,6 +22,8 @@ export interface TestProgress {
   lastUserMsg?: string;     // last message sent to AI
   lastAiSnippet?: string;   // first 80 chars of AI response
   currentStatus?: string;   // "testing" | "got_response"
+  /** When the child process last reported - the stall detector reads it. */
+  lastProgressAt?: number;
 }
 
 export interface RunnerState {
@@ -42,7 +44,7 @@ export type SSEEvent =
   | { type: "state"; state: RunnerState }
   | { type: "log"; line: string }
   | { type: "test_start"; id: string }
-  | { type: "test_progress"; id: string; currentMessage: number; lastUserMsg?: string; lastAiSnippet?: string }
+  | { type: "test_progress"; id: string; currentMessage: number; totalMessages?: number; lastUserMsg?: string; lastAiSnippet?: string; currentStatus?: string }
   | { type: "test_done"; id: string; status: "pass" | "fail"; durationMs: number; errors: string[] }
   | { type: "test_error"; id: string; error: string }
   | { type: "run_done"; passCount: number; failCount: number; durationMs: number; exitCode: number }
