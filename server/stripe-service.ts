@@ -237,7 +237,10 @@ export async function createPaymentIntent(params: {
   const isManualCapture = (params.captureMethod ?? "automatic") === "manual";
   const explicitCountry = params.buyerCountry?.toUpperCase();
   const useUsOrder = !explicitCountry || explicitCountry === "US";
-  let paymentMethodOpts: Stripe.PaymentIntentCreateParams;
+  // Only the payment-method fields. Typed as the full create-params it looked
+  // like the spread below overwrote amount and currency - it never did, since
+  // this object carries neither.
+  let paymentMethodOpts: Partial<Stripe.PaymentIntentCreateParams>;
   if (isManualCapture) {
     paymentMethodOpts = { payment_method_types: ["card"] };
   } else if (useUsOrder) {
@@ -1231,7 +1234,9 @@ export async function createExpressLoginLink(accountId: string): Promise<{ url: 
  */
 export async function retrievePlatformPayoutSchedule(): Promise<string> {
   const stripe = getStripe();
-  const account = await stripe.accounts.retrieve();
+  // No id = the authenticated platform account. A documented Stripe call the
+  // SDK types omit (they require an id), hence the cast.
+  const account = await (stripe.accounts as any).retrieve();
   return (account.settings?.payouts?.schedule?.interval as string) || "unknown";
 }
 
@@ -1279,7 +1284,11 @@ export async function retrieveConnectAccountBalance(accountId: string): Promise<
   pending: number;
 }> {
   const stripe = getStripe();
-  const bal = await stripe.balance.retrieve({ stripeAccount: accountId });
+  // stripeAccount is a REQUEST OPTION, not a params field. Passed as params it
+  // was silently ignored, so this returned the PLATFORM balance rather than the
+  // connected account's - and the payout balance pre-check read the wrong
+  // number.
+  const bal = await stripe.balance.retrieve({}, { stripeAccount: accountId });
   const sum = (arr: Stripe.Balance.Available[] | Stripe.Balance.Pending[] | undefined) =>
     (arr || []).reduce((s, a) => s + a.amount, 0);
   return { available: sum(bal.available as any), pending: sum(bal.pending as any) };
@@ -1453,7 +1462,7 @@ export async function upsertConnectAccountRepresentative(params: {
   };
 }): Promise<Stripe.Person> {
   const stripe = getStripe();
-  const body: Stripe.PersonCreateParams = {
+  const body: Stripe.AccountCreatePersonParams = {
     first_name: params.firstName,
     last_name: params.lastName,
     ...(params.email ? { email: params.email } : {}),
@@ -1485,7 +1494,7 @@ export async function upsertConnectAccountRepresentative(params: {
     existing.data[0];
 
   if (rep) {
-    return await stripe.accounts.updatePerson(params.accountId, rep.id, body as Stripe.PersonUpdateParams);
+    return await stripe.accounts.updatePerson(params.accountId, rep.id, body as Stripe.AccountUpdatePersonParams);
   }
   return await stripe.accounts.createPerson(params.accountId, body);
 }

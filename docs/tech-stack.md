@@ -234,6 +234,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `@types/express@^5.0.0`
 - `@types/express-session@^1.18.0`
 - `@types/geoip-lite@^1.4.4`
+- `@types/luxon@^3.7.3`
 - `@types/node@20.19.27`
 - `@types/passport@^1.0.16`
 - `@types/passport-local@^1.0.38`

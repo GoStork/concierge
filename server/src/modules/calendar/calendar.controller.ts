@@ -353,7 +353,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       subjectProfileId: body.subjectProfileId || null,
       bookingId: booking.id,
       scheduledAt: booking.scheduledAt || null,
-      bookerTimezone: booking.bookerTimezone || null,
+      bookerTimezone: (booking as any).bookerTimezone || null,
       meetingSubtype: booking.meetingSubtype || null,
     });
 
@@ -818,7 +818,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     });
 
     const parentAccountIds = [...new Set(bookings.map(b => (b as any).parentUser?.parentAccountId).filter(Boolean))];
-    const accountMembersMap: Record<string, { id: string; name: string; email: string }[]> = {};
+    const accountMembersMap: Record<string, { id: string; name: string | null; email: string }[]> = {};
     for (const accountId of parentAccountIds) {
       const members = await this.prisma.user.findMany({
         where: { parentAccountId: accountId },
@@ -951,7 +951,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     });
 
     const parentAccountIds = [...new Set(bookings.map(b => (b as any).parentUser?.parentAccountId).filter(Boolean))];
-    const accountMembersMap: Record<string, { id: string; name: string; email: string }[]> = {};
+    const accountMembersMap: Record<string, { id: string; name: string | null; email: string }[]> = {};
     for (const accountId of parentAccountIds) {
       const members = await this.prisma.user.findMany({
         where: { parentAccountId: accountId },
@@ -1249,7 +1249,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     let parentAccountMembers: { id: string; name: string | null; email: string }[] = [];
     if ((booking.parentUser as any)?.parentAccountId) {
       parentAccountMembers = await this.prisma.user.findMany({
-        where: { parentAccountId: booking.parentUser.parentAccountId },
+        where: { parentAccountId: (booking.parentUser as any).parentAccountId },
         select: { id: true, name: true, email: true },
       });
     }
@@ -1468,6 +1468,7 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     // stranded the entire prep bundle in the private Eva chat - permanently,
     // since the matchCallPrepForBookingId dedupe blocks a re-post.
     const prepMemberIds = await (async () => {
+      if (!booking.parentUserId) return [] as string[];
       const me = await this.prisma.user.findUnique({
         where: { id: booking.parentUserId },
         select: { parentAccountId: true },
@@ -1527,8 +1528,8 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
     const providerName = resolvedProviderName || "the agency";
     // Dual-audience: parent copy in the parent's zone, provider note in the provider's zone.
-    const prepProviderTz = await resolveProviderTimezone(this.prisma, booking.providerUserId, booking.bookerTimezone);
-    const prepParentTz = booking.bookerTimezone || prepProviderTz;
+    const prepProviderTz = await resolveProviderTimezone(this.prisma, booking.providerUserId, (booking as any).bookerTimezone);
+    const prepParentTz = (booking as any).bookerTimezone || prepProviderTz;
     const whenParent = formatWhen(booking.scheduledAt, prepParentTz, { weekday: "long" });
     const when = whenParent; // parent-facing default
     const whenProvider = formatWhen(booking.scheduledAt, prepProviderTz, { weekday: "long" });
@@ -3952,7 +3953,7 @@ I'll check in with you right after the call. You've got this!`;
           endTime,
           attendees,
           meetingLink: meetingLink || undefined,
-          timezone: booking.bookerTimezone || "UTC",
+          timezone: (booking as any).bookerTimezone || "UTC",
         },
       );
 
@@ -4027,7 +4028,7 @@ I'll check in with you right after the call. You've got this!`;
             startTime, endTime,
             attendees: parentAttendees,
             meetingLink: parentMeetingLink || undefined,
-            timezone: booking.bookerTimezone || "UTC",
+            timezone: (booking as any).bookerTimezone || "UTC",
           });
           if (eventId) existingMap[memberId] = eventId;
         } catch (err: any) {
@@ -4110,7 +4111,7 @@ I'll check in with you right after the call. You've got this!`;
         {
           startTime: newScheduledAt,
           endTime,
-          timezone: booking.bookerTimezone || "UTC",
+          timezone: (booking as any).bookerTimezone || "UTC",
         },
       );
     } catch (err: any) {
@@ -4176,7 +4177,7 @@ I'll check in with you right after the call. You've got this!`;
           endTime,
           attendees,
           meetingLink: meetingLink || undefined,
-          timezone: booking.bookerTimezone || "UTC",
+          timezone: (booking as any).bookerTimezone || "UTC",
         },
       );
 
@@ -4251,7 +4252,7 @@ I'll check in with you right after the call. You've got this!`;
             startTime, endTime,
             attendees: parentAttendees,
             meetingLink: parentMeetingLink || undefined,
-            timezone: booking.bookerTimezone || "UTC",
+            timezone: (booking as any).bookerTimezone || "UTC",
           });
           if (eventId) existingMap[memberId] = eventId;
         } catch (err: any) {
@@ -4331,7 +4332,7 @@ I'll check in with you right after the call. You've got this!`;
         {
           startTime: newScheduledAt,
           endTime,
-          timezone: booking.bookerTimezone || "UTC",
+          timezone: (booking as any).bookerTimezone || "UTC",
         },
       );
     } catch (err: any) {

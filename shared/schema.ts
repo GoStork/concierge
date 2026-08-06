@@ -1,5 +1,15 @@
 import { z } from "zod";
-import type { Provider as PrismaProvider } from "@prisma/client";
+import type {
+  Provider as PrismaProvider,
+  ProviderType as PrismaProviderType,
+  ProviderService as PrismaProviderService,
+  ProviderLocation as PrismaProviderLocation,
+  User as PrismaUser,
+  ProviderMember as PrismaProviderMember,
+  SurrogacyAgencyProfile as PrismaSurrogacyAgencyProfile,
+  SurrogateScreening as PrismaSurrogateScreening,
+  CostTemplate as PrismaCostTemplate,
+} from "@prisma/client";
 
 /**
  * Derived from Prisma, not hand-maintained. The hand-written version listed
@@ -12,26 +22,11 @@ import type { Provider as PrismaProvider } from "@prisma/client";
 export type Provider = PrismaProvider;
 
 
-export type ProviderType = {
-  id: string;
-  name: string;
-};
+export type ProviderType = PrismaProviderType;
 
-export type ProviderService = {
-  id: string;
-  providerId: string;
-  providerTypeId: string;
-  status: string;
-};
+export type ProviderService = PrismaProviderService;
 
-export type ProviderLocation = {
-  id: string;
-  providerId: string;
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
-};
+export type ProviderLocation = PrismaProviderLocation;
 
 export type UserLocation = {
   id: string;
@@ -39,34 +34,9 @@ export type UserLocation = {
   locationId: string;
 };
 
-export type User = {
-  id: string;
-  email: string;
-  password: string | null;
-  name: string | null;
-  photoUrl: string | null;
-  mobileNumber: string | null;
-  roles: string[];
-  providerId: string | null;
-  mustCompleteProfile: boolean;
-  allLocations: boolean;
-  dailyRoomUrl?: string | null;
-  city?: string | null;
-  state?: string | null;
-  country?: string | null;
-  assignedLocations?: (UserLocation & { location?: ProviderLocation })[];
-};
+export type User = PrismaUser;
 
-export type ProviderMember = {
-  id: string;
-  providerId: string;
-  name: string;
-  title: string | null;
-  bio: string | null;
-  photoUrl: string | null;
-  isMedicalDirector: boolean;
-  locations?: ProviderMemberLocation[];
-};
+export type ProviderMember = PrismaProviderMember;
 
 export type ProviderMemberLocation = {
   id: string;
@@ -75,44 +45,11 @@ export type ProviderMemberLocation = {
   location?: ProviderLocation;
 };
 
-export type SurrogacyAgencyProfile = {
-  id: string;
-  providerId: string;
-  numberOfBabiesBorn: number | null;
-  timeToMatch: string | null;
-  familiesPerCoordinator: number | null;
-};
+export type SurrogacyAgencyProfile = PrismaSurrogacyAgencyProfile;
 
-export type SurrogateScreening = {
-  id: string;
-  surrogacyProfileId: string;
-  criminalBackgroundCheck: boolean;
-  homeVisits: boolean;
-  financialsReview: boolean;
-  socialWorkerScreening: boolean;
-  medicalRecordsReview: boolean;
-  surrogateInsuranceReview: boolean;
-  psychologicalScreening: boolean;
-};
+export type SurrogateScreening = PrismaSurrogateScreening;
 
-export type CostTemplate = {
-  id: string;
-  providerTypeId: string;
-  name: string;
-  description: string | null;
-};
-
-export type CostTemplate = {
-  id: string;
-  providerTypeId: string;
-  category: string;
-  fieldName: string;
-  fieldDescription: string | null;
-  isMandatory: boolean;
-  isBaseCompensation: boolean;
-  allowMultiple: boolean;
-  sortOrder: number;
-};
+export type CostTemplate = PrismaCostTemplate;
 
 export type CostProgram = {
   id: string;

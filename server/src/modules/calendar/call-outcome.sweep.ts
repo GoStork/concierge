@@ -193,7 +193,7 @@ const EARLY_COMPLETE_MIN_TOGETHER_MS = 60 * 1000;
 export async function maybeCompleteBookingEarly(prisma: PrismaService, bookingId: string): Promise<boolean> {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
-    include: sweepInclude as any,
+    include: sweepInclude,
   });
   if (!booking) return false;
   if (booking.outcome || booking.status !== "CONFIRMED" || booking.meetingType !== "video") return false;
@@ -219,7 +219,7 @@ export async function runCallOutcomeSweep(prisma: PrismaService, notifications: 
   const now = Date.now();
   const candidates = await prisma.booking.findMany({
     where: { status: "CONFIRMED", outcome: null, scheduledAt: { lte: new Date(now - GRACE_MS) } },
-    include: sweepInclude as any,
+    include: sweepInclude,
     orderBy: { scheduledAt: "asc" },
     take: 200,
   });
@@ -315,7 +315,7 @@ export async function runCanceledNotRebookedSweep(prisma: PrismaService): Promis
       parentUserId: { not: null },
       cancelledAt: { lte: new Date(now - REBOOK_WINDOW_MS), gte: new Date(now - BACKLOG_CUTOFF_MS) },
     },
-    include: sweepInclude as any,
+    include: sweepInclude,
     take: 200,
   });
 
@@ -371,7 +371,7 @@ export async function runWinbackSilenceSweep(prisma: PrismaService, notification
   const cutoff = new Date(Date.now() - SILENCE_NUDGE_MS);
   const silent = await prisma.booking.findMany({
     where: { winbackSentAt: { not: null, lte: cutoff, gt: new Date(0) }, winbackNudgedAt: null },
-    include: sweepInclude as any,
+    include: sweepInclude,
     take: 100,
   });
 
