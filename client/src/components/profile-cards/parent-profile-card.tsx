@@ -8,10 +8,15 @@ interface ParentProfileCardProps {
   /** When true, renders an "Online" pill + green dot on the avatar. */
   isOnline?: boolean;
   /**
-   * "rail" (default) is the 288px chat sidebar this card was written for.
-   * "wide" is the ~1100px parent record page, where a single column of
-   * attribute rows reads as a ragged list and the email truncation is
-   * pointless. Same component, two contexts - do not fork it.
+   * "rail" (default) is a narrow column: the 288px chat sidebar this card was
+   * written for, and the ~320px contact column on the parent record.
+   * "wide" is a full-width page, where a single column of attribute rows
+   * reads as a ragged list and the email truncation is pointless.
+   *
+   * The record page's contact column asks for "rail" via useDense(): ~320px
+   * on desktop, and a ~390px phone tab, both narrow enough that a multi-column
+   * masonry would shred the labels. Same component, two contexts; do not fork
+   * it.
    */
   layout?: "rail" | "wide";
   /**

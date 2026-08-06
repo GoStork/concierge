@@ -19,7 +19,9 @@ import { Button } from "@/components/ui/button";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { cn } from "@/lib/utils";
 import { MatchStatusBadge, chatDeepLink } from "./parent-cells";
+import { useDense } from "./record-density";
 import type { ConversationRow, ParentRecord, SavedProfileRow } from "./parent-record-types";
 
 const KIND_LABEL: Record<string, string> = {
@@ -64,16 +66,21 @@ export function ConversationRowCard({
   row, isAdmin, parentUserId, showOrg,
 }: { row: ConversationRow; isAdmin: boolean; parentUserId: string; showOrg: boolean }) {
   const navigate = useNavigate();
+  const dense = useDense();
   const chatHref = chatDeepLink(
     { sessionId: row.sessionId, parentUserId, subjectProfileId: row.subjectProfileId },
     isAdmin,
   );
   return (
-    // Stacks on a phone. Side by side, the two buttons hold ~200px of a 390px
-    // screen, which left the text about 130px: the name truncated to "S...",
-    // the badges stacked, and the meta line broke one word per row.
+    // Stacks on a phone, and in a narrow column at any viewport. Side by side,
+    // the two buttons hold ~200px of a 390px screen, which left the text about
+    // 130px: the name truncated to "S...", the badges stacked, and the meta
+    // line broke one word per row.
     <div
-      className="rounded-[var(--radius)] border bg-card p-3 flex flex-col sm:flex-row sm:items-start gap-3 hover:bg-secondary/30 transition-colors"
+      className={cn(
+        "rounded-[var(--radius)] border bg-card p-3 flex flex-col gap-3 hover:bg-secondary/30 transition-colors",
+        !dense && "sm:flex-row sm:items-start",
+      )}
       data-testid={`row-conversation-${row.sessionId}`}
     >
       <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -104,7 +111,7 @@ export function ConversationRowCard({
         )}
       </div>
       </div>
-      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+      <div className={cn("flex items-center gap-1.5 shrink-0 self-end", !dense && "sm:self-auto")}>
         {chatHref && (
           <Button variant="outline" size="sm" onClick={() => navigate(chatHref)} data-testid={`btn-open-chat-${row.sessionId}`}>
             <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Open chat
@@ -122,9 +129,13 @@ export function ConversationRowCard({
 
 function SavedRowCard({ row }: { row: SavedProfileRow }) {
   const navigate = useNavigate();
+  const dense = useDense();
   return (
     <div
-      className="rounded-[var(--radius)] border bg-card p-3 flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-secondary/30 transition-colors"
+      className={cn(
+        "rounded-[var(--radius)] border bg-card p-3 flex flex-col gap-3 hover:bg-secondary/30 transition-colors",
+        !dense && "sm:flex-row sm:items-center",
+      )}
       data-testid={`row-saved-${row.profileId}`}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -141,7 +152,7 @@ function SavedRowCard({ row }: { row: SavedProfileRow }) {
       </div>
       </div>
       {row.profileUrl && (
-        <Button variant="ghost" size="sm" className="shrink-0 self-end sm:self-auto" onClick={() => navigate(row.profileUrl as string)} data-testid={`btn-saved-profile-${row.profileId}`}>
+        <Button variant="ghost" size="sm" className={cn("shrink-0 self-end", !dense && "sm:self-auto")} onClick={() => navigate(row.profileUrl as string)} data-testid={`btn-saved-profile-${row.profileId}`}>
           <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Profile
         </Button>
       )}

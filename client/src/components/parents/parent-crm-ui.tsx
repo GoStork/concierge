@@ -490,29 +490,36 @@ export function ParentLeadOwner({ record }: { record: ParentRecord }) {
   return <OwnerPicker record={record} isAdmin={isAdmin} choice={primary} />;
 }
 
-export function ParentCrmPanel({ record }: { record: ParentRecord }) {
+/**
+ * Notes: the composer and the feed. Lives in the record's middle column,
+ * beside the journey - the two together are "what has happened and what was
+ * said about it".
+ */
+export function ParentNotesPanel({ record }: { record: ParentRecord }) {
+  return <NotesFeed record={record} isAdmin={record.viewer.role === "admin"} />;
+}
+
+/**
+ * Next step and tags: the small stack of things you SET, as opposed to the
+ * things that happened. Lives in the record's right rail.
+ */
+export function ParentFollowUpPanel({ record }: { record: ParentRecord }) {
   const isAdmin = record.viewer.role === "admin";
   const choices = scopeChoices(record, isAdmin);
   const primary = choices[0];
-
   return (
-    // flex-col-reverse on mobile so the scannable state (owner / next step /
-    // tags) comes first and the notes feed second.
-    <div className="flex flex-col-reverse lg:grid lg:grid-cols-[1fr_320px] gap-6">
-      <NotesFeed record={record} isAdmin={isAdmin} />
-      <div className="space-y-3">
-        {/* Lead owner lives in the record header now - see ParentLeadOwner. */}
-        {choices.map((c) => (
-          <NextStepCard
-            key={c.key}
-            record={record}
-            isAdmin={isAdmin}
-            choice={c}
-            existing={record.crm.followUps.find((f) => f.scope === c.scope && f.providerId === c.providerId)}
-          />
-        ))}
-        {primary && <TagEditor record={record} isAdmin={isAdmin} choice={primary} />}
-      </div>
+    <div className="space-y-3">
+      {/* Lead owner lives in the record header now - see ParentLeadOwner. */}
+      {choices.map((c) => (
+        <NextStepCard
+          key={c.key}
+          record={record}
+          isAdmin={isAdmin}
+          choice={c}
+          existing={record.crm.followUps.find((f) => f.scope === c.scope && f.providerId === c.providerId)}
+        />
+      ))}
+      {primary && <TagEditor record={record} isAdmin={isAdmin} choice={primary} />}
     </div>
   );
 }

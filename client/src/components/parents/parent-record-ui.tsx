@@ -28,6 +28,8 @@ import {
   chatDeepLink,
   dedupeHouseholdPhones,
 } from "./parent-cells";
+import { cn } from "@/lib/utils";
+import { useDense } from "./record-density";
 import type { ParentRecord } from "./parent-record-types";
 
 // ─── Collapsible sections, with open state in the URL ───────────────────────
@@ -299,6 +301,7 @@ export function ParentRecordActions({ record }: { record: ParentRecord }) {
 // ─── Identity ───────────────────────────────────────────────────────────────
 
 export function ParentIdentitySection({ record }: { record: ParentRecord }) {
+  const dense = useDense();
   const ip = record.ipForm;
   const submittedButLocked = ip?.status === "SUBMITTED" && !ip.responseId;
   return (
@@ -378,7 +381,10 @@ export function ParentIdentitySection({ record }: { record: ParentRecord }) {
       {/* hideIdentity: the header directly above already shows the photo,
           name, email and phone. Repeating them here is what made the page
           read as two separate Profile blocks. */}
-      <ParentProfileCard user={record.parent} layout="wide" hideIdentity testId="record-profile" />
+      {/* "rail" in the contact column: layout="wide" is a 3-up masonry, which
+          in a 320px rail gives three ~100px columns of shredded labels. This
+          is the same variant the 288px chat sidebar uses. */}
+      <ParentProfileCard user={record.parent} layout={dense ? "rail" : "wide"} hideIdentity testId="record-profile" />
     </div>
   );
 }
@@ -388,6 +394,7 @@ export function ParentIdentitySection({ record }: { record: ParentRecord }) {
 export function ParentMoneySection({
   record, showProviderName,
 }: { record: ParentRecord; showProviderName: boolean }) {
+  const dense = useDense();
   const groups = record.money.byProvider;
   if (groups.length === 0) {
     return (
@@ -404,7 +411,7 @@ export function ParentMoneySection({
           {showProviderName && (
             <p className="text-sm font-medium font-ui mb-2">{g.providerName}</p>
           )}
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className={cn("grid gap-4", !dense && "md:grid-cols-3")}>
             <div>
               <p className="t-micro-label mb-1.5">Cost sheets</p>
               {/* No providerName on the rows: an admin already has the group

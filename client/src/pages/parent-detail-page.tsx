@@ -11,15 +11,18 @@
  * /users/:id still exists for the account-admin job (password, roles,
  * calendars) and is reachable from the Account settings button in the header.
  */
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import { ContactReleaseSection } from "@/components/chat/contact-release-section";
 import { EvaKnowledgePanel } from "@/components/chat/eva-knowledge-panel";
 import {
-  ParentCrmPanel,
+  DenseColumn,
+  ParentNotesPanel,
+  ParentFollowUpPanel,
   ParentLeadOwner,
   ParentRecordActions,
   ParentIdentitySection,
@@ -31,12 +34,44 @@ import {
 } from "@/components/parents";
 import type { ParentRecord } from "@/components/parents";
 
+/**
+ * The three columns, in reading order.
+ *
+ * On desktop they sit side by side. On a phone there is no room for that, so
+ * the same three groups become tabs in the same left-to-right order - one
+ * column visible at a time, nothing reordered, nothing rebuilt. Both layouts
+ * render ONE tree; the tabs only toggle which column is shown.
+ */
+const COLUMNS = [
+  { key: "contact", label: "Contact" },
+  { key: "activity", label: "Activity" },
+  { key: "related", label: "Related" },
+] as const;
+
+type ColumnKey = (typeof COLUMNS)[number]["key"];
+
 export default function ParentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   // Every section, so the default is "all open" and a saved state can name
   // any of them.
-  const { isOpen, toggle } = useOpenSections(["identity", "crm", "interested", "journey", "money", "admin"]);
+  const { isOpen, toggle } = useOpenSections(["identity", "crm", "followup", "interested", "journey", "money", "admin"]);
+
+  // Which column the phone is showing. In the URL per the house rule, so back
+  // returns to the tab you were on - and so a link can point at one.
+  const [params, setParams] = useSearchParams();
+  const rawTab = params.get("col");
+  const activeCol: ColumnKey = COLUMNS.some((c) => c.key === rawTab) ? (rawTab as ColumnKey) : "contact";
+  const setCol = (key: ColumnKey) =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("col", key);
+      return next;
+    }, { replace: true });
+
+  /** Hidden on a phone unless it is the open tab; always shown from lg up. */
+  const colClass = (key: ColumnKey) =>
+    cn("space-y-4 min-w-0", activeCol !== key && "hidden lg:block");
 
   const { data: record, isLoading, error } = useQuery<ParentRecord>({
     queryKey: ["/api/parents", id, "record"],
@@ -99,99 +134,151 @@ export default function ParentDetailPage() {
 
           {record && (
             <>
-              {/* One Profile block. The identity card and the old "Profile"
-                  section rendered the same person twice, so the section is
-                  folded in here and ?sec=identity now drives this card. */}
-              <ParentRecordHeader
-                record={record}
-                isAdmin={!!isAdmin}
-                onJumpToCrm={() => toggle("crm", true)}
-                ownerSlot={<ParentLeadOwner record={record} />}
-                open={isOpen("identity")}
-                onToggle={() => toggle("identity")}
+              {/* Phone only: the three columns as tabs, same order. */}
+              <div
+                className="lg:hidden flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1"
+                role="tablist"
+                data-testid="record-column-tabs"
               >
-                <ParentIdentitySection record={record} />
-              </ParentRecordHeader>
+                {COLUMNS.map((c) => {
+                  const active = activeCol === c.key;
+                  return (
+                    <button
+                      key={c.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setCol(c.key)}
+                      className={cn(
+                        "shrink-0 rounded-full px-3.5 py-1.5 text-sm font-ui border transition-colors",
+                        active
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-secondary text-foreground border-transparent",
+                      )}
+                      data-testid={`tab-record-${c.key}`}
+                    >
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-              <RecordSection id="crm" title="Notes and follow-up" open={isOpen("crm")} onToggle={toggle}>
-                <ParentCrmPanel record={record} />
-              </RecordSection>
-
-              <RecordSection
-                id="interested"
-                title="Interested profiles"
-                count={record.conversations.length + record.savedProfiles.length}
-                open={isOpen("interested")}
-                onToggle={toggle}
-              >
-                <InterestedProfilesSection record={record} groupByProvider={!!isAdmin} />
-              </RecordSection>
-
-              <RecordSection id="journey" title="Journey" open={isOpen("journey")} onToggle={toggle}>
-                {/* No sessionId: the record is the full relationship view,
-                    which is exactly what this card's own docs say to omit it
-                    for. The wrapper is a plain bordered div, never a Card -
-                    Card's overflow-hidden clips the timeline. */}
-                <JourneyTimelineCard
-                  parentUserId={record.parent.id}
-                  providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
-                  showEvents
-                  variant={isAdmin ? "home" : "sidebar"}
-                  testId="record-journey"
-                />
-              </RecordSection>
-
-              <RecordSection
-                id="money"
-                title="Cost sheets, invoices and agreements"
-                count={record.money.byProvider.length}
-                open={isOpen("money")}
-                onToggle={toggle}
-              >
-                <ParentMoneySection record={record} showProviderName={!!isAdmin} />
-              </RecordSection>
-
-              {isAdmin && (
-                <RecordSection id="admin" title="GoStork only" open={isOpen("admin")} onToggle={toggle}>
-                  <div className="space-y-2">
-                    <p className="t-helper">
-                      Contact sharing is per provider org. Unlocking one does not affect the others.
-                    </p>
-                    {record.providerOrgs.length === 0 ? (
-                      <p className="t-helper">This family has no provider relationships yet.</p>
-                    ) : (
-                      record.providerOrgs.map((org, i) => (
-                        <ContactReleaseSection
-                          key={org.providerId}
-                          providerId={org.providerId}
-                          parentAccountId={record.accountKey}
-                          heading={`Contact sharing - ${org.providerName}`}
-                          divider={i > 0}
-                          testId={`contact-release-${org.providerId}`}
-                        />
-                      ))
-                    )}
-                    {/* The record is account-scoped, so this gets every
-                        session's rolling summary rather than the monitor's
-                        single one. historySummary is admin-only on the wire -
-                        the server sends null to providers - so this block
-                        cannot render for them even if it were mounted. */}
-                    <div className="border-t pt-4 mt-4">
-                      <EvaKnowledgePanel
-                        parentAccountId={record.accountKey}
-                        divider={false}
-                        sessionSummaries={record.conversations
-                          .filter((c) => !!c.historySummary)
-                          .map((c) => ({
-                            sessionId: c.sessionId,
-                            label: [c.providerName, c.displayName].filter(Boolean).join(" - ") || "Concierge",
-                            historySummary: c.historySummary as string,
-                          }))}
-                      />
-                    </div>
+              {/* items-start so a short column does not stretch to the height
+                  of the tallest one and leave a long empty card. */}
+              <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)_minmax(0,340px)]">
+                {/* ── Left: who this family is ───────────────────────────── */}
+                <DenseColumn>
+                  <div className={colClass("contact")} data-testid="record-col-contact">
+                    {/* One Profile block. The identity card and the old
+                        "Profile" section rendered the same person twice, so
+                        the section is folded in here and ?sec=identity now
+                        drives this card. */}
+                    <ParentRecordHeader
+                      record={record}
+                      isAdmin={!!isAdmin}
+                      onJumpToCrm={() => { setCol("related"); toggle("followup", true); }}
+                      ownerSlot={<ParentLeadOwner record={record} />}
+                      open={isOpen("identity")}
+                      onToggle={() => toggle("identity")}
+                    >
+                      <ParentIdentitySection record={record} />
+                    </ParentRecordHeader>
                   </div>
-                </RecordSection>
-              )}
+                </DenseColumn>
+
+                {/* ── Middle: what happened, and what was said about it ──── */}
+                <div className={colClass("activity")} data-testid="record-col-activity">
+                  <RecordSection id="journey" title="Activity" open={isOpen("journey")} onToggle={toggle}>
+                    {/* No sessionId: the record is the full relationship view,
+                        which is exactly what this card's own docs say to omit
+                        it for. The wrapper is a plain bordered div, never a
+                        Card - Card's overflow-hidden clips the timeline. */}
+                    <JourneyTimelineCard
+                      parentUserId={record.parent.id}
+                      providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
+                      showEvents
+                      variant={isAdmin ? "home" : "sidebar"}
+                      testId="record-journey"
+                    />
+                  </RecordSection>
+
+                  <RecordSection id="crm" title="Notes" open={isOpen("crm")} onToggle={toggle}>
+                    <ParentNotesPanel record={record} />
+                  </RecordSection>
+                </div>
+
+                {/* ── Right: everything else attached to this family ─────── */}
+                <DenseColumn>
+                  <div className={colClass("related")} data-testid="record-col-related">
+                    <RecordSection id="followup" title="Next step and tags" open={isOpen("followup")} onToggle={toggle}>
+                      <ParentFollowUpPanel record={record} />
+                    </RecordSection>
+
+                    <RecordSection
+                      id="interested"
+                      title="Interested profiles"
+                      count={record.conversations.length + record.savedProfiles.length}
+                      open={isOpen("interested")}
+                      onToggle={toggle}
+                    >
+                      <InterestedProfilesSection record={record} groupByProvider={!!isAdmin} />
+                    </RecordSection>
+
+                    <RecordSection
+                      id="money"
+                      title="Cost sheets, invoices and agreements"
+                      count={record.money.byProvider.length}
+                      open={isOpen("money")}
+                      onToggle={toggle}
+                    >
+                      <ParentMoneySection record={record} showProviderName={!!isAdmin} />
+                    </RecordSection>
+
+                    {isAdmin && (
+                      <RecordSection id="admin" title="GoStork only" open={isOpen("admin")} onToggle={toggle}>
+                        <div className="space-y-2">
+                          <p className="t-helper">
+                            Contact sharing is per provider org. Unlocking one does not affect the others.
+                          </p>
+                          {record.providerOrgs.length === 0 ? (
+                            <p className="t-helper">This family has no provider relationships yet.</p>
+                          ) : (
+                            record.providerOrgs.map((org, i) => (
+                              <ContactReleaseSection
+                                key={org.providerId}
+                                providerId={org.providerId}
+                                parentAccountId={record.accountKey}
+                                heading={`Contact sharing - ${org.providerName}`}
+                                divider={i > 0}
+                                testId={`contact-release-${org.providerId}`}
+                              />
+                            ))
+                          )}
+                          {/* The record is account-scoped, so this gets every
+                              session's rolling summary rather than the
+                              monitor's single one. historySummary is
+                              admin-only on the wire - the server sends null to
+                              providers - so this block cannot render for them
+                              even if it were mounted. */}
+                          <div className="border-t pt-4 mt-4">
+                            <EvaKnowledgePanel
+                              parentAccountId={record.accountKey}
+                              divider={false}
+                              sessionSummaries={record.conversations
+                                .filter((c) => !!c.historySummary)
+                                .map((c) => ({
+                                  sessionId: c.sessionId,
+                                  label: [c.providerName, c.displayName].filter(Boolean).join(" - ") || "Concierge",
+                                  historySummary: c.historySummary as string,
+                                }))}
+                            />
+                          </div>
+                        </div>
+                      </RecordSection>
+                    )}
+                  </div>
+                </DenseColumn>
+              </div>
             </>
           )}
         </div>
