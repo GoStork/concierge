@@ -341,7 +341,10 @@ export interface SyncJob {
   id: string;
   providerId: string;
   type: DonorType;
-  status: "running" | "completed" | "failed";
+  // "partial" = some profiles saved before a failure. A real terminal state
+  // (queries filter on it) that this type never listed, so every assignment
+  // of it was an error.
+  status: "running" | "completed" | "partial" | "failed";
   total: number;
   processed: number;
   succeeded: number;
@@ -1386,7 +1389,17 @@ function isTransientGeminiError(err: any): boolean {
 async function extractProfileDetailSections(
   html: string,
   pageUrl: string,
-): Promise<{ _sections: Record<string, Record<string, any>>; photoUrl?: string; externalId?: string } | null> {
+): Promise<{
+  _sections: Record<string, Record<string, any>>;
+  photoUrl?: string;
+  externalId?: string;
+  // Flat scalars the sperm-donor branch reads off the same payload. They were
+  // always returned; the type just never said so.
+  vialTypes?: string[];
+  iciCost?: unknown;
+  iuiCost?: unknown;
+  ivfCost?: unknown;
+} | null> {
   // Lower the safety thresholds so benign donor-profile pages (which discuss
   // physical features, family origin, religion, etc.) don't get false-positive
   // blocked. We saw one SBoC donor's response come back PROHIBITED_CONTENT on
@@ -2808,7 +2821,7 @@ async function tryFetchEdcDonorData(
     const dashboardLink = allDashLinks.length > 0 ? [null, allDashLinks[0]] : null;
     if (dashboardLink) {
       console.log(`[donor-sync] Found EDC ${syncType} dashboard link: ${dashboardLink[1]}`);
-      const dashUrl = new URL(dashboardLink[1], base).href;
+      const dashUrl = new URL(String(dashboardLink[1]), base).href;
       const dashHtml = await fetchHtml(dashUrl, cookies);
       
       if (dashHtml.includes("donorCardDiv")) return dashHtml;
@@ -4092,7 +4105,8 @@ function reclassifySupportSystemFields(profileData: Record<string, any>): void {
     if (!sectionData || typeof sectionData !== "object" || Array.isArray(sectionData)) continue;
 
     const keysToMove: string[] = [];
-    for (const key of Object.keys(sectionData)) {
+    const sectionRecord = sectionData as Record<string, any>;
+    for (const key of Object.keys(sectionRecord)) {
       if (key.startsWith("_")) continue;
       if (isSupportSystemField(key)) {
         keysToMove.push(key);
@@ -4100,8 +4114,8 @@ function reclassifySupportSystemFields(profileData: Record<string, any>): void {
     }
 
     for (const key of keysToMove) {
-      supportSection[key] = sectionData[key];
-      delete sectionData[key];
+      supportSection[key] = sectionRecord[key];
+      delete sectionRecord[key];
       moved = true;
     }
   }
@@ -7027,7 +7041,8 @@ async function extractTextFromPdfDoc(
     try {
       const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: buffer });
-      await parser.load();
+      // getText() loads on demand - load() is private API and calling it here
+      // was both redundant and a break in the library's contract.
       const textResult = await parser.getText();
       extractedText = (typeof textResult === "string" ? textResult : textResult?.text) || "";
       console.log(`[pdf-sync] pdf-parse fallback extracted ${extractedText.length} chars from ${fileName}`);
@@ -7404,7 +7419,7 @@ export async function repairPhotoUrls(
             if (needsRepair(arr[i])) {
               const newUrl = await persistSinglePhoto(arr[i], providerId, storageService);
               if (newUrl !== arr[i]) {
-                arr[i] = newUrl;
+                if (newUrl) arr[i] = newUrl;
                 changed = true;
               }
             }

@@ -76,6 +76,20 @@ export interface ClassificationResult {
   programSplits?: { programName: string; serviceTypes: string[]; itemKeys: string[] }[];
 }
 
+/** The item shape both parse paths return. Named so enforceCycleTierGrouping's
+ *  generic infers it in full - inline it collapsed to the constraint. */
+type ParsedCostItem = {
+  category: string;
+  key: string;
+  minValue: number | null;
+  maxValue: number | null;
+  isCustom: boolean;
+  isIncluded: boolean;
+  isTier: boolean;
+  comment: string | null;
+  recurrence?: CostItemRecurrence | null;
+};
+
 @Injectable()
 export class CostsAiService {
   private readonly logger = new Logger(CostsAiService.name);
@@ -88,6 +102,10 @@ export class CostsAiService {
     providerTypeName: string,
     originalFileName: string,
     subType?: string,
+    // Was referenced in the body but never declared, so a "multi-service"
+    // parse threw ReferenceError - the one case this branch exists for.
+    // Matches parseAndClassifyDocument's parameter of the same name.
+    approvedTypeNames?: string[],
   ): Promise<
     Array<{
       category: string;
@@ -430,7 +448,7 @@ Return ONLY a valid JSON array with objects having these exact fields:
         : "No predefined templates available. Categorize based on common fertility industry categories.";
 
     const subtypeMenu = ALL_SUBTYPES.map(
-      (s) => `  - "${s}" (${TAB_LABEL[TAB_OF[s]]} > ${SUBTYPE_LABEL[s]})`,
+      (s: SubType) => `  - "${s}" (${TAB_LABEL[TAB_OF[s] as Tab] ?? ""} > ${SUBTYPE_LABEL[s]})`,
     ).join("\n");
 
     // Detect provider type. The 14-subtype taxonomy is IVF-specific. Egg
@@ -871,8 +889,8 @@ ${subtypeTrailingNote}`;
 
     // Items branch - normalize to the same shape as parseFile returns.
     const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-    const items = this.enforceCycleTierGrouping(
-      rawItems.map((item: any) => ({
+    const items = this.enforceCycleTierGrouping<ParsedCostItem>(
+      rawItems.map((item: any): ParsedCostItem => ({
         category: String(item.category || "Other"),
         key: String(item.key || "Unknown"),
         minValue: item.minValue != null ? Number(item.minValue) : null,
@@ -972,7 +990,8 @@ ${subtypeTrailingNote}`;
           const subTypeId = rawSubType as SubType;
           if ((ALL_SUBTYPES as string[]).includes(subTypeId)) {
             const tab = TAB_OF[subTypeId];
-            classification = { tab, subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes, eggDonorSubType: eggDonorFlavor };
+            if (!tab) this.logger.warn(`parseAndClassify: subType "${subTypeId}" has no tab mapping`);
+            classification = { tab: tab ?? ("" as any), subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes, eggDonorSubType: eggDonorFlavor };
             this.logger.log(`parseAndClassify [Multi/IVF]: ${items.length} items, ${subTypeId} (fixed=${isFixedCost}, conf=${confidence.toFixed(2)}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)}, eggDonor=${eggDonorFlavor ?? "n/a"})`);
           } else {
             this.logger.warn(`parseAndClassify [Multi/IVF]: ivf_clinic tag but invalid subType "${cls.subType}", emitting classification without subType`);
@@ -997,7 +1016,8 @@ ${subtypeTrailingNote}`;
         const subTypeId = String(cls.subType ?? "") as SubType;
         if ((ALL_SUBTYPES as string[]).includes(subTypeId)) {
           const tab = TAB_OF[subTypeId];
-          classification = { tab, subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes, eggDonorSubType: eggDonorFlavor };
+          if (!tab) this.logger.warn(`parseAndClassify: subType "${subTypeId}" has no tab mapping`);
+          classification = { tab: tab ?? ("" as any), subType: subTypeId, isFixedCost, confidence, reasoning, programName, country, serviceTypes, eggDonorSubType: eggDonorFlavor };
           this.logger.log(`parseAndClassify [IVF]: ${items.length} items, ${subTypeId} (fixed=${isFixedCost}, conf=${confidence.toFixed(2)}, name="${programName}", country="${country}", tags=${JSON.stringify(serviceTypes)}, eggDonor=${eggDonorFlavor ?? "n/a"})`);
         } else {
           this.logger.warn(`parseAndClassify [IVF]: invalid subType "${cls.subType}", returning items without classification`);
@@ -1189,7 +1209,7 @@ ${subtypeTrailingNote}`;
     const genAI = new GoogleGenerativeAI(apiKey);
 
     const subtypeMenu = ALL_SUBTYPES.map(
-      (s) => `  - "${s}" (${TAB_LABEL[TAB_OF[s]]} > ${SUBTYPE_LABEL[s]})`,
+      (s: SubType) => `  - "${s}" (${TAB_LABEL[TAB_OF[s] as Tab] ?? ""} > ${SUBTYPE_LABEL[s]})`,
     ).join("\n");
 
     const itemsSummary = parsedItems
@@ -1291,6 +1311,10 @@ ${rawTextSnippet ? `\nDocument excerpt (first 1500 chars):\n${rawTextSnippet.sli
         return null;
       }
       const tab = TAB_OF[subType];
+      if (!tab) {
+        this.logger.warn(`Classification subType "${subType}" has no tab mapping`);
+        return null;
+      }
       const confidence = typeof parsed.confidence === "number"
         ? Math.max(0, Math.min(1, parsed.confidence))
         : 0.5;

@@ -16,6 +16,7 @@ import { getBaseUrl } from "./src/lib/get-base-url";
 import { buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
 import { canProviderAccessSession } from "../shared/roles";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { Prisma } from "@prisma/client";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { prisma } from "./db";
@@ -147,7 +148,7 @@ async function callTier1Gemini(
   const userMessage = typeof lastMsg?.content === "string" ? lastMsg.content : JSON.stringify(lastMsg?.content);
 
   const chat = model.startChat({
-    systemInstruction: { parts: [{ text: fullSystemT1 }] },
+    systemInstruction: fullSystemT1,
     history,
   });
 
@@ -555,7 +556,7 @@ async function callTier2Claude(
     model: process.env.TIER2_MODEL || "gemini-3.5-flash",
     ...(process.env.TIER2_THINKING === "1" ? {} : { generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any }),
     ...(geminiTools ? { tools: geminiTools as any } : {}),
-    systemInstruction: { parts: [{ text: fullSystem }] },
+    systemInstruction: fullSystem,
   });
 
   let chat = model.startChat({ history: chatHistory });
@@ -1529,7 +1530,7 @@ async function claudeRetry(messages: any[]): Promise<string> {
     // was the bulk of the 9.3s/6.6s interceptor fires in the Session-2
     // baseline. Retries are rewrite tasks, not reasoning tasks.
     generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
-    ...(systemMsg ? { systemInstruction: { parts: [{ text: systemMsg.content }] } } : {}),
+    ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
   });
   const chat = model.startChat({ history: chatHistory });
   const result = await chat.sendMessage(userMessage);
@@ -1562,7 +1563,7 @@ async function claudeRetryStream(messages: any[], onDelta: (delta: string) => vo
   const model = geminiAI.getGenerativeModel({
     model: "gemini-3.5-flash",
     generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
-    ...(systemMsg ? { systemInstruction: { parts: [{ text: systemMsg.content }] } } : {}),
+    ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
   });
   const chat = model.startChat({ history: chatHistory });
   const result = await chat.sendMessageStream(userMessage);
@@ -1639,7 +1640,7 @@ async function findLatestMatchCard(sessionId: string): Promise<any | null> {
   // strictly by createdAt is the only way "latest" stays correct when the
   // parent jumps between providers in the same shared session.
   const messages = await prisma.aiChatMessage.findMany({
-    where: { sessionId, NOT: { uiCardData: { equals: null } } },
+    where: { sessionId, NOT: { uiCardData: { equals: Prisma.DbNull } } },
     orderBy: { createdAt: "desc" },
     take: 30,
     select: { uiCardData: true },
@@ -1706,7 +1707,7 @@ async function getProgramPartnerClinics(
 // doctorCards (doctors, keyed by slug). Used to attribute per-profile inquiries.
 async function findLatestChatSubject(sessionId: string): Promise<{ profileId: string; type: string } | null> {
   const messages = await prisma.aiChatMessage.findMany({
-    where: { sessionId, NOT: { uiCardData: { equals: null } } },
+    where: { sessionId, NOT: { uiCardData: { equals: Prisma.DbNull } } },
     orderBy: { createdAt: "desc" },
     take: 30,
     select: { uiCardData: true },
@@ -2123,6 +2124,9 @@ async function searchKnowledgeBase(
   maxResults: number = 5,
 ): Promise<{ content: string; sourceTier: number; sourceType: string; score: number }[]> {
   try {
+    // mcpClient is null until the MCP transport connects; a knowledge lookup
+    // before that should return nothing, not throw into the caller's catch.
+    if (!mcpClient) return [];
     const result = await mcpClient.callTool({
       name: "search_knowledge_base",
       arguments: { query, ...(providerId ? { providerId } : {}), maxResults },
@@ -2860,10 +2864,12 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         if (providerUsers.some(u => isUserOnline(u.id))) {
           const now = new Date();
           userMsgDeliveredAt = now.toISOString();
-          prisma.aiChatMessage.update({
-            where: { id: savedUserMsg.id },
-            data: { deliveredAt: now },
-          }).catch(() => {});
+          if (savedUserMsg) {
+            prisma.aiChatMessage.update({
+              where: { id: savedUserMsg.id },
+              data: { deliveredAt: now },
+            }).catch(() => {});
+          }
         }
         for (const pu of providerUsers) {
           await prisma.inAppNotification.create({
@@ -2957,7 +2963,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         sse.sendDone({
           message: { id: triageMsg.id, content: triageContent, senderType: "system", role: "assistant", uiCardData: triageCardData },
           sessionId: currentSessionId,
-          userMessageId: savedUserMsg.id,
+          userMessageId: savedUserMsg?.id ?? null,
           userMessageDeliveredAt: userMsgDeliveredAt,
           quickReplies: teamQuickReplies,
           humanNeeded: true,
@@ -2974,7 +2980,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         sse.sendDone({
           message: { id: ackMsg.id, content: ackContent, senderType: "system", role: "assistant", uiCardData: ackCardData },
           sessionId: currentSessionId,
-          userMessageId: savedUserMsg.id,
+          userMessageId: savedUserMsg?.id ?? null,
           userMessageDeliveredAt: userMsgDeliveredAt,
         });
         return;
@@ -3011,7 +3017,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
           sse.sendDone({
             message: { id: calMsg.id, content: calContent, senderType: "system", role: "assistant", uiCardData: calCardData },
             sessionId: currentSessionId,
-            userMessageId: savedUserMsg.id,
+            userMessageId: savedUserMsg?.id ?? null,
             userMessageDeliveredAt: userMsgDeliveredAt,
             consultationCard: conciergeCard,
           });
@@ -3022,7 +3028,7 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       sse.sendDone({
         message: { id: null, content: "", senderType: "ai", role: "assistant" },
         sessionId: currentSessionId,
-        userMessageId: savedUserMsg.id,
+        userMessageId: savedUserMsg?.id ?? null,
         userMessageDeliveredAt: userMsgDeliveredAt,
         skipAiResponse: true,
         humanNeeded: humanEscalationTriggered,
@@ -3305,7 +3311,14 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
     // Kick off clinic lookup in parallel with synchronous context-building below
     const clinicLookupPromise = (profile?.needsClinic === false && profile?.currentClinicName)
       ? prisma.provider.findFirst({
-          where: { name: { contains: profile.currentClinicName, mode: "insensitive" }, type: { in: ["IVF_CLINIC", "FERTILITY_CLINIC"] } },
+          // Provider has no `type` column - a provider's types are rows in
+          // ProviderService. The old `type: { in: [...] }` filter made Prisma
+          // reject the whole query, so this clinic lookup always failed and
+          // the parent's own clinic was never found.
+          where: {
+            name: { contains: profile.currentClinicName, mode: "insensitive" },
+            services: { some: { status: "APPROVED", providerType: { name: "IVF Clinic" } } },
+          },
           select: {
             name: true,
             ivfSurrogateMinAge: true, ivfSurrogateMaxAge: true,
@@ -6889,7 +6902,11 @@ Rules: Use real values from the data. The providerId = the "id" UUID field. Neve
       // Extract only the Phase 0-2 section from conversation_flow - strip Phase 3+ (match cycles)
       // to keep the prompt small. Gemini returns soft error responses when the prompt grows too large.
       mark("pw2:prompt_sections2_start");
-      const promptSections = await getPromptSections();
+      // getPromptSections returns null when no sections are active (the
+      // "fall back to hardcoded" path). Tier 1 read it unguarded, so an empty
+      // ConciergePromptSection table crashed the whole turn. An empty Map is
+      // the graceful equivalent - every read below is `.get(k) || ""`.
+      const promptSections = (await getPromptSections()) ?? new Map<string, string>();
       mark("pw2:prompt_sections2_done");
       const fullConversationFlow = promptSections.get("conversation_flow") || "";
       const phase3Marker = "=== PHASE 3: PROGRESSIVE MATCH CYCLES ===";
@@ -7290,16 +7307,21 @@ ${phase0Section}`;
       // Gender save: when user answered the gender follow-up ("I am a man" / "I'm the woman")
       // but the DB save hasn't landed yet (bypass served the question without a [[SAVE]] tag),
       // persist it now so isMaleGender / isFemaleGender are correct for subsequent turns.
-      if (genderFromChat && !profile?.gender && userRecord?.parentAccountId) {
+      // Gender lives on User, not IntendedParentProfile - every reader above
+      // uses userRecord.gender. This wrote to a column the profile model does
+      // not have, so the upsert threw into the empty catch and the answer was
+      // silently dropped every time; the next turn asked again.
+      if (genderFromChat && !userRecord?.gender && userRecord?.id) {
         try {
-          await prisma.intendedParentProfile.upsert({
-            where: { parentAccountId: userRecord.parentAccountId },
-            update: { gender: genderFromChat },
-            create: { parentAccountId: userRecord.parentAccountId, gender: genderFromChat },
+          await prisma.user.update({
+            where: { id: userRecord.id },
+            data: { gender: genderFromChat },
           });
-          if (profile) profile.gender = genderFromChat;
+          userRecord.gender = genderFromChat;   // so this same turn sees it
           console.log(`[GENDER SAVE] Saved gender from chat: ${genderFromChat}`);
-        } catch {}
+        } catch (e: any) {
+          console.error(`[GENDER SAVE] failed: ${e?.message}`);
+        }
       }
 
       // Schedule-with-concierge: bypass Gemini entirely - Tier 1's compact
