@@ -240,9 +240,16 @@ class VoiceSession {
     if (this.ws.readyState === WebSocket.OPEN) this.ws.send(pcm, { binary: true });
   }
   private setState(state: SessionState) {
+    // Stamp when her audible speech ENDED - the echo filter may only act
+    // while echo is physically possible (during speech or its immediate
+    // tail), never against a parent speaking into her silence.
+    if (this.state === "speaking" && state !== "speaking") {
+      this.speakingEndedAt = Date.now();
+    }
     this.state = state;
     this.send({ type: "state", state });
   }
+  private speakingEndedAt = 0;
 
   private sttRestarts = 0;
   // Utterance telemetry from the STT provider for the NEXT turn, plus the
@@ -333,8 +340,15 @@ class VoiceSession {
       // junk-whisper incident). An utterance whose words are nearly all
       // words she recently spoke is her own voice - drop it. Single-word
       // and mostly-novel utterances always pass.
+      // Echo is only physically possible while her speech is audible (or in
+      // its immediate ~3s tail: playback + STT latency). Outside that window
+      // the filter must NEVER fire - observed live (0g3kop): the parent's
+      // "Are you there? Are you showing me [sperm donor profiles]?" scored
+      // 2/8 novel (common words she had recently said) and was suppressed
+      // while she sat SILENT - the parent was ignored and hung up.
+      const echoPossible = this.state === "speaking" || Date.now() - this.speakingEndedAt < 3000;
       const nov = this.novelWordInfo(text);
-      if (this.recentSpoken.length > 0 && nov.total >= 2 && nov.novel / nov.total < 0.3) {
+      if (echoPossible && this.recentSpoken.length > 0 && nov.total >= 2 && nov.novel / nov.total < 0.3) {
         log(`echo utterance suppressed (${nov.novel}/${nov.total} novel words): "${text.slice(0, 80)}"`);
         this.send({ type: "partial_transcript", text: "" });
         return;
