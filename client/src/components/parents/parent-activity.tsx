@@ -314,9 +314,12 @@ const money = (cents: number | null) =>
 /** A labelled row inside a detail block. */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline gap-2 min-w-0">
+    // flex-wrap with a minimum basis: the value drops to its own line rather
+    // than being squeezed into a sliver. break-words so a long address wraps
+    // at a sensible point instead of running past the card.
+    <div className="flex items-baseline gap-x-2 gap-y-0.5 flex-wrap min-w-0">
       <span className="t-micro-label shrink-0">{label}</span>
-      <span className="t-micro-value min-w-0 break-words">{children}</span>
+      <span className="t-micro-value min-w-0 basis-40 flex-1 break-words">{children}</span>
     </div>
   );
 }
@@ -502,14 +505,22 @@ function titleCaseWords(value: string): string {
  * the first measurement lands before they have loaded.
  */
 function EmailFrame({ html, title, testId }: { html: string; title: string; testId: string }) {
+  const wrap = useRef<HTMLDivElement>(null);
   const ref = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState(320);
+  const [box, setBox] = useState({ height: 320, scale: 1 });
 
   const measure = () => {
     const doc = ref.current?.contentDocument;
-    if (!doc?.documentElement) return;
-    const h = Math.max(doc.documentElement.scrollHeight, doc.body?.scrollHeight || 0);
-    if (h > 0) setHeight(h);
+    const available = wrap.current?.clientWidth || 0;
+    if (!doc?.documentElement || !available) return;
+    const contentW = Math.max(doc.documentElement.scrollWidth, doc.body?.scrollWidth || 0);
+    const contentH = Math.max(doc.documentElement.scrollHeight, doc.body?.scrollHeight || 0);
+    if (!contentH) return;
+    // A branded email is laid out for ~600px. On a 390px phone that would
+    // either clip or need sideways scrolling, so it is scaled to fit instead
+    // - the whole email, readable, no horizontal scroll. Never scaled UP.
+    const scale = contentW > available ? available / contentW : 1;
+    setBox({ height: Math.ceil(contentH * scale), scale });
   };
 
   useEffect(() => {
@@ -523,6 +534,7 @@ function EmailFrame({ html, title, testId }: { html: string; title: string; test
       doc.querySelectorAll("img").forEach((img) => img.addEventListener("load", measure));
       const ro = new ResizeObserver(measure);
       if (doc.documentElement) ro.observe(doc.documentElement);
+      if (wrap.current) ro.observe(wrap.current);   // re-fit on rotate / resize
       (frame as any).__ro = ro;
     };
     frame.addEventListener("load", onLoad);
@@ -533,18 +545,26 @@ function EmailFrame({ html, title, testId }: { html: string; title: string; test
   }, [html]);
 
   return (
-    <iframe
-      ref={ref}
-      title={title}
-      sandbox="allow-same-origin"
-      srcDoc={html}
-      style={{ height }}
-      className="w-full bg-white block"
-      scrolling="no"
-      data-testid={testId}
-    />
+    <div ref={wrap} style={{ height: box.height }} className="w-full overflow-hidden">
+      <iframe
+        ref={ref}
+        title={title}
+        sandbox="allow-same-origin"
+        srcDoc={html}
+        style={{
+          width: box.scale < 1 ? `${100 / box.scale}%` : "100%",
+          height: box.scale < 1 ? `${box.height / box.scale}px` : box.height,
+          transform: box.scale < 1 ? `scale(${box.scale})` : undefined,
+          transformOrigin: "top left",
+        }}
+        className="bg-white block border-0"
+        scrolling="no"
+        data-testid={testId}
+      />
+    </div>
   );
 }
+
 
 function MessageDetail({ detail, parentUserId }: {
   detail: Extract<ActivityDetail, { type: "message" }>;
@@ -650,44 +670,46 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
     : meta.tone === "accent" ? "hsl(var(--accent))"
     : meta.tone === "primary" ? "hsl(var(--primary))"
     : "hsl(var(--muted-foreground))";
+  const avatar =
+    entry.kind === "ai" && entry.aiAvatarUrl ? (
+      // Eva sent this, so it wears Eva's face - the same reason a parent
+      // action shows the parent and a note shows its author.
+      <img
+        src={getPhotoSrc(entry.aiAvatarUrl) || undefined}
+        alt={entry.aiName || "Concierge"}
+        className="w-7 h-7 rounded-full object-cover object-top shrink-0"
+      />
+    ) : entry.kind === "parent" ? (
+      parentPhotoUrl
+        ? <img src={getPhotoSrc(parentPhotoUrl) || undefined} alt={parentName || "Parent"} className="w-7 h-7 rounded-full object-cover object-top shrink-0" />
+        : <DoctorMonogram name={parentName || "Parent"} size={28} rounded="9999px" />
+    ) : (
+      <span
+        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+        style={{ background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint }}
+      >
+        <Icon className="w-3.5 h-3.5" />
+      </span>
+    );
+
   return (
-    <div className="rounded-[var(--radius)] border bg-card p-3" data-testid={`activity-${entry.id}`}>
-      <div className="flex items-start gap-2.5">
-        {entry.kind === "ai" && entry.aiAvatarUrl ? (
-          // Eva sent this, so it wears Eva's face - the same reason a parent
-          // action shows the parent and a note shows its author.
-          <img
-            src={getPhotoSrc(entry.aiAvatarUrl) || undefined}
-            alt={entry.aiName || "Concierge"}
-            className="w-7 h-7 rounded-full object-cover object-top shrink-0 mt-0.5"
-          />
-        ) : entry.kind === "parent" ? (
-          // The family did this, so show the family - the same reason a note
-          // carries its author's name.
-          parentPhotoUrl
-            ? <img src={getPhotoSrc(parentPhotoUrl) || undefined} alt={parentName || "Parent"} className="w-7 h-7 rounded-full object-cover object-top shrink-0 mt-0.5" />
-            : <DoctorMonogram name={parentName || "Parent"} size={28} rounded="9999px" />
-        ) : (
-          <span
-            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
-            style={{ background: `color-mix(in srgb, ${tint} 12%, transparent)`, color: tint }}
-          >
-            <Icon className="w-3.5 h-3.5" />
-          </span>
-        )}
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
-            <span className="text-sm font-medium font-ui">{entry.title}</span>
-            {entry.byline && <span className="t-helper">by {entry.byline}</span>}
-            {entry.org && <span className="t-helper">{entry.org}</span>}
-            <span className="t-helper ml-auto shrink-0">{fmt(entry.at)}</span>
-          </div>
-          {entry.body && <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>}
-          {entry.extra}
-          {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} viewerRole={viewerRole} onChanged={onChanged} />}
-          <p className="t-helper">{meta.label}</p>
+    // Header row, then everything else at FULL card width. The detail used to
+    // sit in a column beside the icon, which indented every payload by 38px
+    // and cost a phone a tenth of its screen for no information.
+    <div className="rounded-[var(--radius)] border bg-card p-3 space-y-1.5" data-testid={`activity-${entry.id}`}>
+      <div className="flex items-center gap-2.5">
+        {avatar}
+        <div className="min-w-0 flex-1 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
+          <span className="text-sm font-medium font-ui">{entry.title}</span>
+          {entry.byline && <span className="t-helper">by {entry.byline}</span>}
+          {entry.org && <span className="t-helper">{entry.org}</span>}
+          <span className="t-helper sm:ml-auto shrink-0">{fmt(entry.at)}</span>
         </div>
       </div>
+      {entry.body && <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>}
+      {entry.extra}
+      {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} viewerRole={viewerRole} onChanged={onChanged} />}
+      <p className="t-helper">{meta.label}</p>
     </div>
   );
 }
