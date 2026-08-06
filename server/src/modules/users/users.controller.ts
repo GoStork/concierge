@@ -18,6 +18,7 @@ import {
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiParam } from "@nestjs/swagger";
 import { emitJourneyEvent } from "../../../journey-events";
+import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel } from "../../../../shared/journey-ladder";
 import { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
@@ -1063,20 +1064,50 @@ export class UsersController {
         })
       : [];
     const overviewMatchedById = new Map(overviewMatched.map(su => [su.id, su.reservedByParentId]));
-    const LADDER = ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "MATCH_CALL", "MATCHED", "DEPOSIT_PAID", "AGREEMENT_SIGNED", "HANDED_OFF"];
-    const rank = (st: string | null) => (st ? LADDER.indexOf(st) : -1);
+    // Evidence for the two rungs this ladder never had. Same predicates the
+    // journey timeline uses, so the column and the timeline agree.
+    const consultCompletedUsers = new Set(
+      ids.length
+        ? (await this.prisma.booking.findMany({
+            where: {
+              parentUserId: { in: ids },
+              meetingSubtype: { not: "MATCH_CALL" },
+              outcome: { in: ["COMPLETED", "UNVERIFIED"] },
+            },
+            select: { parentUserId: true },
+          })).map(b => b.parentUserId)
+        : [],
+    );
+    const submittedFormAccounts = new Set(
+      (await this.prisma.ipFormResponse.findMany({
+        where: { status: "SUBMITTED" },
+        select: { parentAccountId: true },
+      })).map(f => f.parentAccountId),
+    );
+    const accountKeyOf = new Map(parents.map((p: any) => [p.id, p.parentAccountId || p.id]));
+
+    // ONE ladder, shared with the journey timeline - see
+    // shared/journey-ladder.ts. The old local LADDER const had no rung for a
+    // completed consultation or a submitted form, so the Match Status column
+    // lagged the timeline that renders beside it.
+    const rank = (st: string | null) => (st ? (JOURNEY_STAGE_ORDER as readonly string[]).indexOf(st) : -1);
     const statusByUser = new Map<string, string>();
-    const bump = (userId: string, st: string) => {
+    const bump = (userId: string, st: string | null) => {
+      if (!st) return;
       if (rank(st) > rank(statusByUser.get(userId) || null)) statusByUser.set(userId, st);
     };
     for (const cs of sessions) {
-      bump(cs.userId, cs.status);
-      if (cs.handoffCompletedAt) bump(cs.userId, "HANDED_OFF");
-      if (cs.subjectProfileId && overviewMatchedById.get(cs.subjectProfileId) === cs.userId) bump(cs.userId, "MATCHED");
+      bump(cs.userId, LEGACY_MATCH_STATUS_TO_STAGE[cs.status] || null);
+      if (cs.handoffCompletedAt) bump(cs.userId, "handed_off");
+      if (cs.subjectProfileId && overviewMatchedById.get(cs.subjectProfileId) === cs.userId) bump(cs.userId, "matched");
     }
-    for (const uid of Array.from(matchCallUsers)) { if (uid) bump(uid as string, "MATCH_CALL"); }
-    for (const inv of invoices) { if (inv.status === "PAID") bump(inv.parentUserId, "DEPOSIT_PAID"); }
-    for (const a of agreements) { if (a.status === "SIGNED") bump(a.parentUserId, "AGREEMENT_SIGNED"); }
+    for (const uid of Array.from(consultCompletedUsers)) { if (uid) bump(uid as string, "consult_completed"); }
+    for (const [uid, key] of Array.from(accountKeyOf.entries())) {
+      if (submittedFormAccounts.has(key as string)) bump(uid as string, "ip_form_submitted");
+    }
+    for (const uid of Array.from(matchCallUsers)) { if (uid) bump(uid as string, "match_call_scheduled"); }
+    for (const inv of invoices) { bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent"); }
+    for (const a of agreements) { bump(a.parentUserId, a.status === "SIGNED" ? "agreement_signed" : "agreement_sent"); }
 
     const servicesByAccount = new Map(profiles.map((pr: any) => [pr.parentAccountId, pr.interestedServices || []]));
 
@@ -1303,6 +1334,8 @@ export class UsersController {
       select: {
         meetingSubtype: true,
         status: true,
+        // Proves the consult_completed rung, exactly as journey-timeline does.
+        outcome: true,
         parentUserId: true,
         scheduledAt: true,
         parentUser: {
@@ -1458,6 +1491,25 @@ export class UsersController {
         .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
         .filter(Boolean),
     );
+    // Scoped to the accounts on this page rather than every submitted form.
+    const ipFormKeys = Array.from(new Set(chatSessions.map((cs: any) => cs.userId).filter(Boolean).map((id: string) => accountKey(id))));
+    const ipFormSubmittedAccounts = new Set(
+      ipFormKeys.length
+        ? (await this.prisma.ipFormResponse.findMany({
+            where: { parentAccountId: { in: ipFormKeys }, status: "SUBMITTED" },
+            select: { parentAccountId: true },
+          })).map((f: any) => f.parentAccountId)
+        : [],
+    );
+
+    // Same predicate journey-timeline uses, so the column and the timeline
+    // cannot disagree about whether a call actually happened.
+    const consultCompletedAccounts = new Set(
+      bookings
+        .filter((b: any) => b.meetingSubtype !== "MATCH_CALL" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
+        .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
+        .filter(Boolean),
+    );
 
     // Invoices grouped by sessionId so each match row only shows its own
     // invoices. Single query, in-memory grouping = no N+1.
@@ -1568,19 +1620,25 @@ export class UsersController {
       // Most-advanced journey stage wins. Mirrors the 13-stage spine:
       // Connected -> Match Call -> Matched (double-yes) -> Deposit Paid ->
       // Agreement Signed (handoff).
-      const journeyStatus =
-        cs.handoffCompletedAt || handedOffAccounts.has(key)
-          ? "HANDED_OFF"
-          : rowAgreements.some((a: any) => a.status === "SIGNED")
-          ? "AGREEMENT_SIGNED"
-          : rowInvoices.some((inv: any) => inv.status === "PAID")
-            ? "DEPOSIT_PAID"
-            : cs.subjectProfileId && matchedSurrogateById.get(cs.subjectProfileId)
-                && accountKey(matchedSurrogateById.get(cs.subjectProfileId) as string) === key
-              ? "MATCHED"
-              : matchCallAccounts.has(key)
-                ? "MATCH_CALL"
-                : cs.status;
+      // ONE ladder, shared with the journey timeline - see
+      // shared/journey-ladder.ts. This used to be a hand-rolled six-rung
+      // chain with no rung for a completed consultation or a submitted form,
+      // so a family well past both still read "Call Booked" in this column
+      // while the timeline beside it showed them ticked.
+      const journeyStatus = resolveJourneyStage({
+        handedOff: !!cs.handoffCompletedAt || handedOffAccounts.has(key),
+        agreementSigned: rowAgreements.some((a: any) => a.status === "SIGNED"),
+        agreementSent: rowAgreements.length > 0,
+        invoicePaid: rowInvoices.some((inv: any) => inv.status === "PAID"),
+        invoiceSent: rowInvoices.length > 0,
+        matched: !!(cs.subjectProfileId && matchedSurrogateById.get(cs.subjectProfileId)
+          && accountKey(matchedSurrogateById.get(cs.subjectProfileId) as string) === key),
+        matchCallScheduled: matchCallAccounts.has(key),
+        ipFormSubmitted: ipFormSubmittedAccounts.has(key),
+        consultCompleted: consultCompletedAccounts.has(key),
+        consultScheduled: cs.status === "CONSULTATION_BOOKED",
+        connected: cs.status === "PROVIDER_CONNECTED" || !!cs.providerJoinedAt,
+      });
 
       rows.push({
         // Stable React key - use sessionId so multiple matches for the

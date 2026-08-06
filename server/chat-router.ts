@@ -18,7 +18,7 @@ import {
   type ParentGates,
 } from "./parent-privacy";
 import { emitJourneyEvent } from "./journey-events";
-import { claimGostorkOwner } from "./parent-owner-claim";
+import { claimGostorkOwner, claimProviderOwner } from "./parent-owner-claim";
 import multer from "multer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
@@ -2391,6 +2391,11 @@ chatRouter.post("/api/provider/concierge-sessions/:id/message", requireAuth, asy
       senderType: "provider",
       senderName: senderDisplayName,
     };
+
+    // The provider twin of the GoStork claim: whoever at the agency replies
+    // first owns this family for that org. Best effort - a CRM write must not
+    // be able to stop a message reaching a parent.
+    await claimProviderOwner(session.userId, user, "FIRST_REPLY");
     if (uiCardType) messageData.uiCardType = uiCardType;
     if (uiCardData) messageData.uiCardData = uiCardData;
 

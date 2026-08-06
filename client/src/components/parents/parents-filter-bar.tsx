@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
-import { SERVICE_LABELS, JOURNEY_STATUS_LABELS, IP_FORM_FILTER_LABELS, toDateParam } from "./parent-cells";
+import { SERVICE_LABELS, IP_FORM_FILTER_LABELS, toDateParam } from "./parent-cells";
+import { JOURNEY_STAGE_LABELS } from "@shared/journey-ladder";
 
 /**
  * The one filter control, for all four dropdowns.
@@ -219,7 +220,7 @@ export function ParentsFilterBar({
           />
           <FilterDropdown
             label="All statuses"
-            options={Object.entries(JOURNEY_STATUS_LABELS)}
+            options={Object.entries(JOURNEY_STAGE_LABELS)}
             selected={state.statuses}
             onChange={(next) => setParam("status", next.join(","))}
             testId={`${testIdPrefix}-status-filter`}

@@ -15,6 +15,7 @@
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Lock, Users } from "lucide-react";
 import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-monogram";
+import { JOURNEY_STAGE_LABELS, LEGACY_MATCH_STATUS_TO_STAGE } from "@shared/journey-ladder";
 
 export const SERVICE_LABELS: Record<string, string> = {
   SURROGACY: "Surrogacy",
@@ -23,14 +24,21 @@ export const SERVICE_LABELS: Record<string, string> = {
   IVF_CLINIC: "IVF Clinic",
 };
 
+/**
+ * Status labels come from the shared ladder, so the Match Status column, its
+ * filter and the journey timeline cannot drift apart again. The legacy keys
+ * stay mapped because older rows and the chat session's own status enum - a
+ * different thing, tracking whether a provider may post - still use them.
+ */
 export const JOURNEY_STATUS_LABELS: Record<string, string> = {
-  CONSULTATION_BOOKED: "Call Booked",
-  PROVIDER_CONNECTED: "Connected",
-  MATCH_CALL: "Match Call",
-  MATCHED: "Matched",
-  DEPOSIT_PAID: "Invoice Paid",
-  AGREEMENT_SIGNED: "Agreement Signed",
-  HANDED_OFF: "Handed Off",
+  ...JOURNEY_STAGE_LABELS,
+  CONSULTATION_BOOKED: JOURNEY_STAGE_LABELS.consult_scheduled,
+  PROVIDER_CONNECTED: JOURNEY_STAGE_LABELS.consult_scheduled,
+  MATCH_CALL: JOURNEY_STAGE_LABELS.match_call_scheduled,
+  MATCHED: JOURNEY_STAGE_LABELS.matched,
+  DEPOSIT_PAID: JOURNEY_STAGE_LABELS.invoice_paid,
+  AGREEMENT_SIGNED: JOURNEY_STAGE_LABELS.agreement_signed,
+  HANDED_OFF: JOURNEY_STAGE_LABELS.handed_off,
 };
 
 /** yyyy-mm-dd in LOCAL time (toISOString would shift the day near midnight) */
@@ -192,15 +200,34 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
   // Journey ladder (server derives the most-advanced stage per session):
   // Call Booked -> Connected -> Match Call -> Matched -> Deposit Paid ->
   // Agreement Signed. Early stages green, match milestones accent/primary.
-  const map: Record<string, { label: string; bg: string; fg: string }> = {
-    CONSULTATION_BOOKED: { label: "Call Booked", bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
-    PROVIDER_CONNECTED: { label: "Connected", bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
-    MATCH_CALL: { label: "Match Call", bg: "hsl(var(--brand-warning) / 0.15)", fg: "hsl(var(--brand-warning))" },
-    MATCHED: { label: "Matched", bg: "hsl(var(--accent) / 0.15)", fg: "hsl(var(--accent))" },
-    DEPOSIT_PAID: { label: "Invoice Paid", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
-    AGREEMENT_SIGNED: { label: "Agreement Signed", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
-    HANDED_OFF: { label: "Handed Off", bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
+  // Keyed on the shared stage ids. Legacy enum values stay mapped so a row
+  // written before the ladder was unified still renders a coloured pill
+  // instead of falling through to the neutral "unknown" case.
+  const TONE = {
+    early: { bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
+    call: { bg: "hsl(var(--brand-warning) / 0.15)", fg: "hsl(var(--brand-warning))" },
+    match: { bg: "hsl(var(--accent) / 0.15)", fg: "hsl(var(--accent))" },
+    money: { bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
   };
+  const toneFor: Record<string, { bg: string; fg: string }> = {
+    registered: TONE.early,
+    exploring: TONE.early,
+    consult_scheduled: TONE.early,
+    consult_completed: TONE.early,
+    ip_form_submitted: TONE.early,
+    match_call_scheduled: TONE.call,
+    matched: TONE.match,
+    invoice_sent: TONE.money,
+    invoice_paid: TONE.money,
+    agreement_sent: TONE.money,
+    agreement_signed: TONE.money,
+    handed_off: TONE.money,
+  };
+  const stage = LEGACY_MATCH_STATUS_TO_STAGE[status] || status;
+  const tone = toneFor[stage];
+  const label = JOURNEY_STATUS_LABELS[stage] || JOURNEY_STATUS_LABELS[status];
+  const map: Record<string, { label: string; bg: string; fg: string }> =
+    tone && label ? { [status]: { label, bg: tone.bg, fg: tone.fg } } : {};
   const entry = map[status];
   if (!entry) {
     return (

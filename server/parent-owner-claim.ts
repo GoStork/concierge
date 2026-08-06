@@ -21,7 +21,7 @@
  */
 import { prisma } from "./db";
 import { emitJourneyEvent } from "./journey-events";
-import { isGostorkStaff } from "./parent-crm";
+import { isGostorkStaff, isProviderStaff } from "./parent-crm";
 
 export type OwnerClaimReason = "JOINED_CHAT" | "FIRST_REPLY";
 
@@ -81,5 +81,67 @@ export async function claimGostorkOwner(
     });
   } catch (e) {
     console.error("[owner-claim] failed to auto-assign GoStork owner:", e);
+  }
+}
+
+/**
+ * The provider-side twin: the first staffer at an agency to reply in a thread
+ * claims that family FOR THEIR OWN ORG.
+ *
+ * A separate row from the GoStork owner - scope PROVIDER, pinned to the org -
+ * so the two never overwrite each other and an agency never sees GoStork's
+ * choice or vice versa. Same never-steal rule.
+ *
+ * The org comes from the ACTOR, never from the session: a staffer replying in
+ * a thread is claiming it for the org they belong to.
+ */
+export async function claimProviderOwner(
+  parentUserId: string | null | undefined,
+  actor: any,
+  reason: OwnerClaimReason,
+): Promise<void> {
+  try {
+    if (!parentUserId || !actor?.id || !isProviderStaff(actor)) return;
+    const providerId: string | null = actor.providerId ?? null;
+    if (!providerId) return;
+
+    const parent = await prisma.user.findUnique({
+      where: { id: parentUserId },
+      select: { parentAccountId: true },
+    });
+    if (!parent) return;
+    const accountKey = parent.parentAccountId || parentUserId;
+
+    const existing = await prisma.parentOwner.findFirst({
+      where: { parentAccountId: accountKey, scope: "PROVIDER", providerId },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    try {
+      await prisma.parentOwner.create({
+        data: {
+          parentAccountId: accountKey,
+          scope: "PROVIDER",
+          providerId,
+          ownerUserId: actor.id,
+          ownerName: actor.name || null,
+          assignedByUserId: actor.id,
+        },
+      });
+    } catch (raceErr: any) {
+      if (raceErr?.code === "P2002") return;
+      throw raceErr;
+    }
+
+    emitJourneyEvent({
+      eventType: "CRM_OWNER_ASSIGNED",
+      parentAccountId: accountKey,
+      providerId,
+      actorRole: "provider",
+      metadata: { ownerUserId: actor.id, auto: true, reason },
+    });
+  } catch (e) {
+    console.error("[owner-claim] failed to auto-assign provider owner:", e);
   }
 }
