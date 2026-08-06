@@ -143,6 +143,7 @@ function ContactLine({ record }: { record: ParentRecord }) {
   const reason = record.contactReleaseReason as keyof typeof REASON_LABEL | null;
   return (
     <div className="space-y-1">
+      {/* Email(s) on one line, phone(s) on their own line below. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         {members.filter((m) => m.email).map((m) => (
           <span key={m.id} className="flex items-center gap-1 t-micro-value" data-testid={`record-email-${m.id}`}>
@@ -150,13 +151,17 @@ function ContactLine({ record }: { record: ParentRecord }) {
             <CopyButton value={m.email as string} testId={`btn-copy-record-email-${m.id}`} />
           </span>
         ))}
-        {phones.map((m: any) => (
-          <span key={`p-${m.id}`} className="flex items-center gap-1 t-micro-value" data-testid={`record-phone-${m.id}`}>
-            <span className="t-micro-label">Phone</span> {formatPhoneDisplay(m.mobileNumber)}
-            <CopyButton value={m.mobileNumber} testId={`btn-copy-record-phone-${m.id}`} />
-          </span>
-        ))}
       </div>
+      {phones.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {phones.map((m: any) => (
+            <span key={`p-${m.id}`} className="flex items-center gap-1 t-micro-value" data-testid={`record-phone-${m.id}`}>
+              <span className="t-micro-label">Phone</span> {formatPhoneDisplay(m.mobileNumber)}
+              <CopyButton value={m.mobileNumber} testId={`btn-copy-record-phone-${m.id}`} />
+            </span>
+          ))}
+        </div>
+      )}
       {/* Providers ask "why can I see this now?" constantly, and the payload
           already carries the answer. Phrased exactly as the release panel
           phrases it ("Shared - invoice sent") rather than wrapping the label in

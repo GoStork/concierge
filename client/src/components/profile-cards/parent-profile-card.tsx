@@ -49,21 +49,56 @@ function nonEmpty(val: string | null | undefined): string | null {
 interface ProfileRow { label: string; value: string }
 interface ProfileSection { title: string; rows: ProfileRow[] }
 
+// "min,max" pair -> "min - max". Account-page range sliders store the pair as
+// a comma-joined string; anything else renders as-is.
+function fmtRange(val: string, fmt: (n: number) => string = String): string {
+  const parts = val.split(",");
+  if (parts.length === 2 && parts.every((x) => x.trim() !== "" && !isNaN(Number(x)))) {
+    return `${fmt(Number(parts[0]))} - ${fmt(Number(parts[1]))}`;
+  }
+  return val;
+}
+
+const fmtMoney = (n: number) => `$${n.toLocaleString("en-US")}`;
+const fmtHeight = (in_: number) => { const ft = Math.floor(in_ / 12); return `${ft}'${in_ % 12}"`; };
+
+function pushText(rows: ProfileRow[], label: string, val: string | null | undefined) {
+  if (nonEmpty(val)) rows.push({ label, value: val!.trim() });
+}
+function pushBool(rows: ProfileRow[], label: string, val: boolean | null | undefined) {
+  const v = boolLabel(val);
+  if (v) rows.push({ label, value: v });
+}
+function pushNum(rows: ProfileRow[], label: string, val: number | null | undefined, fmt: (n: number) => string = String) {
+  if (val !== null && val !== undefined) rows.push({ label, value: fmt(val) });
+}
+function pushRange(rows: ProfileRow[], label: string, val: string | null | undefined, fmt?: (n: number) => string) {
+  if (nonEmpty(val)) rows.push({ label, value: fmtRange(val!, fmt) });
+}
+
 interface BasicInfo {
   phone: string | null;
   age: string | null;
+  gender: string | null;
+  sexualOrientation: string | null;
   relationshipStatus: string | null;
   partnerName: string | null;
   partnerAge: string | null;
+  partnerGender: string | null;
+  lgbtqFamily: string | null;
 }
 
 function buildBasics(user: SessionUser): BasicInfo {
   return {
     phone: nonEmpty(formatPhoneDisplay(user.mobileNumber)),
     age: computeAge(user.dateOfBirth),
+    gender: nonEmpty(user.gender),
+    sexualOrientation: nonEmpty(user.sexualOrientation),
     relationshipStatus: nonEmpty(user.relationshipStatus),
     partnerName: nonEmpty(user.partnerFirstName),
     partnerAge: user.partnerAge ? String(user.partnerAge) : null,
+    partnerGender: nonEmpty(user.partnerGender),
+    lgbtqFamily: boolLabel(user.parentAccount?.intendedParentProfile?.isLGBTQ),
   };
 }
 
@@ -94,40 +129,76 @@ function buildSections(user: SessionUser): ProfileSection[] {
   }
   if (bio.length > 0) sections.push({ title: "Biological Baseline", rows: bio });
 
+  // Section field lists and labels mirror the parent's own /account page
+  // (account-page.tsx ProfileSection blocks) - keep the two in sync.
   const clinic: ProfileRow[] = [];
   if (p.needsClinic !== null && p.needsClinic !== undefined) {
     clinic.push({ label: "Needs Clinic", value: p.needsClinic ? "Yes" : "No - has one" });
   }
-  if (nonEmpty(p.currentClinicName)) clinic.push({ label: "Current Clinic", value: p.currentClinicName! });
-  if (nonEmpty(p.clinicPriority)) clinic.push({ label: "Clinic Priority", value: p.clinicPriority! });
+  pushText(clinic, "Current Clinic", p.currentClinicName);
+  pushText(clinic, "Patient Age Group", p.clinicAgeGroup);
+  pushText(clinic, "What Matters Most", p.clinicPriorityTags);
+  if (p.diagnoses?.length > 0) clinic.push({ label: "Diagnoses", value: p.diagnoses.join(", ") });
+  pushText(clinic, "Reason", p.clinicReason);
+  pushText(clinic, "Insurance", p.insurance);
+  pushText(clinic, "Additional Notes", p.clinicPriority);
   if (clinic.length > 0) sections.push({ title: "Clinic Preferences", rows: clinic });
 
   const surro: ProfileRow[] = [];
-  if (nonEmpty(p.surrogateCountries)) surro.push({ label: "Countries Open To", value: p.surrogateCountries! });
-  if (nonEmpty(p.surrogateTermination)) surro.push({ label: "Termination Pref", value: p.surrogateTermination! });
-  if (nonEmpty(p.surrogateTwins)) surro.push({ label: "Twins", value: p.surrogateTwins! });
-  if (nonEmpty(p.surrogateAgeRange)) surro.push({ label: "Surrogate Age Range", value: p.surrogateAgeRange! });
-  if (nonEmpty(p.surrogateBudget)) surro.push({ label: "Budget", value: p.surrogateBudget! });
-  if (nonEmpty(p.surrogateExperience)) surro.push({ label: "Experience Pref", value: p.surrogateExperience! });
-  if (nonEmpty(p.surrogateMedPrefs)) surro.push({ label: "Medical Prefs", value: p.surrogateMedPrefs! });
+  pushText(surro, "Countries Open To", p.surrogateCountries);
+  pushText(surro, "Termination Pref", p.surrogateTermination);
+  pushText(surro, "Twins", p.surrogateTwins);
+  pushRange(surro, "Age Range", p.surrogateAgeRange);
+  pushRange(surro, "BMI Range", p.surrogateBmiRange);
+  pushRange(surro, "Base Compensation", p.surrogateBudget, fmtMoney);
+  pushRange(surro, "Total Cost", p.surrogateTotalCostRange, fmtMoney);
+  pushText(surro, "Race", p.surrogateRace);
+  pushText(surro, "Ethnicity", p.surrogateEthnicity);
+  pushText(surro, "Relationship Status", p.surrogateRelationship);
+  pushRange(surro, "Live Births", p.surrogateLiveBirthsRange);
+  pushNum(surro, "Max C-Sections", p.surrogateMaxCSections);
+  pushNum(surro, "Max Miscarriages", p.surrogateMaxMiscarriages);
+  pushNum(surro, "Max Abortions", p.surrogateMaxAbortions);
+  pushNum(surro, "Last Delivery Since", p.surrogateLastDeliveryYear);
+  pushBool(surro, "Selective Reduction", p.surrogateSelectiveReduction);
+  pushBool(surro, "Open to International Parents", p.surrogateInternationalParents);
+  pushBool(surro, "Open to Same-Sex Couple", p.sameSexCouple);
+  pushBool(surro, "COVID Vaccinated Required", p.surrogateCovidVaccinated);
+  pushText(surro, "Experience Pref", p.surrogateExperience);
+  pushText(surro, "Medical Prefs", p.surrogateMedPrefs);
   if (surro.length > 0) sections.push({ title: "Surrogate Preferences", rows: surro });
 
+  // Titled "Egg Donor Preferences" to match /account - the generic donor*
+  // fields ARE that page's egg-donor section.
   const donor: ProfileRow[] = [];
-  if (nonEmpty(p.donorPreferences)) donor.push({ label: "Preferences", value: p.donorPreferences! });
-  if (nonEmpty(p.donorEyeColor)) donor.push({ label: "Eye Color", value: p.donorEyeColor! });
-  if (nonEmpty(p.donorHairColor)) donor.push({ label: "Hair Color", value: p.donorHairColor! });
-  if (nonEmpty(p.donorHeight)) {
-    const fmtH = (in_: number) => { const ft = Math.floor(in_ / 12); return `${ft}'${in_ % 12}"`; };
-    const hParts = p.donorHeight!.split(",");
-    const hDisplay = hParts.length === 2
-      ? `${fmtH(Number(hParts[0]))} - ${fmtH(Number(hParts[1]))}`
-      : p.donorHeight!;
-    donor.push({ label: "Height", value: hDisplay });
-  }
-  if (nonEmpty(p.donorEducation)) donor.push({ label: "Education", value: p.donorEducation! });
-  if (nonEmpty(p.donorEthnicity)) donor.push({ label: "Ethnicity", value: p.donorEthnicity! });
-  if (nonEmpty(p.spermDonorType)) donor.push({ label: "Sperm Donor Type", value: p.spermDonorType! });
-  if (donor.length > 0) sections.push({ title: "Donor Preferences", rows: donor });
+  pushText(donor, "Eye Color", p.donorEyeColor);
+  pushText(donor, "Hair Color", p.donorHairColor);
+  pushRange(donor, "Height", p.donorHeight, fmtHeight);
+  pushText(donor, "Ethnicity", p.donorEthnicity);
+  pushText(donor, "Education", p.donorEducation);
+  pushText(donor, "Donation Type", p.eggDonorDonationType);
+  pushRange(donor, "Donor Age Range", p.eggDonorAgeRange);
+  pushText(donor, "Egg Type", p.eggDonorEggType);
+  pushRange(donor, "Compensation", p.eggDonorCompensationRange, fmtMoney);
+  pushRange(donor, "Total Cost", p.eggDonorTotalCostRange, fmtMoney);
+  pushRange(donor, "Egg Lot Cost", p.eggDonorLotCostRange, fmtMoney);
+  pushText(donor, "Preferences Summary", p.donorPreferences);
+  if (donor.length > 0) sections.push({ title: "Egg Donor Preferences", rows: donor });
+
+  const sperm: ProfileRow[] = [];
+  pushText(sperm, "Eye Color", p.spermDonorEyeColor);
+  pushText(sperm, "Hair Color", p.spermDonorHairColor);
+  pushText(sperm, "Race", p.spermDonorRace);
+  pushText(sperm, "Ethnicity", p.spermDonorEthnicity);
+  pushText(sperm, "Education", p.spermDonorEducation);
+  pushRange(sperm, "Donor Age Range", p.spermDonorAgeRange);
+  pushRange(sperm, "Height Range", p.spermDonorHeightRange, fmtHeight);
+  pushText(sperm, "Donor Type", p.spermDonorType);
+  pushNum(sperm, "Max Cost", p.spermDonorMaxPrice, fmtMoney);
+  pushText(sperm, "Vial Type", p.spermDonorVialType);
+  pushBool(sperm, "COVID Vaccinated Required", p.spermDonorCovidVaccinated);
+  pushText(sperm, "Additional Preferences", p.spermDonorPreferences);
+  if (sperm.length > 0) sections.push({ title: "Sperm Donor Preferences", rows: sperm });
 
   const providers: ProfileRow[] = [];
   if (nonEmpty(p.currentAgencyName)) providers.push({ label: "Current Agency", value: p.currentAgencyName! });
@@ -201,11 +272,17 @@ export function ParentProfileCard({ user, isOnline, layout = "rail", hideIdentit
         )}
         {!hideIdentity && basics.phone && <div className="t-micro-value"><span className="t-micro-label">Phone</span> {basics.phone}</div>}
         {basics.age && <div className="t-micro-value"><span className="t-micro-label">Age</span> {basics.age}</div>}
+        {basics.gender && <div className="t-micro-value"><span className="t-micro-label">Gender identity</span> {basics.gender}</div>}
+        {basics.sexualOrientation && (
+          <div className="t-micro-value"><span className="t-micro-label">Sexual orientation</span> {basics.sexualOrientation}</div>
+        )}
+        {basics.lgbtqFamily && <div className="t-micro-value"><span className="t-micro-label">LGBTQ+ family</span> {basics.lgbtqFamily}</div>}
         {basics.relationshipStatus && (
           <div className="t-micro-value"><span className="t-micro-label">Relationship status</span> {basics.relationshipStatus}</div>
         )}
         {basics.partnerName && <div className="t-micro-value"><span className="t-micro-label">Partner name</span> {basics.partnerName}</div>}
         {basics.partnerAge && <div className="t-micro-value"><span className="t-micro-label">Partner's age</span> {basics.partnerAge}</div>}
+        {basics.partnerGender && <div className="t-micro-value"><span className="t-micro-label">Partner's gender</span> {basics.partnerGender}</div>}
       </div>
 
       <div className={wide ? "columns-1 md:columns-2 lg:columns-3 gap-x-8 [&>div]:break-inside-avoid" : undefined}>

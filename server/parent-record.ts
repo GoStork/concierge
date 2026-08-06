@@ -44,16 +44,34 @@ const ALL_SECTIONS: RecordSection[] = ["identity", "providers", "interests", "mo
 
 /** The journey ladder, most-advanced first. Mirrors the parents-table derivation. */
 
-const IP_PROFILE_SELECT = {
+// Everything the parent maintains on /account that a connected provider may
+// see. Shared by the record payload here AND both chat-session payloads in
+// chat-router (imported there) - one list, never three.
+export const IP_PROFILE_SELECT = {
   journeyStage: true, interestedServices: true, isFirstIvf: true,
   eggSource: true, spermSource: true, carrier: true, hasEmbryos: true,
   embryoCount: true, embryosTested: true, needsClinic: true,
   currentClinicName: true, clinicPriority: true, needsEggDonor: true,
   needsSurrogate: true, surrogateCountries: true, surrogateTermination: true,
   surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true,
-  surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true,
+  surrogateExperience: true, surrogateMedPrefs: true,
+  surrogateRace: true, surrogateEthnicity: true, surrogateRelationship: true,
+  surrogateBmiRange: true, surrogateTotalCostRange: true, surrogateLiveBirthsRange: true,
+  surrogateMaxCSections: true, surrogateMaxMiscarriages: true, surrogateMaxAbortions: true,
+  surrogateLastDeliveryYear: true, surrogateCovidVaccinated: true,
+  surrogateSelectiveReduction: true, surrogateInternationalParents: true,
+  donorPreferences: true,
   donorEyeColor: true, donorHairColor: true, donorHeight: true,
-  donorEducation: true, donorEthnicity: true, spermDonorType: true,
+  donorEducation: true, donorEthnicity: true,
+  eggDonorAgeRange: true, eggDonorCompensationRange: true, eggDonorTotalCostRange: true,
+  eggDonorLotCostRange: true, eggDonorEggType: true, eggDonorDonationType: true,
+  spermDonorType: true, spermDonorPreferences: true, spermDonorAgeRange: true,
+  spermDonorEyeColor: true, spermDonorHairColor: true, spermDonorHeightRange: true,
+  spermDonorRace: true, spermDonorEthnicity: true, spermDonorEducation: true,
+  spermDonorMaxPrice: true, spermDonorVialType: true, spermDonorCovidVaccinated: true,
+  clinicAgeGroup: true, clinicPriorityTags: true, clinicReason: true,
+  diagnoses: true, insurance: true,
+  sameSexCouple: true, isLGBTQ: true,
   currentAgencyName: true, currentAttorneyName: true,
 } as const;
 
@@ -606,6 +624,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       id: true, name: true, email: true, photoUrl: true, city: true, state: true,
       mobileNumber: true, relationshipStatus: true, partnerFirstName: true,
       partnerAge: true, dateOfBirth: true,
+      gender: true, partnerGender: true, sexualOrientation: true,
       parentAccount: { select: { intendedParentProfile: { select: IP_PROFILE_SELECT } } },
     },
   });

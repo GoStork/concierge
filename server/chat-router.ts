@@ -19,6 +19,7 @@ import {
 } from "./parent-privacy";
 import { emitJourneyEvent } from "./journey-events";
 import { claimGostorkOwner, claimProviderOwner } from "./parent-owner-claim";
+import { IP_PROFILE_SELECT } from "./parent-record";
 import multer from "multer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
@@ -889,10 +890,10 @@ chatRouter.get("/api/admin/concierge-sessions/:id", requireAuth, async (req, res
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true, parentAccountId: true,
+            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true, gender: true, partnerGender: true, sexualOrientation: true, parentAccountId: true,
             parentAccount: {
               select: {
-                intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },
+                intendedParentProfile: { select: IP_PROFILE_SELECT },
               },
             },
           },
@@ -1609,10 +1610,10 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true, parentAccountId: true,
+            id: true, name: true, email: true, photoUrl: true, city: true, state: true, mobileNumber: true, relationshipStatus: true, partnerFirstName: true, partnerAge: true, dateOfBirth: true, gender: true, partnerGender: true, sexualOrientation: true, parentAccountId: true,
             parentAccount: {
               select: {
-                intendedParentProfile: { select: { journeyStage: true, interestedServices: true, isFirstIvf: true, eggSource: true, spermSource: true, carrier: true, hasEmbryos: true, embryoCount: true, embryosTested: true, needsClinic: true, currentClinicName: true, clinicPriority: true, needsEggDonor: true, needsSurrogate: true, surrogateCountries: true, surrogateTermination: true, surrogateTwins: true, surrogateAgeRange: true, surrogateBudget: true, surrogateExperience: true, surrogateMedPrefs: true, donorPreferences: true, donorEyeColor: true, donorHairColor: true, donorHeight: true, donorEducation: true, donorEthnicity: true, spermDonorType: true, currentAgencyName: true, currentAttorneyName: true } },
+                intendedParentProfile: { select: IP_PROFILE_SELECT },
               },
             },
           },
@@ -4923,9 +4924,13 @@ chatRouter.get("/api/provider/dashboard-queue", requireAuth, async (req, res) =>
           const submitted = await prisma.ipFormResponse.findMany({
             where: { parentAccountId: { in: [...acctIds] }, status: "SUBMITTED", submittedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
             orderBy: { submittedAt: "desc" },
-            select: { id: true, parentAccountId: true, submittedAt: true, hasSecondParent: true },
+            select: { id: true, parentAccountId: true, submittedAt: true, hasSecondParent: true, providerViewedAt: true },
           });
-          ipFormsToReview = submitted.map(r => ({ responseId: r.id, parentNames: nameByAcct.get(r.parentAccountId) || "A parent", submittedAt: r.submittedAt as Date, hasSecondParent: r.hasSecondParent }));
+          // Opening the Parent Forms page stamps providerViewedAt[providerId]
+          // (ip-form-router list endpoint) - once seen, the task clears here.
+          ipFormsToReview = submitted
+            .filter(r => !(((r.providerViewedAt as Record<string, string> | null) || {})[user.providerId]))
+            .map(r => ({ responseId: r.id, parentNames: nameByAcct.get(r.parentAccountId) || "A parent", submittedAt: r.submittedAt as Date, hasSecondParent: r.hasSecondParent }));
         }
       }
     } catch (e: any) {

@@ -896,6 +896,22 @@ ipFormRouter.get("/api/provider/ip-forms", requireAuth, async (req, res) => {
     }
     if (!responses.length) return res.json({ forms: [], surrogateAvailable });
 
+    // Viewed receipt: opening this list is the "Review" moment, so stamp this
+    // provider onto each form it hasn't seen yet. Clears the home work-queue
+    // item for this provider only (the JSON is keyed per providerId).
+    if (providerId) {
+      const now = new Date().toISOString();
+      const unseen = responses.filter((r) => !((r.providerViewedAt as Record<string, string> | null) || {})[providerId]);
+      await Promise.all(
+        unseen.map((r) =>
+          prisma.ipFormResponse.update({
+            where: { id: r.id },
+            data: { providerViewedAt: { ...(((r.providerViewedAt as Record<string, string> | null) || {})), [providerId]: now } },
+          }),
+        ),
+      );
+    }
+
     const sections = await loadIpFormTemplate(true);
     const allQuestions = sections.flatMap((s) => s.questions);
     const forms = await Promise.all(

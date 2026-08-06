@@ -3038,6 +3038,11 @@ model IpFormResponse {
   parent2Mode           String? // "member" | "guest"
   promptedAt            DateTime? // when Eva's card was posted - anchors the reminder ladder
   submittedAt           DateTime?
+  // providerId -> ISO timestamp of when that provider first opened the
+  // Parent Forms page after this submission. Per-provider because several
+  // agencies can be connected to the same family; clears the home work-queue
+  // item for the provider who reviewed it without hiding it from the others.
+  providerViewedAt      Json      @default("{}")
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
