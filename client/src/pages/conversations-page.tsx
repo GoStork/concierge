@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
+import { journeyStageLabel } from "@shared/journey-ladder";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useBrandSettings } from "@/hooks/use-brand-settings";
@@ -1720,17 +1721,12 @@ const sendMessageMutation = useMutation({
     refetchOnWindowFocus: true,
   });
   const journeyMatchStatus = (() => {
+    // Labels come from the shared ladder. This used to hold its own copy keyed
+    // on the OLD enum values, so once matchStatus became a stage id every
+    // lookup missed, returned null, and the badge fell through to "Connected"
+    // - reporting the session state instead of the journey.
     const row = (parentContactsQuery.data || []).find((r: any) => r.sessionId === selectedSessionId);
-    const labels: Record<string, string> = {
-      CONSULTATION_BOOKED: "Call Booked",
-      PROVIDER_CONNECTED: "Connected",
-      MATCH_CALL: "Match Call",
-      MATCHED: "Matched",
-      DEPOSIT_PAID: "Invoice Paid",
-      AGREEMENT_SIGNED: "Agreement Signed",
-      HANDED_OFF: "Handed Off",
-    };
-    return row?.matchStatus ? labels[row.matchStatus] || null : null;
+    return row?.matchStatus ? journeyStageLabel(row.matchStatus) : null;
   })();
 
   // Online presence tracking

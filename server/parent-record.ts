@@ -20,6 +20,7 @@
  */
 
 import { prisma } from "./db";
+import { JOURNEY_STAGE_ORDER, resolveJourneyStage } from "../shared/journey-ladder";
 import {
   GATES_OPEN,
   ParentGates,
@@ -42,7 +43,6 @@ export type RecordSection = "identity" | "interests" | "money" | "crm" | "provid
 const ALL_SECTIONS: RecordSection[] = ["identity", "providers", "interests", "money", "crm"];
 
 /** The journey ladder, most-advanced first. Mirrors the parents-table derivation. */
-const LADDER = ["HANDED_OFF", "AGREEMENT_SIGNED", "DEPOSIT_PAID", "MATCHED", "MATCH_CALL"];
 
 const IP_PROFILE_SELECT = {
   journeyStage: true, interestedServices: true, isFirstIvf: true,
@@ -197,7 +197,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         ...(scopeProviderId ? { providerUser: { providerId: scopeProviderId } } : {}),
       },
       select: {
-        id: true, meetingSubtype: true, status: true, scheduledAt: true, sessionId: true,
+        id: true, meetingSubtype: true, status: true, outcome: true, scheduledAt: true, sessionId: true,
         providerUser: { select: { providerId: true } },
       },
       orderBy: { scheduledAt: "desc" },
@@ -344,22 +344,41 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   );
   const paidSessions = new Set(invoices.filter((i) => i.status === "PAID").map((i) => i.sessionId).filter(Boolean) as string[]);
   const signedSessions = new Set(agreements.filter((a) => a.status === "SIGNED").map((a) => a.sessionId).filter(Boolean) as string[]);
+  const agreementSessions = new Set(agreements.map((a) => a.sessionId).filter(Boolean) as string[]);
+  const invoiceSessions = new Set(invoices.map((i) => i.sessionId).filter(Boolean) as string[]);
+  // Same predicate the timeline uses. Relationship-level: bookings are not
+  // session-linked, so a completed consultation counts for the family.
+  const consultCompleted = bookings.some(
+    (b: any) => b.meetingSubtype !== "MATCH_CALL" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"),
+  );
 
-  function sessionStatus(s: (typeof sessions)[number]): string {
-    if (s.handoffCompletedAt || handedOff) return "HANDED_OFF";
-    if (signedSessions.has(s.id)) return "AGREEMENT_SIGNED";
-    if (paidSessions.has(s.id)) return "DEPOSIT_PAID";
+  // The record was a THIRD copy of the ladder, alongside the two list
+  // endpoints and the timeline. All of them now resolve through
+  // shared/journey-ladder.ts, so the header badge, the table column and the
+  // timeline cannot name different rungs for the same family.
+  function sessionStatus(s: (typeof sessions)[number]): string | null {
     const prof = s.subjectProfileId ? profileById.get(s.subjectProfileId) : null;
-    if (prof && prof.kind === "surrogate" && prof.status === "MATCHED") return "MATCHED";
-    if (s.providerId && matchCallOrgs.has(s.providerId)) return "MATCH_CALL";
-    return s.status;
+    return resolveJourneyStage({
+      handedOff: !!s.handoffCompletedAt || handedOff,
+      agreementSigned: signedSessions.has(s.id),
+      agreementSent: agreementSessions.has(s.id),
+      invoicePaid: paidSessions.has(s.id),
+      invoiceSent: invoiceSessions.has(s.id),
+      matched: !!(prof && prof.kind === "surrogate" && prof.status === "MATCHED"),
+      matchCallScheduled: !!(s.providerId && matchCallOrgs.has(s.providerId)),
+      ipFormSubmitted: ipFormRow?.status === "SUBMITTED",
+      consultCompleted: consultCompleted,
+      consultScheduled: s.status === "CONSULTATION_BOOKED",
+      connected: s.status === "PROVIDER_CONNECTED" || !!s.providerJoinedAt,
+    });
   }
 
   function mostAdvanced(values: string[]): string | null {
-    for (const rung of LADDER) if (values.includes(rung)) return rung;
-    if (values.includes("PROVIDER_CONNECTED")) return "PROVIDER_CONNECTED";
-    if (values.includes("CONSULTATION_BOOKED")) return "CONSULTATION_BOOKED";
-    return values[0] ?? null;
+    const order = JOURNEY_STAGE_ORDER as readonly string[];
+    return values.reduce<string | null>(
+      (best, v) => (order.indexOf(v) > order.indexOf(best ?? "") ? v : best),
+      null,
+    );
   }
 
   // ── Conversations ────────────────────────────────────────────────────────

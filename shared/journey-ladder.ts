@@ -18,9 +18,11 @@
  * sides now agree on is WHICH RUNG a family is standing on and WHAT IT IS
  * CALLED.
  *
- * Labels are the COLUMN voice: shorter than the timeline's, which has room to
- * spell things out ("Parent Form Submitted" there, "Form Submitted" in a
- * table cell). The rung ids are what must match, and those do.
+ * Labels are WORD-FOR-WORD the timeline's. I first shortened them for the
+ * table column ("Form Submitted"), which put two different names on one rung
+ * and recreated in wording the split this file exists to remove. If a label
+ * ever has to be shorter somewhere, truncate at the call site - do not fork
+ * the name.
  */
 
 /** Ordered lowest to highest. Later entries win when several are proven. */
@@ -45,8 +47,8 @@ export const JOURNEY_STAGE_LABELS: Record<JourneyStageId, string> = {
   registered: "Registered",
   exploring: "Exploring Profiles",
   consult_scheduled: "Call Booked",
-  consult_completed: "Consultation Done",
-  ip_form_submitted: "Form Submitted",
+  consult_completed: "Consultation Completed",
+  ip_form_submitted: "Parent Form Submitted",
   match_call_scheduled: "Match Call",
   matched: "Matched",
   invoice_sent: "Invoice Sent",
