@@ -42,15 +42,25 @@ import type { ParentRecord } from "./parent-record-types";
  * The "none" sentinel matters: an empty ?sec= is indistinguishable from "never
  * set", so collapsing everything would silently spring back open on reload.
  */
-const SECTIONS_KEY = "gostork-parent-record-sections";
+/**
+ * localStorage remembers which sections you CLOSED, not which you left open.
+ *
+ * It used to store the open list, which meant every section added later was
+ * absent from everyone's saved state and therefore rendered collapsed - the
+ * "Next step and tags" section shipped closed for anyone who had ever opened
+ * this page before. Persisting the exceptions makes a new section open by
+ * default, which is what a new section should do.
+ *
+ * The v1 key is deliberately not migrated: it holds the inverse set, and
+ * reading it as closures would collapse everything a person had open.
+ */
+const CLOSED_KEY = "gostork-parent-record-closed-v2";
 
-function readSaved(): string[] | null {
+function readClosed(): string[] {
   try {
-    const raw = localStorage.getItem(SECTIONS_KEY);
-    if (raw === null) return null;
-    return raw === "none" ? [] : raw.split(",").filter(Boolean);
+    return (localStorage.getItem(CLOSED_KEY) || "").split(",").filter(Boolean);
   } catch {
-    return null;   // private mode
+    return [];   // private mode
   }
 }
 
@@ -58,16 +68,23 @@ function readSaved(): string[] | null {
  * Which sections are open, in the URL so a link carries the view, and mirrored
  * to localStorage so the choice survives to the next parent you open.
  *
- * Precedence: an explicit ?sec= wins (someone sent you that link), then what
- * you last left the page in, then everything open. Everything open is the
- * default because a record you have to unfold five times is a record you stop
- * reading.
+ * Precedence: an explicit ?sec= wins (someone sent you that link), then
+ * everything except what you last closed. Everything open is the default
+ * because a record you have to unfold five times is a record you stop reading.
+ *
+ * The "none" sentinel matters in the URL: an empty ?sec= is indistinguishable
+ * from "never set", so a shared link with everything collapsed would silently
+ * spring open.
  */
 export function useOpenSections(allSections: string[]) {
   const [params, setParams] = useSearchParams();
   const raw = params.get("sec");
+  const fromSaved = () => {
+    const closed = new Set(readClosed());
+    return allSections.filter((s) => !closed.has(s));
+  };
   const resolve = (value: string | null): string[] =>
-    value === null ? (readSaved() ?? allSections) : value === "none" ? [] : value.split(",").filter(Boolean);
+    value === null ? fromSaved() : value === "none" ? [] : value.split(",").filter(Boolean);
 
   const open = new Set(resolve(raw));
 
@@ -79,9 +96,12 @@ export function useOpenSections(allSections: string[]) {
         const shouldOpen = force ?? !set.has(id);
         if (shouldOpen) set.add(id);
         else set.delete(id);
-        const encoded = set.size ? Array.from(set).join(",") : "none";
-        try { localStorage.setItem(SECTIONS_KEY, encoded); } catch { /* private mode */ }
-        next.set("sec", encoded);
+        // Persist the closures, so a section added in a later release is not
+        // born collapsed for everyone who has used this page before.
+        try {
+          localStorage.setItem(CLOSED_KEY, allSections.filter((s) => !set.has(s)).join(","));
+        } catch { /* private mode */ }
+        next.set("sec", set.size ? Array.from(set).join(",") : "none");
         return next;
       },
       { replace: true },
@@ -148,8 +168,12 @@ function ContactLine({ record }: { record: ParentRecord }) {
       {/* Email(s) on one line, phone(s) on their own line below. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         {members.filter((m) => m.email).map((m) => (
-          <span key={m.id} className="flex items-center gap-1 t-micro-value" data-testid={`record-email-${m.id}`}>
-            <span className="t-micro-label">Email</span> {m.email}
+          // min-w-0 + break-all: natan123+cbbbwbb@gmail.com is wider than a
+          // 320px column, and without these it ran straight under the copy
+          // button instead of wrapping.
+          <span key={m.id} className="flex items-start gap-1 min-w-0 max-w-full t-micro-value" data-testid={`record-email-${m.id}`}>
+            <span className="t-micro-label shrink-0">Email</span>
+            <span className="min-w-0 break-all">{m.email}</span>
             <CopyButton value={m.email as string} testId={`btn-copy-record-email-${m.id}`} />
           </span>
         ))}
@@ -157,8 +181,9 @@ function ContactLine({ record }: { record: ParentRecord }) {
       {phones.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {phones.map((m: any) => (
-            <span key={`p-${m.id}`} className="flex items-center gap-1 t-micro-value" data-testid={`record-phone-${m.id}`}>
-              <span className="t-micro-label">Phone</span> {formatPhoneDisplay(m.mobileNumber)}
+            <span key={`p-${m.id}`} className="flex items-center gap-1 min-w-0 max-w-full t-micro-value" data-testid={`record-phone-${m.id}`}>
+              <span className="t-micro-label shrink-0">Phone</span>
+              <span className="whitespace-nowrap">{formatPhoneDisplay(m.mobileNumber)}</span>
               <CopyButton value={m.mobileNumber} testId={`btn-copy-record-phone-${m.id}`} />
             </span>
           ))}
@@ -201,6 +226,7 @@ export function ParentRecordHeader({
   /** The profile detail folded into this card. */
   children?: ReactNode;
 }) {
+  const dense = useDense();
   const photoSrc = record.parent.photoUrl ? getPhotoSrc(record.parent.photoUrl) : null;
   const nextStep = record.crm.followUps[0];
 
@@ -211,6 +237,7 @@ export function ParentRecordHeader({
       open={open}
       onToggle={() => onToggle?.()}
       headerActions={ownerSlot}
+      denseHeader={dense}
       contentClassName="p-5 space-y-4"
       data-testid="record-header"
     >

@@ -197,7 +197,11 @@ export default function ParentDetailPage() {
                       parentUserId={record.parent.id}
                       providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
                       showEvents
-                      variant={isAdmin ? "home" : "sidebar"}
+                      variant="sidebar"
+                      // Wide-and-short column, so the ladder runs left to
+                      // right; the vertical one was drawn for a narrow rail
+                      // and left this column mostly empty space.
+                      orientation="horizontal"
                       testId="record-journey"
                     />
                   </RecordSection>

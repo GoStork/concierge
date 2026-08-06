@@ -18,6 +18,7 @@ import {
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiParam } from "@nestjs/swagger";
 import { emitJourneyEvent } from "../../../journey-events";
+import { serviceKeysFromLabels } from "../../../../shared/service-keys";
 import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel } from "../../../../shared/journey-ladder";
 import { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
@@ -1521,16 +1522,8 @@ export class UsersController {
           where: { parentAccountId: { in: keys } },
           select: { parentAccountId: true, interestedServices: true },
         });
-        const KEY_BY_LABEL: [RegExp, string][] = [
-          [/egg/i, "EGG_DONATION"], [/surrog/i, "SURROGACY"],
-          [/sperm/i, "SPERM_DONATION"], [/ivf|clinic|doctor/i, "IVF_CLINIC"],
-        ];
         for (const pr of profs) {
-          const keysOut = Array.from(new Set(
-            ((pr.interestedServices as string[]) || [])
-              .map((l) => KEY_BY_LABEL.find(([re]) => re.test(l))?.[1])
-              .filter(Boolean) as string[],
-          ));
+          const keysOut = serviceKeysFromLabels(pr.interestedServices as string[]);
           // Store under the grouping key, since that is what the row loop
           // below looks it up by.
           const gk = groupKeyForDbKey.get(pr.parentAccountId);

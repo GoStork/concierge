@@ -19,6 +19,7 @@
  * computed onto a row first and filtered afterwards.
  */
 
+import { serviceKeysFromLabels } from "../shared/service-keys";
 import { prisma } from "./db";
 import { JOURNEY_STAGE_ORDER, resolveJourneyStage } from "../shared/journey-ladder";
 import {
@@ -636,9 +637,19 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     ? { responseId: ipFormRow.id, status: ipFormRow.status, submittedAt: ipFormRow.submittedAt, promptedAt: ipFormRow.promptedAt, surrogateAvailable }
     : { responseId: null, status: "NOT_STARTED", submittedAt: null, promptedAt: null, surrogateAvailable };
 
-  const services = Array.from(
+  // Thread-derived services first; the family's own stated interests as the
+  // fallback. A plain concierge thread carries no serviceType, so without the
+  // fallback this rendered an empty dash on a record whose profile block lists
+  // "Surrogate, Fertility Clinic" a few inches below. Same rule as the parents
+  // list - see serviceKeysFromLabels.
+  const fromThreads = Array.from(
     new Set(conversations.map((c) => c.serviceType).filter(Boolean) as string[]),
   );
+  const services = fromThreads.length
+    ? fromThreads
+    : serviceKeysFromLabels(
+        (parent as any).parentAccount?.intendedParentProfile?.interestedServices as string[] | undefined,
+      );
 
   return {
     viewer: { role: isAdmin ? "admin" : "provider", providerId: scopeProviderId },

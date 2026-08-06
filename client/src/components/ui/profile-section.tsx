@@ -24,6 +24,14 @@ interface ProfileSectionProps {
   collapsible?: boolean;
   open?: boolean;
   onToggle?: () => void;
+  /**
+   * Force headerActions onto their own row instead of sitting beside the
+   * title. Set it when this card lives in a narrow COLUMN rather than a
+   * narrow screen - the `sm:` rule below keys off the viewport, so at 1512px
+   * it happily puts a lead-owner control beside the title inside a 320px
+   * rail and clips both.
+   */
+  denseHeader?: boolean;
   "data-testid"?: string;
 }
 
@@ -42,12 +50,15 @@ export function ProfileSection({
   collapsible = false,
   open = true,
   onToggle,
+  denseHeader = false,
   ...rest
 }: ProfileSectionProps) {
   const testId = rest["data-testid"];
   const heading = (
     <h3
-      className="font-heading text-foreground truncate"
+      // Wraps rather than truncating - a heading that silently loses its
+      // last word is worse than a heading on two lines.
+      className="font-heading text-foreground min-w-0 break-words"
       style={{ fontSize: "var(--section-title-size)", fontWeight: "var(--section-title-weight)" as any }}
       data-testid={
         typeof title === "string"
@@ -85,7 +96,10 @@ export function ProfileSection({
             shrink-0 actions won that fight and squeezed the heading to zero
             width - the title vanished entirely on a narrow phone. */}
         {headerActions && (
-          <div className="px-5 pb-3.5 sm:pb-3.5 sm:pt-3.5 sm:pl-0 basis-full sm:basis-auto shrink-0">
+          <div className={cn(
+            "px-5 pb-3.5 shrink-0",
+            denseHeader ? "basis-full" : "sm:pt-3.5 sm:pl-0 basis-full sm:basis-auto",
+          )}>
             {headerActions}
           </div>
         )}

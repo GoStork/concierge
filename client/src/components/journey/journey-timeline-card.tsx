@@ -102,41 +102,96 @@ function fmtDate(iso: string | null): string | null {
 }
 
 function StageRow({ stage, isLast }: { stage: StageOut; isLast: boolean }) {
-  const done = stage.state === "done";
-  const current = stage.state === "current";
-  const warning = stage.tone === "warning";
   return (
     <div className="flex gap-2.5" data-testid={`journey-stage-${stage.id}`}>
       <div className="flex flex-col items-center">
-        <div
-          className={
-            warning
-              ? "w-5 h-5 rounded-full flex items-center justify-center bg-[hsl(var(--brand-warning))]/15 ring-2 ring-[hsl(var(--brand-warning))] shrink-0"
-              : done
-              ? "w-5 h-5 rounded-full flex items-center justify-center bg-primary text-primary-foreground shrink-0"
-              : current
-              ? "w-5 h-5 rounded-full flex items-center justify-center bg-primary/15 ring-2 ring-primary shrink-0"
-              : "w-5 h-5 rounded-full border-2 border-primary/40 bg-background shrink-0"
-          }
-        >
-          {warning ? (
-            <AlertTriangle className="w-3 h-3 text-[hsl(var(--brand-warning))]" />
-          ) : (
-            <>
-              {done && <Check className="w-3 h-3" />}
-              {current && <div className="w-2 h-2 rounded-full bg-primary" />}
-            </>
-          )}
-        </div>
+        <StageMark stage={stage} />
         {!isLast && <div className="w-px flex-1 min-h-[10px] bg-primary/50" />}
       </div>
       <div className={`${isLast ? "pb-0" : "pb-2.5"} min-w-0 flex-1`} style={isLast ? undefined : { minHeight: 42 }}>
-        <p className={`text-xs font-ui leading-5 ${warning ? "font-semibold text-[hsl(var(--brand-warning))]" : current ? "font-semibold text-foreground" : done ? "text-foreground" : "text-muted-foreground"}`}>
+        <p className={`text-xs font-ui leading-5 ${stageLabelClass(stage)}`}>
           {stage.label}
           {stage.optional && stage.state === "upcoming" && <span className="text-muted-foreground font-normal"> (if needed)</span>}
         </p>
         {stage.reachedAt && <p className="t-helper leading-3">{fmtDate(stage.reachedAt)}</p>}
       </div>
+    </div>
+  );
+}
+
+/** Dot styling, shared by both orientations so the two can never drift. */
+function stageDotClass(stage: StageOut): string {
+  const base = "w-5 h-5 rounded-full flex items-center justify-center shrink-0";
+  if (stage.tone === "warning") return `${base} bg-[hsl(var(--brand-warning))]/15 ring-2 ring-[hsl(var(--brand-warning))]`;
+  if (stage.state === "done") return `${base} bg-primary text-primary-foreground`;
+  if (stage.state === "current") return `${base} bg-primary/15 ring-2 ring-primary`;
+  return "w-5 h-5 rounded-full border-2 border-primary/40 bg-background shrink-0";
+}
+
+function StageMark({ stage }: { stage: StageOut }) {
+  return (
+    <div className={stageDotClass(stage)}>
+      {stage.tone === "warning" ? (
+        <AlertTriangle className="w-3 h-3 text-[hsl(var(--brand-warning))]" />
+      ) : (
+        <>
+          {stage.state === "done" && <Check className="w-3 h-3" />}
+          {stage.state === "current" && <div className="w-2 h-2 rounded-full bg-primary" />}
+        </>
+      )}
+    </div>
+  );
+}
+
+function stageLabelClass(stage: StageOut): string {
+  if (stage.tone === "warning") return "font-semibold text-[hsl(var(--brand-warning))]";
+  if (stage.state === "current") return "font-semibold text-foreground";
+  if (stage.state === "done") return "text-foreground";
+  return "text-muted-foreground";
+}
+
+/**
+ * One rung of the horizontal ladder: dot on a rail, label and date beneath.
+ *
+ * Twelve rungs will not fit legibly across any column we have, so the track
+ * scrolls sideways and each rung holds a fixed width. Squeezing them to fit
+ * would put "Consultation Completed" on four lines of two characters.
+ */
+function StageColumn({ stage, isFirst, isLast, branch }: {
+  stage: StageOut;
+  isFirst: boolean;
+  isLast: boolean;
+  branch?: StageOut;
+}) {
+  // The connector is drawn as two half-width rails either side of the dot, so
+  // every segment meets its neighbour exactly at the column boundary - no
+  // absolute positioning, and it survives any column width.
+  const rail = "h-px flex-1 bg-primary/50";
+  return (
+    <div className="w-[104px] shrink-0" data-testid={`journey-stage-${stage.id}`}>
+      <div className="flex items-center">
+        <div className={isFirst ? "flex-1" : rail} />
+        <StageMark stage={stage} />
+        <div className={isLast ? "flex-1" : rail} />
+      </div>
+      <div className="px-1 pt-1.5 text-center">
+        <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(stage)}`}>
+          {stage.label}
+          {stage.optional && stage.state === "upcoming" && <span className="text-muted-foreground font-normal"> (if needed)</span>}
+        </p>
+        {stage.reachedAt && <p className="t-helper leading-4">{fmtDate(stage.reachedAt)}</p>}
+      </div>
+      {/* A branch rung hangs BELOW its sibling, reached by a short stem - the
+          vertical ladder puts it to the right, which is the same relationship
+          rotated with the rest of the track. */}
+      {branch && (
+        <div className="flex flex-col items-center pt-1">
+          <div className="w-px h-3 bg-primary/50" />
+          <StageMark stage={{ ...branch, tone: undefined }} />
+          <p className={`text-[11px] font-ui leading-tight text-center pt-1 ${stageLabelClass(branch)}`}>{branch.label}</p>
+          {branch.reachedAt && <p className="t-helper leading-4">{fmtDate(branch.reachedAt)}</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -177,7 +232,7 @@ function ForkRow({ main, branch, isLast }: { main: StageOut; branch: StageOut; i
 // of sitting on it. Must match the branch ids emitted by journey-timeline.ts.
 const BRANCH_STAGE_IDS = new Set(["no_show", "match_call_no_show", "not_matched"]);
 
-function JourneyBlock({ journey, showProviderName }: { journey: JourneyOut; showProviderName: boolean }) {
+function JourneyBlock({ journey, showProviderName, horizontal }: { journey: JourneyOut; showProviderName: boolean; horizontal?: boolean }) {
   // Pull branch-type stages off the main line; each attaches to the row that
   // FOLLOWS it in the server order (the fork's sibling rung - e.g. no_show
   // sits between consult_scheduled and consult_completed, so it renders
@@ -214,16 +269,38 @@ function JourneyBlock({ journey, showProviderName }: { journey: JourneyOut; show
           {journey.attention.label}
         </div>
       )}
-      <div>
-        {mainStages.map((st, i) => {
-          const branch = branchBySibling.get(st.id);
-          return branch ? (
-            <ForkRow key={st.id} main={st} branch={branch} isLast={i === mainStages.length - 1} />
-          ) : (
-            <StageRow key={st.id} stage={st} isLast={i === mainStages.length - 1} />
-          );
-        })}
-      </div>
+      {horizontal ? (
+        // Wraps onto as many rows as it needs rather than compressing or
+        // scrolling. Twelve legible rungs are wider than any column here, and
+        // a scroll track hid two thirds of the journey behind an affordance
+        // nobody sees - the rails run to the row edge and pick up again on the
+        // next row, which reads as the continuation it is. items-start so a
+        // rung with a branch hanging under it does not stretch its neighbours.
+        <div className="pb-1">
+          <div className="flex flex-wrap items-start gap-y-3">
+            {mainStages.map((st, i) => (
+              <StageColumn
+                key={st.id}
+                stage={st}
+                isFirst={i === 0}
+                isLast={i === mainStages.length - 1}
+                branch={branchBySibling.get(st.id)}
+              />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div>
+          {mainStages.map((st, i) => {
+            const branch = branchBySibling.get(st.id);
+            return branch ? (
+              <ForkRow key={st.id} main={st} branch={branch} isLast={i === mainStages.length - 1} />
+            ) : (
+              <StageRow key={st.id} stage={st} isLast={i === mainStages.length - 1} />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -234,6 +311,7 @@ export function JourneyTimelineCard({
   sessionId,
   showEvents = false,
   variant = "sidebar",
+  orientation = "vertical",
   testId = "journey-timeline",
 }: {
   /** Omit for the parent's own view (server resolves their account). */
@@ -250,6 +328,13 @@ export function JourneyTimelineCard({
   /** Provider/admin: collapsible recent-activity feed under the timeline. */
   showEvents?: boolean;
   variant?: "sidebar" | "home";
+  /**
+   * "horizontal" lays the ladder left-to-right with the labels beneath each
+   * rung. Use it where the surface is wide and short - the record page's
+   * activity column - rather than the tall narrow rails the vertical ladder
+   * was drawn for. The track scrolls sideways; it never compresses.
+   */
+  orientation?: "vertical" | "horizontal";
   testId?: string;
 }) {
   const [eventsOpen, setEventsOpen] = useState(false);
@@ -323,7 +408,12 @@ export function JourneyTimelineCard({
   return (
     <div className="space-y-4" data-testid={testId}>
       {journeys.map((j) => (
-        <JourneyBlock key={`${j.journeyType}-${j.providerId}`} journey={j} showProviderName={journeys.length > 1 || !providerId} />
+        <JourneyBlock
+          key={`${j.journeyType}-${j.providerId}`}
+          journey={j}
+          showProviderName={journeys.length > 1 || !providerId}
+          horizontal={orientation === "horizontal"}
+        />
       ))}
       {showEvents && parentUserId && (
         <div>
