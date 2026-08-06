@@ -422,13 +422,16 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl }: {
   entry: Entry; parentUserId: string; parentName: string | null; parentPhotoUrl: string | null;
 }) {
   const meta = KIND_META[entry.kind];
+  const isSms = entry.detail?.type === "message" && entry.detail.channel === "SMS";
   // An SMS card was showing an envelope. The icon follows the channel, not
   // the bucket the two share.
-  const Icon = entry.detail?.type === "message" && entry.detail.channel === "SMS"
-    ? MessageSquare
-    : meta.icon;
+  const Icon = isSms ? MessageSquare : meta.icon;
   const tint =
-    meta.tone === "accent" ? "hsl(var(--accent))"
+    // A text message reads as a text message at a glance - green, the way
+    // every messaging app has trained people to expect. --brand-success
+    // rather than iMessage's literal hex, per the no-hardcoded-colour rule.
+    isSms ? "hsl(var(--brand-success))"
+    : meta.tone === "accent" ? "hsl(var(--accent))"
     : meta.tone === "primary" ? "hsl(var(--primary))"
     : "hsl(var(--muted-foreground))";
   return (
