@@ -477,7 +477,10 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
             provider: { select: { id: true, name: true } },
           },
         },
-        parentUser: { select: { id: true, name: true } },
+        // photoUrl, so the booking widget shows the family's face rather than a
+        // monogram. Not Gate B data - the photo already renders in this same
+        // payload's header; email and phone are what the gate withholds.
+        parentUser: { select: { id: true, name: true, photoUrl: true } },
       },
       orderBy: { scheduledAt: "desc" },
     }),
