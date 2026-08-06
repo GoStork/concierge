@@ -24,7 +24,6 @@ import {
   ParentAgreementsCell,
   ParentCostSheetsCell,
   ParentInvoicesCell,
-  ServiceChips,
   chatDeepLink,
   dedupeHouseholdPhones,
 } from "./parent-cells";
@@ -250,7 +249,9 @@ export function ParentRecordHeader({
         {/* The name is the page title now, so it is not repeated here. */}
         <div className="min-w-0 flex items-center gap-2 flex-wrap">
           <MatchStatusBadge status={record.matchStatus} />
-          <ServiceChips services={record.services} limit={0} testId="record-services" />
+          {/* No ServiceChips here: the profile card's Journey "Interested In"
+              row below shows the same interestedServices data. Chips stay in
+              the Parents table, where row-scanning justifies them. */}
           <HouseholdBadge
             memberNames={record.accountMembers.map((m) => m.name || "")}
             selfName={record.parent.name}
