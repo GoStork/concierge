@@ -687,6 +687,9 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         providerId: t.providerId,
         label: t.tag?.label ?? "",
         colorToken: t.tag?.colorToken ?? "accent",
+        // The activity feed places tags chronologically like everything else.
+        createdAt: t.assignedAt,
+        assignedByUserId: t.assignedByUserId ?? null,
       })),
     },
   };

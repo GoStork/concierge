@@ -98,6 +98,8 @@ export interface CrmFollowUp {
   overdue: boolean;
   assigneeUserId: string | null;
   assigneeName: string | null;
+  createdAt?: string;
+  createdByUserId?: string | null;
 }
 
 export interface CrmOwner {
@@ -118,6 +120,9 @@ export interface CrmTag {
   providerId: string | null;
   label: string;
   colorToken: string;
+  /** assignedAt - the activity feed places tags chronologically. */
+  createdAt?: string;
+  assignedByUserId?: string | null;
 }
 
 export interface MoneyGroup {

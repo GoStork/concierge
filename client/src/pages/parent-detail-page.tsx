@@ -22,8 +22,7 @@ import { ContactReleaseSection } from "@/components/chat/contact-release-section
 import { EvaKnowledgePanel } from "@/components/chat/eva-knowledge-panel";
 import {
   DenseColumn,
-  ParentNotesPanel,
-  ParentFollowUpPanel,
+  ParentActivitySection,
   ParentLeadOwner,
   ParentRecordActions,
   ParentIdentitySection,
@@ -56,7 +55,7 @@ export default function ParentDetailPage() {
   const navigate = useNavigate();
   // Every section, so the default is "all open" and a saved state can name
   // any of them.
-  const { isOpen, toggle } = useOpenSections(["identity", "crm", "followup", "interested", "journey", "money", "admin"]);
+  const { isOpen, toggle } = useOpenSections(["identity", "crm", "interested", "journey", "money", "admin"]);
 
   // Which column the phone is showing. In the URL per the house rule, so back
   // returns to the tab you were on - and so a link can point at one.
@@ -178,14 +177,16 @@ export default function ParentDetailPage() {
                     of the Activity tab on a phone - same section, hoisted, not
                     duplicated. */}
                 <div className={cn("lg:col-span-3", colClass("activity"))} data-testid="record-band-journey">
-                  <RecordSection id="journey" title="Activity" open={isOpen("journey")} onToggle={toggle}>
+                  <RecordSection id="journey" title="Lead Status" open={isOpen("journey")} onToggle={toggle}>
                     {/* No sessionId: the record is the full relationship view,
                         which is exactly what this card's own docs say to omit
                         it for. */}
                     <JourneyTimelineCard
                       parentUserId={record.parent.id}
                       providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
-                      showEvents
+                      // The events feed lives in the Activity timeline now,
+                      // where it is one card per entry rather than a collapsed
+                      // list of one-liners under the ladder.
                       variant="sidebar"
                       // Horizontal only where there is a full page width to
                       // spend. Below lg the rungs would be ~30px apart, so it
@@ -206,7 +207,7 @@ export default function ParentDetailPage() {
                     <ParentRecordHeader
                       record={record}
                       isAdmin={!!isAdmin}
-                      onJumpToCrm={() => { setCol("activity"); toggle("followup", true); }}
+                      onJumpToCrm={() => { setCol("activity"); toggle("crm", true); }}
                       ownerSlot={<ParentLeadOwner record={record} />}
                       open={isOpen("identity")}
                       onToggle={() => toggle("identity")}
@@ -218,15 +219,12 @@ export default function ParentDetailPage() {
 
                 {/* ── Middle: what happened, and what was said about it ──── */}
                 <div className={colClass("activity")} data-testid="record-col-activity">
-                  <RecordSection id="crm" title="Notes" open={isOpen("crm")} onToggle={toggle}>
-                    <ParentNotesPanel record={record} />
-                  </RecordSection>
-
-                  {/* Beside the notes, not off in the related rail: a note and
-                      a next step are both "what we are doing about this
-                      family", as opposed to the records attached to them. */}
-                  <RecordSection id="followup" title="Next step and tags" open={isOpen("followup")} onToggle={toggle}>
-                    <ParentFollowUpPanel record={record} />
+                  {/* One timeline, one card per thing that happened. Notes,
+                      next steps and tags are ACTIONS on it rather than
+                      sections of their own - writing a note adds an entry
+                      here, which is where you would look for it anyway. */}
+                  <RecordSection id="crm" title="Activity" open={isOpen("crm")} onToggle={toggle}>
+                    <ParentActivitySection record={record} />
                   </RecordSection>
                 </div>
 

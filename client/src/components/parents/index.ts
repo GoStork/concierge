@@ -6,3 +6,4 @@ export * from "./parent-crm-ui";
 export * from "./parents-table";
 export * from "./parents-filter-bar";
 export * from "./record-density";
+export * from "./parent-activity";

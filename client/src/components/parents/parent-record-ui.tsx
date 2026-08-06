@@ -171,20 +171,20 @@ function ContactLine({ record }: { record: ParentRecord }) {
           // min-w-0 + break-all: natan123+cbbbwbb@gmail.com is wider than a
           // 320px column, and without these it ran straight under the copy
           // button instead of wrapping.
-          <span key={m.id} className="flex items-start gap-1 min-w-0 max-w-full t-micro-value" data-testid={`record-email-${m.id}`}>
+          <span key={m.id} className="flex items-baseline gap-1.5 min-w-0 max-w-full t-micro-value" data-testid={`record-email-${m.id}`}>
             <span className="t-micro-label shrink-0">Email</span>
             <span className="min-w-0 truncate" title={m.email as string}>{m.email}</span>
-            <CopyButton value={m.email as string} testId={`btn-copy-record-email-${m.id}`} />
+            <span className="self-center shrink-0"><CopyButton value={m.email as string} testId={`btn-copy-record-email-${m.id}`} /></span>
           </span>
         ))}
       </div>
       {phones.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {phones.map((m: any) => (
-            <span key={`p-${m.id}`} className="flex items-center gap-1 min-w-0 max-w-full t-micro-value" data-testid={`record-phone-${m.id}`}>
+            <span key={`p-${m.id}`} className="flex items-baseline gap-1.5 min-w-0 max-w-full t-micro-value" data-testid={`record-phone-${m.id}`}>
               <span className="t-micro-label shrink-0">Phone</span>
               <span className="whitespace-nowrap">{formatPhoneDisplay(m.mobileNumber)}</span>
-              <CopyButton value={m.mobileNumber} testId={`btn-copy-record-phone-${m.id}`} />
+              <span className="self-center shrink-0"><CopyButton value={m.mobileNumber} testId={`btn-copy-record-phone-${m.id}`} /></span>
             </span>
           ))}
         </div>

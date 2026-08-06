@@ -80,23 +80,32 @@ function useCrmMutation(parentUserId: string, onDone?: () => void) {
 
 // ─── Notes ──────────────────────────────────────────────────────────────────
 
-function NotesFeed({ record, isAdmin }: { record: ParentRecord; isAdmin: boolean }) {
+/**
+ * The note composer on its own.
+ *
+ * Split out of the notes feed when the record page became one activity
+ * timeline: the timeline renders note cards itself, interleaved with
+ * everything else that happened, so it needs the box to type in without a
+ * second copy of the list underneath it.
+ */
+export function NoteComposer({ record, onPosted }: { record: ParentRecord; onPosted?: () => void }) {
+  const isAdmin = record.viewer.role === "admin";
   const choices = scopeChoices(record, isAdmin);
   const [scopeKey, setScopeKey] = useState(choices[0]?.key || "gostork");
   const [body, setBody] = useState("");
-  const mut = useCrmMutation(record.parent.id, () => setBody(""));
+  const mut = useCrmMutation(record.parent.id, () => { setBody(""); onPosted?.(); });
   const chosen = choices.find((c) => c.key === scopeKey) || choices[0];
 
   return (
-    <div className="space-y-4 max-w-2xl">
-      <div className="space-y-2">
-        <Textarea
-          rows={3}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="What should the next person to open this record know?"
-          data-testid="input-crm-note"
-        />
+    <div className="space-y-2">
+      <Textarea
+        rows={3}
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder="What should the next person to open this record know?"
+        data-testid="input-crm-note"
+      />
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         {isAdmin ? (
           <OptionPills
             // One line per pill. A provider like "Sperm Bank California |
@@ -138,37 +147,6 @@ function NotesFeed({ record, isAdmin }: { record: ParentRecord; isAdmin: boolean
           Post note
         </Button>
       </div>
-
-      {record.crm.notes.length === 0 ? (
-        <div className="rounded-[var(--radius)] bg-secondary p-4">
-          <p className="t-helper">No notes yet. The first note is usually why this family came in.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {record.crm.notes.map((n) => {
-            const org = record.providerOrgs.find((o) => o.providerId === n.providerId);
-            const internal = n.scope === "GOSTORK";
-            return (
-              <div key={n.id} className="rounded-[var(--radius)] border p-3 space-y-1.5" data-testid={`note-${n.id}`}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className="text-xs font-ui px-2 py-0.5 rounded-full"
-                    style={internal
-                      ? { background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }
-                      : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
-                  >
-                    {internal ? "GoStork internal" : `Shared with ${org?.providerName || "provider"}`}
-                  </span>
-                  <span className="t-helper ml-auto">
-                    {n.authorName || "Staff"} · {new Date(n.createdAt).toLocaleString()}
-                  </span>
-                </div>
-                <p className="text-sm whitespace-pre-wrap">{n.body}</p>
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -488,15 +466,6 @@ export function ParentLeadOwner({ record }: { record: ParentRecord }) {
   const primary = scopeChoices(record, isAdmin)[0];
   if (!primary) return null;
   return <OwnerPicker record={record} isAdmin={isAdmin} choice={primary} />;
-}
-
-/**
- * Notes: the composer and the feed. Lives in the record's middle column,
- * beside the journey - the two together are "what has happened and what was
- * said about it".
- */
-export function ParentNotesPanel({ record }: { record: ParentRecord }) {
-  return <NotesFeed record={record} isAdmin={record.viewer.role === "admin"} />;
 }
 
 /**
