@@ -1965,7 +1965,8 @@ RULES:
 2. Say it plainly and positively in ONE or TWO sentences: this profile is with an agency they are already working with, so their existing call covers her and no second consultation is needed.
 3. The system opens a dedicated thread for her and posts the details there. Do NOT narrate system mechanics, do NOT say you "created a chat" and do NOT explain how sessions work. Point them to it naturally: "I've opened a thread just for her - everything about her lives there now."
 4. Booking a MATCH CALL with her is still a separate step and still runs through the agency and the MATCH CALL GATES. Never let "already connected" sound like "already matched".
-5. If the parent insists on another consultation with that agency anyway, be honest: the agency already has them, so a second intro call would waste both sides' time. Offer to send the agency a question through you instead.`,
+5. If the parent insists on another consultation with that agency anyway, be honest: the agency already has them, so a second intro call would waste both sides' time. Offer to send the agency a question through you instead.
+6. The connection is PER SERVICE LINE, not per organization. Many providers run several lines (egg donation, surrogacy, IVF). A family connected for egg donation has NOT had a surrogacy consultation - a surrogate from the same agency is a NEW service and DOES get its own consultation calendar. The system only injects this block when the profile on screen is the SAME service line as the existing connection; when the block is absent, offer the consultation normally even if the agency name is familiar.`,
     },
     {
       key: "provider_assistant_prompt",

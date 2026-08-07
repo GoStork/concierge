@@ -11,6 +11,8 @@
  *
  * See docs/freetext-request-test-plan.md and the Jul 24 routing audit.
  */
+import { providerTypeFromSubject } from "./provider-type-resolve";
+
 /**
  * System cards a PARENT may see in their message feed.
  *
@@ -162,26 +164,57 @@ const SHARED_SESSION_SELECT = {
  * Strict variant: resolves ONLY a genuinely shared thread, never the loose
  * fallback. Use this when the answer drives a branch (skip the consultation,
  * treat the parent as connected) rather than "where do I post this?".
+ *
+ * SERVICE-LINE SCOPING (opts.subjectType): a connection is per SERVICE LINE,
+ * not per org. Many providers run several lines (egg donation + surrogacy on
+ * one Provider row), and a family connected for egg donation has NOT had a
+ * surrogacy consultation - that call still needs to happen. Pass the NEW
+ * subject's type (the match card's `type`) and only sessions whose own line
+ * matches - or whose line cannot be determined - count as "connected".
+ * Callers that only need "is there a shared thread to post into?" (IP form
+ * delivery, booking notifications) omit it and keep the org-wide answer.
  */
 export async function findConnectedProviderSession(
   memberIds: string[],
   providerId: string,
-  opts?: { excludeSessionId?: string | null; client?: any },
+  opts?: { excludeSessionId?: string | null; client?: any; subjectType?: string | null },
 ): Promise<SharedProviderSession | null> {
   if (!memberIds?.length || !providerId) return null;
   const db = opts?.client ?? (await import("./db")).prisma;
-  const found = await db.aiChatSession.findFirst({
-    where: {
-      ...(opts?.excludeSessionId ? { id: { not: opts.excludeSessionId } } : {}),
-      userId: { in: memberIds },
-      providerId,
-      OR: [
-        { status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } },
-        { providerJoinedAt: { not: null } },
-      ],
-    },
+  const where = {
+    ...(opts?.excludeSessionId ? { id: { not: opts.excludeSessionId } } : {}),
+    userId: { in: memberIds },
+    providerId,
+    OR: [
+      { status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } },
+      { providerJoinedAt: { not: null } },
+    ],
+  };
+
+  const newLine = providerTypeFromSubject(opts?.subjectType);
+  if (!newLine) {
+    const found = await db.aiChatSession.findFirst({
+      where,
+      orderBy: { updatedAt: "desc" },
+      select: SHARED_SESSION_SELECT,
+    });
+    return (found as SharedProviderSession) ?? null;
+  }
+
+  const candidates = (await db.aiChatSession.findMany({
+    where,
     orderBy: { updatedAt: "desc" },
+    take: 25,
     select: SHARED_SESSION_SELECT,
+  })) as SharedProviderSession[];
+  // A session with no resolvable line (generic consultation thread, no
+  // subject) counts as covering: we cannot prove it was a different service,
+  // and wrongly booking a duplicate call is the cheaper mistake there. The
+  // title is the fallback signal - subject threads are named "Surrogate #123"
+  // / "Egg Donor #456", which the same regex map resolves.
+  const covering = candidates.find((s) => {
+    const line = providerTypeFromSubject(s.subjectType || s.title);
+    return !line || line === newLine;
   });
-  return (found as SharedProviderSession) ?? null;
+  return covering ?? null;
 }

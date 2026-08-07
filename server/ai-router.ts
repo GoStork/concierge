@@ -9,6 +9,7 @@ import {
   expandParentAccount,
 } from "./consultation-gates";
 import { openConnectedAgencySubjectThread } from "./connected-agency-shortcut";
+import { providerTypeFromSubject } from "./provider-type-resolve";
 import { EVA_PROMPT_SECTION_KEYS } from "./ai-prompt-defaults";
 import { blockContactInfo, isSharedWithProvider, logContactBlock, scanForContactInfo } from "./contact-guard";
 import Anthropic from "@anthropic-ai/sdk";
@@ -3513,8 +3514,12 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       .then(async (latestCard) => {
         const agencyId = latestCard?.ownerProviderId || null;
         if (!agencyId) return null;
+        // Scoped to the on-screen profile's SERVICE LINE: connected for egg
+        // donation does not mean connected for surrogacy - a new line at the
+        // same agency still gets its calendar.
         const connected = await findConnectedProviderSession(accountMemberIds, agencyId, {
           excludeSessionId: currentSessionId,
+          subjectType: latestCard?.type || null,
         });
         if (!connected) return null;
         const agency = await prisma.provider
@@ -10776,9 +10781,21 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         const ids = me?.parentAccountId
           ? (await prisma.user.findMany({ where: { parentAccountId: me.parentAccountId }, select: { id: true } })).map((u) => u.id)
           : [userId];
-        const handedOff = await prisma.aiChatSession.findFirst({
+        const handedOffSessions = await prisma.aiChatSession.findMany({
           where: { userId: { in: ids }, providerId: consultProviderId, handoffCompletedAt: { not: null } },
-          select: { id: true },
+          select: { id: true, subjectType: true, title: true },
+        });
+        // Per SERVICE LINE, like the connected-agency shortcut below: a
+        // journey handed off for egg donation does not cover a surrogacy
+        // consultation with the same org - that call still needs booking. A
+        // handed-off session whose line cannot be resolved covers everything
+        // (cannot prove it was a different service).
+        const guardMc = handedOffSessions.length ? await findLatestMatchCard(currentSessionId) : null;
+        const guardLine = providerTypeFromSubject(guardMc?.type);
+        const handedOff = handedOffSessions.find((s) => {
+          if (!guardLine) return true;
+          const line = providerTypeFromSubject(s.subjectType || s.title);
+          return !line || line === guardLine;
         });
         if (handedOff) {
           console.log(`[CONSULTATION] Provider ${consultProviderId} journey is handed off - dropping consultation card`);
@@ -10834,11 +10851,15 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       if (consultProviderId) {
         try {
           const memberIds = await expandParentAccount(userId);
+          const mc = await findLatestMatchCard(currentSessionId);
+          // Service-line scoped: a family connected to this agency for egg
+          // donation is NOT connected for surrogacy. When the new subject is
+          // a different line, the lookup misses and the calendar goes out.
           const connected = await findConnectedProviderSession(memberIds, consultProviderId, {
             excludeSessionId: currentSessionId,
+            subjectType: mc?.type || null,
           });
           if (connected) {
-            const mc = await findLatestMatchCard(currentSessionId);
             const newSubjectId = mc?.providerId || null;
             // Only shortcut a genuinely NEW subject. Re-booking the same
             // profile is the parent asking for something else entirely.
