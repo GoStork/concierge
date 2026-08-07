@@ -295,7 +295,11 @@ export default function ParentDetailPage() {
                         the section is folded in here and ?sec=identity now
                         drives this card. */}
                     <ParentRecordHeader
-                      record={record}
+                      // The scoped copy, so the per-line status badges follow
+                      // the service filter (Surrogacy selected -> only the
+                      // surrogacy badge). Identity fields are identical on
+                      // both copies.
+                      record={scopedRecord || record}
                       isAdmin={!!isAdmin}
                       onJumpToCrm={() => { setCol("activity"); toggle("crm", true); }}
                       ownerSlot={<ParentLeadOwner record={record} />}

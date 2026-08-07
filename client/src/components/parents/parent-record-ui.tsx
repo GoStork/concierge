@@ -20,7 +20,6 @@ import { REASON_LABEL } from "@/components/chat/contact-release-section";
 import {
   ContactHiddenChip,
   HouseholdBadge,
-  MatchStatusBadge,
   ParentAgreementsCell,
   ParentCostSheetsCell,
   ParentInvoicesCell,
@@ -253,7 +252,12 @@ export function ParentRecordHeader({
             <p className="font-heading text-sm truncate" data-testid="record-parent-name">{record.parent.name}</p>
           )}
           <div className="min-w-0 flex items-center gap-2 flex-wrap">
-            <MatchStatusBadge status={record.matchStatus} />
+            {/* No status badge here. One most-advanced badge lied whenever
+                the family ran two service lines (Handed Off on egg donation
+                while surrogacy had just booked its first call), and the real
+                per-thread statuses already live on the Interested-profiles
+                cards and the Lead Status ladders. A summary that cannot be
+                accurate is worse than none. */}
             {/* No ServiceChips here: the profile card's Journey "Interested In"
                 row below shows the same interestedServices data. Chips stay in
                 the Parents table, where row-scanning justifies them. */}
