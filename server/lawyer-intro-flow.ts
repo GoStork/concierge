@@ -3,14 +3,13 @@
  *
  * Two entry points:
  *
- * 1. maybeOfferLawyerIntro(parentUserId, providerId) - fired after a
- *    consultation chat session is created. If the provider is a Surrogacy
- *    or Egg Donor AGENCY and this parent account has never been offered a
- *    lawyer (IntendedParentProfile.lawyerIntroOfferedAt), Eva posts a
- *    one-time yes/no offer into the parent's own Eva session. Surrogacy and
- *    egg donation both legally require independent counsel - the offer
- *    fires at the first real commitment signal (booking the first call),
- *    NOT waiting for a match.
+ * 1. maybeOfferLawyerIntro(parentUserId, providerId) - RETIRED (Aug 7 2026,
+ *    no callers). It fired at booking time, back to back with the booking
+ *    confirmation's prep questions - two open questions at once. The
+ *    trailing offer in ai-router owns the ask now: it posts on the first
+ *    post-booking turn where Eva is not already waiting on an answer, and
+ *    claims the same IntendedParentProfile.lawyerIntroOfferedAt flag. Kept
+ *    for reference; do not re-wire it without removing the trailing offer.
  *
  * 2. pickLawyerWithBooking(parentUserId) - the auto-pick used by the
  *    lawyer-connect presentation in ai-router (firm profile card + booking
@@ -80,7 +79,11 @@ export async function maybeOfferLawyerIntro(parentUserId: string, providerId: st
       role: "assistant",
       content: `One more thing while that call gets set up: ${journeyWord} journeys require a legal agreement, and it's smart to have your own fertility lawyer lined up early. I can connect you with a vetted attorney right here on GoStork - no obligation. Want me to?`,
       senderType: "ai",
-      uiCardData: { quickReplies: ["Yes, connect me with a lawyer", "Not right now"] },
+      // lawyerOffer marker: the trailing-offer block in ai-router checks it
+      // to avoid asking the same question twice in one session (observed
+      // live: this intro at booking time, then the trailing offer again two
+      // turns later, mid prep-questions).
+      uiCardData: { lawyerOffer: true, quickReplies: ["Yes, connect me with a lawyer", "Not right now"] },
     },
   });
   await prisma.aiChatSession.update({ where: { id: evaSession.id }, data: { updatedAt: new Date() } }).catch(() => {});

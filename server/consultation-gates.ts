@@ -889,6 +889,32 @@ export async function evaluateConsultationAckGate(input: {
 const CONFIDENTIAL_AGENCY_TYPES = ["Surrogacy Agency", "Egg Donor Agency"];
 
 /**
+ * Does the preliminary-step ack apply to this provider at all?
+ *
+ * Only donor/surrogate AGENCIES: their consultation signals real interest in
+ * a specific person, which is the whole thing the ack makes explicit. It was
+ * being enforced on every concierge booking, so a LAWYER'S calendar 409'd
+ * with "the agency treats it as real interest in this profile" (observed
+ * live with IFLG). Clinics, banks and legal always pass. Fails open.
+ */
+export async function providerRequiresPreliminaryAck(
+  providerId: string,
+  client?: any,
+): Promise<boolean> {
+  const prisma = await db(client);
+  const provider = await prisma.provider
+    .findUnique({
+      where: { id: providerId },
+      select: { services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } } },
+    })
+    .catch(() => null);
+  if (!provider) return false;
+  return (provider.services || []).some((s: any) =>
+    CONFIDENTIAL_AGENCY_TYPES.includes(s.providerType?.name || ""),
+  );
+}
+
+/**
  * The provider name a PRE-BOOKING card may show.
  *
  * Until the parent actually books, a donor/surrogate agency's identity stays

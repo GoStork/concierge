@@ -11711,34 +11711,37 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // session (uiCardData.lawyerOffer marker); answering it either creates
     // the legal session (suppresses forever) or leaves the marker (never
     // re-posted).
-    if (hasUpcomingProviderConsult && replySessionId && !lawyerCalendarServed) {
+    // NEVER stack it on a turn where Eva just asked the parent something -
+    // the trailing offer buried the prep question "What is your partner's
+    // first name?" seconds after it was asked (observed live), leaving two
+    // open questions and only one set of buttons.
+    const replyAwaitsAnswer = /\?\s*$/.test(finalContent.trim()) || quickReplies.length > 0;
+    if (hasUpcomingProviderConsult && replySessionId && !lawyerCalendarServed && !replyAwaitsAnswer) {
       try {
-        const [legalSession, alreadyOffered] = await Promise.all([
+        const meForOffer = await prisma.user.findUnique({ where: { id: userId }, select: { parentAccountId: true } });
+        const [legalSession, alreadyOffered, ipProfile] = await Promise.all([
           prisma.aiChatSession.findFirst({ where: { userId, subjectType: "legal" }, select: { id: true } }),
           prisma.aiChatMessage.findFirst({
             where: { sessionId: replySessionId, uiCardData: { path: ["lawyerOffer"], equals: true } },
             select: { id: true },
           }),
+          meForOffer?.parentAccountId
+            ? prisma.intendedParentProfile.findUnique({
+                where: { parentAccountId: meForOffer.parentAccountId },
+                select: { lawyerIntroOfferedAt: true },
+              })
+            : Promise.resolve(null),
         ]);
-        if (!legalSession && !alreadyOffered) {
-          // Show the firm (+ its lawyers as face tabs) with the offer so the
-          // parent sees WHO they'd be connected with before answering.
-          let offerMatchCards: any[] | undefined;
-          try {
-            const { pickLawyerWithBooking } = await import("./lawyer-intro-flow");
-            const pick = await pickLawyerWithBooking(userId);
-            if (pick) {
-              offerMatchCards = [{
-                type: "Law Group",
-                providerId: pick.provider.id,
-                ownerProviderId: pick.provider.id,
-                name: pick.provider.name,
-                photo: pick.provider.logoUrl || undefined,
-                reasons: [],
-              }];
-              void emitJourneyEvent({ eventType: "PROFILE_PRESENTED", parentUserId: userId, providerId: pick.provider.id, sessionId: replySessionId, metadata: { kind: "law_group", viaOffer: true } });
-            }
-          } catch { /* offer still posts without the card */ }
+        // The booking hook (maybeOfferLawyerIntro) may have JUST asked this in
+        // another session - a fresh account-level offer means don't repeat it
+        // here. After a day of silence the pre-call reminder is fair game.
+        const introJustOffered =
+          !!ipProfile?.lawyerIntroOfferedAt &&
+          Date.now() - new Date(ipProfile.lawyerIntroOfferedAt).getTime() < 24 * 3600_000;
+        if (!legalSession && !alreadyOffered && !introJustOffered) {
+          // Text + buttons only, no firm card: answering "yes" presents the
+          // firm card with its calendar, and showing the same card in the
+          // offer meant the parent saw it twice back to back (observed live).
           await prisma.aiChatMessage.create({
             data: {
               sessionId: replySessionId,
@@ -11748,11 +11751,21 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               uiCardData: {
                 lawyerOffer: true,
                 quickReplies: ["Yes, connect me with a lawyer", "Not right now"],
-                ...(offerMatchCards ? { matchCards: offerMatchCards } : {}),
               },
             },
           });
           console.log(`[lawyer-offer] Posted standalone trailing offer in session ${replySessionId}`);
+          // Claim the once-ever account flag (previously claimed by the
+          // retired booking-time hook) - it drives the 24h dedupe above and
+          // keeps "was this family ever offered a lawyer" answerable.
+          if (meForOffer?.parentAccountId) {
+            await prisma.intendedParentProfile
+              .updateMany({
+                where: { parentAccountId: meForOffer.parentAccountId, lawyerIntroOfferedAt: null },
+                data: { lawyerIntroOfferedAt: new Date() },
+              })
+              .catch(() => {});
+          }
         }
       } catch (e: any) {
         console.error("[lawyer-offer] Failed to post trailing offer:", e?.message);

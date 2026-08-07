@@ -49,6 +49,7 @@ import {
   postMissingGateCards,
   expandParentAccount,
   latestConsultIntent,
+  providerRequiresPreliminaryAck,
 } from "../../../consultation-gates";
 import { findConnectedProviderSession } from "../../../parent-visibility";
 import {
@@ -297,12 +298,11 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       data: { sessionId: targetSessionId },
     }).catch((e: any) => this.logger.warn(`[CONSULTATION] Booking->session link failed: ${e.message}`));
 
-    // Phase 6: first call with a surrogacy / egg-donation agency = the
-    // commitment signal for the one-time lawyer-intro offer (fire and
-    // forget; internally idempotent via lawyerIntroOfferedAt).
-    import("../../../lawyer-intro-flow")
-      .then(({ maybeOfferLawyerIntro }) => maybeOfferLawyerIntro(parentUserId, consultProviderId))
-      .catch((e: any) => this.logger.warn(`[lawyer-intro] Offer hook failed: ${e?.message}`));
+    // The lawyer-intro offer used to fire HERE, at booking time - and landed
+    // back to back with the booking confirmation's prep questions, leaving
+    // the parent two open questions at once (observed live). The trailing
+    // offer in ai-router now owns it entirely: it posts on the first
+    // post-booking turn where Eva is not already waiting on an answer.
 
     // Once the parent has booked a consultation with this provider, any pending
     // whispers on OTHER (anonymous) sessions between the same parent+provider
@@ -2482,6 +2482,12 @@ I'll check in with you right after the call. You've got this!`;
         blockingScheduledAt: lock.blocker.scheduledAt,
       });
     }
+
+    // The preliminary ack only exists for donor/surrogate agencies - their
+    // consultation signals real interest in a specific person. Lawyers,
+    // clinics and banks book straight through (observed live: IFLG's
+    // calendar 409'd asking to confirm "real interest in this profile").
+    if (!(await providerRequiresPreliminaryAck(providerId, this.prisma))) return;
 
     const ack = await evaluateConsultationAckGate({
       parentUserId: parentUser.id,

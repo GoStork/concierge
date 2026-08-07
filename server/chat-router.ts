@@ -34,6 +34,7 @@ import {
   evaluateMatchCallGates,
   evaluateConsultationLock,
   evaluateConsultationAckGate,
+  providerRequiresPreliminaryAck,
   postMissingGateCards,
   listOpenConsultations,
   releaseConsultationLock,
@@ -3808,7 +3809,14 @@ chatRouter.get("/api/consultation-gates/status", requireAuth, async (req: Reques
     }
     const [lock, ack] = await Promise.all([
       evaluateConsultationLock({ parentUserId: user.id, targetProviderId: providerId, subjectType }),
-      evaluateConsultationAckGate({ parentUserId: user.id, providerId, subjectProfileId }),
+      // Ack applies to donor/surrogate agencies only - keep this endpoint in
+      // lockstep with the booking endpoint or the widget shows a gate the
+      // booking would never enforce.
+      providerRequiresPreliminaryAck(providerId).then((requires) =>
+        requires
+          ? evaluateConsultationAckGate({ parentUserId: user.id, providerId, subjectProfileId })
+          : { allowed: true, code: null as any, message: "" },
+      ),
     ]);
     res.json({
       intent: "CONSULTATION",
