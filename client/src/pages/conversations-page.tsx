@@ -2592,9 +2592,20 @@ const sendMessageMutation = useMutation({
                   ? (s.userName || "Prospective Parent")
                   : sessionThreadLabel(s);
                 const isAiThread = !s.subjectProfileId && /ai concierge/i.test(s.title || "");
-                const photoSrc = soloProviderLevel
+                // The face follows the NAME: a row labelled with the family's
+                // name wears the family's photo. Anything else prefers its
+                // subject photo and falls back to the family rather than a
+                // letter tile.
+                //
+                // Not keyed on subjectProfileId - a clinic thread carries the
+                // provider's OWN id there with no profilePhotoUrl, so that
+                // test picked an empty branch. Not keyed on soloProviderLevel
+                // either: that decides whether a header is drawn, so the row
+                // dropped to a monogram the moment a header appeared.
+                const parentDisplayName = s.userName || "Prospective Parent";
+                const photoSrc = rowTitle === parentDisplayName
                   ? getPhotoSrc(s.userAvatar)
-                  : getPhotoSrc(s.profilePhotoUrl);
+                  : (getPhotoSrc(s.profilePhotoUrl) || getPhotoSrc(s.userAvatar));
                 const pendingAgeMin = s.pendingQuestions > 0 ? (s.pendingMaxAgeMinutes || 0) : 0;
                 const slaTone = pendingAgeMin >= 24 * 60
                   ? "bg-accent/20 text-accent-foreground border-accent/40"
