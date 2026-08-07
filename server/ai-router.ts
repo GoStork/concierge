@@ -10698,6 +10698,10 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // Set when the already-connected shortcut opens a subject thread instead of
     // a booking card - the client uses it to refresh its conversation list.
     let openedSubjectSessionId: string | null = null;
+    // The preliminary-ack card posted mid-turn (holding the calendar). Sent in
+    // the done payload so the client renders it immediately - it was created
+    // during the stream, so neither the reply append nor the poller sees it.
+    let gateCardMessage: any = null;
 
     const consultationMatch = finalContent.match(/\[\[CONSULTATION_BOOKING:(.*?)\]\]/);
     if (consultationMatch) {
@@ -11105,6 +11109,10 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                   });
                   if (posted) {
                     console.log(`[CONSULTATION] Preliminary ack missing - holding calendar for ${consultProviderId} behind the ack card`);
+                    // Only hand the card to THIS stream when it landed in the
+                    // session on screen - appending a message from another
+                    // thread would render it in the wrong conversation.
+                    if (posted.sessionId === currentSessionId) gateCardMessage = posted;
                     // The model's reply promises the calendar it is no longer
                     // getting - rewrite it so words and cards agree.
                     const promisesCalendar = /calendar|schedul|book|pull(?:ing)? (?:it |that |this )?up|time slot/i.test(finalContent);
@@ -11728,6 +11736,7 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       consultationCard: consultationCard || undefined,
       meetingCards: meetingCards.length > 0 ? meetingCards : undefined,
       openedSubjectSessionId: openedSubjectSessionId || undefined,
+      gateCardMessage: gateCardMessage || undefined,
     });
   } catch (error: any) {
     console.error("AI Router Error:", error);

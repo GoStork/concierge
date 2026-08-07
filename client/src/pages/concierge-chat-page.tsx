@@ -4241,6 +4241,23 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               createdAt: data.message?.createdAt || new Date().toISOString(),
             };
 
+            // The preliminary-ack card posted server-side DURING this turn
+            // (holding the consultation calendar). It's a separate DB message
+            // the poller won't fetch, so append it right under the reply.
+            const gateCardMsg: ChatMessage | null = data.gateCardMessage?.id
+              ? {
+                  role: "assistant",
+                  content: data.gateCardMessage.content ?? "",
+                  id: data.gateCardMessage.id,
+                  senderType: data.gateCardMessage.senderType,
+                  senderName: data.gateCardMessage.senderName,
+                  uiCardType: data.gateCardMessage.uiCardType,
+                  uiCardData: data.gateCardMessage.uiCardData,
+                  createdAt: data.gateCardMessage.createdAt || new Date().toISOString(),
+                }
+              : null;
+            if (gateCardMsg?.id) knownMessageIds.current.add(gateCardMsg.id);
+
             // Apply the final message (with metadata like quickReplies, matchCards, etc.)
             // after the typing animation finishes draining - or immediately if no animation ran
             const applyFinalMsg = () => {
@@ -4253,20 +4270,35 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                     m.quickReplies || m.multiSelect ? { ...m, quickReplies: undefined, multiSelect: undefined } : m
                   );
                   const hasPlaceholder = cleared.some((m) => m.id === streamingId);
-                  return hasPlaceholder
+                  const next = hasPlaceholder
                     ? cleared.map((m) => m.id === streamingId ? finalMsg : m)
                     : [...cleared.filter((m) => m.id !== streamingId), finalMsg];
+                  return appendGateCard(next);
                 });
                 setPendingCurationMessage(finalMsg);
                 curationAwaitingRef.current = true;
               } else {
                 setMessages((prev) => {
                   const hasPlaceholder = prev.some((m) => m.id === streamingId);
-                  return hasPlaceholder
+                  const next = hasPlaceholder
                     ? prev.map((m) => m.id === streamingId ? finalMsg : m)
                     : [...prev.filter((m) => m.id !== streamingId), finalMsg];
+                  return appendGateCard(next);
                 });
               }
+            };
+            // Slot the held-calendar ack card in right after the reply. A
+            // re-ask deletes the old open card server-side and creates a fresh
+            // one, so drop any stale unacknowledged copy still on screen.
+            const appendGateCard = (list: ChatMessage[]): ChatMessage[] => {
+              if (!gateCardMsg) return list;
+              const pruned = list.filter(
+                (m) =>
+                  m.id === gateCardMsg.id ||
+                  m.uiCardType !== "consult_preliminary_ack" ||
+                  !!m.uiCardData?.acknowledgedAt,
+              );
+              return pruned.some((m) => m.id === gateCardMsg.id) ? pruned : [...pruned, gateCardMsg];
             };
 
             if (typingIntervalRef.current) {

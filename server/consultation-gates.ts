@@ -939,7 +939,7 @@ async function postGateCard(input: {
   cardData: Record<string, unknown>;
   subjectProfileId?: string | null;
   client?: any;
-}): Promise<boolean> {
+}): Promise<any | null> {
   const prisma = await db(input.client);
   const cardType = GATE_CARD_TYPE[input.gate];
   const existing = await prisma.aiChatMessage
@@ -955,26 +955,22 @@ async function postGateCard(input: {
       !input.subjectProfileId || (data.subjectProfileId ?? null) === input.subjectProfileId;
     if (sameSubject && !data.acknowledgedAt) {
       // Already asked, still open. If the caller carries a held calendar
-      // (pendingConsultationCard), patch it onto the open card so the tick
-      // releases the CURRENT calendar rather than a stale or missing one -
-      // and report true so the caller keeps holding the calendar back.
+      // (pendingConsultationCard), the old open card may be sitting far up in
+      // scrollback (observed live: a 40-minute-old card, invisible while Eva
+      // says "see the card below"). Delete it and fall through to create a
+      // fresh one at the bottom with the CURRENT calendar - still exactly one
+      // open card, just where the parent is looking.
       const pending = (input.cardData as any)?.pendingConsultationCard;
-      if (pending) {
-        await prisma.aiChatMessage
-          .update({
-            where: { id: existing.id },
-            data: { uiCardData: { ...data, pendingConsultationCard: pending } as any },
-          })
-          .catch((e: any) =>
-            console.error(`[consultation-gates] Pending-calendar patch failed (${cardType}): ${e?.message}`),
-          );
-        return true;
-      }
-      return false;
+      if (!pending) return null;
+      await prisma.aiChatMessage
+        .delete({ where: { id: existing.id } })
+        .catch((e: any) =>
+          console.error(`[consultation-gates] Stale open card delete failed (${cardType}): ${e?.message}`),
+        );
     }
   }
 
-  await prisma.aiChatMessage
+  const created = await prisma.aiChatMessage
     .create({
       data: {
         sessionId: input.sessionId,
@@ -992,8 +988,11 @@ async function postGateCard(input: {
         } as any,
       },
     })
-    .catch((e: any) => console.error(`[consultation-gates] Card post failed (${cardType}): ${e?.message}`));
-  return true;
+    .catch((e: any) => {
+      console.error(`[consultation-gates] Card post failed (${cardType}): ${e?.message}`);
+      return null;
+    });
+  return created;
 }
 
 /**
@@ -1022,7 +1021,7 @@ export async function postPreliminaryAckCard(input: {
    */
   extraCardData?: Record<string, unknown>;
   client?: any;
-}): Promise<boolean> {
+}): Promise<any | null> {
   const { resolveParentEvaSessionId } = await import("./parent-visibility");
   const memberIds = await expandParentAccount(input.parentUserId, input.client);
   const sessionId =
@@ -1031,7 +1030,7 @@ export async function postPreliminaryAckCard(input: {
     console.error(
       `[consultation-gates] No session to post the preliminary ack card for parent ${input.parentUserId} - the booking will be refused with no way through. THIS IS A DEAD END.`,
     );
-    return false;
+    return null;
   }
   const displayName = await maskedProviderName(input.providerId, input.subjectType, input.client);
   const subject = input.subjectLabel || "this profile";
