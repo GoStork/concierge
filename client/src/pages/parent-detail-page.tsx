@@ -273,6 +273,17 @@ export default function ParentDetailPage() {
                     <JourneyTimelineCard
                       parentUserId={record.parent.id}
                       providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
+                      // The service-line chips scope the ladders too - Egg
+                      // Donation selected must not render the surrogacy
+                      // ladder. Bank journeys are donor purchases, so they
+                      // belong to the Egg Donation lens.
+                      journeyTypes={
+                        activeLine === "all"
+                          ? null
+                          : activeLine === "egg_donation"
+                            ? ["egg_donation", "bank"]
+                            : [activeLine]
+                      }
                       // The events feed lives in the Activity timeline now,
                       // where it is one card per entry rather than a collapsed
                       // list of one-liners under the ladder.

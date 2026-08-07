@@ -389,6 +389,7 @@ export function JourneyTimelineCard({
   showEvents = false,
   variant = "sidebar",
   orientation = "vertical",
+  journeyTypes = null,
   testId = "journey-timeline",
 }: {
   /** Omit for the parent's own view (server resolves their account). */
@@ -412,6 +413,12 @@ export function JourneyTimelineCard({
    * was drawn for. The track scrolls sideways; it never compresses.
    */
   orientation?: "vertical" | "horizontal";
+  /**
+   * Show only these journey types (e.g. ["egg_donation","bank"] for the
+   * record page's Egg Donation scope chip). null = all. Display filter
+   * only - the fetch is unchanged, so flipping it is instant.
+   */
+  journeyTypes?: string[] | null;
   testId?: string;
 }) {
   const [eventsOpen, setEventsOpen] = useState(false);
@@ -450,7 +457,10 @@ export function JourneyTimelineCard({
       </div>
     );
   }
-  const journeys = timelineQuery.data?.journeys || [];
+  const allJourneys = timelineQuery.data?.journeys || [];
+  const journeys = journeyTypes?.length
+    ? allJourneys.filter((j) => journeyTypes.includes(j.journeyType))
+    : allJourneys;
   if (journeys.length === 0) {
     return <p className="t-helper" data-testid={`${testId}-empty`}>No journey activity yet.</p>;
   }
