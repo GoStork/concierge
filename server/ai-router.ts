@@ -10815,6 +10815,17 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               (await prisma.provider
                 .findUnique({ where: { id: consultProviderId }, select: { name: true } })
                 .catch(() => null))?.name || "this agency";
+            // The subject is not always an egg donor - the same guard fires for
+            // surrogates and sperm donors. Name the right one, never "she".
+            const guardType = String(guardMc?.type || "").toLowerCase();
+            const subjectNoun = /surrog/.test(guardType)
+              ? "surrogate"
+              : /sperm/.test(guardType)
+                ? "sperm donor"
+                : /egg|donor/.test(guardType)
+                  ? "egg donor"
+                  : "profile";
+            const subjectPlural = subjectNoun === "profile" ? "profiles" : `${subjectNoun}s`;
             const streakKey = `${currentSessionId || userId}`;
             const streak = (consultDropStreak.get(streakKey) || 0) + 1;
             consultDropStreak.set(streakKey, streak);
@@ -10823,14 +10834,14 @@ NEVER promise to search without actually calling the search tool. NEVER end with
               String(userMessage || ""),
             );
             if (askedDifferent) {
-              finalContent = `You're right, you asked about a different agency. This donor is represented by ${provName}, which you're already working with, and that's why no new intro call is needed there. Let me find you donors from agencies you're not connected with yet.`;
-              quickReplies = [`Show me donors from other agencies`, `Stay with ${provName}`];
+              finalContent = `You're right, you asked about a different agency. This ${subjectNoun} is represented by ${provName}, which you're already working with, and that's why no new intro call is needed there. Let me find you ${subjectPlural} from agencies you're not connected with yet.`;
+              quickReplies = [`Show me ${subjectPlural} from other agencies`, `Stay with ${provName}`];
             } else if (streak <= 1) {
-              finalContent = `Quick heads up: this donor is represented by ${provName}, the agency you're already working with, so there's no new intro call to book. You can message them any time in your shared thread, and they can discuss her with you directly. Want me to look at other agencies too?`;
-              quickReplies = [`Show me donors from other agencies`, `I have a question for ${provName}`];
+              finalContent = `Quick heads up: this ${subjectNoun} is represented by ${provName}, the agency you're already working with, so there's no new intro call to book. You can message them any time in your shared thread, and they can discuss this ${subjectNoun} with you directly. Want me to look at other agencies too?`;
+              quickReplies = [`Show me ${subjectPlural} from other agencies`, `I have a question for ${provName}`];
             } else {
-              finalContent = `Same situation as before: she's also with ${provName}, your current agency, so booking a new intro call isn't possible. I can pull up donors from agencies you're not connected with, or pass ${provName} a question about her in your thread.`;
-              quickReplies = [`Show me donors from other agencies`, `Ask ${provName} about her`];
+              finalContent = `Same situation as before: this ${subjectNoun} is also with ${provName}, your current agency, so booking a new intro call isn't possible. I can pull up ${subjectPlural} from agencies you're not connected with, or pass ${provName} a question about this ${subjectNoun} in your thread.`;
+              quickReplies = [`Show me ${subjectPlural} from other agencies`, `Ask ${provName} about this ${subjectNoun}`];
             }
             sse.sendReset();
             sse.sendToken(finalContent);
