@@ -4248,11 +4248,6 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             // (data.providerJoined, status === CONSULTATION_BOOKED|PROVIDER_CONNECTED, or a
             // real senderType==="provider" message) handle that transition correctly.
 
-            if (data.message?.id) knownMessageIds.current.add(data.message.id);
-            // The reply arrives via this response, not the poller, so send the
-            // read receipt here - the user is looking at it right now.
-            if (data.message?.id) markSessionRead(data.sessionId || sessionId);
-
             const finalMsg: ChatMessage = {
               role: "assistant",
               content: data.message?.content ?? "",
@@ -4274,16 +4269,34 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             };
 
             // Apply the final message (with metadata like quickReplies, matchCards, etc.)
-            // after the typing animation finishes draining - or immediately if no animation ran
+            // after the typing animation finishes draining - or immediately if no animation ran.
+            //
+            // The message id is registered as "known" (and read-receipted) IN
+            // HERE, not when the done event arrives: registering it early
+            // meant a lost animation callback left the streamed bubble on
+            // screen with no quickReplies forever, while the poller skipped
+            // the persisted copy as already-known (observed live: the
+            // favorite reply's chips never appeared). Registered late, a
+            // dropped applyFinalMsg self-heals within one 3s poll - the
+            // poller appends the persisted message, chips and all, and the
+            // dedupe below prevents a double render when both paths land.
             const applyFinalMsg = () => {
+              if (data.message?.id) {
+                knownMessageIds.current.add(data.message.id);
+                // The reply arrives via this response, not the poller, so send
+                // the read receipt here - the user is looking at it right now.
+                markSessionRead(data.sessionId || sessionId);
+              }
               if (data.showCuration) {
                 setMessages((prev) => {
                   // Clear quick reply buttons from ALL previous messages when curation fires.
                   // Stale Phase 0 buttons (e.g. "Yes, I'm looking into surrogacy") on earlier
                   // messages must be disabled so the parent can only confirm via the curation UI.
-                  const cleared = prev.map((m) =>
-                    m.quickReplies || m.multiSelect ? { ...m, quickReplies: undefined, multiSelect: undefined } : m
-                  );
+                  const cleared = prev
+                    .filter((m) => !(finalMsg.id && m.id === finalMsg.id))
+                    .map((m) =>
+                      m.quickReplies || m.multiSelect ? { ...m, quickReplies: undefined, multiSelect: undefined } : m
+                    );
                   const hasPlaceholder = cleared.some((m) => m.id === streamingId);
                   const next = hasPlaceholder
                     ? cleared.map((m) => m.id === streamingId ? finalMsg : m)
@@ -4294,10 +4307,11 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
                 curationAwaitingRef.current = true;
               } else {
                 setMessages((prev) => {
-                  const hasPlaceholder = prev.some((m) => m.id === streamingId);
+                  const deduped = prev.filter((m) => !(finalMsg.id && m.id === finalMsg.id));
+                  const hasPlaceholder = deduped.some((m) => m.id === streamingId);
                   const next = hasPlaceholder
-                    ? prev.map((m) => m.id === streamingId ? finalMsg : m)
-                    : [...prev.filter((m) => m.id !== streamingId), finalMsg];
+                    ? deduped.map((m) => m.id === streamingId ? finalMsg : m)
+                    : [...deduped.filter((m) => m.id !== streamingId), finalMsg];
                   return appendGateCard(next);
                 });
               }
