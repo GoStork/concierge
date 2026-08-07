@@ -1347,6 +1347,12 @@ let promptSectionsCacheExpiry = 0;
 // one canned sentence verbatim (observed live: three identical repeats).
 const consultDropStreak = new Map<string, number>();
 
+// Same idea for the ask-first calendar hold: consecutive turns can each emit
+// [[CONSULTATION_BOOKING]] before the parent ticks the ack card (observed
+// live: the favorite turn and the schedule turn, identical canned line twice
+// in a row). The repeat gets a different, shorter phrasing.
+const ackHoldStreak = new Map<string, number>();
+
 // WHISPER PARENT APPROVAL: a whisper is a message to a THIRD PARTY (real
 // provider email + SMS), so the parent sees and approves the question before
 // it sends - the durable control the user mandated after junk whispers
@@ -10698,9 +10704,18 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     // Set when the already-connected shortcut opens a subject thread instead of
     // a booking card - the client uses it to refresh its conversation list.
     let openedSubjectSessionId: string | null = null;
-    // The preliminary-ack card posted mid-turn (holding the calendar). Sent in
-    // the done payload so the client renders it immediately - it was created
-    // during the stream, so neither the reply append nor the poller sees it.
+    // The preliminary-ack card holding the calendar. The DECISION to hold is
+    // made while processing [[CONSULTATION_BOOKING]]; the card itself is
+    // posted only AFTER the reply message is saved so it sorts below the
+    // "see the card below" line on reload. The created row rides the done
+    // payload (gateCardMessage) so the client renders it immediately.
+    let pendingAckCardInput: {
+      providerId: string;
+      subjectProfileId: string;
+      subjectType: string | null;
+      subjectLabel: string | null;
+      heldCard: any;
+    } | null = null;
     let gateCardMessage: any = null;
 
     const consultationMatch = finalContent.match(/\[\[CONSULTATION_BOOKING:(.*?)\]\]/);
@@ -11097,32 +11112,41 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                   providerId: consultProviderId,
                   subjectProfileId,
                 });
+                if (ack.allowed) {
+                  // Ack satisfied - a later hold (new agency, new subject) is
+                  // a fresh conversation and deserves the full phrasing again.
+                  ackHoldStreak.delete(currentSessionId || userId);
+                }
                 if (!ack.allowed) {
-                  const posted = await postPreliminaryAckCard({
-                    parentUserId: userId,
+                  console.log(`[CONSULTATION] Preliminary ack missing - holding calendar for ${consultProviderId} behind the ack card`);
+                  // Defer the actual card POST until after the reply is saved:
+                  // a card created mid-stream carries an earlier createdAt
+                  // than the reply, so on reload it sorted ABOVE the line
+                  // that says "see the card below" (observed live).
+                  pendingAckCardInput = {
                     providerId: consultProviderId,
                     subjectProfileId,
                     subjectType,
                     subjectLabel: sessionTitle,
-                    fallbackSessionId: currentSessionId,
-                    extraCardData: { pendingConsultationCard: consultationCard },
-                  });
-                  if (posted) {
-                    console.log(`[CONSULTATION] Preliminary ack missing - holding calendar for ${consultProviderId} behind the ack card`);
-                    // Only hand the card to THIS stream when it landed in the
-                    // session on screen - appending a message from another
-                    // thread would render it in the wrong conversation.
-                    if (posted.sessionId === currentSessionId) gateCardMessage = posted;
-                    // The model's reply promises the calendar it is no longer
-                    // getting - rewrite it so words and cards agree.
-                    const promisesCalendar = /calendar|schedul|book|pull(?:ing)? (?:it |that |this )?up|time slot/i.test(finalContent);
-                    if (promisesCalendar) {
-                      finalContent = `Wonderful! One quick thing before I open the calendar - see the card below. The moment you confirm, the calendar will appear right here so you can pick your time.`;
-                      sse.sendReset();
-                      sse.sendToken(finalContent);
-                    }
-                    consultationCard = null;
+                    heldCard: consultationCard,
+                  };
+                  // The model's reply promises the calendar it is no longer
+                  // getting - rewrite it so words and cards agree. Consecutive
+                  // holds (favorite turn, then schedule turn) escalate the
+                  // phrasing instead of repeating one line verbatim.
+                  const promisesCalendar = /calendar|schedul|book|pull(?:ing)? (?:it |that |this )?up|time slot/i.test(finalContent);
+                  if (promisesCalendar) {
+                    const streakKey = currentSessionId || userId;
+                    const streak = (ackHoldStreak.get(streakKey) || 0) + 1;
+                    ackHoldStreak.set(streakKey, streak);
+                    if (ackHoldStreak.size > 5000) ackHoldStreak.clear();
+                    finalContent = streak <= 1
+                      ? `Wonderful! One quick thing before I open the calendar - see the card below. The moment you confirm, the calendar will appear right here so you can pick your time.`
+                      : `Of course! Just tap one of the two options on the card below - confirm your interest, or choose an info call - and the calendar will appear right here.`;
+                    sse.sendReset();
+                    sse.sendToken(finalContent);
                   }
+                  consultationCard = null;
                 }
               } catch (e: any) {
                 console.error("[CONSULTATION] Preliminary ack pre-check failed (calendar goes out as before):", e?.message);
@@ -11596,6 +11620,31 @@ NEVER promise to search without actually calling the search tool. NEVER end with
         ...(Object.keys(uiExtras).length > 0 ? { uiCardType: "rich", uiCardData: uiExtras } : {}),
       },
     });
+    // The deferred preliminary-ack card - created AFTER the reply so its
+    // createdAt sorts below "see the card below" on reload. If this fails the
+    // parent is not dead-ended: the booking endpoint's 409 backstop posts the
+    // card too.
+    if (pendingAckCardInput) {
+      try {
+        const posted = await postPreliminaryAckCard({
+          parentUserId: userId,
+          providerId: pendingAckCardInput.providerId,
+          subjectProfileId: pendingAckCardInput.subjectProfileId,
+          subjectType: pendingAckCardInput.subjectType,
+          subjectLabel: pendingAckCardInput.subjectLabel,
+          fallbackSessionId: replySessionId,
+          extraCardData: { pendingConsultationCard: pendingAckCardInput.heldCard },
+        });
+        // Only hand the card to THIS stream when it landed in the session on
+        // screen - appending a message from another thread would render it in
+        // the wrong conversation.
+        if (posted?.sessionId === replySessionId) gateCardMessage = posted;
+        console.log(`[CONSULTATION] Preliminary ack card ${posted ? `posted (${posted.id})` : "NOT posted"} after reply save`);
+      } catch (e: any) {
+        console.error("[CONSULTATION] Deferred ack card post failed:", e?.message);
+      }
+    }
+
     // Mark the user's message as delivered AND read (AI always processes immediately)
     // savedUserMsg is null for system triggers - skip the update in that case
     if (savedUserMsg) {
