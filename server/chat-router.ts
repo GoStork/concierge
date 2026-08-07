@@ -3656,10 +3656,11 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
     // Only a member of the account that owns the card may tick it. Without
     // this, any authenticated user could satisfy another family's gate.
     let shownCardData: any = null;
+    let cardSessionId: string | null = null;
     if (messageId) {
       const msg = await prisma.aiChatMessage.findUnique({
         where: { id: messageId },
-        select: { id: true, uiCardType: true, uiCardData: true, session: { select: { userId: true } } },
+        select: { id: true, sessionId: true, uiCardType: true, uiCardData: true, session: { select: { userId: true } } },
       });
       if (!msg || msg.uiCardType !== GATE_CARD_TYPE[gate as ConsentGate]) {
         return res.status(404).json({ message: "Card not found" });
@@ -3669,6 +3670,7 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
         return res.status(403).json({ message: "Not your card" });
       }
       shownCardData = msg.uiCardData as any;
+      cardSessionId = msg.sessionId;
     }
 
     const memberIds = await callerAccountMemberIds(user);
@@ -3721,6 +3723,33 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
         })
         .catch(() => {});
     }
+    // ASK FIRST, CALENDAR SECOND: the concierge holds the consultation
+    // calendar inside this card (pendingConsultationCard) until the parent
+    // ticks it. Release it now as a fresh message - the card component
+    // invalidates the messages query right after this call, so it renders
+    // immediately. Guarded on the pre-update acknowledgedAt so a second
+    // login ticking a stale card cannot post the calendar twice.
+    if (
+      gate === "PRELIMINARY_STEP" &&
+      cardSessionId &&
+      shownCardData?.pendingConsultationCard &&
+      !shownCardData?.acknowledgedAt
+    ) {
+      await prisma.aiChatMessage
+        .create({
+          data: {
+            sessionId: cardSessionId,
+            role: "assistant",
+            content: `Perfect, thank you for confirming! Here's the calendar - pick whichever time works best for you.`,
+            deliveredAt: acknowledgedAt,
+            uiCardType: "rich",
+            uiCardData: { consultationCard: shownCardData.pendingConsultationCard } as any,
+          },
+        })
+        .then(() => console.log(`[CONSENT] Released held consultation calendar in session ${cardSessionId}`))
+        .catch((e: any) => console.error(`[CONSENT] Failed to release held calendar: ${e?.message}`));
+    }
+
     console.log(`[CONSENT] ${gate} acknowledged by ${user.id} for provider ${providerId}${subjectProfileId ? ` (subject ${subjectProfileId})` : ""}`);
     res.json({ acknowledgedAt: acknowledgedAt.toISOString(), acknowledgedByName });
   } catch (e: any) {

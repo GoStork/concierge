@@ -831,7 +831,7 @@ export async function evaluateConsultationAckGate(input: {
     allowed: false,
     code: "CONSULT_PRELIM_ACK_REQUIRED",
     message:
-      "Please confirm you understand what this consultation leads to before picking a time - it's a quick tick in your chat.",
+      "Almost there - there's a quick confirmation card waiting in your chat. Tap \"I understand\" on it and the calendar will open for you.",
   };
 }
 
@@ -906,7 +906,25 @@ async function postGateCard(input: {
     const data = (existing.uiCardData as any) || {};
     const sameSubject =
       !input.subjectProfileId || (data.subjectProfileId ?? null) === input.subjectProfileId;
-    if (sameSubject && !data.acknowledgedAt) return false; // already asked, still open
+    if (sameSubject && !data.acknowledgedAt) {
+      // Already asked, still open. If the caller carries a held calendar
+      // (pendingConsultationCard), patch it onto the open card so the tick
+      // releases the CURRENT calendar rather than a stale or missing one -
+      // and report true so the caller keeps holding the calendar back.
+      const pending = (input.cardData as any)?.pendingConsultationCard;
+      if (pending) {
+        await prisma.aiChatMessage
+          .update({
+            where: { id: existing.id },
+            data: { uiCardData: { ...data, pendingConsultationCard: pending } as any },
+          })
+          .catch((e: any) =>
+            console.error(`[consultation-gates] Pending-calendar patch failed (${cardType}): ${e?.message}`),
+          );
+        return true;
+      }
+      return false;
+    }
   }
 
   await prisma.aiChatMessage
@@ -949,6 +967,13 @@ export async function postPreliminaryAckCard(input: {
    * this gate is the only one whose card has nowhere else to go.
    */
   fallbackSessionId?: string | null;
+  /**
+   * Extra fields merged into the card's uiCardData. The concierge path stashes
+   * the fully-built consultation calendar here (pendingConsultationCard) so
+   * the acknowledge endpoint can post it the moment the parent ticks the card
+   * - ask first, calendar second.
+   */
+  extraCardData?: Record<string, unknown>;
   client?: any;
 }): Promise<boolean> {
   const { resolveParentEvaSessionId } = await import("./parent-visibility");
@@ -966,13 +991,18 @@ export async function postPreliminaryAckCard(input: {
   return postGateCard({
     gate: "PRELIMINARY_STEP",
     sessionId,
-    content: `Before you pick a time: this call is the first step toward a match call with ${subject} specifically, not a general information session. ${displayName} will prepare for it as real interest in her.`,
+    content:
+      `Before we open the calendar, we want to be upfront about what this call is. It's the first step toward a match call with ${subject} specifically, not a general information session. ` +
+      `Once it's booked, ${displayName} treats it as real interest: they prepare for the call around ${subject} and start thinking seriously about fit with your family. ` +
+      `It's still completely free and nothing is binding - this just makes sure everyone walks into the call on the same page. ` +
+      `If ${subject} is someone you're seriously considering, confirm below and the calendar will open right here.`,
     cardData: {
       providerId: input.providerId,
       providerDisplayName: displayName,
       subjectLabel: input.subjectLabel ?? null,
       subjectProfileId: input.subjectProfileId ?? null,
       subjectType: input.subjectType ?? null,
+      ...(input.extraCardData || {}),
     },
     subjectProfileId: input.subjectProfileId,
     client: input.client,

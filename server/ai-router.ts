@@ -7,6 +7,8 @@ import {
   evaluateMatchCallGates,
   releaseConsultationLock,
   expandParentAccount,
+  evaluateConsultationAckGate,
+  postPreliminaryAckCard,
 } from "./consultation-gates";
 import { openConnectedAgencySubjectThread } from "./connected-agency-shortcut";
 import { providerTypeFromSubject } from "./provider-type-resolve";
@@ -11051,13 +11053,14 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             // the coordinator's surname. Applies ONLY to donor/surrogate agencies;
             // clinics, lawyers, and GoStork are direct providers whose names are
             // always visible. Full names appear post-booking in the 3-way chat.
+            let isConfidentialAgency = false;
             try {
               const CONFIDENTIAL_AGENCY_TYPES = ["Surrogacy Agency", "Egg Donor Agency"];
               const svcTypes = await prisma.provider.findUnique({
                 where: { id: consultProvider.id },
                 select: { services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } } },
               });
-              const isConfidentialAgency = !!svcTypes?.services?.some((s: any) => CONFIDENTIAL_AGENCY_TYPES.includes(s.providerType?.name || ""));
+              isConfidentialAgency = !!svcTypes?.services?.some((s: any) => CONFIDENTIAL_AGENCY_TYPES.includes(s.providerType?.name || ""));
               if (isConfidentialAgency) {
                 const st = (subjectType || "").toLowerCase();
                 consultationCard.providerName = st.includes("egg") ? "the Egg Donor's Agency"
@@ -11073,7 +11076,53 @@ NEVER promise to search without actually calling the search tool. NEVER end with
             } catch (e) {
               console.error("[CONSULTATION] Agency confidentiality masking failed:", e);
             }
-            console.log(`[CONSULTATION] Calendar card shown for provider ${consultProviderId}, profile "${sessionTitle}" (session will be created on actual booking)`);
+
+            // ASK FIRST, CALENDAR SECOND. The preliminary-step ack used to be
+            // enforced only at the booking endpoint: the calendar rendered,
+            // the parent picked a time, got a red 409, and the explanation
+            // card arrived AFTER the wall (observed live, Aug 7). Now the
+            // gate runs before the calendar goes out: if the ack is missing,
+            // hold the fully-built card inside the ack card's uiCardData and
+            // the acknowledge endpoint posts it the moment the parent ticks
+            // "I understand". Fail open - a gate error must never eat the
+            // calendar, the booking endpoint still backstops.
+            if (isConfidentialAgency && subjectProfileId) {
+              try {
+                const ack = await evaluateConsultationAckGate({
+                  parentUserId: userId,
+                  providerId: consultProviderId,
+                  subjectProfileId,
+                });
+                if (!ack.allowed) {
+                  const posted = await postPreliminaryAckCard({
+                    parentUserId: userId,
+                    providerId: consultProviderId,
+                    subjectProfileId,
+                    subjectType,
+                    subjectLabel: sessionTitle,
+                    fallbackSessionId: currentSessionId,
+                    extraCardData: { pendingConsultationCard: consultationCard },
+                  });
+                  if (posted) {
+                    console.log(`[CONSULTATION] Preliminary ack missing - holding calendar for ${consultProviderId} behind the ack card`);
+                    // The model's reply promises the calendar it is no longer
+                    // getting - rewrite it so words and cards agree.
+                    const promisesCalendar = /calendar|schedul|book|pull(?:ing)? (?:it |that |this )?up|time slot/i.test(finalContent);
+                    if (promisesCalendar) {
+                      finalContent = `Wonderful! One quick thing before I open the calendar - see the card below. The moment you confirm, the calendar will appear right here so you can pick your time.`;
+                      sse.sendReset();
+                      sse.sendToken(finalContent);
+                    }
+                    consultationCard = null;
+                  }
+                }
+              } catch (e: any) {
+                console.error("[CONSULTATION] Preliminary ack pre-check failed (calendar goes out as before):", e?.message);
+              }
+            }
+            if (consultationCard) {
+              console.log(`[CONSULTATION] Calendar card shown for provider ${consultProviderId}, profile "${sessionTitle}" (session will be created on actual booking)`);
+            }
           }
         }
       } catch (e) {
