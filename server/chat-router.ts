@@ -3999,6 +3999,13 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
         parentUserId: { in: parentAccountUserIds },
         providerUserId: { in: providerUserIds },
         status: { in: ["PENDING", "CONFIRMED", "CANCELLED", "RESCHEDULED"] },
+        // A booking linked to a chat thread renders ONLY in that thread.
+        // Without this, every call the family ever had with the org leaked
+        // into every thread (observed live: two egg-donor-thread calls from
+        // June rendered inside a brand-new surrogate thread, thoroughly
+        // confusing the provider). Legacy rows with no sessionId stay
+        // org-level and keep showing everywhere - they cannot be attributed.
+        OR: [{ sessionId: session.id }, { sessionId: null }],
       },
       include: {
         providerUser: {

@@ -10950,22 +10950,19 @@ NEVER promise to search without actually calling the search tool. NEVER end with
           let memberName: string | null = null;
           let memberPhoto: string | null = null;
           try {
-            const memberWithBooking = await prisma.user.findFirst({
-              where: {
-                providerId: consultProviderId,
-                scheduleConfig: { bookingPageSlug: { not: null } },
-              },
-              select: {
-                name: true,
-                photoUrl: true,
-                scheduleConfig: { select: { bookingPageSlug: true } },
-              },
-            });
-            if (memberWithBooking?.scheduleConfig?.bookingPageSlug) {
-              memberBookingSlug = memberWithBooking.scheduleConfig.bookingPageSlug;
+            // Role-aware pick: the subject's coordinator first, then the
+            // provider admin - never an arbitrary row (a SCHEDULER's calendar
+            // was being served for surrogate consultations).
+            const pickSubjectType = currentSessionId
+              ? (await findLatestMatchCard(currentSessionId))?.type ?? null
+              : null;
+            const { pickProviderBookingMember } = await import("./provider-booking-member");
+            const memberWithBooking = await pickProviderBookingMember(consultProviderId, pickSubjectType);
+            if (memberWithBooking) {
+              memberBookingSlug = memberWithBooking.slug;
               memberName = memberWithBooking.name;
               memberPhoto = memberWithBooking.photoUrl;
-              console.log(`[CONSULTATION] Found provider member booking slug: ${memberBookingSlug} for ${memberName}`);
+              console.log(`[CONSULTATION] Picked booking member ${memberName} (${memberBookingSlug}) for subject "${pickSubjectType || "none"}"`);
             }
           } catch (e) {
             console.error("[CONSULTATION] Error finding member booking slug:", e);
