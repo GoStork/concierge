@@ -2458,13 +2458,17 @@ const sendMessageMutation = useMutation({
     const hasSessions = filteredSessions.length > 0;
     // Label a thread by what it IS, never by the provider's own name (which is
     // identical on every row and reads inverted). Profile threads keep their
-    // label ("Surrogate #25714"); provider-name titles (calendar fallback and
-    // country-program subjects) become "Consultation"; whisper threads become
-    // "AI Concierge Q&A".
+    // label ("Surrogate #25714"); whisper threads become "AI Concierge Q&A".
+    //
+    // A thread with no profile subject - a clinic consult, legal, a country
+    // program - is named after the FAMILY. That mirrors the parent's own
+    // inbox, where the same kind of thread is named after the provider: each
+    // side sees who they are talking to. "Consultation" said the same thing on
+    // every such row and named nobody.
     const sessionThreadLabel = (s: ProviderSession): string => {
       if (/ai concierge/i.test(s.title || "")) return "AI Concierge Q&A";
       if (s.title && s.title !== s.providerName) return s.title;
-      return "Consultation";
+      return s.userName || "Prospective Parent";
     };
     const assistantLastMsg = (() => {
       const msgs = providerAssistantQuery.data?.messages || [];
@@ -2559,15 +2563,19 @@ const sendMessageMutation = useMutation({
             <div key={parentUserId} data-testid={`parent-group-${parentUserId}`}>
               {!soloProviderLevel && (
                 /* Section header - prominent parent identity (avatar, bold name, state pill) */
-                <div className="mx-3 mt-3 mb-1 px-3 py-2 rounded-[var(--radius)] flex items-center gap-2.5 bg-secondary/40">
-                  <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden bg-background flex items-center justify-center">
+                /* Same proportions as the parent's own provider headers - see
+                   the "Your Matches" header above. A group header is a divider,
+                   not a headline; at 8x8 and font-semibold it competed with the
+                   threads underneath it. */
+                <div className="mx-4 mt-3 mb-2 px-3 py-1.5 rounded-[var(--radius)] flex items-center gap-2 bg-secondary/40">
+                  <div className="w-4 h-4 rounded-full flex-shrink-0 overflow-hidden bg-background flex items-center justify-center">
                     {first.userAvatar ? (
-                      <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-8 h-8 object-cover" />
+                      <img src={getPhotoSrc(first.userAvatar) || undefined} alt="" className="w-4 h-4 object-cover" />
                     ) : (
-                      <User className="w-4 h-4 text-muted-foreground" />
+                      <User className="w-3 h-3 text-muted-foreground" />
                     )}
                   </div>
-                  <span className="text-sm font-semibold font-ui truncate min-w-0 text-foreground">
+                  <span className="text-xs font-medium truncate min-w-0 text-foreground/80">
                     {first.userName || "Prospective Parent"}
                   </span>
                   {onlineStatuses[first.userId] && (
@@ -2745,6 +2753,17 @@ const sendMessageMutation = useMutation({
                       <span className="w-2 h-2 rounded-full bg-[hsl(var(--brand-success))] flex-shrink-0" aria-label="Parent online" />
                     )}
                   </div>
+                  {/* Hide the subject line when it would just repeat the name
+                      directly above it. A thread with no profile subject is
+                      named after the family now, so "Eran Amir / re: Eran
+                      Amir" was the header saying the same thing twice. */}
+                  {(() => {
+                    const subjectLabel = selectedSession
+                      ? sessionThreadLabel(selectedSession)
+                      : (detail.title || "Conversation");
+                    const parentLabel = detail.user.name || "Prospective Parent";
+                    if (subjectLabel === parentLabel) return null;
+                    return (
                   <div className="flex items-center gap-1 mt-0.5 min-w-0">
                     <span className="t-helper flex-shrink-0">re:</span>
                     {selectedSession?.profilePhotoUrl ? (
@@ -2759,6 +2778,8 @@ const sendMessageMutation = useMutation({
                     </span>
                     {selectedSession?.subjectProfileId && <DonorStatusPill status={selectedSession.profileStatus} />}
                   </div>
+                    );
+                  })()}
                 </div>
               </>
             ) : (
