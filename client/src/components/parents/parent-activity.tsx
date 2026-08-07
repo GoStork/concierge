@@ -308,6 +308,21 @@ function buildEntries(record: ParentRecord): Entry[] {
 }
 
 
+/**
+ * Every value Notification.status can hold, in the provider's words.
+ *
+ * "Skipped" is the one that needs saying: it does NOT mean we failed. The
+ * reminder sweep skips a queued message when its booking was cancelled or
+ * rescheduled before the send time - not sending it is the correct outcome,
+ * and a provider reading a bare "skipped" would reasonably assume otherwise.
+ */
+const DELIVERY_MEANING: Record<string, string> = {
+  sent: "",
+  pending: "Queued - not sent yet.",
+  skipped: "Not needed by the time it was due - the meeting had been cancelled or moved.",
+  failed: "The provider rejected it. Worth checking the address or number.",
+};
+
 const money = (cents: number | null) =>
   cents == null ? null : `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -453,6 +468,19 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
             <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Reply to review
           </Button>
         )}
+      </div>
+    );
+  }
+
+  if (detail.type === "whisper") {
+    return (
+      <div className={shell} data-testid={`detail-whisper-${detail.whisperId}`}>
+        {/* The parent is anonymous until they book, so the question is shown
+            without them - that is the whole point of the whisper protocol. */}
+        <Row label="Asked">{detail.question}</Row>
+        {detail.answer
+          ? <Row label="Answered">{detail.answer}</Row>
+          : <p className="t-helper">Not answered yet.</p>}
       </div>
     );
   }
@@ -608,6 +636,9 @@ function MessageDetail({ detail, parentUserId }: {
       <Row label="Kind">{titleCaseWords(detail.kind)}</Row>
       <Row label="Delivery">
         <span style={failed ? { color: "hsl(var(--brand-warning))" } : undefined}>{titleCaseWords(detail.status)}</span>
+        {DELIVERY_MEANING[detail.status] && (
+          <span className="t-helper block">{DELIVERY_MEANING[detail.status]}</span>
+        )}
       </Row>
 
       {/* An email shows the email. The plain-text version was a worse copy of

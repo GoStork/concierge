@@ -179,6 +179,7 @@ export type ActivityDetail =
   | { type: "agreement"; agreementId: string; status: string; documentUrl: string | null; signerStatus: any }
   | { type: "cost_sheet"; quoteId: string; totalCostCents: number | null; fileUrl: string | null; fileName: string | null; notes: string | null }
   | { type: "review"; reviewId: string; rating: number | null; recommendation: string; bodyText: string | null; providerId: string; memberId: string | null; hasResponse: boolean; responseText: string | null }
+  | { type: "whisper"; whisperId: string; question: string; answer: string | null; status: string }
   | { type: "ip_form"; responseId: string; submittedAt: string | null };
 
 export interface ParentRecord {

@@ -194,7 +194,7 @@ async function buildActivity(ctx: {
   const scoped = scopeProviderId ? { providerId: scopeProviderId } : {};
 
   const bookings = ctx.bookings;
-  const [events, reviews, notifications, matchmakers] = await Promise.all([
+  const [events, reviews, notifications, matchmakers, whispers] = await Promise.all([
     prisma.journeyEvent.findMany({
       where: { parentAccountId: accountKey, ...scoped },
       orderBy: { createdAt: "desc" },
@@ -214,6 +214,17 @@ async function buildActivity(ctx: {
       take: 100,
     }),
     prisma.matchmaker.findMany({ where: { isActive: true }, select: { id: true, name: true, avatarUrl: true } }),
+    // Whisper Q&A. "Asked the provider a question" with no question on it is a
+    // card that tells you something happened and nothing about what.
+    prisma.silentQuery.findMany({
+      // Keyed on the PARENT, not on booking sessionIds - a whisper lives on a
+      // chat session and most whispers never involve a booking at all, so the
+      // booking-derived list missed them entirely.
+      where: { parentUserId: { in: memberIds }, ...scoped },
+      select: { id: true, sessionId: true, questionText: true, answerText: true, status: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
   ]);
 
   const sessionPersonaId = (await prisma.aiChatSession.findFirst({
@@ -332,6 +343,22 @@ async function buildActivity(ctx: {
           memberId: r.memberId ?? null,
           hasResponse: !!r.providerReply,
           responseText: r.providerReply ?? null,
+        };
+      }
+    }
+
+    if (ev.eventType === "WHISPER_ASKED" || ev.eventType === "WHISPER_ANSWERED") {
+      // Match on the id when the event carries one, otherwise on the session -
+      // older rows predate the metadata.
+      const w = whispers.find((x: any) => x.id === meta.whisperId)
+        || whispers.find((x: any) => x.sessionId === ev.sessionId);
+      if (w) {
+        entry.detail = {
+          type: "whisper",
+          whisperId: w.id,
+          question: w.questionText,
+          answer: w.answerText ?? null,
+          status: w.status,
         };
       }
     }
@@ -683,10 +710,13 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     // like scoping enough. It is not - that field says who the THREAD is
     // with, not who owns what it is about.
     //
-    // The thread itself is not hidden: it genuinely belongs to this provider
-    // and dropping it would silently lose a row they can see elsewhere. Only
-    // the foreign subject is withheld, and the mis-stamp is logged so the
-    // cause stays visible instead of being papered over here.
+    // The whole row is dropped for a scoped viewer, not just its subject.
+    // Withholding only the subject left a nameless card that fell back to the
+    // org name - so PFCLA saw "Pacific Fertility Center" twice, one of which
+    // was really another agency's surrogate thread. A row a provider cannot
+    // be told the truth about is a row they should not be shown. Admins,
+    // who are unscoped, still see it. The mis-stamp is logged either way so
+    // the cause stays visible instead of being papered over here.
     const foreignSubject = !!(
       scopeProviderId && rawProf && rawProf.providerId && rawProf.providerId !== scopeProviderId
     );
@@ -697,7 +727,8 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         `scoped viewer. The session stamp is probably wrong.`,
       );
     }
-    const prof = foreignSubject ? null : rawProf;
+    if (foreignSubject) return null;
+    const prof = rawProf;
     const resolvedKind: SubjectKind = prof ? prof.kind : kind;
     const doc = resolvedKind === "doctor" && s.subjectProfileId
       ? doctorBySlug.get(s.subjectProfileId)
@@ -714,15 +745,15 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       providerId: s.providerId,
       providerName: org?.name ?? null,
       providerLogoUrl: org?.logoUrl ?? null,
-      subjectKind: foreignSubject ? "none" as SubjectKind : resolvedKind,
-      subjectProfileId: foreignSubject ? null : s.subjectProfileId,
+      subjectKind: resolvedKind,
+      subjectProfileId: s.subjectProfileId,
       displayName,
       photoUrl: prof?.photo ?? doc?.photoUrl ?? org?.logoUrl ?? null,
       profileStatus: prof?.status ?? null,
       // A doctor's subjectProfileId is a SLUG, not a uuid - /doctors/:slug is
       // keyed that way. Passing null here meant every doctor thread rendered
       // with no Profile link at all.
-      profileUrl: foreignSubject ? null : profileUrlFor(
+      profileUrl: profileUrlFor(
         resolvedKind,
         prof?.providerId ?? s.providerId,
         s.subjectProfileId,
@@ -740,7 +771,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
     };
-  });
+  }).filter(Boolean) as any[];
 
   // ── Saved, not contacted ─────────────────────────────────────────────────
   // LEAK GUARD: a parent's favourites span every org's roster. The saved-

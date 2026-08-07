@@ -2327,10 +2327,14 @@ const sendMessageMutation = useMutation({
       )
     );
 
-    // Group sessions by parent userId
+    // Group by parent ACCOUNT, not by login. A household with two logins is
+    // one family with one shared set of threads (that is what parentAccountId
+    // means here), and keying on userId split them into two identical-looking
+    // groups. Two different accounts that happen to share a name stay two
+    // groups, which is correct - they are two different families.
     const parentGroups: Record<string, ProviderSession[]> = {};
     filteredSessions.forEach(s => {
-      const key = s.userId;
+      const key = s.parentAccountId || s.userId;
       if (!parentGroups[key]) parentGroups[key] = [];
       parentGroups[key].push(s);
     });
@@ -2366,12 +2370,12 @@ const sendMessageMutation = useMutation({
 
     // Once a parent has a PROVIDER_CONNECTED session, hide the anonymous whisper session (no subjectProfileId)
     // so the provider only sees the actual donor/surrogate sessions in the folder
-    for (const userId of Object.keys(parentGroups)) {
-      const group = parentGroups[userId];
+    for (const acctKey of Object.keys(parentGroups)) {
+      const group = parentGroups[acctKey];
       const hasJoined = group.some(s => s.status === "PROVIDER_CONNECTED");
       if (hasJoined) {
         const withProfile = group.filter(s => s.subjectProfileId);
-        if (withProfile.length > 0) parentGroups[userId] = withProfile;
+        if (withProfile.length > 0) parentGroups[acctKey] = withProfile;
       }
       // Provider-level consolidation: only marketplace PROFILE threads
       // (donor/surrogate) earn their own row. Everything else - clinic subject,
@@ -2379,12 +2383,12 @@ const sendMessageMutation = useMutation({
       // from the parent's perspective and collapses into ONE row per parent.
       // The server merges the absorbed threads' provider-visible history and
       // pending whispers into the primary thread.
-      const nonProfile = parentGroups[userId].filter(s => !isProfileThread(s));
+      const nonProfile = parentGroups[acctKey].filter(s => !isProfileThread(s));
       if (nonProfile.length > 1) {
         const primary = pickPrimary(nonProfile);
         const absorbed = nonProfile.filter(s => s.id !== primary.id);
         const merged = absorbInto(primary, absorbed);
-        parentGroups[userId] = parentGroups[userId]
+        parentGroups[acctKey] = parentGroups[acctKey]
           .filter(s => !absorbed.some(a => a.id === s.id))
           .map(s => (s.id === primary.id ? merged : s));
       }
@@ -2412,18 +2416,18 @@ const sendMessageMutation = useMutation({
           }
         }
       }
-      for (const userId of Object.keys(parentGroups)) {
-        for (const s of [...parentGroups[userId]]) {
+      for (const acctKey of Object.keys(parentGroups)) {
+        for (const s of [...parentGroups[acctKey]]) {
           if (!isProfileThread(s) || !isEvaThread(s)) continue;
-          const acctKey = s.parentAccountId || s.userId;
+          const sessionAcct = s.parentAccountId || s.userId;
           // Same-profile direct thread wins; an orphan Q&A (its profile has no
           // direct thread) rolls up into the family's primary profile thread.
-          const direct = directByProfile.get(`${acctKey}:${s.subjectProfileId}`)
-            || primaryDirectByAccount.get(acctKey);
+          const direct = directByProfile.get(`${sessionAcct}:${s.subjectProfileId}`)
+            || primaryDirectByAccount.get(sessionAcct);
           if (!direct || direct.id === s.id) continue;
-          parentGroups[userId] = parentGroups[userId].filter(x => x.id !== s.id);
-          if (parentGroups[userId].length === 0) delete parentGroups[userId];
-          const ownerKey = direct.userId;
+          parentGroups[acctKey] = parentGroups[acctKey].filter(x => x.id !== s.id);
+          if (parentGroups[acctKey].length === 0) delete parentGroups[acctKey];
+          const ownerKey = direct.parentAccountId || direct.userId;
           if (parentGroups[ownerKey]) {
             parentGroups[ownerKey] = parentGroups[ownerKey].map(x => (x.id === direct.id ? absorbInto(x, [s]) : x));
           }
