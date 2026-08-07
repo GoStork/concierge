@@ -32,7 +32,6 @@ import {
   resolveParentGates,
 } from "./parent-privacy";
 import { isGostorkStaff } from "./parent-crm";
-import { ALL_SESSION_PROVIDER_ROLES } from "../shared/roles";
 
 export class ParentRecordError extends Error {
   constructor(public status: number, message: string) {
@@ -1315,7 +1314,12 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   const viewerServiceLines: string[] | null = (() => {
     if (isAdmin) return null;
     const roles: string[] = (user?.roles as string[]) || [];
-    if (roles.some((r) => (ALL_SESSION_PROVIDER_ROLES as readonly string[]).includes(r))) return null;
+    // PROVIDER_ADMIN and the practitioner roles genuinely span everything.
+    // SCHEDULER / BILLING_MANAGER are cross-session for ACCESS but say
+    // nothing about focus - a coordinator who also handles billing (Julia:
+    // IP_SURROGACY_COORDINATOR + BILLING_MANAGER) still defaults to her
+    // coordinator lane, so those two do not disable the scope.
+    if (roles.some((r) => ["PROVIDER_ADMIN", "DOCTOR", "LAWYER", "LEGAL_ASSISTANT"].includes(r))) return null;
     const lines = new Set<string>();
     for (const r of roles) {
       if (r === "IP_SURROGACY_COORDINATOR" || r === "SURROGATE_COORDINATOR") lines.add("surrogacy");
