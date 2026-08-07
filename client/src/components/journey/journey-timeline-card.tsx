@@ -24,6 +24,8 @@ interface StageOut {
   state: "done" | "current" | "upcoming";
   optional?: boolean;
   tone?: "warning";
+  /** Server-declared fork off the main line - see journey-timeline.ts. */
+  branch?: boolean;
 }
 
 interface JourneyOut {
@@ -233,9 +235,15 @@ function ForkRow({ main, branch, isLast }: { main: StageOut; branch: StageOut; i
   );
 }
 
-// Branch-type stage ids: warning rungs that fork off the main line instead
-// of sitting on it. Must match the branch ids emitted by journey-timeline.ts.
-const BRANCH_STAGE_IDS = new Set(["no_show", "match_call_no_show", "not_matched"]);
+// The server now DECLARES a fork with `branch: true`, so this list is only a
+// fallback for a payload built before that field existed (a deploy where the
+// client lands first). It used to be the source of truth, with a comment
+// telling whoever edited journey-timeline.ts to remember to update it here -
+// and the first person to add a rung there did not, so a Doctor Call no-show
+// rendered inline, as a step in the middle of the ladder, instead of hanging
+// off it. Do not add new ids here; set `branch: true` on the server.
+const LEGACY_BRANCH_STAGE_IDS = new Set(["no_show", "match_call_no_show", "not_matched"]);
+const isBranchStage = (st: StageOut) => st.branch === true || LEGACY_BRANCH_STAGE_IDS.has(st.id);
 
 function JourneyBlock({ journey, showProviderName, horizontal }: { journey: JourneyOut; showProviderName: boolean; horizontal?: boolean }) {
   // Pull branch-type stages off the main line; each attaches to the row that
@@ -246,7 +254,7 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
   const branchBySibling = new Map<string, StageOut>();
   for (let i = 0; i < journey.stages.length; i++) {
     const st = journey.stages[i];
-    if (BRANCH_STAGE_IDS.has(st.id)) {
+    if (isBranchStage(st)) {
       const sibling = journey.stages[i + 1];
       if (sibling) branchBySibling.set(sibling.id, st);
       continue;

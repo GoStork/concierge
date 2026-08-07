@@ -45,6 +45,15 @@ export interface JourneyStageOut {
   state: "done" | "current" | "upcoming";
   optional?: boolean;
   tone?: "warning";
+  /**
+   * A fork off the main line rather than a step on it - "No Show",
+   * "Not Matched". The client hangs these beside the rung that FOLLOWS them.
+   * Sent explicitly because the client used to re-derive it from a hardcoded
+   * list of ids that had to mirror this file by hand; adding a Doctor Call
+   * no-show here rendered it inline, in the middle of the ladder, because
+   * nobody updated the copy over there.
+   */
+  branch?: boolean;
 }
 
 export interface JourneyOut {
@@ -369,11 +378,11 @@ export async function buildJourneyTimelines(
     // doneWhenReached: a discrete milestone that reads as "done" (checkmark)
     // the moment it has evidence, even while it is the furthest rung - it is a
     // completed action, not a stage you sit in.
-    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; dropIfPassed?: boolean; doneWhenReached?: boolean; tone?: "warning" };
+    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; dropIfPassed?: boolean; doneWhenReached?: boolean; tone?: "warning"; branch?: boolean };
     // Shared tail: invoice + agreement rungs read the same on every ladder.
     const consultRungs: Rung[] = [
       { id: "consult_scheduled", label: "Consultation Scheduled", at: consultScheduledAt },
-      ...(showNoShowRung ? [{ id: "no_show", label: "No Show", at: lastConsultNoShowAt, tone: "warning" as const }] : []),
+      ...(showNoShowRung ? [{ id: "no_show", label: "No Show", at: lastConsultNoShowAt, tone: "warning" as const, branch: true }] : []),
       { id: "consult_completed", label: "Consultation Completed", at: consultCompletedAt },
     ];
     const moneyRungs = (optionalAgreement: boolean): Rung[] => [
@@ -424,7 +433,7 @@ export async function buildJourneyTimelines(
       const doctorCallRungs: Rung[] = [
         { id: "doctor_call_scheduled", label: "Doctor Call Scheduled", at: doctorCallScheduledAt, dropIfPassed: true },
         ...(showDoctorCallNoShow
-          ? [{ id: "doctor_call_no_show", label: "No Show", at: lastDoctorCallNoShowAt, tone: "warning" as const }]
+          ? [{ id: "doctor_call_no_show", label: "No Show", at: lastDoctorCallNoShowAt, tone: "warning" as const, branch: true }]
           : []),
         { id: "doctor_call_completed", label: "Doctor Call Completed", at: doctorCallCompletedAt, dropIfPassed: true },
       ];
@@ -465,8 +474,8 @@ export async function buildJourneyTimelines(
       // beside "Consultation Completed".
       const matchCallRungs: Rung[] = [
         { id: "match_call_scheduled", label: "Match Call Scheduled", at: matchCallScheduledAt, dropIfPassed: true },
-        ...(showNotMatchedRung ? [{ id: "not_matched", label: "Not Matched", at: lastDeclineAt, tone: "warning" as const }] : []),
-        ...(showMatchNoShowRung ? [{ id: "match_call_no_show", label: "No Show", at: lastMatchNoShowAt, tone: "warning" as const }] : []),
+        ...(showNotMatchedRung ? [{ id: "not_matched", label: "Not Matched", at: lastDeclineAt, tone: "warning" as const, branch: true }] : []),
+        ...(showMatchNoShowRung ? [{ id: "match_call_no_show", label: "No Show", at: lastMatchNoShowAt, tone: "warning" as const, branch: true }] : []),
       ];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
@@ -500,6 +509,7 @@ export async function buildJourneyTimelines(
       state: i < highestIdx ? "done" : i === highestIdx ? (i === rungs.length - 1 || r.doneWhenReached ? "done" : "current") : "upcoming",
       ...(r.optional ? { optional: true } : {}),
       ...(r.tone ? { tone: r.tone } : {}),
+      ...(r.branch ? { branch: true } : {}),
     }));
 
     // Attention chips: churn beats no-show beats canceled-not-rebooked.
