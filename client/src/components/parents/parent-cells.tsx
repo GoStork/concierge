@@ -218,8 +218,12 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
     consult_scheduled: TONE.early,
     consult_completed: TONE.early,
     ip_form_submitted: TONE.early,
-    doctor_call_scheduled: TONE.call,
-    doctor_call_completed: TONE.call,
+    // Green like the other on-track stages. Amber is reserved for states
+    // that need chasing (and the branch rungs never reach this badge at all
+    // - No Show and Canceled live on the ladder and the attention chip, not
+    // in the match-status vocabulary).
+    doctor_call_scheduled: TONE.early,
+    doctor_call_completed: TONE.early,
     match_call_scheduled: TONE.call,
     matched: TONE.match,
     invoice_sent: TONE.money,

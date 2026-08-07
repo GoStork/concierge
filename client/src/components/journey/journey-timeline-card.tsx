@@ -171,11 +171,13 @@ function stageLabelClass(stage: StageOut): string {
  * a ladder. The caller's job is to give this enough room; below `lg` the
  * record page switches to the vertical ladder instead of squeezing.
  */
-function StageColumn({ stage, isFirst, isLast, branch }: {
+function StageColumn({ stage, isFirst, isLast, branch, branchChip }: {
   stage: StageOut;
   isFirst: boolean;
   isLast: boolean;
   branch?: StageOut;
+  /** Attention label rendered under the branch it is about. */
+  branchChip?: string | null;
 }) {
   // The connector is drawn as two half-width rails either side of the dot, so
   // every segment meets its neighbour exactly at the column boundary - no
@@ -258,6 +260,15 @@ function StageColumn({ stage, isFirst, isLast, branch }: {
           <div className="px-1 pt-1 text-center">
             <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(branch)}`}>{branch.label}</p>
             {branch.reachedAt && <p className="t-helper leading-4">{fmtDate(branch.reachedAt)}</p>}
+            {branchChip && (
+              <span
+                className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-[10px] font-medium"
+                data-testid="journey-attention-chip"
+              >
+                <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                {branchChip}
+              </span>
+            )}
           </div>
         </>
       )}
@@ -323,22 +334,35 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
     }
     mainStages.push(st);
   }
+  // Which branch rung, if any, the attention chip is about: a "no_show"
+  // warning belongs beside a *_no_show branch, a "canceled" one beside a
+  // *_canceled branch.
+  const branchStages = Array.from(branchBySibling.values());
+  const attentionBranchId =
+    journey.attention?.kind === "no_show" ? branchStages.find((b) => b.id.endsWith("no_show"))?.id ?? null
+    : journey.attention?.kind === "canceled" ? branchStages.find((b) => b.id.endsWith("canceled"))?.id ?? null
+    : null;
   return (
     <div data-testid={`journey-${journey.journeyType}-${journey.providerId}`}>
-      {/* Same stacking on every width: provider name first, service tag under
-          it. The name truncates once cards sit side by side (hover shows it in
-          full) and wraps on mobile, where one card owns the whole row. */}
-      <div className="mb-2 min-w-0">
+      {/* One row: provider name with the service tag at its right. The name
+          truncates first (min-w-0), the tag never does; the pair wraps only
+          when a narrow rail leaves the tag no room at all. */}
+      <div className="mb-2 min-w-0 flex items-center gap-2 flex-wrap">
         {showProviderName && (
-          <p className="text-xs font-medium font-ui sm:truncate" title={journey.providerName}>
+          <p className="text-xs font-medium font-ui truncate min-w-0" title={journey.providerName}>
             {journey.providerName}
           </p>
         )}
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide ${showProviderName ? "mt-1" : ""}`}>
+        <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide">
           {journey.typeLabel}
         </span>
       </div>
-      {journey.attention && (
+      {/* A call-level warning renders NEXT TO the branch rung it is about on
+          the horizontal ladder (see StageColumn), where there is room and the
+          adjacency says which call it means. It stays up here when no
+          matching branch is on the ladder (evidence expired, vertical rail)
+          and for journey-level states like dormant or clearance-failed. */}
+      {journey.attention && !(horizontal && attentionBranchId) && (
         <div className="flex items-center gap-1.5 px-2.5 py-1 mb-2 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium w-fit" data-testid="journey-attention-chip">
           <AlertTriangle className="w-3 h-3" />
           {journey.attention.label}
@@ -356,6 +380,11 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
                 isFirst={i === 0}
                 isLast={i === mainStages.length - 1}
                 branch={branchBySibling.get(st.id)}
+                branchChip={
+                  branchBySibling.get(st.id)?.id === attentionBranchId
+                    ? journey.attention?.label ?? null
+                    : null
+                }
               />
             ))}
           </div>

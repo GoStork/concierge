@@ -790,7 +790,14 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   const orgById = new Map(orgs.map((o) => [o.id, o]));
 
   // ── Journey status, per session and per org ──────────────────────────────
-  const handedOff = sessions.some((s) => s.handoffCompletedAt);
+  // Per ORG, never account-wide. These flags were account-level booleans, so
+  // on the admin's cross-org record one org's milestone bled into every
+  // other org's badge: batman handed off with Family Creations, and his
+  // PFCLA conversation card read "Handed Off" while the PFCLA ladder above
+  // it correctly said Doctor Call Scheduled.
+  const handedOffOrgs = new Set(
+    sessions.filter((s) => s.handoffCompletedAt && s.providerId).map((s) => s.providerId as string),
+  );
   const matchCallOrgs = new Set(
     bookings
       .filter((b) => b.meetingSubtype === "MATCH_CALL" && !["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"].includes(b.status))
@@ -803,20 +810,25 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   const invoiceSessions = new Set(invoices.map((i) => i.sessionId).filter(Boolean) as string[]);
   // Same predicate the timeline uses. Relationship-level: bookings are not
   // session-linked, so a completed consultation counts for the family.
-  const consultCompleted = bookings.some(
-    (b: any) => b.meetingSubtype !== "MATCH_CALL" && b.meetingSubtype !== "DOCTOR_CONSULTATION"
-      && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"),
+  const orgOf = (b: any) => b.providerUser?.providerId as string | undefined;
+  const consultCompletedOrgs = new Set(
+    bookings
+      .filter((b: any) => b.meetingSubtype !== "MATCH_CALL" && b.meetingSubtype !== "DOCTOR_CONSULTATION"
+        && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
+      .map(orgOf).filter(Boolean) as string[],
   );
-  // The Doctor Call has its own rungs in the shared vocabulary now - the
-  // ladder showed "Doctor Call Scheduled" while the badge still read the
-  // consultation stage, because the badge had no word for it. A CONFIRMED
-  // booking with a no-show outcome still proves Scheduled, same as the
-  // timeline.
-  const doctorCallCompleted = bookings.some(
-    (b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"),
+  // The Doctor Call has its own rungs in the shared vocabulary now. A
+  // CONFIRMED booking with a no-show outcome still proves Scheduled, same as
+  // the timeline.
+  const doctorCallCompletedOrgs = new Set(
+    bookings
+      .filter((b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
+      .map(orgOf).filter(Boolean) as string[],
   );
-  const doctorCallScheduled = doctorCallCompleted || bookings.some(
-    (b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && ["PENDING", "CONFIRMED"].includes(b.status),
+  const doctorCallScheduledOrgs = new Set(
+    bookings
+      .filter((b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && ["PENDING", "CONFIRMED"].includes(b.status))
+      .map(orgOf).filter(Boolean) as string[],
   );
 
   // The record was a THIRD copy of the ladder, alongside the two list
@@ -825,18 +837,19 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   // timeline cannot name different rungs for the same family.
   function sessionStatus(s: (typeof sessions)[number]): string | null {
     const prof = s.subjectProfileId ? profileById.get(s.subjectProfileId) : null;
+    const org = s.providerId as string | null;
     return resolveJourneyStage({
-      handedOff: !!s.handoffCompletedAt || handedOff,
+      handedOff: !!s.handoffCompletedAt || !!(org && handedOffOrgs.has(org)),
       agreementSigned: signedSessions.has(s.id),
       agreementSent: agreementSessions.has(s.id),
       invoicePaid: paidSessions.has(s.id),
       invoiceSent: invoiceSessions.has(s.id),
       matched: !!(prof && prof.kind === "surrogate" && prof.status === "MATCHED"),
-      matchCallScheduled: !!(s.providerId && matchCallOrgs.has(s.providerId)),
+      matchCallScheduled: !!(org && matchCallOrgs.has(org)),
       ipFormSubmitted: ipFormRow?.status === "SUBMITTED",
-      doctorCallScheduled,
-      doctorCallCompleted,
-      consultCompleted: consultCompleted,
+      doctorCallScheduled: !!(org && (doctorCallScheduledOrgs.has(org) || doctorCallCompletedOrgs.has(org))),
+      doctorCallCompleted: !!(org && doctorCallCompletedOrgs.has(org)),
+      consultCompleted: !!(org && consultCompletedOrgs.has(org)),
       consultScheduled: s.status === "CONSULTATION_BOOKED",
       connected: s.status === "PROVIDER_CONNECTED" || !!s.providerJoinedAt,
     });
@@ -910,6 +923,12 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     // the full list; their chat button opens the monitor, which can show
     // any session.
     if (scopeProviderId && !sharedSessionIds.has(s.id)) return null;
+    // Admins keep the row - but as what it IS. This is the family's private
+    // concierge thread; the stamped subject ("Dr. Vicken Sepilian") named a
+    // profile the family merely browsed, and the org name suggested a
+    // conversation with PFCLA that never happened. Present it as the Eva
+    // thread, with no fake subject, no org and no journey badge.
+    const isPrivateEva = !sharedSessionIds.has(s.id);
     const prof = rawProf;
     const resolvedKind: SubjectKind = prof ? prof.kind : kind;
     const doc = resolvedKind === "doctor" && s.subjectProfileId
@@ -922,6 +941,29 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         : resolvedKind === "clinic" || resolvedKind === "agency"
           ? (org?.name || "Provider")
           : org?.name || "GoStork concierge";
+    if (isPrivateEva) {
+      return {
+        sessionId: s.id,
+        providerId: null,
+        providerName: null,
+        providerLogoUrl: null,
+        subjectKind: "none" as SubjectKind,
+        subjectProfileId: null,
+        displayName: "AI Concierge",
+        photoUrl: null,
+        profileStatus: null,
+        profileUrl: null,
+        serviceType: null,
+        matchStatus: null,
+        rawStatus: s.status,
+        lastMessagePreview: s.messages[0]?.content
+          ? String(s.messages[0].content).replace(/\[\[.*?\]\]/g, "").replace(/\n/g, " ").trim().slice(0, 120)
+          : null,
+        historySummary: isAdmin ? s.historySummary : null,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      };
+    }
     return {
       sessionId: s.id,
       providerId: s.providerId,
