@@ -27,6 +27,65 @@ export const SERVICE_LABELS: Record<string, string> = {
   IVF_CLINIC: "IVF Clinic",
 };
 
+/** Stable chip order for the quick service scope. */
+const SERVICE_CHIP_ORDER = ["SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC"];
+
+/**
+ * The quick service scope for the parents LIST pages - the same top-right
+ * chips the parent record wears, wired to the table's existing `svc` filter
+ * (the filter-bar dropdown and these chips read and write the same param, so
+ * they can never disagree). Renders only when the table actually spans more
+ * than one service. Single-select by design: a chip is a lens, the dropdown
+ * stays the multi-select power tool.
+ */
+export function ServiceScopeChips({
+  available,
+  selected,
+  onSelect,
+  testIdPrefix = "svc-scope",
+}: {
+  /** Service keys present in the loaded rows. */
+  available: string[];
+  /** The current `svc` multi-filter. */
+  selected: string[];
+  /** null = All services (clear the filter). */
+  onSelect: (svc: string | null) => void;
+  testIdPrefix?: string;
+}) {
+  const ordered = SERVICE_CHIP_ORDER.filter((k) => available.includes(k))
+    .concat(available.filter((k) => !SERVICE_CHIP_ORDER.includes(k)));
+  if (ordered.length < 2) return null;
+  // A multi-selection made in the dropdown highlights nothing here - the
+  // chips only claim states they can express.
+  const activeKey = selected.length === 0 ? "all" : selected.length === 1 ? selected[0] : null;
+  return (
+    <div
+      className="flex items-center gap-1 rounded-full border p-0.5 overflow-x-auto shrink-0"
+      role="tablist"
+      data-testid={testIdPrefix}
+    >
+      {["all", ...ordered].map((k) => (
+        <button
+          key={k}
+          type="button"
+          role="tab"
+          aria-selected={activeKey === k}
+          onClick={() => onSelect(k === "all" ? null : k)}
+          className={
+            "shrink-0 rounded-full px-3 py-1 text-xs font-ui transition-colors " +
+            (activeKey === k
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground")
+          }
+          data-testid={`${testIdPrefix}-${k.toLowerCase()}`}
+        >
+          {k === "all" ? "All services" : SERVICE_LABELS[k] || k}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Status labels come from the shared ladder, so the Match Status column, its
  * filter and the journey timeline cannot drift apart again. The legacy keys

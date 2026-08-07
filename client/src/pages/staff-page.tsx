@@ -17,6 +17,7 @@ import {
   matchesMultiAny,
   parentSortValue,
   parseMulti,
+  ServiceScopeChips,
 } from "@/components/parents";
 import { ParentsTable } from "@/components/parents/parents-table";
 import { ParentsFilterBar } from "@/components/parents/parents-filter-bar";
@@ -304,7 +305,15 @@ function GostorkAdminUsersView() {
           <h1 className="font-display t-page-title text-primary" data-testid="text-page-title">Parents</h1>
           <p className="text-muted-foreground">Manage intended parent accounts.</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          {/* Quick service lens, same place as the parent record's chips.
+              Writes the same `svc` param the filter-bar dropdown reads. */}
+          <ServiceScopeChips
+            available={Array.from(new Set(Object.values(overview || {}).flatMap((o: any) => o?.serviceKeys || [])))}
+            selected={serviceFilter}
+            onSelect={(svc) => updateUsersParam("svc", svc || "")}
+            testIdPrefix="admin-parents-svc-scope"
+          />
           {selectedIds.size > 0 && (
             <Button variant="destructive" onClick={() => setShowBulkDeleteConfirm(true)} data-testid="button-delete-selected">
               <Trash2 className="w-4 h-4 mr-2" /> Delete Selected ({selectedIds.size})
@@ -557,9 +566,19 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="font-display t-page-title text-primary" data-testid="text-page-title">Parents</h1>
-        <p className="text-muted-foreground">Parents who have connected with you via the AI concierge or meetings.</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="font-display t-page-title text-primary" data-testid="text-page-title">Parents</h1>
+          <p className="text-muted-foreground">Parents who have connected with you via the AI concierge or meetings.</p>
+        </div>
+        {/* Quick service lens, same place as the parent record's chips.
+            Writes the same `svc` param the filter-bar dropdown reads. */}
+        <ServiceScopeChips
+          available={Array.from(new Set(grouped.flatMap((g: any) => g.services || [])))}
+          selected={serviceFilter}
+          onSelect={(svc) => setParam("svc", svc || "")}
+          testIdPrefix="provider-parents-svc-scope"
+        />
       </div>
 
       <ParentsFilterBar
