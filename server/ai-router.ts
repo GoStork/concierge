@@ -112,20 +112,15 @@ function setupSSE(res: Response) {
 type SSEHandle = ReturnType<typeof setupSSE>;
 
 // -------------------------------------------------------------------------
-// Tier 1: Gemini 2.5 Flash - fast conversational turns before [[CURATION]]
+// Tier 1: Gemini 3.5 Flash - fast conversational turns before [[CURATION]]
 // -------------------------------------------------------------------------
 async function callTier1Gemini(
   systemPrompt: string,
   messages: any[],
   sse: SSEHandle
 ): Promise<string> {
-  // Use gemini-2.5-flash with thinking disabled for instant conversational responses
   // thinkingBudget: 0 disables the reasoning phase that adds 5-7s latency
   mark("tier1_start");
-  const model = geminiAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
-  });
 
   // Collect inline system messages and merge into the system instruction
   const inlineSysT1 = messages
@@ -135,6 +130,15 @@ async function callTier1Gemini(
   const fullSystemT1 = inlineSysT1.length > 1
     ? inlineSysT1.join("\n\n---\n\n")
     : systemPrompt;
+
+  // systemInstruction MUST be passed here, not to startChat(): getGenerativeModel()
+  // runs formatSystemInstruction() on strings, while startChat() forwards the value
+  // raw into the API request - a plain string there is a guaranteed 400.
+  const model = geminiAI.getGenerativeModel({
+    model: "gemini-3.5-flash",
+    generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as any,
+    systemInstruction: fullSystemT1,
+  });
 
   // Gemini requires history to start with a "user" turn - drop leading model messages
   const rawHistory = messages
@@ -151,7 +155,6 @@ async function callTier1Gemini(
   const userMessage = typeof lastMsg?.content === "string" ? lastMsg.content : JSON.stringify(lastMsg?.content);
 
   const chat = model.startChat({
-    systemInstruction: fullSystemT1,
     history,
   });
 
@@ -6354,7 +6357,7 @@ Do NOT send [[CURATION]] again. Do NOT ask any more questions. Call the tool, th
     });
 
     // -------------------------------------------------------------------------
-    // TIER ROUTING: Tier 1 (Gemini 2.5 Flash) for early turns, Tier 2 (Claude
+    // TIER ROUTING: Tier 1 (Gemini 3.5 Flash) for early turns, Tier 2 (Claude
     // Sonnet 4.6) once [[CURATION]] fires or for all tool-calling turns.
     // One-way door: tier2Active stays true for all subsequent turns.
     // -------------------------------------------------------------------------
@@ -6911,7 +6914,7 @@ Rules: Use real values from the data. The providerId = the "id" UUID field. Neve
         lastAllToolResults.push(...tier2Result.allToolResults);
       }
     } else {
-      // Tier 1: Gemini 2.5 Flash - MINIMAL prompt, Phase 0-2 only, no matching
+      // Tier 1: Gemini 3.5 Flash - MINIMAL prompt, Phase 0-2 only, no matching
       // Extract only the Phase 0-2 section from conversation_flow - strip Phase 3+ (match cycles)
       // to keep the prompt small. Gemini returns soft error responses when the prompt grows too large.
       mark("pw2:prompt_sections2_start");
