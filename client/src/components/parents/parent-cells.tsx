@@ -15,6 +15,7 @@
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Lock, Users } from "lucide-react";
 import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-monogram";
+import { CostSheetRow } from "@/components/chat/cost-sheet-row";
 import { JOURNEY_STAGE_LABELS, LEGACY_MATCH_STATUS_TO_STAGE } from "@shared/journey-ladder";
 
 export const SERVICE_LABELS: Record<string, string> = {
@@ -595,6 +596,37 @@ export function ParentCostSheetsCell({
   }
   const shown = limit > 0 ? costSheets.slice(0, limit) : costSheets;
   const extra = costSheets.length - shown.length;
+
+  // In a list - the record's Documents panel - draw the SAME card the chat
+  // sidebar draws. The pill below is for the table, where a row has one cell
+  // of width and an amount is all that fits; in a column with room, showing
+  // the same quote as a coloured label made it look like a different object
+  // depending on which page you were on.
+  if (layout === "list") {
+    return (
+      <div className="space-y-1.5" data-testid={testId}>
+        {shown.map((cs) => (
+          <CostSheetRow
+            key={cs.id}
+            quote={cs}
+            sessionId={cs.sessionId || sessionId}
+            providerName={providerName}
+            testId={`cost-sheet-row-${cs.id}`}
+            onOpen={() => {
+              const href = chatDeepLink(
+                { sessionId: cs.sessionId || sessionId, parentUserId, subjectProfileId: null },
+                isAdmin,
+                `quote:${cs.id}`,
+              );
+              if (href) navigate(href);
+            }}
+          />
+        ))}
+        {extra > 0 && <OverflowChip count={extra} title={`${extra} more`} />}
+      </div>
+    );
+  }
+
   return (
     <div className={moneyWrapClass(layout)} data-testid={testId}>
       {shown.map((cs) => {
@@ -625,9 +657,10 @@ export function ParentCostSheetsCell({
             style={{ background: bg, color: fg, opacity: superseded ? 0.75 : 1 }}
             title={`${state} - ${new Date(cs.createdAt).toLocaleDateString()}`}
           >
-            {layout === "list"
-              ? `${amount} - ${state.toLowerCase()}${providerName ? ` - ${providerName}` : ""} - ${new Date(cs.createdAt).toLocaleDateString()}`
-              : amount}
+            {/* Chips only now - the list layout returns the shared card above,
+                so this is the table's one-cell form: the amount, with the
+                state carried by the tint and the tooltip. */}
+            {amount}
           </button>
         );
       })}

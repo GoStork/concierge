@@ -19,6 +19,7 @@ import {
   maybeCompleteHandoff,
 } from "../../../agreement-flow";
 import { resolveAgreementTemplate, agreementDocumentType } from "../../../pandadoc-service";
+import { resolveParentEvaSessionId } from "../../../parent-visibility";
 import { resolveQuotePaymentSchedule } from "../costs/payment-schedule.service";
 import {
   getCardDetailsForPaymentIntent,
@@ -1114,9 +1115,28 @@ export class BillingService {
       : [parentUserId];
 
     // Find-or-create the 3-way session for THIS donor. CONSULTATION_BOOKED
-    // is the identity-reveal status the rest of the app already honors.
+    // is the identity-reveal status the rest of the app already honors, and
+    // promoting an ACTIVE subject thread to it is the designed lifecycle.
+    //
+    // But this lookup keys on providerId + subjectProfileId, and those are
+    // EXACTLY the two fields that get stamped onto the parent's private Eva
+    // thread: providerId by a whisper, subjectProfileId by opening a donor
+    // from the marketplace. Whisper an agency, then browse their donor, and
+    // Eva matches - at which point checkout would post a cost sheet and an
+    // invoice into the private thread AND rewrite its status to
+    // CONSULTATION_BOOKED, permanently converting a private conversation into
+    // a shared one and back-exposing the entire transcript to the provider.
+    //
+    // So the family's Eva thread is excluded by id. A subject thread is still
+    // promoted in place; the private one is never touched.
+    const evaSessionId = await resolveParentEvaSessionId(accountIds, this.prisma);
     let session = await this.prisma.aiChatSession.findFirst({
-      where: { userId: { in: accountIds }, providerId, subjectProfileId: donorId },
+      where: {
+        userId: { in: accountIds },
+        providerId,
+        subjectProfileId: donorId,
+        ...(evaSessionId ? { id: { not: evaSessionId } } : {}),
+      },
       orderBy: { updatedAt: "desc" },
       select: { id: true },
     });

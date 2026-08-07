@@ -15,7 +15,7 @@
 import { prisma } from "./db";
 import { getBaseUrl } from "./src/lib/get-base-url";
 import { esc, buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
-import { findSharedProviderSession } from "./parent-visibility";
+import { findConnectedProviderSession } from "./parent-visibility";
 
 function isTestEmail(email: string | null | undefined): boolean {
   return /@gostork-test\.com$/i.test(email || "");
@@ -313,12 +313,23 @@ export async function notifyProvidersIpFormSubmitted(responseId: string): Promis
     }
     // Drop a message into the shared parent-provider chat so the provider sees
     // it in-thread (provider-facing providerContent; parent reads `content`).
-    // Prefer a REAL shared parent-provider thread. A whisper stamps
-    // `providerId` onto the parent's private Eva session (ai-router.ts), so an
-    // unfiltered providerId lookup can pick Eva - and `ip_form_submitted` is
-    // not in the parent's card allow-list, so landing there makes the message
-    // invisible to everyone. findSharedProviderSession owns that two-tier rule.
-    const sharedSession = await findSharedProviderSession(memberIds, provider.id);
+    //
+    // findCONNECTED, not findShared. The two-tier helper falls back to a bare
+    // providerId lookup when no shared thread exists, and a whisper stamps
+    // providerId onto the parent's PRIVATE Eva session - so that fallback
+    // resolves to Eva. This card carries the signed Intended Parent Form:
+    // legal names, date of birth, home address. It does not belong in a
+    // conversation the provider is not a party to, and it would not even
+    // render there (`ip_form_submitted` is not in the parent's card allow-
+    // list), so the fallback was silent misdelivery, not a rescue.
+    const sharedSession = await findConnectedProviderSession(memberIds, provider.id);
+    if (!sharedSession) {
+      console.warn(
+        `[ip-form] ${provider.name} has no shared thread with parent account ` +
+        `${memberIds[0]} - the submitted-form card was not posted. It will be ` +
+        `visible on the parent record and in their inbox.`,
+      );
+    }
     if (sharedSession) {
       void prisma.aiChatMessage.create({
         data: {
@@ -419,10 +430,15 @@ export async function notifyProvidersPhotocopyUploaded(responseId: string): Prom
     for (const pu of providerUsers) {
       void prisma.inAppNotification.create({ data: { userId: pu.id, eventType: "IP_FORM_SUBMITTED", payload: { responseId, parentNames } } }).catch(() => {});
     }
-    // Same trap as above: this posts `ip_form_submitted`, which is NOT in the
-    // parent's card allow-list, so a whisper-stamped Eva session would swallow
-    // it silently. Use the shared two-tier lookup.
-    const sharedSession = await findSharedProviderSession(memberIds, provider.id);
+    // Same rule as above, and this one carries a photo ID - a passport or
+    // driver's licence scan. Strict lookup only; no fallback.
+    const sharedSession = await findConnectedProviderSession(memberIds, provider.id);
+    if (!sharedSession) {
+      console.warn(
+        `[ip-form] ${provider.name} has no shared thread with parent account ` +
+        `${memberIds[0]} - the ID-document card was not posted.`,
+      );
+    }
     if (sharedSession) {
       void prisma.aiChatMessage.create({
         data: {

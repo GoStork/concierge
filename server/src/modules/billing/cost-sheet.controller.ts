@@ -26,6 +26,7 @@ import { StorageService } from "../storage/storage.service";
 import { prisma } from "../../../db";
 import { formatMoneyCents } from "../../lib/format-money";
 import { resolveQuotePaymentSchedule } from "../costs/payment-schedule.service";
+import { resolveParentEvaSessionId } from "../../../parent-visibility";
 
 /**
  * Endpoints for the cost-sheet + invoice flow that sits between the AI chat and Stripe billing.
@@ -65,6 +66,26 @@ export class CostSheetController {
     const isProviderMember = user?.providerId && user.providerId === session.providerId;
     if (!isAdmin && !isProviderMember) {
       throw new ForbiddenException("You don't have access to this session");
+    }
+
+    // A cost sheet is paperwork between the family and the provider. It rides
+    // the 3-way chat, never the family's private conversation with Eva.
+    //
+    // This is reachable, not theoretical: a whisper stamps providerId onto the
+    // Eva thread, the provider inbox lists sessions by providerId, so that
+    // thread can appear in the sidebar and be picked. The auto-draft service
+    // was fixed to never TARGET it; this is the manual twin.
+    const accountIds = session.user?.parentAccountId
+      ? (await this.db.user.findMany({
+          where: { parentAccountId: session.user.parentAccountId },
+          select: { id: true },
+        })).map((u: any) => u.id)
+      : [session.userId];
+    const evaSessionId = await resolveParentEvaSessionId(accountIds, this.db);
+    if (evaSessionId && evaSessionId === session.id) {
+      throw new ForbiddenException(
+        "This is the family's private concierge conversation. Cost sheets go in your shared chat with them.",
+      );
     }
 
     return { session, isAdmin, isProviderMember, roles };

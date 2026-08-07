@@ -658,7 +658,8 @@ async function ut16() {
 // providerId lookup reports "already connected" for every agency they ever
 // whispered to - and would silently skip a consultation they actually need.
 async function ut17() {
-  const { findConnectedProviderSession, findSharedProviderSession } = await import("../server/parent-visibility");
+  const parentVisibility = await import("../server/parent-visibility");
+  const { findConnectedProviderSession } = parentVisibility;
   const queries: any[] = [];
   const client = (results: (any | null)[]) => ({
     aiChatSession: {
@@ -684,13 +685,15 @@ async function ut17() {
   await findConnectedProviderSession(["u1"], "p", { client: client([null]), excludeSessionId: "eva1" });
   check("the caller's own session is excluded from the strict query", queries[0]?.id?.not === "eva1", JSON.stringify(queries[0]?.id));
 
-  // findSharedProviderSession keeps the loose fallback (it answers "where do I
-  // post this?", not "are they connected?") but must try strict FIRST.
-  queries.length = 0;
-  const posted = await findSharedProviderSession(["u1"], "p", { client: client([null, { id: "loose" }]), excludeSessionId: "eva1" });
-  check("the posting lookup falls back to a loose match", posted?.id === "loose", String(posted?.id));
-  check("...only after trying the strict one first", queries.length === 2 && Array.isArray(queries[0]?.OR), String(queries.length));
-  check("...and still excludes the caller's own session", queries[1]?.id?.not === "eva1", JSON.stringify(queries[1]?.id));
+  // There used to be a second helper here, findSharedProviderSession, whose
+  // job was "where do I post this?" and which fell back to a bare providerId
+  // lookup when no shared thread existed. This test asserted that fallback -
+  // i.e. it pinned the bug in place. It shipped signed Intended Parent Forms
+  // and passport scans into the parent's private Eva thread. There is now
+  // exactly ONE lookup and it has no loose tier.
+  check("no loose posting lookup exists any more",
+    !("findSharedProviderSession" in parentVisibility),
+    Object.keys(parentVisibility).join(","));
 }
 
 // ─── UT-18: every tag the prompt promises to strip is actually stripped ──────

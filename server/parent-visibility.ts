@@ -122,7 +122,7 @@ export async function resolveParentEvaSessionId(
   return anyPrivate?.id ?? null;
 }
 
-/** The subset of AiChatSession every caller of findSharedProviderSession needs. */
+/** The subset of AiChatSession every caller of findConnectedProviderSession needs. */
 export interface SharedProviderSession {
   id: string;
   status: string;
@@ -142,59 +142,21 @@ const SHARED_SESSION_SELECT = {
 } as const;
 
 /**
- * The REAL shared parent-provider thread for a given provider - the inverse of
- * resolveParentEvaSessionId, and subject to the same trap from the other side.
+ * DELETED: findSharedProviderSession.
  *
- * THE TRAP: a whisper stamps `providerId` onto the parent's PRIVATE Eva session
- * (ai-router.ts, the [[WHISPER]] handler), so `findFirst({ providerId })` alone
- * can return Eva. Two things go wrong when it does: a provider-facing card lands
- * somewhere the provider cannot see it, and any "are they already connected?"
- * check answers YES for every agency the parent ever whispered to - which would
- * silently skip a consultation the parent actually needs.
+ * It tried the strict query first and, on a miss, fell back to a bare
+ * `{ userId, providerId }` lookup - "better than dropping a message on the
+ * floor". That fallback was the trap, not a rescue: a whisper stamps
+ * providerId onto the parent's PRIVATE Eva session, so it resolved to Eva
+ * exactly when no shared thread existed. It shipped signed Intended Parent
+ * Forms and ID scans into a conversation the provider is not a party to, where
+ * the card is not even in the parent's allow-list - so it rendered to nobody
+ * while sitting in a private thread.
  *
- * The reliable discriminator is the same one the client uses to split the
- * conversations list (conversations-page.tsx `isProviderThread`): a joined
- * provider, or a status that only a shared thread reaches.
- *
- * @param excludeSessionId pass the caller's own session id (typically the Eva
- *   thread the request is running in) so the loose fallback can never resolve
- *   to it. Always pass it when the answer drives a skip/branch decision.
+ * Use findConnectedProviderSession below. If it returns null there is no
+ * shared thread, and the correct behaviour is to log and not post. A narrowed
+ * primary query with the loose one still reachable underneath is not a fix.
  */
-export async function findSharedProviderSession(
-  memberIds: string[],
-  providerId: string,
-  opts?: { excludeSessionId?: string | null; client?: any },
-): Promise<SharedProviderSession | null> {
-  if (!memberIds?.length || !providerId) return null;
-  const db = opts?.client ?? (await import("./db")).prisma;
-  const exclude = opts?.excludeSessionId
-    ? { id: { not: opts.excludeSessionId } }
-    : {};
-
-  const strict = await db.aiChatSession.findFirst({
-    where: {
-      ...exclude,
-      userId: { in: memberIds },
-      providerId,
-      OR: [
-        { status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } },
-        { providerJoinedAt: { not: null } },
-      ],
-    },
-    orderBy: { updatedAt: "desc" },
-    select: SHARED_SESSION_SELECT,
-  });
-  if (strict) return strict as SharedProviderSession;
-
-  // Loose fallback: better than dropping a message on the floor when no shared
-  // thread exists yet. Never trust it as proof of a real connection.
-  const loose = await db.aiChatSession.findFirst({
-    where: { ...exclude, userId: { in: memberIds }, providerId },
-    orderBy: { updatedAt: "desc" },
-    select: SHARED_SESSION_SELECT,
-  });
-  return (loose as SharedProviderSession) ?? null;
-}
 
 /**
  * Strict variant: resolves ONLY a genuinely shared thread, never the loose

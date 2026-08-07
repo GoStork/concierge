@@ -22,7 +22,7 @@
  * permanent holes without a catch-up, not just a one-time migration.
  */
 import { prisma } from "./db";
-import { resolveParentEvaSessionId, findSharedProviderSession } from "./parent-visibility";
+import { resolveParentEvaSessionId, findConnectedProviderSession } from "./parent-visibility";
 import { emitJourneyEvent } from "./journey-events";
 import { sendIpFormParentNudge } from "./notify-ip-form";
 
@@ -250,7 +250,10 @@ export async function maybePromptIpForm(opts: { parentUserId: string; providerId
       // Prefer a REAL shared parent-provider thread - a whisper stamps
       // providerId onto the private Eva session, so the loose lookup can pick
       // the wrong chat (see parent-visibility.ts for the full rationale).
-      const sharedSession = await findSharedProviderSession(memberIds, provider.id);
+      // Strict: the loose tier of the two-tier helper resolves to the
+      // parent's private Eva thread whenever a whisper has stamped this
+      // provider onto it. Paperwork rides the 3-way chat or it waits.
+      const sharedSession = await findConnectedProviderSession(memberIds, provider.id);
       if (sharedSession) {
         await prisma.aiChatMessage.create({
           data: {

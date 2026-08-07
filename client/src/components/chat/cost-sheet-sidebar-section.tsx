@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
+import { CostSheetRow } from "./cost-sheet-row";
 
 interface CostSheetSidebarSectionProps {
   sessionId: string | null;
@@ -687,42 +688,7 @@ export function CostSheetSidebarSection({
       {!embedded && quotes.length > 0 && (
         <div className="space-y-1.5">
           {quotes.map(q => (
-            <div
-              key={q.id}
-              className="rounded-md border p-2 text-xs space-y-0.5"
-              style={{
-                background: q.supersededAt ? "hsl(var(--muted) / 0.3)" : "hsl(var(--background))",
-                opacity: q.supersededAt ? 0.7 : 1,
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">{formatCents(q.totalCostCents)}</span>
-                {q.supersededAt ? (
-                  <span className="t-micro-label">Superseded</span>
-                ) : (
-                  <span
-                    className="text-[10px] uppercase tracking-wide font-medium"
-                    style={{ color: "hsl(var(--brand-success))" }}
-                  >
-                    Current
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between text-muted-foreground">
-                <span>{new Date(q.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
-                {q.costSheetFileUrl && sessionId && (
-                  <a
-                    href={`/api/sessions/${sessionId}/cost-sheets/${q.id}/file`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:underline flex items-center gap-1"
-                  >
-                    <Paperclip className="w-3 h-3" /> {q.costSheetFileName || "File"}
-                  </a>
-                )}
-              </div>
-              {q.notes && <p className="text-muted-foreground italic">{q.notes}</p>}
-            </div>
+            <CostSheetRow key={q.id} quote={q} sessionId={sessionId} />
           ))}
         </div>
       )}
