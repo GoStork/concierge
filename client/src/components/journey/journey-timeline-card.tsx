@@ -177,6 +177,11 @@ function StageColumn({ stage, isFirst, isLast, branch }: {
   // sits 10px below the top of the rail row.
   const DOT = 20;
   const HALF_DOT = DOT / 2;
+  // Breathing room between the sibling's label and the branch dot, so the two
+  // do not touch. 12px is what the vertical fork already uses (ForkRow's
+  // pt-3), which also makes the elbow's vertical run 22px on both - the same
+  // fork drawn the same way, rotated.
+  const BRANCH_GAP = 12;
   return (
     // basis-0 + flex-1: every rung gets an equal share of the row, and
     // min-w-0 lets a long label wrap under its dot instead of widening it.
@@ -225,13 +230,17 @@ function StageColumn({ stage, isFirst, isLast, branch }: {
               className="shrink-0"
               style={{
                 width: `calc(50% - ${HALF_DOT}px)`,
-                height: `${HALF_DOT}px`,
+                // The corner drops through the gap first, then turns - so the
+                // horizontal run still lands exactly on the dot's centre.
+                height: `${BRANCH_GAP + HALF_DOT}px`,
                 borderLeft: `1px solid ${line}`,
                 borderBottom: `1px solid ${line}`,
                 borderBottomLeftRadius: "8px",
               }}
             />
-            <StageMark stage={{ ...branch, tone: undefined }} />
+            <div style={{ marginTop: `${BRANCH_GAP}px` }}>
+              <StageMark stage={{ ...branch, tone: undefined }} />
+            </div>
           </div>
           <div className="px-1 pt-1 text-center">
             <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(branch)}`}>{branch.label}</p>
