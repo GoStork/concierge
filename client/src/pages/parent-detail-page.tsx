@@ -94,37 +94,58 @@ export default function ParentDetailPage() {
 
   const isAdmin = record?.viewer.role === "admin";
 
-  // "My services" scope: a coordinator defaults to their own service lines
-  // (a surrogacy coordinator sees the surrogacy story, not the egg-donation
-  // one), with an "All services" toggle. Display only - access control stays
-  // server-side. In the URL per the house rule, so back keeps the scope.
+  // Service-line scope: ANY viewer - coordinator, provider admin, GoStork
+  // admin - can focus the record on one service line (an admin often IS the
+  // surrogacy coordinator). Chips render whenever the family spans more than
+  // one line. A coordinator with a single lane defaults to it; everyone else
+  // defaults to All. Display only - access control stays server-side. In the
+  // URL per the house rule, so back keeps the scope.
   const viewerLines = record?.viewer.serviceLines || null;
-  const scopeMode: "mine" | "all" = params.get("scope") === "all" ? "all" : "mine";
-  const setScopeMode = (mode: "mine" | "all") =>
-    setParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (mode === "all") next.set("scope", "all");
-      else next.delete("scope");
-      return next;
-    }, { replace: true });
   /** subjectKind (conversations / saved profiles) -> service line. */
   const kindLine = (k?: string | null): string | null =>
     k === "surrogate" ? "surrogacy"
       : k === "egg-donor" || k === "sperm-donor" ? "egg_donation"
       : k === "doctor" || k === "clinic" ? "ivf"
       : null;
+  const LINE_LABELS: Record<string, string> = {
+    surrogacy: "Surrogacy",
+    egg_donation: "Egg Donation",
+    ivf: "IVF",
+    legal: "Legal",
+  };
+  const availableLines = useMemo(() => {
+    if (!record) return [] as string[];
+    const s = new Set<string>();
+    for (const e of record.activity) if (e.serviceLine) s.add(e.serviceLine);
+    for (const c of record.conversations) { const l = kindLine(c.subjectKind); if (l) s.add(l); }
+    for (const p of record.savedProfiles) { const l = kindLine(p.subjectKind); if (l) s.add(l); }
+    return ["surrogacy", "egg_donation", "ivf", "legal"].filter((l) => s.has(l));
+  }, [record]);
+  const defaultLine =
+    viewerLines?.length === 1 && availableLines.includes(viewerLines[0]) ? viewerLines[0] : "all";
+  const rawScope = params.get("scope");
+  const activeLine =
+    rawScope && (rawScope === "all" || availableLines.includes(rawScope)) ? rawScope : defaultLine;
+  const setActiveLine = (line: string) =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      // The default needs no param; anything else is explicit.
+      if (line === defaultLine) next.delete("scope");
+      else next.set("scope", line);
+      return next;
+    }, { replace: true });
   const scopedRecord = useMemo(() => {
-    if (!record || !viewerLines?.length || scopeMode === "all") return record;
+    if (!record || activeLine === "all") return record;
     // Anything unattributable (null line) always shows - the scope narrows,
     // it never hides what it cannot place.
-    const inLines = (line: string | null) => !line || viewerLines.includes(line);
+    const inLine = (line: string | null) => !line || line === activeLine;
     return {
       ...record,
-      activity: record.activity.filter((e) => inLines(e.serviceLine ?? null)),
-      conversations: record.conversations.filter((c) => inLines(kindLine(c.subjectKind))),
-      savedProfiles: record.savedProfiles.filter((p) => inLines(kindLine(p.subjectKind))),
+      activity: record.activity.filter((e) => inLine(e.serviceLine ?? null)),
+      conversations: record.conversations.filter((c) => inLine(kindLine(c.subjectKind))),
+      savedProfiles: record.savedProfiles.filter((p) => inLine(kindLine(p.subjectKind))),
     };
-  }, [record, viewerLines, scopeMode]);
+  }, [record, activeLine]);
 
   return (
     <div className="flex flex-col min-h-[calc(100dvh-64px)]">
@@ -146,30 +167,31 @@ export default function ParentDetailPage() {
             {/* Page-level actions belong beside the page title, the way Add
                 Parent sits on /parents - not inside the profile card. */}
             <div className="flex items-center gap-3">
-              {/* Coordinator scope: only rendered when the viewer's roles
-                  actually narrow to specific service lines. */}
-              {record && !!viewerLines?.length && (
+              {/* Service-line scope: rendered for EVERY viewer once the
+                  family spans more than one line - an admin is often also
+                  the coordinator for one of them. */}
+              {record && availableLines.length >= 2 && (
                 <div
-                  className="flex items-center gap-1 rounded-full border p-0.5"
+                  className="flex items-center gap-1 rounded-full border p-0.5 overflow-x-auto"
                   role="tablist"
                   data-testid="record-scope-toggle"
                 >
-                  {([["mine", "My services"], ["all", "All services"]] as const).map(([mode, label]) => (
+                  {["all", ...availableLines].map((line) => (
                     <button
-                      key={mode}
+                      key={line}
                       type="button"
                       role="tab"
-                      aria-selected={scopeMode === mode}
-                      onClick={() => setScopeMode(mode)}
+                      aria-selected={activeLine === line}
+                      onClick={() => setActiveLine(line)}
                       className={cn(
-                        "rounded-full px-3 py-1 text-xs font-ui transition-colors",
-                        scopeMode === mode
+                        "shrink-0 rounded-full px-3 py-1 text-xs font-ui transition-colors",
+                        activeLine === line
                           ? "bg-primary text-primary-foreground"
                           : "text-muted-foreground hover:text-foreground",
                       )}
-                      data-testid={`record-scope-${mode}`}
+                      data-testid={`record-scope-${line}`}
                     >
-                      {label}
+                      {line === "all" ? "All services" : LINE_LABELS[line] || line}
                     </button>
                   ))}
                 </div>
