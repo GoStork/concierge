@@ -500,8 +500,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         parentProfile?.hasEmbryos == null ||
         (parentProfile?.hasEmbryos === true && (parentProfile?.embryoCount == null || parentProfile?.embryosTested == null)) ||
         (parentProfile?.needsClinic == null && !parentProfile?.currentClinicName) ||
-        parentProfile?.isFirstIvf == null ||
-        (!parentProfile?.surrogateBudget && parentProfile?.needsSurrogate !== false);
+        parentProfile?.isFirstIvf == null;
+      // Budget is deliberately absent - see the matching list in ai-router:
+      // Eva never asks it unprompted.
 
       // INTERNATIONAL PROGRAM - SECOND CALL: an international surrogacy agency is
       // paired with a partner IVF/egg-donor clinic (Provider.partnerProviderIds).

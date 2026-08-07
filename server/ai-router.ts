@@ -3946,7 +3946,12 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
         const consultTypeNames = (upcomingProviderConsult?.providerUser?.provider?.services || []).map((sv: any) => sv.providerType?.name || "");
         const consultIsIvfClinic = consultTypeNames.some((n: string) => /ivf|clinic/i.test(n));
         if (profile?.isFirstIvf == null && consultIsIvfClinic) prepMissing.push("whether this is their first IVF journey");
-        if (!profile?.surrogateBudget && profile?.needsSurrogate !== false) prepMissing.push("their budget comfort range for the journey");
+        // Budget is deliberately NOT a prep question. It was here once and Eva
+        // asked every family their "overall budget comfort range" unprompted -
+        // a question nobody designed into the flow. surrogateBudget still
+        // exists as a field, but it is only ever captured when the PARENT
+        // raises cost (the skip-feedback "Compensation range" branch, cost
+        // questions) or edits it on /account - never volunteered by Eva.
         if (prepMissing.length === 0) {
           // Phase 7C: prep intake complete for this consult - once per
           // account+provider (checked every turn while the consult is

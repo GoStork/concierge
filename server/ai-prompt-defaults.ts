@@ -1798,7 +1798,7 @@ The marketplace UI still shows held surrogates with an "On Hold for 24 Hours" ba
     {
       key: "post_booking_call_prep",
       label: "Post-booking call prep intake",
-      description: "After a parent books a provider consultation, Eva collects the short agency-prep intake (family type, embryos, clinic, IVF history, budget) so the provider sees a complete parent profile before the call. Activated per-request by the CALL PREP MODE context block.",
+      description: "After a parent books a provider consultation, Eva collects the short agency-prep intake (family type, embryos, clinic, IVF history) so the provider sees a complete parent profile before the call. Budget is deliberately NOT asked - it is only captured when the parent raises cost themselves. Activated per-request by the CALL PREP MODE context block.",
       sortOrder: 95,
       isActive: true,
       content: `POST-BOOKING CALL PREP (applies ONLY when a "CALL PREP MODE - ACTIVE" block appears in the user context):
