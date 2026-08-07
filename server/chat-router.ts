@@ -3906,7 +3906,7 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
   try {
     const session = await prisma.aiChatSession.findUnique({
       where: { id: String(req.params.id) },
-      select: { id: true, userId: true, providerId: true, humanAgentId: true },
+      select: { id: true, userId: true, providerId: true, humanAgentId: true, createdAt: true },
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
 
@@ -4003,9 +4003,13 @@ chatRouter.get("/api/chat-session/:id/bookings", requireAuth, async (req: Reques
         // Without this, every call the family ever had with the org leaked
         // into every thread (observed live: two egg-donor-thread calls from
         // June rendered inside a brand-new surrogate thread, thoroughly
-        // confusing the provider). Legacy rows with no sessionId stay
-        // org-level and keep showing everywhere - they cannot be attributed.
-        OR: [{ sessionId: session.id }, { sessionId: null }],
+        // confusing the provider). Legacy rows with no sessionId cannot be
+        // attributed, so they stay org-level - but never in a thread that
+        // did not exist yet when the call was booked.
+        OR: [
+          { sessionId: session.id },
+          { sessionId: null, createdAt: { gte: session.createdAt } },
+        ],
       },
       include: {
         providerUser: {

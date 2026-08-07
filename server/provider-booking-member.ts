@@ -7,15 +7,15 @@
  * SCHEDULER) over Julia (the surrogacy coordinator) and Jered (the provider
  * admin) for a surrogate consultation (observed live, Aug 7 2026).
  *
- * Priority, most specific first - always among members who actually have a
- * booking page configured:
- *   1. A coordinator whose role matches the conversation's subject type
- *      (surrogate subject -> surrogacy coordinator, etc.)
- *   2. PROVIDER_ADMIN
- *   3. Any other coordinator
- *   4. Anyone who is not a pure SCHEDULER / BILLING_MANAGER
- *   5. Last resort: anyone with a booking page - a scheduler's calendar
- *      still beats a dead end with no calendar at all.
+ * Eligibility is STRICT - always among members who actually have a booking
+ * page configured:
+ *   - Typed subject (surrogate, egg donor, ...): the matching coordinator
+ *     first, then PROVIDER_ADMIN. NOBODY else - an egg-donor coordinator on
+ *     a surrogacy call, or a scheduler on any call, cannot run it. If
+ *     neither exists the card falls back to the org's external booking URL
+ *     rather than serving the wrong person's calendar.
+ *   - Untyped conversation: PROVIDER_ADMIN first, then any coordinator.
+ *   - SCHEDULER / BILLING_MANAGER calendars are never shown to parents.
  */
 import { prisma } from "./db";
 import { IP_COORDINATOR_ROLES, DONOR_COORDINATOR_ROLES } from "../shared/roles";
@@ -61,12 +61,15 @@ export async function pickProviderBookingMember(
 
   const has = (u: { roles: string[] }, roles: string[]) => (u.roles || []).some((r) => roles.includes(r));
   const subjectRoles = coordinatorRolesForSubject(subjectType);
-  const picked =
-    (subjectRoles.length ? candidates.find((u) => has(u, subjectRoles)) : undefined) ||
-    candidates.find((u) => (u.roles || []).includes("PROVIDER_ADMIN")) ||
-    candidates.find((u) => has(u, ALL_COORDINATOR_ROLES)) ||
-    candidates.find((u) => !has(u, ["SCHEDULER", "BILLING_MANAGER"])) ||
-    candidates[0];
+  const picked = subjectRoles.length
+    ? // Typed subject: matching coordinator, else admin, else NOBODY - the
+      // wrong service line's coordinator cannot run this call.
+      candidates.find((u) => has(u, subjectRoles)) ||
+      candidates.find((u) => (u.roles || []).includes("PROVIDER_ADMIN"))
+    : // Untyped conversation: admin, else any coordinator. Never a scheduler.
+      candidates.find((u) => (u.roles || []).includes("PROVIDER_ADMIN")) ||
+      candidates.find((u) => has(u, ALL_COORDINATOR_ROLES));
+  if (!picked) return null;
 
   return {
     name: picked.name,
