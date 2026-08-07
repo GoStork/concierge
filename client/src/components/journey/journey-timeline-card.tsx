@@ -172,32 +172,72 @@ function StageColumn({ stage, isFirst, isLast, branch }: {
   // every segment meets its neighbour exactly at the column boundary - no
   // absolute positioning, and it survives any column width.
   const rail = "h-px flex-1 bg-primary/50";
+  const line = "hsl(var(--primary) / 0.5)";
+  // The dot is w-5 (20px), so its centre - and therefore the connector line -
+  // sits 10px below the top of the rail row.
+  const DOT = 20;
+  const HALF_DOT = DOT / 2;
   return (
     // basis-0 + flex-1: every rung gets an equal share of the row, and
     // min-w-0 lets a long label wrap under its dot instead of widening it.
     <div className="flex-1 basis-0 min-w-0" data-testid={`journey-stage-${stage.id}`}>
-      <div className="flex items-center">
-        <div className={isFirst ? "flex-1" : rail} />
-        <StageMark stage={stage} />
-        <div className={isLast ? "flex-1" : rail} />
-      </div>
-      <div className="px-1 pt-1.5 text-center">
-        <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(stage)}`}>
-          {stage.label}
-          {stage.optional && stage.state === "upcoming" && <span className="text-muted-foreground font-normal"> (if needed)</span>}
-        </p>
-        {stage.reachedAt && <p className="t-helper leading-4">{fmtDate(stage.reachedAt)}</p>}
-      </div>
-      {/* A branch rung hangs BELOW its sibling, reached by a short stem - the
-          vertical ladder puts it to the right, which is the same relationship
-          rotated with the rest of the track. */}
-      {branch && (
-        <div className="flex flex-col items-center pt-1">
-          <div className="w-px h-3 bg-primary/50" />
-          <StageMark stage={{ ...branch, tone: undefined }} />
-          <p className={`text-[11px] font-ui leading-tight text-center pt-1 ${stageLabelClass(branch)}`}>{branch.label}</p>
-          {branch.reachedAt && <p className="t-helper leading-4">{fmtDate(branch.reachedAt)}</p>}
+      {/* relative only when there is a branch: the stem is absolute inside
+          this box so it can start on the connector line and run past the
+          label, whose height varies with wrapping. */}
+      <div className={branch ? "relative" : undefined}>
+        <div className="flex items-center">
+          <div className={isFirst ? "flex-1" : rail} />
+          <StageMark stage={stage} />
+          <div className={isLast ? "flex-1" : rail} />
         </div>
+        <div className="px-1 pt-1.5 text-center">
+          <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(stage)}`}>
+            {stage.label}
+            {stage.optional && stage.state === "upcoming" && <span className="text-muted-foreground font-normal"> (if needed)</span>}
+          </p>
+          {stage.reachedAt && <p className="t-helper leading-4">{fmtDate(stage.reachedAt)}</p>}
+        </div>
+        {/* The fork leaves the track BETWEEN two rungs, not out of a dot.
+            left:0 is this column's left edge, and because each connector is
+            drawn as two half-width rails either side of its dot, that edge is
+            exactly the midpoint between this dot and the previous one - the
+            same place the vertical ladder's elbow forks from. It used to drop
+            straight down from the sibling's own dot, which read as "the No
+            Show happened AT Doctor Call Completed" rather than between the
+            two. */}
+        {branch && (
+          <span
+            className="absolute w-px"
+            style={{ left: 0, top: `${HALF_DOT}px`, bottom: 0, backgroundColor: line }}
+          />
+        )}
+      </div>
+      {/* A branch rung hangs BELOW the main line, reached by the corner that
+          finishes the fork: down the column edge, then right into its dot.
+          The vertical ladder puts it to the RIGHT of its sibling, which is
+          the same relationship rotated with the rest of the track. */}
+      {branch && (
+        <>
+          <div className="flex">
+            {/* calc(50% - HALF_DOT) so the dot that follows lands centred on
+                the column, directly under its sibling. */}
+            <div
+              className="shrink-0"
+              style={{
+                width: `calc(50% - ${HALF_DOT}px)`,
+                height: `${HALF_DOT}px`,
+                borderLeft: `1px solid ${line}`,
+                borderBottom: `1px solid ${line}`,
+                borderBottomLeftRadius: "8px",
+              }}
+            />
+            <StageMark stage={{ ...branch, tone: undefined }} />
+          </div>
+          <div className="px-1 pt-1 text-center">
+            <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(branch)}`}>{branch.label}</p>
+            {branch.reachedAt && <p className="t-helper leading-4">{fmtDate(branch.reachedAt)}</p>}
+          </div>
+        </>
       )}
     </div>
   );
