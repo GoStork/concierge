@@ -1350,12 +1350,6 @@ let promptSectionsCacheExpiry = 0;
 // one canned sentence verbatim (observed live: three identical repeats).
 const consultDropStreak = new Map<string, number>();
 
-// Same idea for the ask-first calendar hold: consecutive turns can each emit
-// [[CONSULTATION_BOOKING]] before the parent ticks the ack card (observed
-// live: the favorite turn and the schedule turn, identical canned line twice
-// in a row). The repeat gets a different, shorter phrasing.
-const ackHoldStreak = new Map<string, number>();
-
 // WHISPER PARENT APPROVAL: a whisper is a message to a THIRD PARTY (real
 // provider email + SMS), so the parent sees and approves the question before
 // it sends - the durable control the user mandated after junk whispers
@@ -11115,17 +11109,11 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                   providerId: consultProviderId,
                   subjectProfileId,
                 });
-                if (ack.allowed) {
-                  // Ack satisfied - a later hold (new agency, new subject) is
-                  // a fresh conversation and deserves the full phrasing again.
-                  ackHoldStreak.delete(currentSessionId || userId);
-                }
                 if (!ack.allowed) {
                   console.log(`[CONSULTATION] Preliminary ack missing - holding calendar for ${consultProviderId} behind the ack card`);
-                  // Defer the actual card POST until after the reply is saved:
+                  // Defer the actual card POST until after the reply handling:
                   // a card created mid-stream carries an earlier createdAt
-                  // than the reply, so on reload it sorted ABOVE the line
-                  // that says "see the card below" (observed live).
+                  // than the reply, so on reload it sorted ABOVE it.
                   pendingAckCardInput = {
                     providerId: consultProviderId,
                     subjectProfileId,
@@ -11133,21 +11121,16 @@ NEVER promise to search without actually calling the search tool. NEVER end with
                     subjectLabel: sessionTitle,
                     heldCard: consultationCard,
                   };
-                  // The model's reply promises the calendar it is no longer
-                  // getting - rewrite it so words and cards agree. Consecutive
-                  // holds (favorite turn, then schedule turn) escalate the
-                  // phrasing instead of repeating one line verbatim.
+                  // The card message opens with "Before we open the calendar,
+                  // we want to be upfront..." - a second Eva bubble saying
+                  // "one quick thing before I open the calendar" on top of it
+                  // was pure repetition (observed live). When the model's
+                  // reply is calendar talk, drop the bubble entirely and let
+                  // the card be the whole response.
                   const promisesCalendar = /calendar|schedul|book|pull(?:ing)? (?:it |that |this )?up|time slot/i.test(finalContent);
                   if (promisesCalendar) {
-                    const streakKey = currentSessionId || userId;
-                    const streak = (ackHoldStreak.get(streakKey) || 0) + 1;
-                    ackHoldStreak.set(streakKey, streak);
-                    if (ackHoldStreak.size > 5000) ackHoldStreak.clear();
-                    finalContent = streak <= 1
-                      ? `Wonderful! One quick thing before I open the calendar - see the card below. The moment you confirm, the calendar will appear right here so you can pick your time.`
-                      : `Of course! Just tap one of the two options on the card below - confirm your interest, or choose an info call - and the calendar will appear right here.`;
+                    finalContent = "";
                     sse.sendReset();
-                    sse.sendToken(finalContent);
                   }
                   consultationCard = null;
                 }
@@ -11614,15 +11597,20 @@ NEVER promise to search without actually calling the search tool. NEVER end with
     finalContent = finalContent.replace(/[\u2013\u2014]/g, "-");
 
     const now = new Date();
-    const savedAiMessage = await prisma.aiChatMessage.create({
-      data: {
-        sessionId: replySessionId,
-        role: "assistant",
-        content: finalContent,
-        deliveredAt: now,
-        ...(Object.keys(uiExtras).length > 0 ? { uiCardType: "rich", uiCardData: uiExtras } : {}),
-      },
-    });
+    // On a calendar hold the reply was blanked - the ack card message IS the
+    // response, and an empty Eva bubble on top of it is noise. Skip saving it.
+    const holdSuppressedReply = !!pendingAckCardInput && !finalContent.trim();
+    const savedAiMessage = holdSuppressedReply
+      ? null
+      : await prisma.aiChatMessage.create({
+          data: {
+            sessionId: replySessionId,
+            role: "assistant",
+            content: finalContent,
+            deliveredAt: now,
+            ...(Object.keys(uiExtras).length > 0 ? { uiCardType: "rich", uiCardData: uiExtras } : {}),
+          },
+        });
     // The deferred preliminary-ack card - created AFTER the reply so its
     // createdAt sorts below "see the card below" on reload. If this fails the
     // parent is not dead-ended: the booking endpoint's 409 backstop posts the
@@ -11776,7 +11764,8 @@ NEVER promise to search without actually calling the search tool. NEVER end with
       userMessageId: savedUserMsg?.id ?? null,
       userMessageDeliveredAt: now.toISOString(),
       userMessageReadAt: now.toISOString(),
-      message: savedAiMessage,
+      message: savedAiMessage ?? { id: null, content: "", senderType: "ai", role: "assistant" },
+      skipAiResponse: holdSuppressedReply || undefined,
       quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
       multiSelect: multiSelect || undefined,
       showCuration: showCuration || undefined,
