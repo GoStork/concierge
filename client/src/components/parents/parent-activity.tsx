@@ -26,11 +26,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
 import { AttachmentMessageCard } from "@/components/chat/attachment-message-card";
+import { SpecialMessageCard } from "@/components/chat/special-message-card";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, CalendarCheck, CalendarClock, CalendarX, ChevronDown, ExternalLink,
   Clock, FileText, Mail, MessageSquare,
-  Sparkles, StickyNote, Tag as TagIcon, TrendingUp, User, Video,
+  Receipt, Sparkles, StickyNote, Tag as TagIcon, TrendingUp, User, Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -88,7 +89,6 @@ const PARENT_EVENTS = new Set([
   "PREP_INTAKE_COMPLETED", "WHISPER_ASKED", "ESCALATED_TO_HUMAN",
   "CONSULT_PRELIM_ACKNOWLEDGED", "MATCH_CALL_ATTENDANCE_ACKNOWLEDGED",
   "MATCH_CALL_DECISION_ACKNOWLEDGED", "WINBACK_RESPONSE",
-  "FILE_RECEIVED",
 ]);
 
 /**
@@ -102,6 +102,7 @@ function kindForEvent(ev: { eventType: string; actorRole: string | null }): Acti
   // wears the file glyph rather than Eva's face - the row is about the
   // document, and who sent it is already in the label.
   if (ev.eventType === "MESSAGE_EMAIL" || ev.eventType === "MESSAGE_SMS" || ev.eventType === "FILE_SHARED") return "message";
+  if (ev.eventType === "COST_SHEET_SHARED") return "deal";
   if (DEAL_EVENTS.has(ev.eventType)) return "deal";
   if (ev.actorRole === "parent" || PARENT_EVENTS.has(ev.eventType)) return "parent";
   return "ai";
@@ -170,7 +171,6 @@ const EVENT_LABELS: Record<string, string> = {
   MATCH_CALL_DECISION_ACKNOWLEDGED: "Acknowledged the Match Call decision",
   SUBJECT_THREAD_OPENED: "New thread opened",
   FILE_SHARED: "Document sent",
-  FILE_RECEIVED: "Document received",
   CRM_OWNER_ASSIGNED: "Lead owner assigned",
 };
 
@@ -492,6 +492,23 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
     );
   }
 
+  if (detail.type === "cost_sheet_card") {
+    return (
+      <div className={shell} data-testid={`detail-cost-sheet-card-${detail.messageId}`}>
+        {detail.message && <p className="text-sm break-words">{detail.message}</p>}
+        {/* The SAME card the chat draws. The action callbacks are deliberately
+            omitted, which is exactly how that component degrades to read-only
+            - the record is a history, not a place to resend or cancel. */}
+        <SpecialMessageCard
+          msg={{ id: detail.messageId, uiCardType: "cost_sheet", uiCardData: detail.card } as any}
+          brandColor="hsl(var(--primary))"
+          viewerRole={viewerRole}
+          sessionId={detail.sessionId}
+        />
+      </div>
+    );
+  }
+
   if (detail.type === "attachment") {
     return (
       <div className={shell} data-testid={`detail-attachment-${detail.messageId}`}>
@@ -706,12 +723,21 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
   // A file card reads as a file, whoever sent it - the sparkle and the person
   // glyph both say who acted and nothing about what changed hands.
   const isFile = entry.detail?.type === "attachment";
-  const Icon = isSms ? MessageSquare : isFile ? FileText : (callIcon || meta.icon);
+  const isQuote = entry.detail?.type === "cost_sheet_card" || entry.detail?.type === "cost_sheet";
+  const Icon = isSms ? MessageSquare : isFile ? FileText : isQuote ? Receipt : (callIcon || meta.icon);
   const tint =
     // A text message reads as a text message at a glance - green, the way
     // every messaging app has trained people to expect. --brand-success
     // rather than iMessage's literal hex, per the no-hardcoded-colour rule.
     isSms ? "hsl(var(--brand-success))"
+    // A document is not an email. Both were drawing the accent purple, so the
+    // only thing separating a prep guide from a booking reminder was the
+    // glyph. Blue is the one hue the timeline was not already spending, and
+    // --swipe-compare is where the brand keeps it.
+    : isFile ? "var(--swipe-compare)"
+    // Money gets the brand's own teal and a receipt, so a quote never reads as
+    // one more thing we emailed.
+    : isQuote ? "hsl(var(--primary))"
     // A missed call is not a cancelled one: nobody decided anything, it just
     // needs chasing. Warning tone, matching the booking widget everywhere
     // else in the product.

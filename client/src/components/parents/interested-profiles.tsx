@@ -192,6 +192,7 @@ export function InterestedProfilesSection({
   record, groupByProvider,
 }: { record: ParentRecord; groupByProvider: boolean }) {
   const isAdmin = record.viewer.role === "admin";
+  const dense = useDense();
   const { conversations, savedProfiles } = record;
   const nothingAtAll =
     conversations.length === 0 &&
@@ -281,7 +282,12 @@ export function InterestedProfilesSection({
             {isAdmin ? "Nothing saved yet." : "They have not saved any of your profiles yet."}
           </EmptyPanel>
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
+          // `sm:` keys off the VIEWPORT, not the container. In the record's
+          // ~280px right rail it still fired on a desktop screen and split the
+          // rail into two 130px columns, so every card wrapped to about one
+          // word per line. The dense flag is the container's own answer to
+          // that question, the same one the card body already asks.
+          <div className={cn("grid gap-2", !dense && "sm:grid-cols-2")}>
             {savedProfiles.map((row) => (
               <SavedRowCard key={`${row.subjectKind}-${row.profileId}`} row={row} />
             ))}

@@ -197,6 +197,13 @@ async function buildActivity(ctx: {
   sessionOrg: Map<string, { providerId: string | null; providerName: string | null }>;
 }): Promise<any[]> {
   const sessionIds = Array.from(ctx.sessionOrg.keys());
+  // Threads this viewer is shown, PLUS any thread they sent a quote into. The
+  // quote list is already force-scoped by providerId, so widening the read
+  // here does not widen what is served - see the per-kind checks below.
+  const candidateSessionIds = Array.from(new Set([
+    ...sessionIds,
+    ...ctx.quotes.map((q: any) => q.sessionId).filter(Boolean),
+  ]));
   const { prisma, accountKey, memberIds, isAdmin, scopeProviderId, orgById } = ctx;
   const scoped = scopeProviderId ? { providerId: scopeProviderId } : {};
 
@@ -232,21 +239,36 @@ async function buildActivity(ctx: {
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
-    // Files that changed hands in chat: prep guides, agreements, cost sheets a
-    // coordinator dropped in, anything the family uploaded. Nothing emits a
-    // journey event for these - the delivery IS the chat message - so a record
-    // could say "consultation confirmed" and never mention that the family was
-    // sent a prep guide two seconds later.
+    // Cards the family was SENT in chat: prep guides, documents, cost sheets.
+    // Nothing emits a journey event for any of them - the card IS the chat
+    // message - so a record could say "consultation confirmed" and never
+    // mention the prep guide that went out two seconds later, or show a single
+    // one of the cost sheets this family was quoted.
     //
-    // Scoped by sessionIds, which the caller has already run through the
-    // conversation leak guard, so this can only surface a file from a thread
-    // this viewer is already being shown.
-    sessionIds.length
+    // This is a candidate set, NOT the access decision. Each kind is scoped
+    // again on the way out by whatever actually owns it: a file by its thread,
+    // a cost sheet by its quote. The two disagree in practice - a live cost
+    // sheet PFCLA sent sits in a thread whose subject belongs to another
+    // agency, so thread-scoping alone hid a document from the org that sent
+    // it. Quote sessions are in the candidate set for exactly that reason.
+    //
+    // role/senderType excludes anything the PARENT sent. They upload photos to
+    // Eva ("find me a donor who looks like this"); that is a private exchange
+    // with the concierge, not part of the parent-provider conversation, and it
+    // has no business on a provider's CRM record.
+    candidateSessionIds.length
       ? prisma.aiChatMessage.findMany({
-          where: { sessionId: { in: sessionIds }, uiCardType: "attachment" },
+          where: {
+            sessionId: { in: candidateSessionIds },
+            uiCardType: { in: ["attachment", "cost_sheet"] },
+            NOT: [{ role: "user" }, { senderType: "parent" }],
+          },
           select: {
             id: true, sessionId: true, content: true, senderType: true, senderName: true,
-            role: true, uiCardData: true, createdAt: true,
+            // uiCardType, because the loop below branches on it. Omitted, it
+            // read undefined and every cost sheet silently fell through to
+            // the file branch and was dropped for having no url.
+            role: true, uiCardType: true, uiCardData: true, createdAt: true,
           },
           orderBy: { createdAt: "desc" },
           take: 100,
@@ -454,33 +476,75 @@ async function buildActivity(ctx: {
     });
   }
 
-  // Files handed over in chat.
+  // Cards the family was sent in chat.
   for (const m of attachments as any[]) {
     const card = (m.uiCardData || {}) as Record<string, any>;
-    if (!card.url) continue;                       // nothing to open - not a real file card
     const org = ctx.sessionOrg.get(m.sessionId);
-    const fromParent = m.senderType === "parent" || m.role === "user";
     // Both halves of a dual-audience message are stored on the row: `content`
     // is written to the parent ("Here's your consultation prep guide:") and
     // `providerContent` to the provider ("Prep guide sent to Eran:"). A
     // provider reading the parent's copy would be reading a message addressed
     // to someone else, so each viewer gets the line written for them.
     const line = isAdmin ? m.content : (card.providerContent || m.content);
-    out.push({
-      id: `att-${m.id}`,
+    const message = line ? String(line).replace(/\[\[.*?\]\]/g, "").trim() || null : null;
+    const base = {
       at: m.createdAt,
-      eventType: fromParent ? "FILE_RECEIVED" : "FILE_SHARED",
-      actorRole: fromParent ? "parent" : "system",
+      actorRole: "system",
       providerId: org?.providerId ?? null,
       providerName: org?.providerName ?? null,
       sessionId: m.sessionId,
       aiName: persona?.name ?? null,
       aiAvatarUrl: persona?.avatarUrl ?? null,
+    };
+
+    if (m.uiCardType === "cost_sheet") {
+      // ACCESS: the quote, not the thread. quoteById holds only quotes this
+      // viewer is already scoped to, so a card whose quote is not in it is a
+      // card for someone else and is dropped.
+      const q = card.quoteId ? quoteById.get(card.quoteId) : null;
+      if (!q) continue;
+      const qOrg = orgById.get(q.providerId);
+      out.push({
+        ...base,
+        providerId: q.providerId,
+        providerName: qOrg?.name ?? base.providerName,
+        id: `cs-${m.id}`,
+        eventType: "COST_SHEET_SHARED",
+        detail: {
+          type: "cost_sheet_card",
+          messageId: m.id,
+          sessionId: m.sessionId,
+          message,
+          card: {
+            ...card,
+            quoteId: card.quoteId ?? q?.id ?? null,
+            totalCostCents: q?.totalCostCents ?? card.totalCostCents ?? null,
+            costSheetFileUrl: q?.costSheetFileUrl ?? card.costSheetFileUrl ?? null,
+            costSheetFileName: q?.costSheetFileName ?? card.costSheetFileName ?? null,
+            notes: q?.notes ?? card.notes ?? null,
+            // Cancellation lives on the card, not the quote - there is no
+            // cancelledAt column on ProviderQuote.
+            cancelledAt: card.cancelledAt ?? null,
+            supersededAt: q?.supersededAt ?? null,
+            paymentSchedule: q?.paymentSchedule ?? card.paymentSchedule ?? null,
+          },
+        },
+      });
+      continue;
+    }
+
+    // ACCESS: a file's only owner is the thread it was posted in.
+    if (!ctx.sessionOrg.has(m.sessionId)) continue;
+    if (!card.url) continue;                       // nothing to open - not a real file card
+    out.push({
+      ...base,
+      id: `att-${m.id}`,
+      eventType: "FILE_SHARED",
       detail: {
         type: "attachment",
         messageId: m.id,
         sessionId: m.sessionId,
-        message: line ? String(line).replace(/\[\[.*?\]\]/g, "").trim() || null : null,
+        message,
         senderName: m.senderName || null,
         url: card.url,
         originalName: card.originalName ?? null,
@@ -595,9 +659,14 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     }),
     prisma.providerQuote.findMany({
       where: { parentUserId: { in: memberIds }, ...(scopeProviderId ? { providerId: scopeProviderId } : {}) },
+      // Wide enough for the shared cost-sheet card the timeline mounts: it
+      // draws the file link, the notes and the frozen payment schedule, and a
+      // thinner row made every one of them silently undefined.
       select: {
         id: true, providerId: true, sessionId: true, totalCostCents: true,
         supersededAt: true, parentAcknowledgedAt: true, createdAt: true,
+        costSheetFileUrl: true, costSheetFileName: true, notes: true,
+        paymentSchedule: true, source: true,
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -865,6 +934,12 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     // doctor favourites are keyed by slug, clinic/agency by providerId
     const kind: SubjectKind = row.entityType === "doctor" ? "doctor" : row.entityType === "agency" ? "agency" : "clinic";
     const orgId = kind === "doctor" ? null : row.entityId;
+    // "Saved, NOT contacted" - the donor loop has always checked this and this
+    // one never did, so a clinic the family is mid-consultation with was
+    // listed as a cold favourite directly under its own live thread. A clinic
+    // thread carries the org's own id as its subject, so the same set answers
+    // both shapes.
+    if (chattedProfileIds.has(row.entityId)) continue;
     if (scopeProviderId && orgId !== scopeProviderId) continue;
     if (scopeProviderId && kind === "doctor") continue; // cannot attribute a slug to an org here
     const org = orgId ? orgById.get(orgId) : null;

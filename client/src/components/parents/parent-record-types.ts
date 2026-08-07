@@ -182,6 +182,14 @@ export type ActivityDetail =
   | { type: "whisper"; whisperId: string; question: string; answer: string | null; status: string }
   | { type: "ip_form"; responseId: string; submittedAt: string | null }
   | {
+      type: "cost_sheet_card";
+      messageId: string; sessionId: string;
+      /** The chat line the sheet arrived with, written for THIS viewer. */
+      message: string | null;
+      /** uiCardData as the chat card consumes it, refreshed from the quote. */
+      card: any;
+    }
+  | {
       type: "attachment";
       messageId: string; sessionId: string;
       /** The chat line the file arrived with, written for THIS viewer. */
