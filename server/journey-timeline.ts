@@ -263,8 +263,15 @@ export async function buildJourneyTimelines(
     const everScheduledAt = earliestCreatedAt(scopedBookings);
     const lastNoShowAt = latestMissedAt(noShows);
     // Consultation rung evidence: match calls have their own rung, so they
-    // never prove the consultation rungs.
-    const consultBookings = scopedBookings.filter((bk) => bk.meetingSubtype !== "MATCH_CALL");
+    // never prove the consultation rungs. On IVF the Doctor Call is its own
+    // rung for the same reason - the first call is with the clinic, the
+    // Doctor Call is with the physician, and readiness/handoff hang off the
+    // latter (see video.controller: IVF readiness fires ONLY after it).
+    const splitsDoctorCall = journeyType === "ivf";
+    const consultBookings = scopedBookings.filter(
+      (bk) => bk.meetingSubtype !== "MATCH_CALL"
+        && !(splitsDoctorCall && bk.meetingSubtype === "DOCTOR_CONSULTATION"),
+    );
     const liveConsult = liveOf(consultBookings);
     const completedConsult = completedOf(consultBookings);
     const noShowConsults = noShowsOf(consultBookings);
@@ -284,6 +291,21 @@ export async function buildJourneyTimelines(
     const noShowMatchCalls = noShowsOf(matchCallBookings);
     const matchCallScheduledAt = liveMatchCall.length > 0 || completedMatchCall.length > 0 || noShowMatchCalls.length > 0 ? earliestCreatedAt(matchCallBookings) : null;
     const lastMatchNoShowAt = latestMissedAt(noShowMatchCalls);
+    // Doctor Call rung evidence (IVF ladder): same rules again.
+    const doctorCallBookings = scopedBookings.filter((bk) => bk.meetingSubtype === "DOCTOR_CONSULTATION");
+    const liveDoctorCall = liveOf(doctorCallBookings);
+    const completedDoctorCall = completedOf(doctorCallBookings);
+    const noShowDoctorCalls = noShowsOf(doctorCallBookings);
+    const doctorCallScheduledAt =
+      liveDoctorCall.length > 0 || completedDoctorCall.length > 0 || noShowDoctorCalls.length > 0
+        ? earliestCreatedAt(doctorCallBookings)
+        : null;
+    const doctorCallCompletedAt = completedDoctorCall.length > 0
+      ? completedDoctorCall.reduce<Date | null>((min, bk) => (!min || bk.scheduledAt < min ? bk.scheduledAt : min), null)
+      : null;
+    const lastDoctorCallNoShowAt = latestMissedAt(noShowDoctorCalls);
+    const showDoctorCallNoShow =
+      noShowDoctorCalls.length > 0 && completedDoctorCall.length === 0 && liveDoctorCall.length === 0;
 
     // Session scoping (see opts.sessionId doc): money/terminal evidence only.
     const sid = opts?.sessionId || null;
@@ -393,11 +415,25 @@ export async function buildJourneyTimelines(
       const ivfIpFormRungs: Rung[] = ipFormResponse?.submittedAt
         ? [{ id: "ip_form_submitted", label: "Parent Form Submitted", at: ipFormResponse.submittedAt, dropIfPassed: true, doneWhenReached: true }]
         : [];
+      // The Doctor Call is a real, separate step on an IVF journey - the
+      // clinic consultation comes first, then the call with the physician.
+      // It was missing entirely: DOCTOR_CONSULTATION bookings were folded
+      // into the consultation rungs, and the only reason a second call ever
+      // appeared here was a mis-stamped thread borrowing the agency ladder's
+      // "Match Call". dropIfPassed so journeys that never had one stay clean.
+      const doctorCallRungs: Rung[] = [
+        { id: "doctor_call_scheduled", label: "Doctor Call Scheduled", at: doctorCallScheduledAt, dropIfPassed: true },
+        ...(showDoctorCallNoShow
+          ? [{ id: "doctor_call_no_show", label: "No Show", at: lastDoctorCallNoShowAt, tone: "warning" as const }]
+          : []),
+        { id: "doctor_call_completed", label: "Doctor Call Completed", at: doctorCallCompletedAt, dropIfPassed: true },
+      ];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
         { id: "exploring", label: "Exploring Profiles", at: exploringAt },
         ...consultRungs,
         ...ivfIpFormRungs,
+        ...doctorCallRungs,
         ...moneyRungs(true),
         { id: "handed_off", label: "Handed Off", at: handoffAt },
       ];

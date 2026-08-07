@@ -471,11 +471,29 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
         {detail.hasResponse ? (
           <Row label="Your reply">{detail.responseText}</Row>
         ) : (
-          <Button size="sm" variant="outline" className="mt-1" // This page has no tabs; ?tab=reviews was inert and left you mid-page.
-            // `?review=` is what it actually honours, and the hash is the
-            // fallback if the effect ever misses.
-            onClick={() => navigate(`/providers/${detail.providerId}?review=${detail.reviewId}#parent-reviews-section`)} data-testid={`btn-review-reply-${detail.reviewId}`}>
-            <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Reply to review
+          // Where the REPLY BOX actually lives. The provider profile only
+          // DISPLAYS reviews - ReviewsSection has no reply affordance - so
+          // sending a provider there handed them a button that led to a page
+          // where they could read their review and do nothing about it.
+          // ProviderReviewsPanel, which owns the reply and flag actions, is on
+          // /performance. Admins have no such panel, so they go to the profile,
+          // where ?review= now scrolls to the section (?tab=reviews was inert:
+          // that page has no tabs at all).
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-1"
+            onClick={() =>
+              navigate(
+                viewerRole === "provider"
+                  ? `/performance?tab=reviews&review=${detail.reviewId}`
+                  : `/providers/${detail.providerId}?review=${detail.reviewId}#parent-reviews-section`,
+              )
+            }
+            data-testid={`btn-review-reply-${detail.reviewId}`}
+          >
+            <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+            {viewerRole === "provider" ? "Reply to review" : "Open review"}
           </Button>
         )}
       </div>
