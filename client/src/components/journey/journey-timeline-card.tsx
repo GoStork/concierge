@@ -171,13 +171,11 @@ function stageLabelClass(stage: StageOut): string {
  * a ladder. The caller's job is to give this enough room; below `lg` the
  * record page switches to the vertical ladder instead of squeezing.
  */
-function StageColumn({ stage, isFirst, isLast, branch, branchChip }: {
+function StageColumn({ stage, isFirst, isLast, branch }: {
   stage: StageOut;
   isFirst: boolean;
   isLast: boolean;
   branch?: StageOut;
-  /** Attention label rendered under the branch it is about. */
-  branchChip?: string | null;
 }) {
   // The connector is drawn as two half-width rails either side of the dot, so
   // every segment meets its neighbour exactly at the column boundary - no
@@ -260,15 +258,6 @@ function StageColumn({ stage, isFirst, isLast, branch, branchChip }: {
           <div className="px-1 pt-1 text-center">
             <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(branch)}`}>{branch.label}</p>
             {branch.reachedAt && <p className="t-helper leading-4">{fmtDate(branch.reachedAt)}</p>}
-            {branchChip && (
-              <span
-                className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-[10px] font-medium"
-                data-testid="journey-attention-chip"
-              >
-                <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
-                {branchChip}
-              </span>
-            )}
           </div>
         </>
       )}
@@ -334,14 +323,6 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
     }
     mainStages.push(st);
   }
-  // Which branch rung, if any, the attention chip is about: a "no_show"
-  // warning belongs beside a *_no_show branch, a "canceled" one beside a
-  // *_canceled branch.
-  const branchStages = Array.from(branchBySibling.values());
-  const attentionBranchId =
-    journey.attention?.kind === "no_show" ? branchStages.find((b) => b.id.endsWith("no_show"))?.id ?? null
-    : journey.attention?.kind === "canceled" ? branchStages.find((b) => b.id.endsWith("canceled"))?.id ?? null
-    : null;
   return (
     <div data-testid={`journey-${journey.journeyType}-${journey.providerId}`}>
       {/* One row: provider name with the service tag at its right. The name
@@ -357,12 +338,13 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
           {journey.typeLabel}
         </span>
       </div>
-      {/* A call-level warning renders NEXT TO the branch rung it is about on
-          the horizontal ladder (see StageColumn), where there is room and the
-          adjacency says which call it means. It stays up here when no
-          matching branch is on the ladder (evidence expired, vertical rail)
-          and for journey-level states like dormant or clearance-failed. */}
-      {journey.attention && !(horizontal && attentionBranchId) && (
+      {/* No attention chip on the horizontal ladder at all - with four of
+          them stacked on the record it was one label too many, and the red
+          Canceled / amber No Show branches already say what went sideways.
+          The compact vertical rails keep it: they show a single journey, and
+          the chip doubles as the "needs chasing" cue the parent home builds
+          its to-do from. */}
+      {journey.attention && !horizontal && (
         <div className="flex items-center gap-1.5 px-2.5 py-1 mb-2 rounded-full bg-[hsl(var(--brand-warning))]/10 text-[hsl(var(--brand-warning))] text-xs font-medium w-fit" data-testid="journey-attention-chip">
           <AlertTriangle className="w-3 h-3" />
           {journey.attention.label}
@@ -380,11 +362,6 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
                 isFirst={i === 0}
                 isLast={i === mainStages.length - 1}
                 branch={branchBySibling.get(st.id)}
-                branchChip={
-                  branchBySibling.get(st.id)?.id === attentionBranchId
-                    ? journey.attention?.label ?? null
-                    : null
-                }
               />
             ))}
           </div>
