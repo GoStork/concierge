@@ -420,6 +420,15 @@ export type ConsentGate =
   | "BOTH_PARENTS"
   | "DECISION_WINDOW";
 
+/**
+ * The preliminary-step fork. MATCH_INTEREST = the parent is seriously
+ * considering this profile (the agency preps for the call as real interest).
+ * INFO_ONLY = still researching, wants a general information call - the call
+ * happens either way, but the provider is told honestly which one it is and
+ * no "a family wants her" signal is created for the profile.
+ */
+export type ConsultIntent = "MATCH_INTEREST" | "INFO_ONLY";
+
 /** uiCardType per gate. Registered in parent-visibility.ts + both card dispatchers. */
 export const GATE_CARD_TYPE: Record<ConsentGate, string> = {
   PRELIMINARY_STEP: "consult_preliminary_ack",
@@ -629,6 +638,44 @@ async function hasAck(input: {
     }
   }
   return null;
+}
+
+/**
+ * Which fork did this family choose on the newest preliminary ack for this
+ * provider (+ subject)? Resolved from the JourneyEvent at read time - nothing
+ * stored - so the booking flow can label the call honestly for the provider.
+ * Defaults to MATCH_INTEREST: every ack before the fork existed was exactly
+ * that, and a wrong "info only" label would understate real interest.
+ */
+export async function latestConsultIntent(input: {
+  parentUserId: string;
+  providerId: string;
+  subjectProfileId?: string | null;
+  client?: any;
+}): Promise<ConsultIntent> {
+  const prisma = await db(input.client);
+  const accountId = await resolveParentAccountId(input.parentUserId, input.client);
+  const rows = await prisma.journeyEvent
+    .findMany({
+      where: {
+        parentAccountId: accountId,
+        providerId: input.providerId,
+        eventType: GATE_EVENT_TYPE.PRELIMINARY_STEP,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: { metadata: true },
+    })
+    .catch(() => [] as any[]);
+  for (const r of rows || []) {
+    const acked = (r.metadata as any)?.subjectProfileId ?? null;
+    // Same subject scoping as hasAck: a subject-scoped ack must match; an
+    // unscoped legacy ack counts.
+    if (!input.subjectProfileId || !acked || acked === input.subjectProfileId) {
+      return (r.metadata as any)?.consultIntent === "INFO_ONLY" ? "INFO_ONLY" : "MATCH_INTEREST";
+    }
+  }
+  return "MATCH_INTEREST";
 }
 
 /** Newest booking of a kind for this family + provider, as the ack cutoff. */
@@ -995,7 +1042,8 @@ export async function postPreliminaryAckCard(input: {
       `Before we open the calendar, we want to be upfront about what this call is. It's the first step toward a match call with ${subject} specifically, not a general information session. ` +
       `Once it's booked, ${displayName} treats it as real interest: they prepare for the call around ${subject} and start thinking seriously about fit with your family. ` +
       `It's still completely free and nothing is binding - this just makes sure everyone walks into the call on the same page. ` +
-      `If ${subject} is someone you're seriously considering, confirm below and the calendar will open right here.`,
+      `If ${subject} is someone you're seriously considering, confirm below and the calendar will open right here. ` +
+      `Still exploring? That's completely fine too - choose the info call option instead and you can talk with the agency without signaling commitment to ${subject}.`,
     cardData: {
       providerId: input.providerId,
       providerDisplayName: displayName,
@@ -1089,6 +1137,13 @@ export async function recordGateAck(input: {
   depositSnapshot?: DepositSnapshot | null;
   /** What the provider's sheet said at click time, when it differs. */
   liveDepositAtAck?: DepositSnapshot | null;
+  /**
+   * PRELIMINARY_STEP only: which fork the parent chose. MATCH_INTEREST is the
+   * classic "I understand" (real interest in this profile); INFO_ONLY means
+   * they are still researching and want a general information call. Both
+   * satisfy the gate - the difference is what the PROVIDER is told at booking.
+   */
+  consultIntent?: ConsultIntent | null;
 }): Promise<void> {
   await emitEvent({
     eventType: GATE_EVENT_TYPE[input.gate],
@@ -1101,6 +1156,9 @@ export async function recordGateAck(input: {
       subjectType: input.subjectType ?? null,
       actorUserId: input.actorUserId ?? null,
       actorName: input.actorName ?? null,
+      ...(input.gate === "PRELIMINARY_STEP" && input.consultIntent
+        ? { consultIntent: input.consultIntent }
+        : {}),
       // The figure the parent was actually shown, frozen at the moment they
       // ticked. This is the part that matters if anyone ever disputes it.
       ...(input.gate === "DECISION_WINDOW" && input.depositSnapshot

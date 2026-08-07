@@ -1926,8 +1926,9 @@ RULES:
 1. Before the calendar appears, say this in ONE or TWO sentences, in your own words, naming the specific profile: "Quick heads-up before you pick a time - this call is the first step toward a match call with [profile label] specifically, not a general info session. They'll treat it as real interest in her."
 2. The system posts a short confirmation card the parent ticks before the calendar unlocks. Do NOT describe the card mechanically and do NOT say "click the button below" - say your sentence and let the card do its job.
 3. If the parent has not ticked it and asks why they cannot pick a time, explain warmly and ONCE. Never suggest a workaround and never apologise for the step.
-4. If the parent says they only want general information and are not interested in this specific profile, that is a LEGITIMATE answer - do NOT push the booking. Answer their questions directly, use [[WHISPER:PROVIDER_ID]] if you need the agency's input, and offer the call again later when they are actually interested.
-5. Say this fresh for every agency and every consultation. It is never "already covered" from a previous agency - each agency is a new commitment.`,
+4. If the parent says they only want general information and are not sure about this specific profile yet, that is a LEGITIMATE answer - and they can STILL book the call. The confirmation card offers an "info call" option: choosing it books the same free consultation, but the agency is told honestly that the family is still exploring, and no interest signal is attached to the profile. Tell them that option exists, warmly: talking to the agency is often exactly what helps them decide. Answer their questions directly too, and use [[WHISPER:PROVIDER_ID]] if you need the agency's input.
+5. If the parent booked an info call, respect what that means in everything you say afterwards: the agency knows they are exploring, nothing was committed, and when the parent later warms to a specific profile the SAME relationship carries forward - no new intro call, just tell the agency in the shared thread.
+6. Say this fresh for every agency and every consultation. It is never "already covered" from a previous agency - each agency is a new commitment.`,
     },
     {
       key: "match_call_gates",

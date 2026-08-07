@@ -48,6 +48,7 @@ import {
   postPreliminaryAckCard,
   postMissingGateCards,
   expandParentAccount,
+  latestConsultIntent,
 } from "../../../consultation-gates";
 import { findConnectedProviderSession } from "../../../parent-visibility";
 import {
@@ -208,6 +209,20 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     if (!provider) return;
 
     const parentName = booking.parentUser.name || booking.attendeeName || "Parent";
+    // The preliminary-step fork the family chose: a general information call
+    // (still exploring) or real interest in the profile. Derived from the
+    // JourneyEvent ack at read time; defaults to MATCH_INTEREST. Only
+    // meaningful for subject-scoped agency consultations - never a match call.
+    const consultIntent =
+      body.meetingSubtype || !body.subjectProfileId
+        ? "MATCH_INTEREST"
+        : await latestConsultIntent({
+            parentUserId,
+            providerId: consultProviderId,
+            subjectProfileId: body.subjectProfileId,
+            client: this.prisma,
+          }).catch(() => "MATCH_INTEREST" as const);
+    const isInfoOnly = consultIntent === "INFO_ONLY";
     // Session title guard lives in server/subject-session-title.ts - the
     // already-connected-agency shortcut opens threads too, and the dedupe key
     // is (accountUserIds, providerId, title), so both paths must derive the
@@ -324,11 +339,17 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
         // directly. The parent was previously served the provider's copy and
         // read about themselves in the third person ("Eran Amir has scheduled
         // a consultation") in their own chat.
-        content: `You're all set - your consultation with ${provider.name} is booked. You can message them directly here any time before the call.`,
+        content: isInfoOnly
+          ? `You're all set - your information call with ${provider.name} is booked. They know you're still exploring, so come with all your questions. You can message them directly here any time before the call.`
+          : `You're all set - your consultation with ${provider.name} is booked. You can message them directly here any time before the call.`,
         senderType: "system",
         senderName: "GoStork",
         uiCardData: {
-          providerContent: `Great news! ${parentName} has scheduled a consultation. You can chat with them directly here.`,
+          // Honest labeling IS the provider protection: an info call must
+          // never read as "a family wants her" to the agency.
+          providerContent: isInfoOnly
+            ? `${parentName} has scheduled a general information call. They're still exploring their options and haven't committed to a specific match yet - a great chance to answer their questions. You can chat with them directly here.`
+            : `Great news! ${parentName} has scheduled a consultation. You can chat with them directly here.`,
         } as any,
         createdAt: announcementCreatedAt,
       },
@@ -386,7 +407,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
           payload: {
             sessionId: targetSessionId,
             parentName,
-            message: `${parentName} scheduled a consultation - you can chat with them directly.`,
+            message: isInfoOnly
+              ? `${parentName} scheduled a general information call (still exploring) - you can chat with them directly.`
+              : `${parentName} scheduled a consultation - you can chat with them directly.`,
           },
         },
       });
@@ -407,7 +430,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
             parentUserId,
             providerId: consultProviderId,
             providerName: provider.name,
-            message: `${parentName} requested a consultation with ${provider.name}`,
+            message: isInfoOnly
+              ? `${parentName} requested a general information call with ${provider.name}`
+              : `${parentName} requested a consultation with ${provider.name}`,
           },
         },
       });

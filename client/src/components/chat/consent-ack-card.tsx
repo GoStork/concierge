@@ -56,6 +56,8 @@ export interface ConsentAckData {
   providerContent?: string | null;
   acknowledgedAt?: string | null;
   acknowledgedByName?: string | null;
+  /** PRELIMINARY_STEP fork: how the parent answered. */
+  consultIntent?: "MATCH_INTEREST" | "INFO_ONLY" | null;
 }
 
 interface ConsentAckCardProps {
@@ -139,12 +141,17 @@ export function ConsentAckCard({
     };
   }, [isProvider, acknowledgedAt, data.providerId, data.gate, data.subjectProfileId, data.subjectType]);
 
-  const handleAcknowledge = async () => {
+  const [chosenIntent, setChosenIntent] = useState<"MATCH_INTEREST" | "INFO_ONLY" | null>(
+    data.consultIntent ?? null,
+  );
+
+  const handleAcknowledge = async (consultIntent: "MATCH_INTEREST" | "INFO_ONLY" = "MATCH_INTEREST") => {
     if (saving) return;
     setSaving(true);
     // Optimistic: the tick is the whole interaction, so it must feel instant.
     const optimistic = new Date().toISOString();
     setAcknowledgedAt(optimistic);
+    setChosenIntent(consultIntent);
     try {
       const res = await fetch("/api/consultation-gates/acknowledge", {
         method: "POST",
@@ -157,6 +164,7 @@ export function ConsentAckCard({
           subjectType: data.subjectType ?? null,
           sessionId,
           messageId,
+          consultIntent,
         }),
       });
       if (!res.ok) throw new Error(`Acknowledge failed (${res.status})`);
@@ -165,6 +173,7 @@ export function ConsentAckCard({
       // Roll back rather than pretending it saved - the provider's booking
       // still 409s and a green tick would make that inexplicable.
       setAcknowledgedAt(null);
+      setChosenIntent(data.consultIntent ?? null);
       console.error("[consent-ack]", e);
     } finally {
       setSaving(false);
@@ -184,7 +193,8 @@ export function ConsentAckCard({
         style={{ background: "hsl(var(--brand-success) / 0.1)", color: "hsl(var(--brand-success))" }}
       >
         <Check className="w-3.5 h-3.5" />
-        Confirmed{data.acknowledgedByName ? ` by ${data.acknowledgedByName}` : ""}
+        {chosenIntent === "INFO_ONLY" ? "Info call requested" : "Confirmed"}
+        {data.acknowledgedByName ? ` by ${data.acknowledgedByName}` : ""}
       </div>
     );
   }
@@ -264,7 +274,7 @@ export function ConsentAckCard({
               type="button"
               variant="ghost"
               disabled={saving}
-              onClick={handleAcknowledge}
+              onClick={() => handleAcknowledge("MATCH_INTEREST")}
               className="transition-all hover:opacity-90 font-medium"
               style={{
                 ...chipBase,
@@ -279,6 +289,27 @@ export function ConsentAckCard({
               <Check className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />
               {GATE_BUTTON_LABEL[data.gate]}
             </Button>
+            {data.gate === "PRELIMINARY_STEP" && (
+              // The fork: still-researching parents get the call too - the
+              // agency is just told honestly that it's an info call, and no
+              // "real interest" signal is attached to the profile.
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={saving}
+                onClick={() => handleAcknowledge("INFO_ONLY")}
+                className="transition-all hover:opacity-90 font-medium"
+                style={{
+                  ...chipBase,
+                  backgroundColor: "transparent",
+                  color: "hsl(var(--accent))",
+                  border: "1px solid hsl(var(--accent) / 0.45)",
+                }}
+                data-testid="consent-ack-info-only"
+              >
+                I'm still researching - book an info call
+              </Button>
+            )}
           </div>
         )}
 

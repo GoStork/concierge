@@ -3651,6 +3651,12 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
     if (!VALID_CONSENT_GATES.includes(gate)) {
       return res.status(400).json({ message: "Unknown gate" });
     }
+    // The preliminary-step fork: "I understand" (MATCH_INTEREST, the default)
+    // vs "I'm still researching" (INFO_ONLY). Anything else is ignored.
+    const consultIntent =
+      gate === "PRELIMINARY_STEP" && req.body?.consultIntent === "INFO_ONLY"
+        ? ("INFO_ONLY" as const)
+        : ("MATCH_INTEREST" as const);
     if (!providerId) return res.status(400).json({ message: "providerId is required" });
 
     // Only a member of the account that owns the card may tick it. Without
@@ -3701,6 +3707,7 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
       actorName: user.name || user.firstName || null,
       depositSnapshot: deposit,
       liveDepositAtAck: liveDeposit,
+      consultIntent: gate === "PRELIMINARY_STEP" ? consultIntent : null,
     });
 
     const acknowledgedAt = new Date();
@@ -3718,6 +3725,7 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
               ...((existing?.uiCardData as any) || {}),
               acknowledgedAt: acknowledgedAt.toISOString(),
               acknowledgedByName,
+              ...(gate === "PRELIMINARY_STEP" ? { consultIntent } : {}),
             } as any,
           },
         })
@@ -3740,10 +3748,18 @@ chatRouter.post("/api/consultation-gates/acknowledge", requireAuth, async (req: 
           data: {
             sessionId: cardSessionId,
             role: "assistant",
-            content: `Perfect, thank you for confirming! Here's the calendar - pick whichever time works best for you.`,
+            content:
+              consultIntent === "INFO_ONLY"
+                ? `Got it - a general information call it is, no commitment signaled. Here's the calendar, pick whichever time works best for you.`
+                : `Perfect, thank you for confirming! Here's the calendar - pick whichever time works best for you.`,
             deliveredAt: acknowledgedAt,
             uiCardType: "rich",
-            uiCardData: { consultationCard: shownCardData.pendingConsultationCard } as any,
+            uiCardData: {
+              consultationCard: {
+                ...shownCardData.pendingConsultationCard,
+                consultIntent,
+              },
+            } as any,
           },
         })
         .then(() => console.log(`[CONSENT] Released held consultation calendar in session ${cardSessionId}`))
