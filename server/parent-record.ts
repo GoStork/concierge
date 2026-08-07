@@ -32,6 +32,7 @@ import {
   resolveParentGates,
 } from "./parent-privacy";
 import { isGostorkStaff } from "./parent-crm";
+import { ALL_SESSION_PROVIDER_ROLES } from "../shared/roles";
 
 export class ParentRecordError extends Error {
   constructor(public status: number, message: string) {
@@ -1290,8 +1291,44 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     ])),
   });
 
+  // Tag every activity entry with the SERVICE LINE it belongs to, via its
+  // thread (directly, or through its booking's thread). Untaggable entries
+  // stay null and are always shown - the client's "My services" filter must
+  // never hide something it cannot attribute.
+  {
+    const bookingSessionById = new Map((bookings as any[]).map((b: any) => [b.id, b.sessionId || null]));
+    for (const e of activity as any[]) {
+      const sid =
+        e.sessionId
+        || (e.detail?.bookingId ? bookingSessionById.get(e.detail.bookingId) : null)
+        || e.detail?.booking?.sessionId
+        || null;
+      e.serviceLine = sid ? lineOfSessionId.get(sid) ?? null : null;
+    }
+  }
+
+  // Which service lines the VIEWER covers, for the record page's default
+  // "My services" scope. null = sees everything (admins, provider admins and
+  // other cross-subject roles). Derived from the same role vocabulary the
+  // session access check uses (shared/roles.ts) - this is a display default,
+  // not an access control; canProviderAccessSession stays the gate.
+  const viewerServiceLines: string[] | null = (() => {
+    if (isAdmin) return null;
+    const roles: string[] = (user?.roles as string[]) || [];
+    if (roles.some((r) => (ALL_SESSION_PROVIDER_ROLES as readonly string[]).includes(r))) return null;
+    const lines = new Set<string>();
+    for (const r of roles) {
+      if (r === "IP_SURROGACY_COORDINATOR" || r === "SURROGATE_COORDINATOR") lines.add("surrogacy");
+      if (r === "IP_EGG_DONOR_COORDINATOR" || r === "EGG_DONOR_COORDINATOR") lines.add("egg_donation");
+      if (r === "IP_SPERM_DONOR_COORDINATOR" || r === "SPERM_DONOR_COORDINATOR") lines.add("egg_donation");
+      if (r === "IP_IVF_COORDINATOR") lines.add("ivf");
+      if (r === "IP_LEGAL_COORDINATOR") lines.add("legal");
+    }
+    return lines.size ? Array.from(lines) : null;
+  })();
+
   return {
-    viewer: { role: isAdmin ? "admin" : "provider", providerId: scopeProviderId },
+    viewer: { role: isAdmin ? "admin" : "provider", providerId: scopeProviderId, serviceLines: viewerServiceLines },
     accountKey,
     parent: redactParentContact(parent as any, gates),
     accountMembers: redactParentMembers(members as any, gates),

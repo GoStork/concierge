@@ -11,6 +11,7 @@
  * /users/:id still exists for the account-admin job (password, roles,
  * calendars) and is reachable from the Account settings button in the header.
  */
+import { useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useMediaQuery } from "@/hooks/use-mobile";
@@ -93,6 +94,38 @@ export default function ParentDetailPage() {
 
   const isAdmin = record?.viewer.role === "admin";
 
+  // "My services" scope: a coordinator defaults to their own service lines
+  // (a surrogacy coordinator sees the surrogacy story, not the egg-donation
+  // one), with an "All services" toggle. Display only - access control stays
+  // server-side. In the URL per the house rule, so back keeps the scope.
+  const viewerLines = record?.viewer.serviceLines || null;
+  const scopeMode: "mine" | "all" = params.get("scope") === "all" ? "all" : "mine";
+  const setScopeMode = (mode: "mine" | "all") =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (mode === "all") next.set("scope", "all");
+      else next.delete("scope");
+      return next;
+    }, { replace: true });
+  /** subjectKind (conversations / saved profiles) -> service line. */
+  const kindLine = (k?: string | null): string | null =>
+    k === "surrogate" ? "surrogacy"
+      : k === "egg-donor" || k === "sperm-donor" ? "egg_donation"
+      : k === "doctor" || k === "clinic" ? "ivf"
+      : null;
+  const scopedRecord = useMemo(() => {
+    if (!record || !viewerLines?.length || scopeMode === "all") return record;
+    // Anything unattributable (null line) always shows - the scope narrows,
+    // it never hides what it cannot place.
+    const inLines = (line: string | null) => !line || viewerLines.includes(line);
+    return {
+      ...record,
+      activity: record.activity.filter((e) => inLines(e.serviceLine ?? null)),
+      conversations: record.conversations.filter((c) => inLines(kindLine(c.subjectKind))),
+      savedProfiles: record.savedProfiles.filter((p) => inLines(kindLine(p.subjectKind))),
+    };
+  }, [record, viewerLines, scopeMode]);
+
   return (
     <div className="flex flex-col min-h-[calc(100dvh-64px)]">
       <div className="flex-1 px-4 py-6">
@@ -112,7 +145,37 @@ export default function ParentDetailPage() {
             </div>
             {/* Page-level actions belong beside the page title, the way Add
                 Parent sits on /parents - not inside the profile card. */}
-            {record && isAdmin && <ParentRecordActions record={record} />}
+            <div className="flex items-center gap-3">
+              {/* Coordinator scope: only rendered when the viewer's roles
+                  actually narrow to specific service lines. */}
+              {record && !!viewerLines?.length && (
+                <div
+                  className="flex items-center gap-1 rounded-full border p-0.5"
+                  role="tablist"
+                  data-testid="record-scope-toggle"
+                >
+                  {([["mine", "My services"], ["all", "All services"]] as const).map(([mode, label]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="tab"
+                      aria-selected={scopeMode === mode}
+                      onClick={() => setScopeMode(mode)}
+                      className={cn(
+                        "rounded-full px-3 py-1 text-xs font-ui transition-colors",
+                        scopeMode === mode
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      data-testid={`record-scope-${mode}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {record && isAdmin && <ParentRecordActions record={record} />}
+            </div>
           </div>
           {isLoading && (
             <div className="flex flex-col items-center justify-center gap-3 py-12" data-testid="parent-record-loading">
@@ -229,7 +292,7 @@ export default function ParentDetailPage() {
                       sections of their own - writing a note adds an entry
                       here, which is where you would look for it anyway. */}
                   <RecordSection id="crm" title="Activity" open={isOpen("crm")} onToggle={toggle}>
-                    <ParentActivitySection record={record} />
+                    <ParentActivitySection record={scopedRecord || record} />
                   </RecordSection>
                 </div>
 
@@ -239,11 +302,11 @@ export default function ParentDetailPage() {
                     <RecordSection
                       id="interested"
                       title="Interested profiles"
-                      count={record.conversations.length + record.savedProfiles.length}
+                      count={(scopedRecord || record).conversations.length + (scopedRecord || record).savedProfiles.length}
                       open={isOpen("interested")}
                       onToggle={toggle}
                     >
-                      <InterestedProfilesSection record={record} groupByProvider={!!isAdmin} />
+                      <InterestedProfilesSection record={scopedRecord || record} groupByProvider={!!isAdmin} />
                     </RecordSection>
 
                     <RecordSection

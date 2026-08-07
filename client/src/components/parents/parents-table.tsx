@@ -35,6 +35,7 @@ import {
   ParentAgreementsCell,
   ParentCostSheetsCell,
   ParentInvoicesCell,
+  SERVICE_LABELS,
   ServiceChips,
   TagsCell,
   dedupeHouseholdPhones,
@@ -258,7 +259,26 @@ export function ParentsTable({
                   <ServiceChips services={row.services} limit={1} testId={`chips-services-${row.id}`} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <MatchStatusBadge status={row.matchStatus} />
+                  {row.serviceStatuses && row.serviceStatuses.length > 1 ? (
+                    // A family running several service lines with this org
+                    // has one true status PER LINE - a single most-advanced
+                    // badge was how a brand-new surrogacy thread read
+                    // "Handed Off" off the egg-donation journey.
+                    <div className="flex flex-col gap-1" data-testid={`match-statuses-${row.id}`}>
+                      {row.serviceStatuses.map((ss) => (
+                        <div key={ss.serviceKey || "untyped"} className="flex items-center gap-1.5">
+                          {ss.serviceKey && (
+                            <span className="t-helper text-xs whitespace-nowrap">
+                              {SERVICE_LABELS[ss.serviceKey] || ss.serviceKey}
+                            </span>
+                          )}
+                          <MatchStatusBadge status={ss.status} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <MatchStatusBadge status={row.matchStatus} />
+                  )}
                 </TableCell>
                 <TableCell className="hidden 2xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentCostSheetsCell

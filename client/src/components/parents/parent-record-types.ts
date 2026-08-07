@@ -150,6 +150,12 @@ export interface ActivityEntry {
   aiName: string | null;
   aiAvatarUrl: string | null;
   detail: ActivityDetail | null;
+  /**
+   * The service line this entry belongs to via its thread ("surrogacy",
+   * "egg_donation", "ivf", "legal"), or null when it cannot be attributed -
+   * null entries are always shown regardless of the viewer's scope.
+   */
+  serviceLine?: string | null;
 }
 
 export type ActivityDetail =
@@ -200,7 +206,16 @@ export type ActivityDetail =
     };
 
 export interface ParentRecord {
-  viewer: { role: "admin" | "provider"; providerId: string | null };
+  viewer: {
+    role: "admin" | "provider";
+    providerId: string | null;
+    /**
+     * The service lines the viewer's coordinator roles cover; null = sees
+     * everything (admins, provider admins, cross-subject roles). Drives the
+     * record page's default "My services" scope - display only, not access.
+     */
+    serviceLines?: string[] | null;
+  };
   accountKey: string;
   parent: SessionUser;
   accountMembers: AccountMember[];
@@ -246,6 +261,13 @@ export interface ParentTableRow {
   contactReleased: boolean;
   services: string[];
   matchStatus: string | null;
+  /**
+   * Provider table, per-family rows: one most-advanced status per SERVICE
+   * LINE (a handed-off egg-donation journey and a fresh surrogacy
+   * consultation are both true). serviceKey null = untyped threads only.
+   * Absent/single-entry rows render the plain matchStatus badge.
+   */
+  serviceStatuses?: { serviceKey: string | null; status: string }[];
   costSheets: any[];
   invoices: any[];
   agreements: any[];

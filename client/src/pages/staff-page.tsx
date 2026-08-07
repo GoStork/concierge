@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
+import { JOURNEY_STAGE_ORDER } from "@shared/journey-ladder";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
@@ -467,10 +468,68 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
     },
   });
 
+  // ── One row per FAMILY, like the admin table ─────────────────────────────
+  // The endpoint returns one row per chat thread (the side panels need that
+  // granularity), but three near-identical rows for one family made the table
+  // read as three different parents. Collapse client-side: services become
+  // the union, statuses become one most-advanced status PER SERVICE LINE
+  // (a handed-off egg-donation journey and a fresh surrogacy consultation
+  // are both true - show both), documents concatenate.
+  const stageRank = (s: string | null | undefined) =>
+    s ? (JOURNEY_STAGE_ORDER as readonly string[]).indexOf(s) : -1;
+  const grouped = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const p of parents || []) {
+      const key = (p.members || []).length
+        ? (p.members as any[]).map((m) => m.id).sort().join("|")
+        : String(p.id || p.rowId);
+      let g = map.get(key);
+      if (!g) {
+        g = { ...p, rowId: `acct-${key}`, threads: [] };
+        map.set(key, g);
+      }
+      g.threads.push(p);
+    }
+    for (const g of map.values()) {
+      const threads: any[] = g.threads;
+      const svc = new Set<string>();
+      for (const t of threads) if (t.serviceType) svc.add(t.serviceType);
+      if (svc.size === 0) for (const k of threads[0]?.profileServiceKeys || []) svc.add(k);
+      g.services = Array.from(svc);
+      const byLine = new Map<string, string>();
+      let untypedBest: string | null = null;
+      for (const t of threads) {
+        if (!t.matchStatus) continue;
+        if (t.serviceType) {
+          const cur = byLine.get(t.serviceType);
+          if (!cur || stageRank(t.matchStatus) > stageRank(cur)) byLine.set(t.serviceType, t.matchStatus);
+        } else if (stageRank(t.matchStatus) > stageRank(untypedBest)) {
+          untypedBest = t.matchStatus;
+        }
+      }
+      g.serviceStatuses = Array.from(byLine.entries()).map(([serviceKey, status]) => ({ serviceKey, status }));
+      if (g.serviceStatuses.length === 0 && untypedBest) {
+        g.serviceStatuses = [{ serviceKey: null, status: untypedBest }];
+      }
+      g.matchStatus = threads.reduce(
+        (best: string | null, t: any) => (stageRank(t.matchStatus) > stageRank(best) ? t.matchStatus : best),
+        null,
+      );
+      g.invoices = threads.flatMap((t: any) => t.invoices || []);
+      g.costSheets = threads.flatMap((t: any) => t.costSheets || []);
+      g.agreements = threads.flatMap((t: any) => t.agreements || []);
+      g.sessionCreatedAt = threads.map((t: any) => t.sessionCreatedAt).filter(Boolean).sort()[0] || null;
+      g.sessionUpdatedAt = threads.map((t: any) => t.sessionUpdatedAt).filter(Boolean).sort().pop() || null;
+      g.ipFormStatus = threads.find((t: any) => t.ipFormStatus)?.ipFormStatus ?? null;
+    }
+    return Array.from(map.values());
+  }, [parents]);
+
   const filtered = sortData(
-    (parents || []).filter(p => {
-      if (!matchesMulti(serviceFilter, p.serviceType)) return false;
-      if (!matchesMulti(statusFilter, p.matchStatus)) return false;
+    grouped.filter(p => {
+      if (!matchesMultiAny(serviceFilter, p.services)) return false;
+      // Status filter matches if ANY of the family's per-line statuses match.
+      if (statusFilter.length && !(p.serviceStatuses || []).some((ss: any) => matchesMulti(statusFilter, ss.status))) return false;
       if (!matchesIpForm(formFilter, p.ipFormStatus)) return false;
       if (!matchesCrmFilters(p, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
       if (dateFrom && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) < new Date(`${dateFrom}T00:00:00`))) return false;
@@ -486,9 +545,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
     // did nothing at all, and email and mobile were missing outright.
     (p: any, key: string) => parentSortValue(key, {
       name: p.name, email: p.email, mobile: p.mobileNumber,
-      // Thread subject first, the family's own stated services as fallback -
-      // a CountryProgram thread has no subject-derived service.
-      services: p.serviceType ? [p.serviceType] : (p.profileServiceKeys || []),
+      services: p.services || [],
       matchStatus: p.matchStatus,
       createdAt: p.sessionCreatedAt, updatedAt: p.sessionUpdatedAt,
       costSheets: p.costSheets, invoices: p.invoices, agreements: p.agreements,
@@ -533,8 +590,9 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           members: row.members || [],
           householdNames: (row.members || []).length > 1 ? (row.members || []).map((m: any) => m.name) : undefined,
           contactReleased: !!row.contactReleased,
-          services: row.serviceType ? [row.serviceType] : (row.profileServiceKeys || []),
+          services: row.services || [],
           matchStatus: row.matchStatus ?? null,
+          serviceStatuses: row.serviceStatuses || [],
           costSheets: row.costSheets || [],
           invoices: row.invoices || [],
           agreements: row.agreements || [],
