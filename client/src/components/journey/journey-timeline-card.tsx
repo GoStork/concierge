@@ -103,11 +103,16 @@ function fmtDate(iso: string | null): string | null {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function StageRow({ stage, isLast }: { stage: StageOut; isLast: boolean }) {
+function StageRow({ stage, isLast, stripMarkTone }: { stage: StageOut; isLast: boolean; stripMarkTone?: boolean }) {
   return (
     <div className="flex gap-2.5" data-testid={`journey-stage-${stage.id}`}>
       <div className="flex flex-col items-center">
-        <StageMark stage={stage} />
+        {/* A branch dot draws as a standard stage dot - the fork already says
+            something went sideways - but the LABEL keeps its warning tone.
+            The old code stripped tone from the whole stage, which silenced
+            the label too: the parent's No Show read as plain grey while the
+            provider's horizontal ladder showed it amber. */}
+        <StageMark stage={stripMarkTone ? { ...stage, tone: undefined } : stage} />
         {!isLast && <div className="w-px flex-1 min-h-[10px] bg-primary/50" />}
       </div>
       <div className={`${isLast ? "pb-0" : "pb-2.5"} min-w-0 flex-1`} style={isLast ? undefined : { minHeight: 42 }}>
@@ -279,7 +284,7 @@ function ForkRow({ main, branch, isLast }: { main: StageOut; branch: StageOut; i
         }}
       />
       <StageRow stage={main} isLast={isLast} />
-      <StageRow stage={{ ...branch, tone: undefined }} isLast />
+      <StageRow stage={branch} isLast stripMarkTone />
     </div>
   );
 }
