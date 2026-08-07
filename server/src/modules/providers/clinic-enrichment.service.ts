@@ -587,7 +587,7 @@ async function geminiAcquisitionSearch(
   const BASE_DELAY_MS = 2000;
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash",
     generationConfig: { temperature: 0 } as any,
     tools: [{ googleSearch: {} } as any],
   });
@@ -665,7 +665,7 @@ async function geminiWebsiteSearch(
   const BASE_DELAY_MS = 2000;
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash",
     generationConfig: { temperature: 0 } as any,
     tools: [{ googleSearch: {} } as any],
   });

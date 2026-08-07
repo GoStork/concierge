@@ -1269,7 +1269,7 @@ async function extractDonorsFromPage(
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash",
     generationConfig: { temperature: 0 } as any,
   });
 
@@ -1345,7 +1345,7 @@ IMPORTANT RULES:
 
 // Bounded concurrency for Gemini section-extraction calls. The nightly sync
 // processes donors in batches of 10 in parallel; firing 10 simultaneous calls
-// to gemini-2.5-flash routinely 429s, which used to silently drop ~40% of
+// to Gemini flash routinely 429s, which used to silently drop ~40% of
 // SBoC sperm donors to "no _sections" shape. Cap at 3 in-flight to stay
 // under the per-minute quota while keeping throughput reasonable.
 const GEMINI_EXTRACT_CONCURRENCY = 3;
@@ -1411,7 +1411,7 @@ async function extractProfileDetailSections(
     { category: "HARM_CATEGORY_DANGEROUS_CONTENT" as any, threshold: "BLOCK_ONLY_HIGH" as any },
   ];
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash",
     generationConfig: { temperature: 0 } as any,
     safetySettings,
   });
@@ -3940,7 +3940,7 @@ async function normalizeFieldsWithAI(fields: string[]): Promise<Record<string, s
 
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       generationConfig: { temperature: 0 } as any,
     });
 
@@ -7212,7 +7212,7 @@ async function processSinglePdf(
       (async () => {
         if (isJobCancelled(job.id)) return null;
         const model = genAI.getGenerativeModel({
-          model: "gemini-2.5-flash",
+          model: "gemini-3.5-flash",
           generationConfig: { responseMimeType: "application/json" },
         });
         let result: any;

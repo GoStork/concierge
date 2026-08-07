@@ -549,7 +549,7 @@ async function fetchTeamPage(url: string, timeoutMs = 45000): Promise<{ html: st
 async function searchYearFounded(companyName: string, websiteUrl: string): Promise<number | null> {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.5-flash",
       generationConfig: { temperature: 0 } as any,
       tools: [{ googleSearch: {} } as any],
     });
@@ -1525,7 +1525,7 @@ export async function scrapeProviderWebsite(websiteUrl: string, options: ScrapeO
   combinedTeamHtml = combinedTeamHtml.slice(0, 40000);
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash",
     generationConfig: {
       thinkingConfig: { thinkingBudget: 0 },
     } as any,
