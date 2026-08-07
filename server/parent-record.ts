@@ -804,7 +804,19 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   // Same predicate the timeline uses. Relationship-level: bookings are not
   // session-linked, so a completed consultation counts for the family.
   const consultCompleted = bookings.some(
-    (b: any) => b.meetingSubtype !== "MATCH_CALL" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"),
+    (b: any) => b.meetingSubtype !== "MATCH_CALL" && b.meetingSubtype !== "DOCTOR_CONSULTATION"
+      && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"),
+  );
+  // The Doctor Call has its own rungs in the shared vocabulary now - the
+  // ladder showed "Doctor Call Scheduled" while the badge still read the
+  // consultation stage, because the badge had no word for it. A CONFIRMED
+  // booking with a no-show outcome still proves Scheduled, same as the
+  // timeline.
+  const doctorCallCompleted = bookings.some(
+    (b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"),
+  );
+  const doctorCallScheduled = doctorCallCompleted || bookings.some(
+    (b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && ["PENDING", "CONFIRMED"].includes(b.status),
   );
 
   // The record was a THIRD copy of the ladder, alongside the two list
@@ -822,6 +834,8 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       matched: !!(prof && prof.kind === "surrogate" && prof.status === "MATCHED"),
       matchCallScheduled: !!(s.providerId && matchCallOrgs.has(s.providerId)),
       ipFormSubmitted: ipFormRow?.status === "SUBMITTED",
+      doctorCallScheduled,
+      doctorCallCompleted,
       consultCompleted: consultCompleted,
       consultScheduled: s.status === "CONSULTATION_BOOKED",
       connected: s.status === "PROVIDER_CONNECTED" || !!s.providerJoinedAt,

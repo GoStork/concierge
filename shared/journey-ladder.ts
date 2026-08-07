@@ -32,6 +32,8 @@ export const JOURNEY_STAGE_ORDER = [
   "consult_scheduled",
   "consult_completed",
   "ip_form_submitted",
+  "doctor_call_scheduled",
+  "doctor_call_completed",
   "match_call_scheduled",
   "matched",
   "invoice_sent",
@@ -46,9 +48,14 @@ export type JourneyStageId = (typeof JOURNEY_STAGE_ORDER)[number];
 export const JOURNEY_STAGE_LABELS: Record<JourneyStageId, string> = {
   registered: "Registered",
   exploring: "Exploring Profiles",
-  consult_scheduled: "Call Booked",
+  // Was "Call Booked", while the timeline rung beside it said "Consultation
+  // Scheduled" - one rung, two names, on the same screen. The timeline's
+  // wording wins, per this file's own rule.
+  consult_scheduled: "Consultation Scheduled",
   consult_completed: "Consultation Completed",
   ip_form_submitted: "Parent Form Submitted",
+  doctor_call_scheduled: "Doctor Call Scheduled",
+  doctor_call_completed: "Doctor Call Completed",
   match_call_scheduled: "Match Call",
   matched: "Matched",
   invoice_sent: "Invoice Sent",
@@ -68,6 +75,8 @@ export interface JourneyEvidence {
   consultScheduled?: boolean;
   consultCompleted?: boolean;   // outcome COMPLETED or UNVERIFIED
   ipFormSubmitted?: boolean;
+  doctorCallScheduled?: boolean;   // IVF only - the call with the physician
+  doctorCallCompleted?: boolean;
   matchCallScheduled?: boolean;
   matched?: boolean;
   invoiceSent?: boolean;
@@ -92,6 +101,8 @@ export function resolveJourneyStage(e: JourneyEvidence): JourneyStageId | null {
   if (e.invoiceSent) return "invoice_sent";
   if (e.matched) return "matched";
   if (e.matchCallScheduled) return "match_call_scheduled";
+  if (e.doctorCallCompleted) return "doctor_call_completed";
+  if (e.doctorCallScheduled) return "doctor_call_scheduled";
   if (e.ipFormSubmitted) return "ip_form_submitted";
   if (e.consultCompleted) return "consult_completed";
   if (e.consultScheduled || e.connected) return "consult_scheduled";

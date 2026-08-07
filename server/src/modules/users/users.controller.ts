@@ -1067,12 +1067,26 @@ export class UsersController {
     const overviewMatchedById = new Map(overviewMatched.map(su => [su.id, su.reservedByParentId]));
     // Evidence for the two rungs this ladder never had. Same predicates the
     // journey timeline uses, so the column and the timeline agree.
+    // One query for both doctor-call rungs; the consultation predicate
+    // excludes doctor calls, which carry their own rungs.
+    const doctorCallBookingsOverview = ids.length
+      ? await this.prisma.booking.findMany({
+          where: { parentUserId: { in: ids }, meetingSubtype: "DOCTOR_CONSULTATION" },
+          select: { parentUserId: true, status: true, outcome: true },
+        })
+      : [];
+    const doctorCallCompletedUsers = new Set(
+      doctorCallBookingsOverview.filter(b => ["COMPLETED", "UNVERIFIED"].includes(b.outcome || "")).map(b => b.parentUserId),
+    );
+    const doctorCallScheduledUsers = new Set(
+      doctorCallBookingsOverview.filter(b => ["PENDING", "CONFIRMED"].includes(b.status)).map(b => b.parentUserId),
+    );
     const consultCompletedUsers = new Set(
       ids.length
         ? (await this.prisma.booking.findMany({
             where: {
               parentUserId: { in: ids },
-              meetingSubtype: { not: "MATCH_CALL" },
+              meetingSubtype: { notIn: ["MATCH_CALL", "DOCTOR_CONSULTATION"] },
               outcome: { in: ["COMPLETED", "UNVERIFIED"] },
             },
             select: { parentUserId: true },
@@ -1103,6 +1117,8 @@ export class UsersController {
       if (cs.subjectProfileId && overviewMatchedById.get(cs.subjectProfileId) === cs.userId) bump(cs.userId, "matched");
     }
     for (const uid of Array.from(consultCompletedUsers)) { if (uid) bump(uid as string, "consult_completed"); }
+    for (const uid of Array.from(doctorCallScheduledUsers)) { if (uid) bump(uid as string, "doctor_call_scheduled"); }
+    for (const uid of Array.from(doctorCallCompletedUsers)) { if (uid) bump(uid as string, "doctor_call_completed"); }
     for (const [uid, key] of Array.from(accountKeyOf.entries())) {
       if (submittedFormAccounts.has(key as string)) bump(uid as string, "ip_form_submitted");
     }
@@ -1550,10 +1566,26 @@ export class UsersController {
     );
 
     // Same predicate journey-timeline uses, so the column and the timeline
-    // cannot disagree about whether a call actually happened.
+    // cannot disagree about whether a call actually happened. Doctor calls
+    // have their own rungs and never prove the consultation ones.
     const consultCompletedAccounts = new Set(
       bookings
-        .filter((b: any) => b.meetingSubtype !== "MATCH_CALL" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
+        .filter((b: any) => b.meetingSubtype !== "MATCH_CALL" && b.meetingSubtype !== "DOCTOR_CONSULTATION"
+          && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
+        .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
+        .filter(Boolean),
+    );
+    const doctorCallCompletedAccounts = new Set(
+      bookings
+        .filter((b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
+        .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
+        .filter(Boolean),
+    );
+    // A CONFIRMED booking with a no-show outcome still proves Scheduled,
+    // matching the timeline's rung evidence.
+    const doctorCallScheduledAccounts = new Set(
+      bookings
+        .filter((b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && ["PENDING", "CONFIRMED"].includes(b.status))
         .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
         .filter(Boolean),
     );
@@ -1681,6 +1713,8 @@ export class UsersController {
         matched: !!(cs.subjectProfileId && matchedSurrogateById.get(cs.subjectProfileId)
           && accountKey(matchedSurrogateById.get(cs.subjectProfileId) as string) === key),
         matchCallScheduled: matchCallAccounts.has(key),
+        doctorCallScheduled: doctorCallScheduledAccounts.has(key) || doctorCallCompletedAccounts.has(key),
+        doctorCallCompleted: doctorCallCompletedAccounts.has(key),
         ipFormSubmitted: ipFormSubmittedAccounts.has(key),
         consultCompleted: consultCompletedAccounts.has(key),
         consultScheduled: cs.status === "CONSULTATION_BOOKED",

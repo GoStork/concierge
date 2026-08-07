@@ -218,6 +218,8 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
     consult_scheduled: TONE.early,
     consult_completed: TONE.early,
     ip_form_submitted: TONE.early,
+    doctor_call_scheduled: TONE.call,
+    doctor_call_completed: TONE.call,
     match_call_scheduled: TONE.call,
     matched: TONE.match,
     invoice_sent: TONE.money,
