@@ -44,7 +44,7 @@ export interface JourneyStageOut {
   reachedAt: string | null;
   state: "done" | "current" | "upcoming";
   optional?: boolean;
-  tone?: "warning";
+  tone?: "warning" | "destructive";
   /**
    * A fork off the main line rather than a step on it - "No Show",
    * "Not Matched". The client hangs these beside the rung that FOLLOWS them.
@@ -284,9 +284,24 @@ export async function buildJourneyTimelines(
     const liveConsult = liveOf(consultBookings);
     const completedConsult = completedOf(consultBookings);
     const noShowConsults = noShowsOf(consultBookings);
-    // A no-show still proves the call WAS scheduled - only pure cancellation
-    // (nothing live, completed, or attended-by-anyone) regresses the rung.
-    const consultScheduledAt = liveConsult.length > 0 || completedConsult.length > 0 || noShowConsults.length > 0 ? earliestCreatedAt(consultBookings) : null;
+    // Canceled branch: the call was called off and nothing replaced it. A
+    // RESCHEDULED booking never counts - a new booking exists by definition -
+    // and a no-show outranks it, because a no-show is evidence about a call
+    // that actually stayed on the calendar. Same suppression as the no-show
+    // branch: any completed or live call anywhere clears it.
+    const canceledOf = (list: any[]) => list.filter((bk: any) => bk.status === "CANCELLED");
+    const latestCanceledAt = (list: any[]) => (list.length > 0 ? list.reduce<Date | null>((max, bk) => (!max || (bk.cancelledAt || bk.scheduledAt) > max ? (bk.cancelledAt || bk.scheduledAt) : max), null) : null);
+    const canceledConsults = canceledOf(consultBookings);
+    const showConsultCanceledRung =
+      canceledConsults.length > 0 && noShowConsults.length === 0
+      && completed.length === 0 && liveBooking.length === 0;
+    const lastConsultCanceledAt = latestCanceledAt(canceledConsults);
+    // A no-show still proves the call WAS scheduled; so does a cancellation
+    // WHEN its branch is on display - "Scheduled ✓, then Canceled" is the
+    // true story, and a branch hanging off an unreached rung reads as a
+    // rendering bug. A canceled call with a later real one keeps the old
+    // behaviour: the later call is the evidence.
+    const consultScheduledAt = liveConsult.length > 0 || completedConsult.length > 0 || noShowConsults.length > 0 || showConsultCanceledRung ? earliestCreatedAt(consultBookings) : null;
     const consultCompletedAt = completedConsult.length > 0 ? completedConsult.reduce<Date | null>((min, bk) => (!min || bk.scheduledAt < min ? bk.scheduledAt : min), null) : null;
     // No Show branch: a consultation was missed and nothing newer happened.
     // Suppression stays cross-subtype (any completed or live call, match
@@ -298,15 +313,26 @@ export async function buildJourneyTimelines(
     const liveMatchCall = liveOf(matchCallBookings);
     const completedMatchCall = completedOf(matchCallBookings);
     const noShowMatchCalls = noShowsOf(matchCallBookings);
-    const matchCallScheduledAt = liveMatchCall.length > 0 || completedMatchCall.length > 0 || noShowMatchCalls.length > 0 ? earliestCreatedAt(matchCallBookings) : null;
+    const canceledMatchCalls = canceledOf(matchCallBookings);
+    const showMatchCanceledRung =
+      canceledMatchCalls.length > 0 && noShowMatchCalls.length === 0
+      && completed.length === 0 && liveBooking.length === 0;
+    const lastMatchCanceledAt = latestCanceledAt(canceledMatchCalls);
+    const matchCallScheduledAt = liveMatchCall.length > 0 || completedMatchCall.length > 0 || noShowMatchCalls.length > 0 || showMatchCanceledRung ? earliestCreatedAt(matchCallBookings) : null;
     const lastMatchNoShowAt = latestMissedAt(noShowMatchCalls);
     // Doctor Call rung evidence (IVF ladder): same rules again.
     const doctorCallBookings = scopedBookings.filter((bk) => bk.meetingSubtype === "DOCTOR_CONSULTATION");
     const liveDoctorCall = liveOf(doctorCallBookings);
     const completedDoctorCall = completedOf(doctorCallBookings);
     const noShowDoctorCalls = noShowsOf(doctorCallBookings);
+    const canceledDoctorCalls = canceledOf(doctorCallBookings);
+    const showDoctorCallCanceled =
+      canceledDoctorCalls.length > 0 && noShowDoctorCalls.length === 0
+      && completedDoctorCall.length === 0 && liveDoctorCall.length === 0;
+    const lastDoctorCallCanceledAt = latestCanceledAt(canceledDoctorCalls);
     const doctorCallScheduledAt =
       liveDoctorCall.length > 0 || completedDoctorCall.length > 0 || noShowDoctorCalls.length > 0
+      || showDoctorCallCanceled
         ? earliestCreatedAt(doctorCallBookings)
         : null;
     const doctorCallCompletedAt = completedDoctorCall.length > 0
@@ -378,11 +404,12 @@ export async function buildJourneyTimelines(
     // doneWhenReached: a discrete milestone that reads as "done" (checkmark)
     // the moment it has evidence, even while it is the furthest rung - it is a
     // completed action, not a stage you sit in.
-    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; dropIfPassed?: boolean; doneWhenReached?: boolean; tone?: "warning"; branch?: boolean };
+    type Rung = { id: string; label: string; at: Date | string | null; optional?: boolean; dropIfPassed?: boolean; doneWhenReached?: boolean; tone?: "warning" | "destructive"; branch?: boolean };
     // Shared tail: invoice + agreement rungs read the same on every ladder.
     const consultRungs: Rung[] = [
       { id: "consult_scheduled", label: "Consultation Scheduled", at: consultScheduledAt },
       ...(showNoShowRung ? [{ id: "no_show", label: "No Show", at: lastConsultNoShowAt, tone: "warning" as const, branch: true }] : []),
+      ...(showConsultCanceledRung ? [{ id: "consult_canceled", label: "Canceled", at: lastConsultCanceledAt, tone: "destructive" as const, branch: true }] : []),
       { id: "consult_completed", label: "Consultation Completed", at: consultCompletedAt },
     ];
     const moneyRungs = (optionalAgreement: boolean): Rung[] => [
@@ -435,6 +462,9 @@ export async function buildJourneyTimelines(
         ...(showDoctorCallNoShow
           ? [{ id: "doctor_call_no_show", label: "No Show", at: lastDoctorCallNoShowAt, tone: "warning" as const, branch: true }]
           : []),
+        ...(showDoctorCallCanceled
+          ? [{ id: "doctor_call_canceled", label: "Canceled", at: lastDoctorCallCanceledAt, tone: "destructive" as const, branch: true }]
+          : []),
         { id: "doctor_call_completed", label: "Doctor Call Completed", at: doctorCallCompletedAt, dropIfPassed: true },
       ];
       rungs = [
@@ -476,6 +506,7 @@ export async function buildJourneyTimelines(
         { id: "match_call_scheduled", label: "Match Call Scheduled", at: matchCallScheduledAt, dropIfPassed: true },
         ...(showNotMatchedRung ? [{ id: "not_matched", label: "Not Matched", at: lastDeclineAt, tone: "warning" as const, branch: true }] : []),
         ...(showMatchNoShowRung ? [{ id: "match_call_no_show", label: "No Show", at: lastMatchNoShowAt, tone: "warning" as const, branch: true }] : []),
+        ...(showMatchCanceledRung ? [{ id: "match_call_canceled", label: "Canceled", at: lastMatchCanceledAt, tone: "destructive" as const, branch: true }] : []),
       ];
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },

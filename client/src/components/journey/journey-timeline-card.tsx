@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ChevronDown, ChevronUp, AlertTriangle, Loader2 } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, AlertTriangle, Loader2, X } from "lucide-react";
 
 /**
  * Phase 7A: the shared journey timeline.
@@ -23,7 +23,7 @@ interface StageOut {
   reachedAt: string | null;
   state: "done" | "current" | "upcoming";
   optional?: boolean;
-  tone?: "warning";
+  tone?: "warning" | "destructive";
   /** Server-declared fork off the main line - see journey-timeline.ts. */
   branch?: boolean;
 }
@@ -112,7 +112,7 @@ function StageRow({ stage, isLast, stripMarkTone }: { stage: StageOut; isLast: b
             The old code stripped tone from the whole stage, which silenced
             the label too: the parent's No Show read as plain grey while the
             provider's horizontal ladder showed it amber. */}
-        <StageMark stage={stripMarkTone ? { ...stage, tone: undefined } : stage} />
+        <StageMark stage={stripMarkTone && stage.tone !== "destructive" ? { ...stage, tone: undefined } : stage} />
         {!isLast && <div className="w-px flex-1 min-h-[10px] bg-primary/50" />}
       </div>
       <div className={`${isLast ? "pb-0" : "pb-2.5"} min-w-0 flex-1`} style={isLast ? undefined : { minHeight: 42 }}>
@@ -130,6 +130,7 @@ function StageRow({ stage, isLast, stripMarkTone }: { stage: StageOut; isLast: b
 function stageDotClass(stage: StageOut): string {
   const base = "w-5 h-5 rounded-full flex items-center justify-center shrink-0";
   if (stage.tone === "warning") return `${base} bg-[hsl(var(--brand-warning))]/15 ring-2 ring-[hsl(var(--brand-warning))]`;
+  if (stage.tone === "destructive") return `${base} bg-[hsl(var(--destructive))]/15 ring-2 ring-[hsl(var(--destructive))]`;
   if (stage.state === "done") return `${base} bg-primary text-primary-foreground`;
   if (stage.state === "current") return `${base} bg-primary/15 ring-2 ring-primary`;
   return "w-5 h-5 rounded-full border-2 border-primary/40 bg-background shrink-0";
@@ -140,6 +141,8 @@ function StageMark({ stage }: { stage: StageOut }) {
     <div className={stageDotClass(stage)}>
       {stage.tone === "warning" ? (
         <AlertTriangle className="w-3 h-3 text-[hsl(var(--brand-warning))]" />
+      ) : stage.tone === "destructive" ? (
+        <X className="w-3 h-3 text-[hsl(var(--destructive))]" />
       ) : (
         <>
           {stage.state === "done" && <Check className="w-3 h-3" />}
@@ -152,6 +155,7 @@ function StageMark({ stage }: { stage: StageOut }) {
 
 function stageLabelClass(stage: StageOut): string {
   if (stage.tone === "warning") return "font-semibold text-[hsl(var(--brand-warning))]";
+  if (stage.tone === "destructive") return "font-semibold text-[hsl(var(--destructive))]";
   if (stage.state === "current") return "font-semibold text-foreground";
   if (stage.state === "done") return "text-foreground";
   return "text-muted-foreground";
@@ -244,7 +248,11 @@ function StageColumn({ stage, isFirst, isLast, branch }: {
               }}
             />
             <div style={{ marginTop: `${BRANCH_GAP}px` }}>
-              <StageMark stage={{ ...branch, tone: undefined }} />
+              {/* A warning branch keeps a standard dot - the fork says enough.
+              A destructive one keeps its red X: a cancelled call whose dot
+              draws a green positional checkmark reads as "done", which is
+              the one thing a cancellation is not. */}
+          <StageMark stage={branch.tone === "destructive" ? branch : { ...branch, tone: undefined }} />
             </div>
           </div>
           <div className="px-1 pt-1 text-center">
