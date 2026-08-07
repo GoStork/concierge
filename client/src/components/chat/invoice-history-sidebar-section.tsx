@@ -1,8 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { CreditCard, ExternalLink } from "lucide-react";
-import { formatMoneyCents as formatCents } from "@/lib/format-money";
-import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
+import { CreditCard } from "lucide-react";
+import { InvoiceRow } from "./invoice-row";
 
 // Read-only "Invoices" list for the chat right sidebar - the payment twin of
 // the Cost Sheets section above it. Parents see every invoice on this
@@ -52,43 +50,18 @@ export function InvoiceHistorySidebarSection({
         <h3 className="text-sm font-semibold">Invoices</h3>
       </div>
       <div className="space-y-1.5">
-        {invoices.map(inv => {
-          const isPayable = canPay && inv.status === "AWAITING_PAYMENT";
-          const isDead = ["CANCELLED", "EXPIRED"].includes(inv.status);
-          return (
-            <div
-              key={inv.id}
-              className="rounded-md border p-2 text-xs space-y-0.5"
-              style={{
-                background: isDead ? "hsl(var(--muted) / 0.3)" : "hsl(var(--background))",
-                opacity: isDead ? 0.7 : 1,
-              }}
-              data-testid={`sidebar-invoice-${inv.id}`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold">{formatCents(inv.serviceAmount)}</span>
-                <InvoiceStatusBadge status={inv.status} medicalClearanceStatus={inv.medicalClearanceStatus} />
-              </div>
-              <div className="flex items-center justify-between text-muted-foreground">
-                <span>
-                  {new Date(inv.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                </span>
-                {isPayable && (
-                  <Link
-                    to={`/pay/${inv.paymentToken}?returnTo=${encodeURIComponent(`/chat`)}`}
-                    className="flex items-center gap-1 font-medium hover:underline"
-                    style={{ color: brandColor }}
-                  >
-                    Pay now <ExternalLink className="w-3 h-3" />
-                  </Link>
-                )}
-              </div>
-              {(inv.description || inv.serviceType) && (
-                <p className="text-muted-foreground italic truncate">{inv.description || inv.serviceType}</p>
-              )}
-            </div>
-          );
-        })}
+        {/* The SAME row the parent record's Documents panel draws, so one
+            invoice never looks like two different objects. */}
+        {invoices.map(inv => (
+          <InvoiceRow
+            key={inv.id}
+            invoice={inv}
+            payLink={canPay && inv.status === "AWAITING_PAYMENT"
+              ? `/pay/${inv.paymentToken}?returnTo=${encodeURIComponent(`/chat`)}`
+              : null}
+            testId={`sidebar-invoice-${inv.id}`}
+          />
+        ))}
       </div>
     </div>
   );

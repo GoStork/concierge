@@ -16,6 +16,8 @@ import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Lock, Users } from "lucide-react";
 import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
+import { InvoiceRow } from "@/components/chat/invoice-row";
+import { AgreementRow } from "@/components/chat/agreement-row";
 import { JOURNEY_STAGE_LABELS, LEGACY_MATCH_STATUS_TO_STAGE } from "@shared/journey-ladder";
 
 export const SERVICE_LABELS: Record<string, string> = {
@@ -526,6 +528,27 @@ export function ParentInvoicesCell({
   }
   const shown = limit > 0 ? invoices.slice(0, limit) : invoices;
   const extra = invoices.length - shown.length;
+
+  // In a list - the record's Documents panel - draw the SAME card the chat
+  // sidebar draws, receipt/invoice link included. The pill below stays for
+  // the table, where a cell has one line of width.
+  if (layout === "list") {
+    return (
+      <div className="space-y-1.5" data-testid={testId}>
+        {shown.map((inv) => (
+          <InvoiceRow
+            key={inv.id}
+            invoice={inv}
+            documentHref={`/api/provider/invoices/${inv.id}/document`}
+            providerName={providerName}
+            testId={`invoice-row-${inv.id}`}
+          />
+        ))}
+        {extra > 0 && <OverflowChip count={extra} title={`${extra} more`} />}
+      </div>
+    );
+  }
+
   return (
     <div className={moneyWrapClass(layout)} data-testid={testId}>
       {shown.map((inv) => {
@@ -552,9 +575,7 @@ export function ParentInvoicesCell({
             style={{ background: bg, color: fg }}
             title={`${inv.serviceType?.replace(/_/g, " ")} - ${amount} - ${inv.status}${isPaid ? " (opens receipt PDF)" : " (opens invoice document)"}`}
           >
-            {layout === "list"
-              ? `${amount} - ${inv.status.replace(/_/g, " ").toLowerCase()}${providerName ? ` - ${providerName}` : ""}${inv.createdAt ? ` - ${new Date(inv.createdAt).toLocaleDateString()}` : ""}`
-              : amount}
+            {amount}
           </a>
         );
       })}
@@ -690,6 +711,18 @@ export function ParentAgreementsCell({
   }
   const shown = limit > 0 ? agreements.slice(0, limit) : agreements;
   const extra = agreements.length - shown.length;
+
+  if (layout === "list") {
+    return (
+      <div className="space-y-1.5" data-testid={testId}>
+        {shown.map((agr) => (
+          <AgreementRow key={agr.id} agreement={agr} providerName={providerName} testId={`agreement-row-${agr.id}`} />
+        ))}
+        {extra > 0 && <OverflowChip count={extra} title={`${extra} more`} />}
+      </div>
+    );
+  }
+
   return (
     <div className={moneyWrapClass(layout)} data-testid={testId}>
       {shown.map((agr) => {
@@ -715,9 +748,7 @@ export function ParentAgreementsCell({
             style={{ background: bg, color: fg }}
             title={`${agr.documentType} - ${agr.status}`}
           >
-            {layout === "list"
-              ? `${label} - ${(agr.documentType || "").replace(/_/g, " ")}${providerName ? ` - ${providerName}` : ""}${agr.createdAt ? ` - ${new Date(agr.createdAt).toLocaleDateString()}` : ""}`
-              : label}
+            {label}
           </a>
         );
       })}

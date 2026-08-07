@@ -287,7 +287,15 @@ export function InterestedProfilesSection({
           // rail into two 130px columns, so every card wrapped to about one
           // word per line. The dense flag is the container's own answer to
           // that question, the same one the card body already asks.
-          <div className={cn("grid gap-2", !dense && "sm:grid-cols-2")}>
+          // grid-cols-1 is not decoration: a bare `grid` has NO column
+          // template, so its implicit column is sized to max-content and a
+          // long provider name ("Sperm Bank California | Fertility Center of
+          // California") forced every card wider than the rail - meta text
+          // clipped at the edge and the Profile button pushed clean off
+          // screen. grid-cols-1 means minmax(0,1fr): the column can shrink,
+          // and the truncate/break-words inside finally have something to
+          // truncate against.
+          <div className={cn("grid gap-2 grid-cols-1", !dense && "sm:grid-cols-2")}>
             {savedProfiles.map((row) => (
               <SavedRowCard key={`${row.subjectKind}-${row.profileId}`} row={row} />
             ))}

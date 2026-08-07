@@ -5139,8 +5139,12 @@ chatRouter.get("/api/agreements", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
+    // ?sessionId= scopes the list to one conversation - the chat rail's
+    // Agreements section. Still force-scoped to the caller's own org first;
+    // the session filter only ever narrows.
+    const sessionId = typeof req.query.sessionId === "string" && req.query.sessionId ? req.query.sessionId : null;
     const agreements = await prisma.agreement.findMany({
-      where: { providerId: user.providerId },
+      where: { providerId: user.providerId, ...(sessionId ? { sessionId } : {}) },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,

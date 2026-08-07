@@ -650,9 +650,13 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     }),
     prisma.invoice.findMany({
       where: { parentUserId: { in: memberIds }, ...(scopeProviderId ? { providerId: scopeProviderId } : {}) },
+      // Wide enough for the shared InvoiceRow the record's Documents panel
+      // mounts - it prints the description and the clearance state, and a
+      // thinner select made both silently undefined.
       select: {
         id: true, providerId: true, sessionId: true, serviceType: true, serviceAmount: true,
-        status: true, paidAt: true, createdAt: true,
+        status: true, paidAt: true, createdAt: true, dueAt: true,
+        description: true, medicalClearanceStatus: true,
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -881,6 +885,17 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       );
     }
     if (foreignSubject) return null;
+    // A provider's "In conversation" list holds threads they are a PARTY to.
+    // An ACTIVE, never-joined session carrying their providerId is the
+    // family's private chat with Eva, wearing a whisper or marketplace-deep-
+    // link stamp. Listing it did two bad things at once: it leaked which
+    // profile the family merely BROWSED (one record showed "Dr. Vicken
+    // Sepilian" because the family had opened his marketplace page - they
+    // booked with a different doctor entirely), and its "Open chat" button
+    // led nowhere, because no shared thread exists behind it. Admins keep
+    // the full list; their chat button opens the monitor, which can show
+    // any session.
+    if (scopeProviderId && !sharedSessionIds.has(s.id)) return null;
     const prof = rawProf;
     const resolvedKind: SubjectKind = prof ? prof.kind : kind;
     const doc = resolvedKind === "doctor" && s.subjectProfileId

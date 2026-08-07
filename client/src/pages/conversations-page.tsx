@@ -41,6 +41,7 @@ import { AgreementSidebarSection } from "@/components/chat/agreement-sidebar-sec
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
 import { InvoiceSidebarSection } from "@/components/chat/invoice-sidebar-section";
 import { InvoiceHistorySidebarSection } from "@/components/chat/invoice-history-sidebar-section";
+import { AgreementHistorySidebarSection } from "@/components/chat/agreement-history-sidebar-section";
 import { ScheduleCallSection } from "@/components/chat/schedule-call-section";
 // Legacy imports for dead code pending removal
 import { SwipeDeckCard, type TabSection } from "@/components/marketplace/swipe-deck-card";
@@ -3292,6 +3293,7 @@ const sendMessageMutation = useMutation({
                   {selectedSessionId && (
                     <div className="mt-4">
                       <InvoiceHistorySidebarSection sessionId={selectedSessionId} brandColor={brandColor} canPay={false} />
+                      <AgreementHistorySidebarSection sessionId={selectedSessionId} brandColor={brandColor} />
                     </div>
                   )}
                 </>
