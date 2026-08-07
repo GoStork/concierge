@@ -104,12 +104,14 @@ export default function ParentDetailPage() {
   /** subjectKind (conversations / saved profiles) -> service line. */
   const kindLine = (k?: string | null): string | null =>
     k === "surrogate" ? "surrogacy"
-      : k === "egg-donor" || k === "sperm-donor" ? "egg_donation"
+      : k === "egg-donor" ? "egg_donation"
+      : k === "sperm-donor" ? "sperm_donation"
       : k === "doctor" || k === "clinic" ? "ivf"
       : null;
   const LINE_LABELS: Record<string, string> = {
     surrogacy: "Surrogacy",
     egg_donation: "Egg Donation",
+    sperm_donation: "Sperm Donation",
     ivf: "IVF",
     legal: "Legal",
   };
@@ -119,7 +121,7 @@ export default function ParentDetailPage() {
     for (const e of record.activity) if (e.serviceLine) s.add(e.serviceLine);
     for (const c of record.conversations) { const l = kindLine(c.subjectKind); if (l) s.add(l); }
     for (const p of record.savedProfiles) { const l = kindLine(p.subjectKind); if (l) s.add(l); }
-    return ["surrogacy", "egg_donation", "ivf", "legal"].filter((l) => s.has(l));
+    return ["surrogacy", "egg_donation", "sperm_donation", "ivf", "legal"].filter((l) => s.has(l));
   }, [record]);
   const defaultLine =
     viewerLines?.length === 1 && availableLines.includes(viewerLines[0]) ? viewerLines[0] : "all";
@@ -273,17 +275,10 @@ export default function ParentDetailPage() {
                     <JourneyTimelineCard
                       parentUserId={record.parent.id}
                       providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
-                      // The service-line chips scope the ladders too - Egg
-                      // Donation selected must not render the surrogacy
-                      // ladder. Bank journeys are donor purchases, so they
-                      // belong to the Egg Donation lens.
-                      journeyTypes={
-                        activeLine === "all"
-                          ? null
-                          : activeLine === "egg_donation"
-                            ? ["egg_donation", "bank"]
-                            : [activeLine]
-                      }
+                      // The service-line chips scope the ladders too - each
+                      // journey carries its serviceLine (bank journeys count
+                      // as egg or sperm donation by what the bank sells).
+                      serviceLine={activeLine === "all" ? null : activeLine}
                       // The events feed lives in the Activity timeline now,
                       // where it is one card per entry rather than a collapsed
                       // list of one-liners under the ladder.

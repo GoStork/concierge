@@ -1324,7 +1324,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     for (const r of roles) {
       if (r === "IP_SURROGACY_COORDINATOR" || r === "SURROGATE_COORDINATOR") lines.add("surrogacy");
       if (r === "IP_EGG_DONOR_COORDINATOR" || r === "EGG_DONOR_COORDINATOR") lines.add("egg_donation");
-      if (r === "IP_SPERM_DONOR_COORDINATOR" || r === "SPERM_DONOR_COORDINATOR") lines.add("egg_donation");
+      if (r === "IP_SPERM_DONOR_COORDINATOR" || r === "SPERM_DONOR_COORDINATOR") lines.add("sperm_donation");
       if (r === "IP_IVF_COORDINATOR") lines.add("ivf");
       if (r === "IP_LEGAL_COORDINATOR") lines.add("legal");
     }

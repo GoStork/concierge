@@ -30,6 +30,8 @@ interface StageOut {
 
 interface JourneyOut {
   journeyType: string;
+  /** Service-line filter key (surrogacy / egg_donation / sperm_donation / ivf / legal). */
+  serviceLine?: string | null;
   typeLabel: string;
   providerId: string;
   providerName: string;
@@ -389,7 +391,7 @@ export function JourneyTimelineCard({
   showEvents = false,
   variant = "sidebar",
   orientation = "vertical",
-  journeyTypes = null,
+  serviceLine = null,
   testId = "journey-timeline",
 }: {
   /** Omit for the parent's own view (server resolves their account). */
@@ -414,11 +416,11 @@ export function JourneyTimelineCard({
    */
   orientation?: "vertical" | "horizontal";
   /**
-   * Show only these journey types (e.g. ["egg_donation","bank"] for the
-   * record page's Egg Donation scope chip). null = all. Display filter
-   * only - the fetch is unchanged, so flipping it is instant.
+   * Show only journeys of this SERVICE LINE (the record page's scope chips:
+   * surrogacy / egg_donation / sperm_donation / ivf / legal). null = all.
+   * Display filter only - the fetch is unchanged, so flipping it is instant.
    */
-  journeyTypes?: string[] | null;
+  serviceLine?: string | null;
   testId?: string;
 }) {
   const [eventsOpen, setEventsOpen] = useState(false);
@@ -458,8 +460,8 @@ export function JourneyTimelineCard({
     );
   }
   const allJourneys = timelineQuery.data?.journeys || [];
-  const journeys = journeyTypes?.length
-    ? allJourneys.filter((j) => journeyTypes.includes(j.journeyType))
+  const journeys = serviceLine
+    ? allJourneys.filter((j) => (j.serviceLine ?? j.journeyType) === serviceLine)
     : allJourneys;
   if (journeys.length === 0) {
     return <p className="t-helper" data-testid={`${testId}-empty`}>No journey activity yet.</p>;

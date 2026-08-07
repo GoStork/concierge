@@ -58,6 +58,13 @@ export interface JourneyStageOut {
 
 export interface JourneyOut {
   journeyType: "surrogacy" | "egg_donation" | "ivf" | "bank" | "legal";
+  /**
+   * The SERVICE-LINE filter key this journey belongs to (surrogacy,
+   * egg_donation, sperm_donation, ivf, legal). Finer than journeyType in one
+   * place: a bank journey is egg_donation or sperm_donation depending on
+   * what the bank sells. Drives the record page's service chips.
+   */
+  serviceLine: string;
   typeLabel: string;
   providerId: string;
   providerName: string;
@@ -88,7 +95,8 @@ export function serviceLineOfSubject(st: string | null | undefined): string | nu
   if (!s) return null;
   if (s.includes("legal") || s.includes("lawyer")) return "legal";
   if (s.includes("surrog")) return "surrogacy";
-  if (s.includes("egg") || s.includes("sperm") || s.includes("donor")) return "egg_donation";
+  if (s.includes("sperm")) return "sperm_donation";
+  if (s.includes("egg") || s.includes("donor")) return "egg_donation";
   if (s.includes("ivf") || s.includes("clinic") || s.includes("doctor")) return "ivf";
   return null;
 }
@@ -269,15 +277,34 @@ export async function buildJourneyTimelines(
   // assigned by each record's session subjectType; records that cannot be
   // attributed (no sessionId, subject-less session) count on EVERY line -
   // the pre-split behavior, kept only where attribution is impossible.
-  const lineOf = serviceLineOfSubject;
   const derivedBuckets: Bucket[] = [];
   for (const b of buckets.values()) {
-    const lines = Array.from(new Set(b.sessions.map((s2) => lineOf(s2.subjectType)).filter(Boolean))) as string[];
+    // The EFFECTIVE line of a session at THIS org: the raw subject line,
+    // collapsed through classifyJourneyType so a subject naming a service the
+    // org does not run cannot open a phantom line here. Without this, one
+    // PFCLA thread mis-stamped with another agency's SURROGATE subject split
+    // the clinic into TWO buckets that both classified back to "ivf" -
+    // rendering two identical IVF ladders with the evidence divided between
+    // them. At a bank, egg vs sperm subjects stay distinct lines; anything
+    // else at a bank follows the org's own flavor.
+    const orgBankLine =
+      b.serviceNames.some((n) => /sperm bank/i.test(n)) && !b.serviceNames.some((n) => /egg bank/i.test(n))
+        ? "sperm_donation"
+        : "egg_donation";
+    const effLineOf = (st: string | null | undefined): string | null => {
+      const raw = serviceLineOfSubject(st);
+      if (!raw) return null;
+      const jt = classifyJourneyType(b.serviceNames, [st as string]);
+      if (jt === "bank") return raw === "sperm_donation" || raw === "egg_donation" ? raw : orgBankLine;
+      if (jt === "egg_donation") return "egg_donation";
+      return jt; // surrogacy | ivf | legal map to themselves
+    };
+    const lines = Array.from(new Set(b.sessions.map((s2) => effLineOf(s2.subjectType)).filter(Boolean))) as string[];
     if (lines.length < 2) {
       derivedBuckets.push(b);
       continue;
     }
-    const sessionLine = new Map<string, string | null>(b.sessions.map((s2) => [s2.id, lineOf(s2.subjectType)]));
+    const sessionLine = new Map<string, string | null>(b.sessions.map((s2) => [s2.id, effLineOf(s2.subjectType)]));
     for (const line of lines) {
       const inLine = (sessId: string | null | undefined): boolean => {
         if (!sessId) return true; // unattributable - counts everywhere
@@ -291,10 +318,10 @@ export async function buildJourneyTimelines(
         serviceNames: b.serviceNames,
         depositMilestone: b.depositMilestone,
         sessions: b.sessions.filter((s2) => {
-          const l = lineOf(s2.subjectType);
+          const l = effLineOf(s2.subjectType);
           return l === null || l === line;
         }),
-        subjectTypes: b.sessions.filter((s2) => lineOf(s2.subjectType) === line).map((s2) => s2.subjectType!).filter(Boolean),
+        subjectTypes: b.sessions.filter((s2) => effLineOf(s2.subjectType) === line).map((s2) => s2.subjectType!).filter(Boolean),
         bookings: b.bookings.filter((bk) => inLine(bk.sessionId)),
         invoices: b.invoices.filter((i) => inLine(i.sessionId)),
         agreements: b.agreements.filter((a) => inLine(a.sessionId)),
@@ -650,6 +677,13 @@ export async function buildJourneyTimelines(
 
     journeys.push({
       journeyType,
+      serviceLine:
+        journeyType === "bank"
+          ? (b.subjectTypes.some((s) => /sperm/i.test(s || ""))
+              || (b.serviceNames.some((n) => /sperm bank/i.test(n)) && !b.serviceNames.some((n) => /egg bank/i.test(n)))
+              ? "sperm_donation"
+              : "egg_donation")
+          : journeyType,
       typeLabel: TYPE_LABEL[journeyType],
       providerId: b.providerId,
       providerName: b.providerName,
