@@ -4271,22 +4271,20 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
             // Apply the final message (with metadata like quickReplies, matchCards, etc.)
             // after the typing animation finishes draining - or immediately if no animation ran.
             //
-            // The message id is registered as "known" (and read-receipted) IN
-            // HERE, not when the done event arrives: registering it early
-            // meant a lost animation callback left the streamed bubble on
-            // screen with no quickReplies forever, while the poller skipped
-            // the persisted copy as already-known (observed live: the
-            // favorite reply's chips never appeared). Registered late, a
-            // dropped applyFinalMsg self-heals within one 3s poll - the
-            // poller appends the persisted message, chips and all, and the
-            // dedupe below prevents a double render when both paths land.
+            // Register the id BEFORE the animation defers applyFinalMsg, so
+            // the 3s poller never appends a second copy of a reply whose
+            // placeholder is still typing (registered late, the poller's full
+            // copy rendered NEXT TO the half-typed bubble - observed live).
+            // The lost-animation-callback race that late registration was
+            // covering is handled by the timeout fallback at the call site
+            // below instead: applyFinalMsg is guaranteed to run either way.
+            if (data.message?.id) {
+              knownMessageIds.current.add(data.message.id);
+              // The reply arrives via this response, not the poller, so send
+              // the read receipt here - the user is looking at it right now.
+              markSessionRead(data.sessionId || sessionId);
+            }
             const applyFinalMsg = () => {
-              if (data.message?.id) {
-                knownMessageIds.current.add(data.message.id);
-                // The reply arrives via this response, not the poller, so send
-                // the read receipt here - the user is looking at it right now.
-                markSessionRead(data.sessionId || sessionId);
-              }
               if (data.showCuration) {
                 setMessages((prev) => {
                   // Clear quick reply buttons from ALL previous messages when curation fires.
@@ -4317,8 +4315,21 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
               }
             };
             if (typingIntervalRef.current) {
-              // Animation still running - defer finalMsg until queue drains
-              typingOnDoneRef.current = () => { forceScrollRef.current = false; applyFinalMsg(); };
+              // Animation still running - defer finalMsg until the queue
+              // drains. The completion callback can be LOST (another path
+              // overwrites the shared typingOnDoneRef slot), which used to
+              // leave the half-typed bubble on screen with no quickReplies
+              // forever - so a timeout fallback guarantees the apply runs.
+              // Run-once guard: whichever fires second is a no-op.
+              let applied = false;
+              const applyOnce = () => {
+                if (applied) return;
+                applied = true;
+                forceScrollRef.current = false;
+                applyFinalMsg();
+              };
+              typingOnDoneRef.current = applyOnce;
+              window.setTimeout(applyOnce, 6000);
             } else {
               forceScrollRef.current = false;
               applyFinalMsg();
