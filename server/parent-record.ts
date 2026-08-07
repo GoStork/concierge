@@ -189,12 +189,19 @@ async function buildActivity(ctx: {
   quotes: any[];
   ipFormRow: any;
   bookings: any[];
+  /**
+   * The threads this viewer is allowed to see, already through the
+   * conversation leak guard. Keyed so an entry drawn from a message can name
+   * the org the thread belongs to.
+   */
+  sessionOrg: Map<string, { providerId: string | null; providerName: string | null }>;
 }): Promise<any[]> {
+  const sessionIds = Array.from(ctx.sessionOrg.keys());
   const { prisma, accountKey, memberIds, isAdmin, scopeProviderId, orgById } = ctx;
   const scoped = scopeProviderId ? { providerId: scopeProviderId } : {};
 
   const bookings = ctx.bookings;
-  const [events, reviews, notifications, matchmakers, whispers] = await Promise.all([
+  const [events, reviews, notifications, matchmakers, whispers, attachments] = await Promise.all([
     prisma.journeyEvent.findMany({
       where: { parentAccountId: accountKey, ...scoped },
       orderBy: { createdAt: "desc" },
@@ -225,6 +232,26 @@ async function buildActivity(ctx: {
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
+    // Files that changed hands in chat: prep guides, agreements, cost sheets a
+    // coordinator dropped in, anything the family uploaded. Nothing emits a
+    // journey event for these - the delivery IS the chat message - so a record
+    // could say "consultation confirmed" and never mention that the family was
+    // sent a prep guide two seconds later.
+    //
+    // Scoped by sessionIds, which the caller has already run through the
+    // conversation leak guard, so this can only surface a file from a thread
+    // this viewer is already being shown.
+    sessionIds.length
+      ? prisma.aiChatMessage.findMany({
+          where: { sessionId: { in: sessionIds }, uiCardType: "attachment" },
+          select: {
+            id: true, sessionId: true, content: true, senderType: true, senderName: true,
+            role: true, uiCardData: true, createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+          take: 100,
+        })
+      : Promise.resolve([]),
   ]);
 
   const sessionPersonaId = (await prisma.aiChatSession.findFirst({
@@ -423,6 +450,42 @@ async function buildActivity(ctx: {
         // False on every row written before the content columns existed. The
         // card says so rather than inventing a body.
         contentStored: !!(n.subject || n.bodyText || n.bodyHtml),
+      },
+    });
+  }
+
+  // Files handed over in chat.
+  for (const m of attachments as any[]) {
+    const card = (m.uiCardData || {}) as Record<string, any>;
+    if (!card.url) continue;                       // nothing to open - not a real file card
+    const org = ctx.sessionOrg.get(m.sessionId);
+    const fromParent = m.senderType === "parent" || m.role === "user";
+    // Both halves of a dual-audience message are stored on the row: `content`
+    // is written to the parent ("Here's your consultation prep guide:") and
+    // `providerContent` to the provider ("Prep guide sent to Eran:"). A
+    // provider reading the parent's copy would be reading a message addressed
+    // to someone else, so each viewer gets the line written for them.
+    const line = isAdmin ? m.content : (card.providerContent || m.content);
+    out.push({
+      id: `att-${m.id}`,
+      at: m.createdAt,
+      eventType: fromParent ? "FILE_RECEIVED" : "FILE_SHARED",
+      actorRole: fromParent ? "parent" : "system",
+      providerId: org?.providerId ?? null,
+      providerName: org?.providerName ?? null,
+      sessionId: m.sessionId,
+      aiName: persona?.name ?? null,
+      aiAvatarUrl: persona?.avatarUrl ?? null,
+      detail: {
+        type: "attachment",
+        messageId: m.id,
+        sessionId: m.sessionId,
+        message: line ? String(line).replace(/\[\[.*?\]\]/g, "").trim() || null : null,
+        senderName: m.senderName || null,
+        url: card.url,
+        originalName: card.originalName ?? null,
+        mimeType: card.mimeType ?? null,
+        size: typeof card.size === "number" ? card.size : null,
       },
     });
   }
@@ -1013,6 +1076,12 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   const activity = await buildActivity({
     prisma, accountKey, memberIds, isAdmin, scopeProviderId,
     orgById, invoices, agreements, quotes, ipFormRow, bookings,
+    // The post-leak-guard thread list, not the raw sessions - a thread this
+    // viewer is not shown must not leak through its attachments.
+    sessionOrg: new Map(conversations.map((c) => [
+      c.sessionId,
+      { providerId: c.providerId, providerName: c.providerName },
+    ])),
   });
 
   return {

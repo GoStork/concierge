@@ -25,6 +25,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineBookingNotification } from "@/components/chat/inline-booking-notification";
+import { AttachmentMessageCard } from "@/components/chat/attachment-message-card";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, CalendarCheck, CalendarClock, CalendarX, ChevronDown, ExternalLink,
@@ -87,6 +88,7 @@ const PARENT_EVENTS = new Set([
   "PREP_INTAKE_COMPLETED", "WHISPER_ASKED", "ESCALATED_TO_HUMAN",
   "CONSULT_PRELIM_ACKNOWLEDGED", "MATCH_CALL_ATTENDANCE_ACKNOWLEDGED",
   "MATCH_CALL_DECISION_ACKNOWLEDGED", "WINBACK_RESPONSE",
+  "FILE_RECEIVED",
 ]);
 
 /**
@@ -96,7 +98,10 @@ const PARENT_EVENTS = new Set([
  * row knows better than a static list.
  */
 function kindForEvent(ev: { eventType: string; actorRole: string | null }): ActivityKind {
-  if (ev.eventType === "MESSAGE_EMAIL" || ev.eventType === "MESSAGE_SMS") return "message";
+  // A file we sent sits with the other automated deliveries around it, and
+  // wears the file glyph rather than Eva's face - the row is about the
+  // document, and who sent it is already in the label.
+  if (ev.eventType === "MESSAGE_EMAIL" || ev.eventType === "MESSAGE_SMS" || ev.eventType === "FILE_SHARED") return "message";
   if (DEAL_EVENTS.has(ev.eventType)) return "deal";
   if (ev.actorRole === "parent" || PARENT_EVENTS.has(ev.eventType)) return "parent";
   return "ai";
@@ -164,6 +169,8 @@ const EVENT_LABELS: Record<string, string> = {
   MATCH_CALL_ATTENDANCE_ACKNOWLEDGED: "Acknowledged Match Call attendance",
   MATCH_CALL_DECISION_ACKNOWLEDGED: "Acknowledged the Match Call decision",
   SUBJECT_THREAD_OPENED: "New thread opened",
+  FILE_SHARED: "Document sent",
+  FILE_RECEIVED: "Document received",
   CRM_OWNER_ASSIGNED: "Lead owner assigned",
 };
 
@@ -485,6 +492,20 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
     );
   }
 
+  if (detail.type === "attachment") {
+    return (
+      <div className={shell} data-testid={`detail-attachment-${detail.messageId}`}>
+        {/* The line the file arrived with. Already viewer-specific from the
+            server, so a provider reads their own wording rather than the one
+            addressed to the family. */}
+        {detail.message && <p className="text-sm break-words">{detail.message}</p>}
+        {/* The SAME card every chat surface draws, so the download button and
+            the file-type glyph come for free and cannot drift from chat. */}
+        <AttachmentMessageCard data={detail} testId={`attachment-${detail.messageId}`} />
+      </div>
+    );
+  }
+
   if (detail.type === "ip_form") {
     return (
       <div className={shell} data-testid={`detail-ip-form-${detail.responseId}`}>
@@ -682,7 +703,10 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
   const isNoShow = /NO_SHOW/.test(entry.eventType || "");
   // An SMS card was showing an envelope. The icon follows the channel, not
   // the bucket the two share.
-  const Icon = isSms ? MessageSquare : (callIcon || meta.icon);
+  // A file card reads as a file, whoever sent it - the sparkle and the person
+  // glyph both say who acted and nothing about what changed hands.
+  const isFile = entry.detail?.type === "attachment";
+  const Icon = isSms ? MessageSquare : isFile ? FileText : (callIcon || meta.icon);
   const tint =
     // A text message reads as a text message at a glance - green, the way
     // every messaging app has trained people to expect. --brand-success

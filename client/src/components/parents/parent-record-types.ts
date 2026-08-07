@@ -180,7 +180,16 @@ export type ActivityDetail =
   | { type: "cost_sheet"; quoteId: string; totalCostCents: number | null; fileUrl: string | null; fileName: string | null; notes: string | null }
   | { type: "review"; reviewId: string; rating: number | null; recommendation: string; bodyText: string | null; providerId: string; memberId: string | null; hasResponse: boolean; responseText: string | null }
   | { type: "whisper"; whisperId: string; question: string; answer: string | null; status: string }
-  | { type: "ip_form"; responseId: string; submittedAt: string | null };
+  | { type: "ip_form"; responseId: string; submittedAt: string | null }
+  | {
+      type: "attachment";
+      messageId: string; sessionId: string;
+      /** The chat line the file arrived with, written for THIS viewer. */
+      message: string | null;
+      senderName: string | null;
+      url: string; originalName: string | null; mimeType: string | null;
+      size: number | null;
+    };
 
 export interface ParentRecord {
   viewer: { role: "admin" | "provider"; providerId: string | null };
