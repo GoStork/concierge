@@ -19,6 +19,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiParam } from "@nestjs/swagger";
 import { emitJourneyEvent } from "../../../journey-events";
 import { serviceKeysFromLabels } from "../../../../shared/service-keys";
+import { serviceLineOfSubject } from "../../../journey-timeline";
 import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel } from "../../../../shared/journey-ladder";
 import { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
@@ -1355,6 +1356,9 @@ export class UsersController {
         outcome: true,
         parentUserId: true,
         scheduledAt: true,
+        // Attributes the booking to its thread's SERVICE LINE - see the
+        // line-scoped account sets below.
+        sessionId: true,
         parentUser: {
           select: {
             id: true, name: true, email: true, mobileNumber: true, photoUrl: true, createdAt: true,
@@ -1520,12 +1524,56 @@ export class UsersController {
       }
     }
 
-    const matchCallAccounts = new Set(
-      bookings
-        .filter((b: any) => b.meetingSubtype === "MATCH_CALL" && !["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"].includes(b.status))
-        .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
-        .filter(Boolean),
-    );
+    // ── Line-scoped account evidence ─────────────────────────────────────
+    //
+    // These proofs used to be plain account-level sets, so at a multi-service
+    // org a family's egg-donation history proved the surrogacy row's rungs
+    // (observed live: a surrogate thread born this morning read "Handed Off"
+    // because the donor journey was). Evidence attributed to a thread counts
+    // only for that thread's service line; unattributable evidence (no
+    // sessionId, subject-less thread) keeps the old behavior and counts for
+    // every line.
+    const serviceLineBySession = new Map<string, string | null>();
+    for (const cs of chatSessions) serviceLineBySession.set(cs.id, serviceLineOfSubject(cs.subjectType));
+    {
+      // Bookings can link to sessions outside the visible set (other
+      // statuses) - resolve those lines too.
+      const extraIds = Array.from(new Set(
+        bookings.map((b: any) => b.sessionId).filter((id: any) => id && !serviceLineBySession.has(id)),
+      )) as string[];
+      if (extraIds.length) {
+        const extra = await this.prisma.aiChatSession.findMany({
+          where: { id: { in: extraIds } },
+          select: { id: true, subjectType: true },
+        });
+        for (const s of extra) serviceLineBySession.set(s.id, serviceLineOfSubject(s.subjectType));
+      }
+    }
+    const makeLineScopedSet = () => {
+      const perLine = new Set<string>();
+      const unattributed = new Set<string>();
+      const anyKey = new Set<string>();
+      return {
+        add(key: string, line: string | null) {
+          anyKey.add(key);
+          if (line) perLine.add(`${key}|${line}`);
+          else unattributed.add(key);
+        },
+        has(key: string, rowLine: string | null): boolean {
+          if (!rowLine) return anyKey.has(key);
+          return unattributed.has(key) || perLine.has(`${key}|${rowLine}`);
+        },
+      };
+    };
+    const bookingLine = (b: any): string | null =>
+      b.sessionId ? serviceLineBySession.get(b.sessionId) ?? null : null;
+
+    const matchCallAccounts = makeLineScopedSet();
+    for (const b of bookings) {
+      if (b.parentUserId && b.meetingSubtype === "MATCH_CALL" && !["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"].includes(b.status)) {
+        matchCallAccounts.add(accountKey(b.parentUserId), bookingLine(b));
+      }
+    }
     // The family's own stated services, so a thread whose subject yields
     // nothing (a CountryProgram, a plain concierge thread) still shows what
     // they are here for. The admin table has always done this; the provider
@@ -1568,27 +1616,23 @@ export class UsersController {
     // Same predicate journey-timeline uses, so the column and the timeline
     // cannot disagree about whether a call actually happened. Doctor calls
     // have their own rungs and never prove the consultation ones.
-    const consultCompletedAccounts = new Set(
-      bookings
-        .filter((b: any) => b.meetingSubtype !== "MATCH_CALL" && b.meetingSubtype !== "DOCTOR_CONSULTATION"
-          && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
-        .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
-        .filter(Boolean),
-    );
-    const doctorCallCompletedAccounts = new Set(
-      bookings
-        .filter((b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
-        .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
-        .filter(Boolean),
-    );
+    const consultCompletedAccounts = makeLineScopedSet();
+    const doctorCallCompletedAccounts = makeLineScopedSet();
     // A CONFIRMED booking with a no-show outcome still proves Scheduled,
     // matching the timeline's rung evidence.
-    const doctorCallScheduledAccounts = new Set(
-      bookings
-        .filter((b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && ["PENDING", "CONFIRMED"].includes(b.status))
-        .map((b: any) => (b.parentUserId ? accountKey(b.parentUserId) : null))
-        .filter(Boolean),
-    );
+    const doctorCallScheduledAccounts = makeLineScopedSet();
+    for (const b of bookings) {
+      if (!b.parentUserId) continue;
+      const key = accountKey(b.parentUserId);
+      const line = bookingLine(b);
+      const done = b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED";
+      if (b.meetingSubtype === "DOCTOR_CONSULTATION") {
+        if (done) doctorCallCompletedAccounts.add(key, line);
+        if (["PENDING", "CONFIRMED"].includes(b.status)) doctorCallScheduledAccounts.add(key, line);
+      } else if (b.meetingSubtype !== "MATCH_CALL" && done) {
+        consultCompletedAccounts.add(key, line);
+      }
+    }
 
     // Invoices grouped by sessionId so each match row only shows its own
     // invoices. Single query, in-memory grouping = no N+1.
@@ -1675,14 +1719,18 @@ export class UsersController {
       }
     }
 
-    // Handoff is a JOURNEY-level (parent account x provider org) fact, not a
-    // per-session one: the signed agreement and paid invoice can live on two
+    // Handoff is a JOURNEY-level (parent account x provider org x SERVICE
+    // LINE) fact: the signed agreement and paid invoice can live on two
     // different sessions of the same journey (e.g. Surrogate #24054 signed,
-    // #25714 paid). Any handed-off session marks the whole account handed
-    // off with this provider - matching the timeline's org-level bucketing.
-    const handedOffAccounts = new Set<string>();
+    // #25714 paid), so any handed-off session marks its LINE handed off for
+    // the account - but never a sibling line (a handed-off egg-donation
+    // journey must not stamp a brand-new surrogacy thread). Matches the
+    // timeline's per-line bucketing.
+    const handedOffAccounts = makeLineScopedSet();
     for (const cs of chatSessions) {
-      if (cs.userId && cs.handoffCompletedAt) handedOffAccounts.add(accountKey(cs.userId));
+      if (cs.userId && cs.handoffCompletedAt) {
+        handedOffAccounts.add(accountKey(cs.userId), serviceLineBySession.get(cs.id) ?? null);
+      }
     }
 
     // Build the rows: one per chat session.
@@ -1704,19 +1752,20 @@ export class UsersController {
       // chain with no rung for a completed consultation or a submitted form,
       // so a family well past both still read "Call Booked" in this column
       // while the timeline beside it showed them ticked.
+      const rowLine = serviceLineBySession.get(cs.id) ?? null;
       const journeyStatus = resolveJourneyStage({
-        handedOff: !!cs.handoffCompletedAt || handedOffAccounts.has(key),
+        handedOff: !!cs.handoffCompletedAt || handedOffAccounts.has(key, rowLine),
         agreementSigned: rowAgreements.some((a: any) => a.status === "SIGNED"),
         agreementSent: rowAgreements.length > 0,
         invoicePaid: rowInvoices.some((inv: any) => inv.status === "PAID"),
         invoiceSent: rowInvoices.length > 0,
         matched: !!(cs.subjectProfileId && matchedSurrogateById.get(cs.subjectProfileId)
           && accountKey(matchedSurrogateById.get(cs.subjectProfileId) as string) === key),
-        matchCallScheduled: matchCallAccounts.has(key),
-        doctorCallScheduled: doctorCallScheduledAccounts.has(key) || doctorCallCompletedAccounts.has(key),
-        doctorCallCompleted: doctorCallCompletedAccounts.has(key),
+        matchCallScheduled: matchCallAccounts.has(key, rowLine),
+        doctorCallScheduled: doctorCallScheduledAccounts.has(key, rowLine) || doctorCallCompletedAccounts.has(key, rowLine),
+        doctorCallCompleted: doctorCallCompletedAccounts.has(key, rowLine),
         ipFormSubmitted: ipFormSubmittedAccounts.has(key),
-        consultCompleted: consultCompletedAccounts.has(key),
+        consultCompleted: consultCompletedAccounts.has(key, rowLine),
         consultScheduled: cs.status === "CONSULTATION_BOOKED",
         connected: cs.status === "PROVIDER_CONNECTED" || !!cs.providerJoinedAt,
       });

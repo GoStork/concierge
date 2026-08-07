@@ -125,12 +125,50 @@ function htmlToText(html: string | null | undefined): string | null {
  * Twilio renders the final SMS from a Content Template on their side, so we
  * never hold the sent string. Record the template and the variables we
  * supplied - the truthful thing we DO have - rather than guessing at wording.
+ * Fallback only: renderSmsTemplateForLog below fetches the REAL template
+ * body from Twilio and reproduces the exact text the parent's phone shows.
  */
 function summarizeSmsTemplate(contentSid: string, vars: Record<string, string>): string {
   const parts = Object.entries(vars)
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([k, v]) => `{{${k}}} ${v}`);
   return `Template ${contentSid}\n${parts.join("\n")}`;
+}
+
+/**
+ * The activity timeline showed "Template HXdbef..." plus raw {{n}} pairs -
+ * technically truthful, humanly unreadable. Twilio's Content API returns the
+ * template's actual text body, so fetch it once per SID (cached for the
+ * process lifetime - template bodies change ~never), substitute the
+ * variables, and log the SAME sentence the parent's phone received. Any
+ * failure falls back to the raw summary rather than inventing wording.
+ */
+const smsTemplateBodyCache = new Map<string, string | null>();
+async function fetchSmsTemplateBody(contentSid: string): Promise<string | null> {
+  if (smsTemplateBodyCache.has(contentSid)) return smsTemplateBodyCache.get(contentSid)!;
+  let body: string | null = null;
+  try {
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const token = process.env.TWILIO_AUTH_TOKEN;
+    if (sid && token && contentSid.startsWith("HX")) {
+      const res = await fetch(`https://content.twilio.com/v1/Content/${contentSid}`, {
+        headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}` },
+      });
+      if (res.ok) {
+        const json: any = await res.json();
+        const types = json?.types || {};
+        body = types["twilio/text"]?.body || types["twilio/quick-reply"]?.body || null;
+      }
+    }
+  } catch { /* fall through to null */ }
+  smsTemplateBodyCache.set(contentSid, body);
+  return body;
+}
+
+async function renderSmsTemplateForLog(contentSid: string, vars: Record<string, string>): Promise<string> {
+  const body = await fetchSmsTemplateBody(contentSid);
+  if (!body) return summarizeSmsTemplate(contentSid, vars);
+  return body.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key) => (vars[key] !== undefined ? vars[key] : m));
 }
 
 @Injectable()
@@ -1837,7 +1875,7 @@ export class NotificationService implements OnModuleInit {
             "4": isExternalMeetingUrl(booking.meetingUrl) ? booking.meetingUrl : `${base}/room/${booking.id}`,
           };
           await this.sendSmsWithTemplate(reminder.recipient, TWILIO_TEMPLATES.BOOKING_REMINDER, reminderVars);
-          sentSmsText = summarizeSmsTemplate(TWILIO_TEMPLATES.BOOKING_REMINDER, reminderVars);
+          sentSmsText = await renderSmsTemplateForLog(TWILIO_TEMPLATES.BOOKING_REMINDER, reminderVars);
         }
 
         await this.prisma.notification.update({
@@ -1937,13 +1975,14 @@ export class NotificationService implements OnModuleInit {
       await this.sendSmsWithTemplate(params.recipient, params.contentSid, params.contentVars);
       await this.prisma.notification.update({
         where: { id: notification.id },
-        // Twilio renders the final text from a Content Template on their side,
-        // so the closest faithful record is the template id plus the variables
-        // we supplied. Storing an invented sentence would be worse than this.
+        // The exact sentence the parent's phone shows: the real template body
+        // fetched from Twilio with our variables substituted. Falls back to
+        // the template-id + variables summary if the fetch fails - a faithful
+        // record either way, never an invented one.
         data: {
           status: "sent",
           sentAt: new Date(),
-          bodyText: summarizeSmsTemplate(params.contentSid, params.contentVars),
+          bodyText: await renderSmsTemplateForLog(params.contentSid, params.contentVars),
         },
       });
     } catch (error: any) {

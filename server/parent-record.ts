@@ -22,6 +22,7 @@
 import { serviceKeysFromLabels } from "../shared/service-keys";
 import { prisma } from "./db";
 import { JOURNEY_STAGE_ORDER, resolveJourneyStage } from "../shared/journey-ladder";
+import { serviceLineOfSubject } from "./journey-timeline";
 import {
   GATES_OPEN,
   ParentGates,
@@ -789,47 +790,75 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     : [];
   const orgById = new Map(orgs.map((o) => [o.id, o]));
 
-  // ── Journey status, per session and per org ──────────────────────────────
-  // Per ORG, never account-wide. These flags were account-level booleans, so
+  // ── Journey status, per session and per org x SERVICE LINE ──────────────
+  // Per ORG, never account-wide: these flags were account-level booleans, so
   // on the admin's cross-org record one org's milestone bled into every
-  // other org's badge: batman handed off with Family Creations, and his
-  // PFCLA conversation card read "Handed Off" while the PFCLA ladder above
-  // it correctly said Doctor Call Scheduled.
-  const handedOffOrgs = new Set(
-    sessions.filter((s) => s.handoffCompletedAt && s.providerId).map((s) => s.providerId as string),
+  // other org's badge (batman handed off with Family Creations, and his
+  // PFCLA card read "Handed Off"). Then the SAME bleed happened one level
+  // down inside a multi-service org: the handed-off egg-donation journey
+  // stamped "Handed Off" on a surrogate thread born the same morning. So
+  // evidence is now scoped to (org, service line); evidence that cannot be
+  // attributed to a line counts for every line of its org, and a
+  // subject-less session reads any evidence of its org - the pre-split
+  // behavior, kept only where attribution is impossible.
+  const lineOfSessionId = new Map<string, string | null>(
+    sessions.map((s) => [s.id, serviceLineOfSubject(s.subjectType)]),
   );
-  const matchCallOrgs = new Set(
-    bookings
-      .filter((b) => b.meetingSubtype === "MATCH_CALL" && !["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"].includes(b.status))
-      .map((b) => b.providerUser?.providerId)
-      .filter(Boolean) as string[],
-  );
+  const makeOrgLineSet = () => {
+    const perLine = new Set<string>();
+    const unattributed = new Set<string>();
+    const anyOrg = new Set<string>();
+    return {
+      add(org: string, line: string | null) {
+        anyOrg.add(org);
+        if (line) perLine.add(`${org}|${line}`);
+        else unattributed.add(org);
+      },
+      has(org: string, rowLine: string | null): boolean {
+        if (!rowLine) return anyOrg.has(org);
+        return unattributed.has(org) || perLine.has(`${org}|${rowLine}`);
+      },
+    };
+  };
+  const bookingLineOf = (b: any): string | null =>
+    b.sessionId ? lineOfSessionId.get(b.sessionId) ?? null : null;
+
+  const handedOffOrgs = makeOrgLineSet();
+  for (const s of sessions) {
+    if (s.handoffCompletedAt && s.providerId) {
+      handedOffOrgs.add(s.providerId as string, lineOfSessionId.get(s.id) ?? null);
+    }
+  }
+  const matchCallOrgs = makeOrgLineSet();
+  for (const b of bookings) {
+    if (b.meetingSubtype === "MATCH_CALL" && !["CANCELLED", "DECLINED", "RESCHEDULED", "EXPIRED"].includes(b.status) && b.providerUser?.providerId) {
+      matchCallOrgs.add(b.providerUser.providerId, bookingLineOf(b));
+    }
+  }
   const paidSessions = new Set(invoices.filter((i) => i.status === "PAID").map((i) => i.sessionId).filter(Boolean) as string[]);
   const signedSessions = new Set(agreements.filter((a) => a.status === "SIGNED").map((a) => a.sessionId).filter(Boolean) as string[]);
   const agreementSessions = new Set(agreements.map((a) => a.sessionId).filter(Boolean) as string[]);
   const invoiceSessions = new Set(invoices.map((i) => i.sessionId).filter(Boolean) as string[]);
   // Same predicate the timeline uses. Relationship-level: bookings are not
   // session-linked, so a completed consultation counts for the family.
-  const orgOf = (b: any) => b.providerUser?.providerId as string | undefined;
-  const consultCompletedOrgs = new Set(
-    bookings
-      .filter((b: any) => b.meetingSubtype !== "MATCH_CALL" && b.meetingSubtype !== "DOCTOR_CONSULTATION"
-        && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
-      .map(orgOf).filter(Boolean) as string[],
-  );
+  const consultCompletedOrgs = makeOrgLineSet();
   // The Doctor Call has its own rungs in the shared vocabulary now. A
   // CONFIRMED booking with a no-show outcome still proves Scheduled, same as
   // the timeline.
-  const doctorCallCompletedOrgs = new Set(
-    bookings
-      .filter((b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && (b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED"))
-      .map(orgOf).filter(Boolean) as string[],
-  );
-  const doctorCallScheduledOrgs = new Set(
-    bookings
-      .filter((b: any) => b.meetingSubtype === "DOCTOR_CONSULTATION" && ["PENDING", "CONFIRMED"].includes(b.status))
-      .map(orgOf).filter(Boolean) as string[],
-  );
+  const doctorCallCompletedOrgs = makeOrgLineSet();
+  const doctorCallScheduledOrgs = makeOrgLineSet();
+  for (const b of bookings as any[]) {
+    const org = b.providerUser?.providerId as string | undefined;
+    if (!org) continue;
+    const line = bookingLineOf(b);
+    const done = b.outcome === "COMPLETED" || b.outcome === "UNVERIFIED";
+    if (b.meetingSubtype === "DOCTOR_CONSULTATION") {
+      if (done) doctorCallCompletedOrgs.add(org, line);
+      if (["PENDING", "CONFIRMED"].includes(b.status)) doctorCallScheduledOrgs.add(org, line);
+    } else if (b.meetingSubtype !== "MATCH_CALL" && done) {
+      consultCompletedOrgs.add(org, line);
+    }
+  }
 
   // The record was a THIRD copy of the ladder, alongside the two list
   // endpoints and the timeline. All of them now resolve through
@@ -838,18 +867,19 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   function sessionStatus(s: (typeof sessions)[number]): string | null {
     const prof = s.subjectProfileId ? profileById.get(s.subjectProfileId) : null;
     const org = s.providerId as string | null;
+    const line = lineOfSessionId.get(s.id) ?? null;
     return resolveJourneyStage({
-      handedOff: !!s.handoffCompletedAt || !!(org && handedOffOrgs.has(org)),
+      handedOff: !!s.handoffCompletedAt || !!(org && handedOffOrgs.has(org, line)),
       agreementSigned: signedSessions.has(s.id),
       agreementSent: agreementSessions.has(s.id),
       invoicePaid: paidSessions.has(s.id),
       invoiceSent: invoiceSessions.has(s.id),
       matched: !!(prof && prof.kind === "surrogate" && prof.status === "MATCHED"),
-      matchCallScheduled: !!(org && matchCallOrgs.has(org)),
+      matchCallScheduled: !!(org && matchCallOrgs.has(org, line)),
       ipFormSubmitted: ipFormRow?.status === "SUBMITTED",
-      doctorCallScheduled: !!(org && (doctorCallScheduledOrgs.has(org) || doctorCallCompletedOrgs.has(org))),
-      doctorCallCompleted: !!(org && doctorCallCompletedOrgs.has(org)),
-      consultCompleted: !!(org && consultCompletedOrgs.has(org)),
+      doctorCallScheduled: !!(org && (doctorCallScheduledOrgs.has(org, line) || doctorCallCompletedOrgs.has(org, line))),
+      doctorCallCompleted: !!(org && doctorCallCompletedOrgs.has(org, line)),
+      consultCompleted: !!(org && consultCompletedOrgs.has(org, line)),
       consultScheduled: s.status === "CONSULTATION_BOOKED",
       connected: s.status === "PROVIDER_CONNECTED" || !!s.providerJoinedAt,
     });

@@ -77,6 +77,22 @@ const TYPE_LABEL: Record<JourneyOut["journeyType"], string> = {
   legal: "Legal",
 };
 
+/**
+ * A session subjectType -> the SERVICE LINE it belongs to, or null when it
+ * carries no signal. This is the attribution key the per-line journey split
+ * uses, shared with the provider parents table so the two can never disagree
+ * about which line a thread's evidence belongs to.
+ */
+export function serviceLineOfSubject(st: string | null | undefined): string | null {
+  const s = (st || "").toLowerCase();
+  if (!s) return null;
+  if (s.includes("legal") || s.includes("lawyer")) return "legal";
+  if (s.includes("surrog")) return "surrogacy";
+  if (s.includes("egg") || s.includes("sperm") || s.includes("donor")) return "egg_donation";
+  if (s.includes("ivf") || s.includes("clinic") || s.includes("doctor")) return "ivf";
+  return null;
+}
+
 export function classifyJourneyType(serviceNames: string[], subjectTypes: string[]): JourneyOut["journeyType"] {
   const svc = serviceNames.map((s) => s.toLowerCase());
   const subj = subjectTypes.map((s) => (s || "").toLowerCase()).filter(Boolean);
@@ -243,9 +259,57 @@ export async function buildJourneyTimelines(
     }
   }
 
+  // ---- Split multi-line orgs into one journey per service line ----
+  //
+  // A journey used to be (parent account x provider org), which broke the
+  // moment a family ran TWO services with one org: Family Creations handed
+  // off their egg-donation journey, and the org-level bucket stamped
+  // "Handed Off" (plus the donor invoices and agreement) onto the surrogacy
+  // ladder of a surrogate thread that started this morning. Evidence is
+  // assigned by each record's session subjectType; records that cannot be
+  // attributed (no sessionId, subject-less session) count on EVERY line -
+  // the pre-split behavior, kept only where attribution is impossible.
+  const lineOf = serviceLineOfSubject;
+  const derivedBuckets: Bucket[] = [];
+  for (const b of buckets.values()) {
+    const lines = Array.from(new Set(b.sessions.map((s2) => lineOf(s2.subjectType)).filter(Boolean))) as string[];
+    if (lines.length < 2) {
+      derivedBuckets.push(b);
+      continue;
+    }
+    const sessionLine = new Map<string, string | null>(b.sessions.map((s2) => [s2.id, lineOf(s2.subjectType)]));
+    for (const line of lines) {
+      const inLine = (sessId: string | null | undefined): boolean => {
+        if (!sessId) return true; // unattributable - counts everywhere
+        const l = sessionLine.get(sessId);
+        return l === undefined || l === null || l === line;
+      };
+      const sub: Bucket = {
+        providerId: b.providerId,
+        providerName: b.providerName,
+        providerLogo: b.providerLogo,
+        serviceNames: b.serviceNames,
+        depositMilestone: b.depositMilestone,
+        sessions: b.sessions.filter((s2) => {
+          const l = lineOf(s2.subjectType);
+          return l === null || l === line;
+        }),
+        subjectTypes: b.sessions.filter((s2) => lineOf(s2.subjectType) === line).map((s2) => s2.subjectType!).filter(Boolean),
+        bookings: b.bookings.filter((bk) => inLine(bk.sessionId)),
+        invoices: b.invoices.filter((i) => inLine(i.sessionId)),
+        agreements: b.agreements.filter((a) => inLine(a.sessionId)),
+        events: b.events.filter((e) => inLine(e.sessionId)),
+      };
+      // Sidebar scoping: with a sessionId the caller wants THAT thread's
+      // journey - drop the sibling line's bucket entirely.
+      if (opts?.sessionId && !sub.sessions.some((s2) => s2.id === opts.sessionId)) continue;
+      derivedBuckets.push(sub);
+    }
+  }
+
   // ---- Derive each journey ----
   const journeys: JourneyOut[] = [];
-  for (const b of buckets.values()) {
+  for (const b of derivedBuckets) {
     const journeyType = classifyJourneyType(b.serviceNames, b.subjectTypes);
     const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
 
