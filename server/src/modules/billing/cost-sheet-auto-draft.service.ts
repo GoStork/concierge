@@ -60,6 +60,18 @@ interface LineItemDraft {
   excluded?: boolean;
 }
 
+/**
+ * What makes a thread SHARED - one definition, used by both draft entry
+ * points.
+ *
+ * A shared thread is one the provider is actually a party to: they have
+ * joined it, or it has reached a state that only exists because a call was
+ * booked or a human stepped in. Everything else - including an ACTIVE thread
+ * that merely carries a providerId because the family whispered a question
+ * through it - is the family's private conversation with Eva.
+ */
+const SHARED_THREAD_STATUSES: string[] = ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"];
+
 @Injectable()
 export class CostSheetAutoDraftService {
   private readonly logger = new Logger(CostSheetAutoDraftService.name);
@@ -105,36 +117,40 @@ export class CostSheetAutoDraftService {
       });
       if (!gate1?.isActive) return this.skip("prompt_section_inactive");
 
-      // The draft card belongs in the SHARED parent-provider thread. A whisper
-      // stamps `providerId` onto the parent's private Eva session, so an
-      // ACTIVE-inclusive lookup ordered by updatedAt can hand the draft to Eva
-      // instead (the race documented in calendar.controller's
-      // fireCostSheetAutoDraft chaining - sequencing alone does not fix it,
-      // because a recently-touched Eva session still wins the sort). Try the
-      // real shared thread first and only fall back to the loose lookup.
-      const session =
-        (await this.prisma.aiChatSession.findFirst({
-          where: {
-            userId: booking.parentUserId,
-            providerId,
-            OR: [
-              { status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] } },
-              { providerJoinedAt: { not: null } },
-            ],
-          },
-          orderBy: { updatedAt: "desc" },
-          select: { id: true, subjectType: true, subjectProfileId: true },
-        })) ??
-        (await this.prisma.aiChatSession.findFirst({
-          where: {
-            userId: booking.parentUserId,
-            providerId,
-            status: { in: ["ACTIVE", "CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"] },
-          },
-          orderBy: { updatedAt: "desc" },
-          select: { id: true, subjectType: true, subjectProfileId: true },
-        }));
-      if (!session) return this.skip("no_chat_session");
+      // The draft card belongs in the SHARED parent-provider thread, and
+      // NOWHERE else. Paperwork - cost sheets, invoices, agreements - is
+      // something the two sides transact; the parent's Eva thread is a private
+      // conversation with the concierge and must stay one.
+      //
+      // There used to be a fallback here that also accepted a plain ACTIVE
+      // session. It looked harmless because it still filtered on providerId -
+      // but a whisper STAMPS providerId onto the private Eva session
+      // (ai-router, the [[WHISPER]] handler), so "ACTIVE + this provider"
+      // matches Eva. That is not theoretical: a $50,500 PFCLA quote and six
+      // draft cards were written into one family's private donor-browsing
+      // thread with Eva, one second after their real clinic thread was
+      // created. The provider could never see the sheet they had sent, and
+      // the family got it somewhere it did not belong.
+      //
+      // So: no fallback. If there is no shared thread, there is nowhere
+      // legitimate to put a draft, and skipping loudly is the correct
+      // outcome - see isSharedThread for what counts.
+      const accountUserIds = await this.sharedAccountUserIds(booking.parentUserId, booking.parentUser?.parentAccountId ?? null);
+      const session = await this.prisma.aiChatSession.findFirst({
+        where: {
+          // The whole account, not one login. Partners share threads, so the
+          // shared thread may belong to the member who did not book.
+          userId: { in: accountUserIds },
+          providerId,
+          OR: [
+            { status: { in: SHARED_THREAD_STATUSES } },
+            { providerJoinedAt: { not: null } },
+          ],
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, subjectType: true, subjectProfileId: true },
+      });
+      if (!session) return this.skip("no_shared_thread");
 
       const existingQuote = await this.prisma.providerQuote.findFirst({
         where: { sessionId: session.id, supersededAt: null },
@@ -162,11 +178,23 @@ export class CostSheetAutoDraftService {
           subjectType: true,
           subjectProfileId: true,
           providerId: true,
+          // status and providerJoinedAt drive the shared-thread check below.
+          // Omitted, they read undefined and the check silently passes
+          // everything - the exact trap this guard exists to close.
+          status: true,
+          providerJoinedAt: true,
           user: { select: { parentAccountId: true } },
         },
       });
       if (!session) return this.skip("session_not_found");
       if (!session.providerId) return this.skip("no_provider");
+      // Same rule as the booking path, for the same reason: a provider's
+      // sidebar can surface a whisper-stamped private Eva thread, and
+      // clicking "+ Cost Sheet" on it would post paperwork into the family's
+      // private conversation with the concierge.
+      if (!(session.providerJoinedAt || SHARED_THREAD_STATUSES.includes(session.status))) {
+        return this.skip("not_a_shared_thread");
+      }
       return this.draftCore(
         { id: session.id, subjectType: session.subjectType, subjectProfileId: session.subjectProfileId },
         session.providerId,
@@ -517,6 +545,17 @@ export class CostSheetAutoDraftService {
       this.logger.warn(`Auto-draft error for ${logTag}: ${err.message}`);
       return this.skip("error:" + (err.message || "unknown"));
     }
+  }
+
+  /** Every login on this family's account. Partners share threads. */
+  private async sharedAccountUserIds(userId: string, parentAccountId: string | null): Promise<string[]> {
+    if (!parentAccountId) return [userId];
+    const members = await this.prisma.user.findMany({
+      where: { parentAccountId },
+      select: { id: true },
+    });
+    const ids = members.map((m) => m.id);
+    return ids.length ? ids : [userId];
   }
 
   private skip(reason: string): AutoDraftResult {

@@ -194,7 +194,7 @@ async function buildActivity(ctx: {
    * conversation leak guard. Keyed so an entry drawn from a message can name
    * the org the thread belongs to.
    */
-  sessionOrg: Map<string, { providerId: string | null; providerName: string | null }>;
+  sessionOrg: Map<string, { providerId: string | null; providerName: string | null; shared: boolean }>;
 }): Promise<any[]> {
   const sessionIds = Array.from(ctx.sessionOrg.keys());
   // Threads this viewer is shown, PLUS any thread they sent a quote into. The
@@ -503,6 +503,11 @@ async function buildActivity(ctx: {
       // card for someone else and is dropped.
       const q = card.quoteId ? quoteById.get(card.quoteId) : null;
       if (!q) continue;
+      // ...and the thread still has to be one the provider is a party to.
+      // Paperwork belongs in the 3-way chat; a card sitting in the family's
+      // private Eva thread is there because of the stamping bug, and
+      // surfacing it would leak a private conversation's contents sideways.
+      if (!isAdmin && !org?.shared) continue;
       const qOrg = orgById.get(q.providerId);
       out.push({
         ...base,
@@ -533,8 +538,10 @@ async function buildActivity(ctx: {
       continue;
     }
 
-    // ACCESS: a file's only owner is the thread it was posted in.
-    if (!ctx.sessionOrg.has(m.sessionId)) continue;
+    // ACCESS: a file's only owner is the thread it was posted in, and that
+    // thread has to be shared. Same rule as the cost sheet above.
+    if (!org) continue;
+    if (!isAdmin && !org.shared) continue;
     if (!card.url) continue;                       // nothing to open - not a real file card
     out.push({
       ...base,
@@ -824,6 +831,20 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       null,
     );
   }
+
+  // Threads the provider is actually a party to: they joined, or the thread
+  // reached a state that only exists because a call was booked or a human
+  // stepped in. An ACTIVE thread carrying their providerId is NOT one of
+  // these - that stamp comes from a whisper travelling through the family's
+  // private Eva chat. Mirrors SHARED_THREAD_STATUSES on the write side
+  // (cost-sheet-auto-draft.service.ts); paperwork rides the 3-way chat, and
+  // what the family says to Eva stays between them.
+  const sharedSessionIds = new Set(
+    sessions
+      .filter((s) => s.providerJoinedAt
+        || ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED", "HUMAN_JOINED"].includes(s.status))
+      .map((s) => s.id),
+  );
 
   // ── Conversations ────────────────────────────────────────────────────────
   const conversations = sessions.map((s) => {
@@ -1155,7 +1176,16 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     // viewer is not shown must not leak through its attachments.
     sessionOrg: new Map(conversations.map((c) => [
       c.sessionId,
-      { providerId: c.providerId, providerName: c.providerName },
+      {
+        providerId: c.providerId,
+        providerName: c.providerName,
+        // A thread the provider is actually a party to. An ACTIVE thread that
+        // merely carries their providerId is the family's private Eva chat
+        // with a whisper stamp on it - see SHARED_THREAD_STATUSES in
+        // cost-sheet-auto-draft.service.ts, which is the same test on the
+        // write side.
+        shared: !!sharedSessionIds.has(c.sessionId),
+      },
     ])),
   });
 
