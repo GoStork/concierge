@@ -402,6 +402,28 @@ export default function ProviderHomePage() {
         ))}
       </Card>
 
+      {/* Agreements sit with the paperwork they belong to - Cost Sheets,
+          Invoices, Agreements - rather than after the analytics cards. The
+          documents a provider sends a family are one sequence, and Payouts
+          and the performance sections are a different job. */}
+      <Card className="p-5 space-y-3">
+        <SectionHeader icon={<FileSignature className="w-5 h-5 text-primary" />} title="Agreements" viewAllTo="/provider/agreements" />
+        <AgreementRows
+          items={providerAgreements.slice(0, 5).map((a: any) => ({
+            id: a.id,
+            status: a.status,
+            documentType: a.documentType,
+            createdAt: a.createdAt,
+            signedAt: a.signedAt,
+            title: a.parentName,
+            // Absorbs the old "Out for signature" section: SENT rows show
+            // their signer progress inline.
+            progressLabel: progressByAgreement.get(a.id) || null,
+          }))}
+          emptyText="No agreements sent yet."
+        />
+      </Card>
+
       {/* Payouts */}
       <Card className="p-5 space-y-3">
         <SectionHeader icon={<Landmark className="w-5 h-5 text-primary" />} title="Payouts" viewAllTo="/provider/payouts" />
@@ -568,24 +590,6 @@ export default function ProviderHomePage() {
         })()}
       </Card>
 
-      {/* Agreements */}
-      <Card className="p-5 space-y-3">
-        <SectionHeader icon={<FileSignature className="w-5 h-5 text-primary" />} title="Agreements" viewAllTo="/provider/agreements" />
-        <AgreementRows
-          items={providerAgreements.slice(0, 5).map((a: any) => ({
-            id: a.id,
-            status: a.status,
-            documentType: a.documentType,
-            createdAt: a.createdAt,
-            signedAt: a.signedAt,
-            title: a.parentName,
-            // Absorbs the old "Out for signature" section: SENT rows show
-            // their signer progress inline.
-            progressLabel: progressByAgreement.get(a.id) || null,
-          }))}
-          emptyText="No agreements sent yet."
-        />
-      </Card>
       <BookingDetailDialog booking={selectedMeeting} open={!!selectedMeeting} onClose={() => setSelectedMeeting(null)} />
     </div>
   );
