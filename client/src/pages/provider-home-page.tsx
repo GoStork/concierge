@@ -34,6 +34,7 @@ import {
   Star,
 } from "lucide-react";
 import { AgreementRows } from "@/components/agreements-list";
+import { StarDisplay } from "@/components/reviews/reviews-ui";
 import { QueueRow, SectionHeader } from "@/components/home/home-sections";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
@@ -75,6 +76,18 @@ export default function ProviderHomePage() {
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  // Reviews for the home card. Same query key ProviderReviewsPanel uses on
+  // /performance, so opening "All reviews" costs no second request.
+  const { data: myReviews } = useQuery<any[]>({
+    queryKey: ["/api/reviews/mine"],
+    queryFn: async () => {
+      const res = await fetch("/api/reviews/mine", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
   const firstName = (user as any)?.firstName || (user as any)?.name?.split(" ")[0] || "there";
 
   // Always refetch on mount/focus - global defaults cache forever, which
@@ -477,6 +490,82 @@ export default function ProviderHomePage() {
             <p className="t-helper">engaged to handed off</p>
           </div>
         </div>
+      </Card>
+
+      {/* Reviews - what parents said after working with you. The third leg
+          beside Profile Performance (marketing) and Journey Funnel (pipeline):
+          those two measure what you attract and what you convert, this one
+          measures how it went. "Awaiting response" is the actionable number -
+          a review with no reply is the one thing on this card to do something
+          about, and the reply box lives on /performance. */}
+      <Card className="p-5 space-y-3">
+        <SectionHeader icon={<Star className="w-5 h-5 text-primary" />} title="Reviews" viewAllTo="/performance?tab=reviews" viewAllLabel="All reviews" />
+        <p className="t-helper -mt-2">Verified reviews from parents who worked with you - all time</p>
+        {(() => {
+          const reviews = myReviews || [];
+          const rated = reviews.filter((r: any) => typeof r.rating === "number");
+          if (rated.length === 0) {
+            return (
+              <p className="t-helper">
+                No reviews yet. Parents are invited to review you after a completed consultation.
+              </p>
+            );
+          }
+          const avg = rated.reduce((sum: number, r: any) => sum + r.rating, 0) / rated.length;
+          const awaiting = reviews.filter((r: any) => !r.providerReply).length;
+          const latest = reviews[0];
+          return (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
+                  <p className="t-micro-label">Average rating</p>
+                  <p className="text-lg font-heading font-bold">{avg.toFixed(1)}</p>
+                  <StarDisplay value={avg} size={13} />
+                </div>
+                <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
+                  <p className="t-micro-label">Reviews</p>
+                  <p className="text-lg font-heading font-bold">{rated.length.toLocaleString()}</p>
+                  <p className="t-helper">verified by GoStork</p>
+                </div>
+                <div className="rounded-[var(--radius)] border p-3 bg-secondary/40">
+                  <p className="t-micro-label">Awaiting response</p>
+                  {/* Warning tone only when there is something to answer -
+                      a bold amber zero would read as a problem. */}
+                  <p
+                    className="text-lg font-heading font-bold"
+                    style={awaiting > 0 ? { color: "hsl(var(--brand-warning))" } : undefined}
+                  >
+                    {awaiting.toLocaleString()}
+                  </p>
+                  <p className="t-helper">{awaiting > 0 ? "you can reply publicly" : "all answered"}</p>
+                </div>
+              </div>
+              {latest && (
+                <button
+                  type="button"
+                  onClick={() => navigate("/performance?tab=reviews")}
+                  className="w-full text-left rounded-[var(--radius)] border p-3 hover:bg-secondary/30 transition-colors"
+                  data-testid="home-latest-review"
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <StarDisplay value={latest.rating} size={13} />
+                    {/* reviewerLabel, not authorName - the server already resolves
+                        anonymity into a display label ("Eran A." / "A parent"),
+                        and it is what the reply panel shows. */}
+                    <span className="text-sm font-medium">{latest.reviewerLabel || "A parent"}</span>
+                    <span className="t-helper ml-auto">{new Date(latest.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  {latest.text && <p className="t-helper mt-1 line-clamp-2">{latest.text}</p>}
+                  {!latest.providerReply && (
+                    <span className="t-helper mt-1 inline-block" style={{ color: "hsl(var(--brand-warning))" }}>
+                      Not answered yet
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+          );
+        })()}
       </Card>
 
       {/* Agreements */}
