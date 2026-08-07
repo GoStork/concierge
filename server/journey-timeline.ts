@@ -73,12 +73,27 @@ export function classifyJourneyType(serviceNames: string[], subjectTypes: string
   const subj = subjectTypes.map((s) => (s || "").toLowerCase()).filter(Boolean);
   if (svc.some((s) => s.includes("legal")) || subj.includes("legal")) return "legal";
   if (svc.some((s) => s.includes("egg bank") || s.includes("sperm bank"))) return "bank";
-  // Multi-service agencies disambiguate by what the chats are actually about.
-  if (subj.some((s) => s.includes("surrog"))) return "surrogacy";
-  if (subj.some((s) => s.includes("egg") || s.includes("donor"))) return "egg_donation";
-  if (svc.some((s) => s.includes("surrogacy"))) return "surrogacy";
-  if (svc.some((s) => s.includes("egg donor"))) return "egg_donation";
-  if (svc.some((s) => s.includes("ivf") || s.includes("clinic"))) return "ivf";
+
+  // Subject types disambiguate MULTI-SERVICE agencies: an org that does both
+  // surrogacy and egg donation is placed by what the chats are actually about.
+  //
+  // What it must never do is promote an org into a service it does not offer.
+  // PFCLA is an IVF clinic. One chat thread mis-stamped with another agency's
+  // SURROGATE as its subject was enough to hand the clinic the surrogacy
+  // ladder - so a family's clinic journey showed "Match Call Scheduled" and
+  // "Matched", two rungs that only exist for agencies, on both the provider's
+  // and the parent's screen. The subject says what a conversation is about;
+  // the provider's own approved services say what they can be.
+  const offers = (needle: string) => svc.some((s) => s.includes(needle));
+  // No services loaded (a bare bucket) leaves the subject as the only signal.
+  const noServicesKnown = svc.length === 0;
+  if ((offers("surrogacy") || noServicesKnown) && subj.some((s) => s.includes("surrog"))) return "surrogacy";
+  if ((offers("egg donor") || noServicesKnown) && subj.some((s) => s.includes("egg") || s.includes("donor"))) {
+    return "egg_donation";
+  }
+  if (offers("surrogacy")) return "surrogacy";
+  if (offers("egg donor")) return "egg_donation";
+  if (offers("ivf") || offers("clinic")) return "ivf";
   return "surrogacy";
 }
 

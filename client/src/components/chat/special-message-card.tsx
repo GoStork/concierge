@@ -532,7 +532,11 @@ export function SpecialMessageCard({ msg, brandColor, viewerRole, onOpenInlineVi
           </div>
           <div className="px-4 py-3 space-y-0.5">
             <p className="text-sm font-semibold">{parentNames}</p>
-            <p className="t-helper">Completed and signed - ready to download.</p>
+            <p className="t-helper">
+              {responseId
+                ? "Completed and signed - ready to download."
+                : "Completed and signed. The PDF unlocks once this family shares their contact details with you - sending an invoice or an agreement does it."}
+            </p>
           </div>
           {responseId && (
             <div className="border-t px-4 py-3 space-y-2">

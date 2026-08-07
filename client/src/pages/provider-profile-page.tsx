@@ -82,6 +82,30 @@ export default function ProviderProfilePage() {
     recordProfileOpen(id, viewType); // click-through (VIEW) event
   }, [id, provider]);
 
+  // "Reply to review" on the parent record links here. This page has no tabs -
+  // it is one long scroll with an anchored Reviews section - so the old
+  // `?tab=reviews&review=<id>` link did nothing at all and dropped the
+  // provider somewhere in the middle of the page, next to CDC success rates.
+  // Honour `?review=` by scrolling to the section once it has rendered.
+  const reviewParam = searchParams.get("review");
+  useEffect(() => {
+    if (!reviewParam || !provider) return;
+    // Measured, not assumed: the section is in the DOM on the first tick, so
+    // "wait for it to mount" was the wrong diagnosis. What fails is a SMOOTH
+    // scroll - it aims at an offset computed when the call is made, and the
+    // CDC charts and service cards above are still loading, so the target
+    // slides out from under the animation and the page never moves.
+    //
+    // Jump instantly instead, then re-assert twice as the rest of the page
+    // settles. Cheap, and the last correction is what actually lands.
+    const jump = () =>
+      document.getElementById("parent-reviews-section")?.scrollIntoView({ behavior: "auto", block: "start" });
+    jump();
+    const t1 = window.setTimeout(jump, 400);
+    const t2 = window.setTimeout(jump, 1200);
+    return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
+  }, [reviewParam, provider]);
+
   const surrogacyProfile = provider?.surrogacyProfile;
   const screening = surrogacyProfile?.screening;
 

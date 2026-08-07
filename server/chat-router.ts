@@ -1800,7 +1800,19 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       // (whisper Q&A phase), only show system + provider messages to keep the
       // parent anonymous. Provider-level booked threads also carry the merged
       // whisper history from sibling sessions (consolidation above).
-      messages: mergedMessages,
+      // The ip_form_submitted CARD carries its own copy of the PDF handle,
+      // baked into uiCardData when the message was written - so gating the
+      // right rail is not enough on its own. Strip it here, from every
+      // message, whenever contact is not released. Withholding the handle
+      // rather than hiding a button is what keeps the rule true no matter
+      // which surface renders the card.
+      messages: gates.showContact
+        ? mergedMessages
+        : (mergedMessages as any[]).map((m) =>
+            m?.uiCardType === "ip_form_submitted" && m?.uiCardData?.ipFormResponseId
+              ? { ...m, uiCardData: { ...m.uiCardData, ipFormResponseId: null } }
+              : m,
+          ),
       accountMembers: showIdentity ? accountMembers.map(m => ({ id: m.id, displayName: formatInitials(m) })) : [],
     };
 
@@ -1827,10 +1839,20 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     (responseSession as any).profileStatus = provDetailEntry ? provDetailEntry.status : null;
     await applyMatchedLabelForInCycle([responseSession as any]);
 
-    // Intended Parent Form status for the right rail (identity-revealed only).
-    // Every connected provider can download the full PDF once it exists, even
-    // one that doesn't collect the form itself; only surrogacy agencies get the
-    // surrogate-safe variant.
+    // Intended Parent Form status for the right rail.
+    //
+    // TWO gates, not one. Identity (Gate A) decides whether the block renders
+    // at all; CONTACT RELEASE (Gate B) decides whether the PDF handle ships.
+    // This used to gate on identity alone, with a comment saying every
+    // connected provider may download it - but the PDF endpoint itself gates
+    // on contact release, so the right rail drew a "Download full PDF" button
+    // that 403'd on click. The parent record has always said the true thing
+    // ("the PDF unlocks once this family shares their contact details with
+    // you"); this brings the chat in line rather than loosening the endpoint.
+    //
+    // responseId is the handle to the richest PII we hold - legal names, date
+    // of birth, home address, and a photo ID. Withholding it, not just hiding
+    // a button, is what makes the rule real.
     if (showIdentity) {
       const ipAcct = session.user?.parentAccountId || session.userId;
       const ipRow = await prisma.ipFormResponse.findUnique({
@@ -1840,7 +1862,11 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
       const { providerOffersSurrogacy } = await import("./ip-form-flow");
       (responseSession as any).ipForm = ipRow
         ? {
-            responseId: ipRow.id, status: ipRow.status, submittedAt: ipRow.submittedAt,
+            // Null when contact is not released. `status` stays, so the rail
+            // can say "submitted, and here is what unlocks it" instead of the
+            // flat lie "not submitted yet".
+            responseId: gates.showContact ? ipRow.id : null,
+            status: ipRow.status, submittedAt: ipRow.submittedAt,
             promptedAt: ipRow.promptedAt, hasSecondParent: ipRow.hasSecondParent,
             surrogateAvailable: await providerOffersSurrogacy(user.providerId),
           }

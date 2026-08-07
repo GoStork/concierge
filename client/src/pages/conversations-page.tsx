@@ -3213,7 +3213,14 @@ const sendMessageMutation = useMutation({
                   {detail?.ipForm && (
                     <div className="border-t pt-4 mt-4" data-testid="provider-ip-form-section">
                       <h4 className="font-semibold text-sm mb-3" style={{ fontFamily: "var(--font-display)" }}>Intended Parent Form</h4>
-                      {detail.ipForm.status === "SUBMITTED" ? (
+                      {/* responseId, not status. The server withholds the
+                          handle until contact is released (Gate B), which is
+                          also what the PDF endpoint enforces - so keying the
+                          buttons on `status` alone drew a Download link that
+                          403'd on click. Same three-way split the parent
+                          record uses: downloadable / submitted-but-locked /
+                          not submitted. */}
+                      {detail.ipForm.status === "SUBMITTED" && detail.ipForm.responseId ? (
                         <div className="space-y-2">
                           <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--brand-success))] font-medium">
                             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -3236,6 +3243,14 @@ const sendMessageMutation = useMutation({
                             </a>
                           )}
                         </div>
+                      ) : detail.ipForm.status === "SUBMITTED" ? (
+                        // Submitted, handle withheld. "Not submitted yet"
+                        // would be a flat lie about a form the family did
+                        // complete and sign. Wording matches the record.
+                        <p className="t-helper" data-testid="ip-form-locked">
+                          Submitted{detail.ipForm.submittedAt ? ` on ${new Date(detail.ipForm.submittedAt).toLocaleDateString()}` : ""}. The PDF unlocks once this
+                          family shares their contact details with you - sending an invoice or an agreement does it.
+                        </p>
                       ) : (
                         <p className="t-helper">
                           {detail.ipForm.promptedAt

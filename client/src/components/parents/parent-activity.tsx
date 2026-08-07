@@ -471,7 +471,10 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
         {detail.hasResponse ? (
           <Row label="Your reply">{detail.responseText}</Row>
         ) : (
-          <Button size="sm" variant="outline" className="mt-1" onClick={() => navigate(`/providers/${detail.providerId}?tab=reviews&review=${detail.reviewId}`)} data-testid={`btn-review-reply-${detail.reviewId}`}>
+          <Button size="sm" variant="outline" className="mt-1" // This page has no tabs; ?tab=reviews was inert and left you mid-page.
+            // `?review=` is what it actually honours, and the hash is the
+            // fallback if the effect ever misses.
+            onClick={() => navigate(`/providers/${detail.providerId}?review=${detail.reviewId}#parent-reviews-section`)} data-testid={`btn-review-reply-${detail.reviewId}`}>
             <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Reply to review
           </Button>
         )}
