@@ -2435,6 +2435,19 @@ const sendMessageMutation = useMutation({
       }
     }
 
+    // Names that more than one FAMILY on this list answers to. Two accounts
+    // sharing a display name is ordinary (partners, or a person with several
+    // accounts), and it is the one case where the compact flat row hides which
+    // family a thread belongs to.
+    const nameTally = new Map<string, number>();
+    for (const groupSessions of Object.values(parentGroups)) {
+      const n = (groupSessions[0]?.userName || "").trim().toLowerCase();
+      if (n) nameTally.set(n, (nameTally.get(n) || 0) + 1);
+    }
+    const duplicatedParentNames = new Set(
+      Array.from(nameTally.entries()).filter(([, c]) => c > 1).map(([n]) => n),
+    );
+
     // Sort groups: most recent first
     const sortedGroupEntries = Object.entries(parentGroups).sort((a, b) => {
       const aLatest = Math.max(...a[1].map(s => new Date(s.lastMessageAt).getTime()));
@@ -2532,7 +2545,16 @@ const sendMessageMutation = useMutation({
           // (bold parent name) - a group header wrapping one row is pure redundancy.
           // Post-consolidation this is the normal case for clinics, agencies
           // without listings, legal, and country programs.
-          const soloProviderLevel = groupSessions.length === 1 && !isProfileThread(first);
+          //
+          // EXCEPT when another family on this list has the same name. Then the
+          // flat row is a bold name with no avatar and no boundary, sitting
+          // directly against the next family's rows - so two separate parents
+          // called "Eran Amir" read as one group with a stranger's threads in
+          // it. Keeping the header costs one line and makes the boundary and
+          // the two different faces visible. The groups were never merged;
+          // the divider between them was missing.
+          const nameIsAmbiguous = (duplicatedParentNames.has((first.userName || "").trim().toLowerCase()));
+          const soloProviderLevel = groupSessions.length === 1 && !isProfileThread(first) && !nameIsAmbiguous;
           return (
             <div key={parentUserId} data-testid={`parent-group-${parentUserId}`}>
               {!soloProviderLevel && (
