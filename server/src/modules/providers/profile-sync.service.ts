@@ -1218,6 +1218,25 @@ function extractWpDonorCardProfileUrls(html: string, baseUrl: string): Map<strin
 }
 
 /**
+ * Generic complement to extractWpDonorCardProfileUrls: many WP donor lists link
+ * each card straight to /donor/<id>/ where <id> is the externalId the listing
+ * extraction reports (e.g. Conceptions Center). Capture every such link so
+ * per-donor enrichment can fetch the detail page even when the site lacks the
+ * donor-card/view-more markup. Never overwrites entries captured from card
+ * markup (those are authoritative when both exist).
+ */
+function addNumericProfileDetailUrls(html: string, baseUrl: string, map: Map<string, string>): void {
+  if (!html) return;
+  for (const m of html.matchAll(/href="([^"]*\/(?:donor|surrogate|profile)s?\/(\d{2,})\/?(?:[^"]*)?)"/gi)) {
+    const id = m[2];
+    if (map.has(id)) continue;
+    let href = m[1].trim();
+    try { href = new URL(href, baseUrl).href; } catch {}
+    map.set(id, href);
+  }
+}
+
+/**
  * Extract every photo URL from a Fotorama gallery on a donor-view page (e.g.
  * Eggspecting). The raw (pre-JS) markup is a flat list of <img src> tags inside
  * <div class="fotorama" ...>:
@@ -1324,6 +1343,7 @@ Return a JSON object:
     }
   },
   "photoUrl": "URL to profile photo if visible",
+  "photos": ["EVERY photo URL of THIS person found on the page - the main photo plus all gallery/thumbnail images. When a thumbnail variant exists (WordPress -150x150 style suffix), return the full-size original URL instead. EXCLUDE site logos, icons, decorative images, and photos of anyone else. Empty array if none."],
   "externalId": "Donor/surrogate ID if visible",
   "vialTypes": ["ICI", "IUI"],
   "iciCost": number or null,
@@ -1392,6 +1412,7 @@ async function extractProfileDetailSections(
 ): Promise<{
   _sections: Record<string, Record<string, any>>;
   photoUrl?: string;
+  photos?: string[];
   externalId?: string;
   // Flat scalars the sperm-donor branch reads off the same payload. They were
   // always returned; the type just never said so.
@@ -4855,7 +4876,22 @@ async function runSyncJob(
       return;
     }
 
-    if (sessionCookies && mainHtml.length > 0 && !isOrchidJmsSite(mainHtml) && !sourceUrl.includes("o-jms.com") && !mainHtml.includes("donorCardDiv")) {
+    // How many links on a page point at individual profile-detail pages
+    // (e.g. /donor/11376/, /surrogate-profile/482). A page with several of
+    // these IS the listing - navigating away from it loses the profiles.
+    const countProfileDetailLinks = (html: string): number => {
+      const seen = new Set<string>();
+      for (const m of html.matchAll(/href="([^"]*(?:donor|surrogate|profile)[^"]*\d{2,}[^"]*)"/gi)) {
+        seen.add(m[1]);
+      }
+      return seen.size;
+    };
+    const mainProfileLinks = countProfileDetailLinks(mainHtml);
+    if (mainProfileLinks >= 5) {
+      console.log(`[donor-sync] Source page already lists ${mainProfileLinks} profile links - skipping nav-link discovery`);
+    }
+
+    if (sessionCookies && mainHtml.length > 0 && mainProfileLinks < 5 && !isOrchidJmsSite(mainHtml) && !sourceUrl.includes("o-jms.com") && !mainHtml.includes("donorCardDiv")) {
       const typeNavKeywords: Record<DonorType, RegExp> = {
         "egg-donor": /egg\s*donor|donor\s*match|donor\s*database|donor\s*search|find\s*(?:a\s*)?donor|browse\s*donor/i,
         "surrogate": /surrogate|gestational\s*carrier|\bgc\b|surrogate\s*match|find\s*(?:a\s*)?surrogate|browse\s*surrogate/i,
@@ -4863,8 +4899,12 @@ async function runSyncJob(
       };
       const navPattern = typeNavKeywords[job.type];
       const linkMatches = [...mainHtml.matchAll(/href="([^"]+)"[^>]*>([^<]*)</gi)];
+      // A "Login to Proceed to Donor Database" CTA matches the donor keywords but
+      // leads AWAY from the listing to a login page - never follow login/register links.
+      const loginLinkPattern = /log[\s-]?in|sign[\s-]?in|register|sign[\s-]?up/i;
       const navCandidates = linkMatches
         .filter(m => navPattern.test(m[2]) || navPattern.test(m[1]))
+        .filter(m => !loginLinkPattern.test(m[1]) && !loginLinkPattern.test(m[2]))
         .filter(m => !/\.(css|js|png|jpg|svg|ico|woff|ttf|pdf)\b/i.test(m[1]))
         .filter(m => !m[1].startsWith("#") && !m[1].startsWith("javascript:"));
 
@@ -4873,10 +4913,20 @@ async function runSyncJob(
         console.log(`[donor-sync] Found type-aware nav link for ${job.type}: "${navCandidates[0][2].trim()}" → ${navUrl}`);
         try {
           const navHtml = await fetchHtml(navUrl, sessionCookies);
-          if (navHtml.length > mainHtml.length / 2 && !navHtml.includes('type="password"')) {
+          // Only switch when the destination actually looks MORE like a listing
+          // than where we already are - an info page ("Egg Donor Requirements")
+          // can match the nav keywords yet contain zero profiles.
+          const navProfileLinks = countProfileDetailLinks(navHtml);
+          if (
+            navHtml.length > mainHtml.length / 2 &&
+            !/type=["']password["']/i.test(navHtml) &&
+            navProfileLinks > mainProfileLinks
+          ) {
             mainHtml = navHtml;
             sourceUrl = navUrl;
-            console.log(`[donor-sync] Navigated to ${job.type} listing page (${navHtml.length} chars)`);
+            console.log(`[donor-sync] Navigated to ${job.type} listing page (${navHtml.length} chars, ${navProfileLinks} profile links)`);
+          } else {
+            console.log(`[donor-sync] Staying on source page - nav candidate has ${navProfileLinks} profile links vs ${mainProfileLinks} here`);
           }
         } catch (err: any) {
           console.warn(`[donor-sync] Type-aware nav link failed: ${err.message}`);
@@ -5485,6 +5535,12 @@ async function runSyncJob(
     // profile-link paths entirely (those cards have no per-donor pages and 404).
     const hasWpPaging = /[?&]paged=\d+/.test(mainHtml) || /wp-paginate/i.test(mainHtml);
 
+    // Capture per-donor detail URLs from the listing we already have, for every
+    // path (WP-paginated or not) - enrichment needs item.profileUrl to fetch the
+    // detail page, and card markup capture alone misses sites whose cards link
+    // plainly to /donor/<id>/ (e.g. Conceptions Center).
+    addNumericProfileDetailUrls(mainHtml, sourceUrl, wpProfileUrlMap);
+
     if (!hasWpPaging && profileLinks.length > 0 && items.length < 3) {
       const maxProfiles = Math.min(profileLinks.length, profileLimit && profileLimit > 0 ? profileLimit : 50);
       job.total = maxProfiles;
@@ -5634,7 +5690,7 @@ async function runSyncJob(
         ? prisma.surrogate.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true } })
         : job.type === "sperm-donor"
         ? prisma.spermDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, vialTypes: true, profileData: true } })
-        : prisma.eggDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, photos: true } });
+        : prisma.eggDonor.findMany({ where: { providerId: job.providerId, externalId: { in: externalIds } }, select: { externalId: true, cardHash: true, lastFullSyncAt: true, photos: true, profileData: true } });
       const existing = await dbTable;
       for (const d of existing) {
         if (d.externalId && d.cardHash) existingHashes.set(d.externalId, d.cardHash);
@@ -5719,13 +5775,18 @@ async function runSyncJob(
                   console.log(`[donor-sync] Gallery: ${merged.length} photos for ${item.externalId} from ${item.profileUrl}`);
                 }
               }
-              // WP card-list egg sites (e.g. Eggspecting): the gallery is captured
-              // above, and their donor-view pages are large enough to reliably time
-              // out Gemini section extraction (which they don't need). Skip the rest
-              // of the per-donor enrichment for them - the import loop still upserts
-              // the item with its photos. Non-WP egg providers (e.g. Family Creations)
-              // and sperm donors fall through to the section/vialType extraction below.
-              if (hasWpPaging && job.type === "egg-donor") return;
+              // WP card-list egg sites: skip re-extraction only for donors that are
+              // already FULLY enriched (section data AND a 2+ photo gallery from a
+              // previous run) - re-running Gemini on every large donor-view page
+              // each sync is waste (and on Eggspecting it reliably timed out). A
+              // donor missing either falls through so Education / Religion / the
+              // detail tabs / the photo gallery get extracted at least once.
+              if (
+                hasWpPaging &&
+                job.type === "egg-donor" &&
+                existingHasSections.has(item.externalId || "") &&
+                (existingPhotoCount.get(item.externalId || "") ?? 0) >= 2
+              ) return;
               // Direct extraction of vialTypes from SBC profile HTML.
               // SBC renders: <p class="IUI">Available for: <strong>IUI</strong></p>
               // so we match <p class="..."> with class values ICI/IUI/IVF (primary method).
@@ -5762,6 +5823,23 @@ async function runSyncJob(
                 if (!item.profileData) item.profileData = {};
                 item.profileData._sections = sections._sections;
                 if (sections.photoUrl && !item.photoUrl) item.photoUrl = sections.photoUrl;
+                // Merge the gallery Gemini saw on the detail page into "All Photos"
+                // (same downstream path as the Fotorama extractor: persistPhotoUrls
+                // migrates them to GCS and fills the photos[] column). Covers sites
+                // whose galleries use markup the deterministic extractors don't know.
+                if (Array.isArray(sections.photos) && sections.photos.length > 0) {
+                  const existingGallery = Array.isArray(item.profileData["All Photos"]) ? item.profileData["All Photos"] : [];
+                  const merged: string[] = [];
+                  for (const u of [item.photoUrl, ...existingGallery, ...sections.photos]) {
+                    if (typeof u === "string" && /^https?:\/\//i.test(u) && !merged.includes(u)) merged.push(u);
+                  }
+                  if (merged.length > 1) {
+                    item.profileData["All Photos"] = merged;
+                    if (!item.photoUrl) item.photoUrl = merged[0];
+                    item.photoCount = merged.length;
+                    console.log(`[donor-sync] Gallery (Gemini): ${merged.length} photos for ${item.externalId}`);
+                  }
+                }
                 console.log(`[donor-sync] Enriched ${item.externalId} with ${Object.keys(sections._sections).length} sections`);
 
                 // Map section fields to top-level DB columns for sperm donors
@@ -5803,6 +5881,18 @@ async function runSyncJob(
                   for (const c of cands) { const s = scalar(c); if (s) return s; }
                   return null;
                 };
+                // Case-insensitive lookup across every section field - label
+                // casing varies per site ("Religion Born into" vs "Religion Born
+                // Into"), and exact-key misses left columns null.
+                const flatCI: Record<string, any> = {};
+                for (const [k, v] of Object.entries(flatAll)) flatCI[k.toLowerCase()] = v;
+                const flatGet = (...names: string[]): any => {
+                  for (const n of names) {
+                    const v = flatCI[n.toLowerCase()];
+                    if (v !== null && v !== undefined && v !== "") return v;
+                  }
+                  return null;
+                };
 
                 const ageVal = gc["Age When Donated"] || flatAll["Age When Donated"] || flatAll["Age"];
                 if (ageVal) { const p = parseInt(String(ageVal)); if (!isNaN(p)) item.age = p; }
@@ -5826,15 +5916,24 @@ async function runSyncJob(
                   item.ethnicity = dedupeOrigins(flatAll["Ethnicity"].split(/[,;]+/)) || item.ethnicity || null;
                 }
                 item.education = pickScalar(ed["Major/Area of Study"], ed["Education"], ed["Education Level"],
-                  flatAll["Major/Area of Study"], flatAll["Education"]) || item.education || null;
+                  flatAll["Major/Area of Study"], flatAll["Education"],
+                  flatGet("education level", "highest education", "degrees earned major")) || item.education || null;
                 item.occupation = pickScalar(ed["What is your current or most recent occupation?"],
                   ed["Occupation"], ed["Current Occupation"], ed["What is your occupation?"],
                   flatAll["Occupation"], flatAll["What is your current or most recent occupation?"]) || item.occupation || null;
                 item.religion = pickScalar(relBg["Religion Practiced"], relBg["Religion Born Into"],
-                  relBg["Religion"], flatAll["Religion Practiced"], flatAll["Religion"]) || item.religion || null;
+                  relBg["Religion"], flatAll["Religion Practiced"], flatAll["Religion"],
+                  flatGet("religion practicing now", "religion born into", "religious background")) || item.religion || null;
+                item.bloodType = pickScalar(flatGet("blood type", "blood group", "abo/rh")) || item.bloodType || null;
+                item.relationshipStatus = pickScalar(flatGet("marital status", "relationship status", "partner status")) || item.relationshipStatus || null;
+                if (!item.hairColor) item.hairColor = pickScalar(flatGet("natural hair color", "hair colour"));
+                // Race and ethnicity are used interchangeably by most source sites
+                // (the marketplace filter layer already resolves their synonyms).
+                if (!item.race && item.ethnicity) item.race = item.ethnicity;
                 // Location: use Place of Birth or Location from sections
                 if (!item.location) {
-                  item.location = pickScalar(gc["Place of Birth"], gc["Location"], flatAll["Place of Birth"], flatAll["Location"]);
+                  item.location = pickScalar(gc["Place of Birth"], gc["Location"], flatAll["Place of Birth"], flatAll["Location"],
+                    flatGet("current city", "city", "region", "state"));
                 }
                 // Extract vialTypes from sections response
                 if ((!item.vialTypes || item.vialTypes.length === 0) && Array.isArray(sections.vialTypes) && sections.vialTypes.length > 0) {
@@ -5918,6 +6017,7 @@ async function runSyncJob(
       job.currentStep = totalPages > 1 ? `Importing donors - page 1 of ${totalPages}...` : "Importing donors - page 1...";
       // Capture per-donor profile URLs from page 1's card markup before importing.
       for (const [k, v] of extractWpDonorCardProfileUrls(mainHtml, sourceUrl)) wpProfileUrlMap.set(k, v);
+      addNumericProfileDetailUrls(mainHtml, sourceUrl, wpProfileUrlMap);
       await enrichAndImportItems(items); // stream page 1 immediately
 
       const lastPage = totalPages > 1 ? totalPages : 200; // 200 = runaway guard when unknown
@@ -5941,6 +6041,7 @@ async function runSyncJob(
             job.type === "surrogate" ? pageData?.surrogates || [] : pageData?.donors || [];
           // Capture this page's per-donor profile URLs before importing its donors.
           for (const [k, v] of extractWpDonorCardProfileUrls(pageHtml, pagedUrl)) wpProfileUrlMap.set(k, v);
+          addNumericProfileDetailUrls(pageHtml, pagedUrl, wpProfileUrlMap);
           await enrichAndImportItems(pageItems); // import this page's donors now
         } catch (err: any) {
           // A 404 past the last page is the normal wp-paginate terminator.

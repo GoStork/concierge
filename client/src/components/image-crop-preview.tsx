@@ -87,7 +87,7 @@ export default function ImageCropPreview({
   };
 
   return (
-    <div className="fixed inset-0 bg-background z-50 flex flex-col" data-testid="image-crop-preview">
+    <div className="fixed inset-0 bg-background z-[60] flex flex-col" data-testid="image-crop-preview">
       {/* Header - title only; Save + Cancel moved to bottom SaveBar */}
       <div className="flex items-center justify-center px-4 py-3 border-b border-border relative">
         <button

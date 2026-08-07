@@ -313,6 +313,22 @@ export default function ProfileDatabasePanel({
 
   const startSyncMutation = useMutation({
     mutationFn: async (limit?: number) => {
+      // Save the on-screen config first so "Start Sync" never fails with
+      // "configuration not found" when the admin skipped Save Config.
+      if (configUrl) {
+        await apiRequest(
+          "PUT",
+          `/api/providers/${providerId}/sync-config/${type}`,
+          {
+            databaseUrl: configUrl,
+            username: configUsername || undefined,
+            password: configPassword || undefined,
+          },
+        );
+        queryClient.invalidateQueries({
+          queryKey: [`/api/providers/${providerId}/sync-config/${type}`],
+        });
+      }
       const url = limit
         ? `/api/providers/${providerId}/sync/${type}?limit=${limit}`
         : `/api/providers/${providerId}/sync/${type}`;
@@ -698,6 +714,7 @@ export default function ProfileDatabasePanel({
                 onChange={(e) => setConfigUsername(e.target.value)}
                 className="pl-8"
                 disabled={!isAdmin || isRunning}
+                autoComplete="off"
               />
             </div>
           </div>
@@ -707,6 +724,10 @@ export default function ProfileDatabasePanel({
             </Label>
             <div className="relative">
               <Lock className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
+              {/* new-password stops the browser autofilling the ADMIN's own GoStork
+                  login here - these are credentials for the provider's external
+                  site, and an autofilled wrong password gets silently saved by
+                  the sync auto-save. */}
               <Input
                 id={`pass-${type}`}
                 data-testid={`input-sync-password-${type}`}
@@ -716,6 +737,7 @@ export default function ProfileDatabasePanel({
                 onChange={(e) => setConfigPassword(e.target.value)}
                 className="pl-8 pr-8"
                 disabled={!isAdmin || isRunning}
+                autoComplete="new-password"
               />
               <button
                 type="button"

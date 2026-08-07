@@ -144,7 +144,7 @@ export default function AdminProviderAddPage() {
       setScrapedData(data);
       setPreviewName(data.name || "");
       setPreviewAbout(data.about || "");
-      setPreviewLogoUrl(data.logoUrl || "");
+      setPreviewLogoUrl(data.logoUrl || data.logoWithNameUrl || "");
       setPreviewEmail(data.email || "");
       setPreviewPhone(data.phone || "");
       setPreviewYearFounded(data.yearFounded ? String(data.yearFounded) : "");
@@ -211,7 +211,8 @@ export default function AdminProviderAddPage() {
       const sel: Record<string, "keep" | "scraped"> = {};
       if (data.name && data.name !== previewName) sel.name = previewName ? "keep" : "scraped";
       if (data.about && data.about !== previewAbout) sel.about = previewAbout ? "keep" : "scraped";
-      if (data.logoUrl && data.logoUrl !== previewLogoUrl) sel.logoUrl = previewLogoUrl ? "keep" : "scraped";
+      const scrapedLogo = data.logoUrl || data.logoWithNameUrl;
+      if (scrapedLogo && scrapedLogo !== previewLogoUrl) sel.logoUrl = previewLogoUrl ? "keep" : "scraped";
       if (data.phone && data.phone !== previewPhone) sel.phone = previewPhone ? "keep" : "scraped";
       if (data.yearFounded && String(data.yearFounded) !== previewYearFounded) sel.yearFounded = previewYearFounded ? "keep" : "scraped";
       setMergeSelections(sel);
@@ -517,7 +518,7 @@ export default function AdminProviderAddPage() {
             const scrapedValues: Record<string, string> = {
               name: scrapedData.name || "",
               about: scrapedData.about || "",
-              logoUrl: scrapedData.logoUrl || "",
+              logoUrl: scrapedData.logoUrl || scrapedData.logoWithNameUrl || "",
               email: scrapedData.email || "",
               phone: scrapedData.phone || "",
               yearFounded: scrapedData.yearFounded ? String(scrapedData.yearFounded) : "",
@@ -603,7 +604,7 @@ export default function AdminProviderAddPage() {
             const scrapedVals: Record<string, string> = {
               name: scrapedData.name || "",
               about: scrapedData.about || "",
-              logoUrl: scrapedData.logoUrl || "",
+              logoUrl: scrapedData.logoUrl || scrapedData.logoWithNameUrl || "",
               email: scrapedData.email || "",
               phone: scrapedData.phone || "",
               yearFounded: scrapedData.yearFounded ? String(scrapedData.yearFounded) : "",

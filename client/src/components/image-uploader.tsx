@@ -232,7 +232,7 @@ function LogoEditorOverlay({
   };
 
   return (
-    <div className="fixed inset-0 bg-background z-50 flex flex-col" data-testid={`${testId}-editor`}>
+    <div className="fixed inset-0 bg-background z-[60] flex flex-col" data-testid={`${testId}-editor`}>
       <div className="flex items-center justify-center px-4 py-3 border-b border-border relative">
         <button
           type="button"
@@ -248,9 +248,13 @@ function LogoEditorOverlay({
         </span>
       </div>
 
+      {/* min-h-0 + absolute canvas: the canvas bitmap size is set from this
+          container's size, so it must never feed back into the flex layout -
+          otherwise the container grows each frame and pushes the controls and
+          SaveBar below the viewport. */}
       <div
         ref={containerRef}
-        className="flex-1 relative cursor-grab active:cursor-grabbing select-none touch-none"
+        className="flex-1 min-h-0 overflow-hidden relative cursor-grab active:cursor-grabbing select-none touch-none"
         style={{ backgroundImage: CHECKER_BG, backgroundSize: "16px 16px" }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -258,7 +262,7 @@ function LogoEditorOverlay({
         onPointerCancel={handlePointerUp}
         onWheel={handleWheel}
       >
-        <canvas ref={canvasRef} className="w-full h-full" data-testid={`${testId}-canvas`} />
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" data-testid={`${testId}-canvas`} />
       </div>
 
       <div className="px-6 py-4 border-t border-border bg-background space-y-3">
