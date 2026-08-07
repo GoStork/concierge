@@ -1312,6 +1312,46 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
       take: 50,
     });
 
+    // LEAK GUARD: a session's providerId says who the THREAD is with, not who
+    // owns the profile it is ABOUT. A whisper stamps providerId onto the
+    // parent's private Eva thread, so a thread about another agency's
+    // surrogate can end up carrying this provider's id - and then this query,
+    // which trusts providerId alone, hands them the parent's private
+    // concierge transcript about a roster they do not own.
+    //
+    // Verified live: session a8e2f363 was stamped providerId=PFCLA (a clinic)
+    // while its subject was a Family Creations surrogate, and PFCLA could
+    // read the whole Eva conversation.
+    //
+    // Only marketplace-profile subjects can be owned by someone else; a
+    // clinic/doctor/legal/country-program subject IS the provider.
+    const ownableSubjectIds = sessions
+      .filter((x: any) => /donor|surrogate/i.test(x.subjectType || "") && x.subjectProfileId)
+      .map((x: any) => x.subjectProfileId as string);
+    let foreignSubjectIds = new Set<string>();
+    if (ownableSubjectIds.length) {
+      const [donors, surrogates, sperm] = await Promise.all([
+        prisma.eggDonor.findMany({ where: { id: { in: ownableSubjectIds } }, select: { id: true, providerId: true } }),
+        prisma.surrogate.findMany({ where: { id: { in: ownableSubjectIds } }, select: { id: true, providerId: true } }),
+        (prisma as any).spermDonor?.findMany
+          ? (prisma as any).spermDonor.findMany({ where: { id: { in: ownableSubjectIds } }, select: { id: true, providerId: true } })
+          : Promise.resolve([]),
+      ]);
+      foreignSubjectIds = new Set(
+        [...donors, ...surrogates, ...sperm]
+          .filter((p: any) => p.providerId && p.providerId !== user.providerId)
+          .map((p: any) => p.id as string),
+      );
+    }
+    const visibleSessions = sessions.filter((x: any) => {
+      if (!x.subjectProfileId || !foreignSubjectIds.has(x.subjectProfileId)) return true;
+      console.warn(
+        `[provider-sessions] session ${x.id} is stamped providerId=${user.providerId} but its subject ` +
+        `${x.subjectProfileId} belongs to another provider - withheld. The session stamp is wrong.`,
+      );
+      return false;
+    });
+
     const pendingCounts = await prisma.silentQuery.groupBy({
       by: ["sessionId"],
       where: { providerId: user.providerId, status: "PENDING" },
@@ -1343,7 +1383,7 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
     // can actually read.
     const inboxGates = await resolveParentGatesBatch(
       user.providerId,
-      sessions.map(s => ({
+      visibleSessions.map(s => ({
         accountKey: parentAccountKey(s.user as any),
         sessionStatus: s.status,
         // Sibling statuses for the same account are folded together inside the
@@ -1393,13 +1433,13 @@ chatRouter.get("/api/provider/concierge-sessions", requireAuth, async (req, res)
     // Resolve the parent-selected matchmaker (avatar + name + title) per
     // session - provider list rows should show the persona the parent picked,
     // not a generic sparkle icon.
-    const providerMatchmakerIds = sessions.map(s => s.matchmakerId).filter(Boolean) as string[];
+    const providerMatchmakerIds = visibleSessions.map(s => s.matchmakerId).filter(Boolean) as string[];
     const providerMatchmakers = providerMatchmakerIds.length > 0
       ? await prisma.matchmaker.findMany({ where: { id: { in: providerMatchmakerIds } } })
       : [];
     const providerMatchmakerMap = Object.fromEntries(providerMatchmakers.map(m => [m.id, m]));
 
-    const result = sessions.map(s => {
+    const result = visibleSessions.map(s => {
       const g = gatesFor(s);
       return {
         id: s.id,
@@ -1601,6 +1641,36 @@ async function findMergeableSiblingSessions(
   });
 }
 
+
+/**
+ * Does this session's SUBJECT belong to a provider other than the viewer?
+ *
+ * A session's providerId says who the thread is with; it does not vouch for
+ * who owns the profile the thread is about. A whisper stamps providerId onto
+ * the parent's private Eva thread, so a clinic ended up holding a thread
+ * about another agency's surrogate - and every route that checked only
+ * `session.providerId === user.providerId` served it, transcript and all.
+ *
+ * Only marketplace profiles can be owned by someone else. A clinic, doctor,
+ * legal or country-program subject IS the provider.
+ */
+async function subjectBelongsToAnotherProvider(
+  subjectType: string | null | undefined,
+  subjectProfileId: string | null | undefined,
+  viewerProviderId: string,
+): Promise<boolean> {
+  if (!subjectProfileId || !/donor|surrogate/i.test(subjectType || "")) return false;
+  const [donor, surrogate, sperm] = await Promise.all([
+    prisma.eggDonor.findUnique({ where: { id: subjectProfileId }, select: { providerId: true } }),
+    prisma.surrogate.findUnique({ where: { id: subjectProfileId }, select: { providerId: true } }),
+    (prisma as any).spermDonor?.findUnique
+      ? (prisma as any).spermDonor.findUnique({ where: { id: subjectProfileId }, select: { providerId: true } })
+      : Promise.resolve(null),
+  ]);
+  const owner = donor?.providerId || surrogate?.providerId || (sperm as any)?.providerId || null;
+  return !!owner && owner !== viewerProviderId;
+}
+
 chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
@@ -1628,6 +1698,12 @@ chatRouter.get("/api/provider/concierge-sessions/:id", requireAuth, async (req, 
     });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.providerId !== user.providerId) return res.status(403).json({ message: "Forbidden" });
+    // The list already hides these, but a hidden row is not access control -
+    // this URL is shareable and was still serving the full transcript.
+    if (await subjectBelongsToAnotherProvider((session as any).subjectType, (session as any).subjectProfileId, user.providerId)) {
+      console.warn(`[provider-session] ${session.id} denied: subject ${(session as any).subjectProfileId} belongs to another provider`);
+      return res.status(403).json({ message: "Forbidden" });
+    }
     if (!canProviderAccessSession(user.roles || [], (session as any).subjectType)) return res.status(403).json({ message: "Forbidden" });
 
     // Two gates now, not one. showIdentity is what it always was (plus a
