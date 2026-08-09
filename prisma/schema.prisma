@@ -1057,6 +1057,13 @@ model Notification {
   subject      String?
   bodyHtml     String?   @db.Text
   bodyText     String?   @db.Text
+  // Cross-process send guard. Two servers run the same crons, so a sweep that
+  // reads "not sent yet" on both machines used to send the same email twice in
+  // the same second. This key fingerprints (channel, recipient, booking,
+  // rendered content, 10-min window); the unique index makes the SECOND insert
+  // fail, so the duplicate is never handed to SendGrid/Twilio. Null on rows
+  // written before this existed - Postgres allows many nulls in a unique index.
+  dedupeKey    String?   @unique
   createdAt    DateTime  @default(now())
   booking      Booking?  @relation(fields: [bookingId], references: [id])
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)

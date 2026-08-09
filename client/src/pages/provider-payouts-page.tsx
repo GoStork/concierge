@@ -182,69 +182,72 @@ export default function ProviderPayoutsPage() {
           <p className="t-helper">No payouts match your filters</p>
         </div>
       ) : (
-        <div className="rounded-xl border overflow-hidden">
+        <div className="rounded-[var(--container-radius)] border border-border overflow-hidden bg-card shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
-                <tr className="border-b bg-muted/40">
-                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Parent</th>
-                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Service</th>
-                  <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">Your Payout</th>
-                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">GoStork Paid You</th>
-                  <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Date</th>
-                  <th className="w-8" />
+                <tr className="border-b border-border bg-muted">
+                  <SortableTableHead label="Parent" sortKey="parent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                  <SortableTableHead label="Service" sortKey="service" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                  <SortableTableHead label="Your payout" sortKey="payout" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
+                  <SortableTableHead label="GoStork paid you" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                  <SortableTableHead label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                  <th className="w-10" />
                 </tr>
               </thead>
               <tbody>
-                {payoutRows.map((inv: any) => {
+                {sortedRows.map((inv: any) => {
                   const s = derivePayoutStatus(inv);
+                  const open = expandedId === inv.id;
                   return (
-                    <>
-                    <tr
-                      key={inv.id}
-                      className="border-b last:border-0 hover:bg-muted/10 cursor-pointer"
-                      onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
-                      data-testid={`provider-billing-payout-${inv.id}`}
-                    >
-                      <td className="px-4 py-2.5 whitespace-nowrap">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
-                      <td className="t-helper px-4 py-2.5 whitespace-nowrap">{(inv.serviceType || "-").replace(/_/g, " ").toLowerCase()}</td>
-                      <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
-                      <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: s.color }}>
-                        <span title={s.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
-                          {s.isReceived && <CheckCircle2 className="w-3.5 h-3.5" />}
-                          {s.label}
-                        </span>
-                      </td>
-                      <td className="t-helper px-4 py-2.5 whitespace-nowrap">{formatDateTime(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt)}</td>
-                      <td className="px-2 py-2.5 text-muted-foreground">
-                        {expandedId === inv.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      </td>
-                    </tr>
-                    {expandedId === inv.id && (
-                      <tr key={`${inv.id}-detail`} className="bg-muted/10 border-b last:border-0">
-                        <td colSpan={6} className="px-6 py-5">
-                          <div className="grid md:grid-cols-2 gap-6 text-sm">
-                            <div className="space-y-5">
-                              <ParentInfoBlock parentUser={inv.parentUser} />
-                              <InvoiceInfoBlock inv={inv} />
-                            </div>
-                            <div className="space-y-3">
-                              <h3 className="font-semibold">Actions</h3>
-                              <div>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
-                                >
-                                  <FileText className="w-3.5 h-3.5 mr-1.5" /> Open invoice document
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
+                    // Fragment carries the key: it is the mapped root, so the
+                    // key on the inner <tr> never counted and React warned.
+                    <Fragment key={inv.id}>
+                      <tr
+                        className="border-b last:border-0 transition-colors hover:bg-muted/50 cursor-pointer"
+                        onClick={() => setExpandedId(open ? null : inv.id)}
+                        data-testid={`provider-billing-payout-${inv.id}`}
+                      >
+                        <td className="p-4 align-middle whitespace-nowrap font-medium">{inv.parentUser?.name || inv.parentUser?.email || "Parent"}</td>
+                        <td className="p-4 align-middle whitespace-nowrap"><ServiceTag service={inv.serviceType} /></td>
+                        <td className="p-4 align-middle text-right font-medium whitespace-nowrap tabular-nums">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
+                        <td className="p-4 align-middle text-xs font-medium whitespace-nowrap" style={{ color: s.color }}>
+                          <span title={s.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
+                            {s.isReceived && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {s.label}
+                          </span>
+                        </td>
+                        <td className="t-helper p-4 align-middle whitespace-nowrap">{formatDateTime(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt)}</td>
+                        <td className="p-4 align-middle text-muted-foreground">
+                          {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </td>
                       </tr>
-                    )}
-                    </>
+                      {open && (
+                        <tr className="bg-secondary/40 border-b last:border-0">
+                          <td colSpan={6} className="px-6 py-5">
+                            <div className="grid md:grid-cols-2 gap-6 text-sm">
+                              <div className="space-y-5">
+                                <ParentInfoBlock parentUser={inv.parentUser} />
+                                <InvoiceInfoBlock inv={inv} />
+                              </div>
+                              <div className="space-y-3">
+                                <h3 className="font-semibold">Actions</h3>
+                                <div>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="bg-card"
+                                    onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
+                                  >
+                                    <FileText className="w-3.5 h-3.5 mr-1.5" /> Open invoice document
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>

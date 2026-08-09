@@ -1,4 +1,5 @@
 import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
+import { createHash } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatMoneyCents } from "../../lib/format-money";
 import { formatPhoneDisplay } from "../../lib/format-phone";
@@ -2035,16 +2036,36 @@ export class NotificationService implements OnModuleInit {
     body?: string;
     bcc?: string[];
   }) {
-    const notification = await this.prisma.notification.create({
-      data: {
-        userId: params.userId,
-        bookingId: params.bookingId || null,
-        type: params.type,
-        channel: params.channel,
-        recipient: params.recipient,
-        status: "pending",
-      },
-    });
+    const dedupeKey = buildDedupeKey([
+      params.type,
+      params.channel,
+      params.recipient,
+      params.bookingId,
+      params.subject,
+      params.body,
+    ]);
+    let notification: { id: string };
+    try {
+      notification = await this.prisma.notification.create({
+        data: {
+          userId: params.userId,
+          bookingId: params.bookingId || null,
+          type: params.type,
+          channel: params.channel,
+          recipient: params.recipient,
+          status: "pending",
+          dedupeKey,
+        },
+      });
+    } catch (error: any) {
+      // The other server already claimed this exact send in this window.
+      // Losing the race is the correct outcome: the recipient gets it once.
+      if (error?.code === "P2002") {
+        this.logger.warn(`Duplicate ${params.channel} to ${params.recipient} suppressed (already dispatched)`);
+        return;
+      }
+      throw error;
+    }
 
     try {
       if (params.type === "EMAIL") {
@@ -2089,17 +2110,35 @@ export class NotificationService implements OnModuleInit {
     // as pending with no body, and the timeline then claimed the message
     // predated content recording.
     const bodyText = await renderSmsTemplateForLog(params.contentSid, params.contentVars);
-    const notification = await this.prisma.notification.create({
-      data: {
-        userId: params.userId,
-        bookingId: params.bookingId || null,
-        type: "SMS",
-        channel: params.channel,
-        recipient: params.recipient,
-        status: "pending",
-        bodyText,
-      },
-    });
+    const dedupeKey = buildDedupeKey([
+      "SMS",
+      params.channel,
+      params.recipient,
+      params.bookingId,
+      params.contentSid,
+      JSON.stringify(params.contentVars),
+    ]);
+    let notification: { id: string };
+    try {
+      notification = await this.prisma.notification.create({
+        data: {
+          userId: params.userId,
+          bookingId: params.bookingId || null,
+          type: "SMS",
+          channel: params.channel,
+          recipient: params.recipient,
+          status: "pending",
+          bodyText,
+          dedupeKey,
+        },
+      });
+    } catch (error: any) {
+      if (error?.code === "P2002") {
+        this.logger.warn(`Duplicate SMS (${params.channel}) to ${params.recipient} suppressed (already dispatched)`);
+        return;
+      }
+      throw error;
+    }
 
     try {
       await this.sendSmsWithTemplate(params.recipient, params.contentSid, params.contentVars);
