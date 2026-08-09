@@ -74,12 +74,8 @@ export const JOURNEY_STATUS_LABELS: Record<string, string> = {
   HANDED_OFF: JOURNEY_STAGE_LABELS.handed_off,
 };
 
-/** yyyy-mm-dd in LOCAL time (toISOString would shift the day near midnight) */
-export function toDateParam(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
+/** Re-exported so parents callers keep one import; defined in the filter kit. */
+export { toDateParam } from "@/components/ui/filter-controls";
 
 /**
  * Distinct phone numbers across a household.

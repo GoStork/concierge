@@ -9,150 +9,12 @@
  * Everything lives in URL search params, per the tab-state rule: a filtered
  * view survives a reload, a bookmark, and the back button.
  */
-import { useState } from "react";
-import { CalendarIcon, Check, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
-import { SERVICE_LABELS, IP_FORM_FILTER_LABELS, toDateParam } from "./parent-cells";
+import { FilterRow, FilterSearch, FilterDropdown, FilterDate } from "@/components/ui/filter-controls";
+import { SERVICE_LABELS, IP_FORM_FILTER_LABELS } from "./parent-cells";
 import { ServiceDot } from "@/components/ui/service-tag";
 import { JOURNEY_STAGE_LABELS } from "@shared/journey-ladder";
-
-/**
- * The one filter control, for all four dropdowns.
- *
- * Tags and Owner used to be native <select>s, which draw their own arrow hard
- * against the edge of the pill - beside the two custom triggers it read as a
- * different control. They are single-choice rather than multi, so this takes a
- * `single` mode instead of a second component: same trigger, same panel, same
- * arrow position, and the row is a radio rather than a checkbox.
- */
-function FilterDropdown({
-  label, options, selected, onChange, testId, single = false, serviceDots = false,
-}: {
-  label: string;
-  options: [string, string][];
-  selected: string[];
-  onChange: (next: string[]) => void;
-  testId: string;
-  single?: boolean;
-  /** Draw each option's service-identity dot (services filter only). */
-  serviceDots?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const active = selected.length > 0;
-  const summary = selected.length === 0
-    ? label
-    : selected.length === 1
-      ? (options.find(([k]) => k === selected[0])?.[1] || selected[0])
-      : `${selected.length} selected`;
-
-  const toggle = (key: string) => {
-    if (single) {
-      // Picking the current value again clears it, so there is always a way
-      // back to "all" without hunting for a separate reset row.
-      onChange(selected[0] === key ? [] : [key]);
-      setOpen(false);
-      return;
-    }
-    onChange(selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key]);
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          className={`h-9 px-3 rounded-[var(--radius)] font-normal justify-between gap-2 shrink-0 ${active ? "border-primary text-primary" : ""}`}
-          data-testid={testId}
-        >
-          <span className="truncate max-w-[150px]">{summary}</span>
-          <ChevronDown className="w-3.5 h-3.5 opacity-60 shrink-0" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-60 p-1.5" align="start">
-        <div className="flex items-center justify-between px-2 py-1.5">
-          <span className="t-helper">{label}</span>
-          {active && (
-            <button
-              type="button"
-              className="text-xs text-primary hover:underline"
-              onClick={() => onChange([])}
-              data-testid={`${testId}-clear`}
-            >
-              Clear
-            </button>
-          )}
-        </div>
-        <div className="max-h-64 overflow-y-auto">
-          {options.map(([key, text]) => {
-            const on = selected.includes(key);
-            return (
-              <button
-                key={key}
-                type="button"
-                role={single ? "radio" : "checkbox"}
-                aria-checked={on}
-                className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-[var(--radius)] text-sm text-left hover:bg-secondary transition-colors"
-                onClick={() => toggle(key)}
-                data-testid={`${testId}-opt-${key}`}
-              >
-                <span
-                  className={`w-4 h-4 border flex items-center justify-center shrink-0 ${single ? "rounded-full" : "rounded-[4px]"}`}
-                  style={on
-                    ? { background: "hsl(var(--primary))", borderColor: "hsl(var(--primary))" }
-                    : undefined}
-                >
-                  {on && (single
-                    ? <span className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />
-                    : <Check className="w-3 h-3 text-primary-foreground" />)}
-                </span>
-                {serviceDots && <ServiceDot service={text} />}
-                <span className="truncate">{text}</span>
-              </button>
-            );
-          })}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function DateFilter({ value, onChange, placeholder, testId }: {
-  value: string; onChange: (v: string) => void; placeholder: string; testId: string;
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          className={`h-9 px-3 rounded-full font-normal gap-2 shrink-0 ${value ? "border-primary text-primary" : ""}`}
-          data-testid={testId}
-        >
-          <CalendarIcon className="w-3.5 h-3.5" />
-          {value || placeholder}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          mode="single"
-          selected={value ? new Date(value) : undefined}
-          onSelect={(d) => onChange(d ? toDateParam(d) : "")}
-          data-testid={`calendar-${testId}`}
-        />
-        {value && (
-          <div className="border-t px-3 py-2">
-            <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => onChange("")}>
-              Clear
-            </Button>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 export interface ParentsFilterState {
   q: string;
@@ -202,18 +64,15 @@ export function ParentsFilterBar({
           {/* Full width on a phone: a fixed 260px search left just enough room
               for the From pill to hang off the right edge of the screen instead
               of wrapping onto the next line with the others. */}
-          <div className="relative w-full sm:w-auto">
-            <Input
-              placeholder="Search by name, email, or phone..."
-              value={state.q}
-              onChange={(e) => setParam("q", e.target.value)}
-              className="h-9 w-full sm:w-[260px] rounded-full"
-              data-testid={`${testIdPrefix}-search`}
-            />
-          </div>
+          <FilterSearch
+            placeholder="Search by name, email, or phone..."
+            value={state.q}
+            onChange={(v) => setParam("q", v)}
+            testId={`${testIdPrefix}-search`}
+          />
 
-          <DateFilter value={state.from} onChange={(v) => setParam("from", v)} placeholder="From" testId={`${testIdPrefix}-date-from`} />
-          <DateFilter value={state.to} onChange={(v) => setParam("to", v)} placeholder="To" testId={`${testIdPrefix}-date-to`} />
+          <FilterDate value={state.from} onChange={(v) => setParam("from", v)} placeholder="From" testId={`${testIdPrefix}-date-from`} />
+          <FilterDate value={state.to} onChange={(v) => setParam("to", v)} placeholder="To" testId={`${testIdPrefix}-date-to`} />
 
           <FilterDropdown
             label="All services"
@@ -221,7 +80,7 @@ export function ParentsFilterBar({
             selected={state.services}
             onChange={(next) => setParam("svc", next.join(","))}
             testId={`${testIdPrefix}-service-filter`}
-            serviceDots
+            renderOption={(_k, text) => <ServiceDot service={text} />}
           />
           <FilterDropdown
             label="All statuses"

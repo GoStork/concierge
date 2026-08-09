@@ -9,6 +9,9 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { BookingDetailDialog, SuggestTimeForm } from "@/components/booking-detail-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { FilterSearch, FilterDateRange } from "@/components/ui/filter-controls";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
+import { TableShell } from "@/components/ui/page-header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1206,6 +1209,28 @@ export default function CalendarPage() {
     return map;
   }, [allRecordings]);
 
+  // Search results default to newest-first; any header click takes over.
+  const searchSort = useTableSort("when", "desc");
+  const sortedSearchResults = searchSort.sortData(searchResults || [], (b: any, key) => {
+    const start = new Date(b.scheduledAt).getTime();
+    switch (key) {
+      case "when": return start;
+      case "subject": return (b.subject || "Meeting").toLowerCase();
+      case "participants": return (b.providerUser?.name && b.parentUser?.name
+        ? `${b.providerUser.name} ${b.parentUser.name}`
+        : b.attendeeName || b.providerUser?.name || "").toLowerCase();
+      case "duration": return b.duration || 30;
+      // Recording+transcript sorts above recording-only, above nothing.
+      case "media": {
+        const rec = recordingsByBookingId[b.id];
+        return (rec?.recording?.status === "ready" ? 1 : 0) + (rec?.recording?.transcriptStatus === "ready" ? 1 : 0);
+      }
+      case "status": return b.status || "";
+      default: return null;
+    }
+  });
+
+
 
   const { data: blocks } = useQuery({
     queryKey: ["/api/calendar/blocks", rangeStart.toISOString(), rangeEnd.toISOString()],
@@ -2021,62 +2046,22 @@ export default function CalendarPage() {
               </PopoverContent>
             </Popover>
           )}
-          <div className="relative flex-1 min-w-0 sm:max-w-[220px]">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search meetings..."
-              className="pl-8 h-8 text-xs focus-visible:ring-0 focus-visible:ring-offset-0"
-              data-testid="input-search-query"
+          <FilterSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search meetings..."
+            testId="input-search-query"
+            className="flex-1 min-w-0 sm:max-w-[240px]"
+          />
+          <div className="hidden sm:flex items-center gap-2">
+            <FilterDateRange
+              from={searchFrom}
+              to={searchTo}
+              onFrom={setSearchFrom}
+              onTo={setSearchTo}
+              testIdPrefix="filter-btn-search"
             />
           </div>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant={searchFrom ? "default" : "outline"} size="sm" className="hidden sm:flex shrink-0 h-8 text-xs rounded-full gap-1" data-testid="filter-btn-search-from">
-                <Calendar className="w-3 h-3" />
-                {searchFrom || "From"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-3" align="start">
-              <div className="space-y-2">
-                <span className="text-sm font-medium">From Date</span>
-                <Input
-                  type="date"
-                  value={searchFrom}
-                  onChange={(e) => setSearchFrom(e.target.value)}
-                  className="h-8 text-xs"
-                  data-testid="input-search-from"
-                />
-                {searchFrom && (
-                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setSearchFrom("")}>Clear</Button>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant={searchTo ? "default" : "outline"} size="sm" className="hidden sm:flex shrink-0 h-8 text-xs rounded-full gap-1" data-testid="filter-btn-search-to">
-                <Calendar className="w-3 h-3" />
-                {searchTo || "To"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-3" align="start">
-              <div className="space-y-2">
-                <span className="text-sm font-medium">To Date</span>
-                <Input
-                  type="date"
-                  value={searchTo}
-                  onChange={(e) => setSearchTo(e.target.value)}
-                  className="h-8 text-xs"
-                  data-testid="input-search-to"
-                />
-                {searchTo && (
-                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setSearchTo("")}>Clear</Button>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
           {uniqueHosts.length > 1 && (
             <Popover>
               <PopoverTrigger asChild>
@@ -2183,56 +2168,68 @@ export default function CalendarPage() {
               No meetings found matching your search.
             </div>
           ) : (
-            <div>
-              {(() => {
-                const today = new Date();
-                const groups: { key: string; label: string; items: any[] }[] = [];
-                searchResults.forEach((b: any) => {
-                  const start = new Date(b.scheduledAt);
-                  const dayKey = format(start, "yyyy-MM-dd");
-                  const label = isSameDay(start, today) ? "Today" : format(start, "EEE, MMM d, yyyy");
-                  const existing = groups.find(g => g.key === dayKey);
-                  if (existing) existing.items.push(b);
-                  else groups.push({ key: dayKey, label, items: [b] });
-                });
-                return groups.map((group) => (
-                  <div key={group.key}>
-                    <div className="px-4 py-2 bg-muted/30 border-b border-border/10">
-                      <span className="t-micro-label font-heading">{group.label}</span>
-                    </div>
-                    {group.items.map((b: any) => {
-                      const start = new Date(b.scheduledAt);
-                      const end = new Date(start.getTime() + (b.duration || 30) * 60 * 1000);
-                      const isPast = start < today;
-                      const isPending = b.status === "PENDING";
-                      const isExpired = b.status === "EXPIRED";
-                      const isCancelled = b.status === "CANCELLED" || b.status === "RESCHEDULED" || isExpired;
-                      const barColor = isCancelled ? "hsl(var(--muted-foreground))" : isPending ? "hsl(var(--brand-warning))" : isPast ? "hsl(var(--muted-foreground))" : "hsl(var(--primary))";
-                      const recInfo = recordingsByBookingId[b.id];
-                      const hasRecording = recInfo?.recording?.status === "ready";
-                      const hasTranscript = recInfo?.recording?.transcriptStatus === "ready";
-                      return (
-                        <button
-                          key={b.id}
-                          onClick={() => setSelectedBooking(b)}
-                          className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-muted/40 transition-colors text-left cursor-pointer border-b border-border/10 last:border-b-0"
-                          data-testid={`search-result-${b.id}`}
-                        >
-                          <div className="w-[3px] self-stretch rounded-full shrink-0" style={{ backgroundColor: barColor }} />
-                          <div className="flex-1 min-w-0">
-                            <p className={`font-heading text-[13px] truncate ${isPast || isCancelled ? "text-muted-foreground" : "text-foreground"}`}>
-                              {b.subject || "Meeting"}
-                            </p>
-                            <p className="t-helper mt-0.5">
-                              {format(start, "h:mm a")} – {format(end, "h:mm a")} · {b.duration || 30}min
-                            </p>
-                            <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">
-                              {b.providerUser?.name && b.parentUser?.name
-                                ? `${b.providerUser.name} ↔ ${b.parentUser.name}`
-                                : b.attendeeName || b.providerUser?.name || ""}
-                            </p>
+            /* A table, not a day-grouped list: search results are already a
+               cross-day set, and day headers there fight the sort - you cannot
+               order by status or duration while the rows are pinned into date
+               buckets. The date is a column instead, sorted newest-first by
+               default, so grouping is one click away rather than imposed. */
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted">
+                    <SortableTableHead label="When" sortKey="when" currentSort={searchSort.sortConfig} onSort={searchSort.handleSort} className="whitespace-nowrap" />
+                    <SortableTableHead label="Meeting" sortKey="subject" currentSort={searchSort.sortConfig} onSort={searchSort.handleSort} className="whitespace-nowrap" />
+                    <SortableTableHead label="Participants" sortKey="participants" currentSort={searchSort.sortConfig} onSort={searchSort.handleSort} className="whitespace-nowrap" />
+                    <SortableTableHead label="Duration" sortKey="duration" currentSort={searchSort.sortConfig} onSort={searchSort.handleSort} align="right" className="whitespace-nowrap" />
+                    <SortableTableHead label="Media" sortKey="media" currentSort={searchSort.sortConfig} onSort={searchSort.handleSort} className="whitespace-nowrap" />
+                    <SortableTableHead label="Status" sortKey="status" currentSort={searchSort.sortConfig} onSort={searchSort.handleSort} className="whitespace-nowrap" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedSearchResults.map((b: any) => {
+                    const today = new Date();
+                    const start = new Date(b.scheduledAt);
+                    const end = new Date(start.getTime() + (b.duration || 30) * 60 * 1000);
+                    const isPast = start < today;
+                    const isPending = b.status === "PENDING";
+                    const isExpired = b.status === "EXPIRED";
+                    const isCancelled = b.status === "CANCELLED" || b.status === "RESCHEDULED" || isExpired;
+                    const barColor = isCancelled ? "hsl(var(--muted-foreground))" : isPending ? "hsl(var(--brand-warning))" : isPast ? "hsl(var(--muted-foreground))" : "hsl(var(--primary))";
+                    const recInfo = recordingsByBookingId[b.id];
+                    const hasRecording = recInfo?.recording?.status === "ready";
+                    const hasTranscript = recInfo?.recording?.transcriptStatus === "ready";
+                    const participants = b.providerUser?.name && b.parentUser?.name
+                      ? `${b.providerUser.name} \u2194 ${b.parentUser.name}`
+                      : b.attendeeName || b.providerUser?.name || "";
+                    return (
+                      <tr
+                        key={b.id}
+                        onClick={() => setSelectedBooking(b)}
+                        className="border-b border-border/10 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer bg-card"
+                        data-testid={`search-result-${b.id}`}
+                      >
+                        <td className="p-4 align-middle whitespace-nowrap">
+                          <div className="flex items-center gap-3">
+                            {/* The status bar the list rows carried - kept so a
+                                cancelled row still reads as cancelled at a glance. */}
+                            <div className="w-[3px] h-8 rounded-full shrink-0" style={{ backgroundColor: barColor }} />
+                            <div>
+                              <p className={`font-heading text-[13px] ${isPast || isCancelled ? "text-muted-foreground" : "text-foreground"}`}>
+                                {isSameDay(start, today) ? "Today" : format(start, "EEE, MMM d, yyyy")}
+                              </p>
+                              <p className="t-helper mt-0.5">{format(start, "h:mm a")} - {format(end, "h:mm a")}</p>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
+                        </td>
+                        <td className="p-4 align-middle">
+                          <span className={`font-heading text-[13px] ${isPast || isCancelled ? "text-muted-foreground" : "text-foreground"}`}>
+                            {b.subject || "Meeting"}
+                          </span>
+                        </td>
+                        <td className="t-helper p-4 align-middle max-w-[240px] truncate" title={participants}>{participants || "-"}</td>
+                        <td className="t-helper p-4 align-middle text-right whitespace-nowrap">{b.duration || 30} min</td>
+                        <td className="p-4 align-middle whitespace-nowrap">
+                          <div className="flex items-center gap-2">
                             {hasRecording && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-ui bg-accent/10 text-accent-foreground border border-accent/30">
                                 <Video className="w-3 h-3" /> Recording
@@ -2243,24 +2240,27 @@ export default function CalendarPage() {
                                 <FileText className="w-3 h-3" /> Transcript
                               </span>
                             )}
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-ui ${
-                              isCancelled
-                                ? "bg-muted/50 text-muted-foreground border border-border"
-                                : isPending
-                                  ? "bg-[hsl(var(--brand-warning)/0.08)] text-[hsl(var(--brand-warning))] border border-[hsl(var(--brand-warning)/0.3)]"
-                                  : isPast
-                                    ? "bg-muted/50 text-muted-foreground border border-border"
-                                    : "bg-[hsl(var(--brand-success)/0.08)] text-[hsl(var(--brand-success))] border border-[hsl(var(--brand-success)/0.3)]"
-                            }`}>
-                              {isExpired ? "Expired" : isCancelled ? (b.status === "RESCHEDULED" ? "Rescheduled" : "Cancelled") : isPending ? "Pending" : isPast ? "Completed" : "Confirmed"}
-                            </span>
+                            {!hasRecording && !hasTranscript && <span className="t-helper">-</span>}
                           </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ));
-              })()}
+                        </td>
+                        <td className="p-4 align-middle whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-ui ${
+                            isCancelled
+                              ? "bg-muted/50 text-muted-foreground border border-border"
+                              : isPending
+                                ? "bg-[hsl(var(--brand-warning)/0.08)] text-[hsl(var(--brand-warning))] border border-[hsl(var(--brand-warning)/0.3)]"
+                                : isPast
+                                  ? "bg-muted/50 text-muted-foreground border border-border"
+                                  : "bg-[hsl(var(--brand-success)/0.08)] text-[hsl(var(--brand-success))] border border-[hsl(var(--brand-success)/0.3)]"
+                          }`}>
+                            {isExpired ? "Expired" : isCancelled ? (b.status === "RESCHEDULED" ? "Rescheduled" : "Cancelled") : isPending ? "Pending" : isPast ? "Completed" : "Confirmed"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </Card>

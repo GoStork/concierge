@@ -1,4 +1,5 @@
 import { JourneyFunnelDashboard } from "@/components/journey/journey-funnel";
+import { PageHeader } from "@/components/ui/page-header";
 
 /**
  * Phase 7C: GoStork admin journey analytics - the parent-journey funnel
@@ -8,11 +9,11 @@ import { JourneyFunnelDashboard } from "@/components/journey/journey-funnel";
  */
 export default function AdminAnalyticsPage() {
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 space-y-6 pb-24 md:pb-6">
-      <div>
-        <h1 className="text-2xl font-heading">Journey Analytics</h1>
-        <p className="t-helper mt-1">How parents move through their journeys - conversion, stalls, and provider performance.</p>
-      </div>
+    <div className="space-y-8 pb-24 md:pb-6">
+      <PageHeader
+        title="Journey Analytics"
+        subtitle="How parents move through their journeys - conversion, stalls, and provider performance."
+      />
       <JourneyFunnelDashboard scope="admin" />
     </div>
   );

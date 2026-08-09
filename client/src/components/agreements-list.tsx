@@ -61,6 +61,12 @@ export interface AgreementListItem {
   signedAt?: string | null;
   /** Who/what the row is about: the parent's name (provider view) or the provider's name (parent view). */
   title: string;
+  /**
+   * Admin only: the provider on the other side. When any row carries one the
+   * table grows a Provider column - a provider's own list would print their
+   * own name on every line, so the column stays absent there.
+   */
+  providerName?: string | null;
   /** Optional signer progress, e.g. "1/2 signed" - shown next to the status badge. */
   progressLabel?: string | null;
 }
@@ -89,6 +95,7 @@ export function AgreementRows({
   const sortedItems = sortData(items, (item, key) => {
     switch (key) {
       case "name": return (item.title || "").toLowerCase();
+      case "provider": return (item.providerName || "").toLowerCase();
       case "type": return (item.documentType || "").toLowerCase();
       // Sent sorts by the date the cell leads with, not the signed line under it.
       case "sent": return item.createdAt ? new Date(item.createdAt).getTime() : null;
@@ -117,6 +124,7 @@ export function AgreementRows({
   }
 
   if (variant === "table") {
+    const hasProvider = items.some((i) => !!i.providerName);
     const fmtDate = (d: string) =>
       new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     return (
@@ -126,6 +134,7 @@ export function AgreementRows({
             <TableHeader>
               <TableRow>
                 <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                {hasProvider && <SortableTableHead label="Provider" sortKey="provider" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />}
                 <SortableTableHead label="Agreement" sortKey="type" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <SortableTableHead label="Sent" sortKey="sent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
@@ -141,6 +150,7 @@ export function AgreementRows({
                   data-testid={`agreement-row-${item.id}`}
                 >
                   <TableCell className="font-medium whitespace-nowrap">{item.title}</TableCell>
+                  {hasProvider && <TableCell className="t-helper whitespace-nowrap">{item.providerName || "-"}</TableCell>}
                   <TableCell className="t-helper whitespace-nowrap">{item.documentType}</TableCell>
                   <TableCell className="t-helper whitespace-nowrap">
                     {fmtDate(item.createdAt)}

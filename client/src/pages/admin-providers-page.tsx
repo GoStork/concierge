@@ -5,18 +5,18 @@ import { apiRequest } from "@/lib/queryClient";
 import { api } from "@shared/routes";
 import { Button } from "@/components/ui/button";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Building2, Loader2, Pencil, Globe, Trash2, Search, MapPin, ArrowUp, ArrowDown, ArrowUpDown, Calendar, ChevronDown, CheckCircle2 } from "lucide-react";
+import { Plus, Building2, Loader2, Pencil, Globe, Trash2, MapPin, ArrowUp, ArrowDown, ArrowUpDown, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { ProviderWithRelations } from "@shared/schema";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import ManageServicesDialog from "@/components/manage-services-dialog";
 import { ServiceTag, serviceApprovalIcon } from "@/components/ui/service-tag";
 import { LocationSearchInput } from "@/components/location-search-input";
+import { FilterRow, FilterSearch, FilterDropdown } from "@/components/ui/filter-controls";
 
 type ProviderData = {
   id: string;
@@ -53,6 +53,13 @@ const AUTOMATION_OPTIONS = [
   { value: "all_on", label: "All automations on" },
   { value: "none", label: "No automations" },
 ] as const;
+
+const STATUS_OPTIONS: [string, string][] = [
+  ["NEW", "New"],
+  ["IN_PROGRESS", "In Progress"],
+  ["APPROVED", "Approved"],
+  ["DECLINED", "Declined"],
+];
 
 function providerAutomations(p: any): { cost_sheet: boolean; invoice: boolean; agreement: boolean } {
   const f = (p?.autoFeaturesEnabled as any) || {};
@@ -263,96 +270,74 @@ export default function AdminProvidersPage() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-3">
-      <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide flex-1 min-w-0" data-testid="card-provider-filters">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
+      <div className="flex items-start justify-between gap-3">
+        <FilterRow className="flex-1 min-w-0" >
+          <FilterSearch
             placeholder="Search name, team email or phone..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
-            data-testid="input-admin-search"
+            onChange={setSearchQuery}
+            testId="input-admin-search"
           />
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="shrink-0 h-8 text-xs rounded-full gap-1" data-testid="filter-btn-location">
-              <MapPin className="w-3 h-3" />
-              {locationSearch || "Location"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-64 p-3" align="start">
-            <div className="space-y-2">
-              <span className="text-sm font-medium">Location</span>
-              <LocationSearchInput
-                value={locationSearch}
-                onValueChange={setLocationSearch}
-                onSelect={(commit) => setLocationSearch(commit)}
-                placeholder="City or state..."
-                autoFocus
-                testId="input-admin-location"
-              />
-              {locationSearch && (
-                <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setLocationSearch("")} data-testid="clear-admin-location">
-                  Clear
-                </Button>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant={providerType !== "All" ? "default" : "outline"} size="sm" className="shrink-0 h-8 text-xs rounded-full gap-1" data-testid="select-provider-type">
-              {providerType === "All" ? "All Types" : providerType}
-              <ChevronDown className="w-3 h-3" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-48 p-2" align="start">
-            <div className="space-y-1">
-              {[{ value: "All", label: "All Types" }, ...(providerTypes || []).map((t: any) => ({ value: t.name, label: t.name }))].map((opt) => (
-                <Button key={opt.value} variant={providerType === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => setProviderType(opt.value)} data-testid={`provider-type-${opt.value}`}>
-                  {opt.label}
-                </Button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant={statusFilter !== "All" ? "default" : "outline"} size="sm" className="shrink-0 h-8 text-xs rounded-full gap-1" data-testid="select-status-filter">
-              {statusFilter === "All" ? "All Statuses" : statusFilter.replace("_", " ")}
-              <ChevronDown className="w-3 h-3" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-44 p-2" align="start">
-            <div className="space-y-1">
-              {[{ value: "All", label: "All Statuses" }, { value: "NEW", label: "New" }, { value: "IN_PROGRESS", label: "In Progress" }, { value: "APPROVED", label: "Approved" }, { value: "DECLINED", label: "Declined" }].map((opt) => (
-                <Button key={opt.value} variant={statusFilter === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => setStatusFilter(opt.value)} data-testid={`status-${opt.value}`}>
-                  {opt.label}
-                </Button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant={automationFilter !== "All" ? "default" : "outline"} size="sm" className="shrink-0 h-8 text-xs rounded-full gap-1" data-testid="select-automation-filter">
-              {AUTOMATION_OPTIONS.find((o) => o.value === automationFilter)?.label || "All Automations"}
-              <ChevronDown className="w-3 h-3" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-52 p-2" align="start">
-            <div className="space-y-1">
-              {AUTOMATION_OPTIONS.map((opt) => (
-                <Button key={opt.value} variant={automationFilter === opt.value ? "default" : "ghost"} size="sm" className="w-full justify-start text-xs" onClick={() => setAutomationFilter(opt.value)} data-testid={`automation-${opt.value}`}>
-                  {opt.label}
-                </Button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
+
+          {/* Location keeps its own trigger: it is a typeahead over real
+              locations, not a fixed option list, so it cannot be a
+              FilterDropdown. The pill shape matches the others. */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={`h-9 px-3 rounded-full bg-card font-normal gap-2 shrink-0 ${locationSearch ? "border-primary text-primary" : ""}`}
+                data-testid="filter-btn-location"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                {locationSearch || "Location"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-3" align="start">
+              <div className="space-y-2">
+                <span className="text-sm font-medium">Location</span>
+                <LocationSearchInput
+                  value={locationSearch}
+                  onValueChange={setLocationSearch}
+                  onSelect={(commit) => setLocationSearch(commit)}
+                  placeholder="City or state..."
+                  autoFocus
+                  testId="input-admin-location"
+                />
+                {locationSearch && (
+                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setLocationSearch("")} data-testid="clear-admin-location">
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <FilterDropdown
+            single
+            label="All Types"
+            options={(providerTypes || []).map((t: any) => [t.name, t.name] as [string, string])}
+            selected={providerType === "All" ? [] : [providerType]}
+            onChange={(next) => setProviderType(next[0] || "All")}
+            testId="select-provider-type"
+          />
+          <FilterDropdown
+            single
+            label="All Statuses"
+            options={STATUS_OPTIONS}
+            selected={statusFilter === "All" ? [] : [statusFilter]}
+            onChange={(next) => setStatusFilter(next[0] || "All")}
+            testId="select-status-filter"
+          />
+          <FilterDropdown
+            single
+            label="All Automations"
+            options={AUTOMATION_OPTIONS.filter((o) => o.value !== "All").map((o) => [o.value, o.label] as [string, string])}
+            selected={automationFilter === "All" ? [] : [automationFilter]}
+            onChange={(next) => setAutomationFilter(next[0] || "All")}
+            testId="select-automation-filter"
+          />
+        </FilterRow>
         <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="admin-providers-clear-filters" />
       </div>
 

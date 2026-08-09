@@ -18,12 +18,13 @@ import {
   ChevronUp,
   Loader2,
   AlertCircle,
-  Search,
-  X,
   Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { PageHeader, TableShell } from "@/components/ui/page-header";
+import { FilterRow, FilterSearch, FilterDropdown, FilterDateRange } from "@/components/ui/filter-controls";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import { Input } from "@/components/ui/input";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { derivePayoutStatus } from "@/lib/payout-status";
@@ -43,6 +44,15 @@ function StatCard({ label, value, icon: Icon, sub }: { label: string; value: str
     </div>
   );
 }
+
+// Payout status is derived, not a column - these keys are the ones the
+// server's payoutStatus filter understands.
+const PAYOUT_STATUS_OPTIONS: [string, string][] = [
+  ["pending", "Pending"],
+  ["sent", "Sent"],
+  ["received", "Received"],
+  ["failed", "Failed"],
+];
 
 const STATUS_OPTIONS = [
   { key: "all",             label: "All statuses"  },
@@ -81,6 +91,9 @@ export default function AdminBillingPage() {
   const [payoutStatus, setPayoutStatus] = useState("all");
   const [paidFrom, setPaidFrom] = useState("");
   const [paidTo, setPaidTo] = useState("");
+  // Sort is a server concern here: the table is paginated, so sorting the 25
+  // rows on screen would claim an order the other pages don't share.
+  const { sortConfig, handleSort } = useTableSort();
 
   // Debounce the search box so we don't refetch on every keystroke.
   useEffect(() => {
@@ -89,10 +102,10 @@ export default function AdminBillingPage() {
   }, [searchInput]);
 
   // Reset to page 1 whenever a filter changes.
-  useEffect(() => { setPage(1); }, [serviceType, payoutStatus, paidFrom, paidTo]);
+  useEffect(() => { setPage(1); }, [serviceType, payoutStatus, paidFrom, paidTo, sortConfig.key, sortConfig.direction]);
 
   const { data, isLoading } = useQuery<any>({
-    queryKey: ["/api/admin/invoices", tab, page, search, serviceType, payoutStatus, paidFrom, paidTo],
+    queryKey: ["/api/admin/invoices", tab, page, search, serviceType, payoutStatus, paidFrom, paidTo, sortConfig.key, sortConfig.direction],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), pageSize: "25" });
       if (tab !== "all") params.set("status", tab);
@@ -101,6 +114,10 @@ export default function AdminBillingPage() {
       if (payoutStatus !== "all") params.set("payoutStatus", payoutStatus);
       if (paidFrom) params.set("paidFrom", paidFrom);
       if (paidTo) params.set("paidTo", paidTo);
+      if (sortConfig.key && sortConfig.direction) {
+        params.set("sortBy", sortConfig.key);
+        params.set("sortDir", sortConfig.direction);
+      }
       const res = await fetch(`/api/admin/invoices?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load invoices");
       return res.json();
@@ -144,11 +161,8 @@ export default function AdminBillingPage() {
   const stats = data || { totalGoStorkFees: 0, totalRevenue: 0, totalProviderPayouts: 0, pendingAmount: 0 };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-heading font-bold">Billing Dashboard</h1>
-        <p className="t-helper mt-1">Track all parent payments and provider payouts</p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader title="Billing Dashboard" subtitle="Track all parent payments and provider payouts" />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -159,90 +173,51 @@ export default function AdminBillingPage() {
         <StatCard label="Unpaid Invoices" value={formatCents(stats.pendingAmount)}        icon={Clock}         sub="Future Invoices" />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-nowrap sm:overflow-x-auto sm:scrollbar-hide sm:flex-1 sm:min-w-0">
-        <div className="flex-1 min-w-[180px]">
-          <label className="t-helper mb-1 block">Search</label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-              placeholder="Parent, provider, invoice ID, or session ID"
-              className="pl-9 pr-9"
-              data-testid="billing-search"
-            />
-            {searchInput && (
-              <button
-                type="button"
-                onClick={() => setSearchInput("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="w-[170px] shrink-0">
-          <label className="t-helper mb-1 block">Invoice Status</label>
-          <select
-            value={tab}
-            onChange={e => setStatus(e.target.value)}
-            className="w-full h-10 rounded-[var(--radius)] border border-input bg-background px-3 text-sm"
-            data-testid="billing-status"
-          >
-            {STATUS_OPTIONS.map(o => (
-              <option key={o.key} value={o.key}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="w-[170px] shrink-0">
-          <label className="t-helper mb-1 block">Payout Status</label>
-          <select
-            value={payoutStatus}
-            onChange={e => setPayoutStatus(e.target.value)}
-            className="w-full h-10 rounded-[var(--radius)] border border-input bg-background px-3 text-sm"
-            data-testid="billing-payout-status"
-          >
-            <option value="all">All payout statuses</option>
-            <option value="pending">Pending</option>
-            <option value="sent">Sent</option>
-            <option value="received">Received</option>
-            <option value="failed">Failed</option>
-          </select>
-        </div>
-
-        <div className="w-[170px] shrink-0">
-          <label className="t-helper mb-1 block">Service Type</label>
-          <select
-            value={serviceType}
-            onChange={e => setServiceType(e.target.value)}
-            className="w-full h-10 rounded-[var(--radius)] border border-input bg-background px-3 text-sm"
-            data-testid="billing-service-type"
-          >
-            <option value="all">All services</option>
-            {serviceTypeOptions.map(st => (
-              <option key={st} value={st}>{st}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="w-[150px] shrink-0">
-          <label className="t-helper mb-1 block">Date From</label>
-          <Input type="date" value={paidFrom} onChange={e => setPaidFrom(e.target.value)} data-testid="billing-paid-from" />
-        </div>
-
-        <div className="w-[150px] shrink-0">
-          <label className="t-helper mb-1 block">Date To</label>
-          <Input type="date" value={paidTo} onChange={e => setPaidTo(e.target.value)} data-testid="billing-paid-to" />
-        </div>
-
-        </div>
-        <ClearFiltersButton show={hasActiveFilters} onClick={clearFilters} testId="billing-clear-filters" />
+      {/* Filters. Stacked label-over-control selects became pills: the labels
+          restated what each control already says when nothing is picked
+          ("Invoice Status" above "All statuses"), and the extra row of text
+          pushed the table below the fold. */}
+      <div className="flex items-start justify-between gap-3">
+        <FilterRow className="flex-1 min-w-0">
+          <FilterSearch
+            value={searchInput}
+            onChange={setSearchInput}
+            placeholder="Parent, provider, invoice ID, or session ID"
+            testId="billing-search"
+          />
+          <FilterDateRange
+            from={paidFrom}
+            to={paidTo}
+            onFrom={setPaidFrom}
+            onTo={setPaidTo}
+            testIdPrefix="billing-paid"
+          />
+          <FilterDropdown
+            single
+            label="All statuses"
+            options={STATUS_OPTIONS.filter((o) => o.key !== "all").map((o) => [o.key, o.label] as [string, string])}
+            selected={tab === "all" ? [] : [tab]}
+            onChange={(next) => setStatus(next[0] || "all")}
+            testId="billing-status"
+          />
+          <FilterDropdown
+            single
+            label="All payout statuses"
+            options={PAYOUT_STATUS_OPTIONS}
+            selected={payoutStatus === "all" ? [] : [payoutStatus]}
+            onChange={(next) => setPayoutStatus(next[0] || "all")}
+            testId="billing-payout-status"
+          />
+          <FilterDropdown
+            single
+            label="All services"
+            options={serviceTypeOptions.map((st) => [st, st] as [string, string])}
+            selected={serviceType === "all" ? [] : [serviceType]}
+            onChange={(next) => setServiceType(next[0] || "all")}
+            testId="billing-service-type"
+          />
+        </FilterRow>
+        <ClearFiltersButton pill show={hasActiveFilters} onClick={clearFilters} testId="billing-clear-filters" />
       </div>
 
       {/* Invoice table */}
@@ -256,19 +231,20 @@ export default function AdminBillingPage() {
           <p className="t-helper">No invoices found</p>
         </div>
       ) : (
-        <div className="rounded-xl border overflow-hidden">
+        <TableShell>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b bg-muted/40">
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Parent</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Provider</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Service</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">Amount</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">GoStork Fee</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">Payout</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Invoice Status</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Payout Status</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Date</th>
+              <tr className="border-b bg-muted">
+                <SortableTableHead label="Parent" sortKey="parent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Provider" sortKey="provider" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Service" sortKey="service" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Amount" sortKey="amount" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
+                <SortableTableHead label="GoStork Fee" sortKey="fee" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
+                <SortableTableHead label="Payout" sortKey="payout" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
+                <SortableTableHead label="Invoice Status" sortKey="invoiceStatus" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Payout Status" sortKey="payoutStatus" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -386,6 +362,7 @@ export default function AdminBillingPage() {
               ))}
             </tbody>
           </table>
+          </div>
 
           {/* Pagination */}
           {data.total > 25 && (
@@ -397,7 +374,7 @@ export default function AdminBillingPage() {
               </div>
             </div>
           )}
-        </div>
+        </TableShell>
       )}
     </div>
   );

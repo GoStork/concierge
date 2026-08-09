@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Loader2, Users, Route, CheckCircle2, PauseCircle, TrendingUp, Calendar, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Users, Route, CheckCircle2, PauseCircle, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { FilterRow, FilterDropdown, FilterDateRange } from "@/components/ui/filter-controls";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 
 /**
  * Phase 7C: the journey funnel dashboard - shared by the GoStork admin
@@ -86,10 +86,6 @@ const RESPONSE_LABELS: Record<string, string> = {
 function fmtShort(iso: string | null): string {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function toDateParam(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function KpiTile({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string | number; sub?: string }) {
@@ -175,38 +171,30 @@ function FunnelBars({ funnel }: { funnel: FunnelData["funnels"][number] }) {
   );
 }
 
-function DateChip({ value, placeholder, onChange, testId }: { value: string; placeholder: string; onChange: (v: string) => void; testId: string }) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant={value ? "default" : "outline"} size="sm" className="shrink-0 h-8 text-xs rounded-full gap-1" data-testid={testId}>
-          <Calendar className="w-3 h-3" />
-          {value || placeholder}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <CalendarPicker
-          mode="single"
-          selected={value ? new Date(`${value}T00:00:00`) : undefined}
-          onSelect={(d) => onChange(d ? toDateParam(d) : "")}
-        />
-        {value && (
-          <div className="border-t px-3 py-2">
-            <Button variant="ghost" size="sm" className="text-xs h-6 w-full" onClick={() => onChange("")}>
-              Clear
-            </Button>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}
+/**
+ * Admin provider-comparison columns. "No-shows (P/Pr)" prints two numbers in
+ * one cell, so it sorts by their sum - that column answers "who is losing the
+ * most calls", not which half of the pair is bigger.
+ */
+const PROVIDER_COLUMNS: { key: string; label: string; value: (p: any) => string | number | null }[] = [
+  { key: "provider", label: "Provider", value: (p) => (p.providerName || "").toLowerCase() },
+  { key: "journeys", label: "Journeys", value: (p) => p.journeys ?? 0 },
+  { key: "consults", label: "Consults", value: (p) => p.consultScheduled ?? 0 },
+  { key: "completed", label: "Completed", value: (p) => p.consultCompleted ?? 0 },
+  { key: "noShows", label: "No-shows (P/Pr)", value: (p) => (p.noShowsParent ?? 0) + (p.noShowsProvider ?? 0) },
+  { key: "matched", label: "Matched", value: (p) => p.matched ?? 0 },
+  { key: "paid", label: "Paid", value: (p) => p.invoicePaid ?? 0 },
+  { key: "signed", label: "Signed", value: (p) => p.agreementSigned ?? 0 },
+  { key: "handedOff", label: "Handed off", value: (p) => p.handedOff ?? 0 },
+  { key: "daysToHandoff", label: "~Days to handoff", value: (p) => p.medianDaysToHandoff ?? null },
+];
 
 export function JourneyFunnelDashboard({ scope }: { scope: "admin" | "provider" }) {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [journeyType, setJourneyType] = useState<string>("");
   const [providerId, setProviderId] = useState<string>("");
+  const { sortConfig, handleSort, sortData } = useTableSort();
 
   const params = new URLSearchParams();
   if (fromDate) params.set("from", new Date(`${fromDate}T00:00:00`).toISOString());
@@ -245,36 +233,42 @@ export function JourneyFunnelDashboard({ scope }: { scope: "admin" | "provider" 
   }
   if (!data) return <p className="t-helper">Couldn't load analytics.</p>;
 
+  const sortedProviders = sortData(data.providers || [], (p: any, key) =>
+    PROVIDER_COLUMNS.find((c) => c.key === key)?.value(p) ?? null);
   const churnEntries = Object.entries(data.leaks.churnReasons || {});
   const responseEntries = Object.entries(data.winback.responses || {});
-  const selectCls = "h-9 px-3 rounded-[var(--radius)] border bg-background text-sm shrink-0";
-
   return (
     <div className="space-y-6" data-testid="journey-funnel-dashboard">
-      {/* Filters - same idiom as the Parents page: From/To chips + selects */}
-      <div className="flex items-center gap-3 flex-wrap" data-testid="funnel-filter-bar">
-        <DateChip value={fromDate} placeholder="From" onChange={setFromDate} testId="funnel-date-from" />
-        <DateChip value={toDate} placeholder="To" onChange={setToDate} testId="funnel-date-to" />
+      {/* Filters - the shared kit, same controls as every other list page.
+          The journey-type and provider pickers were native <select>s, which
+          draw their own arrow hard against the pill edge and read as a
+          different control beside the date pills. */}
+      <FilterRow>
+        <FilterDateRange from={fromDate} to={toDate} onFrom={setFromDate} onTo={setToDate} testIdPrefix="funnel-date" />
         {/* Providers only see journey types their approved services can
             produce (server-derived); admin sees all. Hidden entirely when
             there is just one type - nothing to filter. */}
         {(data.availableTypes?.length ?? 5) > 1 && (
-          <select className={selectCls} value={journeyType} onChange={(e) => setJourneyType(e.target.value)} data-testid="funnel-type">
-            <option value="">All journey types</option>
-            {(data.availableTypes || Object.keys(TYPE_OPTIONS)).map((t) => (
-              <option key={t} value={t}>{TYPE_OPTIONS[t] || t}</option>
-            ))}
-          </select>
+          <FilterDropdown
+            single
+            label="All journey types"
+            options={(data.availableTypes || Object.keys(TYPE_OPTIONS)).map((t) => [t, TYPE_OPTIONS[t] || t] as [string, string])}
+            selected={journeyType ? [journeyType] : []}
+            onChange={(next) => setJourneyType(next[0] || "")}
+            testId="funnel-type"
+          />
         )}
         {scope === "admin" && (
-          <select className={selectCls} value={providerId} onChange={(e) => setProviderId(e.target.value)} data-testid="funnel-provider">
-            <option value="">All providers</option>
-            {(optionsQuery.data?.providers || []).map((p: any) => (
-              <option key={p.providerId} value={p.providerId}>{p.providerName}</option>
-            ))}
-          </select>
+          <FilterDropdown
+            single
+            label="All providers"
+            options={(optionsQuery.data?.providers || []).map((p: any) => [p.providerId, p.providerName] as [string, string])}
+            selected={providerId ? [providerId] : []}
+            onChange={(next) => setProviderId(next[0] || "")}
+            testId="funnel-provider"
+          />
         )}
-      </div>
+      </FilterRow>
 
       {/* KPIs */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
@@ -353,20 +347,20 @@ export function JourneyFunnelDashboard({ scope }: { scope: "admin" | "provider" 
             <table className="w-full text-xs font-ui">
               <thead>
                 <tr className="text-left text-muted-foreground">
-                  <th className="py-1.5 pr-3 font-medium">Provider</th>
-                  <th className="py-1.5 pr-3 font-medium">Journeys</th>
-                  <th className="py-1.5 pr-3 font-medium">Consults</th>
-                  <th className="py-1.5 pr-3 font-medium">Completed</th>
-                  <th className="py-1.5 pr-3 font-medium">No-shows (P/Pr)</th>
-                  <th className="py-1.5 pr-3 font-medium">Matched</th>
-                  <th className="py-1.5 pr-3 font-medium">Paid</th>
-                  <th className="py-1.5 pr-3 font-medium">Signed</th>
-                  <th className="py-1.5 pr-3 font-medium">Handed off</th>
-                  <th className="py-1.5 font-medium">~Days to handoff</th>
+                  {PROVIDER_COLUMNS.map((c) => (
+                    <SortableTableHead
+                      key={c.key}
+                      label={c.label}
+                      sortKey={c.key}
+                      currentSort={sortConfig}
+                      onSort={handleSort}
+                      className="h-auto py-1.5 pr-3 px-0 font-medium"
+                    />
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {data.providers.map((p: any) => (
+                {sortedProviders.map((p: any) => (
                   <tr key={p.providerId} className="border-t">
                     <td className="py-1.5 pr-3">
                       <span className="font-medium">{p.providerName}</span>

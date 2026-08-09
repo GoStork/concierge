@@ -10,16 +10,20 @@
 
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Search, FileSignature } from "lucide-react";
+import { Loader2, FileSignature } from "lucide-react";
 import { AgreementRows } from "@/components/agreements-list";
-import { DateRangeFilter, inDateRange } from "@/components/date-range-filter";
+import { inDateRange } from "@/components/date-range-filter";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { PageHeader } from "@/components/ui/page-header";
+import { FilterRow, FilterSearch, FilterDropdown, FilterDateRange } from "@/components/ui/filter-controls";
 
-const AGREEMENT_STATUS_FILTERS = [
-  { key: "all", label: "All statuses" },
-  { key: "sent", label: "Sent - awaiting signature" },
-  { key: "signed", label: "Signed" },
-  { key: "other", label: "Rejected / expired / error" },
+// "all" is the absence of a selection, not an option - the shared dropdown
+// clears by re-picking, so listing it would be a second way to say the same
+// thing.
+const AGREEMENT_STATUS_FILTERS: [string, string][] = [
+  ["sent", "Sent - awaiting signature"],
+  ["signed", "Signed"],
+  ["other", "Rejected / expired / error"],
 ];
 
 export default function AdminAgreementsPage() {
@@ -73,62 +77,57 @@ export default function AdminAgreementsPage() {
   const signedCount = agreements.filter((a: any) => a.status === "SIGNED").length;
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-heading font-bold">Agreements</h1>
-        <p className="t-helper mt-1">Every contract across all providers and parents</p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader title="Agreements" subtitle="Every contract across all providers and parents" />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border p-4 space-y-1">
+      <div className="grid grid-cols-2 gap-4 max-w-xl">
+        <div className="rounded-[var(--radius)] border border-border/50 bg-card p-4 space-y-1">
           <p className="t-micro-label">Awaiting Signature</p>
           <p className="text-xl font-heading font-bold">{sentCount}</p>
         </div>
-        <div className="rounded-xl border p-4 space-y-1">
+        <div className="rounded-[var(--radius)] border border-border/50 bg-card p-4 space-y-1">
           <p className="t-micro-label">Fully Signed</p>
           <p className="text-xl font-heading font-bold">{signedCount}</p>
         </div>
       </div>
 
-      {/* Search + filters */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
+      <div className="flex items-start justify-between gap-3">
+        <FilterRow className="flex-1 min-w-0">
+          <FilterSearch
             value={q}
-            onChange={e => setParam({ q: e.target.value })}
+            onChange={(v) => setParam({ q: v })}
             placeholder="Search by parent, provider, or agreement type..."
-            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-background text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
-            data-testid="admin-agreements-search"
+            testId="admin-agreements-search"
           />
-        </div>
-        <DateRangeFilter from={dateFrom} to={dateTo} onFrom={v => setParam({ from: v })} onTo={v => setParam({ to: v })} testIdPrefix="admin-agreements-date" />
-        <select
-          value={status}
-          onChange={e => setParam({ status: e.target.value })}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
-          data-testid="admin-agreements-status-filter"
-        >
-          {AGREEMENT_STATUS_FILTERS.map(f => (
-            <option key={f.key} value={f.key}>{f.label}</option>
-          ))}
-        </select>
-        {docTypes.length > 1 && (
-          <select
-            value={docType}
-            onChange={e => setParam({ type: e.target.value })}
-            className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
-            data-testid="admin-agreements-type-filter"
-          >
-            <option value="all">All types</option>
-            {docTypes.map(dt => (
-              <option key={dt} value={dt}>{dt}</option>
-            ))}
-          </select>
-        )}
+          <FilterDateRange
+            from={dateFrom}
+            to={dateTo}
+            onFrom={(v) => setParam({ from: v })}
+            onTo={(v) => setParam({ to: v })}
+            testIdPrefix="admin-agreements-date"
+          />
+          <FilterDropdown
+            single
+            label="All statuses"
+            options={AGREEMENT_STATUS_FILTERS}
+            selected={status === "all" ? [] : [status]}
+            onChange={(next) => setParam({ status: next[0] || null })}
+            testId="admin-agreements-status-filter"
+          />
+          {docTypes.length > 1 && (
+            <FilterDropdown
+              single
+              label="All types"
+              options={docTypes.map((dt) => [dt, dt] as [string, string])}
+              selected={docType === "all" ? [] : [docType]}
+              onChange={(next) => setParam({ type: next[0] || null })}
+              testId="admin-agreements-type-filter"
+            />
+          )}
+        </FilterRow>
         <ClearFiltersButton
+          pill
           show={!!(q || dateFrom || dateTo || status !== "all" || docType !== "all")}
           onClick={() => setParam({ q: null, from: null, to: null, status: null, type: null })}
           testId="admin-agreements-clear-filters"
@@ -148,13 +147,17 @@ export default function AdminAgreementsPage() {
         </div>
       ) : (
         <AgreementRows
+          variant="table"
           items={filtered.map((a: any) => ({
             id: a.id,
             status: a.status,
             documentType: a.documentType,
             createdAt: a.createdAt,
             signedAt: a.signedAt,
-            title: `${a.parentName} - ${a.providerName}`,
+            // Admin spans providers, so the provider gets its own sortable
+            // column instead of being glued onto the parent's name.
+            title: a.parentName,
+            providerName: a.providerName,
             progressLabel: a.status === "SENT" && a.signerCount > 0 ? `${a.signedCount}/${a.signerCount} signed` : null,
           }))}
         />

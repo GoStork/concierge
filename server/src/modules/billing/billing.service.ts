@@ -89,6 +89,24 @@ export function serviceTypeFromSubject(subjectType: string | null | undefined): 
   return null;
 }
 
+/**
+ * Sortable columns on the admin Billing Dashboard, mapped to Prisma orderBy.
+ * Payout Status has no single column behind it (it is derived from four
+ * timestamps plus the refund fields), so it orders by the timestamp that
+ * actually moves a row through the payout lifecycle.
+ */
+const ADMIN_INVOICE_ORDER_BY: Record<string, (d: "asc" | "desc") => any> = {
+  parent: (d) => ({ parentUser: { name: d } }),
+  provider: (d) => ({ providerName: d }),
+  service: (d) => ({ serviceType: d }),
+  amount: (d) => ({ serviceAmount: d }),
+  fee: (d) => ({ referralFeeAmount: d }),
+  payout: (d) => ({ providerPayoutAmount: d }),
+  invoiceStatus: (d) => ({ status: d }),
+  payoutStatus: (d) => ({ payoutInitiatedAt: { sort: d, nulls: "last" } }),
+  date: (d) => ({ paidAt: { sort: d, nulls: "last" } }),
+};
+
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
@@ -3110,8 +3128,11 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     paidTo?: Date;
     page?: number;
     pageSize?: number;
+    /** Column key from the admin table header, e.g. "amount". */
+    sortBy?: string;
+    sortDir?: "asc" | "desc";
   }) {
-    const { status, payoutStatus, providerId, serviceType, search, dateFrom, dateTo, paidFrom, paidTo, page = 1, pageSize = 25 } = filters;
+    const { status, payoutStatus, providerId, serviceType, search, dateFrom, dateTo, paidFrom, paidTo, page = 1, pageSize = 25, sortBy, sortDir = "desc" } = filters;
     const where: any = {};
     const andConditions: any[] = [];
     if (status && status !== "all") where.status = status;
@@ -3203,7 +3224,10 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
             },
           },
         },
-        orderBy: { createdAt: "desc" },
+        // Sorting has to happen here, not in the client: the table is
+        // paginated, so a client-side sort would only reorder the 25 rows
+        // already on screen and quietly lie about "highest amount".
+        orderBy: ADMIN_INVOICE_ORDER_BY[sortBy || ""]?.(sortDir) || { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),

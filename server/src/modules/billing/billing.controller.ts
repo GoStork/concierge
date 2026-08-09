@@ -173,6 +173,8 @@ export class BillingController {
       paidTo: query.paidTo ? new Date(new Date(query.paidTo).setHours(23, 59, 59, 999)) : undefined,
       page: query.page ? parseInt(query.page, 10) : 1,
       pageSize: query.pageSize ? parseInt(query.pageSize, 10) : 25,
+      sortBy: query.sortBy,
+      sortDir: query.sortDir === "asc" ? "asc" : "desc",
     });
 
     return result;
