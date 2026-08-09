@@ -289,7 +289,7 @@ export default function ParentDetailPage() {
                     of the Activity tab on a phone - same section, hoisted, not
                     duplicated. */}
                 <div className={cn("lg:col-span-3", colClass("activity"))} data-testid="record-band-journey">
-                  <RecordSection id="journey" title="Lead Status" open={isOpen("journey")} onToggle={toggle} frameless>
+                  <RecordSection id="journey" title="Lead Status" frameless>
                     {/* No sessionId: the record is the full relationship view,
                         which is exactly what this card's own docs say to omit
                         it for. */}
@@ -333,7 +333,7 @@ export default function ParentDetailPage() {
                       // both copies.
                       record={scopedRecord || record}
                       isAdmin={!!isAdmin}
-                      onJumpToCrm={() => { setCol("activity"); toggle("crm", true); }}
+                      onJumpToCrm={() => setCol("activity")}
                       ownerSlot={<ParentLeadOwner record={record} />}
                       open={isOpen("identity")}
                       onToggle={() => toggle("identity")}
@@ -349,7 +349,7 @@ export default function ParentDetailPage() {
                       next steps and tags are ACTIONS on it rather than
                       sections of their own - writing a note adds an entry
                       here, which is where you would look for it anyway. */}
-                  <RecordSection id="crm" title="Activity" open={isOpen("crm")} onToggle={toggle} frameless>
+                  <RecordSection id="crm" title="Activity" frameless="always">
                     <ParentActivitySection record={scopedRecord || record} />
                   </RecordSection>
                 </div>
@@ -361,8 +361,6 @@ export default function ParentDetailPage() {
                       id="interested"
                       title="Interested profiles"
                       count={(scopedRecord || record).conversations.length + (scopedRecord || record).savedProfiles.length}
-                      open={isOpen("interested")}
-                      onToggle={toggle}
                       frameless
                     >
                       <InterestedProfilesSection record={scopedRecord || record} groupByProvider={!!isAdmin} />
@@ -372,15 +370,13 @@ export default function ParentDetailPage() {
                       id="money"
                       title="Documents"
                       count={record.money.byProvider.length}
-                      open={isOpen("money")}
-                      onToggle={toggle}
                       frameless
                     >
                       <ParentMoneySection record={record} showProviderName={!!isAdmin} />
                     </RecordSection>
 
                     {isAdmin && (
-                      <RecordSection id="admin" title="GoStork only" open={isOpen("admin")} onToggle={toggle}>
+                      <RecordSection id="admin" title="GoStork only">
                         <div className="space-y-2">
                           <p className="t-helper">
                             Contact sharing is per provider org. Unlocking one does not affect the others.

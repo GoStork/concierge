@@ -109,26 +109,27 @@ export function useOpenSections(allSections: string[]) {
 }
 
 export function RecordSection({
-  id, title, count, open, onToggle, children, frameless = false,
+  id, title, count, children, frameless = false,
 }: {
   id: string;
   title: string;
   count?: number | null;
-  open: boolean;
-  onToggle: (id: string, force?: boolean) => void;
   children: ReactNode;
   /**
-   * Below lg (where the record tabs between columns), drop the section frame
-   * and let the children's own cards sit on the page background, HubSpot
-   * mobile style. Only for sections whose children ARE cards - a frameless
-   * section around bare text would just look unfinished.
+   * Drop the section frame and let the children's own cards sit on the page
+   * background, HubSpot style. `true` = below lg only (where the record
+   * tabs between columns); `"always"` = every width (the Activity feed,
+   * HubSpot's middle column). Only for sections whose children ARE cards -
+   * a frameless section around bare text would just look unfinished.
    */
-  frameless?: boolean;
+  frameless?: boolean | "always";
 }) {
   return (
     // The shared section card every profile detail page uses - its own docs
     // say not to re-implement a section header, and this page had been doing
     // exactly that with a plain bordered div and no header bar.
+    // NOT collapsible (by request): these sections are the page, and folding
+    // them away just hid content behind an extra tap.
     <ProfileSection
       title={
         <span className="flex items-center gap-2">
@@ -136,15 +137,12 @@ export function RecordSection({
           {typeof count === "number" && count > 0 && <span className="t-helper">({count})</span>}
         </span>
       }
-      collapsible
-      open={open}
-      onToggle={() => onToggle(id)}
       frameless={frameless}
       // Tighter below sm for the same reason the page gutter shrinks there:
       // three nested frames were eating a third of a phone's width. Frameless
-      // sections drop the padding entirely below lg - the children's own
-      // cards land straight on the page background.
-      contentClassName={frameless ? "p-0 lg:p-5" : "p-2.5 sm:p-5"}
+      // sections drop the padding wherever the frame is gone - the children's
+      // own cards land straight on the page background.
+      contentClassName={frameless === "always" ? "p-0" : frameless ? "p-0 lg:p-5" : "p-2.5 sm:p-5"}
       data-testid={`section-${id}`}
     >
       {children}
