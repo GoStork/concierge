@@ -3414,7 +3414,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
   // We don't store the PDF; receipts are regenerated on demand. Cheap
   // enough at our volume and lets brand/legal-identity edits flow through
   // retroactively.
-  async getInvoiceDocumentForProvider(invoiceId: string, providerId: string): Promise<
+  async getInvoiceDocumentForProvider(invoiceId: string, providerId: string | null): Promise<
     | { kind: "pdf"; pdf: Buffer; filename: string }
     | { kind: "html"; html: string; filename: string }
   > {
@@ -3426,7 +3426,11 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
       },
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
-    if (invoice.providerId !== providerId) {
+    // providerId null = GoStork admin (the controller only passes null after
+    // verifying the role) - admins span every org, so the ownership check is
+    // skipped rather than forcing the client to thread a providerId it does
+    // not have on every surface.
+    if (providerId !== null && invoice.providerId !== providerId) {
       throw new NotFoundException("Invoice not found");
     }
 

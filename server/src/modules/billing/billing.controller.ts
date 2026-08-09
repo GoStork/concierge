@@ -479,8 +479,13 @@ export class BillingController {
     const user = req.user as any;
     const isAdmin = user?.roles?.includes?.("GOSTORK_ADMIN");
     let providerId: string | null = user?.providerId || null;
-    if (isAdmin && req.query.providerId) providerId = String(req.query.providerId);
-    if (!providerId) {
+    if (isAdmin) {
+      // Admins span every org: an explicit providerId query narrows the
+      // scope if given, otherwise null tells the service to skip the
+      // ownership check. Requiring the query here 403'd every invoice chip
+      // on the admin parents table (the row payload carries no providerId).
+      providerId = req.query.providerId ? String(req.query.providerId) : null;
+    } else if (!providerId) {
       return res.status(HttpStatus.FORBIDDEN).json({ message: "Forbidden" });
     }
     try {
