@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -10,7 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Building2, Loader2, Pencil, Globe, Trash2, Search, MapPin, ArrowUp, ArrowDown, ArrowUpDown, Calendar, ChevronDown } from "lucide-react";
+import { Plus, Building2, Loader2, Pencil, Globe, Trash2, Search, MapPin, ArrowUp, ArrowDown, ArrowUpDown, Calendar, ChevronDown, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { ProviderWithRelations } from "@shared/schema";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -63,6 +63,20 @@ function providerAutomations(p: any): { cost_sheet: boolean; invoice: boolean; a
     agreement: mode === "approval" || mode === "auto_send" || (mode == null && f.autoAgreementDraft === true),
   };
 }
+
+// Setup columns: one per tab on the provider edit page. A green check means
+// that tab has real content (server derives each flag from the tab's own data
+// - see attachSetupStatus in providers.controller). Clicking a cell opens the
+// provider straight on that tab, so an admin can fill the gap in one click.
+const SETUP_COLUMNS = [
+  { key: "team", label: "Team", tab: "users" },
+  { key: "costs", label: "Costs", tab: "costs" },
+  { key: "legalIdentity", label: "Legal Identity", tab: "legal-identity" },
+  { key: "billing", label: "Billing", tab: "billing" },
+  { key: "payouts", label: "Payouts", tab: "payouts" },
+  { key: "sponsorship", label: "Sponsorship", tab: "sponsorship" },
+  { key: "autoReply", label: "Auto Reply", tab: "auto-replies" },
+] as const;
 
 export default function AdminProvidersPage() {
   const queryClient = useQueryClient();
@@ -158,6 +172,29 @@ export default function AdminProvidersPage() {
   const { data: providerTypes } = useQuery<any[]>({
     queryKey: ["/api/provider-types"],
   });
+
+  // Horizontal scroller with a pinned Actions column, same treatment the
+  // parents table uses: the seven setup columns push the row past the viewport
+  // on a laptop, and edit/delete have to stay reachable without scrolling back.
+  // The scroll container is the Table's OWN wrapper - it clips first, so
+  // overflow-x on the Card around it never gets a chance to scroll.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [scrolledRight, setScrolledRight] = useState(false);
+  const measure = useCallback(() => {
+    const el = scroller.current;
+    if (!el) return;
+    setScrolledRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }, []);
+  useEffect(() => {
+    measure();
+    const el = scroller.current;
+    if (!el) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure, providers?.length]);
+  // A hairline, not a drop shadow - matches the parents table.
+  const pinR = scrolledRight ? { borderLeft: "1px solid hsl(var(--border))" } : undefined;
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -279,7 +316,7 @@ export default function AdminProvidersPage() {
       </div>
 
       <div className={`bg-card rounded-[var(--radius)] border border-border/50 shadow-sm overflow-hidden transition-opacity ${isFetching && !isLoading ? "opacity-60" : ""}`}>
-        <Table>
+        <Table wrapperClassName="overflow-x-auto" wrapperRef={scroller} onWrapperScroll={measure}>
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-[280px]">
@@ -349,19 +386,22 @@ export default function AdminProvidersPage() {
                   {sortBy === "updated_desc" ? <ArrowDown className="w-3.5 h-3.5" /> : sortBy === "updated_asc" ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />}
                 </button>
               </TableHead>
-              <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+              {SETUP_COLUMNS.map((c) => (
+                <TableHead key={c.key} className="hidden lg:table-cell whitespace-nowrap text-center">{c.label}</TableHead>
+              ))}
+              <TableHead className="text-right whitespace-nowrap sticky right-0 z-20 bg-muted" style={pinR}>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12">
+                <TableCell colSpan={15} className="text-center py-12">
                   <Loader2 className="w-6 h-6 animate-spin text-primary mx-auto" />
                 </TableCell>
               </TableRow>
             ) : providers && providers.length > 0 ? (
               providers.map((provider: any) => (
-                <TableRow key={provider.id} data-testid={`row-provider-${provider.id}`} className="cursor-pointer" onClick={() => navigate(`/admin/providers/${provider.id}`)}>
+                <TableRow key={provider.id} data-testid={`row-provider-${provider.id}`} className="cursor-pointer bg-card" onClick={() => navigate(`/admin/providers/${provider.id}`)}>
                   <TableCell className="font-ui">
                     <div className="flex items-center gap-3">
                       {provider.logoUrl ? (
@@ -438,7 +478,24 @@ export default function AdminProvidersPage() {
                   <TableCell className="hidden xl:table-cell whitespace-nowrap">
                     <span className="t-helper">{provider.updatedAt ? new Date(provider.updatedAt).toLocaleDateString() : "-"}</span>
                   </TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                  {SETUP_COLUMNS.map((c) => {
+                    const done = !!provider.setupStatus?.[c.key];
+                    return (
+                      <TableCell
+                        key={c.key}
+                        className="hidden lg:table-cell text-center"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/admin/providers/${provider.id}?tab=${c.tab}`); }}
+                        data-testid={`setup-${c.key}-${provider.id}`}
+                      >
+                        {done ? (
+                          <Check className="w-4 h-4 mx-auto text-[hsl(var(--brand-success))]" aria-label={`${c.label} configured`} />
+                        ) : (
+                          <span className="t-helper">-</span>
+                        )}
+                      </TableCell>
+                    );
+                  })}
+                  <TableCell className="text-right sticky right-0 z-10 bg-inherit" style={pinR} onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
@@ -463,7 +520,7 @@ export default function AdminProvidersPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={15} className="text-center text-muted-foreground py-8">
                   {debouncedSearch || debouncedLocation || providerType !== "All" || statusFilter !== "All"
                     ? "No providers match your filters."
                     : "No providers yet. Click \"Add Provider\" to get started."}

@@ -134,7 +134,7 @@ type ScrapedData = {
   teamMembers: ScrapedTeamMember[];
 };
 
-const VALID_TABS = ["profile", "users", "egg-donors", "surrogates", "sperm-donors", "costs", "legal-identity", "billing", "payouts", "sponsorship", "branding"];
+const VALID_TABS = ["profile", "users", "egg-donors", "surrogates", "sperm-donors", "costs", "legal-identity", "billing", "payouts", "sponsorship", "branding", "auto-replies"];
 
 export default function AdminProviderEditPage() {
   const { id } = useParams<{ id: string }>();

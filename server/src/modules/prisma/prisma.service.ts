@@ -43,6 +43,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.providerBankAccount;
   }
 
+  get providerLegalIdentity() {
+    return prisma.providerLegalIdentity;
+  }
+
   get providerReview() {
     return prisma.providerReview;
   }

@@ -960,7 +960,82 @@ export class ProvidersController {
       },
       orderBy,
     });
-    return applyMarketplaceFilters(rows);
+    const filtered = applyMarketplaceFilters(rows);
+    return await this.attachSetupStatus(filtered);
+  }
+
+  /**
+   * Per-provider "which setup tabs are done" flags for the admin Providers
+   * table. One column per tab on the provider edit page, so an admin can see
+   * at a glance who still has an empty Billing or Payouts tab without opening
+   * every provider.
+   *
+   * Every flag is derived from the same data its tab edits - never a separate
+   * "isConfigured" column that can drift from reality. Legal Identity is the
+   * only non-obvious one: its row is auto-created on first read (see
+   * LegalIdentityService.getOrCreate), so row-exists proves nothing and we
+   * check the two fields receipts and Stripe KYC actually need.
+   */
+  private async attachSetupStatus<T extends { id: string }>(rows: T[]): Promise<T[]> {
+    if (rows.length === 0) return rows;
+    const ids = rows.map((r) => r.id);
+    const byProvider = { providerId: { in: ids } };
+
+    const [team, costs, legal, fees, banks, sponsorships, autoReplies] = await Promise.all([
+      this.prisma.user.findMany({ where: byProvider, select: { providerId: true }, distinct: ["providerId"] }),
+      this.prisma.providerCostSheet.findMany({ where: byProvider, select: { providerId: true }, distinct: ["providerId"] }),
+      this.prisma.providerLegalIdentity.findMany({
+        where: byProvider,
+        select: { providerId: true, legalName: true, businessName: true, taxId: true },
+      }),
+      this.prisma.referralFeeConfig.findMany({
+        where: { ...byProvider, isActive: true },
+        select: { providerId: true },
+        distinct: ["providerId"],
+      }),
+      this.prisma.providerBankAccount.findMany({
+        where: byProvider,
+        select: { providerId: true, stripeConnectAccountId: true, payoutsEnabled: true },
+      }),
+      this.prisma.sponsorship.findMany({
+        where: { ...byProvider, status: "ACTIVE" },
+        select: { providerId: true },
+        distinct: ["providerId"],
+      }),
+      this.prisma.providerAutoReply.findMany({
+        where: { ...byProvider, isEnabled: true },
+        select: { providerId: true },
+        distinct: ["providerId"],
+      }),
+    ]);
+
+    const setOf = (list: { providerId: string | null }[]) =>
+      new Set(list.map((r) => r.providerId).filter(Boolean) as string[]);
+    const teamSet = setOf(team);
+    const costsSet = setOf(costs);
+    const feesSet = setOf(fees);
+    const sponsorSet = setOf(sponsorships);
+    const autoReplySet = setOf(autoReplies);
+    const legalSet = setOf(
+      legal.filter((l) => !!(l.legalName?.trim() || l.businessName?.trim()) && !!l.taxId?.trim()),
+    );
+    // Payouts count as set up once a Connect account exists - onboarding may
+    // still be mid-flight, so payoutsEnabled is reported separately rather
+    // than gating the checkmark.
+    const payoutsSet = setOf(banks.filter((b) => !!b.stripeConnectAccountId || b.payoutsEnabled));
+
+    return rows.map((r) => ({
+      ...r,
+      setupStatus: {
+        team: teamSet.has(r.id),
+        costs: costsSet.has(r.id),
+        legalIdentity: legalSet.has(r.id),
+        billing: feesSet.has(r.id),
+        payouts: payoutsSet.has(r.id),
+        sponsorship: sponsorSet.has(r.id),
+        autoReply: autoReplySet.has(r.id),
+      },
+    }));
   }
 
   // Lightweight {id, name} list of APPROVED providers for a given marketplace
