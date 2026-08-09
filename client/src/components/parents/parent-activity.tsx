@@ -843,7 +843,12 @@ function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="shrink-0 inline-flex items-center gap-0.5 t-helper hover:text-foreground transition-colors"
+          // p-3 -m-3 below sm: an invisible 44px-class hit area around the
+          // small text (Apple's minimum tap target). The visual layout is
+          // unchanged - the negative margin swallows the padding - but a
+          // thumb no longer has to land on a 20px-tall word. Desktop keeps
+          // the tight footprint.
+          className="shrink-0 inline-flex items-center gap-0.5 t-helper hover:text-foreground transition-colors p-3 -m-3 sm:p-0 sm:m-0"
           data-testid={`btn-note-actions-${note.id}`}
         >
           Actions <ChevronDown className="w-3 h-3" />
