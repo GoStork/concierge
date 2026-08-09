@@ -203,7 +203,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
             on each provider's admin page (<code className="text-xs bg-muted px-1 rounded">/admin/providers/:id</code> → Legal Identity tab).
           </p>
         </header>
-        <section className="space-y-3 rounded-xl border bg-secondary/30 p-5">
+        <section className="space-y-3 rounded-xl border bg-card p-5">
           <div>
             <h3 className="font-semibold">W-9 PandaDoc template</h3>
             <p className="t-helper mt-0.5">
@@ -267,7 +267,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       {/* W-9 section - moved out of Billing tab. Self-contained component
           owns its own status query + send/fill/resubmit mutations. */}
       {effectiveProviderId && (
-        <section className="space-y-3 rounded-xl border bg-secondary/30 p-5">
+        <section className="space-y-3 rounded-xl border bg-card p-5">
           <div>
             <h3 className="font-semibold">W-9 Form</h3>
             <p className="t-helper mt-0.5">

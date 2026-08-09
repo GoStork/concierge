@@ -93,15 +93,15 @@ export default function ProviderBillingPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-xl border p-4 space-y-1">
+        <div className="rounded-xl border p-4 space-y-1 bg-card">
           <p className="t-micro-label">Total Received</p>
           <p className="text-xl font-heading font-bold">{formatCents(totalReceived)}</p>
         </div>
-        <div className="rounded-xl border p-4 space-y-1">
+        <div className="rounded-xl border p-4 space-y-1 bg-card">
           <p className="t-micro-label">Awaiting Payment</p>
           <p className="text-xl font-heading font-bold">{awaitingCount}</p>
         </div>
-        <div className="rounded-xl border p-4 space-y-1">
+        <div className="rounded-xl border p-4 space-y-1 bg-card">
           <p className="t-micro-label">Pending Payouts</p>
           <p className="text-xl font-heading font-bold">{pendingPayouts}</p>
         </div>
@@ -116,7 +116,7 @@ export default function ProviderBillingPage() {
             value={q}
             onChange={e => setParam({ q: e.target.value })}
             placeholder="Search by parent, service, or description..."
-            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-background text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
+            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-card text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
             data-testid="provider-billing-search"
           />
         </div>
@@ -124,7 +124,7 @@ export default function ProviderBillingPage() {
         <select
           value={status}
           onChange={e => setParam({ status: e.target.value })}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          className="h-9 px-3 rounded-[var(--radius)] border bg-card text-sm"
           data-testid="provider-billing-status-filter"
         >
           {INVOICE_STATUS_FILTERS.map(f => (
@@ -135,7 +135,7 @@ export default function ProviderBillingPage() {
           <select
             value={service}
             onChange={e => setParam({ service: e.target.value })}
-            className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+            className="h-9 px-3 rounded-[var(--radius)] border bg-card text-sm"
             data-testid="provider-billing-service-filter"
           >
             <option value="all">All services</option>
@@ -161,7 +161,7 @@ export default function ProviderBillingPage() {
           <p className="t-helper">{invoices.length ? "No invoices match your filters" : "No invoices yet"}</p>
         </div>
       ) : (
-        <div className="rounded-xl border overflow-hidden">
+        <div className="rounded-xl border overflow-hidden bg-card">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">
               <thead>

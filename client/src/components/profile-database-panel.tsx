@@ -622,7 +622,7 @@ export default function ProfileDatabasePanel({
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <button
               type="button"
-              className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3 text-left w-full hover:bg-muted/50 transition-colors cursor-pointer"
+              className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3 text-left w-full hover:bg-muted/50 transition-colors cursor-pointer bg-card"
               onClick={() => setShowReport(!showReport)}
               data-testid={`btn-toggle-report-${type}`}
             >
@@ -644,11 +644,11 @@ export default function ProfileDatabasePanel({
               </div>
               <div className="t-helper">Sync Status</div>
             </button>
-            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
+            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3 bg-card">
               <div className="text-xl font-heading" data-testid={`text-stat-profiles-${type}`}>{profiles.length.toLocaleString()}</div>
               <div className="t-helper">Total Profiles</div>
             </div>
-            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
+            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3 bg-card">
               <div className="text-xl font-heading" data-testid={`text-stat-latest-${type}`}>
                 {profiles.length > 0
                   ? (() => { const d = new Date(Math.max(...profiles.map((p) => new Date(p.createdAt).getTime()))); return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`; })()
@@ -656,13 +656,13 @@ export default function ProfileDatabasePanel({
               </div>
               <div className="t-helper">Latest Profile Added</div>
             </div>
-            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
+            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3 bg-card">
               <div className="text-xl font-heading" data-testid={`text-stat-last-synced-donor-${type}`}>
                 {lastSyncedProfileLabel}
               </div>
               <div className="t-helper">Last Synced At</div>
             </div>
-            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3">
+            <div className="border rounded-[var(--radius)] pt-3 pb-2.5 px-3 bg-card">
               <div className="text-xl font-heading text-muted-foreground" data-testid={`text-stat-errors-${type}`}>
                 {lastReport?.failed || 0}
               </div>
@@ -886,7 +886,7 @@ export default function ProfileDatabasePanel({
 
       {showConfig && isSyncRunning && jobProgress && (
         <div
-          className="border rounded-[var(--radius)] p-4 space-y-3"
+          className="border rounded-[var(--radius)] p-4 space-y-3 bg-card"
           data-testid={`sync-progress-${type}`}
         >
           <div className="flex items-center justify-between">
@@ -1061,7 +1061,7 @@ export default function ProfileDatabasePanel({
       )}
 
       {showConfig && type === "surrogate" && (isAdmin || roles.includes("PROVIDER_ADMIN")) && (
-        <div className="border rounded-[var(--radius)] p-4 space-y-4" data-testid="pdf-upload-card">
+        <div className="border rounded-[var(--radius)] p-4 space-y-4 bg-card" data-testid="pdf-upload-card">
           <h4 className="font-heading text-sm flex items-center gap-2">
             <FileUp className="w-4 h-4" />
             Bulk PDF Upload
@@ -1213,7 +1213,7 @@ export default function ProfileDatabasePanel({
               </div>
             )}
             {isPdfRunning && pdfJobProgress && (
-              <div className="border rounded-[var(--radius)] p-4 space-y-3" data-testid="pdf-progress">
+              <div className="border rounded-[var(--radius)] p-4 space-y-3 bg-card" data-testid="pdf-progress">
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />

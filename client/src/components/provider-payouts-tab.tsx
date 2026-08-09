@@ -246,7 +246,7 @@ function MethodCard({
     <button
       type="button"
       onClick={onSelect}
-      className="text-left rounded-xl border p-5 transition-colors"
+      className="text-left rounded-xl border p-5 transition-colors bg-card"
       style={{
         background: selected ? "hsl(var(--primary) / 0.05)" : "hsl(var(--card))",
         borderColor: selected ? "hsl(var(--primary))" : "hsl(var(--border))",
@@ -387,7 +387,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
         </div>
       </div>
       {(state.bankName || state.accountLast4) && (
-        <div className="rounded-lg border p-3 bg-background/60 text-sm">
+        <div className="rounded-lg border p-3 bg-card text-sm">
           <p className="t-micro-label">Receiving bank</p>
           <p className="mt-1 font-medium">
             {state.bankName || "Bank on file"}{state.accountLast4 ? ` -- ${state.accountLast4}` : ""}
@@ -397,7 +397,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
       )}
 
       {/* Change bank account - expandable */}
-      <div className="rounded-lg border bg-background/60">
+      <div className="rounded-lg border bg-card">
         <button
           type="button"
           onClick={() => setIsChangingBank(v => !v)}
@@ -434,7 +434,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
       </div>
 
       {/* Disconnect */}
-      <div className="rounded-lg border bg-background/60 p-3 flex items-center justify-between gap-3">
+      <div className="rounded-lg border bg-card p-3 flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium">Disconnect payout account</p>
           <p className="t-helper mt-0.5">
@@ -461,7 +461,7 @@ function PayoutsReadyCard({ state }: { state: PayoutsState }) {
         </Button>
       </div>
       {disconnectBlockedReason && (
-        <div className="rounded-lg border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-warning) / 0.4)", background: "hsl(var(--brand-warning) / 0.05)" }}>
+        <div className="rounded-lg border p-3 flex items-start gap-2 bg-card" style={{ borderColor: "hsl(var(--brand-warning) / 0.4)", background: "hsl(var(--brand-warning) / 0.05)" }}>
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
           <p className="text-sm" style={{ color: "hsl(var(--brand-warning))" }}>{disconnectBlockedReason}</p>
         </div>
@@ -522,7 +522,7 @@ function BankReplaceForm({ onSaved }: { onSaved: () => void }) {
           <select
             value={accountType}
             onChange={e => setAccountType(e.target.value as any)}
-            className="h-10 rounded-md border bg-background px-3 text-sm w-full"
+            className="h-10 rounded-md border bg-card px-3 text-sm w-full"
           >
             <option value="checking">Checking</option>
             <option value="savings">Savings</option>
@@ -539,7 +539,7 @@ function BankReplaceForm({ onSaved }: { onSaved: () => void }) {
         <Input value={holderName} onChange={e => setHolderName(e.target.value)} />
       </Field>
       {error && (
-        <div className="rounded-lg border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
+        <div className="rounded-lg border p-3 flex items-start gap-2 bg-card" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-error))" }} />
           <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{error}</p>
         </div>
@@ -739,7 +739,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
             />
           </dl>
         ) : (
-          <div className="flex items-start gap-2 rounded-md border p-3 bg-background" style={{ borderColor: "hsl(var(--brand-warning) / 0.4)" }}>
+          <div className="flex items-start gap-2 rounded-md border p-3 bg-card" style={{ borderColor: "hsl(var(--brand-warning) / 0.4)" }}>
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
             <div className="text-xs">
               <p className="font-medium">Complete your Legal Identity first</p>
@@ -810,7 +810,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
             <select
               value={bankAccountType}
               onChange={e => setBankAccountType(e.target.value as any)}
-              className="h-10 rounded-md border bg-background px-3 text-sm w-full"
+              className="h-10 rounded-md border bg-card px-3 text-sm w-full"
             >
               <option value="checking">Checking</option>
               <option value="savings">Savings</option>
@@ -829,7 +829,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
       </div>
 
       {error && (
-        <div className="rounded-lg border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
+        <div className="rounded-lg border p-3 flex items-start gap-2 bg-card" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-error))" }} />
           <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{error}</p>
         </div>
@@ -964,7 +964,7 @@ function PayoutHistoryTable() {
           {payouts.length} payout{payouts.length === 1 ? "" : "s"} - what GoStork has sent (or is sending) to your bank.
         </p>
       </div>
-      <div className="rounded-xl border overflow-hidden">
+      <div className="rounded-xl border overflow-hidden bg-card">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>

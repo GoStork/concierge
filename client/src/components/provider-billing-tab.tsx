@@ -159,7 +159,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                   key={st}
                   type="button"
                   onClick={() => setActiveTab(st)}
-                  className="px-4 py-2 rounded-full border text-sm font-medium transition-colors"
+                  className="px-4 py-2 rounded-full border text-sm font-medium transition-colors bg-card"
                   style={{
                     background: activeTab === st ? "hsl(var(--primary))" : "hsl(var(--secondary))",
                     color: activeTab === st ? "hsl(var(--primary-foreground))" : "hsl(var(--foreground))",
@@ -177,7 +177,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                 <button
                   type="button"
                   onClick={() => setActiveTab("COMBINED")}
-                  className="px-4 py-2 rounded-full border text-sm font-medium transition-colors"
+                  className="px-4 py-2 rounded-full border text-sm font-medium transition-colors bg-card"
                   style={{
                     background: activeTab === "COMBINED" ? "hsl(var(--accent))" : "hsl(var(--secondary))",
                     color: activeTab === "COMBINED" ? "hsl(var(--accent-foreground))" : "hsl(var(--foreground))",
@@ -236,7 +236,7 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
                 : `${invoices.length} invoice${invoices.length !== 1 ? "s" : ""} for this provider - full money flow from parent payment through GoStork to the provider's bank.`}
             </p>
           </div>
-          <div className="rounded-xl border overflow-hidden">
+          <div className="rounded-xl border overflow-hidden bg-card">
             <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] text-sm">
               <thead>
@@ -470,7 +470,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
                 </p>
               </div>
               {invoice.bankPayoutCompletedAt && (
-            <div className="rounded-md border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-warning) / 0.5)", background: "hsl(var(--brand-warning) / 0.08)" }}>
+            <div className="rounded-md border p-3 flex items-start gap-2 bg-card" style={{ borderColor: "hsl(var(--brand-warning) / 0.5)", background: "hsl(var(--brand-warning) / 0.08)" }}>
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
               <div className="text-xs space-y-1">
                 <p className="font-medium" style={{ color: "hsl(var(--brand-warning))" }}>This payout already landed in the provider's bank</p>
@@ -521,7 +521,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
                 <button
                   type="button"
                   onClick={() => setMode("proportional")}
-                  className="text-left rounded-lg border p-3 transition-colors"
+                  className="text-left rounded-lg border p-3 transition-colors bg-card"
                   style={{
                     background: mode === "proportional" ? "hsl(var(--primary) / 0.05)" : "hsl(var(--card))",
                     borderColor: mode === "proportional" ? "hsl(var(--primary))" : "hsl(var(--border))",
@@ -535,7 +535,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
                 <button
                   type="button"
                   onClick={() => setMode("keep_platform_fee")}
-                  className="text-left rounded-lg border p-3 transition-colors"
+                  className="text-left rounded-lg border p-3 transition-colors bg-card"
                   style={{
                     background: mode === "keep_platform_fee" ? "hsl(var(--primary) / 0.05)" : "hsl(var(--card))",
                     borderColor: mode === "keep_platform_fee" ? "hsl(var(--primary))" : "hsl(var(--border))",
@@ -565,7 +565,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
               <p className="t-helper">Stored on the invoice for the audit trail. Not shown to the parent.</p>
             </div>
             {error && (
-              <div className="rounded-lg border p-3 flex items-start gap-2" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
+              <div className="rounded-lg border p-3 flex items-start gap-2 bg-card" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-error))" }} />
                 <p className="text-xs" style={{ color: "hsl(var(--brand-error))" }}>{error}</p>
               </div>

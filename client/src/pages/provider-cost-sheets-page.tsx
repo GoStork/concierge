@@ -75,11 +75,11 @@ export default function ProviderCostSheetsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border p-4 space-y-1">
+        <div className="rounded-xl border p-4 space-y-1 bg-card">
           <p className="t-micro-label">Active Cost Sheets</p>
           <p className="text-xl font-heading font-bold">{currentCount}</p>
         </div>
-        <div className="rounded-xl border p-4 space-y-1">
+        <div className="rounded-xl border p-4 space-y-1 bg-card">
           <p className="t-micro-label">Acknowledged by Parents</p>
           <p className="text-xl font-heading font-bold">{acknowledgedCount}</p>
         </div>
@@ -94,7 +94,7 @@ export default function ProviderCostSheetsPage() {
             value={q}
             onChange={e => setParam({ q: e.target.value })}
             placeholder="Search by parent or file name..."
-            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-background text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
+            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-card text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
             data-testid="provider-cost-sheets-search"
           />
         </div>
@@ -102,7 +102,7 @@ export default function ProviderCostSheetsPage() {
         <select
           value={status}
           onChange={e => setParam({ status: e.target.value })}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          className="h-9 px-3 rounded-[var(--radius)] border bg-card text-sm"
           data-testid="provider-cost-sheets-status-filter"
         >
           {COST_SHEET_STATUS_FILTERS.map(f => (
@@ -112,7 +112,7 @@ export default function ProviderCostSheetsPage() {
         <select
           value={svc}
           onChange={e => setParam({ svc: e.target.value })}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          className="h-9 px-3 rounded-[var(--radius)] border bg-card text-sm"
           data-testid="provider-cost-sheets-service-filter"
         >
           <option value="all">All services</option>
@@ -141,7 +141,7 @@ export default function ProviderCostSheetsPage() {
           {filtered.map((cs: any) => (
             <div
               key={cs.id}
-              className="rounded-xl border px-5 py-4 flex items-center justify-between gap-3"
+              className="rounded-xl border px-5 py-4 flex items-center justify-between gap-3 bg-card"
               style={{ opacity: cs.supersededAt ? 0.65 : 1 }}
               data-testid={`provider-cost-sheet-${cs.id}`}
             >

@@ -191,7 +191,7 @@ export function ReferralFeeConfigSection({
   return (
     <section className="space-y-4">
       {/* GoStork Referral Fee Type + amount input grouped in an outlined box */}
-      <div className="rounded-lg border p-4 space-y-4">
+      <div className="rounded-lg border p-4 space-y-4 bg-card">
         <div className="space-y-2">
           <Label>
             GoStork Referral Fee Type
@@ -260,7 +260,7 @@ export function ReferralFeeConfigSection({
       {/* Parent Pays Basis grouped in an outlined box. The Default First Payment
           amount input only renders when that basis is selected - picking
           Total Quoted Cost means there is no first-payment override. */}
-      <div className="rounded-lg border p-4 space-y-3">
+      <div className="rounded-lg border p-4 space-y-3 bg-card">
         <Label>Parent Pays Basis</Label>
         <div className="space-y-2">
           {/* Total Quoted Cost option */}
@@ -376,7 +376,7 @@ export function ReferralFeeConfigSection({
             ].map(opt => (
               <label
                 key={opt.value}
-                className="flex gap-3 cursor-pointer rounded-lg border px-4 py-3 transition-colors"
+                className="flex gap-3 cursor-pointer rounded-lg border px-4 py-3 transition-colors bg-card"
                 style={{
                   borderColor: depositMilestone === opt.value ? "hsl(var(--primary))" : "hsl(var(--border))",
                   background: depositMilestone === opt.value ? "hsl(var(--primary) / 0.05)" : "transparent",

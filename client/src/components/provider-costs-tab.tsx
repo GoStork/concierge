@@ -3655,7 +3655,7 @@ function ProgramsView({
         );
 
         return (
-          <div key={program.id} className="border rounded-[var(--container-radius)] overflow-hidden">
+          <div key={program.id} className="border rounded-[var(--container-radius)] overflow-hidden bg-card">
             <div
               className="px-4 py-3 bg-muted/20 transition-colors cursor-pointer hover:bg-muted/40"
               onClick={() => setExpandedProgramId(isExpanded ? null : program.id)}
@@ -3872,7 +3872,7 @@ function ProgramsView({
       })}
 
       {programs.length === 0 && !programsQuery.isLoading && !isAddingProgram && !uploadFirstType && (
-        <div className="text-center py-8 border rounded-[var(--container-radius)] text-muted-foreground">
+        <div className="text-center py-8 border rounded-[var(--container-radius)] text-muted-foreground bg-card">
           <Globe className="w-8 h-8 mx-auto mb-2 opacity-40" />
           <p className="text-sm">No programs created yet.</p>
           {(isAdminView || canManagePrograms) && (
