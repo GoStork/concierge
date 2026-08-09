@@ -166,7 +166,7 @@ export function RichTextEditor({
           aria-multiline="true"
           onInput={emit}
           onBlur={saveSelection}
-          className="min-h-[84px] max-h-[320px] overflow-y-auto px-3 py-2 text-sm outline-none break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3"
+          className="min-h-[140px] max-h-[420px] overflow-y-auto px-3 py-2 text-sm outline-none break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3"
           data-testid={`${testId}-input`}
         />
         {empty && placeholder && (
