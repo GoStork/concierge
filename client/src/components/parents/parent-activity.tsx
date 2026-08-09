@@ -700,6 +700,7 @@ function MessageDetail({ detail, parentUserId }: {
   // Only fetch the email once its card is actually on screen. The timeline can
   // hold dozens of messages, and eagerly pulling every rendered document would
   // make opening a record download a few megabytes nobody scrolled to.
+  // (formatSmsForDisplay lives just below this component.)
   useEffect(() => {
     if (!detail.hasHtml || visible || !ref.current) return;
     const el = ref.current;
@@ -740,11 +741,13 @@ function MessageDetail({ detail, parentUserId }: {
           the thing sitting right beneath it, so only messages with NO rendered
           document (SMS) fall back to text - rendered through the same
           rich-text pass the chat uses, so the join URL becomes a clickable
-          link instead of forty characters of unbroken text in the middle of
-          one long sentence. */}
+          link. formatSmsForDisplay adds the line structure the source lacks
+          (SMS copy is written as one long line by design); break-words, not
+          break-all, so ordinary words stay whole and only an overlong URL
+          ever breaks mid-string. */}
       {!detail.hasHtml && detail.bodyPreview && (
-        <div className="text-sm whitespace-pre-wrap break-all pt-1 rounded-[calc(var(--radius)/2)] bg-card border px-2.5 py-2">
-          {renderRichText(detail.bodyPreview)}
+        <div className="text-sm whitespace-pre-wrap break-words pt-1 rounded-[calc(var(--radius)/2)] bg-card border px-2.5 py-2">
+          {renderRichText(formatSmsForDisplay(detail.bodyPreview))}
         </div>
       )}
 
@@ -770,6 +773,24 @@ function MessageDetail({ detail, parentUserId }: {
       )}
     </div>
   );
+}
+
+/**
+ * SMS copy is written as ONE long line by design (that is what a text message
+ * is), so the timeline bubble showed a run-on sentence. Display-only
+ * formatting - the stored body is untouched: each sentence gets its own line,
+ * and a URL moves to its own line so the link reads as the action it is.
+ * Honorifics (Dr. Vicken, St. Jude) must not split - the callback skips the
+ * break when the "sentence end" is really an abbreviation.
+ */
+const SMS_NO_BREAK_AFTER = /^(?:Dr|Mr|Mrs|Ms|St|Jr|Sr|vs|etc|no|approx)\.$/i;
+function formatSmsForDisplay(text: string): string {
+  // Already multi-line (a future Content Template with real breaks): keep it.
+  if (text.includes("\n")) return text;
+  return text
+    .replace(/\s+(https?:\/\/\S+)/g, "\n$1")
+    .replace(/(\S+[.!?])\s+(?=[A-Z0-9])/g, (match, word) =>
+      SMS_NO_BREAK_AFTER.test(word) ? match : `${word}\n`);
 }
 
 /**
