@@ -87,7 +87,11 @@ async function getFixture(): Promise<Fixture> {
 
   await p.user.update({
     where: { id: parentId },
-    data: { mobileNumber: "+19172247761", mobileNumberDisplay: "+1 (917) 224-7761", city: "New York", state: "New York" },
+    // 555-01xx is the reserved FICTIONAL range - this fixture used a real
+    // person's number, and test runs that exercised invoice/booking flows
+    // sent real Twilio SMS to a real phone ("Hi Privacy, ..."). The send
+    // layer also short-circuits 555-01xx numbers as a second line of defense.
+    data: { mobileNumber: "+19175550142", mobileNumberDisplay: "+1 (917) 555-0142", city: "New York", state: "New York" },
   });
   await p.user.update({ where: { id: provUserId }, data: { providerId: provider.id, roles: { set: ["PROVIDER_ADMIN"] } } });
   await p.user.update({ where: { id: adminId }, data: { roles: { set: ["GOSTORK_ADMIN"] } } });

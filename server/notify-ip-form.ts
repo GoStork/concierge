@@ -51,12 +51,23 @@ const IP_FORM_REMINDER_CONTENT_SID = "PLACEHOLDER"; // TODO: create Twilio Conte
 
 /** Raw-body SMS (clone of NotificationService.sendRawSms - E.164 normalize, prefer MessagingService). */
 async function sendRawSms(to: string, body: string): Promise<void> {
+  // Test-run kill-switch, same as NotificationService - test fixtures carry
+  // real phone numbers and must never text real phones.
+  if (process.env.SMS_DISABLED === "1") {
+    console.log(`[IP FORM NOTIFY] [SMS DISABLED] To: ${to}`);
+    return;
+  }
   const twilioSid = process.env.TWILIO_ACCOUNT_SID;
   const twilioToken = process.env.TWILIO_AUTH_TOKEN;
   const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
   const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
   if (!twilioSid || !twilioToken || (!twilioFrom && !twilioMessagingServiceSid)) {
     console.log(`[IP FORM NOTIFY] [SMS MOCK] To: ${to}, Body: ${body}`);
+    return;
+  }
+  // Reserved fictional range (test fixtures) - see NotificationService.sendRawSms.
+  if (/^\+?1?\d{3}55501\d{2}$/.test(to.replace(/[\s\-\(\)]/g, ""))) {
+    console.log(`[IP FORM NOTIFY] [SMS FICTIONAL] Skipping test-fixture number ${to}`);
     return;
   }
   let normalizedTo = to.replace(/[\s\-\(\)]/g, "");
@@ -136,7 +147,7 @@ export async function sendIpFormGuestInvite(params: {
     if (params.phone) {
       await sendRawSms(
         params.phone,
-        `${params.inviterName} started your GoStork Intended Parent Form and needs your signature. Review your sections and sign here (private link, expires in 30 days): ${params.link}`,
+        `${params.inviterName} started your GoStork Intended Parent Form and needs your signature.\n\nReview your sections and sign here (private link, expires in 30 days):\n${params.link}`,
       ).catch((e) => console.error(`[IP FORM NOTIFY] guest invite SMS failed: ${e?.message}`));
     }
   } catch (e: any) {
@@ -196,7 +207,7 @@ export async function notifyPartnerSigned(params: {
       if (!m.mobileNumber || isTestEmail(m.email)) continue;
       await sendRawSms(
         m.mobileNumber,
-        `Good news ${getFirstName(m.name)} - ${signer} signed your GoStork Intended Parent Form. It's ready to review and submit: ${formUrl}`,
+        `Good news ${getFirstName(m.name)} - ${signer} signed your GoStork Intended Parent Form.\n\nIt's ready to review and submit: ${formUrl}`,
       ).catch((e) => console.error(`[IP FORM NOTIFY] partner-signed SMS failed: ${e?.message}`));
     }
   } catch (e: any) {
@@ -488,7 +499,7 @@ export async function sendIpFormPhotocopyRequest(params: { responseId: string; p
     if (m.mobileNumber && !isTestEmail(m.email)) {
       await sendRawSms(
         m.mobileNumber,
-        `Hi ${getFirstName(m.name)}, ${params.providerName} needs a copy of each parent's ID document to continue. Add it to your GoStork Intended Parent Form here: ${formUrl}`,
+        `Hi ${getFirstName(m.name)}, ${params.providerName} needs a copy of each parent's ID document to continue.\n\nAdd it to your GoStork Intended Parent Form here:\n${formUrl}`,
       ).catch((e) => console.error(`[IP FORM NOTIFY] photocopy SMS failed: ${e?.message}`));
     }
     void prisma.inAppNotification
@@ -572,7 +583,7 @@ export async function sendIpFormParentNudge(params: {
       } else {
         await sendRawSms(
           m.mobileNumber,
-          `Hi ${getFirstName(m.name)}, your GoStork Intended Parent Form is still waiting. Your surrogacy agency needs it before a match call can be scheduled - it takes about 20-30 minutes and saves as you go: ${formUrl}`,
+          `Hi ${getFirstName(m.name)}, your GoStork Intended Parent Form is still waiting.\n\nYour surrogacy agency needs it before a match call can be scheduled - it takes about 20-30 minutes and saves as you go:\n${formUrl}`,
         ).catch((e) => console.error(`[IP FORM NOTIFY] SMS failed: ${e?.message}`));
       }
     }

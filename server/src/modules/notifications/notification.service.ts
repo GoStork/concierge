@@ -50,26 +50,30 @@ export type NotificationChannel =
   | "sponsorship_ended";
 
 
+// [V3] generation, Aug 9 2026: every body reformatted with line breaks so a
+// text reads as a message (greeting / when / action link on their own lines)
+// instead of one run-on sentence. The [V2] content resources still exist on
+// Twilio untouched - swapping a sid back is the whole rollback.
 const TWILIO_TEMPLATES = {
-  BOOKING_SUBMITTED_PARENT: "HXa677816cb8bf69768464139042b88515",
-  BOOKING_REQUEST_PROVIDER: "HX544035e88f6e478c1314e7704064d7a9",
-  BOOKING_CONFIRMED_PARENT: "HX84cc7a1854b66a15a69c7bae3c4e448b",
-  BOOKING_CONFIRMED_PROVIDER: "HX57ea6e74bad99d093b69863b9777c6bd",
-  BOOKING_CANCELLED_PARENT: "HXdbef3610b962e07acfc48e19c0eb9022",
-  BOOKING_CANCELLED_PROVIDER: "HX5ba9b231a5b9224899e14d02ec6e2e1c",
-  BOOKING_RESCHEDULED_PARENT: "HX93eb1970ccb6a39f7dc832ef3fdd6c85",
-  BOOKING_RESCHEDULED_PARENT_WITH_MSG: "HX69dc26c3047d6324b62d46c52daaf1c2",
-  BOOKING_RESCHEDULED_PROVIDER: "HX39a6658c894cd89adf3754336c2e50dd",
-  BOOKING_REMINDER: "HXe18583f530a691a3e58bc4b033f3a4f6",
-  MEETING_DECLINED_PARENT: "HX1ecf20919c598d71728a371ae5a9338c",
-  NEW_TIME_SUGGESTED_PARENT: "HX523f2bab235463f38de799c7c9af6e1e",
-  NEW_TIME_SUGGESTED_PARENT_WITH_MSG: "HXce262a7c751f702b1bbe5cc5c04c48a1",
-  CALENDAR_RECONNECTION: "HX23ad7022a43c074802b805dddf938df4",
-  CALENDAR_RECONNECTION_REAUTH: "HX4c2f5bdfa7699ceb9fc9b9b8372e5e8c",
-  VIDEO_WAITING_PARENT: "HX5ebdfae8412e2b22814ab321e1eb34c7",
-  VIDEO_WAITING_PROVIDER: "HX7a0d4fa0fca197607ea546e80eb5750b",
-  MEMBER_INVITATION: "HXe69876a807739e3d399e2f5f33ed8f0a",
-  AGREEMENT_READY_PARENT: "HXfcae315df1af6c9ca650ee7908ee8574",
+  BOOKING_SUBMITTED_PARENT: "HX55b648dd015e02fa7b6b2b3e506f90ca",
+  BOOKING_REQUEST_PROVIDER: "HX89473ec423381115929d767cb700452f",
+  BOOKING_CONFIRMED_PARENT: "HX2ad3886a826af603d4255f6abe59d57e",
+  BOOKING_CONFIRMED_PROVIDER: "HX21d5758b976a2b90fc9a34db77381983",
+  BOOKING_CANCELLED_PARENT: "HX9363d211407a375ac0c1c37abb8119af",
+  BOOKING_CANCELLED_PROVIDER: "HX9c33671d45aef4cfd2a76e7f1acc4cac",
+  BOOKING_RESCHEDULED_PARENT: "HX1676457910398959bfebf36808cee8d6",
+  BOOKING_RESCHEDULED_PARENT_WITH_MSG: "HX898c696ecb971b0be5efbf6b95c09a5b",
+  BOOKING_RESCHEDULED_PROVIDER: "HX7f182ab67e197501c5b6c9997f536039",
+  BOOKING_REMINDER: "HXb21f3284bbf0096009ef3b2fce8c5ed9",
+  MEETING_DECLINED_PARENT: "HX029fcadeabe2f8c1e1786e129e9c78b5",
+  NEW_TIME_SUGGESTED_PARENT: "HX6aec537d5db26764f61b202ce90bb66a",
+  NEW_TIME_SUGGESTED_PARENT_WITH_MSG: "HXe5caee98b84bf91564d7a973386af243",
+  CALENDAR_RECONNECTION: "HX18ed59c1954d4d44406ff50d5252ae86",
+  CALENDAR_RECONNECTION_REAUTH: "HX6ee12a3a806ed0361e075a9e77216a3c",
+  VIDEO_WAITING_PARENT: "HX581a002549a2034f12ef023fd2cde7e1",
+  VIDEO_WAITING_PROVIDER: "HX7bacb24092cc54215cbe7d6120c919eb",
+  MEMBER_INVITATION: "HXf0f33ae9bd167179316d9b48d5a9d8d3",
+  AGREEMENT_READY_PARENT: "HXed034f64aac61228d1e5aae190985212",
   POST_CALL_FOLLOWUP_PARENT: "PLACEHOLDER", // TODO: create Twilio Content Template; falls back to sendRawSms
 };
 
@@ -2063,6 +2067,14 @@ export class NotificationService implements OnModuleInit {
   }
 
   private async sendSmsWithTemplate(to: string, contentSid: string, contentVars: Record<string, string>) {
+    // Kill-switch for test runs. Fixtures carry real-looking phone numbers,
+    // and a suite that exercises a booking or invoice flow was texting real
+    // phones through the real Twilio account ("Hi Privacy, you have a payment
+    // request of $5,000..."). The test runner sets SMS_DISABLED=1.
+    if (process.env.SMS_DISABLED === "1") {
+      this.logger.log(`[SMS DISABLED] To: ${to}, ContentSid: ${contentSid}`);
+      return;
+    }
     const twilioSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
@@ -2070,6 +2082,12 @@ export class NotificationService implements OnModuleInit {
 
     if (!twilioSid || !twilioToken || (!twilioFrom && !twilioMessagingServiceSid)) {
       this.logger.log(`[SMS MOCK] To: ${to}, ContentSid: ${contentSid}, Vars: ${JSON.stringify(contentVars)}`);
+      return;
+    }
+
+    // Reserved fictional range (test fixtures) - see sendRawSms.
+    if (/^\+?1?\d{3}55501\d{2}$/.test(to.replace(/[\s\-\(\)]/g, ""))) {
+      this.logger.log(`[SMS FICTIONAL] Skipping test-fixture number ${to}`);
       return;
     }
 
@@ -2259,7 +2277,7 @@ export class NotificationService implements OnModuleInit {
       if (admin.mobileNumber) {
         this.sendRawSms(
           admin.mobileNumber,
-          `${brandData.companyName} Alert: ${params.parentName} (${params.parentEmail}) is requesting human assistance in the AI concierge. Join the chat: ${chatUrl}`,
+          `${brandData.companyName} Alert: ${params.parentName} (${params.parentEmail}) is requesting human assistance in the AI concierge.\n\nJoin the chat: ${chatUrl}`,
         ).catch(e => this.logger.error(`Failed to send escalation SMS to ${admin.mobileNumber}: ${e.message}`));
       }
     }
@@ -2327,7 +2345,7 @@ export class NotificationService implements OnModuleInit {
         // Fallback raw SMS until template is created
         this.sendRawSms(
           params.parentPhone,
-          `Hi ${firstName}, your agreement from ${params.providerName} is ready to sign. Review it here: ${params.signingUrl || chatUrl}`,
+          `Hi ${firstName}, your agreement from ${params.providerName} is ready to sign.\n\nReview and sign: ${params.signingUrl || chatUrl}`,
         ).catch(e => this.logger.error(`Failed to send agreement SMS (raw): ${e.message}`));
       }
     }
@@ -2488,6 +2506,11 @@ export class NotificationService implements OnModuleInit {
   }
 
   private async sendRawSms(to: string, body: string) {
+    // Same test-run kill-switch as sendSmsWithTemplate - see the comment there.
+    if (process.env.SMS_DISABLED === "1") {
+      this.logger.log(`[SMS DISABLED] To: ${to}, Body: ${body.slice(0, 80)}`);
+      return;
+    }
     const twilioSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioFrom = process.env.TWILIO_PHONE_NUMBER;
@@ -2502,6 +2525,14 @@ export class NotificationService implements OnModuleInit {
     let normalizedTo = to.replace(/[\s\-\(\)]/g, "");
     if (!normalizedTo.startsWith("+")) {
       normalizedTo = `+1${normalizedTo}`;
+    }
+
+    // 555-01xx is the reserved fictional range test fixtures use. Attempting
+    // them against Twilio just burns undeliverable sends into the account's
+    // reputation.
+    if (/^\+1\d{3}55501\d{2}$/.test(normalizedTo)) {
+      this.logger.log(`[SMS FICTIONAL] Skipping test-fixture number ${normalizedTo}`);
+      return;
     }
 
     const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
@@ -2664,8 +2695,8 @@ export class NotificationService implements OnModuleInit {
       if (member.mobileNumber && !smsSentTo.has(member.mobileNumber)) {
         smsSentTo.add(member.mobileNumber);
         const smsBody = params.dueAt
-          ? `Hi ${memberFirst}, your payment of ${params.serviceAmountFormatted} for ${params.providerName} is due soon. Pay securely via GoStork: ${params.paymentUrl}`
-          : `Hi ${memberFirst}, you have a payment request of ${params.serviceAmountFormatted} from ${params.providerName}. Pay securely via GoStork: ${params.paymentUrl}`;
+          ? `Hi ${memberFirst}, your payment of ${params.serviceAmountFormatted} for ${params.providerName} is due soon.\n\nPay securely via GoStork:\n${params.paymentUrl}`
+          : `Hi ${memberFirst}, you have a payment request of ${params.serviceAmountFormatted} from ${params.providerName}.\n\nPay securely via GoStork:\n${params.paymentUrl}`;
         await this.sendRawSms(member.mobileNumber, smsBody).catch(e =>
           this.logger.error(`Failed to send payment request SMS: ${e.message}`),
         );
@@ -2821,9 +2852,9 @@ export class NotificationService implements OnModuleInit {
   }) {
     let smsBody = "";
     if (params.reminderType === "4h_remaining") {
-      smsBody = `Urgent: Only 4 hours left to secure your surrogate match with ${params.providerName}. Pay now: ${params.paymentUrl}`;
+      smsBody = `Urgent: Only 4 hours left to secure your surrogate match with ${params.providerName}.\n\nPay now: ${params.paymentUrl}`;
     } else if (params.reminderType === "1h_remaining") {
-      smsBody = `Last chance: 1 hour remaining to reserve your match with ${params.providerName}. Pay now: ${params.paymentUrl}`;
+      smsBody = `Last chance: 1 hour remaining to reserve your match with ${params.providerName}.\n\nPay now: ${params.paymentUrl}`;
     } else if (params.reminderType === "expired") {
       smsBody = `Your 24-hour hold with ${params.providerName} has expired. Contact GoStork to explore next steps.`;
     }
@@ -2886,7 +2917,7 @@ export class NotificationService implements OnModuleInit {
       } else {
         this.sendRawSms(
           params.parentPhone,
-          `Hi ${firstName}, your consultation with ${params.providerName} just ended. How did it go? Let Ariel know: ${params.chatUrl}`,
+          `Hi ${firstName}, your consultation with ${params.providerName} just ended. How did it go?\n\nLet Ariel know: ${params.chatUrl}`,
         ).catch(e => this.logger.error(`Failed to send post-call SMS (raw): ${e.message}`));
       }
     }
@@ -3154,7 +3185,7 @@ export class NotificationService implements OnModuleInit {
         smsSentTo.add(member.mobileNumber);
         await this.sendRawSms(
           member.mobileNumber,
-          `Hi ${getFirstName(member.name) || firstName}, ${params.providerName} sent a cost sheet (${params.totalCostFormatted}) via GoStork. View it here: ${chatUrl}`,
+          `Hi ${getFirstName(member.name) || firstName}, ${params.providerName} sent a cost sheet (${params.totalCostFormatted}) via GoStork.\n\nView it here: ${chatUrl}`,
         ).catch(e => this.logger.error(`Failed to send cost sheet SMS: ${e.message}`));
       }
     }
@@ -3185,17 +3216,17 @@ export class NotificationService implements OnModuleInit {
       first: {
         title: `A prospective parent is waiting for an answer (${params.ageFormatted})`,
         body: `A prospective parent asked a question through the GoStork AI concierge and has been waiting <strong>${esc(params.ageFormatted)}</strong> for a reply. Your answer is relayed by Eva and stays anonymous.<br/><br/><em>"${esc(preview)}"</em>`,
-        smsBody: `GoStork: a parent is waiting ${params.ageFormatted} for your reply. Question: "${preview.slice(0, 80)}..." Reply: ${chatUrl}`,
+        smsBody: `GoStork: a parent is waiting ${params.ageFormatted} for your reply.\n\nQuestion: "${preview.slice(0, 80)}..."\n\nReply: ${chatUrl}`,
       },
       second: {
         title: `Still waiting (${params.ageFormatted}) - parent may move on`,
         body: `A prospective parent has now been waiting <strong>${esc(params.ageFormatted)}</strong> for an answer through the GoStork AI concierge. Parents who don't hear back within 24-48 hours often move on to other providers.<br/><br/><em>"${esc(preview)}"</em>`,
-        smsBody: `GoStork reminder: parent has waited ${params.ageFormatted}. They may move on if no reply. Question: "${preview.slice(0, 80)}..." ${chatUrl}`,
+        smsBody: `GoStork reminder: parent has waited ${params.ageFormatted}. They may move on if no reply.\n\nQuestion: "${preview.slice(0, 80)}..."\n\nReply: ${chatUrl}`,
       },
       escalation: {
         title: `Escalated: parent has waited ${params.ageFormatted} for an answer`,
         body: `A prospective parent has waited <strong>${esc(params.ageFormatted)}</strong> without a response. GoStork has been notified and may follow up on your behalf. Please reply as soon as possible.<br/><br/><em>"${esc(preview)}"</em>`,
-        smsBody: `GoStork ESCALATED: parent waited ${params.ageFormatted}. GoStork has been notified. Reply now: ${chatUrl}`,
+        smsBody: `GoStork ESCALATED: parent waited ${params.ageFormatted}. GoStork has been notified.\n\nReply now: ${chatUrl}`,
       },
     }[params.stage];
 
@@ -3248,12 +3279,12 @@ export class NotificationService implements OnModuleInit {
       pre_meeting_24h: {
         title: "Send a cost sheet before tomorrow's meeting",
         body: `Your meeting with <strong>${esc(params.parentName)}</strong>${params.meetingTimeFormatted ? ` (${params.meetingTimeFormatted})` : ""} is coming up. Send a cost sheet now so the parent's invoice can be issued automatically once they're ready to proceed.`,
-        smsBody: `Reminder: your meeting with ${params.parentName}${params.meetingTimeFormatted ? ` (${params.meetingTimeFormatted})` : ""} is in ~24h. Send a cost sheet on GoStork so we can invoice them when they're ready: ${chatUrl}`,
+        smsBody: `Reminder: your meeting with ${params.parentName}${params.meetingTimeFormatted ? ` (${params.meetingTimeFormatted})` : ""} is in ~24h.\n\nSend a cost sheet on GoStork so we can invoice them when they're ready:\n${chatUrl}`,
       },
       pre_meeting_1h: {
         title: "Your meeting starts in 1 hour - send a cost sheet",
         body: `Your meeting with <strong>${esc(params.parentName)}</strong>${params.meetingTimeFormatted ? ` (${params.meetingTimeFormatted})` : ""} starts soon. Send a cost sheet so the invoice can flow automatically afterwards.`,
-        smsBody: `Your meeting with ${params.parentName} starts in ~1h. Send a cost sheet on GoStork: ${chatUrl}`,
+        smsBody: `Your meeting with ${params.parentName} starts in ~1h.\n\nSend a cost sheet on GoStork: ${chatUrl}`,
       },
       post_readiness: {
         title: "Parent is ready - please send a cost sheet",
