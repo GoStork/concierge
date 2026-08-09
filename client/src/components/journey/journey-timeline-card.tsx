@@ -173,11 +173,17 @@ function stageLabelClass(stage: StageOut): string {
  * a ladder. The caller's job is to give this enough room; below `lg` the
  * record page switches to the vertical ladder instead of squeezing.
  */
-function StageColumn({ stage, isFirst, isLast, branch }: {
+function StageColumn({ stage, isFirst, isLast, branch, widthPct }: {
   stage: StageOut;
   isFirst: boolean;
   isLast: boolean;
   branch?: StageOut;
+  /**
+   * Fixed share of the strip, computed from the LONGEST ladder on the page
+   * so the same rung index lands on the same vertical line on every ladder
+   * (by request). Shorter ladders simply end early instead of stretching.
+   */
+  widthPct?: number;
 }) {
   // The connector is drawn as two half-width rails either side of the dot, so
   // every segment meets its neighbour exactly at the column boundary - no
@@ -194,9 +200,13 @@ function StageColumn({ stage, isFirst, isLast, branch }: {
   // fork drawn the same way, rotated.
   const BRANCH_GAP = 12;
   return (
-    // basis-0 + flex-1: every rung gets an equal share of the row, and
+    // Fixed width (see widthPct) so rung indexes align across ladders;
     // min-w-0 lets a long label wrap under its dot instead of widening it.
-    <div className="flex-1 basis-0 min-w-0" data-testid={`journey-stage-${stage.id}`}>
+    <div
+      className={widthPct ? "shrink-0 min-w-0" : "flex-1 basis-0 min-w-0"}
+      style={widthPct ? { width: `${widthPct}%` } : undefined}
+      data-testid={`journey-stage-${stage.id}`}
+    >
       {/* relative only when there is a branch: the stem is absolute inside
           this box so it can start on the connector line and run past the
           label, whose height varies with wrapping. */}
@@ -209,9 +219,15 @@ function StageColumn({ stage, isFirst, isLast, branch }: {
         <div className="flex items-center">
           {!isFirst && <div className={rail} />}
           <StageMark stage={stage} />
-          {!isLast && <div className={rail} />}
+          {/* The last rung keeps an INVISIBLE spacer where its rail would
+              be, so its dot stays at the same index position as every other
+              ladder's rung of that index - a missing rail would let the dot
+              slide to the column's right edge. */}
+          {!isLast ? <div className={rail} /> : !isFirst && <div className="h-px flex-1" />}
         </div>
-        <div className={`pt-1.5 ${isFirst ? "pr-1 text-left" : isLast ? "pl-1 text-right" : "px-1 text-center"}`}>
+        {/* Only the FIRST rung anchors (left) - a right-anchored last rung
+            would break index alignment for ladders that end early. */}
+        <div className={`pt-1.5 ${isFirst ? "pr-1 text-left" : "px-1 text-center"}`}>
           <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(stage)}`}>
             {stage.label}
             {stage.optional && stage.state === "upcoming" && <span className="text-muted-foreground font-normal"> (if needed)</span>}
@@ -314,7 +330,13 @@ function ForkRow({ main, branch, isLast }: { main: StageOut; branch: StageOut; i
 const LEGACY_BRANCH_STAGE_IDS = new Set(["no_show", "match_call_no_show", "not_matched"]);
 const isBranchStage = (st: StageOut) => st.branch === true || LEGACY_BRANCH_STAGE_IDS.has(st.id);
 
-function JourneyBlock({ journey, showProviderName, horizontal }: { journey: JourneyOut; showProviderName: boolean; horizontal?: boolean }) {
+function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
+  journey: JourneyOut;
+  showProviderName: boolean;
+  horizontal?: boolean;
+  /** Column count of the LONGEST ladder on the page - see StageColumn.widthPct. */
+  cols?: number;
+}) {
   // Pull branch-type stages off the main line; each attaches to the row that
   // FOLLOWS it in the server order (the fork's sibling rung - e.g. no_show
   // sits between consult_scheduled and consult_completed, so it renders
@@ -397,6 +419,7 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
                 isFirst={i === 0}
                 isLast={i === mainStages.length - 1}
                 branch={branchBySibling.get(st.id)}
+                widthPct={cols ? 100 / cols : undefined}
               />
             ))}
           </div>
@@ -552,6 +575,12 @@ export function JourneyTimelineCard({
           // families). Admins span providers, so they keep it.
           showProviderName={!providerId}
           horizontal={orientation === "horizontal"}
+          // Same column width on every ladder (from the longest one), so
+          // rung N sits on the same vertical line page-wide; shorter
+          // ladders end early rather than stretching.
+          cols={orientation === "horizontal"
+            ? Math.max(...journeys.map((jj) => jj.stages.filter((st) => !isBranchStage(st)).length))
+            : undefined}
         />
       ))}
       {showEvents && parentUserId && (
