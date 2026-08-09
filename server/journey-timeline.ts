@@ -37,6 +37,10 @@
  * once a new match call is booked or the match confirms.
  */
 import { prisma } from "./db";
+import {
+  winnersByLine, matchedElsewhereAt, isCommittingInvoice, isCommittingAgreement,
+  PRE_ENGAGEMENT_STAGES, MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL,
+} from "./matched-elsewhere";
 
 export interface JourneyStageOut {
   id: string;
@@ -171,7 +175,7 @@ export async function buildJourneyTimelines(
   // ---- Load the relationship evidence in one sweep ----
   const [sessions, bookings, invoices, agreements, events] = await Promise.all([
     prisma.aiChatSession.findMany({
-      where: { userId: { in: memberIds }, providerId: { not: null }, ...(opts?.providerId ? { providerId: opts.providerId } : {}) },
+      where: { userId: { in: memberIds }, providerId: { not: null } },
       select: {
         id: true, providerId: true, subjectType: true, createdAt: true, updatedAt: true,
         handoffCompletedAt: true, status: true,
@@ -180,7 +184,7 @@ export async function buildJourneyTimelines(
       orderBy: { updatedAt: "desc" },
     }),
     prisma.booking.findMany({
-      where: { parentUserId: { in: memberIds }, ...(opts?.providerId ? { providerUser: { providerId: opts.providerId } } : {}) },
+      where: { parentUserId: { in: memberIds } },
       select: {
         id: true, status: true, outcome: true, scheduledAt: true, createdAt: true, cancelledAt: true,
         cancelledByRole: true, meetingSubtype: true, duration: true, sessionId: true,
@@ -188,15 +192,15 @@ export async function buildJourneyTimelines(
       },
     }),
     prisma.invoice.findMany({
-      where: { parentUserId: { in: memberIds }, ...(opts?.providerId ? { providerId: opts.providerId } : {}) },
+      where: { parentUserId: { in: memberIds } },
       select: { id: true, providerId: true, sessionId: true, status: true, createdAt: true, paidAt: true, triggerSource: true, medicalClearanceStatus: true, authorizedAt: true, clearanceConfirmedAt: true },
     }),
     prisma.agreement.findMany({
-      where: { parentUserId: { in: memberIds }, ...(opts?.providerId ? { providerId: opts.providerId } : {}) },
-      select: { id: true, providerId: true, sessionId: true, status: true, createdAt: true, signedAt: true },
+      where: { parentUserId: { in: memberIds } },
+      select: { id: true, providerId: true, sessionId: true, status: true, createdAt: true, signedAt: true, supersededAt: true },
     }),
     prisma.journeyEvent.findMany({
-      where: { parentAccountId, ...(opts?.providerId ? { providerId: opts.providerId } : {}) },
+      where: { parentAccountId },
       select: { providerId: true, sessionId: true, eventType: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     }),
@@ -334,9 +338,47 @@ export async function buildJourneyTimelines(
     }
   }
 
+  // The service line a bucket belongs to. Extracted so the cross-provider
+  // outcome pass below and the journey it emits cannot disagree about which
+  // line a provider is on.
+  const lineOfBucket = (b: typeof derivedBuckets[number], jt: string): string =>
+    jt === "bank"
+      ? (b.subjectTypes.some((s) => /sperm/i.test(s || ""))
+          || (b.serviceNames.some((n) => /sperm bank/i.test(n)) && !b.serviceNames.some((n) => /egg bank/i.test(n)))
+          ? "sperm_donation"
+          : "egg_donation")
+      : jt;
+
+  // ---- Cross-provider outcome ----
+  // Which provider the family actually committed to on each line. Feeds the
+  // "Matched Elsewhere" branch on every OTHER provider's ladder. See
+  // server/matched-elsewhere.ts for why this is derived and never stored.
+  // NOTE the ordering: evidence is loaded for EVERY provider above, the
+  // winners pass runs across all of it, and only then is the output narrowed
+  // to the caller's own org (below). Scoping the queries instead - which is
+  // what they used to do - meant a losing provider never loaded the rival
+  // invoice that beat them, so the one provider who most needs to know they
+  // lost was the one provider who could never be told. Nothing about the
+  // rival leaves this function: only the timestamp reaches the ladder.
+  const lineWinners = winnersByLine(
+    derivedBuckets.flatMap((b) => {
+      const line = lineOfBucket(b, classifyJourneyType(b.serviceNames, b.subjectTypes));
+      return [
+        ...b.invoices.filter(isCommittingInvoice)
+          .map((i) => ({ providerId: b.providerId, serviceLine: line, at: (i as any).paidAt || i.createdAt })),
+        ...b.agreements.filter(isCommittingAgreement)
+          .map((a) => ({ providerId: b.providerId, serviceLine: line, at: (a as any).signedAt || a.createdAt })),
+      ];
+    }),
+  );
+
+  const visibleBuckets = opts?.providerId
+    ? derivedBuckets.filter((b) => b.providerId === opts.providerId)
+    : derivedBuckets;
+
   // ---- Derive each journey ----
   const journeys: JourneyOut[] = [];
-  for (const b of derivedBuckets) {
+  for (const b of visibleBuckets) {
     const journeyType = classifyJourneyType(b.serviceNames, b.subjectTypes);
     const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
 
@@ -626,6 +668,29 @@ export async function buildJourneyTimelines(
     highestIdx = -1;
     rungs.forEach((r, i) => { if (r.at) highestIdx = Math.max(highestIdx, i); });
 
+    // ---- Matched Elsewhere branch ----
+    // The family committed to another provider on this line. Renders like No
+    // Show / Canceled - a branch hanging off wherever this provider actually
+    // got to - and becomes the current state, because it is. Providers who
+    // never got past browsing are skipped: nothing was lost.
+    const lostAt = matchedElsewhereAt(
+      lineWinners,
+      b.providerId,
+      lineOfBucket(b, journeyType),
+      highestIdx >= 0 && !PRE_ENGAGEMENT_STAGES.has(rungs[highestIdx].id),
+    );
+    if (lostAt) {
+      rungs.splice(highestIdx + 1, 0, {
+        id: MATCHED_ELSEWHERE_STAGE,
+        label: MATCHED_ELSEWHERE_LABEL,
+        at: lostAt,
+        tone: "warning" as const,
+        branch: true,
+      });
+      highestIdx = -1;
+      rungs.forEach((r, i) => { if (r.at) highestIdx = Math.max(highestIdx, i); });
+    }
+
     // A reached FINAL rung is done, not "current" - the journey is over,
     // so a handed-off tree renders fully checked (user decision, 7B).
     const stages: JourneyStageOut[] = rungs.map((r, i) => ({
@@ -681,13 +746,7 @@ export async function buildJourneyTimelines(
 
     journeys.push({
       journeyType,
-      serviceLine:
-        journeyType === "bank"
-          ? (b.subjectTypes.some((s) => /sperm/i.test(s || ""))
-              || (b.serviceNames.some((n) => /sperm bank/i.test(n)) && !b.serviceNames.some((n) => /egg bank/i.test(n)))
-              ? "sperm_donation"
-              : "egg_donation")
-          : journeyType,
+      serviceLine: lineOfBucket(b, journeyType),
       typeLabel: TYPE_LABEL[journeyType],
       providerId: b.providerId,
       providerName: b.providerName,
