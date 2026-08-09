@@ -60,10 +60,18 @@ function buildServiceLines(row: ParentTableRow): { serviceKey: string | null; st
   return lines;
 }
 
+/** Current cost sheets only; when every sheet was superseded, keep the newest. */
+function liveCostSheets(costSheets: any[]): any[] {
+  const live = costSheets.filter((cs) => !cs.supersededAt);
+  if (live.length) return live;
+  return costSheets.length ? [costSheets[0]] : [];
+}
+
 /**
- * Order a row's invoices to mirror its stacked Services column: invoices for
- * the first listed service line first, then the second, unknown types last.
- * Stable within a group (server already sends newest-first).
+ * Order a row's invoices (or agreements - both carry serviceType) to mirror
+ * the stacked Services column: rows for the first listed service line first,
+ * then the second, unknown types last. Stable within a group (server already
+ * sends newest-first).
  */
 function sortInvoicesByServiceOrder(
   invoices: any[],
@@ -331,12 +339,18 @@ export function ParentsTable({
                   )}
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                  {/* Superseded sheets are history, not state - the record's
+                      Documents panel keeps the full trail; the table shows
+                      only what is live, stacked. If every sheet was
+                      superseded (edge case), the newest one still shows so
+                      the column never lies about a quote having been sent. */}
                   <ParentCostSheetsCell
-                    costSheets={row.costSheets || []}
+                    costSheets={liveCostSheets(row.costSheets || [])}
                     sessionId={row.sessionId}
                     isAdmin={isAdmin}
                     parentUserId={row.id}
-                    limit={1}
+                    limit={0}
+                    stack
                   />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -350,7 +364,11 @@ export function ParentsTable({
                   />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                  <ParentAgreementsCell agreements={row.agreements || []} limit={1} />
+                  <ParentAgreementsCell
+                    agreements={sortInvoicesByServiceOrder(row.agreements || [], row.serviceStatuses)}
+                    limit={0}
+                    stack
+                  />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell" data-testid={`text-created-${row.id}`}>
                   <span className="t-helper">{row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"}</span>

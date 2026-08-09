@@ -617,6 +617,7 @@ export function ParentCostSheetsCell({
   parentUserId,
   limit = 2,
   layout = "chips",
+  stack = false,
   providerName,
   testId,
 }: MoneyCellBase & {
@@ -625,6 +626,7 @@ export function ParentCostSheetsCell({
   isAdmin?: boolean;
   parentUserId?: string | null;
   providerName?: string | null;
+  stack?: boolean;
 }) {
   const navigate = useNavigate();
   if (!costSheets || costSheets.length === 0) {
@@ -664,7 +666,7 @@ export function ParentCostSheetsCell({
   }
 
   return (
-    <div className={moneyWrapClass(layout)} data-testid={testId}>
+    <div className={stack ? "flex flex-col gap-1 items-start" : moneyWrapClass(layout)} data-testid={testId}>
       {shown.map((cs) => {
         const superseded = !!cs.supersededAt;
         const acked = !superseded && !!cs.parentAcknowledgedAt;
@@ -718,9 +720,10 @@ export function ParentAgreementsCell({
   agreements,
   limit = 2,
   layout = "chips",
+  stack = false,
   providerName,
   testId,
-}: MoneyCellBase & { agreements: any[]; providerName?: string | null }) {
+}: MoneyCellBase & { agreements: any[]; providerName?: string | null; stack?: boolean }) {
   if (!agreements || agreements.length === 0) {
     return <span className="t-helper">-</span>;
   }
@@ -739,7 +742,7 @@ export function ParentAgreementsCell({
   }
 
   return (
-    <div className={moneyWrapClass(layout)} data-testid={testId}>
+    <div className={stack ? "flex flex-col gap-1 items-start" : moneyWrapClass(layout)} data-testid={testId}>
       {shown.map((agr) => {
         const isSigned = agr.status === "SIGNED";
         const isSent = agr.status === "SENT";
