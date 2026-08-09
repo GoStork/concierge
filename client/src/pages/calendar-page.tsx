@@ -1830,7 +1830,7 @@ export default function CalendarPage() {
           </h2>
         </div>
         <div className="flex items-center gap-2 flex-1 justify-end">
-          <div className="hidden sm:flex items-center border border-border/40 rounded-[var(--radius)] overflow-hidden">
+          <div className="hidden sm:flex items-center border border-border/40 rounded-[var(--radius)] overflow-hidden bg-card">
             <button
               onClick={() => {
                 const d = new Date(currentDate);
@@ -1902,7 +1902,7 @@ export default function CalendarPage() {
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
-          <div className="hidden sm:flex items-center bg-muted/40 rounded-[var(--radius)] p-0.5">
+          <div className="hidden sm:flex items-center bg-card border border-border/40 rounded-[var(--radius)] p-0.5">
             {[
               { key: Views.DAY, label: "Day" },
               { key: Views.WEEK, label: "Week" },
@@ -1938,7 +1938,7 @@ export default function CalendarPage() {
           <div className="hidden lg:block lg:w-[340px] shrink-0">
             <div className="flex items-center gap-2 justify-end">
               {!isParentUser && config?.bookingPageSlug && (
-                <Button variant="outline" onClick={copyBookingLink} data-testid="button-copy-booking-link" className="gap-1.5 shadow-none">
+                <Button variant="outline" onClick={copyBookingLink} data-testid="button-copy-booking-link" className="gap-1.5 shadow-none bg-card">
                   {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   Booking Link
                 </Button>
@@ -1957,13 +1957,13 @@ export default function CalendarPage() {
           </div>
           <div className="flex lg:hidden items-center gap-2">
             {!isParentUser && config?.bookingPageSlug && (
-              <Button variant="outline" onClick={copyBookingLink} data-testid="button-copy-booking-link-sm" className="hidden sm:inline-flex gap-1.5 shadow-none">
+              <Button variant="outline" onClick={copyBookingLink} data-testid="button-copy-booking-link-sm" className="hidden sm:inline-flex gap-1.5 shadow-none bg-card">
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 Booking Link
               </Button>
             )}
             {!isParentUser && config?.bookingPageSlug && (
-              <Button variant="outline" size="icon" className="sm:hidden shadow-none" onClick={copyBookingLink} data-testid="button-copy-booking-link-mobile">
+              <Button variant="outline" size="icon" className="sm:hidden shadow-none bg-card" onClick={copyBookingLink} data-testid="button-copy-booking-link-mobile">
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               </Button>
             )}
@@ -1991,7 +1991,7 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      <div className="flex sm:hidden items-center bg-muted/40 rounded-[var(--radius)] p-0.5">
+      <div className="flex sm:hidden items-center bg-card border border-border/40 rounded-[var(--radius)] p-0.5">
         {[
           { key: Views.DAY, label: "Day" },
           { key: MULTI_DAY_KEY, label: "Multi-Day" },
