@@ -1185,9 +1185,12 @@ export class UsersController {
     const subjectRows = ids.length
       ? await this.prisma.aiChatSession.findMany({
           where: { userId: { in: ids }, subjectType: { not: null } },
-          select: { userId: true, subjectType: true },
+          // id feeds sessionLineById below - cost sheets carry no service
+          // type of their own, so their line comes from their session.
+          select: { id: true, userId: true, subjectType: true },
         })
       : [];
+    const sessionLineById = new Map(subjectRows.map((r) => [r.id, lineOfSubject(r.subjectType)]));
     const SUBJECT_SERVICE_LABELS: [RegExp, string][] = [
       [/egg/i, "Egg Donor"],
       [/surrog/i, "Surrogate"],
@@ -1317,7 +1320,9 @@ export class UsersController {
         tags: tagsByKey.get(crmKey) || [],
       };
     }
-    for (const q of quotes) overview[q.parentUserId]?.costSheets.push(q);
+    for (const q of quotes) {
+      overview[q.parentUserId]?.costSheets.push({ ...q, serviceLine: q.sessionId ? (sessionLineById.get(q.sessionId) || null) : null });
+    }
     for (const inv of invoices) overview[inv.parentUserId]?.invoices.push(inv);
     for (const a of agreements) overview[a.parentUserId]?.agreements.push(a);
 

@@ -12,6 +12,7 @@
  * and a "+N", a record page wants every item on its own line. One component,
  * two contexts, per the no-fork rule in CLAUDE.md.
  */
+import { type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Lock, Users } from "lucide-react";
 import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-monogram";
@@ -491,7 +492,30 @@ interface MoneyCellBase {
   /** Max items before collapsing into "+N". 0 means no cap (record page). */
   limit?: number;
   layout?: MoneyCellLayout;
+  /**
+   * Line-aligned mode: one row of chips per entry, row N pairing with line N
+   * of the table's Services column (an empty line renders "-"). Built by the
+   * table via alignToLines; overrides limit/stack when set.
+   */
+  groups?: any[][] | null;
   testId?: string;
+}
+
+/** The groups-mode wrapper all three money cells share. */
+function GroupedChipRows({ groups, render, testId }: {
+  groups: any[][];
+  render: (item: any) => ReactNode;
+  testId?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1 items-start" data-testid={testId}>
+      {groups.map((items, i) => (
+        <span key={i} className="flex items-center gap-1 h-[22px]">
+          {items.length === 0 ? <span className="t-helper">-</span> : items.map(render)}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function OverflowChip({ count, title }: { count: number; title: string }) {
@@ -524,6 +548,7 @@ export function ParentInvoicesCell({
   limit = 2,
   layout = "chips",
   stack = false,
+  groups = null,
   providerName,
   testId,
 }: MoneyCellBase & { invoices: any[]; providerName?: string | null; stack?: boolean }) {
@@ -553,6 +578,42 @@ export function ParentInvoicesCell({
     );
   }
 
+  const invoiceChip = (inv: any) => {
+    const isPaid = inv.status === "PAID";
+    const isAwaiting = inv.status === "AWAITING_PAYMENT" || inv.status === "PAYMENT_PROCESSING";
+    // Money moving BACKWARD is a red event, not a neutral one - a cream
+    // refund chip read the same as an inert draft.
+    const isRefund = inv.status === "REFUNDED" || inv.status === "PARTIALLY_REFUNDED";
+    const tone = isPaid ? "success" : isAwaiting ? "warning" : isRefund ? "error" : "muted";
+    const bg =
+      tone === "success" ? "hsl(var(--brand-success) / 0.12)"
+      : tone === "warning" ? "hsl(var(--brand-warning) / 0.15)"
+      : tone === "error" ? "hsl(var(--brand-error) / 0.12)"
+      : "hsl(var(--secondary))";
+    const fg =
+      tone === "success" ? "hsl(var(--brand-success))"
+      : tone === "warning" ? "hsl(var(--brand-warning))"
+      : tone === "error" ? "hsl(var(--brand-error))"
+      : "hsl(var(--foreground))";
+    const amount = `$${(inv.serviceAmount / 100).toLocaleString()}`;
+    return (
+      <a
+        key={inv.id}
+        href={`/api/provider/invoices/${inv.id}/document`}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
+        style={{ background: bg, color: fg }}
+        title={`${inv.serviceType?.replace(/_/g, " ")} - ${amount} - ${inv.status}${isPaid ? " (opens receipt PDF)" : " (opens invoice document)"}`}
+      >
+        {amount}
+      </a>
+    );
+  };
+
+  if (groups) return <GroupedChipRows groups={groups} render={invoiceChip} testId={testId} />;
+
   return (
     // stack: one invoice per 22px line, so the parents table's invoice
     // column pairs line-for-line with the stacked Services column (invoices
@@ -561,39 +622,7 @@ export function ParentInvoicesCell({
       className={stack ? "flex flex-col gap-1 items-start" : moneyWrapClass(layout)}
       data-testid={testId}
     >
-      {shown.map((inv) => {
-        const isPaid = inv.status === "PAID";
-        const isAwaiting = inv.status === "AWAITING_PAYMENT" || inv.status === "PAYMENT_PROCESSING";
-        // Money moving BACKWARD is a red event, not a neutral one - a cream
-        // refund chip read the same as an inert draft.
-        const isRefund = inv.status === "REFUNDED" || inv.status === "PARTIALLY_REFUNDED";
-        const tone = isPaid ? "success" : isAwaiting ? "warning" : isRefund ? "error" : "muted";
-        const bg =
-          tone === "success" ? "hsl(var(--brand-success) / 0.12)"
-          : tone === "warning" ? "hsl(var(--brand-warning) / 0.15)"
-          : tone === "error" ? "hsl(var(--brand-error) / 0.12)"
-          : "hsl(var(--secondary))";
-        const fg =
-          tone === "success" ? "hsl(var(--brand-success))"
-          : tone === "warning" ? "hsl(var(--brand-warning))"
-          : tone === "error" ? "hsl(var(--brand-error))"
-          : "hsl(var(--foreground))";
-        const amount = `$${(inv.serviceAmount / 100).toLocaleString()}`;
-        return (
-          <a
-            key={inv.id}
-            href={`/api/provider/invoices/${inv.id}/document`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
-            style={{ background: bg, color: fg }}
-            title={`${inv.serviceType?.replace(/_/g, " ")} - ${amount} - ${inv.status}${isPaid ? " (opens receipt PDF)" : " (opens invoice document)"}`}
-          >
-            {amount}
-          </a>
-        );
-      })}
+      {shown.map(invoiceChip)}
       {extra > 0 && (
         <OverflowChip
           count={extra}
@@ -618,6 +647,7 @@ export function ParentCostSheetsCell({
   limit = 2,
   layout = "chips",
   stack = false,
+  groups = null,
   providerName,
   testId,
 }: MoneyCellBase & {
@@ -665,43 +695,47 @@ export function ParentCostSheetsCell({
     );
   }
 
+  const costSheetChip = (cs: any) => {
+    const superseded = !!cs.supersededAt;
+    const acked = !superseded && !!cs.parentAcknowledgedAt;
+    const bg = acked ? "hsl(var(--brand-success) / 0.12)"
+      : superseded ? "hsl(var(--secondary))"
+      : "hsl(var(--brand-warning) / 0.15)";
+    const fg = acked ? "hsl(var(--brand-success))"
+      : superseded ? "hsl(var(--muted-foreground))"
+      : "hsl(var(--brand-warning))";
+    const amount = `$${((cs.totalCostCents || 0) / 100).toLocaleString()}`;
+    const state = superseded ? "Superseded" : acked ? "Acknowledged" : "Awaiting review";
+    return (
+      <button
+        key={cs.id}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          const href = chatDeepLink(
+            { sessionId: cs.sessionId || sessionId, parentUserId, subjectProfileId: null },
+            isAdmin,
+            `quote:${cs.id}`,
+          );
+          if (href) navigate(href);
+        }}
+        className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
+        style={{ background: bg, color: fg, opacity: superseded ? 0.75 : 1 }}
+        title={`${state} - ${new Date(cs.createdAt).toLocaleDateString()}`}
+      >
+        {/* Chips only now - the list layout returns the shared card above,
+            so this is the table's one-cell form: the amount, with the
+            state carried by the tint and the tooltip. */}
+        {amount}
+      </button>
+    );
+  };
+
+  if (groups) return <GroupedChipRows groups={groups} render={costSheetChip} testId={testId} />;
+
   return (
     <div className={stack ? "flex flex-col gap-1 items-start" : moneyWrapClass(layout)} data-testid={testId}>
-      {shown.map((cs) => {
-        const superseded = !!cs.supersededAt;
-        const acked = !superseded && !!cs.parentAcknowledgedAt;
-        const bg = acked ? "hsl(var(--brand-success) / 0.12)"
-          : superseded ? "hsl(var(--secondary))"
-          : "hsl(var(--brand-warning) / 0.15)";
-        const fg = acked ? "hsl(var(--brand-success))"
-          : superseded ? "hsl(var(--muted-foreground))"
-          : "hsl(var(--brand-warning))";
-        const amount = `$${((cs.totalCostCents || 0) / 100).toLocaleString()}`;
-        const state = superseded ? "Superseded" : acked ? "Acknowledged" : "Awaiting review";
-        return (
-          <button
-            key={cs.id}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              const href = chatDeepLink(
-                { sessionId: cs.sessionId || sessionId, parentUserId, subjectProfileId: null },
-                isAdmin,
-                `quote:${cs.id}`,
-              );
-              if (href) navigate(href);
-            }}
-            className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
-            style={{ background: bg, color: fg, opacity: superseded ? 0.75 : 1 }}
-            title={`${state} - ${new Date(cs.createdAt).toLocaleDateString()}`}
-          >
-            {/* Chips only now - the list layout returns the shared card above,
-                so this is the table's one-cell form: the amount, with the
-                state carried by the tint and the tooltip. */}
-            {amount}
-          </button>
-        );
-      })}
+      {shown.map(costSheetChip)}
       {extra > 0 && (
         <OverflowChip
           count={extra}
@@ -721,6 +755,7 @@ export function ParentAgreementsCell({
   limit = 2,
   layout = "chips",
   stack = false,
+  groups = null,
   providerName,
   testId,
 }: MoneyCellBase & { agreements: any[]; providerName?: string | null; stack?: boolean }) {
@@ -741,35 +776,39 @@ export function ParentAgreementsCell({
     );
   }
 
+  const agreementChip = (agr: any) => {
+    const isSigned = agr.status === "SIGNED";
+    const isSent = agr.status === "SENT";
+    const bg = isSigned
+      ? "hsl(var(--brand-success) / 0.12)"
+      : isSent ? "hsl(var(--brand-warning) / 0.15)"
+      : "hsl(var(--secondary))";
+    const fg = isSigned
+      ? "hsl(var(--brand-success))"
+      : isSent ? "hsl(var(--brand-warning))"
+      : "hsl(var(--foreground))";
+    const label = isSigned ? "Signed" : isSent ? "Awaiting" : agr.status.charAt(0) + agr.status.slice(1).toLowerCase();
+    return (
+      <a
+        key={agr.id}
+        href={`/agreements/${agr.id}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
+        style={{ background: bg, color: fg }}
+        title={`${agr.documentType} - ${agr.status}`}
+      >
+        {label}
+      </a>
+    );
+  };
+
+  if (groups) return <GroupedChipRows groups={groups} render={agreementChip} testId={testId} />;
+
   return (
     <div className={stack ? "flex flex-col gap-1 items-start" : moneyWrapClass(layout)} data-testid={testId}>
-      {shown.map((agr) => {
-        const isSigned = agr.status === "SIGNED";
-        const isSent = agr.status === "SENT";
-        const bg = isSigned
-          ? "hsl(var(--brand-success) / 0.12)"
-          : isSent ? "hsl(var(--brand-warning) / 0.15)"
-          : "hsl(var(--secondary))";
-        const fg = isSigned
-          ? "hsl(var(--brand-success))"
-          : isSent ? "hsl(var(--brand-warning))"
-          : "hsl(var(--foreground))";
-        const label = isSigned ? "Signed" : isSent ? "Awaiting" : agr.status.charAt(0) + agr.status.slice(1).toLowerCase();
-        return (
-          <a
-            key={agr.id}
-            href={`/agreements/${agr.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="text-xs font-ui px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity"
-            style={{ background: bg, color: fg }}
-            title={`${agr.documentType} - ${agr.status}`}
-          >
-            {label}
-          </a>
-        );
-      })}
+      {shown.map(agreementChip)}
       {extra > 0 && (
         <OverflowChip
           count={extra}

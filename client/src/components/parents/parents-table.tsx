@@ -26,7 +26,7 @@ import { SortableTableHead, type SortConfig } from "@/components/sortable-table-
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
-import { ServiceTag } from "@/components/ui/service-tag";
+import { ServiceTag, normalizeServiceKey } from "@/components/ui/service-tag";
 import {
   ContactHiddenChip,
   HouseholdBadge,
@@ -200,6 +200,24 @@ export function ParentsTable({
               : [{ id: row.id, name: row.name, email: row.email, mobileNumber: row.mobileNumber, photoUrl: null }];
             const phones = dedupeHouseholdPhones(contactLines as any, contactLines[0] as any);
             const svcLines = buildServiceLines(row);
+            // Money columns pair line-for-line with the Services stack: chip
+            // row N belongs to service line N ("-" when that line has none).
+            // Artifacts whose service can't be resolved fold onto the leading
+            // line - the same rule the status derivation uses. Single-line
+            // rows skip alignment and render the plain stack.
+            const alignToLines = (items: any[], keyOf: (it: any) => string | null | undefined): any[][] | null => {
+              if (svcLines.length <= 1) return null;
+              const rows: any[][] = svcLines.map(() => []);
+              for (const it of items) {
+                const k = normalizeServiceKey(keyOf(it));
+                const idx = k ? svcLines.findIndex((l) => l.serviceKey && normalizeServiceKey(l.serviceKey) === k) : -1;
+                rows[idx >= 0 ? idx : 0].push(it);
+              }
+              return rows;
+            };
+            const liveSheets = liveCostSheets(row.costSheets || []);
+            const sortedInvoices = sortInvoicesByServiceOrder(row.invoices || [], row.serviceStatuses);
+            const sortedAgreements = sortInvoicesByServiceOrder(row.agreements || [], row.serviceStatuses);
             return (
               <TableRow
                 key={row.key}
@@ -345,12 +363,13 @@ export function ParentsTable({
                       superseded (edge case), the newest one still shows so
                       the column never lies about a quote having been sent. */}
                   <ParentCostSheetsCell
-                    costSheets={liveCostSheets(row.costSheets || [])}
+                    costSheets={liveSheets}
                     sessionId={row.sessionId}
                     isAdmin={isAdmin}
                     parentUserId={row.id}
                     limit={0}
                     stack
+                    groups={liveSheets.length ? alignToLines(liveSheets, (cs) => cs.serviceLine) : null}
                   />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -358,16 +377,18 @@ export function ParentsTable({
                       order as the Services column so an invoice sits beside
                       the line it was sent for. */}
                   <ParentInvoicesCell
-                    invoices={sortInvoicesByServiceOrder(row.invoices || [], row.serviceStatuses)}
+                    invoices={sortedInvoices}
                     limit={0}
                     stack
+                    groups={sortedInvoices.length ? alignToLines(sortedInvoices, (inv) => inv.serviceType) : null}
                   />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentAgreementsCell
-                    agreements={sortInvoicesByServiceOrder(row.agreements || [], row.serviceStatuses)}
+                    agreements={sortedAgreements}
                     limit={0}
                     stack
+                    groups={sortedAgreements.length ? alignToLines(sortedAgreements, (agr) => agr.serviceType) : null}
                   />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell" data-testid={`text-created-${row.id}`}>

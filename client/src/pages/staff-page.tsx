@@ -517,7 +517,10 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         null,
       );
       g.invoices = threads.flatMap((t: any) => t.invoices || []);
-      g.costSheets = threads.flatMap((t: any) => t.costSheets || []);
+      // Stamp each sheet with its thread's service line - quotes carry no
+      // serviceType of their own, and the table aligns money chips to the
+      // Services column line-for-line.
+      g.costSheets = threads.flatMap((t: any) => (t.costSheets || []).map((cs: any) => ({ ...cs, serviceLine: t.serviceType ?? null })));
       g.agreements = threads.flatMap((t: any) => t.agreements || []);
       g.sessionCreatedAt = threads.map((t: any) => t.sessionCreatedAt).filter(Boolean).sort()[0] || null;
       g.sessionUpdatedAt = threads.map((t: any) => t.sessionUpdatedAt).filter(Boolean).sort().pop() || null;
