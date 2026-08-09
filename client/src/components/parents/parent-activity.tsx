@@ -763,84 +763,89 @@ function MessageDetail({ detail, parentUserId }: {
 }
 
 /**
- * A note's body, plus Edit and Delete for its author (or an admin).
- *
- * The body is server-sanitized HTML - on write AND on read, which is what
- * makes dangerouslySetInnerHTML safe here. Legacy plain-text notes carry no
- * tags and render through the pre-wrap path.
+ * A note's Edit / Delete, in the CARD HEADER - same row as the title and
+ * date, per review. The state lives in EntryCard because the actions sit in
+ * the header while the editor they toggle sits in the body.
  *
  * Delete is a two-step inline confirm, not a dialog. Edit reuses the same
  * rich editor the composer uses; scope stays immutable (the server enforces
  * it - re-scoping by edit would disclose an internal note with no trail).
+ * The body is server-sanitized HTML - on write AND on read, which is what
+ * makes dangerouslySetInnerHTML safe; legacy plain-text notes carry no tags
+ * and render through the pre-wrap path.
  */
-function NoteEntryBody({ note, parentUserId }: {
-  note: { id: string; html: string; canManage: boolean };
-  parentUserId: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [draft, setDraft] = useState(note.html);
-  const mut = useCrmMutation(parentUserId, () => { setEditing(false); setConfirming(false); });
-  const hasText = !!draft.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+type NoteMode = "view" | "edit" | "confirm";
 
-  if (editing) {
+function NoteHeaderActions({ note, mode, setMode, onDelete, pending, onStartEdit }: {
+  note: { id: string; canManage: boolean };
+  mode: NoteMode;
+  setMode: (m: NoteMode) => void;
+  onDelete: () => void;
+  pending: boolean;
+  onStartEdit: () => void;
+}) {
+  if (!note.canManage || mode === "edit") return null;
+  if (mode === "confirm") {
+    return (
+      <span className="shrink-0 inline-flex items-center gap-2">
+        <span className="t-helper">Delete?</span>
+        <button
+          type="button"
+          className="t-helper underline"
+          style={{ color: "hsl(var(--destructive))" }}
+          onClick={onDelete}
+          data-testid={`btn-note-delete-confirm-${note.id}`}
+        >
+          {pending ? "Deleting..." : "Yes, delete"}
+        </button>
+        <button type="button" className="t-helper underline" onClick={() => setMode("view")}>Keep it</button>
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 inline-flex items-center gap-2">
+      <button type="button" className="t-helper underline" onClick={onStartEdit} data-testid={`btn-note-edit-${note.id}`}>
+        Edit
+      </button>
+      <button type="button" className="t-helper underline" onClick={() => setMode("confirm")} data-testid={`btn-note-delete-${note.id}`}>
+        Delete
+      </button>
+    </span>
+  );
+}
+
+function NoteEntryBody({ note, mode, draft, setDraft, onSave, onCancel, pending }: {
+  note: { id: string; html: string };
+  mode: NoteMode;
+  draft: string;
+  setDraft: (h: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  pending: boolean;
+}) {
+  const hasText = !!draft.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  if (mode === "edit") {
     return (
       <div className="space-y-2" data-testid={`note-edit-${note.id}`}>
         <RichTextEditor initialHtml={note.html} onChange={setDraft} testId={`note-editor-${note.id}`} />
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            disabled={!hasText || mut.isPending}
-            onClick={() => mut.mutate({ url: `/api/parents/${parentUserId}/notes/${note.id}`, method: "PATCH", body: { body: draft } })}
-            data-testid={`btn-note-save-${note.id}`}
-          >
+          <Button size="sm" disabled={!hasText || pending} onClick={onSave} data-testid={`btn-note-save-${note.id}`}>
             Save
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setDraft(note.html); }}>Cancel</Button>
+          <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
         </div>
       </div>
     );
   }
-
-  return (
-    <div className="space-y-1.5">
-      {isRichNoteHtml(note.html) ? (
-        <div
-          className="text-sm break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3"
-          // Sanitized server-side on write and read - see server/note-html.ts.
-          dangerouslySetInnerHTML={{ __html: note.html }}
-          data-testid={`note-body-${note.id}`}
-        />
-      ) : (
-        <p className="text-sm whitespace-pre-wrap break-words" data-testid={`note-body-${note.id}`}>{note.html}</p>
-      )}
-      {note.canManage && (
-        <div className="flex items-center gap-2">
-          <button type="button" className="t-helper underline" onClick={() => { setDraft(note.html); setEditing(true); }} data-testid={`btn-note-edit-${note.id}`}>
-            Edit
-          </button>
-          {confirming ? (
-            <span className="inline-flex items-center gap-2">
-              <span className="t-helper">Delete this note?</span>
-              <button
-                type="button"
-                className="t-helper underline"
-                style={{ color: "hsl(var(--destructive))" }}
-                onClick={() => mut.mutate({ url: `/api/parents/${parentUserId}/notes/${note.id}`, method: "DELETE" })}
-                data-testid={`btn-note-delete-confirm-${note.id}`}
-              >
-                {mut.isPending ? "Deleting..." : "Yes, delete"}
-              </button>
-              <button type="button" className="t-helper underline" onClick={() => setConfirming(false)}>Keep it</button>
-            </span>
-          ) : (
-            <button type="button" className="t-helper underline" onClick={() => setConfirming(true)} data-testid={`btn-note-delete-${note.id}`}>
-              Delete
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+  return isRichNoteHtml(note.html) ? (
+    <div
+      className="text-sm break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3"
+      // Sanitized server-side on write and read - see server/note-html.ts.
+      dangerouslySetInnerHTML={{ __html: note.html }}
+      data-testid={`note-body-${note.id}`}
+    />
+  ) : (
+    <p className="text-sm whitespace-pre-wrap break-words" data-testid={`note-body-${note.id}`}>{note.html}</p>
   );
 }
 
@@ -848,6 +853,11 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
   entry: Entry; parentUserId: string; parentName: string | null; parentPhotoUrl: string | null;
   viewerRole: "provider" | "admin"; onChanged: () => void;
 }) {
+  // Note-only state, hosted here because the Edit/Delete links live in the
+  // card HEADER while the editor they toggle renders in the body.
+  const [noteMode, setNoteMode] = useState<NoteMode>("view");
+  const [noteDraft, setNoteDraft] = useState("");
+  const noteMut = useCrmMutation(parentUserId, () => setNoteMode("view"));
   const meta = KIND_META[entry.kind];
   const isSms = entry.detail?.type === "message" && entry.detail.channel === "SMS";
   const callIcon = CALL_ICONS[entry.eventType || ""];
@@ -924,10 +934,28 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
           {entry.byline && <span className="t-helper">by {entry.byline}</span>}
           {entry.org && <span className="t-helper">{entry.org}</span>}
           <span className="t-helper sm:ml-auto shrink-0">{fmt(entry.at)}</span>
+          {entry.note && (
+            <NoteHeaderActions
+              note={entry.note}
+              mode={noteMode}
+              setMode={setNoteMode}
+              pending={noteMut.isPending}
+              onStartEdit={() => { setNoteDraft(entry.note!.html); setNoteMode("edit"); }}
+              onDelete={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "DELETE" })}
+            />
+          )}
         </div>
       </div>
       {entry.note ? (
-        <NoteEntryBody note={entry.note} parentUserId={parentUserId} />
+        <NoteEntryBody
+          note={entry.note}
+          mode={noteMode}
+          draft={noteDraft}
+          setDraft={setNoteDraft}
+          pending={noteMut.isPending}
+          onSave={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { body: noteDraft } })}
+          onCancel={() => setNoteMode("view")}
+        />
       ) : entry.body ? (
         <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>
       ) : null}
