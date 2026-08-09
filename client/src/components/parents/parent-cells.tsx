@@ -564,14 +564,19 @@ export function ParentInvoicesCell({
       {shown.map((inv) => {
         const isPaid = inv.status === "PAID";
         const isAwaiting = inv.status === "AWAITING_PAYMENT" || inv.status === "PAYMENT_PROCESSING";
-        const tone = isPaid ? "success" : isAwaiting ? "warning" : "muted";
+        // Money moving BACKWARD is a red event, not a neutral one - a cream
+        // refund chip read the same as an inert draft.
+        const isRefund = inv.status === "REFUNDED" || inv.status === "PARTIALLY_REFUNDED";
+        const tone = isPaid ? "success" : isAwaiting ? "warning" : isRefund ? "error" : "muted";
         const bg =
           tone === "success" ? "hsl(var(--brand-success) / 0.12)"
           : tone === "warning" ? "hsl(var(--brand-warning) / 0.15)"
+          : tone === "error" ? "hsl(var(--brand-error) / 0.12)"
           : "hsl(var(--secondary))";
         const fg =
           tone === "success" ? "hsl(var(--brand-success))"
           : tone === "warning" ? "hsl(var(--brand-warning))"
+          : tone === "error" ? "hsl(var(--brand-error))"
           : "hsl(var(--foreground))";
         const amount = `$${(inv.serviceAmount / 100).toLocaleString()}`;
         return (

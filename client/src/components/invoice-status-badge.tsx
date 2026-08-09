@@ -7,7 +7,10 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   CLEARANCE_FAILED: { label: "Clearance Failed",  color: "hsl(var(--brand-error))",   bg: "hsl(var(--brand-error) / 0.1)"  },
   EXPIRED:          { label: "Expired",           color: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.5)"      },
   CANCELLED:        { label: "Cancelled",         color: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.5)"      },
-  REFUNDED:         { label: "Refunded",          color: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.5)"      },
+  // Refunds are red, not muted: money moved backward. Muted is reserved for
+  // invoices where nothing ended up happening (expired, cancelled).
+  REFUNDED:            { label: "Refunded",           color: "hsl(var(--brand-error))", bg: "hsl(var(--brand-error) / 0.1)" },
+  PARTIALLY_REFUNDED:  { label: "Partially Refunded", color: "hsl(var(--brand-error))", bg: "hsl(var(--brand-error) / 0.1)" },
 };
 
 interface InvoiceStatusBadgeProps {
