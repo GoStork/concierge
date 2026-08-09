@@ -761,9 +761,11 @@ function SponsorshipsTable({ sponsorships, loading, isAdmin, providerId, base, o
   if (!rows.length) return null;
 
   return (
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm font-ui">Your Sponsorships</CardTitle></CardHeader>
-      <CardContent>
+    // Flush table inside the card, heading above it - the Team table's
+    // shape, so every settings table reads identically.
+    <section className="space-y-3">
+      <h3 className="font-semibold">Your Sponsorships</h3>
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -783,8 +785,8 @@ function SponsorshipsTable({ sponsorships, loading, isAdmin, providerId, base, o
             </TableBody>
           </Table>
         </div>
-      </CardContent>
-    </Card>
+      </Card>
+    </section>
   );
 }
 

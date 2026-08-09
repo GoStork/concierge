@@ -1,5 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ExternalLink, FileSignature } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -66,10 +68,18 @@ export function AgreementRows({
   items,
   emptyText = "No agreements yet.",
   isLoading = false,
+  variant = "list",
 }: {
   items: AgreementListItem[];
   emptyText?: string;
   isLoading?: boolean;
+  /**
+   * "table" renders the Team-table shape (flush shadcn Table in a Card) -
+   * the settings Documents tab uses it so every settings table matches.
+   * "list" keeps the compact divided rows the home pages embed in their
+   * own cards. One component, both contexts - never fork this.
+   */
+  variant?: "list" | "table";
 }) {
   const navigate = useNavigate();
 
@@ -89,6 +99,63 @@ export function AgreementRows({
         <FileSignature className="w-8 h-8 mx-auto text-muted-foreground/50" />
         <p className="t-helper">{emptyText}</p>
       </div>
+    );
+  }
+
+  if (variant === "table") {
+    const fmtDate = (d: string) =>
+      new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    return (
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="whitespace-nowrap">Name</TableHead>
+                <TableHead className="whitespace-nowrap">Agreement</TableHead>
+                <TableHead className="whitespace-nowrap">Sent</TableHead>
+                <TableHead className="whitespace-nowrap">Status</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map(item => (
+                <TableRow
+                  key={item.id}
+                  className="cursor-pointer"
+                  onClick={() => navigate(`/agreements/${item.id}`)}
+                  data-testid={`agreement-row-${item.id}`}
+                >
+                  <TableCell className="font-medium whitespace-nowrap">{item.title}</TableCell>
+                  <TableCell className="t-helper whitespace-nowrap">{item.documentType}</TableCell>
+                  <TableCell className="t-helper whitespace-nowrap">
+                    {fmtDate(item.createdAt)}
+                    {item.signedAt && <span className="block">Signed {fmtDate(item.signedAt)}</span>}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {agreementStatusBadge(item.status)}
+                    {item.progressLabel && (
+                      <span className="text-xs font-medium ml-2" style={{ color: "hsl(var(--brand-warning))" }}>
+                        {item.progressLabel}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); navigate(`/agreements/${item.id}`); }}
+                      aria-label="Open agreement"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
     );
   }
 

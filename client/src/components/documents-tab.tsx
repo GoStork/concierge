@@ -246,8 +246,9 @@ export default function DocumentsTab() {
         </div>
       </Card>
 
-      {/* Section E - Sent Agreements */}
-      <Card className="p-6 space-y-4">
+      {/* Section E - Sent Agreements. Heading above a flush table card -
+          the Team table's shape, shared with every settings table. */}
+      <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-primary" />
@@ -259,6 +260,7 @@ export default function DocumentsTab() {
         </div>
 
         <AgreementRows
+          variant="table"
           isLoading={agreementsLoading}
           emptyText="No agreements have been sent yet."
           items={agreements.map(a => ({
@@ -270,7 +272,7 @@ export default function DocumentsTab() {
             title: a.parentName,
           }))}
         />
-      </Card>
+      </section>
     </div>
   );
 }

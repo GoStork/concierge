@@ -964,16 +964,16 @@ function PayoutHistoryTable() {
           {payouts.length} payout{payouts.length === 1 ? "" : "s"} - what GoStork has sent (or is sending) to your bank.
         </p>
       </div>
-      <div className="rounded-xl border overflow-hidden bg-card">
+      <div className="rounded-[var(--container-radius)] border border-border overflow-hidden bg-card shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
-              <tr className="border-b bg-muted/40">
-                <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Parent</th>
-                <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Service</th>
-                <th className="t-helper text-right px-4 py-2.5 whitespace-nowrap">Your payout</th>
-                <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">GoStork paid you</th>
-                <th className="t-helper text-left px-4 py-2.5 whitespace-nowrap">Date</th>
+              <tr className="border-b border-border bg-muted">
+                <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Parent</th>
+                <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Service</th>
+                <th className="h-12 px-4 text-right align-middle font-heading t-micro-label whitespace-nowrap">Your payout</th>
+                <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">GoStork paid you</th>
+                <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Date</th>
               </tr>
             </thead>
             <tbody>
@@ -985,20 +985,20 @@ function PayoutHistoryTable() {
                 return (
                   <tr
                     key={inv.id}
-                    className="border-b last:border-0 hover:bg-muted/10 cursor-pointer"
+                    className="border-b last:border-0 transition-colors hover:bg-muted/50 cursor-pointer"
                     onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
                     title="Open invoice document"
                   >
-                    <td className="px-4 py-2.5 whitespace-nowrap">{parent}</td>
-                    <td className="t-helper px-4 py-2.5 whitespace-nowrap">{service}</td>
-                    <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
-                    <td className="px-4 py-2.5 text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
+                    <td className="p-4 align-middle whitespace-nowrap">{parent}</td>
+                    <td className="t-helper p-4 align-middle whitespace-nowrap">{service}</td>
+                    <td className="p-4 align-middle text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
+                    <td className="p-4 align-middle text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
                       <span title={status.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
                         {status.isReceived && <CheckCircle2 className="w-3.5 h-3.5" />}
                         {status.label}
                       </span>
                     </td>
-                    <td className="t-helper px-4 py-2.5 whitespace-nowrap">{dateStr}</td>
+                    <td className="t-helper p-4 align-middle whitespace-nowrap">{dateStr}</td>
                   </tr>
                 );
               })}
