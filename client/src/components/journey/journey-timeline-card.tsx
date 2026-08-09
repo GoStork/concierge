@@ -325,21 +325,28 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
     }
     mainStages.push(st);
   }
+  const headerBits = (
+    <>
+      {showProviderName && (
+        <p className="text-xs font-medium font-ui truncate min-w-0" title={journey.providerName}>
+          {journey.providerName}
+        </p>
+      )}
+      <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide">
+        {journey.typeLabel}
+      </span>
+    </>
+  );
   return (
     <div data-testid={`journey-${journey.journeyType}-${journey.providerId}`}>
-      {/* One row: provider name with the service tag at its right. The name
-          truncates first (min-w-0), the tag never does; the pair wraps only
-          when a narrow rail leaves the tag no room at all. */}
-      <div className="mb-2 min-w-0 flex items-center gap-2 flex-wrap">
-        {showProviderName && (
-          <p className="text-xs font-medium font-ui truncate min-w-0" title={journey.providerName}>
-            {journey.providerName}
-          </p>
-        )}
-        <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide">
-          {journey.typeLabel}
-        </span>
-      </div>
+      {/* Vertical rails keep the header ABOVE the ladder (they are narrow).
+          The horizontal ladder inlines it on the rung row instead - see
+          below - which takes a full line of height off every ladder. */}
+      {!horizontal && (
+        <div className="mb-2 min-w-0 flex items-center gap-2 flex-wrap">
+          {headerBits}
+        </div>
+      )}
       {/* No attention chip on the horizontal ladder at all - with four of
           them stacked on the record it was one label too many, and the red
           Canceled / amber No Show branches already say what went sideways.
@@ -354,9 +361,27 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
       )}
       {horizontal ? (
         // One row, always. items-start so a rung with a branch hanging under
-        // it does not stretch its neighbours to match.
-        <div className="pb-1">
-          <div className="flex items-start">
+        // it does not stretch its neighbours to match. The label block sits
+        // IN FRONT of the rungs (by request): admin stacks provider name over
+        // the service tag, provider staff see only the tag - and the stack
+        // is shorter than the ladder, so each journey is exactly one row.
+        <div className="pb-1 flex items-start gap-4">
+          {/* FIXED width when the name shows (admin): every ladder's rungs
+              start on the same vertical line no matter how long the org
+              name is, the name ellipsizes, and the title attribute serves
+              the full name on hover. Provider staff see only the tag, which
+              needs no reserved width. */}
+          <div className={`shrink-0 flex flex-col items-start gap-1 pt-1 ${showProviderName ? "w-[180px]" : ""}`}>
+            {showProviderName && (
+              <p className="text-xs font-medium font-ui truncate w-full" title={journey.providerName}>
+                {journey.providerName}
+              </p>
+            )}
+            <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide">
+              {journey.typeLabel}
+            </span>
+          </div>
+          <div className="flex items-start flex-1 min-w-0">
             {mainStages.map((st, i) => (
               <StageColumn
                 key={st.id}
@@ -507,12 +532,17 @@ export function JourneyTimelineCard({
   }
 
   return (
-    <div className="space-y-4" data-testid={testId}>
+    // Horizontal ladders pack tighter - the inline label made each journey a
+    // single row, so the old 16px gaps read as holes.
+    <div className={orientation === "horizontal" ? "space-y-2" : "space-y-4"} data-testid={testId}>
       {journeys.map((j) => (
         <JourneyBlock
           key={`${j.journeyType}-${j.providerId}`}
           journey={j}
-          showProviderName={journeys.length > 1 || !providerId}
+          // A provider is ALWAYS looking at their own org - the name told
+          // them nothing (the service tag disambiguates multi-service
+          // families). Admins span providers, so they keep it.
+          showProviderName={!providerId}
           horizontal={orientation === "horizontal"}
         />
       ))}
