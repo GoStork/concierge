@@ -273,7 +273,11 @@ export default function ParentDetailPage() {
                     {/* Same surface the Home journey cards sit on, so the
                         ladder does not float on bare white while every other
                         block on the page has a card under it. */}
-                    <div className="rounded-[var(--radius)] border bg-secondary/40 p-4">
+                    {/* Below lg the cream card gives the ladder its chrome on
+                        the sand page (cards-on-background). At lg+ the frame
+                        came off (by request) - the rungs sit straight on the
+                        page. */}
+                    <div className="rounded-[var(--radius)] border bg-secondary/40 p-4 lg:border-0 lg:bg-transparent lg:p-0 lg:rounded-none">
                     <JourneyTimelineCard
                       parentUserId={record.parent.id}
                       providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
