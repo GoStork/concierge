@@ -468,6 +468,12 @@ async function buildActivity(ctx: {
   // is a delivery log you can scan.
   for (const n of notifications) {
     if (n.bookingId && !bookingById.has(n.bookingId)) continue;   // out of scope
+    // The timeline is a record of what HAPPENED. A reminder queued at
+    // confirm time for the day of the meeting has not happened yet - it
+    // appears once it actually sends (or fails/skips), not before. Showing
+    // it early buried the real confirmation cards under four "Pending"
+    // rows that read as delivery failures.
+    if (n.status === "pending" && n.scheduledFor) continue;
     const b = n.bookingId ? bookingById.get(n.bookingId) : null;
     out.push({
       id: `notif-${n.id}`,
