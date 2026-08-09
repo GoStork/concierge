@@ -74,8 +74,8 @@ const SETUP_COLUMNS = [
   { key: "legalIdentity", label: "Legal Identity", tab: "legal-identity" },
   { key: "billing", label: "Billing", tab: "billing" },
   { key: "payouts", label: "Payouts", tab: "payouts" },
-  { key: "sponsorship", label: "Sponsorship", tab: "sponsorship" },
   { key: "autoReply", label: "Auto Reply", tab: "auto-replies" },
+  { key: "sponsorship", label: "Sponsorship", tab: "sponsorship" },
 ] as const;
 
 // Sort values for the columns the API cannot order by. Booleans sort as 1/0 so
