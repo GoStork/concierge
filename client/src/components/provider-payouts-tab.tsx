@@ -197,7 +197,7 @@ export function ProviderPayoutsTab() {
 
       {/* Express path: just a button */}
       {selectedMethod === "STRIPE_CONNECT_EXPRESS" && (
-        <section className="rounded-xl border p-6 bg-secondary/40 space-y-3">
+        <section className="rounded-xl border p-6 bg-card space-y-3">
           <h3 className="font-semibold">Stripe Connect onboarding</h3>
           <p className="t-helper">
             You'll be redirected to a secure Stripe-hosted page where you'll enter your business info,
@@ -279,7 +279,7 @@ function StatusBanner({ state }: { state: PayoutsState }) {
   }
   if (state.requirementsDisabledReason) {
     return (
-      <div className="rounded-lg border p-4 bg-secondary/40 flex items-start gap-3" style={{ borderColor: "hsl(var(--brand-error) / 0.4)" }}>
+      <div className="rounded-lg border p-4 flex items-start gap-3" style={{ borderColor: "hsl(var(--brand-error) / 0.4)", background: "hsl(var(--brand-error) / 0.05)" }}>
         <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-error))" }} />
         <div>
           <p className="text-sm font-medium">Stripe needs more from you</p>
@@ -314,7 +314,7 @@ function StatusBanner({ state }: { state: PayoutsState }) {
   }
   if (state.onboardingStartedAt && !state.detailsSubmitted) {
     return (
-      <div className="rounded-lg border p-4 bg-secondary/40 flex items-start gap-3">
+      <div className="rounded-lg border p-4 bg-card flex items-start gap-3">
         <Loader2 className="w-5 h-5 mt-0.5 shrink-0 animate-spin text-muted-foreground" />
         <div>
           <p className="text-sm font-medium">Onboarding in progress</p>
@@ -754,7 +754,11 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
       </div>
 
       {/* Representative */}
-      <div className="space-y-3">
+      {/* The editable sections are white cards; the read-only Business
+          identity panel above stays on secondary so it recedes against
+          them. Without any fill these sections dissolved into the sand
+          page - the whole tab read as one cream sheet. */}
+      <div className="rounded-xl border bg-card p-5 space-y-3">
         <h3 className="font-semibold text-sm">
           {legalIdentity?.businessType === "individual" ? "Personal info" : "Authorized representative (owner or officer)"}
         </h3>
@@ -798,7 +802,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
       </div>
 
       {/* Bank */}
-      <div className="space-y-3">
+      <div className="rounded-xl border bg-card p-5 space-y-3">
         <h3 className="font-semibold text-sm">Where to send payouts</h3>
         <p className="t-helper">
           Bank account that will receive your share. US bank, USD only.
