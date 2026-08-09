@@ -201,12 +201,17 @@ function StageColumn({ stage, isFirst, isLast, branch }: {
           this box so it can start on the connector line and run past the
           label, whose height varies with wrapping. */}
       <div className={branch ? "relative" : undefined}>
+        {/* First and last rungs ANCHOR to the strip's edges instead of
+            centering in their columns (by request): ladders have different
+            stage counts, so a centered first dot landed at a different x on
+            every ladder - anchored, every "Registered" starts on the same
+            vertical line. */}
         <div className="flex items-center">
-          <div className={isFirst ? "flex-1" : rail} />
+          {!isFirst && <div className={rail} />}
           <StageMark stage={stage} />
-          <div className={isLast ? "flex-1" : rail} />
+          {!isLast && <div className={rail} />}
         </div>
-        <div className="px-1 pt-1.5 text-center">
+        <div className={`pt-1.5 ${isFirst ? "pr-1 text-left" : isLast ? "pl-1 text-right" : "px-1 text-center"}`}>
           <p className={`text-[11px] font-ui leading-tight ${stageLabelClass(stage)}`}>
             {stage.label}
             {stage.optional && stage.state === "upcoming" && <span className="text-muted-foreground font-normal"> (if needed)</span>}
@@ -371,7 +376,10 @@ function JourneyBlock({ journey, showProviderName, horizontal }: { journey: Jour
               name is, the name ellipsizes, and the title attribute serves
               the full name on hover. Provider staff see only the tag, which
               needs no reserved width. */}
-          <div className={`shrink-0 flex flex-col items-start gap-1 pt-1 ${showProviderName ? "w-[180px]" : ""}`}>
+          {/* FIXED width in BOTH modes - a natural-width column made each
+              ladder's rungs start wherever its tag ended ("EGG DONATION" is
+              wider than "SURROGACY"). */}
+          <div className={`shrink-0 flex flex-col items-start gap-1 pt-1 ${showProviderName ? "w-[180px]" : "w-[130px]"}`}>
             {showProviderName && (
               <p className="text-xs font-medium font-ui truncate w-full" title={journey.providerName}>
                 {journey.providerName}
