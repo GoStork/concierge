@@ -45,7 +45,7 @@
   --accent-foreground: 0 0% 100%; /* white, like the Hinge button */
   
   /* Backgrounds */
-  --background: 210 20% 96%; /* Light blue-gray - lifts pure-white cards */
+  --background: 38 31% 95%; /* Warm sand #F6F3EE - lifts pure-white cards (Option B, Aug 2026) */
   --card: 0 0% 100%;
   --card-foreground: 222 47% 11%;
   
@@ -54,7 +54,7 @@
   --muted-foreground: 215.4 16.3% 46.9%;
   --popover: 0 0% 100%;
   --popover-foreground: 222.2 47.4% 11.2%;
-  --border: 214.3 31.8% 91.4%;
+  --border: 38 20% 81%; /* Warm gray #D9D2C6 - visible card separation (Option B) */
   --input: 214.3 31.8% 91.4%;
   --ring: 183 100% 25%;
   --radius: 0.5rem;

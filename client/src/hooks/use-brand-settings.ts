@@ -226,13 +226,15 @@ export const BRAND_DEFAULTS: BrandSettings = {
   letterSpacing: "normal",
   buttonTextCase: "normal",
   linkDecoration: "hover",
-  backgroundColor: null,
+  // Option B "Warm Sand" (Aug 2026): tinted page + visible warm border so
+  // white cards separate - mirrors the live SiteSettings row.
+  backgroundColor: "#F6F3EE",
   foregroundColor: null,
-  cardColor: null,
+  cardColor: "#FFFFFF",
   cardForegroundColor: null,
   mutedColor: null,
   mutedForegroundColor: null,
-  borderColor: null,
+  borderColor: "#D9D2C6",
   inputColor: null,
   ringColor: null,
   popoverColor: null,
