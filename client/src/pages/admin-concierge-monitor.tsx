@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { journeyStageLabel } from "@shared/journey-ladder";
 import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -644,16 +645,12 @@ export default function AdminConciergeMonitor() {
   });
   const journeyMatchStatus = (() => {
     const row = (adminContactsQuery.data || []).find((r: any) => r.sessionId === selectedSessionId);
-    const labels: Record<string, string> = {
-      CONSULTATION_BOOKED: "Call Booked",
-      PROVIDER_CONNECTED: "Connected",
-      MATCH_CALL: "Match Call",
-      MATCHED: "Matched",
-      DEPOSIT_PAID: "Invoice Paid",
-      AGREEMENT_SIGNED: "Agreement Signed",
-      HANDED_OFF: "Handed Off",
-    };
-    return row?.matchStatus ? labels[row.matchStatus] || null : null;
+    // Shared ladder labels - matchStatus is a stage id (agreement_signed).
+    // This held its own copy keyed on the OLD enum values, so every lookup
+    // missed, returned null, and the chip fell back to the coarse session
+    // status: "Connected" on a thread whose ladder read Agreement Signed.
+    // Exactly the bug the provider chat rail had (conversations-page.tsx).
+    return row?.matchStatus ? journeyStageLabel(row.matchStatus) : null;
   })();
 
   // Build detail content when a session is selected

@@ -1123,9 +1123,11 @@ export class UsersController {
     ];
     const lineOfSubject = (t: string | null | undefined): string =>
       LINE_BY_SUBJECT.find(([re]) => re.test(t || ""))?.[1] || "";
-    const SERVICE_LINE_KEYS = new Set(["SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC"]);
-    const lineOfServiceType = (t: string | null | undefined): string =>
-      t && SERVICE_LINE_KEYS.has(t) ? t : "";
+    // Invoice/Agreement serviceType is DISPLAY text in the DB ("Egg
+    // Donation", "Surrogacy"), not the enum key - normalize through the same
+    // regexes as everything else, or every invoice lands in the untyped
+    // bucket and the line reads "Consultation Scheduled" past a paid invoice.
+    const lineOfServiceType = (t: string | null | undefined): string => lineOfSubject(t);
     const bump = (userId: string, st: string | null, line = "") => {
       if (!st) return;
       if (rank(st) > rank(statusByUser.get(userId) || null)) statusByUser.set(userId, st);
@@ -1150,10 +1152,14 @@ export class UsersController {
     for (const inv of invoices) { bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent", lineOfServiceType(inv.serviceType)); }
     for (const a of agreements) { bump(a.parentUserId, a.status === "SIGNED" ? "agreement_signed" : "agreement_sent", lineOfServiceType((a as any).serviceType)); }
 
-    // Same shape and fallback rule as the provider table's per-line grouping
-    // (staff-page byLine): typed lines each carry their own most-advanced
-    // stage, most advanced first; the untyped bucket surfaces only when no
-    // typed line exists.
+    // Typed lines each carry their own most-advanced stage, most advanced
+    // first. Untyped stages (a legacy agreement with no serviceType, a match
+    // call booking) are REAL rungs, so they are never dropped: with no typed
+    // line they surface as their own entry, and otherwise they fold into the
+    // leading typed line when they outrank it - artifacts with no line stamp
+    // almost always belong to the journey that is furthest along, and
+    // dropping them made K Money read "Consultation Scheduled" past a signed
+    // agreement.
     const serviceStatusesOf = (userId: string): { serviceKey: string | null; status: string }[] => {
       const m = lineStatusByUser.get(userId);
       if (!m) return [];
@@ -1161,9 +1167,10 @@ export class UsersController {
         .filter(([k]) => k !== "")
         .sort((a, b) => rank(b[1]) - rank(a[1]))
         .map(([serviceKey, status]) => ({ serviceKey, status }));
-      if (typed.length) return typed;
       const un = m.get("");
-      return un ? [{ serviceKey: null, status: un }] : [];
+      if (!typed.length) return un ? [{ serviceKey: null, status: un }] : [];
+      if (un && rank(un) > rank(typed[0].status)) typed[0] = { ...typed[0], status: un };
+      return typed;
     };
 
     const servicesByAccount = new Map(profiles.map((pr: any) => [pr.parentAccountId, pr.interestedServices || []]));
