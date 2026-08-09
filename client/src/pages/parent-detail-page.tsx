@@ -31,7 +31,6 @@ import {
   ParentRecordHeader,
   RecordSection,
   InterestedProfilesSection,
-  useOpenSections,
 } from "@/components/parents";
 import type { ParentRecord } from "@/components/parents";
 
@@ -59,7 +58,8 @@ export default function ParentDetailPage() {
   const navigate = useNavigate();
   // Every section, so the default is "all open" and a saved state can name
   // any of them.
-  const { isOpen, toggle } = useOpenSections(["identity", "crm", "interested", "journey", "money", "admin"]);
+  // Sections stopped being collapsible (Aug 2026) - useOpenSections and the
+  // ?sec= param went with them; ?col= (mobile tab) and ?scope= remain.
 
   // Which column the phone is showing. In the URL per the house rule, so back
   // returns to the tab you were on - and so a link can point at one.
@@ -312,8 +312,6 @@ export default function ParentDetailPage() {
                       isAdmin={!!isAdmin}
                       onJumpToCrm={() => setCol("activity")}
                       ownerSlot={<ParentLeadOwner record={record} />}
-                      open={isOpen("identity")}
-                      onToggle={() => toggle("identity")}
                     >
                       <ParentIdentitySection record={record} />
                     </ParentRecordHeader>

@@ -221,16 +221,13 @@ function ContactLine({ record }: { record: ParentRecord }) {
  * "who is this and who owns them" survives with the card shut.
  */
 export function ParentRecordHeader({
-  record, isAdmin, onJumpToCrm, ownerSlot, open = true, onToggle, children,
+  record, isAdmin, onJumpToCrm, ownerSlot, children,
 }: {
   record: ParentRecord;
   isAdmin: boolean;
   onJumpToCrm: () => void;
-  /** The lead owner control. Sits in the header bar, so it stays put when the
-      card is collapsed. */
+  /** The lead owner control. Sits in the header bar beside the title. */
   ownerSlot?: ReactNode;
-  open?: boolean;
-  onToggle?: () => void;
   /** The profile detail folded into this card. */
   children?: ReactNode;
 }) {
@@ -239,11 +236,9 @@ export function ParentRecordHeader({
   const nextStep = record.crm.followUps[0];
 
   return (
+    // NOT collapsible, matching every other record section (by request).
     <ProfileSection
       title="Profile"
-      collapsible
-      open={open}
-      onToggle={() => onToggle?.()}
       headerActions={ownerSlot}
       denseHeader={dense}
       contentClassName="p-2.5 sm:p-5 space-y-4"
