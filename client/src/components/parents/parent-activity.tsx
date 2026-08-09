@@ -31,9 +31,10 @@ import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, CalendarCheck, CalendarClock, CalendarX, ChevronDown, ExternalLink,
   Clock, FileText, Mail, MessageSquare,
-  Receipt, Sparkles, StickyNote, Tag as TagIcon, TrendingUp, User, Video,
+  Pencil, Pin, Receipt, Sparkles, StickyNote, Tag as TagIcon, Trash2, TrendingUp, User, Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -218,7 +219,7 @@ interface Entry {
   title: string;
   body?: string | null;
   /** kind "note" only: the raw note plus whether the viewer may manage it. */
-  note?: { id: string; html: string; canManage: boolean };
+  note?: { id: string; html: string; canManage: boolean; pinned: boolean };
   /** The person who wrote it. Only notes have one. */
   byline?: string | null;
   /** Which org the entry belongs to. NOT an author - see buildEntries. */
@@ -255,6 +256,7 @@ function buildEntries(record: ParentRecord): Entry[] {
       note: {
         id: n.id,
         html: n.body,
+        pinned: !!n.pinned,
         // The server re-checks on write; this only decides whether to DRAW
         // the buttons. Admins manage everything, authors their own.
         canManage: record.viewer.role === "admin" || (!!record.viewer.userId && n.authorUserId === record.viewer.userId),
@@ -325,7 +327,15 @@ function buildEntries(record: ParentRecord): Entry[] {
     });
   }
 
-  return out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  return out.sort((a, b) => {
+    // A pinned note holds the top of the feed no matter what happens below
+    // it, until someone unpins it - then it drops back to its date. Several
+    // pinned notes order among themselves by date.
+    const ap = a.note?.pinned ? 1 : 0;
+    const bp = b.note?.pinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    return new Date(b.at).getTime() - new Date(a.at).getTime();
+  });
 }
 
 
@@ -776,11 +786,12 @@ function MessageDetail({ detail, parentUserId }: {
  */
 type NoteMode = "view" | "edit" | "confirm";
 
-function NoteHeaderActions({ note, mode, setMode, onDelete, pending, onStartEdit }: {
-  note: { id: string; canManage: boolean };
+function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending, onStartEdit }: {
+  note: { id: string; canManage: boolean; pinned: boolean };
   mode: NoteMode;
   setMode: (m: NoteMode) => void;
   onDelete: () => void;
+  onTogglePin: () => void;
   pending: boolean;
   onStartEdit: () => void;
 }) {
@@ -803,14 +814,32 @@ function NoteHeaderActions({ note, mode, setMode, onDelete, pending, onStartEdit
     );
   }
   return (
-    <span className="shrink-0 inline-flex items-center gap-2">
-      <button type="button" className="t-helper underline" onClick={onStartEdit} data-testid={`btn-note-edit-${note.id}`}>
-        Edit
-      </button>
-      <button type="button" className="t-helper underline" onClick={() => setMode("confirm")} data-testid={`btn-note-delete-${note.id}`}>
-        Delete
-      </button>
-    </span>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="shrink-0 inline-flex items-center gap-0.5 t-helper hover:text-foreground transition-colors"
+          data-testid={`btn-note-actions-${note.id}`}
+        >
+          Actions <ChevronDown className="w-3 h-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={onTogglePin} data-testid={`btn-note-pin-${note.id}`}>
+          <Pin className="w-3.5 h-3.5 mr-2" /> {note.pinned ? "Unpin" : "Pin"}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onStartEdit} data-testid={`btn-note-edit-${note.id}`}>
+          <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => setMode("confirm")}
+          className="text-[hsl(var(--destructive))] focus:text-[hsl(var(--destructive))]"
+          data-testid={`btn-note-delete-${note.id}`}
+        >
+          <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -931,19 +960,29 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
         {avatar}
         <div className="min-w-0 flex-1 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
           <span className="text-sm font-medium font-ui">{entry.title}</span>
+          {entry.note?.pinned && (
+            <span className="inline-flex items-center gap-1 t-helper" data-testid={`note-pinned-${entry.note.id}`}>
+              <Pin className="w-3 h-3" style={{ color: "hsl(var(--accent))" }} /> Pinned
+            </span>
+          )}
           {entry.byline && <span className="t-helper">by {entry.byline}</span>}
           {entry.org && <span className="t-helper">{entry.org}</span>}
-          <span className="t-helper sm:ml-auto shrink-0">{fmt(entry.at)}</span>
-          {entry.note && (
-            <NoteHeaderActions
-              note={entry.note}
-              mode={noteMode}
-              setMode={setNoteMode}
-              pending={noteMut.isPending}
-              onStartEdit={() => { setNoteDraft(entry.note!.html); setNoteMode("edit"); }}
-              onDelete={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "DELETE" })}
-            />
-          )}
+          {/* Actions sits LEFT of the date, HubSpot-style; the ml-auto on
+              this wrapper is what pushes the pair to the card's right edge. */}
+          <span className="sm:ml-auto shrink-0 inline-flex items-center gap-3">
+            {entry.note && (
+              <NoteHeaderActions
+                note={entry.note}
+                mode={noteMode}
+                setMode={setNoteMode}
+                pending={noteMut.isPending}
+                onStartEdit={() => { setNoteDraft(entry.note!.html); setNoteMode("edit"); }}
+                onTogglePin={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { pinned: !entry.note!.pinned } })}
+                onDelete={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "DELETE" })}
+              />
+            )}
+            <span className="t-helper">{fmt(entry.at)}</span>
+          </span>
         </div>
       </div>
       {entry.note ? (

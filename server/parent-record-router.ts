@@ -215,6 +215,17 @@ parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (r
     if (!viewer.isAdmin && existing.authorUserId !== viewer.userId) {
       return res.status(403).json({ message: "You can only edit your own notes" });
     }
+    // A pin toggle sends no body; the note keeps its text. Everything else
+    // still requires one.
+    const pinOnly = req.body?.body === undefined && typeof req.body?.pinned === "boolean";
+    if (pinOnly) {
+      const note = await prisma.parentNote.update({
+        where: { id: existing.id },
+        data: { pinned: !!req.body.pinned },
+      });
+      return res.json(note);
+    }
+
     const body = sanitizeNoteHtml(String(req.body?.body || ""));
     const bodyText = noteHtmlToText(body);
     if (!bodyText) return res.status(400).json({ message: "A note needs a body" });
