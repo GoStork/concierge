@@ -242,14 +242,6 @@ function fmt(iso: string): string {
   });
 }
 
-/** Phone-width timestamp: the year costs ~45px the byline needs more. */
-function fmtShort(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-  });
-}
-
 function buildEntries(record: ParentRecord): Entry[] {
   const out: Entry[] = [];
 
@@ -856,7 +848,9 @@ function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending
           // unchanged - the negative margin swallows the padding - but a
           // thumb no longer has to land on a 20px-tall word. Desktop keeps
           // the tight footprint.
-          className="shrink-0 inline-flex items-center gap-0.5 t-helper hover:text-foreground transition-colors p-3 -m-3 sm:p-0 sm:m-0"
+          // text-foreground, not helper grey: this is a control, not meta
+          // text, and on a phone the grey read as disabled.
+          className="shrink-0 inline-flex items-center gap-0.5 text-sm font-ui text-foreground transition-colors hover:opacity-70 p-3 -m-3 sm:p-0 sm:m-0"
           data-testid={`btn-note-actions-${note.id}`}
         >
           Actions <ChevronDown className="w-3 h-3" />
@@ -1009,33 +1003,32 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
     >
       <div className="flex items-center gap-2.5">
         {avatar}
-        {/* ONE line, never wrapping: the byline (and org) truncate before
-            Actions/date ever leave the top-right corner - on a phone the
-            wrapped second line read as the button being missing entirely.
-            The date drops its year below sm to buy the byline room. */}
-        <div className="min-w-0 flex-1 flex items-baseline gap-x-2">
-          <span className="text-sm font-medium font-ui shrink-0">{entry.title}</span>
-          {entry.byline && <span className="t-helper truncate min-w-0">by {entry.byline}</span>}
-          {entry.org && <span className="t-helper truncate min-w-0">{entry.org}</span>}
-          {/* Actions sits LEFT of the date, HubSpot-style; the ml-auto on
-              this wrapper is what pushes the pair to the card's right edge. */}
-          <span className="ml-auto shrink-0 inline-flex items-center gap-3">
-            {entry.note && (
-              <NoteHeaderActions
-                note={entry.note}
-                mode={noteMode}
-                setMode={setNoteMode}
-                pending={noteMut.isPending}
-                onStartEdit={() => { setNoteDraft(entry.note!.html); setNoteMode("edit"); }}
-                onTogglePin={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { pinned: !entry.note!.pinned } })}
-                onDelete={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "DELETE" })}
-              />
-            )}
-            <span className="t-helper whitespace-nowrap">
-              <span className="hidden sm:inline">{fmt(entry.at)}</span>
-              <span className="sm:hidden">{fmtShort(entry.at)}</span>
+        {/* Title row never wraps: byline (and org) truncate before Actions
+            ever leaves the top-right corner - on a phone a wrapped second
+            line read as the button being missing entirely. */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-x-2">
+            <span className="text-sm font-medium font-ui shrink-0">{entry.title}</span>
+            {entry.byline && <span className="t-helper truncate min-w-0">by {entry.byline}</span>}
+            {entry.org && <span className="t-helper truncate min-w-0">{entry.org}</span>}
+            <span className="ml-auto shrink-0 inline-flex items-center gap-3">
+              {entry.note && (
+                <NoteHeaderActions
+                  note={entry.note}
+                  mode={noteMode}
+                  setMode={setNoteMode}
+                  pending={noteMut.isPending}
+                  onStartEdit={() => { setNoteDraft(entry.note!.html); setNoteMode("edit"); }}
+                  onTogglePin={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { pinned: !entry.note!.pinned } })}
+                  onDelete={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "DELETE" })}
+                />
+              )}
             </span>
-          </span>
+          </div>
+          {/* HubSpot card shape on every viewport: the date lives on its own
+              line under the header, leaving the far right corner of the
+              title row to Actions alone. */}
+          <p className="t-helper mt-0.5">{fmt(entry.at)}</p>
         </div>
       </div>
       {entry.note ? (
