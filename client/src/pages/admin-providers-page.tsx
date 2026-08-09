@@ -10,7 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Building2, Loader2, Pencil, Globe, Trash2, Search, MapPin, ArrowUp, ArrowDown, ArrowUpDown, Calendar, ChevronDown, Check } from "lucide-react";
+import { Plus, Building2, Loader2, Pencil, Globe, Trash2, Search, MapPin, ArrowUp, ArrowDown, ArrowUpDown, Calendar, ChevronDown, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { ProviderWithRelations } from "@shared/schema";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -469,6 +469,10 @@ export default function AdminProvidersPage() {
                   <TableCell className="hidden xl:table-cell whitespace-nowrap">
                     <span className="t-helper">{provider.updatedAt ? new Date(provider.updatedAt).toLocaleDateString() : "-"}</span>
                   </TableCell>
+                  {/* CheckCircle2, not a bare Check: the bare check is the in-chip
+                      approval modifier (ServiceTag). A standalone "this is done"
+                      cell mark is CheckCircle2 in brand-success - the same mark
+                      the Billing and Payouts tables print for a received payout. */}
                   {SETUP_COLUMNS.map((c) => {
                     const done = !!provider.setupStatus?.[c.key];
                     return (
@@ -479,7 +483,7 @@ export default function AdminProvidersPage() {
                         data-testid={`setup-${c.key}-${provider.id}`}
                       >
                         {done ? (
-                          <Check className="w-4 h-4 mx-auto text-[hsl(var(--brand-success))]" aria-label={`${c.label} configured`} />
+                          <CheckCircle2 className="w-4 h-4 mx-auto text-[hsl(var(--brand-success))]" aria-label={`${c.label} configured`} />
                         ) : (
                           <span className="t-helper">-</span>
                         )}
