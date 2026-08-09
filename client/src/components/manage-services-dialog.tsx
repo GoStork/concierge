@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
+import { ServiceTag } from "@/components/ui/service-tag";
 import { useToast } from "@/hooks/use-toast";
 
 export const SERVICE_STATUS_OPTIONS = ["NEW", "IN_PROGRESS", "APPROVED", "DECLINED"] as const;
@@ -114,7 +115,7 @@ export default function ManageServicesDialog({ provider, open, onOpenChange }: M
             <div className="space-y-3">
               {localServices.map((service: any) => (
                 <div key={service.id} className="flex items-center justify-between gap-3 p-3 border rounded-[var(--radius)]" data-testid={`service-row-${service.id}`}>
-                  <span className="text-sm font-ui">{service.providerType?.name || "Service"}</span>
+                  <ServiceTag service={service.providerType?.name || "Service"} label={service.providerType?.name} size="md" />
                   <div className="flex items-center gap-2">
                     {confirmRemoveId === service.id ? (
                       <>

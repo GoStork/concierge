@@ -19,6 +19,7 @@ import { CostSheetRow } from "@/components/chat/cost-sheet-row";
 import { InvoiceRow } from "@/components/chat/invoice-row";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { JOURNEY_STAGE_LABELS, LEGACY_MATCH_STATUS_TO_STAGE } from "@shared/journey-ladder";
+import { ServiceTag } from "@/components/ui/service-tag";
 
 export const SERVICE_LABELS: Record<string, string> = {
   SURROGACY: "Surrogacy",
@@ -146,7 +147,9 @@ export function ContactHiddenChip({ testId }: { testId: string }) {
  * Service chips with the same 2-visible + "+N" treatment the money cells use.
  * Extracted from two inline copies (the admin table read free-text labels off
  * parents-overview, the provider table read a single enum key off
- * parent-contacts) so both render identically.
+ * parent-contacts) so both render identically. Each chip is the shared
+ * ServiceTag, so this column carries the same per-service color as every
+ * other surface on the platform.
  */
 export function ServiceChips({
   services,
@@ -167,13 +170,7 @@ export function ServiceChips({
       data-testid={testId}
     >
       {shown.map((svc) => (
-        <span
-          key={svc}
-          className="text-xs font-ui px-2 py-0.5 rounded-full"
-          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
-        >
-          {SERVICE_LABELS[svc] || svc}
-        </span>
+        <ServiceTag key={svc} service={SERVICE_LABELS[svc] || svc} />
       ))}
       {extra > 0 && (
         <span

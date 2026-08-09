@@ -2,6 +2,7 @@ import { User } from "lucide-react";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
 import type { SessionUser } from "@/components/chat/chat-types";
+import { ServiceTag } from "@/components/ui/service-tag";
 
 interface ParentProfileCardProps {
   user: SessionUser;
@@ -84,7 +85,9 @@ function displayValue(raw: string): string {
     .join(", ");
 }
 
-interface ProfileRow { label: string; value: string }
+// `serviceTags` set means the value is a list of service names rendered as
+// the shared ServiceTag pills instead of plain text ("Interested In").
+interface ProfileRow { label: string; value: string; serviceTags?: string[] }
 interface ProfileSection { title: string; rows: ProfileRow[] }
 
 // "min,max" pair -> "min - max". Account-page range sliders store the pair as
@@ -149,7 +152,9 @@ function buildSections(user: SessionUser): ProfileSection[] {
   // journeyStage (Eva's AI-saved self-note) is deliberately NOT displayed -
   // the sidebar's Match Status chip shows the server-derived ladder, which
   // is always current; showing both confused people whenever they diverged.
-  if (p.interestedServices?.length > 0) journey.push({ label: "Interested In", value: p.interestedServices.join(", ") });
+  if (p.interestedServices?.length > 0) {
+    journey.push({ label: "Interested In", value: p.interestedServices.join(", "), serviceTags: p.interestedServices });
+  }
   const firstIvf = boolLabel(p.isFirstIvf);
   if (firstIvf) journey.push({ label: "First IVF", value: firstIvf });
   if (journey.length > 0) sections.push({ title: "Journey", rows: journey });
@@ -333,7 +338,13 @@ export function ParentProfileCard({ user, isOnline, layout = "rail", hideIdentit
               {section.rows.map((row) => (
                 <div key={row.label} className="t-micro-value">
                   <span className="t-micro-label">{row.label}</span>{" "}
-                  <span>{row.value}</span>
+                  {row.serviceTags?.length ? (
+                    <span className="inline-flex flex-wrap gap-1 align-middle">
+                      {row.serviceTags.map((svc) => <ServiceTag key={svc} service={svc} />)}
+                    </span>
+                  ) : (
+                    <span>{row.value}</span>
+                  )}
                 </div>
               ))}
             </div>

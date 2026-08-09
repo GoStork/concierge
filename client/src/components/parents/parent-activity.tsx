@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ServiceDot } from "@/components/ui/service-tag";
 import { cn } from "@/lib/utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -1163,6 +1164,7 @@ export function ParentActivitySection({ record, scope }: {
               {["all", ...scope.lines].map((line) => (
                 <DropdownMenuItem key={line} onClick={() => scope.onChange(line)} data-testid={`record-scope-${line}`}>
                   <Check className={cn("w-3.5 h-3.5 mr-2", scope.active === line ? "opacity-100" : "opacity-0")} />
+                  {line !== "all" && <ServiceDot service={scope.labels[line] || line} className="mr-1.5" />}
                   {line === "all" ? "All services" : scope.labels[line] || line}
                 </DropdownMenuItem>
               ))}

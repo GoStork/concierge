@@ -26,6 +26,7 @@ import { SortableTableHead, type SortConfig } from "@/components/sortable-table-
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
+import { ServiceTag } from "@/components/ui/service-tag";
 import {
   ContactHiddenChip,
   HouseholdBadge,
@@ -268,9 +269,7 @@ export function ParentsTable({
                       {row.serviceStatuses.map((ss) => (
                         <div key={ss.serviceKey || "untyped"} className="flex items-center gap-1.5">
                           {ss.serviceKey && (
-                            <span className="t-helper text-xs whitespace-nowrap">
-                              {SERVICE_LABELS[ss.serviceKey] || ss.serviceKey}
-                            </span>
+                            <ServiceTag service={SERVICE_LABELS[ss.serviceKey] || ss.serviceKey} />
                           )}
                           <MatchStatusBadge status={ss.status} />
                         </div>

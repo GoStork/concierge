@@ -14,7 +14,8 @@ import { Plus, Building2, Loader2, Pencil, Globe, Trash2, Search, MapPin, ArrowU
 import { useToast } from "@/hooks/use-toast";
 import type { ProviderWithRelations } from "@shared/schema";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import ManageServicesDialog, { SERVICE_STATUS_STYLES as STATUS_STYLES } from "@/components/manage-services-dialog";
+import ManageServicesDialog from "@/components/manage-services-dialog";
+import { ServiceTag, serviceApprovalIcon } from "@/components/ui/service-tag";
 import { LocationSearchInput } from "@/components/location-search-input";
 
 type ProviderData = {
@@ -393,9 +394,14 @@ export default function AdminProvidersPage() {
                   <TableCell className="hidden lg:table-cell" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-wrap gap-1">
                       {provider.services?.map((s: any) => (
-                        <Badge key={s.id} className={`text-xs cursor-pointer ${STATUS_STYLES[s.status] || ""}`} onClick={() => setManageServicesProvider(provider)} data-testid={`badge-service-${s.id}`}>
-                          {s.providerType?.name || "Service"}: {s.status?.replace("_", " ")}
-                        </Badge>
+                        <ServiceTag
+                          key={s.id}
+                          service={s.providerType?.name || "Service"}
+                          approved={serviceApprovalIcon(s.status)}
+                          title={`${s.providerType?.name || "Service"}: ${(s.status || "").replace("_", " ")}`}
+                          onClick={() => setManageServicesProvider(provider)}
+                          testId={`badge-service-${s.id}`}
+                        />
                       ))}
                       {(!provider.services || provider.services.length === 0) && (
                         <Button variant="ghost" size="sm" className="t-helper" onClick={() => setManageServicesProvider(provider)}>

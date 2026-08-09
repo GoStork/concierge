@@ -50,7 +50,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import ImageUploader from "@/components/image-uploader";
-import ManageServicesDialog, { SERVICE_STATUS_STYLES } from "@/components/manage-services-dialog";
+import ManageServicesDialog from "@/components/manage-services-dialog";
+import { ServiceTag, serviceApprovalIcon } from "@/components/ui/service-tag";
 
 type ScrapedTeamMember = {
   id?: string;
@@ -960,13 +961,14 @@ export default function AdminProviderEditPage() {
               {(provider.services || []).length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {(provider.services || []).map((svc: any) => (
-                    <Badge
+                    <ServiceTag
                       key={svc.id}
-                      className={`text-xs ${SERVICE_STATUS_STYLES[svc.status] || ""}`}
-                      data-testid={`edit-service-${svc.id}`}
-                    >
-                      {svc.providerType?.name || "Service"}: {svc.status?.replace("_", " ")}
-                    </Badge>
+                      service={svc.providerType?.name || "Service"}
+                      approved={serviceApprovalIcon(svc.status)}
+                      title={`${svc.providerType?.name || "Service"}: ${(svc.status || "").replace("_", " ")}`}
+                      size="md"
+                      testId={`edit-service-${svc.id}`}
+                    />
                   ))}
                 </div>
               ) : (

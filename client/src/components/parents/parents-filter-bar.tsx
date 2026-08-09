@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { SERVICE_LABELS, IP_FORM_FILTER_LABELS, toDateParam } from "./parent-cells";
+import { ServiceDot } from "@/components/ui/service-tag";
 import { JOURNEY_STAGE_LABELS } from "@shared/journey-ladder";
 
 /**
@@ -29,7 +30,7 @@ import { JOURNEY_STAGE_LABELS } from "@shared/journey-ladder";
  * arrow position, and the row is a radio rather than a checkbox.
  */
 function FilterDropdown({
-  label, options, selected, onChange, testId, single = false,
+  label, options, selected, onChange, testId, single = false, serviceDots = false,
 }: {
   label: string;
   options: [string, string][];
@@ -37,6 +38,8 @@ function FilterDropdown({
   onChange: (next: string[]) => void;
   testId: string;
   single?: boolean;
+  /** Draw each option's service-identity dot (services filter only). */
+  serviceDots?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const active = selected.length > 0;
@@ -106,6 +109,7 @@ function FilterDropdown({
                     ? <span className="w-1.5 h-1.5 rounded-full bg-primary-foreground" />
                     : <Check className="w-3 h-3 text-primary-foreground" />)}
                 </span>
+                {serviceDots && <ServiceDot service={text} />}
                 <span className="truncate">{text}</span>
               </button>
             );
@@ -217,6 +221,7 @@ export function ParentsFilterBar({
             selected={state.services}
             onChange={(next) => setParam("svc", next.join(","))}
             testId={`${testIdPrefix}-service-filter`}
+            serviceDots
           />
           <FilterDropdown
             label="All statuses"

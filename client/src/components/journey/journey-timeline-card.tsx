@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronUp, AlertTriangle, Loader2, X } from "lucide-react";
+import { ServiceTag } from "@/components/ui/service-tag";
 
 /**
  * Phase 7A: the shared journey timeline.
@@ -359,9 +360,7 @@ function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
           {journey.providerName}
         </p>
       )}
-      <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide">
-        {journey.typeLabel}
-      </span>
+      <ServiceTag service={journey.typeLabel} label={journey.typeLabel} className="shrink-0" />
     </>
   );
   return (
@@ -407,9 +406,7 @@ function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
                 {journey.providerName}
               </p>
             )}
-            <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full bg-accent/15 text-[hsl(var(--accent))] text-[10px] font-semibold uppercase tracking-wide">
-              {journey.typeLabel}
-            </span>
+            <ServiceTag service={journey.typeLabel} label={journey.typeLabel} className="shrink-0" />
           </div>
           <div className="flex items-start flex-1 min-w-0">
             {mainStages.map((st, i) => (
