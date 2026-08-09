@@ -39,13 +39,17 @@ export function FilterSearch({ value, onChange, placeholder = "Search...", testI
   className?: string;
 }) {
   return (
-    <div className={`relative w-full sm:w-auto ${className || ""}`}>
+    // The WRAPPER carries the width and the input fills it. The input used to
+    // set sm:w-[260px] itself, so a caller who narrowed the wrapper (the
+    // calendar caps it at 240px) still got a 260px input spilling 20px past
+    // its own box and overlapping the From filter beside it.
+    <div className={`relative w-full sm:w-[260px] ${className || ""}`}>
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
       <Input
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-9 w-full sm:w-[260px] rounded-full bg-card pl-9"
+        className="h-9 w-full rounded-full bg-card pl-9"
         data-testid={testId}
       />
     </div>

@@ -103,7 +103,9 @@ export default function ProviderBillingPage() {
   const pendingPayouts = invoices.filter((i: any) => i.status === "PAID" && (i.providerPayoutAmount || 0) > 0 && !derivePayoutStatus(i).isReceived).length;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+    // Nine columns need more than the 5xl the sibling pages use - at that
+    // width the table overflowed into a scroller on a screen with room left.
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
       <ListPageHeader title="Invoices" subtitle="Every invoice you've sent to parents" />
 
       <StatGrid>
