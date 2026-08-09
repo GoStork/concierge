@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -411,6 +411,39 @@ export function CalendarSettings() {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
+
+  // When the connected account exposes exactly one calendar, the selection step
+  // adds nothing - auto-connect it with conflict checking on. The ref guards
+  // against re-firing (and against retry loops if the connect call errors; on
+  // error the selection page stays visible with the calendar pre-selected).
+  const autoConnectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (connectStep === "google-calendars" && googleCalendars?.length === 1) {
+      const cal = googleCalendars[0];
+      const key = `google:${connectingGoogleEmail || ""}:${cal.id}`;
+      if (autoConnectedRef.current === key || addConnectionMutation.isPending) return;
+      autoConnectedRef.current = key;
+      setSelectedCalendarIds([cal.id]);
+      setConflictCalendarIds([cal.id]);
+      addConnectionMutation.mutate({ provider: "google", calendarIds: [cal.id], googleEmail: connectingGoogleEmail || undefined, conflictCalendarIds: [cal.id] });
+    } else if (connectStep === "microsoft-calendars" && microsoftCalendars?.length === 1) {
+      const cal = microsoftCalendars[0];
+      const key = `microsoft:${connectingMicrosoftEmail || ""}:${cal.id}`;
+      if (autoConnectedRef.current === key || addConnectionMutation.isPending) return;
+      autoConnectedRef.current = key;
+      setSelectedCalendarIds([cal.id]);
+      setConflictCalendarIds([cal.id]);
+      addConnectionMutation.mutate({ provider: "microsoft", calendarIds: [cal.id], microsoftEmail: connectingMicrosoftEmail || undefined, conflictCalendarIds: [cal.id] });
+    } else if (connectStep === "caldav-calendars" && caldavCalendars.length === 1 && connectProvider && caldavConnectingEmail) {
+      const cal = caldavCalendars[0];
+      const key = `caldav:${caldavConnectingEmail}:${cal.id}`;
+      if (autoConnectedRef.current === key || caldavSelectMutation.isPending) return;
+      autoConnectedRef.current = key;
+      setSelectedCalendarIds([cal.id]);
+      setConflictCalendarIds([cal.id]);
+      caldavSelectMutation.mutate({ provider: connectProvider, email: caldavConnectingEmail, calendarIds: [cal.id], conflictCalendarIds: [cal.id] });
+    }
+  }, [connectStep, googleCalendars, microsoftCalendars, caldavCalendars]);
 
   const updateConnectionMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
