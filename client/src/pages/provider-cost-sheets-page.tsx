@@ -8,21 +8,24 @@
  * section - the provider counterpart of /my/cost-sheets.
  */
 
-import { Link, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, FileText, Search, Paperclip, MessageCircle, Check } from "lucide-react";
+import { FileText, Paperclip, MessageCircle, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
-import { DateRangeFilter, inDateRange } from "@/components/date-range-filter";
-import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { inDateRange } from "@/components/date-range-filter";
+import { FilterSearch, FilterDropdown, FilterDateRange } from "@/components/ui/filter-controls";
+import { ListPageHeader, StatGrid, StatCard, ListFilterBar, ListLoading, ListEmpty, TableShell, TableHeadRow, TableBodyRow } from "@/components/ui/list-page";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
+import { ServiceTag, SERVICE_FILTER_OPTIONS } from "@/components/ui/service-tag";
 
 const COST_SHEET_STATUS_FILTERS = [
-  { key: "all", label: "All statuses" },
   { key: "current", label: "Current" },
   { key: "superseded", label: "Superseded" },
 ];
 
 export default function ProviderCostSheetsPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const status = searchParams.get("status") || "all";
   const q = searchParams.get("q") || "";
@@ -63,125 +66,129 @@ export default function ProviderCostSheetsPage() {
     return matchesSearch([cs.parentName, cs.notes, cs.costSheetFileName]);
   });
 
+  const { sortConfig, handleSort, sortData } = useTableSort();
+  const rows = sortData(filtered, (cs: any, key) => {
+    switch (key) {
+      case "parent": return (cs.parentName || "").toLowerCase();
+      case "service": return (cs.serviceType || "").toLowerCase();
+      case "total": return cs.totalCostCents ?? null;
+      case "status": return cs.supersededAt ? "superseded" : cs.parentAcknowledgedAt ? "acknowledged" : "current";
+      case "date": return new Date(cs.createdAt).getTime();
+      default: return null;
+    }
+  });
+
   const currentCount = costSheets.filter((cs: any) => !cs.supersededAt).length;
   const acknowledgedCount = costSheets.filter((cs: any) => !cs.supersededAt && cs.parentAcknowledgedAt).length;
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-heading font-bold">Cost Sheets</h1>
-        <p className="t-helper mt-1">Every pricing quote you've shared with parents</p>
-      </div>
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+      <ListPageHeader title="Cost Sheets" subtitle="Every pricing quote you've shared with parents" />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border p-4 space-y-1 bg-card">
-          <p className="t-micro-label">Active Cost Sheets</p>
-          <p className="text-xl font-heading font-bold">{currentCount}</p>
-        </div>
-        <div className="rounded-xl border p-4 space-y-1 bg-card">
-          <p className="t-micro-label">Acknowledged by Parents</p>
-          <p className="text-xl font-heading font-bold">{acknowledgedCount}</p>
-        </div>
-      </div>
+      <StatGrid>
+        <StatCard label="Active cost sheets" value={currentCount} testId="stat-active-cost-sheets" />
+        <StatCard label="Acknowledged by parents" value={acknowledgedCount} testId="stat-acknowledged" />
+      </StatGrid>
 
-      {/* Search + status filter */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={q}
-            onChange={e => setParam({ q: e.target.value })}
-            placeholder="Search by parent or file name..."
-            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-card text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
-            data-testid="provider-cost-sheets-search"
-          />
-        </div>
-        <DateRangeFilter from={dateFrom} to={dateTo} onFrom={v => setParam({ from: v })} onTo={v => setParam({ to: v })} testIdPrefix="provider-cost-sheets-date" />
-        <select
-          value={status}
-          onChange={e => setParam({ status: e.target.value })}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-card text-sm"
-          data-testid="provider-cost-sheets-status-filter"
-        >
-          {COST_SHEET_STATUS_FILTERS.map(f => (
-            <option key={f.key} value={f.key}>{f.label}</option>
-          ))}
-        </select>
-        <select
-          value={svc}
-          onChange={e => setParam({ svc: e.target.value })}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-card text-sm"
-          data-testid="provider-cost-sheets-service-filter"
-        >
-          <option value="all">All services</option>
-          {[["SURROGACY","Surrogacy"],["EGG_DONATION","Egg Donation"],["SPERM_DONATION","Sperm Donation"],["IVF_CLINIC","IVF Clinic"]].map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
-        <ClearFiltersButton
-          show={!!(q || dateFrom || dateTo || status !== "all" || svc !== "all")}
-          onClick={() => setParam({ q: null, from: null, to: null, status: null, svc: null })}
-          testId="provider-cost-sheets-clear-filters"
+      <ListFilterBar
+        showClear={!!(q || dateFrom || dateTo || status !== "all" || svc !== "all")}
+        onClear={() => setParam({ q: null, from: null, to: null, status: null, svc: null })}
+        testId="provider-cost-sheets-clear-filters"
+      >
+        <FilterSearch
+          placeholder="Search by parent or file name..."
+          value={q} onChange={(v) => setParam({ q: v })}
+          testId="provider-cost-sheets-search"
         />
-      </div>
+        <FilterDateRange
+          from={dateFrom} to={dateTo}
+          onFrom={(v) => setParam({ from: v })} onTo={(v) => setParam({ to: v })}
+          testIdPrefix="provider-cost-sheets-date"
+        />
+        <FilterDropdown
+          single label="All statuses"
+          options={COST_SHEET_STATUS_FILTERS.map(f => [f.key, f.label] as [string, string])}
+          selected={status === "all" ? [] : [status]}
+          onChange={(next) => setParam({ status: next[0] || null })}
+          testId="provider-cost-sheets-status-filter"
+        />
+        <FilterDropdown
+          single label="All services"
+          options={SERVICE_FILTER_OPTIONS}
+          selected={svc === "all" ? [] : [svc]}
+          onChange={(next) => setParam({ svc: next[0] || null })}
+          testId="provider-cost-sheets-service-filter"
+          renderOption={(_k, text) => <ServiceTag service={text} />}
+        />
+      </ListFilterBar>
 
       {isLoading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
+        <ListLoading />
       ) : !filtered.length ? (
-        <div className="flex flex-col items-center gap-2 py-16 text-center">
-          <FileText className="w-8 h-8 text-muted-foreground" />
-          <p className="t-helper">{costSheets.length ? "No cost sheets match your filters" : "No cost sheets shared yet"}</p>
-        </div>
+        <ListEmpty
+          icon={<FileText className="w-8 h-8 text-muted-foreground" />}
+          message={costSheets.length ? "No cost sheets match your filters" : "No cost sheets shared yet"}
+        />
       ) : (
-        <div className="space-y-3">
-          {filtered.map((cs: any) => (
-            <div
-              key={cs.id}
-              className="rounded-xl border px-5 py-4 flex items-center justify-between gap-3 bg-card"
-              style={{ opacity: cs.supersededAt ? 0.65 : 1 }}
-              data-testid={`provider-cost-sheet-${cs.id}`}
-            >
-              <div className="space-y-0.5 min-w-0">
-                <p className="font-semibold truncate">{cs.parentName}</p>
-                <p className="t-helper">
-                  {new Date(cs.createdAt).toLocaleDateString()}
-                  {cs.parentAcknowledgedAt && (
-                    <span className="inline-flex items-center gap-1 ml-2" style={{ color: "hsl(var(--brand-success))" }}>
+        <TableShell minWidth={760}>
+          <TableHeadRow>
+            <SortableTableHead label="Parent" sortKey="parent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+            <SortableTableHead label="Service" sortKey="service" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+            <SortableTableHead label="Total" sortKey="total" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
+            <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+            <SortableTableHead label="Shared" sortKey="date" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+            <th className="text-right whitespace-nowrap px-4 t-micro-label font-heading">Actions</th>
+          </TableHeadRow>
+          <tbody>
+            {rows.map((cs: any) => (
+              <TableBodyRow
+                key={cs.id}
+                onClick={() => navigate(`/chat/${cs.sessionId}?msg=quote:${cs.id}`)}
+                title="Open conversation"
+                className={cs.supersededAt ? "opacity-65" : ""}
+                testId={`provider-cost-sheet-${cs.id}`}
+              >
+                <td className="p-4 align-middle whitespace-nowrap font-medium">{cs.parentName}</td>
+                <td className="p-4 align-middle whitespace-nowrap"><ServiceTag service={cs.serviceType} /></td>
+                <td className="p-4 align-middle text-right font-medium whitespace-nowrap tabular-nums">{formatCents(cs.totalCostCents)}</td>
+                <td className="p-4 align-middle whitespace-nowrap">
+                  {cs.supersededAt ? (
+                    <span className="t-micro-label">Superseded</span>
+                  ) : cs.parentAcknowledgedAt ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-medium" style={{ color: "hsl(var(--brand-success))" }}>
                       <Check className="w-3 h-3" /> Acknowledged
                     </span>
+                  ) : (
+                    <span className="text-[10px] uppercase tracking-wide font-medium" style={{ color: "hsl(var(--brand-warning))" }}>Current</span>
                   )}
-                </p>
-                {cs.notes && <p className="t-helper italic truncate">{cs.notes}</p>}
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                {cs.supersededAt ? (
-                  <span className="t-micro-label">Superseded</span>
-                ) : (
-                  <span className="text-[10px] uppercase tracking-wide font-medium" style={{ color: "hsl(var(--brand-success))" }}>Current</span>
-                )}
-                <p className="font-heading font-bold">{formatCents(cs.totalCostCents)}</p>
-                <div className="flex items-center gap-1.5">
-                  {cs.hasFile && (
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={`/api/sessions/${cs.sessionId}/cost-sheets/${cs.id}/file`} target="_blank" rel="noopener noreferrer" title={cs.costSheetFileName || "Download file"}>
-                        <Paperclip className="w-3.5 h-3.5" />
-                      </a>
-                    </Button>
-                  )}
-                  <Button variant="outline" size="sm" asChild>
-                    <Link to={`/chat/${cs.sessionId}?msg=quote:${cs.id}`} title="Open conversation">
+                </td>
+                <td className="t-helper p-4 align-middle whitespace-nowrap">{new Date(cs.createdAt).toLocaleDateString()}</td>
+                <td className="p-4 align-middle text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                  <div className="inline-flex items-center gap-1.5">
+                    {cs.hasFile && (
+                      <Button variant="outline" size="sm" className="bg-card" asChild>
+                        <a
+                          href={`/api/sessions/${cs.sessionId}/cost-sheets/${cs.id}/file`}
+                          target="_blank" rel="noopener noreferrer"
+                          title={cs.costSheetFileName || "Download file"}
+                        >
+                          <Paperclip className="w-3.5 h-3.5" />
+                        </a>
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline" size="sm" className="bg-card"
+                      onClick={() => navigate(`/chat/${cs.sessionId}?msg=quote:${cs.id}`)}
+                      title="Open conversation"
+                    >
                       <MessageCircle className="w-3.5 h-3.5" />
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+                    </Button>
+                  </div>
+                </td>
+              </TableBodyRow>
+            ))}
+          </tbody>
+        </TableShell>
       )}
     </div>
   );

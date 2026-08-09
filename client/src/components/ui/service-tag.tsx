@@ -113,6 +113,17 @@ export function ServiceDot({ service, className }: { service: string | null | un
   );
 }
 
+/**
+ * The service filter's options, in the enum vocabulary the tables filter on.
+ * Kept beside CANON so a new service shows up in the filters automatically.
+ */
+export const SERVICE_FILTER_OPTIONS: [string, string][] = [
+  ["SURROGACY", "Surrogacy"],
+  ["EGG_DONATION", "Egg Donation"],
+  ["SPERM_DONATION", "Sperm Donation"],
+  ["IVF_CLINIC", "IVF Clinic"],
+];
+
 /** Map a ProviderService status enum onto the tag's approval icon. */
 export function serviceApprovalIcon(status: string | null | undefined): boolean | "pending" | "declined" | undefined {
   if (status === "APPROVED") return true;

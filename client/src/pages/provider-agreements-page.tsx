@@ -10,13 +10,13 @@
 
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Search, FileSignature } from "lucide-react";
+import { FileSignature } from "lucide-react";
 import { AgreementRows } from "@/components/agreements-list";
-import { DateRangeFilter, inDateRange } from "@/components/date-range-filter";
-import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { inDateRange } from "@/components/date-range-filter";
+import { FilterSearch, FilterDropdown, FilterDateRange } from "@/components/ui/filter-controls";
+import { ListPageHeader, StatGrid, StatCard, ListFilterBar, ListLoading, ListEmpty } from "@/components/ui/list-page";
 
 const AGREEMENT_STATUS_FILTERS = [
-  { key: "all", label: "All statuses" },
   { key: "sent", label: "Sent - awaiting signature" },
   { key: "signed", label: "Signed" },
   { key: "other", label: "Rejected / expired / error" },
@@ -72,81 +72,61 @@ export default function ProviderAgreementsPage() {
   const signedCount = agreements.filter((a: any) => a.status === "SIGNED").length;
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-      <div>
-        <h1 className="text-2xl font-heading font-bold">Agreements</h1>
-        <p className="t-helper mt-1">Every contract you've sent to parents, across all services</p>
-      </div>
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+      <ListPageHeader title="Agreements" subtitle="Every contract you've sent to parents, across all services" />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border p-4 space-y-1">
-          <p className="t-micro-label">Awaiting Signature</p>
-          <p className="text-xl font-heading font-bold">{sentCount}</p>
-        </div>
-        <div className="rounded-xl border p-4 space-y-1">
-          <p className="t-micro-label">Fully Signed</p>
-          <p className="text-xl font-heading font-bold">{signedCount}</p>
-        </div>
-      </div>
+      <StatGrid>
+        <StatCard label="Awaiting signature" value={sentCount} testId="stat-awaiting-signature" />
+        <StatCard label="Fully signed" value={signedCount} testId="stat-fully-signed" />
+      </StatGrid>
 
-      {/* Search + status filter */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={q}
-            onChange={e => setParam({ q: e.target.value })}
-            placeholder="Search by parent or agreement type..."
-            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-background text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
-            data-testid="provider-agreements-search"
-          />
-        </div>
-        <DateRangeFilter from={dateFrom} to={dateTo} onFrom={v => setParam({ from: v })} onTo={v => setParam({ to: v })} testIdPrefix="provider-agreements-date" />
-        <select
-          value={status}
-          onChange={e => setParam({ status: e.target.value })}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
-          data-testid="provider-agreements-status-filter"
-        >
-          {AGREEMENT_STATUS_FILTERS.map(f => (
-            <option key={f.key} value={f.key}>{f.label}</option>
-          ))}
-        </select>
-        {docTypes.length > 1 && (
-          <select
-            value={docType}
-            onChange={e => setParam({ type: e.target.value })}
-            className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
-            data-testid="provider-agreements-type-filter"
-          >
-            <option value="all">All types</option>
-            {docTypes.map(dt => (
-              <option key={dt} value={dt}>{dt}</option>
-            ))}
-          </select>
-        )}
-        <ClearFiltersButton
-          show={!!(q || dateFrom || dateTo || status !== "all" || docType !== "all")}
-          onClick={() => setParam({ q: null, from: null, to: null, status: null, type: null })}
-          testId="provider-agreements-clear-filters"
+      <ListFilterBar
+        showClear={!!(q || dateFrom || dateTo || status !== "all" || docType !== "all")}
+        onClear={() => setParam({ q: null, from: null, to: null, status: null, type: null })}
+        testId="provider-agreements-clear-filters"
+      >
+        <FilterSearch
+          placeholder="Search by parent or agreement type..."
+          value={q} onChange={(v) => setParam({ q: v })}
+          testId="provider-agreements-search"
         />
-      </div>
+        <FilterDateRange
+          from={dateFrom} to={dateTo}
+          onFrom={(v) => setParam({ from: v })} onTo={(v) => setParam({ to: v })}
+          testIdPrefix="provider-agreements-date"
+        />
+        <FilterDropdown
+          single label="All statuses"
+          options={AGREEMENT_STATUS_FILTERS.map(f => [f.key, f.label] as [string, string])}
+          selected={status === "all" ? [] : [status]}
+          onChange={(next) => setParam({ status: next[0] || null })}
+          testId="provider-agreements-status-filter"
+        />
+        {docTypes.length > 1 && (
+          <FilterDropdown
+            single label="All types"
+            options={docTypes.map(dt => [dt, dt] as [string, string])}
+            selected={docType === "all" ? [] : [docType]}
+            onChange={(next) => setParam({ type: next[0] || null })}
+            testId="provider-agreements-type-filter"
+          />
+        )}
+      </ListFilterBar>
 
       {isLoading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
+        <ListLoading />
       ) : !filtered.length ? (
-        <div className="flex flex-col items-center gap-2 py-16 text-center">
-          <FileSignature className="w-8 h-8 text-muted-foreground" />
-          <p className="t-helper">
-            {agreements.length ? "No agreements match your filters" : "No agreements sent yet. Agreements appear here once drafted or sent for signature."}
-          </p>
-        </div>
+        <ListEmpty
+          icon={<FileSignature className="w-8 h-8 text-muted-foreground" />}
+          message={agreements.length
+            ? "No agreements match your filters"
+            : "No agreements sent yet. Agreements appear here once drafted or sent for signature."}
+        />
       ) : (
+        // variant="table" is the same shared renderer the record's Documents
+        // panel uses - no second agreements table to keep in step.
         <AgreementRows
+          variant="table"
           items={filtered.map((a: any) => ({
             id: a.id,
             status: a.status,
