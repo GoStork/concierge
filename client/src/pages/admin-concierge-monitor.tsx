@@ -976,6 +976,7 @@ export default function AdminConciergeMonitor() {
                   sessionQueryKey="/api/admin/concierge-sessions"
                   embedded
                   onClose={() => setAdminInlinePanel(null)}
+                  subjectServiceType={selectedSummary?.subjectType ?? null}
                 />
               ) : undefined
             }

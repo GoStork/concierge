@@ -3081,6 +3081,7 @@ const sendMessageMutation = useMutation({
                       initialLineItems={invoiceEditPrefill?.lineItems ?? null}
                       initialDescription={invoiceEditPrefill?.description ?? null}
                       cancelInvoiceIdOnSend={invoiceEditPrefill?.invoiceId ?? null}
+                      subjectServiceType={selectedSession?.subjectType ?? null}
                     />
                   ) : providerInlinePanel === "agreement" ? (
                     <AgreementSidebarSection

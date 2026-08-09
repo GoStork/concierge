@@ -701,7 +701,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       where: { parentUserId: { in: memberIds }, ...(scopeProviderId ? { providerId: scopeProviderId } : {}) },
       select: {
         id: true, providerId: true, sessionId: true, status: true, documentType: true,
-        serviceType: true, signedAt: true, createdAt: true,
+        serviceType: true, signedAt: true, createdAt: true, supersededAt: true,
       },
       orderBy: { createdAt: "desc" },
     }),

@@ -1035,7 +1035,7 @@ export class UsersController {
       ids.length
         ? this.prisma.agreement.findMany({
             where: { parentUserId: { in: ids } },
-            select: { id: true, parentUserId: true, status: true, documentType: true, serviceType: true, createdAt: true, providerId: true },
+            select: { id: true, parentUserId: true, status: true, documentType: true, serviceType: true, createdAt: true, providerId: true, supersededAt: true },
             orderBy: { createdAt: "desc" },
           })
         : [],
@@ -1160,7 +1160,12 @@ export class UsersController {
     }
     for (const uid of Array.from(matchCallUsers)) { if (uid) bump(uid as string, "match_call_scheduled"); }
     for (const inv of invoices) { bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent", lineOfServiceType(inv.serviceType), (inv as any).providerId); }
-    for (const a of agreements) { bump(a.parentUserId, a.status === "SIGNED" ? "agreement_signed" : "agreement_sent", lineOfServiceType((a as any).serviceType), (a as any).providerId); }
+    for (const a of agreements) {
+      // A superseded draft is not an open rung - the agreement that replaced
+      // it carries the journey.
+      if ((a as any).supersededAt) continue;
+      bump(a.parentUserId, a.status === "SIGNED" ? "agreement_signed" : "agreement_sent", lineOfServiceType((a as any).serviceType), (a as any).providerId);
+    }
 
     // Typed lines each carry their own most-advanced stage, most advanced
     // first. Untyped stages (a legacy agreement with no serviceType, a match
@@ -1821,6 +1826,7 @@ export class UsersController {
           signedAt: true,
           createdAt: true,
           sessionId: true,
+          supersededAt: true,
         },
         orderBy: { createdAt: "desc" },
       });

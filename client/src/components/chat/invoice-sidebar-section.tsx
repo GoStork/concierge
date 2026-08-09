@@ -91,6 +91,11 @@ interface InvoiceSidebarSectionProps {
   initialLineItems?: Array<{ serviceType: LineServiceType; description: string | null; amountCents: number }> | null;
   initialDescription?: string | null;
   cancelInvoiceIdOnSend?: string | null;
+  /** The thread's subject ("Egg Donor", "Surrogate", ...). Seeds the line
+   *  item's service so an invoice raised inside an egg-donor chat is not
+   *  stamped with the provider's first enabled service by default - that
+   *  mislabelling put a phantom service line on the parents table. */
+  subjectServiceType?: string | null;
 }
 
 interface PreviewLine {
@@ -145,7 +150,20 @@ export function InvoiceSidebarSection({
   initialLineItems = null,
   initialDescription = null,
   cancelInvoiceIdOnSend = null,
+  subjectServiceType = null,
 }: InvoiceSidebarSectionProps) {
+  // The line a fresh invoice defaults to: whatever this thread is about.
+  // Falls back to the provider's first enabled service only when the thread
+  // has no subject (a general Eva chat).
+  const threadLineType: LineServiceType | null = (() => {
+    const t = (subjectServiceType || "").toLowerCase();
+    if (!t) return null;
+    if (t.includes("egg")) return "EGG_DONATION";
+    if (t.includes("surrog")) return "SURROGACY";
+    if (t.includes("sperm")) return "SPERM_DONATION";
+    if (t.includes("ivf") || t.includes("clinic") || t.includes("doctor")) return "IVF_CLINIC";
+    return null;
+  })();
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(embedded);
   const [overrideInput, setOverrideInput] = useState("");
@@ -171,7 +189,7 @@ export function InvoiceSidebarSection({
         return draft;
       });
     }
-    return [newLine("SURROGACY")];
+    return [newLine(threadLineType ?? "SURROGACY")];
   });
 
   const totalLineCents = lineItems.reduce((sum, li) => {
@@ -334,7 +352,7 @@ export function InvoiceSidebarSection({
   };
   const addLine = () => {
     setLineItems(prev => {
-      const seedType = enabledServiceTypes[0] ?? "SURROGACY";
+      const seedType = threadLineType ?? enabledServiceTypes[0] ?? "SURROGACY";
       const next = newLine(seedType);
       next.amountInput = defaultDollarsForService(seedType, activeQuoteTotalCents);
       return [...prev, next];
@@ -472,7 +490,7 @@ export function InvoiceSidebarSection({
     onSuccess: () => {
       setOverrideInput("");
       setDescription("");
-      setLineItems([newLine("SURROGACY")]);
+      setLineItems([newLine(threadLineType ?? "SURROGACY")]);
       setError(null);
       setExpanded(false);
       if (sessionQueryKey && sessionId) {

@@ -255,6 +255,60 @@ export async function fetchDocumentViewUrl(apiKey: string, documentId: string, r
  * every `status: "SENT"` write calls it and that no already-sent Agreement in
  * the database lacks a release.
  */
+/**
+ * The service line a chat thread belongs to, as the Agreement/Invoice enum.
+ * Sessions store human subject types ("Egg Donor"); everything downstream
+ * keys on the enum.
+ */
+export async function serviceTypeOfSession(sessionId: string | null | undefined): Promise<string | null> {
+  if (!sessionId) return null;
+  const s = await prisma.aiChatSession.findUnique({ where: { id: sessionId }, select: { subjectType: true } });
+  const t = (s?.subjectType || "").toLowerCase();
+  if (!t) return null;
+  if (t.includes("egg")) return "EGG_DONATION";
+  if (t.includes("surrog")) return "SURROGACY";
+  if (t.includes("sperm")) return "SPERM_DONATION";
+  if (t.includes("ivf") || t.includes("clinic") || t.includes("doctor")) return "IVF_CLINIC";
+  return null;
+}
+
+/**
+ * A signed agreement retires the earlier unsigned attempts it replaced.
+ *
+ * An agency that generates an agreement twice (a correction, a re-send after
+ * a failed signature) used to leave the first one SENT forever - the parents
+ * table then showed a permanent "Awaiting" next to the "Signed", and nobody
+ * could tell it was dead. Scoped to the same parent + provider + document
+ * type, and only rows created BEFORE the signed one, so a genuinely separate
+ * later agreement is never retired by an older signature.
+ */
+export async function supersedeReplacedAgreements(signed: {
+  id: string; parentUserId: string; providerId: string; documentType: string; createdAt: Date; signedAt?: Date | null;
+}): Promise<number> {
+  try {
+    const res = await prisma.agreement.updateMany({
+      where: {
+        id: { not: signed.id },
+        parentUserId: signed.parentUserId,
+        providerId: signed.providerId,
+        documentType: signed.documentType,
+        status: { not: "SIGNED" },
+        supersededAt: null,
+        createdAt: { lt: signed.createdAt },
+      },
+      data: { supersededAt: signed.signedAt ?? new Date() },
+    });
+    if (res.count > 0) {
+      console.log(`[agreements] ${signed.id} superseded ${res.count} earlier unsigned agreement(s)`);
+    }
+    return res.count;
+  } catch (e: any) {
+    // Never block a signature on bookkeeping.
+    console.error(`[agreements] supersede sweep failed for ${signed.id}: ${e?.message}`);
+    return 0;
+  }
+}
+
 export async function releaseContactOnAgreementSent(agreement: { id: string; providerId: string; parentUserId: string; sessionId?: string | null }): Promise<void> {
   try {
     const parent = await prisma.user.findUnique({
@@ -347,6 +401,11 @@ export async function generateAgreement({ providerId, parentUserId, sessionId }:
       providerId,
       parentUserId,
       sessionId,
+      // This legacy path has no template to read a service from, so take it
+      // from the thread the agreement is being generated in - the document
+      // belongs to whatever journey it was raised inside. Without it the
+      // agreement could not be attributed to a service line at all.
+      serviceType: await serviceTypeOfSession(sessionId),
       status: "DRAFT",
       documentType: "Agency Agreement",
       signerStatus: Object.keys(initialSignerStatus).length > 0 ? initialSignerStatus : undefined,
@@ -1361,6 +1420,17 @@ export async function syncAgreementStatus(agreementId: string): Promise<{ status
       ...(transitioningToSigned ? { signedAt: new Date() } : {}),
     },
   });
+
+  if (transitioningToSigned) {
+    await supersedeReplacedAgreements({
+      id: agreement.id,
+      parentUserId: agreement.parentUserId,
+      providerId: agreement.providerId,
+      documentType: agreement.documentType,
+      createdAt: agreement.createdAt,
+      signedAt: new Date(),
+    });
+  }
 
   // If this poll is the first to detect completion, send the provider notification email.
   // The webhook handler skips when status is already SIGNED, so one of them sends - not both.

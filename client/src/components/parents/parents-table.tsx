@@ -62,11 +62,15 @@ function buildServiceLines(row: ParentTableRow): { serviceKey: string | null; st
   return lines;
 }
 
-/** Current cost sheets only; when every sheet was superseded, keep the newest. */
-function liveCostSheets(costSheets: any[]): any[] {
-  const live = costSheets.filter((cs) => !cs.supersededAt);
+/**
+ * Current rows only; when every row was superseded, keep the newest so the
+ * column never reads as "nothing was ever sent". Shared by cost sheets and
+ * agreements - both carry supersededAt and both are sent newest-first.
+ */
+function liveOnly(rows: any[]): any[] {
+  const live = rows.filter((r) => !r.supersededAt);
   if (live.length) return live;
-  return costSheets.length ? [costSheets[0]] : [];
+  return rows.length ? [rows[0]] : [];
 }
 
 /**
@@ -221,9 +225,9 @@ export function ParentsTable({
               }
               return rows;
             };
-            const liveSheets = liveCostSheets(row.costSheets || []);
+            const liveSheets = liveOnly(row.costSheets || []);
             const sortedInvoices = sortInvoicesByServiceOrder(row.invoices || [], row.serviceStatuses);
-            const sortedAgreements = sortInvoicesByServiceOrder(row.agreements || [], row.serviceStatuses);
+            const sortedAgreements = sortInvoicesByServiceOrder(liveOnly(row.agreements || []), row.serviceStatuses);
             return (
               <TableRow
                 key={row.key}

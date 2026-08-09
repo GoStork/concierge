@@ -23,7 +23,7 @@ import { IP_PROFILE_SELECT } from "./parent-record";
 import multer from "multer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "./db";
-import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession, refreshTemplateRoles, syncAgreementStatus } from "./pandadoc-service";
+import { generateAgreement, syncTemplateToPandaDoc, createTemplateEditingSession, generateAgreementFromTemplate, getAgreementSigningSession, refreshTemplateRoles, syncAgreementStatus, supersedeReplacedAgreements } from "./pandadoc-service";
 import { StorageService } from "./src/modules/storage/storage.service";
 import { isUserOnline, getOnlineUserIds } from "./online-tracker";
 import { getBaseUrl as getAppBaseUrlShared } from "./src/lib/get-base-url";
@@ -6362,6 +6362,18 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
           await prisma.agreement.update({
             where: { id: agreement.id },
             data: { status: "SIGNED", signedAt: new Date() },
+          });
+
+          // Retire the earlier unsigned attempts this one replaced. Mirrors
+          // syncAgreementStatus - whichever path wins the race does it, and
+          // the sweep is idempotent (supersededAt: null guard).
+          await supersedeReplacedAgreements({
+            id: agreement.id,
+            parentUserId: agreement.parentUserId,
+            providerId: agreement.providerId,
+            documentType: agreement.documentType,
+            createdAt: agreement.createdAt,
+            signedAt: new Date(),
           });
 
           const parentName = agreement.parentUser.name ||

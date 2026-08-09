@@ -2241,6 +2241,11 @@ model Agreement {
   invoiceId          String?   @unique // GoStork payment gate - must be PAID before agreement can be signed
   signedAt           DateTime?
   rejectedAt         DateTime?
+  // Set when a LATER agreement for the same parent + provider + documentType
+  // reaches SIGNED. Mirrors ProviderQuote.supersededAt: the row survives for
+  // the audit trail, but tables show only what is live - an unsigned draft
+  // that was replaced is not an open item anyone should chase.
+  supersededAt       DateTime?
   // Origin app URL captured at generation time. Used by webhook handlers
   // when notifying subsequent signers, so the URL in the email matches
   // the environment the agency generated from - regardless of which
