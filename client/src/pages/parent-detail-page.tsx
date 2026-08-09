@@ -172,7 +172,11 @@ export default function ParentDetailPage() {
 
   return (
     <div className="flex flex-col min-h-[calc(100dvh-64px)]">
-      <div className="flex-1 px-4 py-6">
+      {/* px-2 below sm: on a phone the page gutter, the section frame and
+          the entry-card frame all nest, and 16px per side here left the
+          actual content barely 290px wide. The section keeps its own border,
+          so the page needs almost no gutter of its own. */}
+      <div className="flex-1 px-2 sm:px-4 py-6">
         <div className="w-full space-y-4">
           {/* Same page-title treatment as /parents. This was a 14px label in a
               bar of its own, which read as a breadcrumb rather than the title
@@ -285,7 +289,7 @@ export default function ParentDetailPage() {
                     of the Activity tab on a phone - same section, hoisted, not
                     duplicated. */}
                 <div className={cn("lg:col-span-3", colClass("activity"))} data-testid="record-band-journey">
-                  <RecordSection id="journey" title="Lead Status" open={isOpen("journey")} onToggle={toggle}>
+                  <RecordSection id="journey" title="Lead Status" open={isOpen("journey")} onToggle={toggle} frameless>
                     {/* No sessionId: the record is the full relationship view,
                         which is exactly what this card's own docs say to omit
                         it for. */}
@@ -345,7 +349,7 @@ export default function ParentDetailPage() {
                       next steps and tags are ACTIONS on it rather than
                       sections of their own - writing a note adds an entry
                       here, which is where you would look for it anyway. */}
-                  <RecordSection id="crm" title="Activity" open={isOpen("crm")} onToggle={toggle}>
+                  <RecordSection id="crm" title="Activity" open={isOpen("crm")} onToggle={toggle} frameless>
                     <ParentActivitySection record={scopedRecord || record} />
                   </RecordSection>
                 </div>
@@ -359,6 +363,7 @@ export default function ParentDetailPage() {
                       count={(scopedRecord || record).conversations.length + (scopedRecord || record).savedProfiles.length}
                       open={isOpen("interested")}
                       onToggle={toggle}
+                      frameless
                     >
                       <InterestedProfilesSection record={scopedRecord || record} groupByProvider={!!isAdmin} />
                     </RecordSection>
@@ -369,6 +374,7 @@ export default function ParentDetailPage() {
                       count={record.money.byProvider.length}
                       open={isOpen("money")}
                       onToggle={toggle}
+                      frameless
                     >
                       <ParentMoneySection record={record} showProviderName={!!isAdmin} />
                     </RecordSection>

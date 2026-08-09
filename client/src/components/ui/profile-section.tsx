@@ -32,6 +32,16 @@ interface ProfileSectionProps {
    * rail and clips both.
    */
   denseHeader?: boolean;
+  /**
+   * Below lg, drop the card frame entirely - plain heading, bare children.
+   * For pages whose MOBILE layout tabs between columns (the parent record):
+   * there the tab already is the section, and nesting a framed section
+   * inside it just spends screen width on a second border (HubSpot's mobile
+   * record does the same - cards sit directly on the page background).
+   * Only set this when the children carry their own card chrome. Desktop is
+   * untouched.
+   */
+  frameless?: boolean;
   "data-testid"?: string;
 }
 
@@ -51,6 +61,7 @@ export function ProfileSection({
   open = true,
   onToggle,
   denseHeader = false,
+  frameless = false,
   ...rest
 }: ProfileSectionProps) {
   const testId = rest["data-testid"];
@@ -71,10 +82,17 @@ export function ProfileSection({
   );
 
   return (
-    <Card className={cn("overflow-hidden", className)} data-testid={testId}>
+    <Card
+      className={cn(
+        "overflow-hidden",
+        frameless && "max-lg:border-0 max-lg:bg-transparent max-lg:shadow-none max-lg:rounded-none max-lg:overflow-visible",
+        className,
+      )}
+      data-testid={testId}
+    >
       {/* Wraps: headerActions can be as wide as a lead-owner control with a
           name and a button, which on a phone sat on top of the title. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 border-b bg-muted/50">
+      <div className={cn("flex flex-wrap items-center justify-between gap-x-3 border-b bg-muted/50", frameless && "max-lg:border-0 max-lg:bg-transparent")}>
         {collapsible ? (
           // The whole bar is the target, not just the chevron - a 3px icon is
           // a poor place to make someone aim.
@@ -82,14 +100,17 @@ export function ProfileSection({
             type="button"
             onClick={onToggle}
             aria-expanded={open}
-            className="flex-1 min-w-0 flex items-center gap-2 px-5 py-3.5 text-left hover:bg-muted transition-colors"
+            className={cn(
+              "flex-1 min-w-0 flex items-center gap-2 px-5 py-3.5 text-left hover:bg-muted transition-colors",
+              frameless && "max-lg:px-1 max-lg:py-2.5 max-lg:hover:bg-transparent",
+            )}
             data-testid={testId ? `${testId}-toggle` : undefined}
           >
             <ChevronDown className={cn("w-4 h-4 shrink-0 transition-transform", !open && "-rotate-90")} />
             {heading}
           </button>
         ) : (
-          <div className="flex-1 min-w-0 px-5 py-3.5">{heading}</div>
+          <div className={cn("flex-1 min-w-0 px-5 py-3.5", frameless && "max-lg:px-1 max-lg:py-2.5")}>{heading}</div>
         )}
         {/* basis-full below sm: the actions take their own row rather than
             competing with the title. flex-1 + truncate on the title meant the

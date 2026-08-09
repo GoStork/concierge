@@ -109,7 +109,7 @@ export function useOpenSections(allSections: string[]) {
 }
 
 export function RecordSection({
-  id, title, count, open, onToggle, children,
+  id, title, count, open, onToggle, children, frameless = false,
 }: {
   id: string;
   title: string;
@@ -117,6 +117,13 @@ export function RecordSection({
   open: boolean;
   onToggle: (id: string, force?: boolean) => void;
   children: ReactNode;
+  /**
+   * Below lg (where the record tabs between columns), drop the section frame
+   * and let the children's own cards sit on the page background, HubSpot
+   * mobile style. Only for sections whose children ARE cards - a frameless
+   * section around bare text would just look unfinished.
+   */
+  frameless?: boolean;
 }) {
   return (
     // The shared section card every profile detail page uses - its own docs
@@ -132,7 +139,12 @@ export function RecordSection({
       collapsible
       open={open}
       onToggle={() => onToggle(id)}
-      contentClassName="p-5"
+      frameless={frameless}
+      // Tighter below sm for the same reason the page gutter shrinks there:
+      // three nested frames were eating a third of a phone's width. Frameless
+      // sections drop the padding entirely below lg - the children's own
+      // cards land straight on the page background.
+      contentClassName={frameless ? "p-0 lg:p-5" : "p-2.5 sm:p-5"}
       data-testid={`section-${id}`}
     >
       {children}
@@ -236,7 +248,7 @@ export function ParentRecordHeader({
       onToggle={() => onToggle?.()}
       headerActions={ownerSlot}
       denseHeader={dense}
-      contentClassName="p-5 space-y-4"
+      contentClassName="p-2.5 sm:p-5 space-y-4"
       data-testid="record-header"
     >
       <div className="flex items-start gap-3 min-w-0">

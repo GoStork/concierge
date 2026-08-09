@@ -242,6 +242,14 @@ function fmt(iso: string): string {
   });
 }
 
+/** Phone-width timestamp: the year costs ~45px the byline needs more. */
+function fmtShort(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+}
+
 function buildEntries(record: ParentRecord): Entry[] {
   const out: Entry[] = [];
 
@@ -1001,13 +1009,17 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
     >
       <div className="flex items-center gap-2.5">
         {avatar}
-        <div className="min-w-0 flex-1 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
-          <span className="text-sm font-medium font-ui">{entry.title}</span>
-          {entry.byline && <span className="t-helper">by {entry.byline}</span>}
-          {entry.org && <span className="t-helper">{entry.org}</span>}
+        {/* ONE line, never wrapping: the byline (and org) truncate before
+            Actions/date ever leave the top-right corner - on a phone the
+            wrapped second line read as the button being missing entirely.
+            The date drops its year below sm to buy the byline room. */}
+        <div className="min-w-0 flex-1 flex items-baseline gap-x-2">
+          <span className="text-sm font-medium font-ui shrink-0">{entry.title}</span>
+          {entry.byline && <span className="t-helper truncate min-w-0">by {entry.byline}</span>}
+          {entry.org && <span className="t-helper truncate min-w-0">{entry.org}</span>}
           {/* Actions sits LEFT of the date, HubSpot-style; the ml-auto on
               this wrapper is what pushes the pair to the card's right edge. */}
-          <span className="sm:ml-auto shrink-0 inline-flex items-center gap-3">
+          <span className="ml-auto shrink-0 inline-flex items-center gap-3">
             {entry.note && (
               <NoteHeaderActions
                 note={entry.note}
@@ -1019,7 +1031,10 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
                 onDelete={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "DELETE" })}
               />
             )}
-            <span className="t-helper">{fmt(entry.at)}</span>
+            <span className="t-helper whitespace-nowrap">
+              <span className="hidden sm:inline">{fmt(entry.at)}</span>
+              <span className="sm:hidden">{fmtShort(entry.at)}</span>
+            </span>
           </span>
         </div>
       </div>
