@@ -364,7 +364,29 @@ export class NotificationService implements OnModuleInit {
     this.logger.log("Reminder scheduler started (every 60s)");
   }
 
+
+  /**
+   * Callers load bookings with wildly different includes - one selects
+   * parentUser without mobileNumber, the public-token cancel path loads no
+   * relations at all - and the missing phone silently killed the parent's
+   * SMS while the email (which falls back to attendeeEmails on the booking
+   * row itself) still went out. Hydrate what notifications need instead of
+   * trusting every caller's select. undefined = "not selected" (refetch);
+   * null = the user genuinely has no number (respect it).
+   */
+  private async withParentContact<T extends { parentUserId?: string | null; parentUser?: any }>(booking: T): Promise<T> {
+    if (booking?.parentUserId && booking.parentUser?.mobileNumber === undefined) {
+      const parent = await this.prisma.user.findUnique({
+        where: { id: booking.parentUserId },
+        select: { id: true, name: true, email: true, mobileNumber: true, photoUrl: true },
+      });
+      if (parent) return { ...booking, parentUser: { ...(booking.parentUser || {}), ...parent } };
+    }
+    return booking;
+  }
+
   async sendBookingSubmitted(booking: any) {
+    booking = await this.withParentContact(booking);
     const cc = this.bookingCallCopy(booking);
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
@@ -705,6 +727,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   async sendBookingExpired(booking: any) {
+    booking = await this.withParentContact(booking);
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
     const attendeeName = booking.attendeeName || booking.parentUser?.name || attendeeEmail;
@@ -821,6 +844,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   async sendBookingConfirmation(booking: any) {
+    booking = await this.withParentContact(booking);
     const cc = this.bookingCallCopy(booking);
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
@@ -944,6 +968,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   async sendBookingCancellation(booking: any, cancelledBy?: "parent" | "provider" | "gostork") {
+    booking = await this.withParentContact(booking);
     const cc = this.bookingCallCopy(booking);
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
@@ -1055,6 +1080,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   async sendBookingRescheduled(originalBooking: any, newBooking: any, message: string = "") {
+    newBooking = await this.withParentContact(newBooking);
     const cc = this.bookingCallCopy(newBooking.meetingSubtype ? newBooking : originalBooking);
     const providerUser = newBooking.providerUser || (await this.prisma.user.findUnique({ where: { id: newBooking.providerUserId } }));
     const attendeeEmail = newBooking.attendeeEmails?.[0] || newBooking.parentUser?.email;
@@ -1191,6 +1217,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   async sendBookingDeclinedToParent(booking: any) {
+    booking = await this.withParentContact(booking);
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId }, include: { scheduleConfig: { select: { bookingPageSlug: true } } } }));
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
     const attendeeName = booking.attendeeName || booking.parentUser?.name || attendeeEmail;
@@ -1257,6 +1284,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   async sendNewTimeSuggested(originalBooking: any, suggestedBooking: any) {
+    suggestedBooking = await this.withParentContact(suggestedBooking);
     const newBooking = suggestedBooking;
     const providerUser = suggestedBooking.providerUser || (await this.prisma.user.findUnique({ where: { id: suggestedBooking.providerUserId } }));
     const attendeeEmail = suggestedBooking.attendeeEmails?.[0] || suggestedBooking.parentUser?.email;
@@ -1723,6 +1751,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   private async scheduleReminders(booking: any) {
+    booking = await this.withParentContact(booking);
     const scheduledAt = new Date(booking.scheduledAt);
     const attendeeEmail = booking.attendeeEmails?.[0] || booking.parentUser?.email;
     const providerUser = booking.providerUser || (await this.prisma.user.findUnique({ where: { id: booking.providerUserId } }));
