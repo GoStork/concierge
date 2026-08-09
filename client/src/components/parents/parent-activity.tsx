@@ -314,11 +314,18 @@ function buildEntries(record: ParentRecord): Entry[] {
 
   for (const ev of record.activity || []) {
     if (SUPERSEDED_BY_PAYLOAD.has(ev.eventType)) continue;
+    // A future-queued reminder is not a SENT message - titling it "sent"
+    // with an amber Pending made a correctly-scheduled reminder read as a
+    // delivery failure (and buried the real confirmation cards beneath it).
+    const isScheduledMsg =
+      ev.detail?.type === "message" && ev.detail.status === "pending" && !!ev.detail.scheduledFor;
     out.push({
       id: `ev-${ev.id}`,
       kind: kindForEvent(ev),
       at: ev.at,
-      title: EVENT_LABELS[ev.eventType] || ev.eventType.toLowerCase().replace(/_/g, " "),
+      title: isScheduledMsg
+        ? (ev.eventType === "MESSAGE_SMS" ? "Text message scheduled" : "Email scheduled")
+        : (EVENT_LABELS[ev.eventType] || ev.eventType.toLowerCase().replace(/_/g, " ")),
       org: ev.providerName,
       detail: ev.detail,
       eventType: ev.eventType,
@@ -731,9 +738,20 @@ function MessageDetail({ detail, parentUserId }: {
       {detail.subject && <Row label="Subject">{detail.subject}</Row>}
       <Row label="Kind">{titleCaseWords(detail.kind)}</Row>
       <Row label="Delivery">
-        <span style={failed ? { color: "hsl(var(--brand-warning))" } : undefined}>{titleCaseWords(detail.status)}</span>
-        {DELIVERY_MEANING[detail.status] && (
-          <span className="t-helper block">{DELIVERY_MEANING[detail.status]}</span>
+        {detail.status === "pending" && detail.scheduledFor ? (
+          // A future-queued reminder: pending BY DESIGN, so no amber, no
+          // "not sent yet" alarm - say when it will go out instead.
+          <>
+            <span>Scheduled</span>
+            <span className="t-helper block">Will send {fmt(detail.scheduledFor)}.</span>
+          </>
+        ) : (
+          <>
+            <span style={failed ? { color: "hsl(var(--brand-warning))" } : undefined}>{titleCaseWords(detail.status)}</span>
+            {DELIVERY_MEANING[detail.status] && (
+              <span className="t-helper block">{DELIVERY_MEANING[detail.status]}</span>
+            )}
+          </>
         )}
       </Row>
 
@@ -751,10 +769,12 @@ function MessageDetail({ detail, parentUserId }: {
         </div>
       )}
 
-      {!detail.contentStored && (
+      {!detail.contentStored && !(detail.status === "pending" && detail.scheduledFor) && (
         // Only true of messages sent before the content columns existed. They
         // cannot be recovered - the rendered email resolves brand settings and
         // one-time links at send time - so this says so instead of guessing.
+        // Scheduled reminders are excluded: their body is rendered at SEND
+        // time, so an empty body is expected, not historical.
         <p className="t-helper">This message was sent before GoStork began recording message content.</p>
       )}
 

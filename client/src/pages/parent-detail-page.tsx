@@ -246,7 +246,9 @@ export default function ParentDetailPage() {
                         "shrink-0 rounded-full px-3.5 py-1.5 text-sm font-ui border transition-colors",
                         active
                           ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-secondary text-foreground border-transparent",
+                          // bg-card + border, not bg-secondary: the cream
+                          // chips vanished into the Warm Sand page tint.
+                          : "bg-card text-foreground border-border",
                       )}
                       data-testid={`tab-record-${c.key}`}
                     >

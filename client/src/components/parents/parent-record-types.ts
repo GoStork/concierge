@@ -174,6 +174,8 @@ export type ActivityDetail =
       type: "message";
       notificationId: string; channel: string; kind: string;
       recipient: string; status: string; sentAt: string | null;
+      /** Set on future-queued reminders - still pending BY DESIGN. */
+      scheduledFor?: string | null;
       bookingId: string | null;
       subject: string | null;
       bodyPreview: string | null;

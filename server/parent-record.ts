@@ -487,6 +487,10 @@ async function buildActivity(ctx: {
         recipient: n.recipient,
         status: n.status,
         sentAt: n.sentAt,
+        // A reminder queued at confirm time for the day of the meeting is
+        // NOT a sent message - the client titles it "scheduled" and says
+        // when it will fire, instead of an alarming "Pending".
+        scheduledFor: n.scheduledFor ?? null,
         bookingId: n.bookingId ?? null,
         subject: n.subject ?? null,
         // A preview only - the full HTML is served by the preview route, so a
