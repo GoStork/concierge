@@ -141,7 +141,7 @@ export function ConversationRowCard({
   );
 }
 
-function SavedRowCard({ row }: { row: SavedProfileRow }) {
+function SavedRowCard({ row, showOrg }: { row: SavedProfileRow; showOrg: boolean }) {
   const navigate = useNavigate();
   const dense = useDense();
   return (
@@ -160,7 +160,11 @@ function SavedRowCard({ row }: { row: SavedProfileRow }) {
             Center of California" ran straight past the card's right edge. */}
         <p className="t-helper break-words">
           {KIND_LABEL[row.subjectKind] || "Profile"}
-          {row.providerName ? ` · ${row.providerName}` : ""}
+          {/* Org name only where it disambiguates - the admin sees every
+              provider's roster. A provider only ever receives their own
+              saved rows, so for them the label repeats on every card and
+              says nothing. */}
+          {showOrg && row.providerName ? ` · ${row.providerName}` : ""}
           {" · saved "}{new Date(row.savedAt).toLocaleDateString()}
         </p>
       </div>
@@ -297,7 +301,7 @@ export function InterestedProfilesSection({
           // truncate against.
           <div className={cn("grid gap-2 grid-cols-1", !dense && "sm:grid-cols-2")}>
             {savedProfiles.map((row) => (
-              <SavedRowCard key={`${row.subjectKind}-${row.profileId}`} row={row} />
+              <SavedRowCard key={`${row.subjectKind}-${row.profileId}`} row={row} showOrg={isAdmin} />
             ))}
           </div>
         )}
