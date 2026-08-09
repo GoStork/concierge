@@ -392,6 +392,7 @@ export function JourneyTimelineCard({
   variant = "sidebar",
   orientation = "vertical",
   serviceLine = null,
+  live = false,
   testId = "journey-timeline",
 }: {
   /** Omit for the parent's own view (server resolves their account). */
@@ -421,6 +422,13 @@ export function JourneyTimelineCard({
    * Display filter only - the fetch is unchanged, so flipping it is instant.
    */
   serviceLine?: string | null;
+  /**
+   * Poll while mounted (15s, paused in background tabs) so the ladder moves
+   * without a manual refresh. The record page passes it - a CRM screen staff
+   * keep open while things happen elsewhere. Rails and home mounts stay
+   * non-live; they remount on navigation anyway.
+   */
+  live?: boolean;
   testId?: string;
 }) {
   const [eventsOpen, setEventsOpen] = useState(false);
@@ -438,7 +446,9 @@ export function JourneyTimelineCard({
       if (!res.ok) throw new Error("Failed to load journey");
       return res.json() as Promise<{ registeredAt: string | null; journeys: JourneyOut[] }>;
     },
-    staleTime: 30_000,
+    staleTime: live ? 10_000 : 30_000,
+    refetchInterval: live ? 15_000 : false,
+    refetchOnWindowFocus: live,
   });
 
   const eventsQuery = useQuery({
@@ -449,7 +459,9 @@ export function JourneyTimelineCard({
       return res.json() as Promise<{ events: { id: string; eventType: string; createdAt: string }[] }>;
     },
     enabled: showEvents && eventsOpen && !!parentUserId,
-    staleTime: 30_000,
+    staleTime: live ? 10_000 : 30_000,
+    refetchInterval: live ? 15_000 : false,
+    refetchOnWindowFocus: live,
   });
 
   if (timelineQuery.isLoading) {

@@ -11,9 +11,9 @@
  * /users/:id still exists for the account-admin job (password, roles,
  * calendars) and is reachable from the Account settings button in the header.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMediaQuery } from "@/hooks/use-mobile";
 import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -78,7 +78,8 @@ export default function ParentDetailPage() {
   const colClass = (key: ColumnKey) =>
     cn("space-y-4 min-w-0", activeCol !== key && "hidden lg:block");
 
-  const { data: record, isLoading, error } = useQuery<ParentRecord>({
+  const qc = useQueryClient();
+  const { data: record, isLoading, error, dataUpdatedAt } = useQuery<ParentRecord>({
     queryKey: ["/api/parents", id, "record"],
     queryFn: async () => {
       const res = await fetch(`/api/parents/${id}/record`, { credentials: "include" });
@@ -90,7 +91,27 @@ export default function ParentDetailPage() {
     },
     enabled: !!id,
     retry: false,
+    // The record is a CRM screen staff keep open while the world moves -
+    // Eva sends a cost sheet, a parent books a call, a colleague pins a
+    // note. Poll rather than SSE: the page already re-renders cleanly from
+    // a fresh payload (mutations invalidate this same key), and TanStack
+    // pauses the interval automatically while the tab is in the background.
+    // Same pattern and cadence family as the conversations page.
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
+
+  // The few panels that fetch OUTSIDE the record payload would otherwise
+  // freeze: the app's global staleTime is Infinity, so without a nudge the
+  // admin contact-release block and the owner/tag option lists never see a
+  // colleague's change. Ride them on the record poll - invalidation only
+  // refetches queries actually mounted on this page.
+  useEffect(() => {
+    if (!dataUpdatedAt) return;
+    qc.invalidateQueries({ queryKey: ["/api/admin/contact-releases"] });
+    qc.invalidateQueries({ queryKey: ["/api/parents/crm/owner-options"] });
+    qc.invalidateQueries({ queryKey: ["/api/parents/crm/tag-vocabulary"] });
+  }, [dataUpdatedAt, qc]);
 
   const isAdmin = record?.viewer.role === "admin";
 
@@ -287,6 +308,7 @@ export default function ParentDetailPage() {
                       // spend. Below lg the rungs would be ~30px apart, so it
                       // stays the vertical ladder it was drawn as.
                       orientation={isWide ? "horizontal" : "vertical"}
+                      live
                       testId="record-journey"
                     />
                     </div>
