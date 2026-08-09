@@ -955,15 +955,24 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const userPhoto = (user as any).photoUrl as string | null;
   const userPhotoSrc = getPhotoSrc(userPhoto);
 
+  {
+    // Chat and marketplace surfaces keep a WHITE canvas: immersive full-bleed
+    // experiences designed on white - the Warm Sand page tint (Aug 2026)
+    // exists to separate cards on DATA pages, and these have no card grid.
+    // Implemented by re-pointing --background at --card for the whole route
+    // subtree, because these pages ALSO paint dozens of their own inner
+    // panels with bg-background - a class swap on the wrapper alone left
+    // them sand on a white canvas.
+  }
+  const whiteCanvas =
+    location.pathname.startsWith("/chat") || location.pathname.startsWith("/admin/concierge-monitor")
+    || location.pathname === "/marketplace" || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname);
+
   return (
-    // Chat and marketplace surfaces keep a WHITE canvas (bg-card): they are
-    // immersive full-bleed experiences designed on white, and the Warm Sand
-    // page tint (Aug 2026) exists to separate cards on DATA pages - these two
-    // have no card grid to separate.
-    <div className={`min-h-screen ${
-      location.pathname.startsWith("/chat") || location.pathname.startsWith("/admin/concierge-monitor")
-      || location.pathname === "/marketplace" || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname)
-        ? "bg-card" : "bg-background"}`}>
+    <div
+      className="min-h-screen bg-background"
+      style={whiteCanvas ? ({ "--background": "var(--card)" } as React.CSSProperties) : undefined}
+    >
       <header className="fixed top-0 left-0 right-0 h-16 bg-card border-b border-border/40 z-50 shadow-sm hidden md:block">
         <div className="h-full px-4 md:px-6 grid grid-cols-[auto_1fr_auto] items-center gap-4">
           <Link to={isParentOnly && brandSettings?.enableAiConcierge && brandSettings?.parentExperienceMode !== 'MARKETPLACE_ONLY' ? '/chat' : '/marketplace'} className="flex items-center gap-2.5 shrink-0" data-testid="link-logo">
