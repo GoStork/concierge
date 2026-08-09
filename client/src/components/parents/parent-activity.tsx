@@ -37,7 +37,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
-import { NoteComposer, ParentFollowUpPanel } from "./parent-crm-ui";
+import { NoteComposer, ParentFollowUpPanel, useCrmMutation } from "./parent-crm-ui";
+import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
 
 
@@ -215,6 +216,8 @@ interface Entry {
   at: string;
   title: string;
   body?: string | null;
+  /** kind "note" only: the raw note plus whether the viewer may manage it. */
+  note?: { id: string; html: string; canManage: boolean };
   /** The person who wrote it. Only notes have one. */
   byline?: string | null;
   /** Which org the entry belongs to. NOT an author - see buildEntries. */
@@ -248,7 +251,13 @@ function buildEntries(record: ParentRecord): Entry[] {
       kind: "note",
       at: n.createdAt,
       title: "Note",
-      body: n.body,
+      note: {
+        id: n.id,
+        html: n.body,
+        // The server re-checks on write; this only decides whether to DRAW
+        // the buttons. Admins manage everything, authors their own.
+        canManage: record.viewer.role === "admin" || (!!record.viewer.userId && n.authorUserId === record.viewer.userId),
+      },
       byline: n.authorName || "Staff",
       extra: (
         <span
@@ -731,6 +740,88 @@ function MessageDetail({ detail, parentUserId }: {
   );
 }
 
+/**
+ * A note's body, plus Edit and Delete for its author (or an admin).
+ *
+ * The body is server-sanitized HTML - on write AND on read, which is what
+ * makes dangerouslySetInnerHTML safe here. Legacy plain-text notes carry no
+ * tags and render through the pre-wrap path.
+ *
+ * Delete is a two-step inline confirm, not a dialog. Edit reuses the same
+ * rich editor the composer uses; scope stays immutable (the server enforces
+ * it - re-scoping by edit would disclose an internal note with no trail).
+ */
+function NoteEntryBody({ note, parentUserId }: {
+  note: { id: string; html: string; canManage: boolean };
+  parentUserId: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [draft, setDraft] = useState(note.html);
+  const mut = useCrmMutation(parentUserId, () => { setEditing(false); setConfirming(false); });
+  const hasText = !!draft.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+
+  if (editing) {
+    return (
+      <div className="space-y-2" data-testid={`note-edit-${note.id}`}>
+        <RichTextEditor initialHtml={note.html} onChange={setDraft} testId={`note-editor-${note.id}`} />
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            disabled={!hasText || mut.isPending}
+            onClick={() => mut.mutate({ url: `/api/parents/${parentUserId}/notes/${note.id}`, method: "PATCH", body: { body: draft } })}
+            data-testid={`btn-note-save-${note.id}`}
+          >
+            Save
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setDraft(note.html); }}>Cancel</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {isRichNoteHtml(note.html) ? (
+        <div
+          className="text-sm break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3"
+          // Sanitized server-side on write and read - see server/note-html.ts.
+          dangerouslySetInnerHTML={{ __html: note.html }}
+          data-testid={`note-body-${note.id}`}
+        />
+      ) : (
+        <p className="text-sm whitespace-pre-wrap break-words" data-testid={`note-body-${note.id}`}>{note.html}</p>
+      )}
+      {note.canManage && (
+        <div className="flex items-center gap-2">
+          <button type="button" className="t-helper underline" onClick={() => { setDraft(note.html); setEditing(true); }} data-testid={`btn-note-edit-${note.id}`}>
+            Edit
+          </button>
+          {confirming ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="t-helper">Delete this note?</span>
+              <button
+                type="button"
+                className="t-helper underline"
+                style={{ color: "hsl(var(--destructive))" }}
+                onClick={() => mut.mutate({ url: `/api/parents/${parentUserId}/notes/${note.id}`, method: "DELETE" })}
+                data-testid={`btn-note-delete-confirm-${note.id}`}
+              >
+                {mut.isPending ? "Deleting..." : "Yes, delete"}
+              </button>
+              <button type="button" className="t-helper underline" onClick={() => setConfirming(false)}>Keep it</button>
+            </span>
+          ) : (
+            <button type="button" className="t-helper underline" onClick={() => setConfirming(true)} data-testid={`btn-note-delete-${note.id}`}>
+              Delete
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole, onChanged }: {
   entry: Entry; parentUserId: string; parentName: string | null; parentPhotoUrl: string | null;
   viewerRole: "provider" | "admin"; onChanged: () => void;
@@ -808,7 +899,11 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
           <span className="t-helper sm:ml-auto shrink-0">{fmt(entry.at)}</span>
         </div>
       </div>
-      {entry.body && <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>}
+      {entry.note ? (
+        <NoteEntryBody note={entry.note} parentUserId={parentUserId} />
+      ) : entry.body ? (
+        <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>
+      ) : null}
       {entry.extra}
       {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} viewerRole={viewerRole} onChanged={onChanged} />}
       <p className="t-helper">{meta.label}</p>

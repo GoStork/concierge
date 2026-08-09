@@ -17,6 +17,7 @@
 - **react-hook-form** (forms); `react-big-calendar` + `react-day-picker` (scheduling); `embla-carousel`, `react-easy-crop`, `react-resizable-panels`
 
 ## Backend
+- **sanitize-html** - server-side allowlist sanitizer for rich-text CRM note bodies (write + read paths in `server/note-html.ts`).
 - **NestJS 11** on **Express 5** (`@nestjs/platform-express`)
 - **Auth:** Passport.js + JWT, with `express-session` stored in **PostgreSQL** via `connect-pg-simple` (no Redis), multi-role RBAC
 - **API docs:** Swagger (`@nestjs/swagger`)
@@ -206,6 +207,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 - `@types/pdf-parse@^1.1.5`
 - `@types/pdfkit@^0.17.6`
 - `@types/react-big-calendar@^1.16.3`
+- `@types/sanitize-html@^2.16.1`
 - `@types/sharp@^0.31.1`
 - `esbuild@^0.27.4`
 - `rollup@^4.59.0`
@@ -214,6 +216,7 @@ _Auto-generated from package.json by `npm run tech-stack` - do not edit between 
 **Other (review & categorize)**
 - `canvas-confetti@^1.9.4`
 - `livekit-client@^2.21.0`
+- `sanitize-html@^2.17.6`
 
 ### Dev / build dependencies
 

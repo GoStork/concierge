@@ -21,6 +21,7 @@ import {
 import { parentAccountKey, resolveParentGates } from "./parent-privacy";
 import { emitJourneyEvent } from "./journey-events";
 import { blockContactInfo } from "./contact-guard";
+import { sanitizeNoteHtml, noteHtmlToText } from "./note-html";
 
 export const parentRecordRouter = Router();
 
@@ -134,7 +135,10 @@ parentRecordRouter.get("/api/parents/:id/notes", requireAuth, async (req, res) =
       where: { ...crmReadWhere(viewer, accountKey), deletedAt: null },
       orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
     });
-    res.json(notes);
+    // Sanitize on READ as well as write: pre-rich-text notes are plain text a
+    // user could have typed literal markup into, and the client renders
+    // anything tag-shaped as HTML.
+    res.json(notes.map((n) => ({ ...n, body: sanitizeNoteHtml(n.body) })));
   } catch (e: any) {
     fail(res, e, "GET notes");
   }
@@ -144,8 +148,12 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
   try {
     const viewer = resolveCrmViewer(req.user as any);
     const accountKey = await assertCanReachParent(req.user as any, String(req.params.id));
-    const body = String(req.body?.body || "").trim();
-    if (!body) return res.status(400).json({ message: "A note needs a body" });
+    // The composer sends rich HTML. Sanitize before ANYTHING else - storage,
+    // the contact guard, the length in the journey event - so hostile markup
+    // never exists anywhere downstream.
+    const body = sanitizeNoteHtml(String(req.body?.body || ""));
+    const bodyText = noteHtmlToText(body);
+    if (!bodyText) return res.status(400).json({ message: "A note needs a body" });
 
     const target = resolveWriteTarget(viewer, req.body?.scope, req.body?.providerId);
 
@@ -160,7 +168,9 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
       // "note" surface: the person being stopped here is STAFF, not the
       // parent, so the chat wording ("your messages are always free") would be
       // nonsense. They need to know this org has not earned the details yet.
-      if (!g.showContact && blockContactInfo(res, body, "parent CRM note", {
+      // Scan the stripped text: markup could split a phone number
+      // ("555<b>-</b>0143") straight past the regex.
+      if (!g.showContact && blockContactInfo(res, bodyText, "parent CRM note", {
         parentAccountId: accountKey, providerId: target.providerId, authorUserId: viewer.userId,
       }, "note")) return;
     }
@@ -186,7 +196,7 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
       // Ids and lengths only. GET /api/journey/events returns metadata verbatim
       // to providers; it is force-scoped by providerId, but that exclusion must
       // not be the only thing between an internal note and an agency inbox.
-      metadata: { noteId: note.id, scope: target.scope, length: body.length },
+      metadata: { noteId: note.id, scope: target.scope, length: bodyText.length },
     });
 
     res.json(note);
@@ -205,8 +215,19 @@ parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (r
     if (!viewer.isAdmin && existing.authorUserId !== viewer.userId) {
       return res.status(403).json({ message: "You can only edit your own notes" });
     }
-    const body = String(req.body?.body || "").trim();
-    if (!body) return res.status(400).json({ message: "A note needs a body" });
+    const body = sanitizeNoteHtml(String(req.body?.body || ""));
+    const bodyText = noteHtmlToText(body);
+    if (!bodyText) return res.status(400).json({ message: "A note needs a body" });
+
+    // The SAME Gate B guard as POST. Without it, editing was a hole: post a
+    // clean provider-visible note, then edit the phone number in.
+    if (existing.scope === "PROVIDER" && existing.providerId) {
+      const accountKey2 = existing.parentAccountId;
+      const g = await resolveParentGates(existing.providerId, accountKey2, { sessionStatus: null, hasBooking: true });
+      if (!g.showContact && blockContactInfo(res, bodyText, "parent CRM note", {
+        parentAccountId: accountKey2, providerId: existing.providerId, authorUserId: viewer.userId,
+      }, "note")) return;
+    }
 
     // scope and providerId are IMMUTABLE. Re-scoping a GOSTORK note to PROVIDER
     // by edit would disclose it to an agency with nothing on the record saying

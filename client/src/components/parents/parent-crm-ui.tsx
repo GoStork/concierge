@@ -21,6 +21,7 @@ import { OptionPills } from "@/components/ui/option-pills";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { useToast } from "@/hooks/use-toast";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import type { CrmScope, ParentRecord, ProviderOrg } from "./parent-record-types";
 
 interface ScopeChoice {
@@ -52,7 +53,7 @@ function scopeChoices(record: ParentRecord, isAdmin: boolean): ScopeChoice[] {
   ];
 }
 
-function useCrmMutation(parentUserId: string, onDone?: () => void) {
+export function useCrmMutation(parentUserId: string, onDone?: () => void) {
   const qc = useQueryClient();
   const { toast } = useToast();
   return useMutation({
@@ -93,17 +94,19 @@ export function NoteComposer({ record, onPosted }: { record: ParentRecord; onPos
   const choices = scopeChoices(record, isAdmin);
   const [scopeKey, setScopeKey] = useState(choices[0]?.key || "gostork");
   const [body, setBody] = useState("");
-  const mut = useCrmMutation(record.parent.id, () => { setBody(""); onPosted?.(); });
+  // Remounting the editor is how it clears - it is uncontrolled by design.
+  const [editorKey, setEditorKey] = useState(0);
+  const mut = useCrmMutation(record.parent.id, () => { setBody(""); setEditorKey((k) => k + 1); onPosted?.(); });
   const chosen = choices.find((c) => c.key === scopeKey) || choices[0];
+  const hasText = !!body.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
 
   return (
     <div className="space-y-2">
-      <Textarea
-        rows={3}
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
+      <RichTextEditor
+        key={editorKey}
+        onChange={setBody}
         placeholder="What should the next person to open this record know?"
-        data-testid="input-crm-note"
+        testId="input-crm-note"
       />
       <div className="flex items-center justify-between gap-2 flex-wrap">
         {isAdmin ? (
@@ -129,7 +132,7 @@ export function NoteComposer({ record, onPosted }: { record: ParentRecord; onPos
         )}
         <Button
           size="sm"
-          disabled={!body.trim() || mut.isPending}
+          disabled={!hasText || mut.isPending}
           onClick={() => mut.mutate({
             url: `/api/parents/${record.parent.id}/notes`,
             method: "POST",

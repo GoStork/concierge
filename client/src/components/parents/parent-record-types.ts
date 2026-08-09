@@ -209,6 +209,8 @@ export interface ParentRecord {
   viewer: {
     role: "admin" | "provider";
     providerId: string | null;
+    /** The caller's own user id - drives Edit/Delete on their own notes. */
+    userId?: string | null;
     /**
      * The service lines the viewer's coordinator roles cover; null = sees
      * everything (admins, provider admins, cross-subject roles). Drives the

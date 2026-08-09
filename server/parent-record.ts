@@ -32,6 +32,7 @@ import {
   resolveParentGates,
 } from "./parent-privacy";
 import { isGostorkStaff } from "./parent-crm";
+import { sanitizeNoteHtml } from "./note-html";
 
 export class ParentRecordError extends Error {
   constructor(public status: number, message: string) {
@@ -1332,7 +1333,9 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   })();
 
   return {
-    viewer: { role: isAdmin ? "admin" : "provider", providerId: scopeProviderId, serviceLines: viewerServiceLines },
+    // userId: so the client can offer Edit/Delete on the caller's OWN notes
+    // without a per-note authorship query. The server re-checks on write.
+    viewer: { role: isAdmin ? "admin" : "provider", providerId: scopeProviderId, serviceLines: viewerServiceLines, userId: user?.id ?? null },
     accountKey,
     parent: redactParentContact(parent as any, gates),
     accountMembers: redactParentMembers(members as any, gates),
@@ -1358,7 +1361,9 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     activity,
     money,
     crm: {
-      notes,
+      // Read-side sanitize: legacy plain-text notes may contain literal
+      // markup, and the client renders tag-shaped bodies as HTML.
+      notes: notes.map((n: any) => ({ ...n, body: sanitizeNoteHtml(n.body) })),
       followUps: followUps.map((f) => ({ ...f, overdue: new Date(f.dueAt).getTime() < now })),
       owners: ownersWithPhoto,
       tags: tagAssignments.map((t: any) => ({
