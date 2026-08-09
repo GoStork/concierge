@@ -16,6 +16,20 @@ import sanitizeHtml from "sanitize-html";
  * a style allowlist is where sanitizer bypasses live. No iframes, no forms,
  * no event handlers (sanitize-html drops on* attributes by default).
  */
+/**
+ * GCS URLs in notes must go through our authenticated proxy. The uploads
+ * bucket is PRIVATE - a raw storage.googleapis.com URL 403s in an <img>, so
+ * an inserted photo rendered as a broken image. Chat surfaces solve this
+ * client-side with getPhotoSrc(); note HTML is stored markup, so the rewrite
+ * lives here instead - applied on write AND read, which also repairs notes
+ * saved before the fix.
+ */
+function proxyGcsUrl(url: string | undefined): string | undefined {
+  if (!url) return url;
+  const m = url.match(/^https?:\/\/storage\.googleapis\.com\/[^/]*gostork[^/]*\/(.+)$/i);
+  return m ? `/api/uploads/gcs?path=${encodeURIComponent(decodeURIComponent(m[1]))}` : url;
+}
+
 const NOTE_SANITIZE: sanitizeHtml.IOptions = {
   allowedTags: [
     "p", "br", "div", "span",
@@ -31,8 +45,16 @@ const NOTE_SANITIZE: sanitizeHtml.IOptions = {
   allowedSchemes: ["http", "https"],
   allowProtocolRelative: false,
   transformTags: {
-    // Every link opens in a new tab and never leaks an opener handle.
-    a: sanitizeHtml.simpleTransform("a", { target: "_blank", rel: "noopener noreferrer" }),
+    // Every link opens in a new tab and never leaks an opener handle; links
+    // into the private GCS bucket are rewritten to the authenticated proxy.
+    a: (tagName, attribs) => ({
+      tagName,
+      attribs: { ...attribs, href: proxyGcsUrl(attribs.href) ?? "", target: "_blank", rel: "noopener noreferrer" },
+    }),
+    img: (tagName, attribs) => ({
+      tagName,
+      attribs: { ...attribs, src: proxyGcsUrl(attribs.src) ?? "" },
+    }),
   },
 };
 

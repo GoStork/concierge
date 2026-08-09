@@ -6,6 +6,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { getPhotoSrc } from "@/lib/profile-utils";
 
 /**
  * A small rich-text editor: bold / italic / underline, clear formatting,
@@ -105,7 +106,12 @@ export function RichTextEditor({
 
   const insertImage = async (file: File) => {
     const up = await upload(file);
-    if (up) exec("insertImage", up.url);
+    // getPhotoSrc, not the raw URL: the uploads bucket is private, so the
+    // raw storage.googleapis.com URL 403s in an <img>. The proxied form is
+    // also what gets STORED, so the note renders for every viewer through
+    // their own auth. (The server rewrites too - note-html.ts - this just
+    // makes the preview work while the note is still being written.)
+    if (up) exec("insertImage", getPhotoSrc(up.url) || up.url);
   };
 
   const insertAttachment = async (file: File) => {
@@ -114,7 +120,8 @@ export function RichTextEditor({
     // An anchor, not a custom card: it is the one shape that survives the
     // sanitizer and reads the same in every surface that shows the note.
     const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-    exec("insertHTML", `<a href="${esc(up.url)}">\u{1F4CE} ${esc(up.originalName)}</a>&nbsp;`);
+    const href = getPhotoSrc(up.url) || up.url;   // private bucket - see insertImage
+    exec("insertHTML", `<a href="${esc(href)}">\u{1F4CE} ${esc(up.originalName)}</a>&nbsp;`);
   };
 
   const applyLink = () => {
