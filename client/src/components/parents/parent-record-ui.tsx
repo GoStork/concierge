@@ -468,7 +468,11 @@ export function ParentMoneySection({
           {showProviderName && (
             <p className="text-sm font-medium font-ui mb-2">{g.providerName}</p>
           )}
-          <div className={cn("grid gap-4", !dense && "md:grid-cols-3")}>
+          {/* grid-cols-1 is load-bearing: with no explicit template the
+              implicit track is max-content sized, so one long attachment
+              name pushed every row past the rail card's edge. minmax(0,1fr)
+              pins the track to the container and lets truncate do its job. */}
+          <div className={cn("grid grid-cols-1 gap-4", !dense && "md:grid-cols-3")}>
             <div>
               <p className="t-micro-label mb-1.5">Cost sheets</p>
               {/* No providerName on the rows: an admin already has the group

@@ -393,10 +393,12 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
   onChanged: () => void;
 }) {
   const navigate = useNavigate();
-  // bg-secondary/40 is exactly what the Home journey cards use. At full
-  // strength this token is a visible mint, which read as a different surface
-  // from every other card in the product.
-  const shell = "mt-2 rounded-[var(--radius)] border bg-secondary/40 p-3 space-y-1.5";
+  // Option A (approved Aug 9): a card is at most TWO fills. No cream wrapper
+  // box - the detail rows sit directly on the white card behind a hairline,
+  // and only the message bubble / email frame carries its own outlined
+  // surface. Cream now means exactly one thing on this page: an editable
+  // composer panel.
+  const shell = "mt-2.5 pt-2.5 border-t border-border/60 space-y-1.5";
 
   if (detail.type === "booking") {
     // The shared widget every chat surface already uses - same layout, same
@@ -734,7 +736,7 @@ function MessageDetail({ detail, parentUserId }: {
   });
 
   return (
-    <div ref={ref} className="mt-2 rounded-[var(--radius)] border bg-secondary/40 p-3 space-y-1.5" data-testid={`detail-message-${detail.notificationId}`}>
+    <div ref={ref} className="mt-2.5 pt-2.5 border-t border-border/60 space-y-1.5" data-testid={`detail-message-${detail.notificationId}`}>
       <Row label="To">{detail.recipient}</Row>
       {detail.subject && <Row label="Subject">{detail.subject}</Row>}
       <Row label="Kind">{titleCaseWords(detail.kind)}</Row>

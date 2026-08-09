@@ -260,7 +260,10 @@ export default function ParentDetailPage() {
 
               {/* items-start so a short column does not stretch to the height
                   of the tallest one and leave a long empty card. */}
-              <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)_minmax(0,340px)]">
+              {/* Contact rail is 384px, not 360: the profile's four
+                  "Interested In" service tags need 339px of card interior to
+                  sit on ONE line at full size, and 360 left them 21px short. */}
+              <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,384px)_minmax(0,1fr)_minmax(0,340px)]">
                 {/* ── Full-width band: where this family is in the journey ──
                     Spans all three columns so the twelve rungs get the whole
                     page width and land on ONE row. Inside the middle column it

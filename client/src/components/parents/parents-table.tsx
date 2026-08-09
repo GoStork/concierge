@@ -256,23 +256,38 @@ export function ParentsTable({
                   )}
                 </TableCell>
 
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
-                  <ServiceChips services={row.services} limit={1} testId={`chips-services-${row.id}`} />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell whitespace-nowrap">
+                {/* Services and Match Status are PAIRED stacks: when a family
+                    runs several lines, line N of this column names the
+                    service whose status is line N of the next column - both
+                    stacks render from serviceStatuses in the same order, each
+                    line pinned to the same fixed height so the pairs stay on
+                    a shared baseline. No "+N" collapse: every line shows. */}
+                <TableCell className="hidden lg:table-cell whitespace-nowrap align-middle">
                   {row.serviceStatuses && row.serviceStatuses.length > 1 ? (
-                    // A family running several service lines with this org
-                    // has one true status PER LINE - a single most-advanced
-                    // badge was how a brand-new surrogacy thread read
-                    // "Handed Off" off the egg-donation journey.
-                    <div className="flex flex-col gap-1" data-testid={`match-statuses-${row.id}`}>
+                    <div className="flex flex-col gap-1 items-start" data-testid={`chips-services-${row.id}`}>
                       {row.serviceStatuses.map((ss) => (
-                        <div key={ss.serviceKey || "untyped"} className="flex items-center gap-1.5">
-                          {ss.serviceKey && (
-                            <ServiceTag service={SERVICE_LABELS[ss.serviceKey] || ss.serviceKey} />
-                          )}
+                        <span key={ss.serviceKey || "untyped"} className="flex items-center h-[22px]">
+                          {ss.serviceKey
+                            ? <ServiceTag service={SERVICE_LABELS[ss.serviceKey] || ss.serviceKey} />
+                            : <span className="t-helper">-</span>}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <ServiceChips services={row.services} limit={0} testId={`chips-services-${row.id}`} />
+                  )}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell whitespace-nowrap align-middle">
+                  {row.serviceStatuses && row.serviceStatuses.length > 1 ? (
+                    // One true status PER LINE - a single most-advanced badge
+                    // was how a brand-new surrogacy thread read "Handed Off"
+                    // off the egg-donation journey. The service name lives in
+                    // the previous column, same line - not repeated here.
+                    <div className="flex flex-col gap-1 items-start" data-testid={`match-statuses-${row.id}`}>
+                      {row.serviceStatuses.map((ss) => (
+                        <span key={ss.serviceKey || "untyped"} className="flex items-center h-[22px]">
                           <MatchStatusBadge status={ss.status} />
-                        </div>
+                        </span>
                       ))}
                     </div>
                   ) : (

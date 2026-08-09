@@ -337,13 +337,21 @@ export function ParentProfileCard({ user, isOnline, layout = "rail", hideIdentit
             <div className="space-y-1.5">
               {section.rows.map((row) => (
                 <div key={row.label} className="t-micro-value">
-                  <span className="t-micro-label">{row.label}</span>{" "}
                   {row.serviceTags?.length ? (
-                    <span className="inline-flex flex-wrap gap-1 align-middle">
-                      {row.serviceTags.map((svc) => <ServiceTag key={svc} service={svc} />)}
-                    </span>
+                    // Tags get the card's full width on their own line - four
+                    // services fit one row at full size; inline after the
+                    // label they wrapped after three.
+                    <>
+                      <span className="t-micro-label block">{row.label}</span>
+                      <span className="flex flex-wrap gap-1 mt-1">
+                        {row.serviceTags.map((svc) => <ServiceTag key={svc} service={svc} />)}
+                      </span>
+                    </>
                   ) : (
-                    <span>{row.value}</span>
+                    <>
+                      <span className="t-micro-label">{row.label}</span>{" "}
+                      <span>{row.value}</span>
+                    </>
                   )}
                 </div>
               ))}
