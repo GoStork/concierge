@@ -20,7 +20,7 @@ import { CostSheetRow } from "@/components/chat/cost-sheet-row";
 import { InvoiceRow } from "@/components/chat/invoice-row";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { JOURNEY_STAGE_LABELS, LEGACY_MATCH_STATUS_TO_STAGE } from "@shared/journey-ladder";
-import { ServiceTag } from "@/components/ui/service-tag";
+import { ServiceTag, normalizeServiceKey } from "@/components/ui/service-tag";
 
 export const SERVICE_LABELS: Record<string, string> = {
   SURROGACY: "Surrogacy",
@@ -28,6 +28,24 @@ export const SERVICE_LABELS: Record<string, string> = {
   SPERM_DONATION: "Sperm Donation",
   IVF_CLINIC: "IVF Clinic",
 };
+
+/**
+ * Any raw service text -> the SERVICE_LABELS enum key.
+ *
+ * Invoices and agreements store DISPLAY text ("Egg Donation"), sessions store
+ * subject types ("Egg Donor"), and this table's vocabulary is the enum key -
+ * three spellings of one idea. Routes through the ServiceTag normalizer so
+ * there is exactly one place that knows how service names vary.
+ */
+export function serviceEnumKey(raw: string | null | undefined): string | null {
+  switch (normalizeServiceKey(raw)) {
+    case "surrogacy": return "SURROGACY";
+    case "egg_donation": return "EGG_DONATION";
+    case "sperm_donation": return "SPERM_DONATION";
+    case "ivf": return "IVF_CLINIC";
+    default: return null;
+  }
+}
 
 /**
  * Status labels come from the shared ladder, so the Match Status column, its

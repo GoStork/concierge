@@ -1028,14 +1028,14 @@ export class UsersController {
       ids.length
         ? this.prisma.invoice.findMany({
             where: { parentUserId: { in: ids } },
-            select: { id: true, parentUserId: true, serviceType: true, serviceAmount: true, status: true },
+            select: { id: true, parentUserId: true, serviceType: true, serviceAmount: true, status: true, providerId: true },
             orderBy: { createdAt: "desc" },
           })
         : [],
       ids.length
         ? this.prisma.agreement.findMany({
             where: { parentUserId: { in: ids } },
-            select: { id: true, parentUserId: true, status: true, documentType: true, serviceType: true, createdAt: true },
+            select: { id: true, parentUserId: true, status: true, documentType: true, serviceType: true, createdAt: true, providerId: true },
             orderBy: { createdAt: "desc" },
           })
         : [],
@@ -1045,7 +1045,7 @@ export class UsersController {
     const sessions = ids.length
       ? await this.prisma.aiChatSession.findMany({
           where: { userId: { in: ids }, status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] } },
-          select: { userId: true, status: true, subjectProfileId: true, subjectType: true, handoffCompletedAt: true },
+          select: { userId: true, status: true, subjectProfileId: true, subjectType: true, handoffCompletedAt: true, providerId: true },
         })
       : [];
     const matchCallUsers = new Set(
@@ -1128,18 +1128,28 @@ export class UsersController {
     // regexes as everything else, or every invoice lands in the untyped
     // bucket and the line reads "Consultation Scheduled" past a paid invoice.
     const lineOfServiceType = (t: string | null | undefined): string => lineOfSubject(t);
-    const bump = (userId: string, st: string | null, line = "") => {
+    // Which orgs are working each line - feeds the admin table's Provider
+    // column, aligned line-for-line with the Services stack.
+    const lineProvidersByUser = new Map<string, Map<string, Set<string>>>();
+    const bump = (userId: string, st: string | null, line = "", providerId?: string | null) => {
       if (!st) return;
       if (rank(st) > rank(statusByUser.get(userId) || null)) statusByUser.set(userId, st);
       const m = lineStatusByUser.get(userId) || new Map<string, string>();
       if (rank(st) > rank(m.get(line) || null)) m.set(line, st);
       lineStatusByUser.set(userId, m);
+      if (providerId) {
+        const pm = lineProvidersByUser.get(userId) || new Map<string, Set<string>>();
+        const set = pm.get(line) || new Set<string>();
+        set.add(providerId);
+        pm.set(line, set);
+        lineProvidersByUser.set(userId, pm);
+      }
     };
     for (const cs of sessions) {
       const line = lineOfSubject(cs.subjectType);
-      bump(cs.userId, LEGACY_MATCH_STATUS_TO_STAGE[cs.status] || null, line);
-      if (cs.handoffCompletedAt) bump(cs.userId, "handed_off", line);
-      if (cs.subjectProfileId && overviewMatchedById.get(cs.subjectProfileId) === cs.userId) bump(cs.userId, "matched", "SURROGACY");
+      bump(cs.userId, LEGACY_MATCH_STATUS_TO_STAGE[cs.status] || null, line, cs.providerId);
+      if (cs.handoffCompletedAt) bump(cs.userId, "handed_off", line, cs.providerId);
+      if (cs.subjectProfileId && overviewMatchedById.get(cs.subjectProfileId) === cs.userId) bump(cs.userId, "matched", "SURROGACY", cs.providerId);
     }
     for (const uid of Array.from(consultCompletedUsers)) { if (uid) bump(uid as string, "consult_completed"); }
     // Doctor calls ARE the clinic line - the one booking type with a line of its own.
@@ -1149,8 +1159,8 @@ export class UsersController {
       if (submittedFormAccounts.has(key as string)) bump(uid as string, "ip_form_submitted");
     }
     for (const uid of Array.from(matchCallUsers)) { if (uid) bump(uid as string, "match_call_scheduled"); }
-    for (const inv of invoices) { bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent", lineOfServiceType(inv.serviceType)); }
-    for (const a of agreements) { bump(a.parentUserId, a.status === "SIGNED" ? "agreement_signed" : "agreement_sent", lineOfServiceType((a as any).serviceType)); }
+    for (const inv of invoices) { bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent", lineOfServiceType(inv.serviceType), (inv as any).providerId); }
+    for (const a of agreements) { bump(a.parentUserId, a.status === "SIGNED" ? "agreement_signed" : "agreement_sent", lineOfServiceType((a as any).serviceType), (a as any).providerId); }
 
     // Typed lines each carry their own most-advanced stage, most advanced
     // first. Untyped stages (a legacy agreement with no serviceType, a match
@@ -1160,16 +1170,44 @@ export class UsersController {
     // almost always belong to the journey that is furthest along, and
     // dropping them made K Money read "Consultation Scheduled" past a signed
     // agreement.
-    const serviceStatusesOf = (userId: string): { serviceKey: string | null; status: string }[] => {
+    // One name lookup for every org referenced on any line.
+    const allLineProviderIds = new Set<string>();
+    for (const pm of Array.from(lineProvidersByUser.values())) {
+      for (const s of Array.from(pm.values())) for (const id of Array.from(s)) allLineProviderIds.add(id);
+    }
+    const lineProviderNameById = new Map<string, string>();
+    if (allLineProviderIds.size) {
+      const provs = await this.prisma.provider.findMany({
+        where: { id: { in: Array.from(allLineProviderIds) } },
+        select: { id: true, name: true },
+      });
+      for (const p of provs) lineProviderNameById.set(p.id, p.name);
+    }
+
+    const serviceStatusesOf = (userId: string): { serviceKey: string | null; status: string; providerNames: string[] }[] => {
       const m = lineStatusByUser.get(userId);
       if (!m) return [];
+      const pm = lineProvidersByUser.get(userId);
+      const namesOf = (...lines: string[]): string[] => {
+        const out = new Set<string>();
+        for (const l of lines) {
+          for (const id of Array.from(pm?.get(l) || [])) {
+            const n = lineProviderNameById.get(id);
+            if (n) out.add(n);
+          }
+        }
+        return Array.from(out).sort();
+      };
       const typed = Array.from(m.entries())
         .filter(([k]) => k !== "")
         .sort((a, b) => rank(b[1]) - rank(a[1]))
-        .map(([serviceKey, status]) => ({ serviceKey, status }));
+        .map(([serviceKey, status]) => ({ serviceKey, status, providerNames: namesOf(serviceKey) }));
       const un = m.get("");
-      if (!typed.length) return un ? [{ serviceKey: null, status: un }] : [];
-      if (un && rank(un) > rank(typed[0].status)) typed[0] = { ...typed[0], status: un };
+      if (!typed.length) return un ? [{ serviceKey: null, status: un, providerNames: namesOf("") }] : [];
+      if (un && rank(un) > rank(typed[0].status)) {
+        // Untyped fold carries its orgs along with its stage.
+        typed[0] = { ...typed[0], status: un, providerNames: namesOf(typed[0].serviceKey, "") };
+      }
       return typed;
     };
 
@@ -1355,22 +1393,26 @@ export class UsersController {
       const serviceKeysMerged = Array.from(new Set(memberIds.flatMap(id => overview[id]?.serviceKeys || [])));
       const household = { memberIds, memberNames: members.map(m => m.name || "") };
       // Couples share one journey, so the per-line stacks merge too: the
-      // most-advanced stage per line across both logins.
-      const mergedLines = new Map<string, string>();
-      let mergedUntyped: string | null = null;
+      // most-advanced stage per line across both logins, orgs unioned.
+      const mergedLines = new Map<string, { status: string; providerNames: Set<string> }>();
+      let mergedUntyped: { status: string; providerNames: Set<string> } | null = null;
       for (const id of memberIds) {
-        for (const ss of (overview[id]?.serviceStatuses || []) as { serviceKey: string | null; status: string }[]) {
+        for (const ss of (overview[id]?.serviceStatuses || []) as { serviceKey: string | null; status: string; providerNames?: string[] }[]) {
           if (ss.serviceKey) {
-            const cur = mergedLines.get(ss.serviceKey);
-            if (!cur || rank(ss.status) > rank(cur)) mergedLines.set(ss.serviceKey, ss.status);
-          } else if (rank(ss.status) > rank(mergedUntyped)) {
-            mergedUntyped = ss.status;
+            const cur = mergedLines.get(ss.serviceKey) || { status: ss.status, providerNames: new Set<string>() };
+            if (rank(ss.status) > rank(cur.status)) cur.status = ss.status;
+            for (const n of ss.providerNames || []) cur.providerNames.add(n);
+            mergedLines.set(ss.serviceKey, cur);
+          } else if (!mergedUntyped || rank(ss.status) > rank(mergedUntyped.status)) {
+            mergedUntyped = { status: ss.status, providerNames: new Set(ss.providerNames || []) };
           }
         }
       }
       const serviceStatusesMerged = mergedLines.size
-        ? Array.from(mergedLines.entries()).sort((a, b) => rank(b[1]) - rank(a[1])).map(([serviceKey, status]) => ({ serviceKey, status }))
-        : (mergedUntyped ? [{ serviceKey: null, status: mergedUntyped }] : []);
+        ? Array.from(mergedLines.entries())
+            .sort((a, b) => rank(b[1].status) - rank(a[1].status))
+            .map(([serviceKey, v]) => ({ serviceKey, status: v.status, providerNames: Array.from(v.providerNames).sort() }))
+        : (mergedUntyped ? [{ serviceKey: null, status: mergedUntyped.status, providerNames: Array.from(mergedUntyped.providerNames).sort() }] : []);
       for (const id of memberIds) {
         if (!overview[id]) continue;
         overview[id].matchStatus = bestStatus;

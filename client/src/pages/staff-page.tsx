@@ -17,6 +17,7 @@ import {
   matchesMultiAny,
   parentSortValue,
   parseMulti,
+  serviceEnumKey,
 } from "@/components/parents";
 import { ParentsTable } from "@/components/parents/parents-table";
 import { ParentsFilterBar } from "@/components/parents/parents-filter-bar";
@@ -508,6 +509,23 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           untypedBest = t.matchStatus;
         }
       }
+      g.invoices = threads.flatMap((t: any) => t.invoices || []);
+      // Money artifacts open service lines of their own: an invoice typed
+      // "Surrogacy" inside an egg-donor thread means the org IS running a
+      // surrogacy line for this family, and the admin view already shows it
+      // that way - without this the two tables disagreed on the row's lines.
+      // Untyped artifacts stay with their thread's session-derived status.
+      const artifactBump = (svcText: string | null | undefined, st: string | null) => {
+        if (!st) return;
+        const key = serviceEnumKey(svcText);
+        if (!key) return;
+        const cur = byLine.get(key);
+        if (!cur || stageRank(st) > stageRank(cur)) byLine.set(key, st);
+      };
+      for (const inv of g.invoices) artifactBump(inv.serviceType, inv.status === "PAID" ? "invoice_paid" : "invoice_sent");
+      for (const agr of threads.flatMap((t: any) => t.agreements || [])) {
+        artifactBump(agr.serviceType, agr.status === "SIGNED" ? "agreement_signed" : "agreement_sent");
+      }
       g.serviceStatuses = Array.from(byLine.entries()).map(([serviceKey, status]) => ({ serviceKey, status }));
       if (g.serviceStatuses.length === 0 && untypedBest) {
         g.serviceStatuses = [{ serviceKey: null, status: untypedBest }];
@@ -516,7 +534,6 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         (best: string | null, t: any) => (stageRank(t.matchStatus) > stageRank(best) ? t.matchStatus : best),
         null,
       );
-      g.invoices = threads.flatMap((t: any) => t.invoices || []);
       // Stamp each sheet with its thread's service line - quotes carry no
       // serviceType of their own, and the table aligns money chips to the
       // Services column line-for-line.

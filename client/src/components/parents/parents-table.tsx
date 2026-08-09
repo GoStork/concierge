@@ -50,12 +50,14 @@ import type { ParentTableRow } from "./parent-record-types";
  * yet) with no status - so the admin view never drops a service the profile
  * declares just because it has no session yet.
  */
-function buildServiceLines(row: ParentTableRow): { serviceKey: string | null; status: string | null }[] {
-  const lines: { serviceKey: string | null; status: string | null }[] =
-    (row.serviceStatuses || []).map((ss) => ({ serviceKey: ss.serviceKey, status: ss.status }));
+function buildServiceLines(row: ParentTableRow): { serviceKey: string | null; status: string | null; providerNames?: string[] }[] {
+  const lines: { serviceKey: string | null; status: string | null; providerNames?: string[] }[] =
+    (row.serviceStatuses || []).map((ss) => ({ ...ss }));
   const seen = new Set(lines.map((l) => l.serviceKey).filter(Boolean));
   for (const svc of row.services || []) {
-    if (!seen.has(svc)) { seen.add(svc); lines.push({ serviceKey: svc, status: null }); }
+    // A declared interest is never status-less: the family is at least
+    // Registered on that line (user rule) - "-" read as missing data.
+    if (!seen.has(svc)) { seen.add(svc); lines.push({ serviceKey: svc, status: "registered" }); }
   }
   return lines;
 }
@@ -109,8 +111,8 @@ export function ParentsTable({
   selectable = false, selectedIds, onToggleSelect, onToggleSelectAll,
   allVisibleSelected = false, someSelected = false, rowActions,
 }: ParentsTableProps) {
-  // checkbox + 12 shared + optional actions
-  const colSpan = 12 + (selectable ? 1 : 0) + (rowActions ? 1 : 0);
+  // checkbox + 12 shared + admin provider column + optional actions
+  const colSpan = 12 + (selectable ? 1 : 0) + (isAdmin ? 1 : 0) + (rowActions ? 1 : 0);
 
   // Every data column shows from xl up (user request: providers see the same
   // table admins do, Actions aside). Below xl the narrow set survives; the
@@ -178,6 +180,10 @@ export function ParentsTable({
             <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell max-w-[170px]" data-testid="sort-email" />
             <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-mobile" />
             <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
+            {/* Admin spans orgs, so each service line names who is running it.
+                A provider's whole table is their own org - the column would
+                print their name on every line. */}
+            {isAdmin && <TableHead className="whitespace-nowrap hidden lg:table-cell">Provider</TableHead>}
             <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
             <SortableTableHead label="Cost Sheets" sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-cost-sheets" />
             <SortableTableHead label="Invoices" sortKey="invoices" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-invoices" />
@@ -338,6 +344,28 @@ export function ParentsTable({
                     <ServiceChips services={row.services} limit={0} testId={`chips-services-${row.id}`} />
                   )}
                 </TableCell>
+                {isAdmin && (
+                  <TableCell className="hidden lg:table-cell whitespace-nowrap align-middle" data-testid={`cell-providers-${row.id}`}>
+                    {svcLines.length > 1 ? (
+                      <div className="flex flex-col gap-1 items-start">
+                        {svcLines.map((ss) => (
+                          <span key={ss.serviceKey || "untyped"} className="flex items-center h-[22px] text-xs">
+                            {ss.providerNames?.length
+                              ? <span className="truncate max-w-[160px]" title={ss.providerNames.join(", ")}>{ss.providerNames.join(", ")}</span>
+                              : <span className="t-helper">-</span>}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      (() => {
+                        const names = svcLines[0]?.providerNames || [];
+                        return names.length
+                          ? <span className="text-xs truncate max-w-[160px] inline-block" title={names.join(", ")}>{names.join(", ")}</span>
+                          : <span className="t-helper">-</span>;
+                      })()
+                    )}
+                  </TableCell>
+                )}
                 <TableCell className="hidden lg:table-cell whitespace-nowrap align-middle">
                   {svcLines.length > 1 ? (
                     // One true status PER LINE - a single most-advanced badge
@@ -353,7 +381,9 @@ export function ParentsTable({
                       ))}
                     </div>
                   ) : (
-                    <MatchStatusBadge status={row.matchStatus} />
+                    // A parent with a declared service but no journey yet is
+                    // still Registered - never a blank status.
+                    <MatchStatusBadge status={row.matchStatus ?? (row.services?.length ? "registered" : null)} />
                   )}
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>

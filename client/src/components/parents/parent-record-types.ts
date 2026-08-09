@@ -272,7 +272,7 @@ export interface ParentTableRow {
    * consultation are both true). serviceKey null = untyped threads only.
    * Absent/single-entry rows render the plain matchStatus badge.
    */
-  serviceStatuses?: { serviceKey: string | null; status: string }[];
+  serviceStatuses?: { serviceKey: string | null; status: string; providerNames?: string[] }[];
   costSheets: any[];
   invoices: any[];
   agreements: any[];
