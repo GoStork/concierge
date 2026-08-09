@@ -955,16 +955,20 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
     // Header row, then everything else at FULL card width. The detail used to
     // sit in a column beside the icon, which indented every payload by 38px
     // and cost a phone a tenth of its screen for no information.
-    <div className="rounded-[var(--radius)] border bg-card p-3 space-y-1.5" data-testid={`activity-${entry.id}`}>
+    // Pinned notes wear the pin ON the frame, centered on the top border,
+    // HubSpot-style - not as a chip in the header row. The chip pokes ~10px
+    // above the card, so a pinned card carries its own top margin: an inline
+    // style, because a margin utility loses to space-y-2's higher-specificity
+    // sibling selector on the feed.
+    <div
+      className="relative rounded-[var(--radius)] border bg-card p-3 space-y-1.5"
+      style={entry.note?.pinned ? { marginTop: "0.875rem" } : undefined}
+      data-testid={`activity-${entry.id}`}
+    >
       <div className="flex items-center gap-2.5">
         {avatar}
         <div className="min-w-0 flex-1 flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
           <span className="text-sm font-medium font-ui">{entry.title}</span>
-          {entry.note?.pinned && (
-            <span className="inline-flex items-center gap-1 t-helper" data-testid={`note-pinned-${entry.note.id}`}>
-              <Pin className="w-3 h-3" style={{ color: "hsl(var(--accent))" }} /> Pinned
-            </span>
-          )}
           {entry.byline && <span className="t-helper">by {entry.byline}</span>}
           {entry.org && <span className="t-helper">{entry.org}</span>}
           {/* Actions sits LEFT of the date, HubSpot-style; the ml-auto on
@@ -1001,6 +1005,18 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
       {entry.extra}
       {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} viewerRole={viewerRole} onChanged={onChanged} />}
       <p className="t-helper">{meta.label}</p>
+      {/* LAST child on purpose: as the first child it would push margin-top
+          from the card's space-y onto the real first row. Absolute, so order
+          does not matter visually. */}
+      {entry.note?.pinned && (
+        <span
+          className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border bg-card flex items-center justify-center shadow-sm"
+          title="Pinned"
+          data-testid={`note-pinned-${entry.note.id}`}
+        >
+          <Pin className="w-3 h-3" style={{ color: "hsl(var(--accent))" }} />
+        </span>
+      )}
     </div>
   );
 }
