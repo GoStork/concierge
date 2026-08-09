@@ -45,6 +45,9 @@ import type { ParentRecord } from "@/components/parents";
  */
 const COLUMNS = [
   { key: "contact", label: "Contact" },
+  // Its own tab on a phone: inside Activity the twelve-rung ladder pushed
+  // the actual feed a full screen down.
+  { key: "journey", label: "Lead Status" },
   { key: "activity", label: "Activity" },
   { key: "related", label: "Related" },
 ] as const;
@@ -194,35 +197,9 @@ export default function ParentDetailPage() {
             {/* Page-level actions belong beside the page title, the way Add
                 Parent sits on /parents - not inside the profile card. */}
             <div className="flex items-center gap-3">
-              {/* Service-line scope: rendered for EVERY viewer once the
-                  family spans more than one line - an admin is often also
-                  the coordinator for one of them. */}
-              {record && availableLines.length >= 2 && (
-                <div
-                  className="flex items-center gap-1 rounded-full border p-0.5 overflow-x-auto"
-                  role="tablist"
-                  data-testid="record-scope-toggle"
-                >
-                  {["all", ...availableLines].map((line) => (
-                    <button
-                      key={line}
-                      type="button"
-                      role="tab"
-                      aria-selected={activeLine === line}
-                      onClick={() => setActiveLine(line)}
-                      className={cn(
-                        "shrink-0 rounded-full px-3 py-1 text-xs font-ui transition-colors",
-                        activeLine === line
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                      data-testid={`record-scope-${line}`}
-                    >
-                      {line === "all" ? "All services" : LINE_LABELS[line] || line}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {/* The service-line scope moved into the Activity actions row
+                  (by request) - see the scope prop on ParentActivitySection.
+                  Same state, same page-wide effect. */}
               {record && isAdmin && <ParentRecordActions record={record} />}
             </div>
           </div>
@@ -288,7 +265,7 @@ export default function ParentDetailPage() {
                     only had ~690px and had to wrap onto four. It is still part
                     of the Activity tab on a phone - same section, hoisted, not
                     duplicated. */}
-                <div className={cn("lg:col-span-3", colClass("activity"))} data-testid="record-band-journey">
+                <div className={cn("lg:col-span-3", colClass("journey"))} data-testid="record-band-journey">
                   <RecordSection id="journey" title="Lead Status" frameless>
                     {/* No sessionId: the record is the full relationship view,
                         which is exactly what this card's own docs say to omit
@@ -350,7 +327,12 @@ export default function ParentDetailPage() {
                       sections of their own - writing a note adds an entry
                       here, which is where you would look for it anyway. */}
                   <RecordSection id="crm" title="Activity" frameless="always">
-                    <ParentActivitySection record={scopedRecord || record} />
+                    <ParentActivitySection
+                      record={scopedRecord || record}
+                      scope={availableLines.length >= 2
+                        ? { lines: availableLines, labels: LINE_LABELS, active: activeLine, onChange: setActiveLine }
+                        : undefined}
+                    />
                   </RecordSection>
                 </div>
 

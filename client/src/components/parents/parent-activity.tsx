@@ -29,8 +29,8 @@ import { AttachmentMessageCard } from "@/components/chat/attachment-message-card
 import { SpecialMessageCard } from "@/components/chat/special-message-card";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, CalendarCheck, CalendarClock, CalendarX, ChevronDown, ExternalLink,
-  Clock, FileText, Mail, MessageSquare,
+  AlertTriangle, CalendarCheck, CalendarClock, CalendarX, Check, ChevronDown, ExternalLink,
+  Clock, FileText, Filter, Mail, MessageSquare,
   Pencil, Pin, Receipt, Sparkles, StickyNote, Tag as TagIcon, Trash2, TrendingUp, User, Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -848,9 +848,10 @@ function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending
           // unchanged - the negative margin swallows the padding - but a
           // thumb no longer has to land on a 20px-tall word. Desktop keeps
           // the tight footprint.
-          // text-foreground, not helper grey: this is a control, not meta
-          // text, and on a phone the grey read as disabled.
-          className="shrink-0 inline-flex items-center gap-0.5 text-sm font-ui text-foreground transition-colors hover:opacity-70 p-3 -m-3 sm:p-0 sm:m-0"
+          // Same face as the card title (font-medium foreground): a control,
+          // not meta text - helper grey read as disabled, plain foreground
+          // read heavier than the product's own type.
+          className="shrink-0 inline-flex items-center gap-0.5 text-sm font-medium font-ui text-foreground transition-colors hover:opacity-70 p-3 -m-3 sm:p-0 sm:m-0"
           data-testid={`btn-note-actions-${note.id}`}
         >
           Actions <ChevronDown className="w-3 h-3" />
@@ -1046,7 +1047,10 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
       ) : null}
       {entry.extra}
       {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} viewerRole={viewerRole} onChanged={onChanged} />}
-      <p className="t-helper">{meta.label}</p>
+      {/* The footer label earns its place only when it ADDS something the
+          header didn't say (e.g. "AI Activity" on an email). On a note it
+          just repeated the title. */}
+      {!entry.note && <p className="t-helper">{meta.label}</p>}
       {/* LAST child on purpose: as the first child it would push margin-top
           from the card's space-y onto the real first row. Absolute, so order
           does not matter visually. */}
@@ -1073,7 +1077,22 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
 
 type Composer = "note" | "next_step" | null;
 
-export function ParentActivitySection({ record }: { record: ParentRecord }) {
+export function ParentActivitySection({ record, scope }: {
+  record: ParentRecord;
+  /**
+   * The page-wide service-line filter, relocated here from the page's top
+   * right corner (by request) but unchanged in behavior: picking a line
+   * still scopes the WHOLE record - ladders, interested profiles, documents
+   * - not just this feed. State lives in the page (URL param); this is only
+   * the control.
+   */
+  scope?: {
+    lines: string[];
+    labels: Record<string, string>;
+    active: string;
+    onChange: (line: string) => void;
+  };
+}) {
   const [composer, setComposer] = useState<Composer>(null);
   const qc = useQueryClient();
   // Confirming or declining from a card changes the record, so pull it again.
@@ -1110,6 +1129,25 @@ export function ParentActivitySection({ record }: { record: ParentRecord }) {
           <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Next step and tags
           <ChevronDown className={cn("w-3 h-3 ml-1 transition-transform", composer === "next_step" && "rotate-180")} />
         </Button>
+        {scope && scope.lines.length >= 2 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" data-testid="btn-activity-scope">
+                <Filter className="w-3.5 h-3.5 mr-1.5" />
+                {scope.active === "all" ? "All services" : scope.labels[scope.active] || scope.active}
+                <ChevronDown className="w-3 h-3 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {["all", ...scope.lines].map((line) => (
+                <DropdownMenuItem key={line} onClick={() => scope.onChange(line)} data-testid={`record-scope-${line}`}>
+                  <Check className={cn("w-3.5 h-3.5 mr-2", scope.active === line ? "opacity-100" : "opacity-0")} />
+                  {line === "all" ? "All services" : scope.labels[line] || line}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {composer === "note" && (
