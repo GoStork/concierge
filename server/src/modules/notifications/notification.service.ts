@@ -227,6 +227,7 @@ export class NotificationService implements OnModuleInit {
   }
 
   private reminderInterval: ReturnType<typeof setInterval> | null = null;
+  private smsReconcileInterval: ReturnType<typeof setInterval> | null = null;
   private cachedCompanyName: string | null = null;
   private companyNameCacheTime: number = 0;
   private cachedBrandData: Record<string, string> | null = null;
@@ -284,7 +285,72 @@ export class NotificationService implements OnModuleInit {
     return booking?.bookerTimezone || "America/Los_Angeles";
   }
 
+  /**
+   * A server restart (or crash) between handing an SMS to Twilio and writing
+   * "sent" back strands the Notification row as pending forever - the parent
+   * HAS the text, the timeline says "Queued - not sent yet". Both Macs
+   * auto-restart on every push, so this is a routine event, not a freak one.
+   * Reconcile against Twilio's own records: a stale pending row whose
+   * recipient has a Twilio message within +-20 minutes of the row's creation
+   * is marked sent (with Twilio's timestamp); if Twilio answers and has no
+   * such message, the send truly never happened - failed. Twilio unreachable
+   * leaves the row for the next pass. Runs on both servers; the
+   * status-guarded updateMany makes the passes idempotent.
+   */
+  private async reconcileStalePendingSms() {
+    const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+    const twilioToken = process.env.TWILIO_AUTH_TOKEN;
+    if (!twilioSid || !twilioToken) return;
+
+    const stale = await this.prisma.notification.findMany({
+      where: { type: "SMS", status: "pending", createdAt: { lt: new Date(Date.now() - 10 * 60_000) } },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+    if (stale.length === 0) return;
+
+    const auth = "Basic " + Buffer.from(`${twilioSid}:${twilioToken}`).toString("base64");
+    for (const row of stale) {
+      let to = String(row.recipient || "").replace(/[\s\-\(\)]/g, "");
+      if (to && !to.startsWith("+")) to = `+1${to}`;
+      if (!to) continue;
+      try {
+        const res = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json?To=${encodeURIComponent(to)}&PageSize=50`,
+          { headers: { Authorization: auth } },
+        );
+        if (!res.ok) continue; // Twilio unhappy - retry next pass
+        const body = await res.json();
+        const created = row.createdAt.getTime();
+        // NEAREST in time, not first-in-window: several texts often go out
+        // within the same minute (reminder + confirmation), and first-match
+        // backfilled a sibling message's body onto this row.
+        const match = (body.messages || [])
+          .filter((m: any) => !["failed", "canceled"].includes(m.status)
+            && Math.abs(new Date(m.date_created).getTime() - created) <= 20 * 60_000)
+          .sort((a: any, b: any) =>
+            Math.abs(new Date(a.date_created).getTime() - created) - Math.abs(new Date(b.date_created).getTime() - created))[0];
+        await this.prisma.notification.updateMany({
+          // status guard: the other server may have reconciled it already
+          where: { id: row.id, status: "pending" },
+          data: match
+            ? { status: "sent", sentAt: new Date(match.date_created), ...(row.bodyText ? {} : { bodyText: match.body || null }) }
+            : { status: "failed" },
+        });
+        this.logger.log(`[SMS RECONCILE] ${row.id} -> ${match ? "sent" : "failed"} (${to})`);
+      } catch (e: any) {
+        this.logger.warn(`[SMS RECONCILE] ${row.id} skipped: ${e.message}`);
+      }
+    }
+  }
+
   onModuleInit() {
+    // One early pass picks up rows stranded by the restart that just
+    // happened, then every 10 minutes for anything new.
+    setTimeout(() => this.reconcileStalePendingSms().catch(() => {}), 45_000);
+    this.smsReconcileInterval = setInterval(() => {
+      this.reconcileStalePendingSms().catch((e) => this.logger.warn(`SMS reconcile pass failed: ${e.message}`));
+    }, 10 * 60_000);
     this.reminderInterval = setInterval(() => {
       this.processReminders().catch((e) => {
         const msg = e.message || "";
@@ -1972,6 +2038,14 @@ export class NotificationService implements OnModuleInit {
     contentSid: string;
     contentVars: Record<string, string>;
   }) {
+    // The exact sentence the parent's phone shows: the real template body
+    // fetched from Twilio with our variables substituted. Falls back to the
+    // template-id + variables summary if the fetch fails - a faithful record
+    // either way, never an invented one. Rendered BEFORE the row is created:
+    // a server restart between send and status-update used to strand a row
+    // as pending with no body, and the timeline then claimed the message
+    // predated content recording.
+    const bodyText = await renderSmsTemplateForLog(params.contentSid, params.contentVars);
     const notification = await this.prisma.notification.create({
       data: {
         userId: params.userId,
@@ -1980,6 +2054,7 @@ export class NotificationService implements OnModuleInit {
         channel: params.channel,
         recipient: params.recipient,
         status: "pending",
+        bodyText,
       },
     });
 
@@ -1987,15 +2062,7 @@ export class NotificationService implements OnModuleInit {
       await this.sendSmsWithTemplate(params.recipient, params.contentSid, params.contentVars);
       await this.prisma.notification.update({
         where: { id: notification.id },
-        // The exact sentence the parent's phone shows: the real template body
-        // fetched from Twilio with our variables substituted. Falls back to
-        // the template-id + variables summary if the fetch fails - a faithful
-        // record either way, never an invented one.
-        data: {
-          status: "sent",
-          sentAt: new Date(),
-          bodyText: await renderSmsTemplateForLog(params.contentSid, params.contentVars),
-        },
+        data: { status: "sent", sentAt: new Date() },
       });
     } catch (error: any) {
       this.logger.warn(`SMS dispatch failed to ${params.recipient}: ${error.message}`);
