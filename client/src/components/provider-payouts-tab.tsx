@@ -23,9 +23,7 @@ import {
   Loader2, ExternalLink, CheckCircle2, AlertCircle, ArrowRight, Building2, User as UserIcon,
   ChevronDown, ChevronUp, Unlink, History,
 } from "lucide-react";
-import { derivePayoutStatus } from "@/lib/payout-status";
-import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
-import { formatDateTime } from "@/lib/format-date";
+import { PayoutTable } from "@/components/payout-table";
 import { Button } from "@/components/ui/button";
 import { SaveBar } from "@/components/ui/save-bar";
 import { Input } from "@/components/ui/input";
@@ -911,11 +909,6 @@ function ReadOnly({ label, value }: { label: string; value?: string | null }) {
 // We only show rows where the parent has paid - unpaid invoices don't have a
 // payout to track yet.
 
-function formatCents(cents: number | null | undefined, currency: string = "USD"): string {
-  if (cents == null) return "-";
-  return (cents / 100).toLocaleString("en-US", { style: "currency", currency: currency.toUpperCase() });
-}
-
 function PayoutHistoryTable() {
   const { data: invoices = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/provider/invoices"],
@@ -939,42 +932,6 @@ function PayoutHistoryTable() {
       return bT - aT;
     });
 
-  // Header sort layers on top of the newest-first default: no active key means
-  // sortData returns the list untouched, so the default order survives.
-  const { sortConfig, handleSort, sortData } = useTableSort();
-  const sortedPayouts = sortData(payouts, (inv: any, key) => {
-    switch (key) {
-      case "parent": return (inv.parentUser?.name || inv.parentUser?.email || "").toLowerCase();
-      case "service": return (inv.serviceType || "").toLowerCase();
-      case "payout": return inv.providerPayoutAmount ?? null;
-      case "status": return derivePayoutStatus(inv).label;
-      case "date": return new Date(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt).getTime();
-      default: return null;
-    }
-  });
-
-  if (isLoading) {
-    return (
-      <section className="space-y-3">
-        <h3 className="font-semibold flex items-center gap-2"><History className="w-4 h-4" /> Payout history</h3>
-        <div className="rounded-xl border p-6 bg-secondary/40 flex items-center justify-center">
-          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-        </div>
-      </section>
-    );
-  }
-
-  if (payouts.length === 0) {
-    return (
-      <section className="space-y-3">
-        <h3 className="font-semibold flex items-center gap-2"><History className="w-4 h-4" /> Payout history</h3>
-        <div className="t-helper rounded-xl border p-6 bg-secondary/40">
-          No payouts yet. When a parent pays an invoice for one of your services, you'll see the payout here.
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="space-y-3">
       <div>
@@ -983,48 +940,7 @@ function PayoutHistoryTable() {
           {payouts.length} payout{payouts.length === 1 ? "" : "s"} - what GoStork has sent (or is sending) to your bank.
         </p>
       </div>
-      <div className="rounded-[var(--container-radius)] border border-border overflow-hidden bg-card shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted">
-                <SortableTableHead label="Parent" sortKey="parent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
-                <SortableTableHead label="Service" sortKey="service" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
-                <SortableTableHead label="Your payout" sortKey="payout" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
-                <SortableTableHead label="GoStork paid you" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
-                <SortableTableHead label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
-              </tr>
-            </thead>
-            <tbody>
-              {sortedPayouts.map((inv: any) => {
-                const status = derivePayoutStatus(inv);
-                const dateStr = formatDateTime(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt);
-                const parent = inv.parentUser?.name || inv.parentUser?.email || "Parent";
-                const service = inv.serviceType?.replace(/_/g, " ").toLowerCase() || "-";
-                return (
-                  <tr
-                    key={inv.id}
-                    className="border-b last:border-0 transition-colors hover:bg-muted/50 cursor-pointer"
-                    onClick={() => window.open(`/api/provider/invoices/${inv.id}/document`, "_blank", "noopener,noreferrer")}
-                    title="Open invoice document"
-                  >
-                    <td className="p-4 align-middle whitespace-nowrap">{parent}</td>
-                    <td className="t-helper p-4 align-middle whitespace-nowrap">{service}</td>
-                    <td className="p-4 align-middle text-right font-medium whitespace-nowrap">{formatCents(inv.providerPayoutAmount, inv.currency)}</td>
-                    <td className="p-4 align-middle text-xs font-medium whitespace-nowrap" style={{ color: status.color }}>
-                      <span title={status.tooltip} className="cursor-help underline decoration-dotted underline-offset-2 inline-flex items-center gap-1">
-                        {status.isReceived && <CheckCircle2 className="w-3.5 h-3.5" />}
-                        {status.label}
-                      </span>
-                    </td>
-                    <td className="t-helper p-4 align-middle whitespace-nowrap">{dateStr}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <PayoutTable payouts={payouts} mode="open" testIdPrefix="settings-payout" />
     </section>
   );
 }
