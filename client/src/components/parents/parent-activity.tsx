@@ -259,7 +259,11 @@ function buildEntries(record: ParentRecord): Entry[] {
         canManage: record.viewer.role === "admin" || (!!record.viewer.userId && n.authorUserId === record.viewer.userId),
       },
       byline: n.authorName || "Staff",
-      extra: (
+      // The audience chip is an ADMIN affordance: admins write to several
+      // audiences, so each card must say which one it reached. A provider
+      // has exactly one - every note they can see is shared with their own
+      // org by construction - so the chip told them nothing.
+      extra: record.viewer.role === "admin" ? (
         <span
           className="text-xs font-ui px-2 py-0.5 rounded-full"
           style={internal
@@ -268,7 +272,7 @@ function buildEntries(record: ParentRecord): Entry[] {
         >
           {internal ? "GoStork internal" : `Shared with ${org?.providerName || "provider"}`}
         </span>
-      ),
+      ) : undefined,
     });
   }
 
