@@ -280,7 +280,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       )}
 
       {/* Identity form */}
-      <section className="space-y-4">
+      <section className="space-y-4 rounded-xl border bg-card p-5">
         <div>
           <h3 className="font-semibold">Business identity</h3>
         </div>
@@ -365,7 +365,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       </section>
 
       {/* Address */}
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-xl border bg-card p-5">
         <h3 className="font-semibold">Business address</h3>
         <Field label="Street address" required hint="W-9 Line 5.">
           <Input value={addrLine1} onChange={e => setAddrLine1(e.target.value)} />

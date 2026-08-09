@@ -2004,7 +2004,7 @@ function SingleCostsTab({
                     ? "border-primary/30 bg-primary/5 cursor-wait"
                     : isDragging
                       ? "border-primary bg-primary/5 cursor-pointer"
-                      : "border-border hover:border-primary/50 cursor-pointer"
+                      : "border-border hover:border-primary/50 cursor-pointer bg-card"
                 }`}
                 onDragOver={(e) => { e.preventDefault(); if (!uploadMutation.isPending && !isParsing) setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}

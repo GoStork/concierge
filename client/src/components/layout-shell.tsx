@@ -966,7 +966,11 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   }
   const whiteCanvas =
     location.pathname.startsWith("/chat") || location.pathname.startsWith("/admin/concierge-monitor")
-    || location.pathname === "/marketplace" || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname);
+    || location.pathname === "/marketplace" || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname)
+    // The parents LIST stays on white (a full-bleed table, no card grid);
+    // the /parents/:id record page keeps the sand - its card columns are
+    // exactly what the tint exists to separate.
+    || location.pathname === "/parents";
 
   return (
     <div

@@ -321,8 +321,11 @@ export function ReferralFeeConfigSection({
         </p>
       </div>
 
-      {/* Sample Total Quoted Cost (drives preview when basis = TOTAL_COST or fee = PERCENTAGE) */}
-      <div className="space-y-1.5 max-w-md">
+      {/* Sample Total Quoted Cost (drives preview when basis = TOTAL_COST or
+          fee = PERCENTAGE). The input and its live preview share one white
+          card - they are a single what-if tool, not two loose blocks. */}
+      <div className="rounded-lg border bg-card p-4 space-y-4 max-w-md">
+      <div className="space-y-1.5">
         <Label>Sample Total Quoted Cost ($) <span className="text-muted-foreground font-normal">(preview only)</span></Label>
         <NumberInput
           placeholder="e.g. 25,000"
@@ -336,7 +339,7 @@ export function ReferralFeeConfigSection({
 
       {/* Live split preview */}
       {showPreview && (
-        <div className="rounded-lg border p-4 space-y-2 bg-secondary/40 max-w-md">
+        <div className="rounded-lg border p-4 space-y-2 bg-secondary/40">
           <p className="t-micro-label">Payment Split Preview</p>
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between text-muted-foreground">
@@ -361,10 +364,11 @@ export function ReferralFeeConfigSection({
           </p>
         </div>
       )}
+      </div>
 
       {/* Surrogacy-specific settings */}
       {showSurrogacyExtras && (
-        <div className="space-y-4 border-t pt-4">
+        <div className="rounded-lg border bg-card p-4 space-y-4">
           <div>
             <h4 className="text-sm font-medium">Surrogacy Deposit Trigger</h4>
             <p className="t-helper mt-0.5">When should GoStork request the parent's deposit?</p>
