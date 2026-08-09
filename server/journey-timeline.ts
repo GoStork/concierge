@@ -451,7 +451,11 @@ export async function buildJourneyTimelines(
     // Match-call No Show branch: mirrors the consultation branch; the
     // decline branch outranks it (a decline is the more definitive signal).
     const showMatchNoShowRung = !showNotMatchedRung && !matchedAt && noShowMatchCalls.length > 0 && completedMatchCall.length === 0 && liveMatchCall.length === 0;
-    const nonBankInvoices = scopedInvoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT");
+    // CANCELLED excluded: an invoice the agency voided never happened as far
+    // as the ladder is concerned - it was ticking "Invoice Sent" on journeys
+    // whose only invoice had been withdrawn. EXPIRED still counts (it really
+    // was sent; the window merely lapsed).
+    const nonBankInvoices = scopedInvoices.filter((i) => i.triggerSource !== "BANK_CHECKOUT" && i.status !== "CANCELLED");
     const invoiceSentAt = nonBankInvoices.length > 0 ? nonBankInvoices.reduce<Date | null>((min, i) => (!min || i.createdAt < min ? i.createdAt : min), null) : null;
     const paidInvoice = scopedInvoices.filter((i) => i.status === "PAID" && i.paidAt);
     const paidAt = paidInvoice.length > 0 ? paidInvoice.reduce<Date | null>((min, i) => (!min || (i.paidAt && i.paidAt < min) ? i.paidAt : min), null) : null;

@@ -1159,7 +1159,11 @@ export class UsersController {
       if (submittedFormAccounts.has(key as string)) bump(uid as string, "ip_form_submitted");
     }
     for (const uid of Array.from(matchCallUsers)) { if (uid) bump(uid as string, "match_call_scheduled"); }
-    for (const inv of invoices) { bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent", lineOfServiceType(inv.serviceType), (inv as any).providerId); }
+    for (const inv of invoices) {
+      // A voided invoice is not a rung - same rule as a superseded agreement.
+      if (inv.status === "CANCELLED") continue;
+      bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent", lineOfServiceType(inv.serviceType), (inv as any).providerId);
+    }
     for (const a of agreements) {
       // A superseded draft is not an open rung - the agreement that replaced
       // it carries the journey.

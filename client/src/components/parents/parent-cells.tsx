@@ -30,6 +30,16 @@ export const SERVICE_LABELS: Record<string, string> = {
 };
 
 /**
+ * A voided invoice is not state anyone acts on: it never becomes money, it
+ * should not sit in a money column, and it must not tick "Invoice Sent" on
+ * the ladder. EXPIRED is deliberately NOT here - that invoice was really
+ * sent and the window simply lapsed, so it stays visible as something to
+ * re-send. The server applies the same rule (journey-timeline, the two list
+ * endpoints, and the record's invoiced total).
+ */
+export const isLiveInvoice = (inv: { status?: string | null }) => inv?.status !== "CANCELLED";
+
+/**
  * Any raw service text -> the SERVICE_LABELS enum key.
  *
  * Invoices and agreements store DISPLAY text ("Egg Donation"), sessions store

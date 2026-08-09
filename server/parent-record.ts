@@ -1199,7 +1199,9 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
             costSheets: qs,
             totals: {
               quotedCents: qs.filter((q) => !q.supersededAt).reduce((sum, q) => sum + (q.totalCostCents || 0), 0),
-              invoicedCents: inv.reduce((sum, i) => sum + (i.serviceAmount || 0), 0),
+              // Voided invoices are excluded, exactly like superseded quotes
+              // above - otherwise a canceled $15,000 still reads as invoiced.
+              invoicedCents: inv.filter((i) => i.status !== "CANCELLED").reduce((sum, i) => sum + (i.serviceAmount || 0), 0),
               paidCents: inv.filter((i) => i.status === "PAID").reduce((sum, i) => sum + (i.serviceAmount || 0), 0),
             },
           };

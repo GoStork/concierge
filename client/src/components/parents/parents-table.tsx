@@ -40,6 +40,7 @@ import {
   ServiceChips,
   TagsCell,
   dedupeHouseholdPhones,
+  isLiveInvoice,
 } from "./parent-cells";
 import type { ParentTableRow } from "./parent-record-types";
 
@@ -233,7 +234,7 @@ export function ParentsTable({
               return rows;
             };
             const liveSheets = liveOnly(row.costSheets || []);
-            const sortedInvoices = sortInvoicesByServiceOrder(row.invoices || [], row.serviceStatuses);
+            const sortedInvoices = sortInvoicesByServiceOrder((row.invoices || []).filter(isLiveInvoice), row.serviceStatuses);
             const sortedAgreements = sortInvoicesByServiceOrder(liveOnly(row.agreements || []), row.serviceStatuses);
             return (
               <TableRow

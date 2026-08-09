@@ -18,6 +18,7 @@ import {
   parentSortValue,
   parseMulti,
   serviceEnumKey,
+  isLiveInvoice,
 } from "@/components/parents";
 import { ParentsTable } from "@/components/parents/parents-table";
 import { ParentsFilterBar } from "@/components/parents/parents-filter-bar";
@@ -526,7 +527,10 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
         const cur = byLine.get(key);
         if (!cur || stageRank(st) > stageRank(cur)) byLine.set(key, st);
       };
-      for (const inv of g.invoices) artifactBump(inv.serviceType, inv.status === "PAID" ? "invoice_paid" : "invoice_sent");
+      for (const inv of g.invoices) {
+        if (!isLiveInvoice(inv)) continue;
+        artifactBump(inv.serviceType, inv.status === "PAID" ? "invoice_paid" : "invoice_sent");
+      }
       for (const agr of threads.flatMap((t: any) => t.agreements || [])) {
         artifactBump(agr.serviceType, agr.status === "SIGNED" ? "agreement_signed" : "agreement_sent");
       }
