@@ -55,7 +55,10 @@ export type NotificationChannel =
 // instead of one run-on sentence. The [V2] content resources still exist on
 // Twilio untouched - swapping a sid back is the whole rollback.
 const TWILIO_TEMPLATES = {
-  BOOKING_SUBMITTED_PARENT: "HX55b648dd015e02fa7b6b2b3e506f90ca",
+  // V3.1: {{6}} carries the whole "We'll notify you once <host> from <org>
+  // confirms." sentence, built in code - the host name is not always known,
+  // and an empty template variable would leave a dangling "once confirms."
+  BOOKING_SUBMITTED_PARENT: "HXcad9487dccd95ef2ee65f6765815c5dd",
   BOOKING_REQUEST_PROVIDER: "HX89473ec423381115929d767cb700452f",
   BOOKING_CONFIRMED_PARENT: "HX2ad3886a826af603d4255f6abe59d57e",
   BOOKING_CONFIRMED_PROVIDER: "HX21d5758b976a2b90fc9a34db77381983",
@@ -310,6 +313,11 @@ export class NotificationService implements OnModuleInit {
     const dateStr = formatDate(scheduledAt, booking.bookerTimezone);
     const timeStr = formatTime(scheduledAt, booking.bookerTimezone);
     const detailsLink = `${base}/booking/${booking.publicToken}`;
+    // Name the human who actually has to approve - "the provider confirms"
+    // told the parent nothing the "With:" row didn't already contradict.
+    const confirmLine = staffMember
+      ? `We'll notify you once ${staffMember} from ${providerName} confirms.`
+      : `We'll notify you once ${providerName} confirms.`;
 
     const parentEmailBuilder = (firstName: string) => buildBrandedEmail(brandData, {
       title: "Meeting Request Submitted",
@@ -322,7 +330,7 @@ export class NotificationService implements OnModuleInit {
         { label: "Location", value: location },
         ...(staffMember ? [{ label: "With", value: esc(staffMember) }] : []),
       ],
-      alertBox: { text: "We'll notify you once the provider confirms your meeting.", type: "info" },
+      alertBox: { text: esc(confirmLine), type: "info" },
       buttons: [
         { label: "View Details", url: detailsLink },
         { label: "Reschedule", url: detailsLink, variant: "secondary" },
@@ -342,7 +350,7 @@ export class NotificationService implements OnModuleInit {
       const parentPhone = booking.parentUser?.mobileNumber || submittedPrimaryDetails.phone;
       if (parentPhone) {
         await this.dispatchSmsTemplate({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, channel: "booking_submitted", recipient: parentPhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_SUBMITTED_PARENT, contentVars: { "1": getFirstName(attendeeName), "2": providerName, "3": dateStr, "4": timeStr, "5": detailsLink },
+          contentSid: TWILIO_TEMPLATES.BOOKING_SUBMITTED_PARENT, contentVars: { "1": getFirstName(attendeeName), "2": providerName, "3": dateStr, "4": timeStr, "5": detailsLink, "6": confirmLine },
         });
       }
     }
@@ -354,7 +362,7 @@ export class NotificationService implements OnModuleInit {
       });
       if (memberPhone) {
         await this.dispatchSmsTemplate({ userId: memberId, bookingId: booking.id, channel: "booking_submitted", recipient: memberPhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_SUBMITTED_PARENT, contentVars: { "1": getFirstName(memberName), "2": providerName, "3": dateStr, "4": timeStr, "5": detailsLink },
+          contentSid: TWILIO_TEMPLATES.BOOKING_SUBMITTED_PARENT, contentVars: { "1": getFirstName(memberName), "2": providerName, "3": dateStr, "4": timeStr, "5": detailsLink, "6": confirmLine },
         });
       }
     });
@@ -381,7 +389,7 @@ export class NotificationService implements OnModuleInit {
       });
       if (aePhone) {
         await this.dispatchSmsTemplate({ userId: booking.parentUserId || booking.providerUserId, bookingId: booking.id, channel: "booking_submitted", recipient: aePhone,
-          contentSid: TWILIO_TEMPLATES.BOOKING_SUBMITTED_PARENT, contentVars: { "1": getFirstName(aeName) || ae.split("@")[0], "2": providerName, "3": dateStr, "4": timeStr, "5": detailsLink },
+          contentSid: TWILIO_TEMPLATES.BOOKING_SUBMITTED_PARENT, contentVars: { "1": getFirstName(aeName) || ae.split("@")[0], "2": providerName, "3": dateStr, "4": timeStr, "5": detailsLink, "6": confirmLine },
         });
       }
     });
