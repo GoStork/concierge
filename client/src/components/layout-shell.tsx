@@ -966,11 +966,12 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   }
   const whiteCanvas =
     location.pathname.startsWith("/chat") || location.pathname.startsWith("/admin/concierge-monitor")
-    || location.pathname === "/marketplace" || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname)
-    // The parents LIST stays on white (a full-bleed table, no card grid);
-    // the /parents/:id record page keeps the sand - its card columns are
-    // exactly what the tint exists to separate.
-    || location.pathname === "/parents";
+    || location.pathname === "/marketplace" || /^\/(surrogate|eggdonor|spermdonor)\//.test(location.pathname);
+    // /parents used to be here, on the theory that a full-bleed table needs no
+    // tint to separate it. It does: the table sits in a white card, and on a
+    // white canvas that card had no edge, so the page read as a different app
+    // from /admin/providers - the same table, the same filters, one sand and
+    // one white. Data pages all keep the sand now.
 
   return (
     <div

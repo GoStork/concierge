@@ -130,7 +130,10 @@ export function ParentsFilterBar({
             <button
               key={pill.key}
               type="button"
-              className="text-xs font-ui px-2.5 py-1 rounded-full border transition-colors"
+              // bg-card when inactive, like every other control in this bar -
+              // transparent would let the sand page through and make these
+              // read as labels rather than buttons.
+              className="text-xs font-ui px-2.5 py-1 rounded-full border bg-card transition-colors"
               style={active
                 ? { background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))", borderColor: "hsl(var(--primary) / 0.4)" }
                 : undefined}

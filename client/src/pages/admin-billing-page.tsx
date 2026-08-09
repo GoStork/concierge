@@ -34,7 +34,7 @@ import { ParentInfoBlock, InvoiceInfoBlock } from "@/components/invoice-details-
 
 function StatCard({ label, value, icon: Icon, sub }: { label: string; value: string; icon: any; sub?: string }) {
   return (
-    <div className="rounded-xl border p-4 space-y-1">
+    <div className="rounded-[var(--radius)] border border-border/50 bg-card p-4 space-y-1">
       <div className="t-helper flex items-center gap-2">
         <Icon className="w-4 h-4" />
         <span>{label}</span>

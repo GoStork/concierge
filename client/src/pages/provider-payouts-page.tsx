@@ -11,12 +11,16 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Search, Landmark, CheckCircle2, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { Fragment } from "react";
+import { Loader2, Landmark, CheckCircle2, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { formatDateTime } from "@/lib/format-date";
 import { derivePayoutStatus } from "@/lib/payout-status";
-import { DateRangeFilter, inDateRange } from "@/components/date-range-filter";
+import { inDateRange } from "@/components/date-range-filter";
 import { ClearFiltersButton } from "@/components/clear-filters-button";
+import { FilterRow, FilterSearch, FilterDropdown, FilterDateRange } from "@/components/ui/filter-controls";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
+import { ServiceTag } from "@/components/ui/service-tag";
 import { ParentInfoBlock, InvoiceInfoBlock } from "@/components/invoice-details-blocks";
 import { Button } from "@/components/ui/button";
 
@@ -83,6 +87,21 @@ export default function ProviderPayoutsPage() {
       return bT - aT;
     });
 
+  // Header sort layers on top of the newest-first default: with no active key
+  // sortData returns the list untouched, so that default survives. Same
+  // comparator as the Settings payout table, so the two never disagree.
+  const { sortConfig, handleSort, sortData } = useTableSort();
+  const sortedRows = sortData(payoutRows, (inv: any, key) => {
+    switch (key) {
+      case "parent": return (inv.parentUser?.name || inv.parentUser?.email || "").toLowerCase();
+      case "service": return (inv.serviceType || "").toLowerCase();
+      case "payout": return inv.providerPayoutAmount ?? null;
+      case "status": return derivePayoutStatus(inv).label;
+      case "date": return new Date(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt).getTime();
+      default: return null;
+    }
+  });
+
   const totalReceived = invoices
     .filter((i: any) => i.status === "PAID")
     .reduce((sum: number, i: any) => sum + (i.providerPayoutAmount || 0), 0);
@@ -96,55 +115,57 @@ export default function ProviderPayoutsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border p-4 space-y-1">
-          <p className="t-micro-label">Total Received</p>
-          <p className="text-xl font-heading font-bold">{formatCents(totalReceived)}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-[var(--container-radius)] border border-border bg-card shadow-sm p-4 space-y-1">
+          <p className="t-micro-label">Total received</p>
+          <p className="text-2xl font-heading font-bold">{formatCents(totalReceived)}</p>
         </div>
-        <div className="rounded-xl border p-4 space-y-1">
-          <p className="t-micro-label">Pending Payouts</p>
-          <p className="text-xl font-heading font-bold">{pendingPayouts}</p>
+        <div className="rounded-[var(--container-radius)] border border-border bg-card shadow-sm p-4 space-y-1">
+          <p className="t-micro-label">Pending payouts</p>
+          <p className="text-2xl font-heading font-bold">{pendingPayouts}</p>
         </div>
       </div>
 
-      {/* Search + filters */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={q}
-            onChange={e => setParam({ q: e.target.value })}
+      {/* The shared filter controls every other table uses - the raw input and
+          selects here predated them and were the only filters in the product
+          that did not match. */}
+      <div className="flex items-start justify-between gap-3">
+        <FilterRow>
+          <FilterSearch
             placeholder="Search by parent, service, or description..."
-            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-background text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
-            data-testid="provider-payouts-search"
+            value={q}
+            onChange={(v) => setParam({ q: v })}
+            testId="provider-payouts-search"
           />
-        </div>
-        <DateRangeFilter from={dateFrom} to={dateTo} onFrom={v => setParam({ from: v })} onTo={v => setParam({ to: v })} testIdPrefix="provider-payouts-date" />
-        <select
-          value={status}
-          onChange={e => setParam({ status: e.target.value })}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
-          data-testid="provider-payouts-status-filter"
-        >
-          {PAYOUT_STATUS_FILTERS.map(f => (
-            <option key={f.key} value={f.key}>{f.label}</option>
-          ))}
-        </select>
-        {serviceTypes.length > 1 && (
-          <select
-            value={service}
-            onChange={e => setParam({ service: e.target.value })}
-            className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
-            data-testid="provider-payouts-service-filter"
-          >
-            <option value="all">All services</option>
-            {serviceTypes.map(st => (
-              <option key={st} value={st}>{st}</option>
-            ))}
-          </select>
-        )}
+          <FilterDateRange
+            from={dateFrom}
+            to={dateTo}
+            onFrom={(v) => setParam({ from: v })}
+            onTo={(v) => setParam({ to: v })}
+            testIdPrefix="provider-payouts-date"
+          />
+          <FilterDropdown
+            single
+            label="All statuses"
+            options={PAYOUT_STATUS_FILTERS.filter(f => f.key !== "all").map(f => [f.key, f.label] as [string, string])}
+            selected={status === "all" ? [] : [status]}
+            onChange={(next) => setParam({ status: next[0] || null })}
+            testId="provider-payouts-status-filter"
+          />
+          {serviceTypes.length > 1 && (
+            <FilterDropdown
+              single
+              label="All services"
+              options={serviceTypes.map(st => [st, st.replace(/_/g, " ")] as [string, string])}
+              selected={service === "all" ? [] : [service]}
+              onChange={(next) => setParam({ service: next[0] || null })}
+              testId="provider-payouts-service-filter"
+              renderOption={(_k, text) => <ServiceTag service={text} />}
+            />
+          )}
+        </FilterRow>
         <ClearFiltersButton
+          pill
           show={!!(q || dateFrom || dateTo || status !== "all" || service !== "all")}
           onClick={() => setParam({ q: null, from: null, to: null, status: null, service: null })}
           testId="provider-payouts-clear-filters"

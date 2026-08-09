@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Loader2, Users, Route, CheckCircle2, PauseCircle, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { FilterRow, FilterDropdown, FilterDateRange } from "@/components/ui/filter-controls";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
@@ -90,7 +91,7 @@ function fmtShort(iso: string | null): string {
 
 function KpiTile({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string | number; sub?: string }) {
   return (
-    <div className="rounded-[var(--radius)] border bg-secondary/40 p-3 flex items-start gap-2.5 min-w-0">
+    <div className="rounded-[var(--radius)] border border-border/50 bg-card p-3 flex items-start gap-2.5 min-w-0">
       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">{icon}</div>
       <div className="min-w-0">
         <p className="t-micro-label whitespace-nowrap truncate" title={label}>{label}</p>
@@ -339,14 +340,17 @@ export function JourneyFunnelDashboard({ scope }: { scope: "admin" | "provider" 
         <p className="t-helper">Per stage: count · conversion from previous stage · median days from previous stage.</p>
       </Card>
 
-      {/* Provider comparison (admin only) */}
+      {/* Provider comparison (admin only). Same shape as the Team and Providers
+          tables: heading above, flush shadcn Table inside a Card, sortable
+          headers. It used to be a bare <table> with its own 12px type and
+          py-1.5 rows, which read as a spreadsheet pasted into the page. */}
       {scope === "admin" && (
-        <Card className="p-5" data-testid="funnel-providers">
-          <h3 className="font-heading text-base mb-3">Providers</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs font-ui">
-              <thead>
-                <tr className="text-left text-muted-foreground">
+        <section className="space-y-3" data-testid="funnel-providers">
+          <h3 className="font-heading text-base">Providers</h3>
+          <Card className="overflow-hidden">
+            <Table wrapperClassName="overflow-x-auto">
+              <TableHeader>
+                <TableRow>
                   {PROVIDER_COLUMNS.map((c) => (
                     <SortableTableHead
                       key={c.key}
@@ -354,33 +358,34 @@ export function JourneyFunnelDashboard({ scope }: { scope: "admin" | "provider" 
                       sortKey={c.key}
                       currentSort={sortConfig}
                       onSort={handleSort}
-                      className="h-auto py-1.5 pr-3 px-0 font-medium"
+                      align={c.key === "provider" ? "left" : "right"}
+                      className="whitespace-nowrap"
                     />
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {sortedProviders.map((p: any) => (
-                  <tr key={p.providerId} className="border-t">
-                    <td className="py-1.5 pr-3">
+                  <TableRow key={p.providerId} className="bg-card">
+                    <TableCell className="whitespace-nowrap">
                       <span className="font-medium">{p.providerName}</span>
-                      <span className="text-muted-foreground"> · {p.journeyTypes.join(", ")}</span>
-                    </td>
-                    <td className="py-1.5 pr-3">{p.journeys}</td>
-                    <td className="py-1.5 pr-3">{p.consultScheduled}</td>
-                    <td className="py-1.5 pr-3">{p.consultCompleted}</td>
-                    <td className="py-1.5 pr-3">{p.noShowsParent}/{p.noShowsProvider}</td>
-                    <td className="py-1.5 pr-3">{p.matched}</td>
-                    <td className="py-1.5 pr-3">{p.invoicePaid}</td>
-                    <td className="py-1.5 pr-3">{p.agreementSigned}</td>
-                    <td className="py-1.5 pr-3">{p.handedOff}</td>
-                    <td className="py-1.5">{p.medianDaysToHandoff ?? "-"}</td>
-                  </tr>
+                      <span className="t-helper"> · {p.journeyTypes.join(", ")}</span>
+                    </TableCell>
+                    <TableCell className="text-right">{p.journeys}</TableCell>
+                    <TableCell className="text-right">{p.consultScheduled}</TableCell>
+                    <TableCell className="text-right">{p.consultCompleted}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">{p.noShowsParent}/{p.noShowsProvider}</TableCell>
+                    <TableCell className="text-right">{p.matched}</TableCell>
+                    <TableCell className="text-right">{p.invoicePaid}</TableCell>
+                    <TableCell className="text-right">{p.agreementSigned}</TableCell>
+                    <TableCell className="text-right">{p.handedOff}</TableCell>
+                    <TableCell className="text-right">{p.medianDaysToHandoff ?? "-"}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+              </TableBody>
+            </Table>
+          </Card>
+        </section>
       )}
     </div>
   );
