@@ -187,6 +187,7 @@ export type ActivityDetail =
   | { type: "review"; reviewId: string; rating: number | null; recommendation: string; bodyText: string | null; providerId: string; memberId: string | null; hasResponse: boolean; responseText: string | null }
   | { type: "whisper"; whisperId: string; question: string; answer: string | null; status: string }
   | { type: "ip_form"; responseId: string; submittedAt: string | null }
+  | { type: "winback"; kind: "no_show" | "canceled"; message: string }
   | {
       type: "cost_sheet_card";
       messageId: string; sessionId: string;

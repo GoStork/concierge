@@ -74,6 +74,18 @@ async function findEvaSessionForParent(prisma: PrismaService, parentUserId: stri
  * WINBACK_SENT. The uiCardData.winback payload lets ai-router handle the
  * quick replies deterministically (incl. serving the reschedule calendar).
  */
+/**
+ * The exact text Eva sends. Exported so the CRM timeline can show WHAT was
+ * sent on a "Win-back message sent" card instead of re-rendering the
+ * cancelled meeting widget next to it - one source, no copy drift.
+ */
+export function winbackMessageCopy(kind: "no_show" | "canceled", meetingSubtype: string | null, providerName: string): string {
+  const callLabel = meetingSubtype === "MATCH_CALL" ? "Match Call" : "call";
+  return kind === "no_show"
+    ? `Looks like your ${callLabel} with ${providerName} didn't end up happening - no worries at all, these things come up. Want me to help you get it back on the books?`
+    : `I saw your ${callLabel} with ${providerName} was canceled and a new time hasn't been set yet. Should we find a new time that works better?`;
+}
+
 async function sendWinback(prisma: PrismaService, booking: SweepBooking, kind: "no_show" | "canceled"): Promise<void> {
   if (!booking.parentUserId || booking.winbackSentAt) return;
   if (isGoStorkHouseBooking(booking)) return;
@@ -85,12 +97,7 @@ async function sendWinback(prisma: PrismaService, booking: SweepBooking, kind: "
   }
 
   const providerName = providerDisplayName(booking);
-  const isMatchCall = booking.meetingSubtype === "MATCH_CALL";
-  const callLabel = isMatchCall ? "Match Call" : "call";
-  const content =
-    kind === "no_show"
-      ? `Looks like your ${callLabel} with ${providerName} didn't end up happening - no worries at all, these things come up. Want me to help you get it back on the books?`
-      : `I saw your ${callLabel} with ${providerName} was canceled and a new time hasn't been set yet. Should we find a new time that works better?`;
+  const content = winbackMessageCopy(kind, booking.meetingSubtype || null, providerName);
 
   await prisma.aiChatMessage.create({
     data: {

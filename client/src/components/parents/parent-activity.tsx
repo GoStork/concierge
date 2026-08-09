@@ -557,6 +557,18 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
     );
   }
 
+  if (detail.type === "winback") {
+    return (
+      <div className={shell} data-testid="detail-winback">
+        {/* Eva's words, verbatim - the same copy builder the sweep uses. */}
+        <p className="text-sm break-words italic">"{detail.message}"</p>
+        <p className="t-helper">
+          Sent by the concierge in the family's chat, with quick replies to reschedule.
+        </p>
+      </div>
+    );
+  }
+
   if (detail.type === "ip_form") {
     return (
       <div className={shell} data-testid={`detail-ip-form-${detail.responseId}`}>
@@ -846,6 +858,11 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
     // every messaging app has trained people to expect. --brand-success
     // rather than iMessage's literal hex, per the no-hardcoded-colour rule.
     isSms ? "hsl(var(--brand-success))"
+    // Sticky-note gold - the one colour the timeline was not spending, and
+    // the colour every notes product has trained people to expect. Notes
+    // and emails both wore the accent purple, so only the glyph told a
+    // hand-written note apart from an automated send.
+    : entry.kind === "note" ? "var(--swipe-undo)"
     // A document is not an email. Both were drawing the accent purple, so the
     // only thing separating a prep guide from a booking reminder was the
     // glyph. Blue is the one hue the timeline was not already spending, and

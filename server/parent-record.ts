@@ -33,6 +33,7 @@ import {
 } from "./parent-privacy";
 import { isGostorkStaff } from "./parent-crm";
 import { sanitizeNoteHtml } from "./note-html";
+import { winbackMessageCopy } from "./src/modules/calendar/call-outcome.sweep";
 
 export class ParentRecordError extends Error {
   constructor(public status: number, message: string) {
@@ -316,6 +317,27 @@ async function buildActivity(ctx: {
       aiAvatarUrl: persona?.avatarUrl ?? null,
       detail: null as any,
     };
+
+    // A win-back event CARRIES the bookingId of the missed meeting, but the
+    // card is about the MESSAGE Eva sent, not the meeting - joining the
+    // booking here rendered the cancelled-meeting widget a third time under
+    // a title that promised the win-back text. The copy is deterministic and
+    // shared with the sweep that sends it, so show exactly what went out.
+    if (ev.eventType === "WINBACK_SENT") {
+      const wb = ev.bookingId ? bookingById.get(ev.bookingId) : null;
+      const org2 = ev.providerId ? orgById.get(ev.providerId) : null;
+      entry.detail = {
+        type: "winback",
+        kind: (meta.kind === "canceled" ? "canceled" : "no_show") as "no_show" | "canceled",
+        message: winbackMessageCopy(
+          meta.kind === "canceled" ? "canceled" : "no_show",
+          wb?.meetingSubtype ?? null,
+          org2?.name ?? "the provider",
+        ),
+      };
+      out.push(entry);
+      continue;
+    }
 
     // Meeting: the whole booking, so the card can carry the same actions the
     // booking widget offers everywhere else.
