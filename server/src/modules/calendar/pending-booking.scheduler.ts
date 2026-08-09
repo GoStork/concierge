@@ -88,10 +88,13 @@ export async function runPendingBookingCheck(prisma: PrismaService, notification
 
       // 2. URGENT - slot within 24h and the one-shot urgent nudge hasn't gone out.
       if (slotMs - nowMs <= DAY_MS && !booking.pendingUrgentSentAt) {
-        await prisma.booking.update({
-          where: { id: booking.id },
+        // Atomic claim - both servers run this cron on the same tick and read
+        // the same unsent booking. The loser gets count 0 and sends nothing.
+        const claim = await prisma.booking.updateMany({
+          where: { id: booking.id, pendingUrgentSentAt: null },
           data: { pendingUrgentSentAt: now, pendingReminderAt: now },
         });
+        if (claim.count === 0) continue;
         await notifications.sendPendingBookingReminder(booking, { urgent: true }).catch(e =>
           console.error(`[pending-booking] urgent nudge failed for ${booking.id}: ${e.message}`));
         await prisma.inAppNotification.create({
@@ -108,10 +111,13 @@ export async function runPendingBookingCheck(prisma: PrismaService, notification
       // 3. DAILY - unanswered for >= 24h since request or last daily nudge.
       const lastRef = (booking.pendingReminderAt ?? booking.createdAt).getTime();
       if (nowMs - lastRef >= DAY_MS) {
-        await prisma.booking.update({
-          where: { id: booking.id },
+        // Compare-and-swap on the value we read: only the server whose UPDATE
+        // finds pendingReminderAt still unchanged owns this nudge.
+        const claim = await prisma.booking.updateMany({
+          where: { id: booking.id, pendingReminderAt: booking.pendingReminderAt ?? null },
           data: { pendingReminderAt: now },
         });
+        if (claim.count === 0) continue;
         await notifications.sendPendingBookingReminder(booking, { urgent: false }).catch(e =>
           console.error(`[pending-booking] daily nudge failed for ${booking.id}: ${e.message}`));
         await prisma.inAppNotification.create({

@@ -99,6 +99,16 @@ async function sendWinback(prisma: PrismaService, booking: SweepBooking, kind: "
   const providerName = providerDisplayName(booking);
   const content = winbackMessageCopy(kind, booking.meetingSubtype || null, providerName);
 
+  // Claim before writing anything the parent can see - the other server is on
+  // the same tick. Claiming here (not after the message) is deliberate: every
+  // early return above leaves winbackSentAt null so the booking is retried,
+  // and past this line exactly one server proceeds.
+  const claim = await prisma.booking.updateMany({
+    where: { id: booking.id, winbackSentAt: null },
+    data: { winbackSentAt: new Date() },
+  });
+  if (claim.count === 0) return;
+
   await prisma.aiChatMessage.create({
     data: {
       sessionId,
@@ -121,7 +131,6 @@ async function sendWinback(prisma: PrismaService, booking: SweepBooking, kind: "
     },
   });
   await prisma.aiChatSession.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
-  await prisma.booking.update({ where: { id: booking.id }, data: { winbackSentAt: new Date() } });
   await emitJourneyEvent({
     eventType: "WINBACK_SENT",
     parentUserId: booking.parentUserId,
@@ -389,7 +398,15 @@ export async function runWinbackSilenceSweep(prisma: PrismaService, notification
         where: { bookingId: booking.id, eventType: { in: ["WINBACK_RESPONSE", "REENGAGED", "CHURN_REASON"] } },
         select: { id: true },
       });
-      await prisma.booking.update({ where: { id: booking.id }, data: { winbackNudgedAt: new Date() } });
+      // Claim the nudge atomically. The other server is running this same sweep
+      // on the same tick and read the same unnudged booking; whichever UPDATE
+      // lands first owns the send, and the other sees count 0 and walks away.
+      // A plain update() here sent the parent two identical emails 8ms apart.
+      const claim = await prisma.booking.updateMany({
+        where: { id: booking.id, winbackNudgedAt: null },
+        data: { winbackNudgedAt: new Date() },
+      });
+      if (claim.count === 0) continue;
       if (responded) continue;
 
       const providerName = providerDisplayName(booking);
