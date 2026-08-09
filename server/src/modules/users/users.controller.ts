@@ -1035,7 +1035,7 @@ export class UsersController {
       ids.length
         ? this.prisma.agreement.findMany({
             where: { parentUserId: { in: ids } },
-            select: { id: true, parentUserId: true, status: true, documentType: true, createdAt: true },
+            select: { id: true, parentUserId: true, status: true, documentType: true, serviceType: true, createdAt: true },
             orderBy: { createdAt: "desc" },
           })
         : [],
@@ -1108,24 +1108,63 @@ export class UsersController {
     // lagged the timeline that renders beside it.
     const rank = (st: string | null) => (st ? (JOURNEY_STAGE_ORDER as readonly string[]).indexOf(st) : -1);
     const statusByUser = new Map<string, string>();
-    const bump = (userId: string, st: string | null) => {
+    // Per-SERVICE-LINE stages, so the admin table can show one status per
+    // line exactly like the provider table (a brand-new surrogacy thread must
+    // not read "Handed Off" off the egg-donation journey). "" = untyped: real
+    // rungs (a match call booking has no service line of its own) that fall
+    // back exactly the way the provider grouping does - shown only when the
+    // parent has no typed line at all.
+    const lineStatusByUser = new Map<string, Map<string, string>>();
+    const LINE_BY_SUBJECT: [RegExp, string][] = [
+      [/egg/i, "EGG_DONATION"],
+      [/surrog/i, "SURROGACY"],
+      [/sperm/i, "SPERM_DONATION"],
+      [/ivf|clinic|doctor/i, "IVF_CLINIC"],
+    ];
+    const lineOfSubject = (t: string | null | undefined): string =>
+      LINE_BY_SUBJECT.find(([re]) => re.test(t || ""))?.[1] || "";
+    const SERVICE_LINE_KEYS = new Set(["SURROGACY", "EGG_DONATION", "SPERM_DONATION", "IVF_CLINIC"]);
+    const lineOfServiceType = (t: string | null | undefined): string =>
+      t && SERVICE_LINE_KEYS.has(t) ? t : "";
+    const bump = (userId: string, st: string | null, line = "") => {
       if (!st) return;
       if (rank(st) > rank(statusByUser.get(userId) || null)) statusByUser.set(userId, st);
+      const m = lineStatusByUser.get(userId) || new Map<string, string>();
+      if (rank(st) > rank(m.get(line) || null)) m.set(line, st);
+      lineStatusByUser.set(userId, m);
     };
     for (const cs of sessions) {
-      bump(cs.userId, LEGACY_MATCH_STATUS_TO_STAGE[cs.status] || null);
-      if (cs.handoffCompletedAt) bump(cs.userId, "handed_off");
-      if (cs.subjectProfileId && overviewMatchedById.get(cs.subjectProfileId) === cs.userId) bump(cs.userId, "matched");
+      const line = lineOfSubject(cs.subjectType);
+      bump(cs.userId, LEGACY_MATCH_STATUS_TO_STAGE[cs.status] || null, line);
+      if (cs.handoffCompletedAt) bump(cs.userId, "handed_off", line);
+      if (cs.subjectProfileId && overviewMatchedById.get(cs.subjectProfileId) === cs.userId) bump(cs.userId, "matched", "SURROGACY");
     }
     for (const uid of Array.from(consultCompletedUsers)) { if (uid) bump(uid as string, "consult_completed"); }
-    for (const uid of Array.from(doctorCallScheduledUsers)) { if (uid) bump(uid as string, "doctor_call_scheduled"); }
-    for (const uid of Array.from(doctorCallCompletedUsers)) { if (uid) bump(uid as string, "doctor_call_completed"); }
+    // Doctor calls ARE the clinic line - the one booking type with a line of its own.
+    for (const uid of Array.from(doctorCallScheduledUsers)) { if (uid) bump(uid as string, "doctor_call_scheduled", "IVF_CLINIC"); }
+    for (const uid of Array.from(doctorCallCompletedUsers)) { if (uid) bump(uid as string, "doctor_call_completed", "IVF_CLINIC"); }
     for (const [uid, key] of Array.from(accountKeyOf.entries())) {
       if (submittedFormAccounts.has(key as string)) bump(uid as string, "ip_form_submitted");
     }
     for (const uid of Array.from(matchCallUsers)) { if (uid) bump(uid as string, "match_call_scheduled"); }
-    for (const inv of invoices) { bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent"); }
-    for (const a of agreements) { bump(a.parentUserId, a.status === "SIGNED" ? "agreement_signed" : "agreement_sent"); }
+    for (const inv of invoices) { bump(inv.parentUserId, inv.status === "PAID" ? "invoice_paid" : "invoice_sent", lineOfServiceType(inv.serviceType)); }
+    for (const a of agreements) { bump(a.parentUserId, a.status === "SIGNED" ? "agreement_signed" : "agreement_sent", lineOfServiceType((a as any).serviceType)); }
+
+    // Same shape and fallback rule as the provider table's per-line grouping
+    // (staff-page byLine): typed lines each carry their own most-advanced
+    // stage, most advanced first; the untyped bucket surfaces only when no
+    // typed line exists.
+    const serviceStatusesOf = (userId: string): { serviceKey: string | null; status: string }[] => {
+      const m = lineStatusByUser.get(userId);
+      if (!m) return [];
+      const typed = Array.from(m.entries())
+        .filter(([k]) => k !== "")
+        .sort((a, b) => rank(b[1]) - rank(a[1]))
+        .map(([serviceKey, status]) => ({ serviceKey, status }));
+      if (typed.length) return typed;
+      const un = m.get("");
+      return un ? [{ serviceKey: null, status: un }] : [];
+    };
 
     const servicesByAccount = new Map(profiles.map((pr: any) => [pr.parentAccountId, pr.interestedServices || []]));
 
@@ -1262,6 +1301,7 @@ export class UsersController {
         agreements: [],
         updatedAt: lastActivityByUser.get(parent.id) || null,
         matchStatus: statusByUser.get(parent.id) || null,
+        serviceStatuses: serviceStatusesOf(parent.id),
         ipFormStatus: ipFormByKey.get(crmKey) ?? null,
         owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
         nextStep: step
@@ -1302,9 +1342,27 @@ export class UsersController {
       const servicesMerged = Array.from(new Set(memberIds.flatMap(id => overview[id]?.services || [])));
       const serviceKeysMerged = Array.from(new Set(memberIds.flatMap(id => overview[id]?.serviceKeys || [])));
       const household = { memberIds, memberNames: members.map(m => m.name || "") };
+      // Couples share one journey, so the per-line stacks merge too: the
+      // most-advanced stage per line across both logins.
+      const mergedLines = new Map<string, string>();
+      let mergedUntyped: string | null = null;
+      for (const id of memberIds) {
+        for (const ss of (overview[id]?.serviceStatuses || []) as { serviceKey: string | null; status: string }[]) {
+          if (ss.serviceKey) {
+            const cur = mergedLines.get(ss.serviceKey);
+            if (!cur || rank(ss.status) > rank(cur)) mergedLines.set(ss.serviceKey, ss.status);
+          } else if (rank(ss.status) > rank(mergedUntyped)) {
+            mergedUntyped = ss.status;
+          }
+        }
+      }
+      const serviceStatusesMerged = mergedLines.size
+        ? Array.from(mergedLines.entries()).sort((a, b) => rank(b[1]) - rank(a[1])).map(([serviceKey, status]) => ({ serviceKey, status }))
+        : (mergedUntyped ? [{ serviceKey: null, status: mergedUntyped }] : []);
       for (const id of memberIds) {
         if (!overview[id]) continue;
         overview[id].matchStatus = bestStatus;
+        overview[id].serviceStatuses = serviceStatusesMerged;
         overview[id].updatedAt = latest;
         overview[id].costSheets = costSheetsMerged;
         overview[id].invoices = invoicesMerged;

@@ -343,6 +343,7 @@ function GostorkAdminUsersView() {
             contactReleased: true,
             services: o.serviceKeys || [],
             matchStatus: o.matchStatus ?? null,
+            serviceStatuses: o.serviceStatuses || [],
             costSheets: o.costSheets || [],
             invoices: o.invoices || [],
             agreements: o.agreements || [],

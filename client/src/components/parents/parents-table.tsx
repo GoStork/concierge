@@ -44,6 +44,23 @@ import {
 import type { ParentTableRow } from "./parent-record-types";
 
 /**
+ * One entry per service line for the paired Services / Match Status stacks:
+ * lines with journey artifacts first (each paired with its own stage), then
+ * interest-only services (the family said they want it, nothing has happened
+ * yet) with no status - so the admin view never drops a service the profile
+ * declares just because it has no session yet.
+ */
+function buildServiceLines(row: ParentTableRow): { serviceKey: string | null; status: string | null }[] {
+  const lines: { serviceKey: string | null; status: string | null }[] =
+    (row.serviceStatuses || []).map((ss) => ({ serviceKey: ss.serviceKey, status: ss.status }));
+  const seen = new Set(lines.map((l) => l.serviceKey).filter(Boolean));
+  for (const svc of row.services || []) {
+    if (!seen.has(svc)) { seen.add(svc); lines.push({ serviceKey: svc, status: null }); }
+  }
+  return lines;
+}
+
+/**
  * Order a row's invoices to mirror its stacked Services column: invoices for
  * the first listed service line first, then the second, unknown types last.
  * Stable within a group (server already sends newest-first).
@@ -87,11 +104,10 @@ export function ParentsTable({
   // checkbox + 12 shared + optional actions
   const colSpan = 12 + (selectable ? 1 : 0) + (rowActions ? 1 : 0);
 
-  // Cost Sheets and Agreements now appear only at 2xl. They were the two
-  // columns most often empty, and dropping them below 1536px is what lets the
-  // rest fit a laptop without sideways scrolling - the thing that made the
-  // email look permanently truncated. Invoices stays: it is the money column
-  // people actually scan.
+  // Every data column shows from xl up (user request: providers see the same
+  // table admins do, Actions aside). Below xl the narrow set survives; the
+  // horizontal scroller + pinned right edge below carry the overflow on a
+  // laptop instead of hiding whole columns.
   //
   // The scroll container is the Table's OWN wrapper, not the Card: the wrapper
   // clips first, so overflow-x on any ancestor is dead weight and the columns
@@ -152,13 +168,13 @@ export function ParentsTable({
                 fits with the headers unwrapped. */}
             <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={onSort} className="min-w-[164px]" data-testid="sort-name" />
             <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={onSort} className="hidden sm:table-cell max-w-[170px]" data-testid="sort-email" />
-            <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-mobile" />
+            <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-mobile" />
             <SortableTableHead label="Services" sortKey="services" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-services" />
             <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
-            <SortableTableHead label="Cost Sheets" sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-cost-sheets" />
+            <SortableTableHead label="Cost Sheets" sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-cost-sheets" />
             <SortableTableHead label="Invoices" sortKey="invoices" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-invoices" />
-            <SortableTableHead label="Agreements" sortKey="agreements" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-agreements" />
-            <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden 2xl:table-cell" data-testid="sort-created" />
+            <SortableTableHead label="Agreements" sortKey="agreements" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-agreements" />
+            <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-created" />
             <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
             <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
             <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
@@ -175,6 +191,7 @@ export function ParentsTable({
               ? row.members
               : [{ id: row.id, name: row.name, email: row.email, mobileNumber: row.mobileNumber, photoUrl: null }];
             const phones = dedupeHouseholdPhones(contactLines as any, contactLines[0] as any);
+            const svcLines = buildServiceLines(row);
             return (
               <TableRow
                 key={row.key}
@@ -257,7 +274,7 @@ export function ParentsTable({
                   )}
                 </TableCell>
 
-                <TableCell className="hidden 2xl:table-cell whitespace-nowrap" data-testid={`text-parent-mobile-${row.id}`} onClick={(e) => e.stopPropagation()}>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap" data-testid={`text-parent-mobile-${row.id}`} onClick={(e) => e.stopPropagation()}>
                   {!row.contactReleased ? (
                     <ContactHiddenChip testId={`chip-mobile-hidden-${row.key}`} />
                   ) : phones.length === 0 ? (
@@ -281,9 +298,9 @@ export function ParentsTable({
                     line pinned to the same fixed height so the pairs stay on
                     a shared baseline. No "+N" collapse: every line shows. */}
                 <TableCell className="hidden lg:table-cell whitespace-nowrap align-middle">
-                  {row.serviceStatuses && row.serviceStatuses.length > 1 ? (
+                  {svcLines.length > 1 ? (
                     <div className="flex flex-col gap-1 items-start" data-testid={`chips-services-${row.id}`}>
-                      {row.serviceStatuses.map((ss) => (
+                      {svcLines.map((ss) => (
                         <span key={ss.serviceKey || "untyped"} className="flex items-center h-[22px]">
                           {ss.serviceKey
                             ? <ServiceTag service={SERVICE_LABELS[ss.serviceKey] || ss.serviceKey} />
@@ -296,15 +313,16 @@ export function ParentsTable({
                   )}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap align-middle">
-                  {row.serviceStatuses && row.serviceStatuses.length > 1 ? (
+                  {svcLines.length > 1 ? (
                     // One true status PER LINE - a single most-advanced badge
                     // was how a brand-new surrogacy thread read "Handed Off"
                     // off the egg-donation journey. The service name lives in
-                    // the previous column, same line - not repeated here.
+                    // the previous column, same line - not repeated here; an
+                    // interest-only line has no journey yet, so a "-".
                     <div className="flex flex-col gap-1 items-start" data-testid={`match-statuses-${row.id}`}>
-                      {row.serviceStatuses.map((ss) => (
+                      {svcLines.map((ss) => (
                         <span key={ss.serviceKey || "untyped"} className="flex items-center h-[22px]">
-                          <MatchStatusBadge status={ss.status} />
+                          {ss.status ? <MatchStatusBadge status={ss.status} /> : <span className="t-helper">-</span>}
                         </span>
                       ))}
                     </div>
@@ -312,7 +330,7 @@ export function ParentsTable({
                     <MatchStatusBadge status={row.matchStatus} />
                   )}
                 </TableCell>
-                <TableCell className="hidden 2xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentCostSheetsCell
                     costSheets={row.costSheets || []}
                     sessionId={row.sessionId}
@@ -331,10 +349,10 @@ export function ParentsTable({
                     stack
                   />
                 </TableCell>
-                <TableCell className="hidden 2xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentAgreementsCell agreements={row.agreements || []} limit={1} />
                 </TableCell>
-                <TableCell className="hidden 2xl:table-cell" data-testid={`text-created-${row.id}`}>
+                <TableCell className="hidden xl:table-cell" data-testid={`text-created-${row.id}`}>
                   <span className="t-helper">{row.createdAt ? new Date(row.createdAt).toLocaleDateString() : "-"}</span>
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap">
