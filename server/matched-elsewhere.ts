@@ -70,17 +70,16 @@ export function matchedElsewhereAt(
 }
 
 /**
- * A commitment is a non-refunded PAID invoice or a live SIGNED agreement.
+ * A commitment is any PAID invoice - bank checkouts included.
  *
- * BANK_CHECKOUT invoices are excluded on purpose: buying vials from one bank
- * is a purchase, not an exclusive engagement, and a family may well buy from
- * two. Cancelled and refunded invoices are excluded because the money did not
- * stay moved - the same rule the ladder uses for the Invoice Paid rung.
+ * Vial purchases were briefly excluded on the theory that buying from one
+ * bank does not preclude buying from another. Overruled, and rightly: a
+ * family buys donor sperm or eggs once for a given journey, so the purchase
+ * IS the conversion and every other bank on that line should hear about it.
+ * Cancelled and refunded invoices never reach here - they are not PAID.
  */
-export function isCommittingInvoice(inv: {
-  status?: string | null; triggerSource?: string | null;
-}): boolean {
-  return inv?.status === "PAID" && inv?.triggerSource !== "BANK_CHECKOUT";
+export function isCommittingInvoice(inv: { status?: string | null }): boolean {
+  return inv?.status === "PAID";
 }
 
 export function isCommittingAgreement(agr: {

@@ -575,6 +575,13 @@ export async function buildJourneyTimelines(
       rungs = [
         { id: "registered", label: "Registered", at: registeredAt },
         { id: "exploring", label: "Exploring Profiles", at: exploringAt },
+        // Banks run consultations like every other provider - egg banks and
+        // sperm banks both land here (one journeyType, "bank"). Omitting
+        // these rungs meant a booked bank consultation could never show on
+        // the ladder, so the ladder said "Exploring Profiles" while the
+        // Match Status pill and the Interested-profiles card both said
+        // "Consultation Scheduled" off the same booking.
+        ...consultRungs,
         { id: "donor_selected", label: "Donor Selected", at: b.events.find((e) => e.eventType === "BANK_CHECKOUT_STARTED")?.createdAt || checkoutAt },
         { id: "checkout", label: "Checkout", at: checkoutAt },
         { id: "invoice_paid", label: "Invoice Paid", at: bankPaidAt },
