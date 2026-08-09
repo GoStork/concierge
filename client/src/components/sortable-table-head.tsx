@@ -12,12 +12,20 @@ type Props = {
   currentSort: SortConfig;
   onSort: (key: string) => void;
   className?: string;
+  /**
+   * Where the label sits in the cell. Money and count columns are right
+   * aligned and centered checkmark columns exist too - the arrow has to
+   * follow the label or the header stops lining up with its own data.
+   */
+  align?: "left" | "right" | "center";
   /** For a pinned column that needs an edge shadow the class layer cannot express. */
   style?: React.CSSProperties;
   "data-testid"?: string;
 };
 
-export function SortableTableHead({ label, sortKey, currentSort, onSort, className, style, ...props }: Props) {
+const ALIGN_CLASS = { left: "justify-start", right: "justify-end", center: "justify-center" } as const;
+
+export function SortableTableHead({ label, sortKey, currentSort, onSort, className, align = "left", style, ...props }: Props) {
   const isActive = currentSort.key === sortKey;
   const direction = isActive ? currentSort.direction : null;
 
@@ -28,7 +36,7 @@ export function SortableTableHead({ label, sortKey, currentSort, onSort, classNa
       onClick={() => onSort(sortKey)}
       data-testid={props["data-testid"]}
     >
-      <div className="flex items-center gap-1 whitespace-nowrap">
+      <div className={`flex items-center gap-1 whitespace-nowrap ${ALIGN_CLASS[align]}`}>
         <span>{label}</span>
         {direction === "asc" ? (
           <ArrowUp className="w-3.5 h-3.5 shrink-0 text-foreground/70" />

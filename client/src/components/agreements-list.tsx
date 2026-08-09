@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import { ExternalLink, FileSignature } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -82,6 +83,19 @@ export function AgreementRows({
   variant?: "list" | "table";
 }) {
   const navigate = useNavigate();
+  // The list variant keeps the caller's order (home pages show "latest first");
+  // only the settings table exposes headers, so only it re-orders.
+  const { sortConfig, handleSort, sortData } = useTableSort();
+  const sortedItems = sortData(items, (item, key) => {
+    switch (key) {
+      case "name": return (item.title || "").toLowerCase();
+      case "type": return (item.documentType || "").toLowerCase();
+      // Sent sorts by the date the cell leads with, not the signed line under it.
+      case "sent": return item.createdAt ? new Date(item.createdAt).getTime() : null;
+      case "status": return item.status || "";
+      default: return null;
+    }
+  });
 
   if (isLoading) {
     return (
@@ -111,15 +125,15 @@ export function AgreementRows({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="whitespace-nowrap">Name</TableHead>
-                <TableHead className="whitespace-nowrap">Agreement</TableHead>
-                <TableHead className="whitespace-nowrap">Sent</TableHead>
-                <TableHead className="whitespace-nowrap">Status</TableHead>
+                <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Agreement" sortKey="type" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Sent" sortKey="sent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map(item => (
+              {sortedItems.map(item => (
                 <TableRow
                   key={item.id}
                   className="cursor-pointer"

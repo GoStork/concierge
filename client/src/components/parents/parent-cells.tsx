@@ -393,6 +393,8 @@ export interface ParentSortSource {
   mobile?: string | null;
   services?: string[] | null;
   matchStatus?: string | null;
+  /** Admin-only Provider column: every provider named on any service line. */
+  serviceStatuses?: { providerNames?: string[] | null }[] | null;
   createdAt?: string | null;
   updatedAt?: string | null;
   costSheets?: { totalCostCents?: number | null }[] | null;
@@ -412,6 +414,10 @@ export function parentSortValue(key: string, src: ParentSortSource): string | nu
     case "mobile": return src.mobile || "";
     case "services": return (src.services || []).map((s) => SERVICE_LABELS[s] || s).sort().join(", ");
     case "status": return src.matchStatus || "";
+    case "provider": {
+      const names = Array.from(new Set((src.serviceStatuses || []).flatMap((s) => s.providerNames || []))).sort();
+      return names.length ? names.join(", ") : null;
+    }
     case "created": return src.createdAt ? new Date(src.createdAt).getTime() : null;
     case "updated": return src.updatedAt ? new Date(src.updatedAt).getTime() : null;
     case "costSheets": return sum(src.costSheets, "totalCostCents");

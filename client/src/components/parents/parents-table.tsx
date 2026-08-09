@@ -195,7 +195,7 @@ export function ParentsTable({
             {/* Admin spans orgs, so each service line names who is running it.
                 A provider's whole table is their own org - the column would
                 print their name on every line. */}
-            {isAdmin && <TableHead className="whitespace-nowrap hidden lg:table-cell">Provider</TableHead>}
+            {isAdmin && <SortableTableHead label="Provider" sortKey="provider" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-provider" />}
             <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
             <SortableTableHead label="Cost Sheets" sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-cost-sheets" />
             <SortableTableHead label="Invoices" sortKey="invoices" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-invoices" />

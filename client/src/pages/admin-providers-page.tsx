@@ -78,6 +78,50 @@ const SETUP_COLUMNS = [
   { key: "autoReply", label: "Auto Reply", tab: "auto-replies" },
 ] as const;
 
+// Sort values for the columns the API cannot order by. Booleans sort as 1/0 so
+// "configured first" is one click on any setup column.
+const CLIENT_SORT_VALUE: Record<string, (p: any) => number> = {
+  services: (p) => p.services?.length || 0,
+  locations: (p) => p.locations?.length || 0,
+  automations: (p) => Object.values(providerAutomations(p)).filter(Boolean).length,
+  ...Object.fromEntries(
+    SETUP_COLUMNS.map((c) => [`setup_${c.key}`, (p: any) => (p.setupStatus?.[c.key] ? 1 : 0)]),
+  ),
+};
+
+/**
+ * One header cell for this page's URL-param sort. Every column named the same
+ * asc/desc pair and re-implemented the arrow logic inline; this is that markup
+ * once. Clicking cycles asc -> desc -> asc on the column, and the active
+ * direction is whichever of the two keys the URL currently holds.
+ */
+function SortHeader({ label, asc, desc, sortBy, setSortBy, className, align = "left", testId }: {
+  label: string;
+  asc: string;
+  desc: string;
+  sortBy: string;
+  setSortBy: (v: string) => void;
+  className?: string;
+  align?: "left" | "center" | "right";
+  testId?: string;
+}) {
+  const active = sortBy === asc ? "asc" : sortBy === desc ? "desc" : null;
+  const justify = align === "center" ? "justify-center" : align === "right" ? "justify-end" : "justify-start";
+  return (
+    <TableHead className={`whitespace-nowrap ${align === "center" ? "text-center" : align === "right" ? "text-right" : ""} ${className || ""}`}>
+      <button
+        type="button"
+        className={`flex items-center gap-1 hover:text-primary transition-colors cursor-pointer whitespace-nowrap w-full ${justify}`}
+        onClick={() => setSortBy(active === "asc" ? desc : asc)}
+        data-testid={testId}
+      >
+        {label}
+        {active === "asc" ? <ArrowUp className="w-3.5 h-3.5" /> : active === "desc" ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />}
+      </button>
+    </TableHead>
+  );
+}
+
 export default function AdminProvidersPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -120,7 +164,12 @@ export default function AdminProvidersPage() {
   const debouncedSearch = useDebounce(searchQuery, 300);
   const debouncedLocation = useDebounce(locationSearch, 300);
 
-  const isClientSort = sortBy === "services_asc" || sortBy === "services_desc" || sortBy === "locations_asc" || sortBy === "locations_desc";
+  // Columns the server can order by go through the API (name/website/dates);
+  // everything derived from the payload - counts, automation flags, the setup
+  // checkmarks - sorts here. Client keys are always "<base>_asc" / "<base>_desc"
+  // so one comparator covers all of them and the URL still round-trips.
+  const clientSortBase = /_(asc|desc)$/.test(sortBy) ? sortBy.replace(/_(asc|desc)$/, "") : null;
+  const isClientSort = !!clientSortBase && CLIENT_SORT_VALUE[clientSortBase] !== undefined;
 
   const serverSortBy = isClientSort ? "newest" : sortBy;
 
@@ -155,19 +204,11 @@ export default function AdminProvidersPage() {
         return a[automationFilter as "cost_sheet" | "invoice" | "agreement"] === true;
       });
     }
-    if (!rows || !isClientSort) return rows;
-    const sorted = [...rows];
-    if (sortBy === "services_asc") {
-      sorted.sort((a: any, b: any) => (a.services?.length || 0) - (b.services?.length || 0));
-    } else if (sortBy === "services_desc") {
-      sorted.sort((a: any, b: any) => (b.services?.length || 0) - (a.services?.length || 0));
-    } else if (sortBy === "locations_asc") {
-      sorted.sort((a: any, b: any) => (a.locations?.length || 0) - (b.locations?.length || 0));
-    } else if (sortBy === "locations_desc") {
-      sorted.sort((a: any, b: any) => (b.locations?.length || 0) - (a.locations?.length || 0));
-    }
-    return sorted;
-  }, [rawProviders, sortBy, isClientSort, automationFilter]);
+    if (!rows || !isClientSort || !clientSortBase) return rows;
+    const value = CLIENT_SORT_VALUE[clientSortBase];
+    const dir = sortBy.endsWith("_desc") ? -1 : 1;
+    return [...rows].sort((a: any, b: any) => (value(a) - value(b)) * dir);
+  }, [rawProviders, sortBy, isClientSort, clientSortBase, automationFilter]);
 
   const { data: providerTypes } = useQuery<any[]>({
     queryKey: ["/api/provider-types"],
@@ -319,75 +360,25 @@ export default function AdminProvidersPage() {
         <Table wrapperClassName="overflow-x-auto" wrapperRef={scroller} onWrapperScroll={measure}>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-[280px]">
-                <button
-                  type="button"
-                  className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer whitespace-nowrap"
-                  onClick={() => setSortBy(sortBy === "alphabetical" ? "alphabetical_desc" : "alphabetical")}
-                  data-testid="sort-header-name"
-                >
-                  Name
-                  {sortBy === "alphabetical" ? <ArrowUp className="w-3.5 h-3.5" /> : sortBy === "alphabetical_desc" ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />}
-                </button>
-              </TableHead>
-              <TableHead className="hidden md:table-cell max-w-[180px]">
-                <button
-                  type="button"
-                  className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer whitespace-nowrap"
-                  onClick={() => setSortBy(sortBy === "website_asc" ? "website_desc" : "website_asc")}
-                  data-testid="sort-header-website"
-                >
-                  Website
-                  {sortBy === "website_asc" ? <ArrowUp className="w-3.5 h-3.5" /> : sortBy === "website_desc" ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />}
-                </button>
-              </TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">
-                <button
-                  type="button"
-                  className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer whitespace-nowrap"
-                  onClick={() => setSortBy(sortBy === "services_asc" ? "services_desc" : "services_asc")}
-                  data-testid="sort-header-services"
-                >
-                  Services
-                  {sortBy === "services_asc" ? <ArrowUp className="w-3.5 h-3.5" /> : sortBy === "services_desc" ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />}
-                </button>
-              </TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">Automations</TableHead>
-              <TableHead className="hidden lg:table-cell whitespace-nowrap">
-                <button
-                  type="button"
-                  className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer whitespace-nowrap"
-                  onClick={() => setSortBy(sortBy === "locations_asc" ? "locations_desc" : "locations_asc")}
-                  data-testid="sort-header-locations"
-                >
-                  Locations
-                  {sortBy === "locations_asc" ? <ArrowUp className="w-3.5 h-3.5" /> : sortBy === "locations_desc" ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />}
-                </button>
-              </TableHead>
-              <TableHead className="hidden xl:table-cell whitespace-nowrap">
-                <button
-                  type="button"
-                  className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer whitespace-nowrap"
-                  onClick={() => setSortBy(sortBy === "newest" ? "oldest" : "newest")}
-                  data-testid="sort-header-created"
-                >
-                  Created
-                  {sortBy === "newest" ? <ArrowDown className="w-3.5 h-3.5" /> : sortBy === "oldest" ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />}
-                </button>
-              </TableHead>
-              <TableHead className="hidden xl:table-cell whitespace-nowrap">
-                <button
-                  type="button"
-                  className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer whitespace-nowrap"
-                  onClick={() => setSortBy(sortBy === "updated_desc" ? "updated_asc" : "updated_desc")}
-                  data-testid="sort-header-updated"
-                >
-                  Updated
-                  {sortBy === "updated_desc" ? <ArrowDown className="w-3.5 h-3.5" /> : sortBy === "updated_asc" ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />}
-                </button>
-              </TableHead>
+              <SortHeader label="Name" asc="alphabetical" desc="alphabetical_desc" sortBy={sortBy} setSortBy={setSortBy} className="min-w-[280px]" testId="sort-header-name" />
+              <SortHeader label="Website" asc="website_asc" desc="website_desc" sortBy={sortBy} setSortBy={setSortBy} className="hidden md:table-cell max-w-[180px]" testId="sort-header-website" />
+              <SortHeader label="Services" asc="services_asc" desc="services_desc" sortBy={sortBy} setSortBy={setSortBy} className="hidden lg:table-cell" testId="sort-header-services" />
+              <SortHeader label="Automations" asc="automations_asc" desc="automations_desc" sortBy={sortBy} setSortBy={setSortBy} className="hidden lg:table-cell" testId="sort-header-automations" />
+              <SortHeader label="Locations" asc="locations_asc" desc="locations_desc" sortBy={sortBy} setSortBy={setSortBy} className="hidden lg:table-cell" testId="sort-header-locations" />
+              <SortHeader label="Created" asc="oldest" desc="newest" sortBy={sortBy} setSortBy={setSortBy} className="hidden xl:table-cell" testId="sort-header-created" />
+              <SortHeader label="Updated" asc="updated_asc" desc="updated_desc" sortBy={sortBy} setSortBy={setSortBy} className="hidden xl:table-cell" testId="sort-header-updated" />
               {SETUP_COLUMNS.map((c) => (
-                <TableHead key={c.key} className="hidden lg:table-cell whitespace-nowrap text-center">{c.label}</TableHead>
+                <SortHeader
+                  key={c.key}
+                  label={c.label}
+                  asc={`setup_${c.key}_asc`}
+                  desc={`setup_${c.key}_desc`}
+                  sortBy={sortBy}
+                  setSortBy={setSortBy}
+                  align="center"
+                  className="hidden lg:table-cell"
+                  testId={`sort-header-setup-${c.key}`}
+                />
               ))}
               <TableHead className="text-right whitespace-nowrap sticky right-0 z-20 bg-muted" style={pinR}>Actions</TableHead>
             </TableRow>

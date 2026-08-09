@@ -35,7 +35,7 @@ const TYPE_OPTIONS: Record<string, string> = {
   surrogacy: "Surrogacy",
   egg_donation: "Egg Donation",
   ivf: "IVF",
-  bank: "Donor Bank",
+  bank: "Egg Donation",
   legal: "Legal",
 };
 

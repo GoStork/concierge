@@ -201,6 +201,20 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
         if (context === "parent") return getRoleLabel(item.parentAccountRole || "", context);
         return getRelevantRoles(item.roles || [], context).map(r => getRoleLabel(r, context)).join(", ");
       }
+      // Location/Video/Calendar sort by the same text the cell prints, so the
+      // order on screen matches what the reader is looking at. Members with
+      // nothing in the column sink via sortData's null handling.
+      case "location": {
+        if (item.allLocations) return "All Locations";
+        const locs = item.assignedLocations || [];
+        return locs.length ? locs.map(al => `${al.location.city}, ${al.location.state}`).sort().join("; ") : null;
+      }
+      case "video": return item.dailyRoomUrl || null;
+      case "calendar": {
+        if (item.scheduleConfig?.bookingPageSlug) return item.scheduleConfig.bookingPageSlug;
+        const conns = item.calendarConnections || [];
+        return conns.length ? conns.map(c => c.label || c.provider).sort().join(", ") : null;
+      }
       default: return "";
     }
   });
@@ -268,10 +282,10 @@ export default function MembersTable({ context, providerId, currentUserId, canMa
               <SortableTableHead label="Name" sortKey="name" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
               <SortableTableHead label="Email" sortKey="email" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden sm:table-cell" />
               <SortableTableHead label="Mobile" sortKey="mobile" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden md:table-cell" />
-              {hasLocations && <TableHead className="whitespace-nowrap hidden lg:table-cell">Location</TableHead>}
+              {hasLocations && <SortableTableHead label="Location" sortKey="location" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" />}
               <SortableTableHead label={context === "parent" ? "Role" : "Roles"} sortKey="roles" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden sm:table-cell" />
-              {hasVideo && <TableHead className="whitespace-nowrap hidden lg:table-cell">Video Room</TableHead>}
-              {hasCalendar && <TableHead className="whitespace-nowrap hidden lg:table-cell">Calendar</TableHead>}
+              {hasVideo && <SortableTableHead label="Video Room" sortKey="video" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" />}
+              {hasCalendar && <SortableTableHead label="Calendar" sortKey="calendar" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap hidden lg:table-cell" />}
               {showActionsColumn && <TableHead className="text-right whitespace-nowrap">Actions</TableHead>}
             </TableRow>
           </TableHeader>

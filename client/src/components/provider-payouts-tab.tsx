@@ -24,6 +24,7 @@ import {
   ChevronDown, ChevronUp, Unlink, History,
 } from "lucide-react";
 import { derivePayoutStatus } from "@/lib/payout-status";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import { formatDateTime } from "@/lib/format-date";
 import { Button } from "@/components/ui/button";
 import { SaveBar } from "@/components/ui/save-bar";
@@ -934,6 +935,20 @@ function PayoutHistoryTable() {
       return bT - aT;
     });
 
+  // Header sort layers on top of the newest-first default: no active key means
+  // sortData returns the list untouched, so the default order survives.
+  const { sortConfig, handleSort, sortData } = useTableSort();
+  const sortedPayouts = sortData(payouts, (inv: any, key) => {
+    switch (key) {
+      case "parent": return (inv.parentUser?.name || inv.parentUser?.email || "").toLowerCase();
+      case "service": return (inv.serviceType || "").toLowerCase();
+      case "payout": return inv.providerPayoutAmount ?? null;
+      case "status": return derivePayoutStatus(inv).label;
+      case "date": return new Date(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt).getTime();
+      default: return null;
+    }
+  });
+
   if (isLoading) {
     return (
       <section className="space-y-3">
@@ -969,15 +984,15 @@ function PayoutHistoryTable() {
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-border bg-muted">
-                <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Parent</th>
-                <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Service</th>
-                <th className="h-12 px-4 text-right align-middle font-heading t-micro-label whitespace-nowrap">Your payout</th>
-                <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">GoStork paid you</th>
-                <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Date</th>
+                <SortableTableHead label="Parent" sortKey="parent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Service" sortKey="service" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Your payout" sortKey="payout" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
+                <SortableTableHead label="GoStork paid you" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
               </tr>
             </thead>
             <tbody>
-              {payouts.map((inv: any) => {
+              {sortedPayouts.map((inv: any) => {
                 const status = derivePayoutStatus(inv);
                 const dateStr = formatDateTime(inv.bankPayoutCompletedAt || inv.payoutInitiatedAt || inv.paidAt || inv.createdAt);
                 const parent = inv.parentUser?.name || inv.parentUser?.email || "Parent";

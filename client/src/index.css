@@ -64,8 +64,11 @@
   --service-egg-donation: 39 84% 39%;    /* #B97D10 gold   */
   --service-sperm-donation: 212 51% 50%; /* #3E7BC0 blue   */
   --service-ivf: 176 84% 26%;            /* #0B7C74 teal   */
-  --service-bank: 338 46% 55%;           /* #C0567C rose   */
-  --service-legal: 220 21% 45%;          /* #5B6B8C slate  */
+  /* Burgundy, not slate: legal was the one grey tag and read as disabled.
+     Sits in the widest free arc of the wheel (285 -> 39), so it stays
+     distinct from surrogacy's mauve - the service it most often appears
+     beside, since surrogacy journeys need a lawyer. */
+  --service-legal: 338 45% 43%;          /* #9E3B5E burgundy */
   --input: 214.3 31.8% 91.4%;
   --ring: 183 100% 25%;
   --radius: 0.5rem;

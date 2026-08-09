@@ -13,7 +13,8 @@ function providerTypeLabel(serviceNames: string[]): string {
   if (svc.some((n) => n.includes("legal"))) return "Law Firm";
   if (svc.some((n) => n.includes("ivf") || n.includes("clinic"))) return "Clinic";
   if (svc.some((n) => n.includes("surrogacy") || n.includes("egg donor"))) return "Agency";
-  if (svc.some((n) => n.includes("egg bank") || n.includes("sperm bank"))) return "Donor Bank";
+  if (svc.some((n) => n.includes("sperm bank"))) return "Sperm Donation";
+  if (svc.some((n) => n.includes("egg bank"))) return "Egg Donation";
   if (svc.some((n) => n.includes("therapist"))) return "Therapy";
   if (svc.some((n) => n.includes("genetic"))) return "Genetic Counseling";
   if (svc.some((n) => n.includes("nutrition"))) return "Nutrition";

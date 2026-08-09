@@ -31,6 +31,7 @@ import { formatMoneyCents } from "@/lib/format-money";
 import { formatDateTime } from "@/lib/format-date";
 import { derivePayoutStatus } from "@/lib/payout-status";
 import { InvoiceStatusBadge } from "./invoice-status-badge";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import {
   ReferralFeeConfigSection,
   LINE_SERVICE_LABELS,
@@ -122,6 +123,24 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
     if (enabledServices.length === 1) setActiveTab(enabledServices[0]);
     else if (enabledServices.length > 1) setActiveTab(prev => (prev === "COMBINED" ? enabledServices[0] : prev));
   }, [feeData, enabledServices.length]);
+
+  // Payments received / Invoice history sort. Money sorts by value and the two
+  // status columns by the label the row actually prints (derivePayoutStatus is
+  // the same helper the cell renders), so the order always matches what's read.
+  const { sortConfig, handleSort, sortData } = useTableSort();
+  const sortedInvoices = sortData(invoices, (inv: any, key) => {
+    switch (key) {
+      case "parent": return (inv.parentUser?.name || inv.parentUser?.email || "").toLowerCase();
+      case "service": return (inv.serviceType || "").toLowerCase();
+      case "amount": return inv.serviceAmount ?? null;
+      case "fee": return inv.referralFeeAmount ?? null;
+      case "payout": return inv.providerPayoutAmount ?? null;
+      case "invoiceStatus": return inv.status || "";
+      case "payoutStatus": return derivePayoutStatus(inv).label;
+      case "date": return new Date(inv.paidAt || inv.createdAt).getTime();
+      default: return null;
+    }
+  });
 
   const configByService = useMemo(() => {
     const map = new Map<LineServiceType, ReferralFeeConfigPayload>();
@@ -241,21 +260,21 @@ export function ProviderBillingTab({ providerId, mode = "admin" }: ProviderBilli
             <table className="w-full min-w-[960px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted">
-                  <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Parent</th>
-                  <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Service</th>
-                  <th className="h-12 px-4 text-right align-middle font-heading t-micro-label whitespace-nowrap">Amount paid</th>
-                  <th className="h-12 px-4 text-right align-middle font-heading t-micro-label whitespace-nowrap">GoStork fee</th>
-                  <th className="h-12 px-4 text-right align-middle font-heading t-micro-label whitespace-nowrap">{isProviderMode ? "Your payout" : "Provider payout"}</th>
-                  <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Parent paid GoStork</th>
-                  <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">{isProviderMode ? "GoStork paid you" : "GoStork paid provider"}</th>
-                  <th className="h-12 px-4 text-left align-middle font-heading t-micro-label whitespace-nowrap">Date</th>
+                  <SortableTableHead label="Parent" sortKey="parent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                  <SortableTableHead label="Service" sortKey="service" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                  <SortableTableHead label="Amount paid" sortKey="amount" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
+                  <SortableTableHead label="GoStork fee" sortKey="fee" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
+                  <SortableTableHead label={isProviderMode ? "Your payout" : "Provider payout"} sortKey="payout" currentSort={sortConfig} onSort={handleSort} align="right" className="whitespace-nowrap" />
+                  <SortableTableHead label="Parent paid GoStork" sortKey="invoiceStatus" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                  <SortableTableHead label={isProviderMode ? "GoStork paid you" : "GoStork paid provider"} sortKey="payoutStatus" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                  <SortableTableHead label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                   {!isProviderMode && (
                     <th className="h-12 px-4 text-right align-middle font-heading t-micro-label whitespace-nowrap">Actions</th>
                   )}
                 </tr>
               </thead>
               <tbody>
-                {invoices.map((inv: any) => {
+                {sortedInvoices.map((inv: any) => {
                   // Payout status: derived from a single shared helper so the
                   // Billing tab and Payouts history table stay in lockstep.
                   // Five terminal states (Received / Failed at bank / Failed

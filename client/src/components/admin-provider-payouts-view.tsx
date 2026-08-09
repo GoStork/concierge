@@ -9,6 +9,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, CheckCircle2, AlertCircle, ExternalLink, RefreshCw, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 
 interface PayoutsState {
   payoutMethod: "STRIPE_CONNECT_EXPRESS" | "STRIPE_CONNECT_CUSTOM" | null;
@@ -66,6 +67,20 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
       if (!res.ok) throw new Error("Failed to load pending invoices");
       return res.json();
     },
+  });
+
+  // Pending payouts sort by whatever each cell prints - Status by the failure
+  // reason the row shows, so identical failures group together.
+  const { sortConfig, handleSort, sortData } = useTableSort();
+  const sortedPending = sortData(pendingData?.invoices || [], (inv: any, key) => {
+    switch (key) {
+      case "invoice": return inv.id;
+      case "service": return inv.serviceType || "";
+      case "amount": return inv.providerPayoutAmount ?? null;
+      case "status": return inv.payoutFailedAt ? `Failed: ${inv.payoutFailureReason || "Unknown error"}` : "Never auto-fired";
+      case "paidAt": return inv.paidAt ? new Date(inv.paidAt).getTime() : null;
+      default: return null;
+    }
   });
 
   const refreshMutation = useMutation({
@@ -229,16 +244,16 @@ export function AdminProviderPayoutsView({ providerId }: AdminProviderPayoutsVie
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/40">
-                  <th className="text-left px-4 py-2 font-medium text-xs">Invoice</th>
-                  <th className="text-left px-4 py-2 font-medium text-xs">Service</th>
-                  <th className="text-right px-4 py-2 font-medium text-xs">Payout owed</th>
-                  <th className="text-left px-4 py-2 font-medium text-xs">Status</th>
-                  <th className="text-left px-4 py-2 font-medium text-xs">Paid at</th>
+                  <SortableTableHead label="Invoice" sortKey="invoice" currentSort={sortConfig} onSort={handleSort} className="h-auto px-4 py-2 font-medium text-xs" />
+                  <SortableTableHead label="Service" sortKey="service" currentSort={sortConfig} onSort={handleSort} className="h-auto px-4 py-2 font-medium text-xs" />
+                  <SortableTableHead label="Payout owed" sortKey="amount" currentSort={sortConfig} onSort={handleSort} align="right" className="h-auto px-4 py-2 font-medium text-xs" />
+                  <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="h-auto px-4 py-2 font-medium text-xs" />
+                  <SortableTableHead label="Paid at" sortKey="paidAt" currentSort={sortConfig} onSort={handleSort} className="h-auto px-4 py-2 font-medium text-xs" />
                   <th className="text-right px-4 py-2 font-medium text-xs">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {pendingData.invoices.map(inv => (
+                {sortedPending.map(inv => (
                   <tr key={inv.id} className="border-b last:border-0 hover:bg-muted/10">
                     <td className="px-4 py-2 font-mono text-xs">{inv.id.slice(0, 8)}</td>
                     <td className="px-4 py-2">{inv.serviceType}</td>

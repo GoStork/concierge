@@ -205,6 +205,7 @@ function GostorkAdminUsersView() {
     return parentSortValue(key, {
       name: item.name, email: item.email, mobile: item.mobileNumber,
       services: o.serviceKeys, matchStatus: o.matchStatus,
+      serviceStatuses: o.serviceStatuses,
       createdAt: item.createdAt, updatedAt: o.updatedAt,
       costSheets: o.costSheets, invoices: o.invoices, agreements: o.agreements,
       owner: o.owner, nextStep: o.nextStep, tags: o.tags,

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
 import { apiRequest } from "@/lib/queryClient";
 import { formatMoneyCents } from "@/lib/format-money";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -407,13 +408,34 @@ function CostStat({ label, spendCents, count }: { label: string; spendCents: num
 // Per-profile performance: type filter, sortable columns, top-performer highlight,
 // and an impressions-by-type breakdown bar.
 function PerformanceSection({ perProfile }: { perProfile: any[] }) {
-  const [sortKey, setSortKey] = useState<"impressions" | "views" | "saves" | "inquiries">("impressions");
+  type PerfKey = "name" | "type" | "impressions" | "views" | "saves" | "saveRate" | "inquiries" | "trend";
+  const [sortKey, setSortKey] = useState<PerfKey>("impressions");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+
+  // Every column sorts by the value its own cell prints: save rate by the
+  // ratio, not the raw saves, and Trend by the net movement the sparkline
+  // draws (last point minus first) so "who is climbing" is one click.
+  const perfValue = (p: any, key: PerfKey): string | number => {
+    switch (key) {
+      case "name": return (p.name || "").toLowerCase();
+      case "type": return p.type || "";
+      case "saveRate": return p.impressions ? (p.saves ?? 0) / p.impressions : -1;
+      case "trend": {
+        const series: number[] = p.series || [];
+        return series.length > 1 ? series[series.length - 1] - series[0] : 0;
+      }
+      default: return (p[key] ?? 0) as number;
+    }
+  };
 
   // Type filtering is now page-level (perProfile arrives already scoped).
   const types = Array.from(new Set(perProfile.map((p) => p.type)));
   const sorted = [...perProfile].sort((a, b) => {
-    const d = ((b[sortKey] ?? 0) as number) - ((a[sortKey] ?? 0) as number);
+    const aV = perfValue(a, sortKey);
+    const bV = perfValue(b, sortKey);
+    const d = typeof aV === "number" && typeof bV === "number"
+      ? bV - aV
+      : String(bV).localeCompare(String(aV), undefined, { sensitivity: "base" });
     return sortDir === "desc" ? d : -d;
   });
   const topImpr = perProfile.reduce((m, p) => Math.max(m, p.impressions ?? 0), 0);
@@ -422,13 +444,13 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
     .sort((a, b) => b.impressions - a.impressions);
   const maxTypeImpr = byType.reduce((m, t) => Math.max(m, t.impressions), 1);
 
-  const toggleSort = (k: typeof sortKey) => {
+  const toggleSort = (k: PerfKey) => {
     if (sortKey === k) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
     else { setSortKey(k); setSortDir("desc"); }
   };
-  const SortHead = ({ k, children }: { k: typeof sortKey; children: React.ReactNode }) => (
-    <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort(k)} data-testid={`sort-${k}`}>
-      <span className="inline-flex items-center gap-1">{children}{sortKey === k && (sortDir === "desc" ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />)}</span>
+  const SortHead = ({ k, children, align = "right" }: { k: PerfKey; children: React.ReactNode; align?: "left" | "right" }) => (
+    <TableHead className={`${align === "right" ? "text-right" : ""} cursor-pointer select-none`} onClick={() => toggleSort(k)} data-testid={`sort-${k}`}>
+      <span className={`inline-flex items-center gap-1 ${align === "right" ? "justify-end" : ""}`}>{children}{sortKey === k && (sortDir === "desc" ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />)}</span>
     </TableHead>
   );
 
@@ -456,13 +478,14 @@ function PerformanceSection({ perProfile }: { perProfile: any[] }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Profile</TableHead><TableHead>Type</TableHead>
+              <SortHead k="name" align="left">Profile</SortHead>
+              <SortHead k="type" align="left">Type</SortHead>
               <SortHead k="impressions">Impressions</SortHead>
               <SortHead k="views">Clicks</SortHead>
               <SortHead k="saves">Saves</SortHead>
-              <TableHead className="text-right">Save rate</TableHead>
+              <SortHead k="saveRate">Save rate</SortHead>
               <SortHead k="inquiries">Inquiries</SortHead>
-              <TableHead className="text-right">Trend</TableHead>
+              <SortHead k="trend">Trend</SortHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -752,12 +775,29 @@ function PlanCard({ plan, busy, isAdmin, onCharge, onComp }: { plan: any; busy: 
 function SponsorshipsTable({ sponsorships, loading, isAdmin, providerId, base, onChanged }: {
   sponsorships: any[]; loading: boolean; isAdmin: boolean; providerId?: string; base: string; onChanged: () => void;
 }) {
-  if (loading) return <div className="t-helper flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>;
+  // Header sort on top of the server's newest-first order; Period sorts by when
+  // the term started, which is what the date range in the cell leads with.
+  // Declared above the loading/empty returns - a hook after an early return
+  // changes the hook count between renders.
+  const { sortConfig, handleSort, sortData } = useTableSort();
   // Show current/actionable sponsorships plus any that were ever activated (real
   // subscriptions). Hide discarded pendings that never activated, so the table
   // stays clean. Server already orders newest-first.
   const rows = sponsorships.filter((s) =>
     ["ACTIVE", "PENDING_PAYMENT", "PAST_DUE"].includes(s.status) || !!s.currentPeriodStart);
+
+  const sortedRows = sortData(rows, (s: any, key) => {
+    switch (key) {
+      case "plan": return (s.plan?.displayName || "").toLowerCase();
+      case "status": return s.status || "";
+      case "billing": return s.billingMode === "AUTO_RENEW" ? "Auto-renew" : "One month";
+      case "amount": return s.isComped ? 0 : (s.priceCentsSnapshot ?? s.priceCents ?? null);
+      case "period": return s.currentPeriodStart ? new Date(s.currentPeriodStart).getTime() : null;
+      default: return null;
+    }
+  });
+
+  if (loading) return <div className="t-helper flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading...</div>;
   if (!rows.length) return null;
 
   return (
@@ -770,16 +810,16 @@ function SponsorshipsTable({ sponsorships, loading, isAdmin, providerId, base, o
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Plan</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Billing</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Period</TableHead>
+                <SortableTableHead label="Plan" sortKey="plan" currentSort={sortConfig} onSort={handleSort} />
+                <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} />
+                <SortableTableHead label="Billing" sortKey="billing" currentSort={sortConfig} onSort={handleSort} />
+                <SortableTableHead label="Amount" sortKey="amount" currentSort={sortConfig} onSort={handleSort} align="right" />
+                <SortableTableHead label="Period" sortKey="period" currentSort={sortConfig} onSort={handleSort} />
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((s) => (
+              {sortedRows.map((s) => (
                 <SponsorshipTableRow key={s.id} s={s} isAdmin={isAdmin} providerId={providerId} base={base} onChanged={onChanged} />
               ))}
             </TableBody>

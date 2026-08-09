@@ -754,7 +754,14 @@ export async function buildJourneyTimelines(
     journeys.push({
       journeyType,
       serviceLine: lineOfBucket(b, journeyType),
-      typeLabel: TYPE_LABEL[journeyType],
+      // "Donor Bank" is not a service a family shops for - a sperm bank IS
+      // sperm donation and an egg bank IS egg donation (frozen is just a
+      // sub-type). The bank LADDER stays its own shape (Donor Selected /
+      // Checkout instead of Match Call), but it wears its donation line's
+      // name so the platform speaks one service vocabulary.
+      typeLabel: journeyType === "bank"
+        ? (lineOfBucket(b, journeyType) === "sperm_donation" ? "Sperm Donation" : "Egg Donation")
+        : TYPE_LABEL[journeyType],
       providerId: b.providerId,
       providerName: b.providerName,
       providerLogo: b.providerLogo,

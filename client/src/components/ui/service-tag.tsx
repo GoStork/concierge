@@ -11,20 +11,19 @@ import { Check, Clock, X } from "lucide-react";
  *
  * Accepts raw strings from anywhere in the product ("egg_donation",
  * "Egg Donor Agency", "EGG DONATION", "Fertility Clinic", ...) - the
- * normalizer maps them all onto six canonical keys. Unknown strings render
+ * normalizer maps them all onto five canonical keys. Unknown strings render
  * as a neutral chip rather than throwing, so a new service degrades
  * gracefully until it is added here.
  */
 
 export type ServiceKey =
-  | "surrogacy" | "egg_donation" | "sperm_donation" | "ivf" | "bank" | "legal";
+  | "surrogacy" | "egg_donation" | "sperm_donation" | "ivf" | "legal";
 
 const CANON: Record<ServiceKey, { label: string; cssVar: string }> = {
   surrogacy:      { label: "Surrogacy",      cssVar: "--service-surrogacy" },
   egg_donation:   { label: "Egg Donation",   cssVar: "--service-egg-donation" },
   sperm_donation: { label: "Sperm Donation", cssVar: "--service-sperm-donation" },
   ivf:            { label: "IVF",            cssVar: "--service-ivf" },
-  bank:           { label: "Donor Bank",     cssVar: "--service-bank" },
   legal:          { label: "Legal",          cssVar: "--service-legal" },
 };
 
@@ -33,8 +32,11 @@ export function normalizeServiceKey(raw: string | null | undefined): ServiceKey 
   if (!raw) return null;
   const s = String(raw).toLowerCase().replace(/[\s_-]+/g, " ").trim();
   if (s.includes("surrogate") || s.includes("surrogacy")) return "surrogacy";
-  // Banks BEFORE donation: "egg bank" must not fall through to egg donation.
-  if (s.includes("bank")) return "bank";
+  // Banks are NOT their own service: a sperm bank is sperm donation, an egg
+  // bank is egg donation (frozen is a sub-type, not a category). So "Egg
+  // Bank" deliberately falls through to egg donation here - the opposite of
+  // the original rule, which gave banks a separate "Donor Bank" identity the
+  // family never actually shops for.
   if (s.includes("egg")) return "egg_donation";
   if (s.includes("sperm")) return "sperm_donation";
   if (s.includes("ivf") || s.includes("clinic") || s.includes("doctor") || s.includes("fertility")) return "ivf";
@@ -54,7 +56,7 @@ export function ServiceTag({
 }: {
   /** Any raw service string the product holds - normalized internally. */
   service: string | null | undefined;
-  /** Override the display text (e.g. keep "Egg Bank" instead of "Donor Bank"). */
+  /** Override the display text (e.g. spell out "IVF Clinic"). */
   label?: string;
   /** sm = table/ladder density; md = profile/header density. */
   size?: "sm" | "md";
