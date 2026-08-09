@@ -1133,9 +1133,13 @@ export function ParentActivitySection({ record, scope }: {
           never a dialog - the house rule, and a note you have to open a modal
           to write is a note nobody writes. */}
       <div className="flex flex-wrap gap-2">
+        {/* Outline buttons are transparent, which reads fine on a white card
+            but disappears into the sand page these sit directly on - same
+            fix as the mobile record tabs: explicit card fill. */}
         <Button
           variant={composer === "note" ? "default" : "outline"}
           size="sm"
+          className={composer === "note" ? undefined : "bg-card"}
           onClick={() => toggle("note")}
           data-testid="btn-activity-add-note"
         >
@@ -1145,6 +1149,7 @@ export function ParentActivitySection({ record, scope }: {
         <Button
           variant={composer === "next_step" ? "default" : "outline"}
           size="sm"
+          className={composer === "next_step" ? undefined : "bg-card"}
           onClick={() => toggle("next_step")}
           data-testid="btn-activity-add-next-step"
         >
@@ -1154,7 +1159,7 @@ export function ParentActivitySection({ record, scope }: {
         {scope && scope.lines.length >= 2 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="btn-activity-scope">
+              <Button variant="outline" size="sm" className="bg-card" data-testid="btn-activity-scope">
                 <Filter className="w-3.5 h-3.5 mr-1.5" />
                 {scope.active === "all" ? "All services" : scope.labels[scope.active] || scope.active}
                 <ChevronDown className="w-3 h-3 ml-1" />

@@ -474,6 +474,9 @@ async function buildActivity(ctx: {
     // it early buried the real confirmation cards under four "Pending"
     // rows that read as delivery failures.
     if (n.status === "pending" && n.scheduledFor) continue;
+    // "skipped" = a reminder whose booking was canceled before it fired.
+    // Nothing was ever sent, so there is nothing to log.
+    if (n.status === "skipped") continue;
     const b = n.bookingId ? bookingById.get(n.bookingId) : null;
     out.push({
       id: `notif-${n.id}`,

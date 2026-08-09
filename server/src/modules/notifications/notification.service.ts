@@ -302,8 +302,20 @@ export class NotificationService implements OnModuleInit {
     const twilioToken = process.env.TWILIO_AUTH_TOKEN;
     if (!twilioSid || !twilioToken) return;
 
+    // A future-scheduled reminder is SUPPOSED to sit pending until its time
+    // comes - sweeping it here married it to whatever Twilio message went out
+    // at booking time (the confirmation), which both duplicated the
+    // confirmation card on the activity timeline AND killed the real
+    // reminder (no longer pending = processReminders never sends it). Only
+    // rows past their scheduled time by the same 10-minute grace are stale.
+    const staleCutoff = new Date(Date.now() - 10 * 60_000);
     const stale = await this.prisma.notification.findMany({
-      where: { type: "SMS", status: "pending", createdAt: { lt: new Date(Date.now() - 10 * 60_000) } },
+      where: {
+        type: "SMS",
+        status: "pending",
+        createdAt: { lt: staleCutoff },
+        OR: [{ scheduledFor: null }, { scheduledFor: { lt: staleCutoff } }],
+      },
       orderBy: { createdAt: "desc" },
       take: 20,
     });
@@ -321,7 +333,9 @@ export class NotificationService implements OnModuleInit {
         );
         if (!res.ok) continue; // Twilio unhappy - retry next pass
         const body = await res.json();
-        const created = row.createdAt.getTime();
+        // A scheduled row's send happens at scheduledFor, not createdAt -
+        // anchor the match on when the message was supposed to leave.
+        const created = (row.scheduledFor ?? row.createdAt).getTime();
         // NEAREST in time, not first-in-window: several texts often go out
         // within the same minute (reminder + confirmation), and first-match
         // backfilled a sibling message's body onto this row.
