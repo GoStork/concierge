@@ -962,7 +962,7 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
     // sibling selector on the feed.
     <div
       className="relative rounded-[var(--radius)] border bg-card p-3 space-y-1.5"
-      style={entry.note?.pinned ? { marginTop: "0.875rem" } : undefined}
+      style={entry.note?.pinned ? { marginTop: "1.125rem" } : undefined}
       data-testid={`activity-${entry.id}`}
     >
       <div className="flex items-center gap-2.5">
@@ -1010,11 +1010,19 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
           does not matter visually. */}
       {entry.note?.pinned && (
         <span
-          className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full border bg-card flex items-center justify-center shadow-sm"
+          className="absolute left-1/2 -translate-x-1/2 w-7 h-7 rounded-full border bg-card flex items-center justify-center shadow-sm"
+          // Inline, not -top-*: the card's space-y hands this LAST child a
+          // margin-top that still shifts an absolutely positioned element,
+          // which sank the chip 6px below center. marginTop: 0 kills that;
+          // -15px = half the 28px chip plus the card's 1px border, so the
+          // chip's midline rides exactly on the visible frame line.
+          style={{ top: -15, marginTop: 0 }}
           title="Pinned"
           data-testid={`note-pinned-${entry.note.id}`}
         >
-          <Pin className="w-3 h-3" style={{ color: "hsl(var(--accent))" }} />
+          {/* rotate-45 tips the head to the upper right, the way HubSpot
+              draws a pin that is IN the board rather than lying beside it. */}
+          <Pin className="w-4 h-4 rotate-45" style={{ color: "hsl(var(--accent))" }} />
         </span>
       )}
     </div>
