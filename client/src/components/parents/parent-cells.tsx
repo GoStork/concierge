@@ -523,9 +523,10 @@ export function ParentInvoicesCell({
   invoices,
   limit = 2,
   layout = "chips",
+  stack = false,
   providerName,
   testId,
-}: MoneyCellBase & { invoices: any[]; providerName?: string | null }) {
+}: MoneyCellBase & { invoices: any[]; providerName?: string | null; stack?: boolean }) {
   if (!invoices || invoices.length === 0) {
     return <span className="t-helper">-</span>;
   }
@@ -553,7 +554,13 @@ export function ParentInvoicesCell({
   }
 
   return (
-    <div className={moneyWrapClass(layout)} data-testid={testId}>
+    // stack: one invoice per 22px line, so the parents table's invoice
+    // column pairs line-for-line with the stacked Services column (invoices
+    // arrive pre-sorted into service order by the caller).
+    <div
+      className={stack ? "flex flex-col gap-1 items-start" : moneyWrapClass(layout)}
+      data-testid={testId}
+    >
       {shown.map((inv) => {
         const isPaid = inv.status === "PAID";
         const isAwaiting = inv.status === "AWAITING_PAYMENT" || inv.status === "PAYMENT_PROCESSING";

@@ -905,7 +905,11 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     const org = s.providerId as string | null;
     const line = lineOfSessionId.get(s.id) ?? null;
     return resolveJourneyStage({
-      handedOff: !!s.handoffCompletedAt || !!(org && handedOffOrgs.has(org, line)),
+      // Same subject-aware rule as parent-contacts: a thread about a specific
+      // profile wears that profile's own stage; only subject-less sessions
+      // inherit the line-level handoff rollup. Without this, both egg donor
+      // rows on the record read "Handed Off" when only one of them was.
+      handedOff: !!s.handoffCompletedAt || (!s.subjectProfileId && !!(org && handedOffOrgs.has(org, line))),
       agreementSigned: signedSessions.has(s.id),
       agreementSent: agreementSessions.has(s.id),
       invoicePaid: paidSessions.has(s.id),

@@ -43,6 +43,24 @@ import {
 } from "./parent-cells";
 import type { ParentTableRow } from "./parent-record-types";
 
+/**
+ * Order a row's invoices to mirror its stacked Services column: invoices for
+ * the first listed service line first, then the second, unknown types last.
+ * Stable within a group (server already sends newest-first).
+ */
+function sortInvoicesByServiceOrder(
+  invoices: any[],
+  serviceStatuses?: { serviceKey: string | null }[] | null,
+): any[] {
+  const order = (serviceStatuses || []).map((ss) => ss.serviceKey).filter(Boolean) as string[];
+  if (order.length < 2 || invoices.length < 2) return invoices;
+  const rank = (inv: any) => {
+    const i = order.indexOf(inv.serviceType);
+    return i === -1 ? order.length : i;
+  };
+  return [...invoices].sort((a, b) => rank(a) - rank(b));
+}
+
 export interface ParentsTableProps {
   rows: ParentTableRow[];
   sortConfig: SortConfig;
@@ -304,7 +322,14 @@ export function ParentsTable({
                   />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                  <ParentInvoicesCell invoices={row.invoices || []} limit={1} />
+                  {/* All invoices, stacked, sorted into the same service
+                      order as the Services column so an invoice sits beside
+                      the line it was sent for. */}
+                  <ParentInvoicesCell
+                    invoices={sortInvoicesByServiceOrder(row.invoices || [], row.serviceStatuses)}
+                    limit={0}
+                    stack
+                  />
                 </TableCell>
                 <TableCell className="hidden 2xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <ParentAgreementsCell agreements={row.agreements || []} limit={1} />

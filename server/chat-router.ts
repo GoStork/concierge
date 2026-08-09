@@ -177,7 +177,13 @@ async function computeProfileAvailability(
 async function applyMatchedLabelForInCycle(
   items: { id?: string | null; profileStatus?: string | null }[],
 ): Promise<void> {
-  const targets = items.filter(s => (s.profileStatus === "IN_CYCLE" || s.profileStatus === "INACTIVE" || s.profileStatus === "PENDING") && s.id);
+  // ANY roster status upgrades on a committed thread - including AVAILABLE.
+  // An egg donor whose agency never flipped her roster status still read
+  // "Available" (= no pill at all) on the very thread where the family had
+  // paid and signed, while a surrogate in the same state wore "Matched".
+  // The commitment on THIS thread is the fact that matters, not whether the
+  // provider remembered to update the roster.
+  const targets = items.filter(s => s.profileStatus && s.id);
   if (targets.length === 0) return;
   const sessionIds = targets.map(s => s.id!);
   const [paid, signed] = await Promise.all([

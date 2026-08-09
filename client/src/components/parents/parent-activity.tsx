@@ -39,6 +39,7 @@ import { ServiceDot } from "@/components/ui/service-tag";
 import { cn } from "@/lib/utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
 import { NoteComposer, ParentFollowUpPanel, useCrmMutation } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
@@ -737,7 +738,12 @@ function MessageDetail({ detail, parentUserId }: {
 
   return (
     <div ref={ref} className="mt-2.5 pt-2.5 border-t border-border/60 space-y-1.5" data-testid={`detail-message-${detail.notificationId}`}>
-      <Row label="To">{detail.recipient}</Row>
+      {/* SMS recipients are stored E.164 (+19172247761) - render them
+          country-formatted like every other phone in the product. Email
+          recipients pass through untouched. */}
+      <Row label="To">
+        {detail.channel === "SMS" ? formatPhoneDisplay(detail.recipient) || detail.recipient : detail.recipient}
+      </Row>
       {detail.subject && <Row label="Subject">{detail.subject}</Row>}
       <Row label="Kind">{titleCaseWords(detail.kind)}</Row>
       <Row label="Delivery">

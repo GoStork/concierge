@@ -1754,7 +1754,14 @@ export class UsersController {
       // while the timeline beside it showed them ticked.
       const rowLine = serviceLineBySession.get(cs.id) ?? null;
       const journeyStatus = resolveJourneyStage({
-        handedOff: !!cs.handoffCompletedAt || handedOffAccounts.has(key, rowLine),
+        // A session with its OWN subject profile shows its own truth: the
+        // line-level rollup exists for paperwork spread across subject-less
+        // sibling sessions, but smearing it onto every same-line profile
+        // thread stamped "Handed Off" on a donor the family merely paid an
+        // invoice for - nobody could tell WHICH donor was actually handed
+        // off. (The line ladder itself still shows Handed Off - that is the
+        // journey's status; this is the profile's.)
+        handedOff: !!cs.handoffCompletedAt || (!cs.subjectProfileId && handedOffAccounts.has(key, rowLine)),
         agreementSigned: rowAgreements.some((a: any) => a.status === "SIGNED"),
         agreementSent: rowAgreements.length > 0,
         invoicePaid: rowInvoices.some((inv: any) => inv.status === "PAID"),
