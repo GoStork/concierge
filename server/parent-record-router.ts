@@ -212,11 +212,11 @@ parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (r
     const existing = await prisma.parentNote.findUnique({ where: { id: String(req.params.noteId) } });
     if (!existing || existing.deletedAt) return res.status(404).json({ message: "Note not found" });
     if (!canMutateCrmRow(viewer, existing as any)) return res.status(403).json({ message: "Forbidden" });
-    if (!viewer.isAdmin && existing.authorUserId !== viewer.userId) {
-      return res.status(403).json({ message: "You can only edit your own notes" });
-    }
-    // A pin toggle sends no body; the note keeps its text. Everything else
-    // still requires one.
+    // A pin toggle sends no body; the note keeps its text. It sits BEFORE the
+    // author check on purpose: a pin belongs to the PARENT RECORD, not to the
+    // note's author (HubSpot semantics) - a coordinator covering for a
+    // colleague must be able to pin or unpin the colleague's note. The org
+    // check above still applies; only the note's words stay author-only.
     const pinOnly = req.body?.body === undefined && typeof req.body?.pinned === "boolean";
     if (pinOnly) {
       const note = await prisma.parentNote.update({
@@ -224,6 +224,9 @@ parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (r
         data: { pinned: !!req.body.pinned },
       });
       return res.json(note);
+    }
+    if (!viewer.isAdmin && existing.authorUserId !== viewer.userId) {
+      return res.status(403).json({ message: "You can only edit your own notes" });
     }
 
     const body = sanitizeNoteHtml(String(req.body?.body || ""));

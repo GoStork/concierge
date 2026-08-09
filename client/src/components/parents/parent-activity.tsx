@@ -795,7 +795,11 @@ function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending
   pending: boolean;
   onStartEdit: () => void;
 }) {
-  if (!note.canManage || mode === "edit") return null;
+  // The menu renders for EVERY note the viewer can see: pinning belongs to
+  // the parent record, not the author (HubSpot semantics), so a colleague
+  // covering the lead can pin or unpin too. Only Edit and Delete - the
+  // note's words - stay author-only via canManage.
+  if (mode === "edit") return null;
   if (mode === "confirm") {
     return (
       <span className="shrink-0 inline-flex items-center gap-2">
@@ -828,16 +832,20 @@ function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending
         <DropdownMenuItem onClick={onTogglePin} data-testid={`btn-note-pin-${note.id}`}>
           <Pin className="w-3.5 h-3.5 mr-2" /> {note.pinned ? "Unpin" : "Pin"}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onStartEdit} data-testid={`btn-note-edit-${note.id}`}>
-          <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => setMode("confirm")}
-          className="text-[hsl(var(--destructive))] focus:text-[hsl(var(--destructive))]"
-          data-testid={`btn-note-delete-${note.id}`}
-        >
-          <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
-        </DropdownMenuItem>
+        {note.canManage && (
+          <DropdownMenuItem onClick={onStartEdit} data-testid={`btn-note-edit-${note.id}`}>
+            <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
+          </DropdownMenuItem>
+        )}
+        {note.canManage && (
+          <DropdownMenuItem
+            onClick={() => setMode("confirm")}
+            className="text-[hsl(var(--destructive))] focus:text-[hsl(var(--destructive))]"
+            data-testid={`btn-note-delete-${note.id}`}
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
