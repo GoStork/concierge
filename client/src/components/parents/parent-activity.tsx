@@ -942,7 +942,7 @@ export function ParentActivitySection({ record }: { record: ParentRecord }) {
           onClick={() => toggle("note")}
           data-testid="btn-activity-add-note"
         >
-          <StickyNote className="w-3.5 h-3.5 mr-1.5" /> Note
+          <StickyNote className="w-3.5 h-3.5 mr-1.5" /> Create Note
           <ChevronDown className={cn("w-3 h-3 ml-1 transition-transform", composer === "note" && "rotate-180")} />
         </Button>
         <Button
