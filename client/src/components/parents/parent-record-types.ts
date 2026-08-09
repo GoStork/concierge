@@ -273,6 +273,13 @@ export interface ParentTableRow {
    * Absent/single-entry rows render the plain matchStatus badge.
    */
   serviceStatuses?: { serviceKey: string | null; status: string; providerNames?: string[] }[];
+  /**
+   * Everything the family SAID they are looking for, whether or not this
+   * viewer is working on it. Rendered as extra service tags with no status
+   * and no money, so a provider sees the full ask (their cross-sell) without
+   * ever learning what another agency is doing on those lines.
+   */
+  interestServices?: string[];
   costSheets: any[];
   invoices: any[];
   agreements: any[];

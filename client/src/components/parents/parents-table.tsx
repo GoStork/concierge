@@ -59,6 +59,13 @@ function buildServiceLines(row: ParentTableRow): { serviceKey: string | null; st
     // Registered on that line (user rule) - "-" read as missing data.
     if (!seen.has(svc)) { seen.add(svc); lines.push({ serviceKey: svc, status: "registered" }); }
   }
+  // Services the family wants that this viewer is NOT working: the tag shows
+  // (matching the profile's "Interested in"), the status and money stay
+  // empty. Blank renders identically whether nobody is on that line or a
+  // rival agency is, so the gap cannot be read as intelligence.
+  for (const svc of row.interestServices || []) {
+    if (!seen.has(svc)) { seen.add(svc); lines.push({ serviceKey: svc, status: null }); }
+  }
   return lines;
 }
 

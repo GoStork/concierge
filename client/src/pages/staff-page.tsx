@@ -498,6 +498,10 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       for (const t of threads) if (t.serviceType) svc.add(t.serviceType);
       if (svc.size === 0) for (const k of threads[0]?.profileServiceKeys || []) svc.add(k);
       g.services = Array.from(svc);
+      // Everything the family asked for, own lines included. The table shows
+      // the ones this org is NOT running as bare tags (no status, no money),
+      // so a provider sees the full ask without seeing a rival's journey.
+      g.interestServices = threads[0]?.profileServiceKeys || [];
       const byLine = new Map<string, string>();
       let untypedBest: string | null = null;
       for (const t of threads) {
@@ -612,6 +616,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           householdNames: (row.members || []).length > 1 ? (row.members || []).map((m: any) => m.name) : undefined,
           contactReleased: !!row.contactReleased,
           services: row.services || [],
+          interestServices: row.interestServices || [],
           matchStatus: row.matchStatus ?? null,
           serviceStatuses: row.serviceStatuses || [],
           costSheets: row.costSheets || [],
