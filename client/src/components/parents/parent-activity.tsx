@@ -37,6 +37,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { renderRichText } from "@/lib/render-rich-text";
 import { NoteComposer, ParentFollowUpPanel, useCrmMutation } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
@@ -727,9 +728,14 @@ function MessageDetail({ detail, parentUserId }: {
 
       {/* An email shows the email. The plain-text version was a worse copy of
           the thing sitting right beneath it, so only messages with NO rendered
-          document (SMS) fall back to text. */}
+          document (SMS) fall back to text - rendered through the same
+          rich-text pass the chat uses, so the join URL becomes a clickable
+          link instead of forty characters of unbroken text in the middle of
+          one long sentence. */}
       {!detail.hasHtml && detail.bodyPreview && (
-        <p className="text-sm whitespace-pre-wrap break-words pt-1">{detail.bodyPreview}</p>
+        <div className="text-sm whitespace-pre-wrap break-all pt-1 rounded-[calc(var(--radius)/2)] bg-card border px-2.5 py-2">
+          {renderRichText(detail.bodyPreview)}
+        </div>
       )}
 
       {!detail.contentStored && (
