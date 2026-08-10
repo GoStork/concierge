@@ -29,6 +29,7 @@ import { isUserOnline, getOnlineUserIds } from "./online-tracker";
 import { getBaseUrl as getAppBaseUrlShared } from "./src/lib/get-base-url";
 import { formatWhen, resolveProviderTimezone } from "./src/lib/booking-when";
 import { buildBrandedEmail, fetchEmailBrandData } from "./src/modules/notifications/email-builder";
+import { humanizeLineServiceType } from "./src/modules/billing/billing.service";
 import { canProviderAccessSession, canSendProviderMessage, COORDINATOR_SUBJECT_TYPES, ALL_SESSION_PROVIDER_ROLES } from "../shared/roles";
 import {
   evaluateMatchCallGates,
@@ -4827,7 +4828,7 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
           dueAt: inv.dueAt,
           overdue: inv.dueAt ? inv.dueAt < now : false,
           amountCents: inv.serviceAmount,
-          serviceType: inv.serviceType,
+          serviceType: humanizeLineServiceType(inv.serviceType),
           parentName: inv.parentUser?.firstName || inv.parentUser?.name || inv.parentUser?.email || "Parent",
           providerName: inv.provider?.name || null,
           taskKey: `due-invoice:${inv.id}:${inv.dueAt ? new Date(inv.dueAt).getTime() : 0}`,
@@ -4894,7 +4895,7 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
         id: inv.id,
         status: inv.status,
         amountCents: inv.serviceAmount,
-        serviceType: inv.serviceType,
+        serviceType: humanizeLineServiceType(inv.serviceType),
         createdAt: inv.createdAt,
         parentName: inv.parentUser?.firstName || inv.parentUser?.name || inv.parentUser?.email || "Parent",
         providerName: inv.provider?.name || null,

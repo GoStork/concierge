@@ -36,16 +36,11 @@ import {
 const formatCents = (cents: number, currency?: string) => formatMoneyCents(cents, currency || "USD");
 
 // Maps provider type names to human-readable service types
-function resolveServiceType(providerTypeName: string | undefined): string {
-  if (!providerTypeName) return "Fertility Service";
-  const name = providerTypeName.toLowerCase();
-  if (name.includes("ivf") || name.includes("clinic")) return "IVF Treatment";
-  if (name.includes("egg donor")) return "Egg Donation";
-  if (name.includes("sperm")) return "Sperm Donation";
-  if (name.includes("surrogacy")) return "Surrogacy";
-  if (name.includes("egg bank")) return "Egg Donation";
-  return "Fertility Service";
-}
+// resolveServiceType lived here: the label-returning twin of
+// providerTypeNameToServiceType below. Its only caller stamped
+// Invoice.serviceType, which now stores the enum like every other model, so
+// keeping it would leave a second, subtly different vocabulary
+// ("IVF Treatment" vs "IVF Clinic") waiting to be picked up by mistake.
 
 // Maps the line-item enum (DB-stored) to a parent-facing label.
 export function humanizeLineServiceType(t: string): string {
@@ -429,11 +424,17 @@ export class BillingService {
 
     // When line items are supplied, the invoice's primary serviceType comes
     // from the FIRST line item rather than the provider's first service - so
-    // legacy code paths that read invoice.serviceType still render a sensible
-    // headline (e.g. "Surrogacy" instead of "Egg Donation").
+    // code paths that read invoice.serviceType still show a sensible headline
+    // (e.g. "Surrogacy" instead of "Egg Donation").
+    //
+    // Stored as the ENUM, matching Agreement.serviceType and
+    // ProviderQuote.serviceType. It used to be a display label, so the three
+    // models disagreed about the same field: an enum-keyed lookup applied to
+    // "Egg Donation" silently missed, which is how a parent's match status
+    // came out wrong. Every render point humanizes at the boundary instead.
     const headlineServiceType = hasLineItems
-      ? humanizeLineServiceType(lineItems![0].serviceType)
-      : resolveServiceType(provider.services.find(s => s.status === "APPROVED")?.providerType?.name
+      ? String(lineItems![0].serviceType || "OTHER").toUpperCase()
+      : providerTypeNameToServiceType(provider.services.find(s => s.status === "APPROVED")?.providerType?.name
           ?? provider.services[0]?.providerType?.name);
 
     if (dryRun) {
@@ -1032,7 +1033,7 @@ export class BillingService {
           paymentToken: invoice.paymentToken,
           paymentUrl,
           providerName: invoice.providerName,
-          serviceType: invoice.serviceType,
+          serviceType: humanizeLineServiceType(invoice.serviceType),
           serviceAmount: invoice.serviceAmount,
           referralFeeAmount: invoice.referralFeeAmount,
           providerPayoutAmount: invoice.providerPayoutAmount,
@@ -1053,7 +1054,7 @@ export class BillingService {
       parentEmail: invoice.parentUser.email,
       parentPhone: invoice.parentUser.mobileNumber,
       providerName: invoice.providerName,
-      serviceType: invoice.serviceType,
+      serviceType: humanizeLineServiceType(invoice.serviceType),
       serviceAmountFormatted: formatCents(invoice.serviceAmount),
       referralFeeFormatted: formatCents(invoice.referralFeeAmount),
       paymentUrl,
@@ -2606,7 +2607,7 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
         referralFeeAmount: invoice.referralFeeAmount,
         providerPayoutAmount: invoice.providerPayoutAmount,
         currency: invoice.currency || "USD",
-        serviceType: invoice.serviceType,
+        serviceType: humanizeLineServiceType(invoice.serviceType),
         providerName: invoice.providerName,
         description: invoice.description || null,
         paidAt,
@@ -2645,7 +2646,7 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
       providerEmails,
       receiptNumber,
       paidAmountFormatted,
-      serviceType: invoice.serviceType,
+      serviceType: humanizeLineServiceType(invoice.serviceType),
       description: invoice.description || null,
       paidAtIso: paidAt.toISOString(),
       pdf,
@@ -2712,11 +2713,11 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
           role: "assistant",
           // Viewer-specific voices (dual-audience rule) + the fireworks
           // celebration on a completed payment (not on authorizations).
-          content: `You've ${verb} ${amount} for ${invoice.serviceType} via ${invoice.providerName} - thank you!`,
+          content: `You've ${verb} ${amount} for ${humanizeLineServiceType(invoice.serviceType)} via ${invoice.providerName} - thank you!`,
           senderType: "system",
           senderName: "GoStork",
           uiCardData: {
-            providerContent: `${parentLabel} has ${verb} ${amount} for ${invoice.serviceType} via ${invoice.providerName}. Thank you!`,
+            providerContent: `${parentLabel} has ${verb} ${amount} for ${humanizeLineServiceType(invoice.serviceType)} via ${invoice.providerName}. Thank you!`,
             ...(verb === "paid" ? { celebration: "payment_received" } : {}),
           },
         },
@@ -2994,7 +2995,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
             parentName: invoice.parentUser.name || invoice.parentUser.email,
             parentUserId: invoice.parentUserId,
             providerName: invoice.providerName,
-            serviceType: invoice.serviceType,
+            serviceType: humanizeLineServiceType(invoice.serviceType),
             serviceAmount: formatCents(invoice.serviceAmount),
             referralFee: formatCents(invoice.referralFeeAmount),
             providerPayout: formatCents(invoice.providerPayoutAmount),
@@ -3008,7 +3009,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
       invoiceId: invoice.id,
       parentName: invoice.parentUser.name || invoice.parentUser.email,
       providerName: invoice.providerName,
-      serviceType: invoice.serviceType,
+      serviceType: humanizeLineServiceType(invoice.serviceType),
       serviceAmountFormatted: formatCents(invoice.serviceAmount),
       referralFeeFormatted: formatCents(invoice.referralFeeAmount),
       providerPayoutFormatted: formatCents(invoice.providerPayoutAmount),
@@ -3358,7 +3359,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
       invoiceId: invoice.id,
       paymentToken: invoice.paymentToken,
       customerId,
-      description: `GoStork - ${invoice.providerName} - ${invoice.serviceType}`,
+      description: `GoStork - ${invoice.providerName} - ${humanizeLineServiceType(invoice.serviceType)}`,
     });
 
     await this.prisma.invoice.update({
@@ -3506,7 +3507,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
           referralFeeAmount: invoice.referralFeeAmount,
           providerPayoutAmount: invoice.providerPayoutAmount,
           currency,
-          serviceType: invoice.serviceType,
+          serviceType: humanizeLineServiceType(invoice.serviceType),
           providerName: invoice.providerName,
           description: invoice.description || null,
           paidAt,
@@ -3557,7 +3558,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
 
     const lineRowsHtml = (lineItems.length > 0
       ? lineItems
-      : [{ serviceType: invoice.serviceType, description: invoice.description, amountCents: invoice.serviceAmount }]
+      : [{ serviceType: humanizeLineServiceType(invoice.serviceType), description: invoice.description, amountCents: invoice.serviceAmount }]
     )
       .map((li: any) => `
         <tr>

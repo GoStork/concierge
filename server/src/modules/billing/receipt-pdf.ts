@@ -324,9 +324,11 @@ export function generateReceiptPdf(args: {
       const lines = invoice.lineItems && invoice.lineItems.length > 0
         ? invoice.lineItems
         // Fallback when no line items - synthesize one row from the legacy fields.
+        // No serviceTypeLabel here on purpose: lineLabel prefers it VERBATIM,
+        // so passing the raw column through would print "EGG_DONATION" on the
+        // receipt. Left absent, lineLabel maps the enum itself.
         : [{
             serviceType: invoice.serviceType,
-            serviceTypeLabel: invoice.serviceType,
             description: invoice.description,
             amountCents: invoice.serviceAmount,
           }];

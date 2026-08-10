@@ -532,7 +532,7 @@ export class CostSheetController {
       invoices: invoices.map((inv: any) => ({
         id: inv.id,
         paymentToken: inv.paymentToken,
-        serviceType: inv.serviceType,
+        serviceType: humanizeLineServiceType(inv.serviceType),
         providerName: inv.providerName,
         serviceAmount: inv.serviceAmount,
         status: inv.status,

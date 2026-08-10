@@ -18,7 +18,7 @@ import {
 import { Request, Response } from "express";
 import geoip from "geoip-lite";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
-import { BillingService } from "./billing.service";
+import { BillingService, humanizeLineServiceType } from "./billing.service";
 import { releaseSubjectHold, RELEASE_COUNTDOWN_MS, PAY_SOON_EXTENSION_MS, fmtHoldDeadline } from "./donor-hold.sweep";
 import { SponsorshipService } from "../sponsorship/sponsorship.service";
 import * as stripeService from "../../../stripe-service";
@@ -523,7 +523,7 @@ export class BillingController {
       id: invoice.id,
       paymentToken: invoice.paymentToken,
       providerName: invoice.providerName,
-      serviceType: invoice.serviceType,
+      serviceType: humanizeLineServiceType(invoice.serviceType),
       description: invoice.description,
       serviceAmount: invoice.serviceAmount,
       referralFeeAmount: invoice.referralFeeAmount,
@@ -787,7 +787,7 @@ export class BillingController {
         currency: invoice.currency || "USD",
         invoiceId: invoice.id,
         paymentToken: invoice.paymentToken,
-        description: `GoStork - ${invoice.providerName} - ${invoice.serviceType}`,
+        description: `GoStork - ${invoice.providerName} - ${humanizeLineServiceType(invoice.serviceType)}`,
         captureMethod: isClearanceFlow ? "manual" : "automatic",
         receiptEmail: (invoice as any).parentUser?.email,
         buyerCountry,
