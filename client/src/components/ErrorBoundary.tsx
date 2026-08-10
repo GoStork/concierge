@@ -81,7 +81,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
               </button>
               <button
                 onClick={() => this.setState({ error: null, info: null })}
-                className="h-9 px-4 rounded-[var(--radius)] border border-border bg-background text-foreground font-ui text-sm"
+                className="h-9 px-4 rounded-[var(--radius)] border border-border bg-card text-foreground font-ui text-sm"
               >
                 Dismiss
               </button>

@@ -547,7 +547,7 @@ function RuleForm({
           value={guidance}
           onChange={(e) => setGuidance(e.target.value)}
           placeholder="Mention that GoStork partners offer financing options through Prosper..."
-          className="mt-1 w-full rounded-[var(--radius)] border border-input bg-background px-3 py-2 text-sm min-h-[80px] resize-y"
+          className="mt-1 w-full rounded-[var(--radius)] border border-input bg-card px-3 py-2 text-sm min-h-[80px] resize-y"
           data-testid="input-rule-guidance"
         />
       </div>
@@ -1061,7 +1061,7 @@ function KnowledgeBaseCard() {
                     value={answerInputs[w.id] || ""}
                     onChange={(e) => setAnswerInputs((prev) => ({ ...prev, [w.id]: e.target.value }))}
                     placeholder="Type your answer..."
-                    className="w-full rounded-[var(--radius)] border border-input bg-background px-3 py-2 text-sm min-h-[60px] resize-y"
+                    className="w-full rounded-[var(--radius)] border border-input bg-card px-3 py-2 text-sm min-h-[60px] resize-y"
                     data-testid={`input-whisper-answer-${w.id}`}
                   />
                   <div className="flex justify-end mt-2">

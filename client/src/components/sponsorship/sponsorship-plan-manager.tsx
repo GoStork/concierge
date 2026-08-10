@@ -191,7 +191,7 @@ function NewBundleForm({ onDone, onCancel }: { onDone: () => void; onCancel: () 
       <div className="flex items-end gap-3 flex-wrap">
         <div className="w-36">
           <label className="t-helper">Type</label>
-          <select value={entityType} onChange={(e) => setEntityType(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm" data-testid="new-plan-type">
+          <select value={entityType} onChange={(e) => setEntityType(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm" data-testid="new-plan-type">
             {SLOT_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
           </select>
         </div>

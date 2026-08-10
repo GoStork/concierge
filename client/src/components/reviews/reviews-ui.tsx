@@ -168,7 +168,7 @@ export function ReviewForm({
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="A sentence or two helps other families (optional)"
-        className="w-full text-sm rounded-[var(--radius)] border bg-background p-2 min-h-[70px] font-ui"
+        className="w-full text-sm rounded-[var(--radius)] border bg-card p-2 min-h-[70px] font-ui"
         data-testid="review-text"
       />
       <label className="flex items-start gap-2 cursor-pointer">

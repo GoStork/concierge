@@ -1638,7 +1638,7 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
                   placeholder={`Enter ${f.label.toLowerCase()}`}
                   rows={3}
                   disabled={isDisabled}
-                  className="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-border bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 disabled:cursor-default disabled:resize-none"
+                  className="w-full px-3 py-2 text-sm rounded-[var(--radius)] border border-border bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60 disabled:cursor-default disabled:resize-none"
                 />
               </div>
             );

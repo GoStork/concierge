@@ -96,7 +96,7 @@ function FieldRow({
         <select
           value={value === "true" ? "true" : value === "false" ? "false" : ""}
           onChange={(e) => onChange(field, e.target.value)}
-          className="flex h-10 w-full rounded-[var(--radius)] border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-10 w-full rounded-[var(--radius)] border border-input bg-card px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           data-testid={`input-${field}`}
         >
           <option value="">-</option>

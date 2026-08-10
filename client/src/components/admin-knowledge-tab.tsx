@@ -44,7 +44,7 @@ function RuleForm({
           value={guidance}
           onChange={(e) => setGuidance(e.target.value)}
           placeholder="e.g. Mention that GoStork partners offer financing options through Prosper..."
-          className="mt-1 w-full rounded-[var(--radius)] border border-input bg-background px-3 py-2 text-sm min-h-[80px] resize-y"
+          className="mt-1 w-full rounded-[var(--radius)] border border-input bg-card px-3 py-2 text-sm min-h-[80px] resize-y"
           data-testid="input-rule-guidance"
         />
       </div>

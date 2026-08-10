@@ -29,7 +29,7 @@ function Calendar({
         caption_label: isDropdownCaption ? "hidden" : "text-sm font-medium",
         caption_dropdowns: "flex justify-center items-center gap-1.5",
         dropdown:
-          "appearance-none rounded-[var(--radius)] border border-input bg-background px-2 py-1 text-sm font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring",
+          "appearance-none rounded-[var(--radius)] border border-input bg-card px-2 py-1 text-sm font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring",
         dropdown_month: "relative",
         dropdown_year: "relative",
         dropdown_icon: "hidden",

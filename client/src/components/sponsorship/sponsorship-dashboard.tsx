@@ -161,10 +161,10 @@ export function SponsorshipDashboard({ providerId, isAdmin = false, mode = "spon
           {showFullAnalytics && range === "custom" && (
             <div className="flex items-center gap-1.5 text-sm">
               <input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm" data-testid="range-from" />
+                className="h-9 rounded-md border border-input bg-card px-2 text-sm" data-testid="range-from" />
               <span className="text-muted-foreground">to</span>
               <input type="date" value={customTo} min={customFrom || undefined} onChange={(e) => setCustomTo(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm" data-testid="range-to" />
+                className="h-9 rounded-md border border-input bg-card px-2 text-sm" data-testid="range-to" />
             </div>
           )}
           {showFullAnalytics && (a?.availableTypes?.length ?? 0) > 1 && (
@@ -759,7 +759,7 @@ function PlanCard({ plan, busy, isAdmin, onCharge, onComp }: { plan: any; busy: 
       {isAdmin && comping && (
         <div className="mt-2 pt-2 border-t border-border flex items-center gap-2 flex-wrap">
           <span className="t-helper">Free for</span>
-          <select value={months} onChange={(e) => setMonths(parseInt(e.target.value, 10))} className="h-8 rounded-md border border-input bg-background px-2 text-sm" data-testid={`comp-months-${plan.tierKey}`}>
+          <select value={months} onChange={(e) => setMonths(parseInt(e.target.value, 10))} className="h-8 rounded-md border border-input bg-card px-2 text-sm" data-testid={`comp-months-${plan.tierKey}`}>
             {[1, 2, 3, 6, 12].map((m) => <option key={m} value={m}>{m} month{m > 1 ? "s" : ""}</option>)}
           </select>
           <Button size="sm" onClick={() => { onComp(months); setComping(false); }} disabled={busy} data-testid={`comp-grant-${plan.tierKey}`}>Grant free</Button>

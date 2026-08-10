@@ -87,14 +87,14 @@ export default function MyCostSheetsPage() {
             value={q}
             onChange={e => setParam({ q: e.target.value })}
             placeholder="Search by provider or file name..."
-            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-background text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
+            className="w-full h-9 pl-9 pr-3 rounded-[var(--radius)] border bg-card text-sm outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
             data-testid="cost-sheets-search"
           />
         </div>
         <select
           value={status}
           onChange={e => setParam({ status: e.target.value })}
-          className="h-9 px-3 rounded-[var(--radius)] border bg-background text-sm"
+          className="h-9 px-3 rounded-[var(--radius)] border bg-card text-sm"
           data-testid="cost-sheets-status-filter"
         >
           {COST_SHEET_STATUS_FILTERS.map(f => (

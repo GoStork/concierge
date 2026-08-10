@@ -525,7 +525,7 @@ function RefundButton({ invoice, onRefunded }: { invoice: any; onRefunded: () =>
                 <select
                   value={reason}
                   onChange={e => setReason(e.target.value as any)}
-                  className="h-10 rounded-md border bg-background px-3 text-sm w-full"
+                  className="h-10 rounded-md border bg-card px-3 text-sm w-full"
                 >
                   <option value="requested_by_customer">Requested by customer</option>
                   <option value="duplicate">Duplicate charge</option>

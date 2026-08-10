@@ -62,7 +62,7 @@ export function SuggestTimeForm({ bookingId, onCancel, onSuccess }: { bookingId:
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Add a message (optional)"
-        className="w-full text-xs rounded-[var(--radius)] border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full text-xs rounded-[var(--radius)] border border-input bg-card px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
         rows={2}
         data-testid="input-suggest-message"
       />
@@ -111,7 +111,7 @@ function RescheduleForm({ bookingId, onCancel, onSuccess }: { bookingId: string;
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         placeholder="Add a message (optional)"
-        className="w-full text-xs rounded-[var(--radius)] border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full text-xs rounded-[var(--radius)] border border-input bg-card px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
         rows={2}
         data-testid="input-reschedule-message"
       />
