@@ -18,7 +18,7 @@ import {
   resolveCrmViewer,
   resolveWriteTarget,
 } from "./parent-crm";
-import { parentAccountKey, resolveParentGates } from "./parent-privacy";
+import { parentAccountKey, resolveParentGates, resolveParentGatesBatch } from "./parent-privacy";
 import { emitJourneyEvent } from "./journey-events";
 import { blockContactInfo } from "./contact-guard";
 import { sanitizeNoteHtml, noteHtmlToText } from "./note-html";
@@ -546,6 +546,77 @@ parentRecordRouter.get("/api/parents/:id/assignable", requireAuth, async (req, r
     });
   } catch (e: any) {
     fail(res, e, "assignable users");
+  }
+});
+
+/**
+ * Every open task for this provider, for the Home work queue.
+ *
+ * Reads TASKS rather than re-deriving the queue, which is the point of
+ * materializing: dismiss an item on the family's record and it leaves Home
+ * too, because there is only one row behind both. Mine first, then the rest of
+ * the org - unassigned work is still everyone's to pick up.
+ */
+parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
+  try {
+    const user = req.user as any;
+    const providerId = user?.providerId;
+    if (!providerId) return res.status(403).json({ message: "Forbidden" });
+
+    const rows = await prisma.parentTask.findMany({
+      where: { providerId, status: "OPEN" },
+      orderBy: { dueAt: "asc" },
+      take: 200,
+    });
+    if (!rows.length) return res.json({ tasks: [] });
+
+    // Parent NAMES go through the same gate as everywhere else: a family who
+    // has not released their identity to this org is "Prospective Parent" on
+    // the dashboard too, not just in chat.
+    const accountKeys = Array.from(new Set(rows.map((r) => r.parentAccountId)));
+    const members = await prisma.user.findMany({
+      where: { OR: [{ parentAccountId: { in: accountKeys } }, { id: { in: accountKeys } }] },
+      select: { id: true, name: true, firstName: true, email: true, parentAccountId: true },
+    });
+    const gates = await resolveParentGatesBatch(
+      providerId,
+      accountKeys.map((k) => ({ accountKey: k })),
+      prisma as any,
+    );
+    const nameByKey = new Map<string, { name: string; parentUserId: string }>();
+    for (const m of members as any[]) {
+      const key = m.parentAccountId || m.id;
+      if (nameByKey.has(key)) continue;
+      const g = gates.get(key);
+      nameByKey.set(key, {
+        name: g?.showIdentity ? (m.firstName || m.name || "Parent") : "Prospective Parent",
+        parentUserId: m.id,
+      });
+    }
+
+    const now = Date.now();
+    res.json({
+      tasks: rows.map((t) => {
+        const who = nameByKey.get(t.parentAccountId);
+        return {
+          id: t.id,
+          title: t.title,
+          type: t.type,
+          priority: t.priority,
+          dueAt: t.dueAt,
+          overdue: new Date(t.dueAt).getTime() < now,
+          source: t.source,
+          deepLink: t.deepLink,
+          assigneeUserId: t.assigneeUserId,
+          assigneeName: t.assigneeName,
+          mine: t.assigneeUserId === user.id,
+          parentName: who?.name || "A family",
+          parentUserId: who?.parentUserId || null,
+        };
+      }).sort((a, b) => (a.mine === b.mine ? 0 : a.mine ? -1 : 1)),
+    });
+  } catch (e: any) {
+    fail(res, e, "provider tasks");
   }
 });
 

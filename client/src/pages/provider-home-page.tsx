@@ -25,7 +25,7 @@ import {
   ChevronRight,
   Video,
   DollarSign,
-  MessageCircleQuestion,
+  MessageCircleQuestion, Phone,
   MessageCircle,
   CalendarClock,
   BarChart3,
@@ -39,6 +39,21 @@ import { QueueRow, SectionHeader } from "@/components/home/home-sections";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { derivePayoutStatus } from "@/lib/payout-status";
+
+interface ProviderTask {
+  id: string;
+  title: string;
+  type: string;
+  priority: string;
+  dueAt: string;
+  overdue: boolean;
+  source: string;
+  deepLink: string | null;
+  assigneeName: string | null;
+  mine: boolean;
+  parentName: string;
+  parentUserId: string | null;
+}
 
 interface ProviderQueue {
   openApprovals: Array<{ messageId: string; sessionId: string; type: string; createdAt: string; parentName: string; documentType: string | null; totalCents: number | null }>;
@@ -164,6 +179,22 @@ export default function ProviderHomePage() {
     ...fresh,
   });
 
+  /**
+   * The work queue itself. Reads TASKS - the same rows that live on each
+   * family's record - so the queue and the record can never disagree, and a
+   * coordinator's own tasks sit alongside the ones the product raised.
+   */
+  const { data: taskData } = useQuery<{ tasks: ProviderTask[] }>({
+    queryKey: ["/api/provider/tasks"],
+    queryFn: async () => {
+      const res = await fetch("/api/provider/tasks", { credentials: "include" });
+      if (!res.ok) return { tasks: [] };
+      return res.json();
+    },
+    ...fresh,
+  });
+  const tasks = taskData?.tasks || [];
+
   const { data: pendingBookings = [] } = useQuery<any[]>({
     queryKey: ["/api/calendar/bookings/pending"],
     queryFn: async () => {
@@ -216,9 +247,7 @@ export default function ProviderHomePage() {
     .sort((a: any, b: any) => new Date(b.payoutInitiatedAt || b.paidAt || b.createdAt).getTime() - new Date(a.payoutInitiatedAt || a.paidAt || a.createdAt).getTime());
 
   const queueCount =
-    (queue?.openApprovals.length || 0) +
-    (queue?.pendingWhispers.length || 0) +
-    (queue?.reviewsAwaitingReply?.length || 0) +
+    tasks.length +
     (queue?.ipFormsToReview?.length || 0) +
     pendingBookings.length +
     (unreadMessages > 0 ? 1 : 0);
@@ -243,23 +272,25 @@ export default function ProviderHomePage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {(queue?.openApprovals || []).map(a => {
-              const { title, detail, cta } = approvalLabel(a, conciergeName);
-              const icon = a.type === "invoice_draft_approval" ? <Receipt className="w-4 h-4" />
-                : a.type === "agreement_draft_approval" ? <FileSignature className="w-4 h-4" />
-                : a.type === "provider_readiness_prompt" ? <MessageCircleQuestion className="w-4 h-4" />
-                : <FileText className="w-4 h-4" />;
-              return (
-                <QueueRow
-                  key={a.messageId}
-                  icon={icon}
-                  title={title}
-                  detail={detail}
-                  cta={cta}
-                  onClick={() => navigate(`/chat/${a.sessionId}?msg=${a.messageId}`)}
-                />
-              );
-            })}
+            {/* Tasks, not a re-derivation. These are the same rows that live on
+                the family's record, so dismissing one there removes it here -
+                which a second derived copy could never honour. Mine first. */}
+            {tasks.map(t => (
+              <QueueRow
+                key={t.id}
+                icon={t.type === "CALL" ? <Phone className="w-4 h-4" />
+                  : t.type === "EMAIL" ? <MessageCircle className="w-4 h-4" />
+                  : <CheckCircle2 className="w-4 h-4" />}
+                title={t.title}
+                detail={[
+                  t.overdue ? "Overdue" : `Due ${fmtWhen(t.dueAt)}`,
+                  t.mine ? null : (t.assigneeName || "Unassigned"),
+                  t.priority !== "NONE" ? t.priority.toLowerCase() : null,
+                ].filter(Boolean).join(" - ")}
+                cta={t.source === "SYSTEM" ? "Review" : "Open"}
+                onClick={() => navigate(t.deepLink || (t.parentUserId ? `/parents/${t.parentUserId}` : "/parents"))}
+              />
+            ))}
             {pendingBookings.map((b: any) => (
               <QueueRow
                 key={b.id}
@@ -279,16 +310,6 @@ export default function ProviderHomePage() {
                 onClick={() => navigate("/chat")}
               />
             )}
-            {(queue?.pendingWhispers || []).map(w => (
-              <QueueRow
-                key={w.id}
-                icon={<MessageCircleQuestion className="w-4 h-4" />}
-                title="Question from a prospective parent"
-                detail={w.questionText.length > 90 ? `${w.questionText.slice(0, 90)}...` : w.questionText}
-                cta="Answer"
-                onClick={() => navigate("/chat")}
-              />
-            ))}
             {(queue?.ipFormsToReview || []).map(f => (
               <QueueRow
                 key={`ipform-${f.responseId}`}
@@ -297,16 +318,6 @@ export default function ProviderHomePage() {
                 detail="Download the PDF or the surrogate-safe version to share with candidates"
                 cta="Review"
                 onClick={() => navigate("/provider/parent-forms")}
-              />
-            ))}
-            {(queue?.reviewsAwaitingReply || []).map(r => (
-              <QueueRow
-                key={r.reviewId}
-                icon={<Star className="w-4 h-4" />}
-                title={`New ${r.rating}-star review from ${r.reviewerLabel}${r.memberName ? ` (about ${r.memberName})` : ""}`}
-                detail={r.text ? (r.text.length > 90 ? `${r.text.slice(0, 90)}...` : r.text) : "A public reply shows prospective families how you engage"}
-                cta="Reply"
-                onClick={() => navigate("/performance?tab=reviews")}
               />
             ))}
           </div>
