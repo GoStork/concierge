@@ -89,7 +89,12 @@ export function useCrmMutation(parentUserId: string, onDone?: () => void) {
  * everything else that happened, so it needs the box to type in without a
  * second copy of the list underneath it.
  */
-export function NoteComposer({ record, onPosted }: { record: ParentRecord; onPosted?: () => void }) {
+export function NoteComposer({ record, onPosted, onCancel }: {
+  record: ParentRecord;
+  onPosted?: () => void;
+  /** Closes the composer without posting. Omit where it is always open. */
+  onCancel?: () => void;
+}) {
   const isAdmin = record.viewer.role === "admin";
   const choices = scopeChoices(record, isAdmin);
   const [scopeKey, setScopeKey] = useState(choices[0]?.key || "gostork");
@@ -108,7 +113,11 @@ export function NoteComposer({ record, onPosted }: { record: ParentRecord; onPos
         placeholder="What should the next person to open this record know?"
         testId="input-crm-note"
       />
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      {/* Scope pills sit on their own row now. The actions below them mirror
+          the edit-a-note controls exactly - same order, same variants, same
+          bottom-left position - so posting a new note and saving an edited one
+          are the same gesture in the same place. */}
+      <div className="flex items-center gap-2 flex-wrap">
         {isAdmin ? (
           <OptionPills
             // One line per pill. A provider like "Sperm Bank California |
@@ -128,8 +137,10 @@ export function NoteComposer({ record, onPosted }: { record: ParentRecord; onPos
           // A provider has only one audience, so there is nothing to pick and
           // nothing to say - the visibility chip was removed as noise. The
           // scope still travels on the WRITE below; this was display only.
-          <span />
+          null
         )}
+      </div>
+      <div className="flex items-center gap-2">
         <Button
           size="sm"
           disabled={!hasText || mut.isPending}
@@ -143,6 +154,11 @@ export function NoteComposer({ record, onPosted }: { record: ParentRecord; onPos
           {mut.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
           Post note
         </Button>
+        {onCancel && (
+          <Button size="sm" variant="ghost" onClick={onCancel} data-testid="btn-cancel-note">
+            Cancel
+          </Button>
+        )}
       </div>
     </div>
   );

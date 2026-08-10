@@ -1212,8 +1212,10 @@ export function ParentActivitySection({ record, scope }: {
           onClick={() => toggle("note")}
           data-testid="btn-activity-add-note"
         >
+          {/* No chevron: this opens a composer, it does not open a menu, and
+              the caret promised a dropdown that never existed. Closing it is
+              Cancel, next to Post, where the note's own edit controls are. */}
           <StickyNote className="w-3.5 h-3.5 mr-1.5" /> Create Note
-          <ChevronDown className={cn("w-3 h-3 ml-1 transition-transform", composer === "note" && "rotate-180")} />
         </Button>
         <Button
           variant={composer === "next_step" ? "default" : "outline"}
@@ -1255,7 +1257,11 @@ export function ParentActivitySection({ record, scope }: {
           row and a tinted one beside a white one reads as a mistake. */}
       {composer === "note" && (
         <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-note">
-          <NoteComposer record={record} onPosted={() => setComposer(null)} />
+          <NoteComposer
+            record={record}
+            onPosted={() => setComposer(null)}
+            onCancel={() => setComposer(null)}
+          />
         </div>
       )}
       {composer === "next_step" && (
