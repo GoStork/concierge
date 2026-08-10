@@ -1233,7 +1233,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
           where: { ...crmWhere, deletedAt: null },
           orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
         }),
-        prisma.parentFollowUp.findMany({ where: { ...crmWhere, status: "OPEN" }, orderBy: { dueAt: "asc" } }),
+        prisma.parentTask.findMany({ where: { ...crmWhere, status: "OPEN" }, orderBy: { dueAt: "asc" } }),
         prisma.parentOwner.findMany({ where: crmWhere }),
         prisma.parentTagAssignment.findMany({
           where: crmWhere,
@@ -1419,7 +1419,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       // Read-side sanitize: legacy plain-text notes may contain literal
       // markup, and the client renders tag-shaped bodies as HTML.
       notes: notes.map((n: any) => ({ ...n, body: sanitizeNoteHtml(n.body) })),
-      followUps: followUps.map((f) => ({ ...f, overdue: new Date(f.dueAt).getTime() < now })),
+      tasks: followUps.map((f: any) => ({ ...f, overdue: new Date(f.dueAt).getTime() < now })),
       owners: ownersWithPhoto,
       tags: tagAssignments.map((t: any) => ({
         id: t.id,

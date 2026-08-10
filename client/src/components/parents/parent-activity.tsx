@@ -283,7 +283,7 @@ function buildEntries(record: ParentRecord): Entry[] {
     });
   }
 
-  for (const f of record.crm.followUps) {
+  for (const f of record.crm.tasks) {
     out.push({
       id: `followup-${f.id}`,
       // Placed by when it was SET, not when it is due - this is a history, and
@@ -291,7 +291,7 @@ function buildEntries(record: ParentRecord): Entry[] {
       at: f.createdAt || f.dueAt,
       kind: "next_step",
       title: "Next step set",
-      body: f.body,
+      body: f.title,
       byline: f.assigneeName || null,
       extra: (
         <span

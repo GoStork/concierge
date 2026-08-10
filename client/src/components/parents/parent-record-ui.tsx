@@ -233,7 +233,7 @@ export function ParentRecordHeader({
 }) {
   const dense = useDense();
   const photoSrc = record.parent.photoUrl ? getPhotoSrc(record.parent.photoUrl) : null;
-  const nextStep = record.crm.followUps[0];
+  const nextStep = record.crm.tasks[0];
 
   return (
     // NOT collapsible, matching every other record section (by request).
@@ -293,7 +293,7 @@ export function ParentRecordHeader({
                 : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
               data-testid="chip-record-next-step"
             >
-              {nextStep.overdue ? "Overdue: " : "Next: "}{nextStep.body}
+              {nextStep.overdue ? "Overdue: " : "Next: "}{nextStep.title}
             </button>
           )}
           {record.crm.tags.slice(0, 3).map((t) => (

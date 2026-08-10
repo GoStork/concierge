@@ -168,9 +168,9 @@ export function NoteComposer({ record, onPosted, onCancel }: {
 
 function NextStepCard({
   record, isAdmin, choice, existing,
-}: { record: ParentRecord; isAdmin: boolean; choice: ScopeChoice; existing: ParentRecord["crm"]["followUps"][number] | undefined }) {
+}: { record: ParentRecord; isAdmin: boolean; choice: ScopeChoice; existing: ParentRecord["crm"]["tasks"][number] | undefined }) {
   const [editing, setEditing] = useState(false);
-  const [body, setBody] = useState(existing?.body || "");
+  const [body, setBody] = useState(existing?.title || "");
   const [dueAt, setDueAt] = useState<Date | undefined>(existing ? new Date(existing.dueAt) : undefined);
   const mut = useCrmMutation(record.parent.id, () => setEditing(false));
   const editable = isAdmin || choice.providerId === record.viewer.providerId;
@@ -203,7 +203,7 @@ function NextStepCard({
           <>
             <p className="text-sm flex items-start gap-1.5">
               {existing.overdue && <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />}
-              {existing.body}
+              {existing.title}
             </p>
             <p className="t-helper" style={existing.overdue ? { color: "hsl(var(--brand-warning))" } : undefined}>
               Due {new Date(existing.dueAt).toLocaleDateString()}
@@ -504,7 +504,7 @@ export function ParentFollowUpPanel({ record }: { record: ParentRecord }) {
           record={record}
           isAdmin={isAdmin}
           choice={c}
-          existing={record.crm.followUps.find((f) => f.scope === c.scope && f.providerId === c.providerId)}
+          existing={record.crm.tasks.find((f) => f.scope === c.scope && f.providerId === c.providerId)}
         />
       ))}
       {primary && <TagEditor record={record} isAdmin={isAdmin} choice={primary} />}

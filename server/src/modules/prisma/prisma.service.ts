@@ -262,8 +262,8 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.parentNote;
   }
 
-  get parentFollowUp() {
-    return prisma.parentFollowUp;
+  get parentTask() {
+    return prisma.parentTask;
   }
 
   get parentOwner() {

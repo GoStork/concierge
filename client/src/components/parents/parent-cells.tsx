@@ -320,16 +320,16 @@ export function OwnerCell({ owner, testId }: { owner?: { name: string | null; ph
 
 export function NextStepCell({
   nextStep, testId,
-}: { nextStep?: { body: string; dueAt: string; overdue: boolean } | null; testId?: string }) {
+}: { nextStep?: { title: string; dueAt: string; overdue: boolean } | null; testId?: string }) {
   if (!nextStep) return <span className="t-helper">-</span>;
   const due = new Date(nextStep.dueAt);
   const today = new Date();
   const isToday = due.toDateString() === today.toDateString();
   const label = nextStep.overdue ? "Overdue" : isToday ? "Today" : due.toLocaleDateString();
   const warn = nextStep.overdue || isToday;
-  const short = nextStep.body.length > 24 ? `${nextStep.body.slice(0, 24)}...` : nextStep.body;
+  const short = nextStep.title.length > 24 ? `${nextStep.title.slice(0, 24)}...` : nextStep.title;
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={`${nextStep.body} - due ${due.toLocaleDateString()}`} data-testid={testId}>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title={`${nextStep.title} - due ${due.toLocaleDateString()}`} data-testid={testId}>
       <span className="text-sm">{short}</span>
       <span
         className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"

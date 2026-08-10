@@ -1389,9 +1389,9 @@ export class UsersController {
             where: { parentAccountId: { in: crmKeys } },
             select: { parentAccountId: true, scope: true, ownerUserId: true, ownerName: true },
           }),
-          this.prisma.parentFollowUp.findMany({
+          this.prisma.parentTask.findMany({
             where: { parentAccountId: { in: crmKeys }, status: "OPEN" },
-            select: { parentAccountId: true, id: true, scope: true, providerId: true, body: true, dueAt: true },
+            select: { parentAccountId: true, id: true, scope: true, providerId: true, title: true, dueAt: true, priority: true, type: true },
             orderBy: { dueAt: "asc" },
           }),
           this.prisma.parentTagAssignment.findMany({
@@ -1458,7 +1458,7 @@ export class UsersController {
         ipFormStatus: ipFormByKey.get(crmKey) ?? null,
         owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
         nextStep: step
-          ? { id: step.id, body: step.body, dueAt: step.dueAt, overdue: new Date(step.dueAt).getTime() < nowMs }
+          ? { id: step.id, title: step.title, dueAt: step.dueAt, priority: step.priority, type: step.type, overdue: new Date(step.dueAt).getTime() < nowMs }
           : null,
         tags: tagsByKey.get(crmKey) || [],
       };
@@ -2188,9 +2188,9 @@ export class UsersController {
             where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId },
             select: { parentAccountId: true, ownerUserId: true, ownerName: true },
           }),
-          this.prisma.parentFollowUp.findMany({
+          this.prisma.parentTask.findMany({
             where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId, status: "OPEN" },
-            select: { parentAccountId: true, id: true, body: true, dueAt: true },
+            select: { parentAccountId: true, id: true, title: true, dueAt: true, priority: true, type: true },
             orderBy: { dueAt: "asc" },
           }),
           this.prisma.parentTagAssignment.findMany({
@@ -2249,7 +2249,7 @@ export class UsersController {
           ipFormStatus: ipFormByKey.get(crmKey) ?? null,
           owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
           nextStep: step
-            ? { id: step.id, body: step.body, dueAt: step.dueAt, overdue: new Date(step.dueAt).getTime() < nowMs }
+            ? { id: step.id, title: step.title, dueAt: step.dueAt, priority: step.priority, type: step.type, overdue: new Date(step.dueAt).getTime() < nowMs }
             : null,
           tags: tagsByKey.get(crmKey) || [],
         };

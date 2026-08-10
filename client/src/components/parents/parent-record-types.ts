@@ -88,16 +88,29 @@ export interface CrmNote {
   updatedAt: string;
 }
 
-export interface CrmFollowUp {
+/** A piece of work someone owes this family. Was CrmFollowUp. */
+export interface CrmTask {
   id: string;
   scope: CrmScope;
   providerId: string | null;
-  body: string;
+  title: string;
+  notes: string | null;
+  /** TODO | CALL | EMAIL */
+  type: string;
+  /** NONE | LOW | MEDIUM | HIGH */
+  priority: string;
   dueAt: string;
+  reminderMinutesBefore: number | null;
   status: string;
   overdue: boolean;
   assigneeUserId: string | null;
   assigneeName: string | null;
+  /** MANUAL | SYSTEM - system tasks mirror an unresolved artifact. */
+  source: string;
+  /** SYSTEM only: where the work actually gets done. */
+  deepLink: string | null;
+  /** Completed while the artifact was still unresolved, on purpose. */
+  dismissedUnresolved: boolean;
   createdAt?: string;
   createdByUserId?: string | null;
 }
@@ -259,7 +272,7 @@ export interface ParentRecord {
   money: { byProvider: MoneyGroup[] };
   crm: {
     notes: CrmNote[];
-    followUps: CrmFollowUp[];
+    tasks: CrmTask[];
     owners: CrmOwner[];
     tags: CrmTag[];
   };
@@ -306,6 +319,6 @@ export interface ParentTableRow {
   updatedAt: string | null;
   isDisabled?: boolean;
   owner?: { userId?: string; name: string | null } | null;
-  nextStep?: { id: string; body: string; dueAt: string; overdue: boolean } | null;
+  nextStep?: { id: string; title: string; dueAt: string; priority?: string; type?: string; overdue: boolean } | null;
   tags?: { tagId: string; label: string; colorToken: string }[];
 }

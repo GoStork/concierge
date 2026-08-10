@@ -164,7 +164,7 @@ model Provider {
   parentBriefings                       ProviderParentBriefing[]
   parentContactReleases                 ParentContactRelease[]
   parentNotes                           ParentNote[]
-  parentFollowUps                       ParentFollowUp[]
+  parentTasks                           ParentTask[]
   parentOwners                          ParentOwner[]
   parentTagDefinitions                  ParentTagDefinition[]
   parentTagAssignments                  ParentTagAssignment[]
@@ -197,21 +197,21 @@ model ProviderParentBriefing {
 /// org+service -> org-any. A null staffUserId means "organization default";
 /// a null providerTypeId means "any service line this org runs".
 model ProviderAutoReply {
-  id              String        @id @default(uuid())
+  id              String                  @id @default(uuid())
   providerId      String
   staffUserId     String?
   providerTypeId  String?
   body            String
   /// [{ originalName, url, mimeType, size }] - same shape the chat
   /// attachment card already renders, produced by /api/chat-upload.
-  attachments     Json          @default("[]")
-  isEnabled       Boolean       @default(true)
+  attachments     Json                    @default("[]")
+  isEnabled       Boolean                 @default(true)
   createdByUserId String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  provider        Provider      @relation(fields: [providerId], references: [id])
-  staffUser       User?         @relation("AutoReplyStaff", fields: [staffUserId], references: [id])
-  providerType    ProviderType? @relation(fields: [providerTypeId], references: [id])
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  provider        Provider                @relation(fields: [providerId], references: [id])
+  staffUser       User?                   @relation("AutoReplyStaff", fields: [staffUserId], references: [id])
+  providerType    ProviderType?           @relation(fields: [providerTypeId], references: [id])
   sends           ProviderAutoReplySend[]
 
   @@index([providerId])
@@ -1650,32 +1650,32 @@ model SiteSettings {
 }
 
 model Matchmaker {
-  id                String   @id @default(uuid())
-  name              String
-  title             String
-  description       String
-  avatarUrl         String?
-  personalityPrompt String   @db.Text
-  initialGreeting   String?  @db.Text
-  isActive          Boolean  @default(true)
-  sortOrder         Int      @default(0)
+  id                   String   @id @default(uuid())
+  name                 String
+  title                String
+  description          String
+  avatarUrl            String?
+  personalityPrompt    String   @db.Text
+  initialGreeting      String?  @db.Text
+  isActive             Boolean  @default(true)
+  sortOrder            Int      @default(0)
   // Voice mode: TTS voices for this persona, one per provider - voice ids are
   // NOT portable between vendors (ElevenLabs uses opaque ids, OpenAI uses
   // named voices, Cartesia uses UUIDs), so switching the active provider must
   // never invalidate a stored voice. Shape: {"elevenlabs": "...", "openai":
   // "shimmer", "cartesia": "..."}. voiceId is the legacy single-provider field,
   // still read as the ElevenLabs fallback.
-  voiceIds          Json?
-  voiceId           String?
+  voiceIds             Json?
+  voiceId              String?
   // Phase 3 realtime video avatar: provider-side face/avatar id generated from
   // this persona's photo, plus which avatar vendor created it.
-  avatarFaceId      String?
+  avatarFaceId         String?
   // Optional portrait-framed avatar served to phones (portrait viewports);
   // falls back to avatarFaceId (cropped) when unset.
   avatarFaceIdPortrait String?
-  avatarProvider    String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  avatarProvider       String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 model BrandTemplate {
@@ -2883,30 +2883,65 @@ model ParentNote {
 }
 
 /// The next step on a parent. Each org tracks its own independently of GoStork's.
-model ParentFollowUp {
-  id                String    @id @default(uuid())
-  parentAccountId   String
+/// A piece of work someone owes this family.
+///
+/// Was ParentFollowUp, which allowed exactly ONE open row per (parent x scope)
+/// - enforced by two partial unique indexes, now dropped. A coordinator has
+/// more than one thing to do for a family, and pretending otherwise made the
+/// feature a scratchpad rather than a queue.
+///
+/// Two kinds live here, distinguished by `source`:
+///   MANUAL - somebody typed it.
+///   SYSTEM - materialized from the provider work queue (an approval waiting,
+///            an agreement out for signature). `systemKey` is the artifact's
+///            identity, unique so a sweep re-running can never duplicate it,
+///            and `deepLink` is where the work actually gets done.
+model ParentTask {
+  id                    String    @id @default(uuid())
+  parentAccountId       String
   /// GOSTORK | PROVIDER
-  scope             String
-  providerId        String?
-  body              String
-  dueAt             DateTime
+  scope                 String
+  providerId            String?
+  title                 String
+  notes                 String?
+  /// TODO | CALL | EMAIL
+  type                  String    @default("TODO")
+  /// NONE | LOW | MEDIUM | HIGH
+  priority              String    @default("NONE")
+  dueAt                 DateTime
+  /// Minutes BEFORE dueAt to send the reminder. null = none, 0 = at due time.
+  reminderMinutesBefore Int?
+  /// Set when that reminder goes out, so two machines cannot both send it.
+  reminderSentAt        DateTime?
   /// OPEN | DONE | CANCELED
-  status            String    @default("OPEN")
-  assigneeUserId    String?
-  assigneeName      String?
-  completedAt       DateTime?
-  completedByUserId String?
-  createdByUserId   String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  status                String    @default("OPEN")
+  assigneeUserId        String?
+  assigneeName          String?
+  completedAt           DateTime?
+  completedByUserId     String?
+  /// MANUAL | SYSTEM
+  source                String    @default("MANUAL")
+  /// SYSTEM only: the artifact this mirrors. Unique - the reconcile sweep
+  /// re-runs every 10 minutes and must never raise the same work twice.
+  systemKey             String?   @unique
+  /// SYSTEM only: where the work is actually done (the Review link).
+  deepLink              String?
+  /// Completed while the underlying artifact was still unresolved - the
+  /// coordinator was warned and chose to dismiss it anyway. Kept so the
+  /// activity card can say so rather than showing a clean "done".
+  dismissedUnresolved   Boolean   @default(false)
+  createdByUserId       String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   provider Provider? @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@index([parentAccountId, status, dueAt])
   @@index([providerId, status, dueAt])
-  /// Drives the "overdue first" sort on the parents table.
-  @@index([scope, providerId, status, dueAt])
+  /// "My tasks, soonest first" - the Home queue and the digest both read this.
+  @@index([assigneeUserId, status, dueAt])
+  /// The reminder sweep: everything due soon that has not been reminded yet.
+  @@index([status, dueAt, reminderSentAt])
 }
 
 /// Lead owner. A parent can have both a GoStork owner and a per-org owner.

@@ -276,51 +276,163 @@ parentRecordRouter.delete("/api/parents/:id/notes/:noteId", requireAuth, async (
 
 // ─── Follow-up ──────────────────────────────────────────────────────────────
 
-parentRecordRouter.put("/api/parents/:id/follow-up", requireAuth, async (req, res) => {
+const TASK_TYPES = ["TODO", "CALL", "EMAIL"];
+const TASK_PRIORITIES = ["NONE", "LOW", "MEDIUM", "HIGH"];
+/** Offsets the UI offers, in minutes before due. 0 = at due time. */
+const REMINDER_OFFSETS = [0, 30, 60, 1440, 10080];
+
+/**
+ * Shape and validate the writable half of a task.
+ *
+ * Enums are whitelisted rather than passed through: the reminder sweep and the
+ * digest both branch on these strings, so an unrecognised one would silently
+ * mean "never remind" instead of failing loudly.
+ */
+function readTaskInput(body: any) {
+  const title = String(body?.title ?? body?.body ?? "").trim();
+  const dueAt = body?.dueAt ? new Date(body.dueAt) : null;
+  const type = TASK_TYPES.includes(String(body?.type)) ? String(body.type) : "TODO";
+  const priority = TASK_PRIORITIES.includes(String(body?.priority)) ? String(body.priority) : "NONE";
+  const raw = body?.reminderMinutesBefore;
+  const reminderMinutesBefore = raw === null || raw === undefined || raw === ""
+    ? null
+    : (REMINDER_OFFSETS.includes(Number(raw)) ? Number(raw) : null);
+  return {
+    title,
+    notes: body?.notes ? String(body.notes) : null,
+    type,
+    priority,
+    dueAt,
+    reminderMinutesBefore,
+  };
+}
+
+/**
+ * Can this viewer put a task in that person's queue?
+ *
+ * GoStork may assign across orgs - that is a deliberate product decision, so
+ * they can chase an agency directly. It has a consequence the caller must not
+ * forget: a cross-org task is READ BY the provider, so it is written at
+ * PROVIDER scope and its text goes through the same contact guard as a
+ * provider-visible note. GoStork cannot smuggle a parent's phone number into
+ * an agency's task list.
+ */
+async function resolveAssignee(assigneeUserId: string | null | undefined) {
+  if (!assigneeUserId) return { assigneeUserId: null, assigneeName: null, providerId: null as string | null };
+  const u = await prisma.user.findUnique({
+    where: { id: String(assigneeUserId) },
+    select: { id: true, name: true, email: true, providerId: true },
+  });
+  if (!u) return { assigneeUserId: null, assigneeName: null, providerId: null as string | null };
+  return { assigneeUserId: u.id, assigneeName: u.name || u.email, providerId: u.providerId };
+}
+
+parentRecordRouter.post("/api/parents/:id/tasks", requireAuth, async (req, res) => {
   try {
     const viewer = resolveCrmViewer(req.user as any);
     const accountKey = await assertCanReachParent(req.user as any, String(req.params.id));
-    const target = resolveWriteTarget(viewer, req.body?.scope, req.body?.providerId);
-    const body = String(req.body?.body || "").trim();
-    const dueAt = req.body?.dueAt ? new Date(req.body.dueAt) : null;
-    if (!body) return res.status(400).json({ message: "A next step needs a description" });
-    if (!dueAt || isNaN(dueAt.getTime())) return res.status(400).json({ message: "A next step needs a valid due date" });
+    const input = readTaskInput(req.body);
+    if (!input.title) return res.status(400).json({ message: "A task needs a title" });
+    if (!input.dueAt || isNaN(input.dueAt.getTime())) {
+      return res.status(400).json({ message: "A task needs a valid due date" });
+    }
 
-    // The partial unique indexes guarantee at most one OPEN row per
-    // (account, scope, org), so this is a find-then-write rather than an
-    // upsert - Prisma cannot target a partial index.
-    const open = await prisma.parentFollowUp.findFirst({
-      where: {
-        parentAccountId: accountKey, scope: target.scope, providerId: target.providerId, status: "OPEN",
+    const assignee = await resolveAssignee(req.body?.assigneeUserId);
+    // Assigning to someone at a provider org makes this THEIR task, so it is
+    // written at that org's scope no matter who created it - otherwise a
+    // GoStork-scoped row would be invisible to the person meant to do it.
+    const target = assignee.providerId
+      ? { scope: "PROVIDER", providerId: assignee.providerId }
+      : resolveWriteTarget(viewer, req.body?.scope, req.body?.providerId);
+
+    // A PROVIDER-scoped task is READ BY that org, so it passes the same
+    // contact guard a provider-visible note does. GoStork assigning across
+    // orgs must not become a way to hand an agency a phone number that
+    // ParentContactRelease is deliberately withholding.
+    if (target.scope === "PROVIDER" && target.providerId) {
+      const g = await resolveParentGates(target.providerId, accountKey, { sessionStatus: null, hasBooking: true });
+      if (!g.showContact && blockContactInfo(res, `${input.title}\n${input.notes || ""}`, "parent task", {
+        parentAccountId: accountKey, providerId: target.providerId, authorUserId: viewer.userId,
+      }, "note")) return;
+    }
+
+    const row = await prisma.parentTask.create({
+      data: {
+        parentAccountId: accountKey,
+        scope: target.scope,
+        providerId: target.providerId,
+        title: input.title,
+        notes: input.notes,
+        type: input.type,
+        priority: input.priority,
+        dueAt: input.dueAt,
+        reminderMinutesBefore: input.reminderMinutesBefore,
+        assigneeUserId: assignee.assigneeUserId,
+        assigneeName: assignee.assigneeName,
+        createdByUserId: viewer.userId,
       },
     });
-    const row = open
-      ? await prisma.parentFollowUp.update({
-          where: { id: open.id },
-          data: { body, dueAt, assigneeUserId: req.body?.assigneeUserId ?? open.assigneeUserId },
-        })
-      : await prisma.parentFollowUp.create({
-          data: {
-            parentAccountId: accountKey,
-            scope: target.scope,
-            providerId: target.providerId,
-            body,
-            dueAt,
-            assigneeUserId: req.body?.assigneeUserId ?? null,
-            createdByUserId: viewer.userId,
-          },
-        });
 
     emitJourneyEvent({
       eventType: "CRM_FOLLOWUP_SET",
       parentAccountId: accountKey,
       providerId: target.providerId,
       actorRole: viewer.isAdmin ? "admin" : "provider",
-      metadata: { followUpId: row.id, scope: target.scope, dueAt: dueAt.toISOString() },
+      // Ids and shapes only - never the task text. GET /api/journey/events
+      // returns metadata verbatim to providers.
+      metadata: {
+        taskId: row.id, scope: target.scope, dueAt: input.dueAt.toISOString(),
+        type: input.type, priority: input.priority,
+      },
     });
     res.json(row);
   } catch (e: any) {
-    fail(res, e, "PUT follow-up");
+    fail(res, e, "create task");
+  }
+});
+
+parentRecordRouter.patch("/api/parents/:id/tasks/:tid", requireAuth, async (req, res) => {
+  try {
+    const viewer = resolveCrmViewer(req.user as any);
+    const accountKey = await assertCanReachParent(req.user as any, String(req.params.id));
+    const row = await prisma.parentTask.findUnique({ where: { id: String(req.params.tid) } });
+    if (!row) return res.status(404).json({ message: "Task not found" });
+    if (!canMutateCrmRow(viewer, row as any)) return res.status(403).json({ message: "Forbidden" });
+
+    const input = readTaskInput({ ...row, ...req.body });
+    if (!input.title) return res.status(400).json({ message: "A task needs a title" });
+    if (!input.dueAt || isNaN(input.dueAt.getTime())) {
+      return res.status(400).json({ message: "A task needs a valid due date" });
+    }
+    const assignee = req.body?.assigneeUserId !== undefined
+      ? await resolveAssignee(req.body.assigneeUserId)
+      : { assigneeUserId: row.assigneeUserId, assigneeName: row.assigneeName, providerId: null };
+
+    if (row.scope === "PROVIDER" && row.providerId) {
+      const g = await resolveParentGates(row.providerId, accountKey, { sessionStatus: null, hasBooking: true });
+      if (!g.showContact && blockContactInfo(res, `${input.title}\n${input.notes || ""}`, "parent task", {
+        parentAccountId: accountKey, providerId: row.providerId, authorUserId: viewer.userId,
+      }, "note")) return;
+    }
+
+    const updated = await prisma.parentTask.update({
+      where: { id: row.id },
+      data: {
+        title: input.title,
+        notes: input.notes,
+        type: input.type,
+        priority: input.priority,
+        dueAt: input.dueAt,
+        reminderMinutesBefore: input.reminderMinutesBefore,
+        assigneeUserId: assignee.assigneeUserId,
+        assigneeName: assignee.assigneeName,
+        // A re-dated or re-timed task earns a fresh reminder.
+        reminderSentAt: input.dueAt.getTime() !== new Date(row.dueAt).getTime() ? null : row.reminderSentAt,
+      },
+    });
+    res.json(updated);
+  } catch (e: any) {
+    fail(res, e, "update task");
   }
 });
 
@@ -328,10 +440,10 @@ parentRecordRouter.post("/api/parents/:id/follow-up/:fid/complete", requireAuth,
   try {
     const viewer = resolveCrmViewer(req.user as any);
     const accountKey = await assertCanReachParent(req.user as any, String(req.params.id));
-    const row = await prisma.parentFollowUp.findUnique({ where: { id: String(req.params.fid) } });
+    const row = await prisma.parentTask.findUnique({ where: { id: String(req.params.fid) } });
     if (!row) return res.status(404).json({ message: "Next step not found" });
     if (!canMutateCrmRow(viewer, row as any)) return res.status(403).json({ message: "Forbidden" });
-    const updated = await prisma.parentFollowUp.update({
+    const updated = await prisma.parentTask.update({
       where: { id: row.id },
       data: { status: "DONE", completedAt: new Date(), completedByUserId: viewer.userId },
     });
@@ -352,10 +464,10 @@ parentRecordRouter.delete("/api/parents/:id/follow-up/:fid", requireAuth, async 
   try {
     const viewer = resolveCrmViewer(req.user as any);
     await assertCanReachParent(req.user as any, String(req.params.id));
-    const row = await prisma.parentFollowUp.findUnique({ where: { id: String(req.params.fid) } });
+    const row = await prisma.parentTask.findUnique({ where: { id: String(req.params.fid) } });
     if (!row) return res.status(404).json({ message: "Next step not found" });
     if (!canMutateCrmRow(viewer, row as any)) return res.status(403).json({ message: "Forbidden" });
-    await prisma.parentFollowUp.update({ where: { id: row.id }, data: { status: "CANCELED" } });
+    await prisma.parentTask.update({ where: { id: row.id }, data: { status: "CANCELED" } });
     res.json({ ok: true });
   } catch (e: any) {
     fail(res, e, "cancel follow-up");
