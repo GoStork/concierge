@@ -30,14 +30,23 @@ export function FileTypeGlyph({
   const label = labelOverride ?? meta.label;
   const accent = accentOverride ?? meta.accent;
   const kind = labelOverride ?? meta.kind;
-  // Shrink the badge font for longer labels so they stay inside the band -
-  // the ladder ran out at 5 characters, so INVOICE (7) overflowed and lost
-  // its first and last letters to the band edges.
-  const fontSize = label.length <= 3 ? 9
-    : label.length === 4 ? 7.2
-    : label.length === 5 ? 6.2
-    : label.length === 6 ? 5.5
-    : 4.8;
+  /**
+   * Every label is set at the SAME font size, so COSTS and INVOICE read as
+   * large as PDF - cap height is what the eye reads as "font size".
+   *
+   * Shrinking the size to fit (the old ladder) dropped INVOICE to nearly half
+   * of PDF and made it look like a different, lesser thing. It cannot fit at
+   * full width instead: 7 characters need ~45 units and the whole glyph is
+   * only 40 wide. So the band widens for longer labels and `textLength` +
+   * lengthAdjust condenses the glyphs horizontally to fill it exactly - same
+   * height, narrower letters, like a condensed typeface.
+   */
+  const fontSize = 9;
+  const bandWidth = label.length <= 3 ? 28 : 34;
+  const bandX = 3;
+  // Only condense when the label is too wide for the plain band; PDF and the
+  // other 3-letter types keep their natural letterforms untouched.
+  const textLength = label.length > 3 ? bandWidth - 5 : undefined;
 
   return (
     <svg
@@ -54,10 +63,10 @@ export function FileTypeGlyph({
         strokeWidth="1"
       />
       <path d="M26 1.5L34.5 10H28A2 2 0 0 1 26 8Z" fill="#C7CED6" />
-      <rect x="3" y="25" width="28" height="13" rx="2.5" fill={accent} />
+      <rect x={bandX} y="25" width={bandWidth} height="13" rx="2.5" fill={accent} />
       {label && (
         <text
-          x="17"
+          x={bandX + bandWidth / 2}
           y="31.9"
           textAnchor="middle"
           dominantBaseline="middle"
@@ -66,6 +75,8 @@ export function FileTypeGlyph({
           fontWeight="700"
           fontFamily="system-ui, -apple-system, sans-serif"
           letterSpacing="0.3"
+          textLength={textLength}
+          lengthAdjust={textLength ? "spacingAndGlyphs" : undefined}
         >
           {label}
         </text>
