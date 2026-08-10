@@ -353,6 +353,25 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
     } catch (err: any) {
       console.error(`[matched-elsewhere] Cron error: ${err.message}`);
     }
+    // Tasks: raise a real task for every unresolved work-queue item, and
+    // close the ones whose artifact has since been resolved. Idempotent - the
+    // unique systemKey means the other machine running this same tick is a
+    // no-op rather than a duplicate.
+    try {
+      const { runTaskMaterializeSweep } = await import("../../../task-materializer");
+      await runTaskMaterializeSweep(prisma);
+    } catch (err: any) {
+      console.error(`[tasks] Cron error: `);
+    }
+    // Task pushes: the per-task reminder, and the 8am digest which fires at
+    // 8am in each assignee's own timezone rather than one server hour.
+    try {
+      const { runTaskReminderSweep, runTaskDigestSweep } = await import("../../../task-reminders");
+      await runTaskReminderSweep(prisma, notifications);
+      await runTaskDigestSweep(prisma, notifications);
+    } catch (err: any) {
+      console.error(`[tasks] Reminder cron error: `);
+    }
     // Phase 8: post-handoff review check-ins (+1 reminder after 3 days).
     try {
       const { runReviewCheckinSweep } = await import("../../../review-prompts");

@@ -41,6 +41,9 @@ export type NotificationChannel =
   | "agreement_signed"
   // Cross-provider outcome: the losing agency is told, once, per line.
   | "matched_elsewhere"
+  // A task's own reminder, and the once-a-day roundup of what is due.
+  | "task_reminder"
+  | "task_digest"
   // GoStork's own alert when a family commits (immediate or digested).
   | "commitment_alert"
   | "invoice_payment_request"
@@ -2688,6 +2691,77 @@ export class NotificationService implements OnModuleInit {
         body: html,
       }).catch(e => this.logger.error(`Failed commitment alert to ${r.email}: ${e.message}`));
     }
+  }
+
+  /** One task, at the offset its owner chose. */
+  async sendTaskReminder(params: {
+    recipient: { userId: string; email: string; name: string | null };
+    task: { id: string; title: string; dueAt: Date | string; type: string; priority: string };
+    parentAccountId: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const baseUrl = getBaseUrl();
+    const firstName = getFirstName(params.recipient.name || "") || "there";
+    // Rendered with no timeZone option on purpose: the reader's mail client
+    // shows their own clock, which is the same rule the app follows.
+    const due = new Date(params.task.dueAt).toLocaleString("en-US", {
+      weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    });
+    const html = buildBrandedEmail(brandData, {
+      title: "A task is due",
+      greeting: `Hi ${firstName},`,
+      body: `<strong>${this.escapeHtml(params.task.title)}</strong> is due ${this.escapeHtml(due)}.`,
+      buttons: [{ label: "Open the record", url: `${baseUrl}/parents/${params.parentAccountId}` }],
+      footer: "You set this reminder when you created the task.",
+    });
+    await this.dispatchNotification({
+      userId: params.recipient.userId,
+      type: "EMAIL",
+      channel: "task_reminder",
+      recipient: params.recipient.email,
+      subject: `Due: ${params.task.title}`,
+      body: html,
+    }).catch(e => this.logger.error(`Failed task reminder to ${params.recipient.email}: ${e.message}`));
+  }
+
+  /** The 8am roundup, sent at 8am in the recipient's own timezone. */
+  async sendTaskDigest(params: {
+    recipient: { userId: string; email: string; name: string | null };
+    timezone: string;
+    overdue: { id: string; title: string; dueAt: Date | string }[];
+    today: { id: string; title: string; dueAt: Date | string }[];
+  }) {
+    const brandData = await this.getBrandData();
+    const baseUrl = getBaseUrl();
+    const firstName = getFirstName(params.recipient.name || "") || "there";
+    const time = (d: Date | string) => new Date(d).toLocaleString("en-US", {
+      timeZone: params.timezone, hour: "numeric", minute: "2-digit",
+    });
+    const list = (rows: { title: string; dueAt: Date | string }[]) =>
+      `<ul>${rows.map(r => `<li>${this.escapeHtml(r.title)} - ${this.escapeHtml(time(r.dueAt))}</li>`).join("")}</ul>`;
+
+    const counts = [
+      params.overdue.length ? `${params.overdue.length} overdue` : "",
+      params.today.length ? `${params.today.length} due today` : "",
+    ].filter(Boolean).join(" and ");
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Your day",
+      greeting: `Hi ${firstName},`,
+      body: `You have ${counts}.`
+        + (params.overdue.length ? `<p style="margin:16px 0 4px"><strong>Overdue</strong></p>${list(params.overdue)}` : "")
+        + (params.today.length ? `<p style="margin:16px 0 4px"><strong>Due today</strong></p>${list(params.today)}` : ""),
+      buttons: [{ label: "Open your queue", url: `${baseUrl}/provider/home` }],
+      footer: "Sent each morning when you have something due.",
+    });
+    await this.dispatchNotification({
+      userId: params.recipient.userId,
+      type: "EMAIL",
+      channel: "task_digest",
+      recipient: params.recipient.email,
+      subject: counts ? `Your day: ${counts}` : "Your day",
+      body: html,
+    }).catch(e => this.logger.error(`Failed task digest to ${params.recipient.email}: ${e.message}`));
   }
 
   async sendW9RequestNotification(params: {
