@@ -1009,6 +1009,24 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
   const [noteMode, setNoteMode] = useState<NoteMode>("view");
   const [noteDraft, setNoteDraft] = useState("");
   const noteMut = useCrmMutation(parentUserId, () => setNoteMode("view"));
+
+  /**
+   * A note opens for editing when you click it - the whole card is the
+   * affordance, not a menu item two clicks away. Only for notes this viewer
+   * may actually change; on anyone else's the card stays inert rather than
+   * offering an edit that would be refused.
+   */
+  const canOpenNoteEdit = !!entry.note?.canManage && noteMode === "view";
+  const openNoteEdit = (e: React.MouseEvent) => {
+    const el = e.target as HTMLElement;
+    // Never swallow a real control. A note body can hold links and uploaded
+    // files, and the header carries Actions and the pin.
+    if (el.closest('a,button,input,textarea,select,[role="menuitem"],[role="menu"],[contenteditable="true"]')) return;
+    // Dragging across the text to copy it is not a request to edit it.
+    if ((window.getSelection()?.toString() || "").length > 0) return;
+    setNoteDraft(entry.note!.html);
+    setNoteMode("edit");
+  };
   const meta = KIND_META[entry.kind];
   const isSms = entry.detail?.type === "message" && entry.detail.channel === "SMS";
   const callIcon = CALL_ICONS[entry.eventType || ""];
@@ -1083,8 +1101,12 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
     // style, because a margin utility loses to space-y-2's higher-specificity
     // sibling selector on the feed.
     <div
-      className="relative rounded-[var(--radius)] border bg-card p-3 space-y-1.5"
+      className={cn(
+        "relative rounded-[var(--radius)] border bg-card p-3 space-y-1.5",
+        canOpenNoteEdit && "cursor-text hover:border-primary/40 transition-colors",
+      )}
       style={entry.note?.pinned ? { marginTop: "1.125rem" } : undefined}
+      onClick={canOpenNoteEdit ? openNoteEdit : undefined}
       data-testid={`activity-${entry.id}`}
     >
       <div className="flex items-center gap-2.5">
