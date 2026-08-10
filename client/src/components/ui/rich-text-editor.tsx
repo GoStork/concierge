@@ -157,7 +157,10 @@ export function RichTextEditor({
   );
 
   return (
-    <div className="rounded-[var(--radius)] border bg-background focus-within:ring-1 focus-within:ring-ring" data-testid={testId}>
+    // bg-card, not bg-background: this is a field you type into, and it always
+    // sits inside a white card. --background is the PAGE colour, so it painted
+    // the composer sand while every other input beside it stayed white.
+    <div className="rounded-[var(--radius)] border bg-card focus-within:ring-1 focus-within:ring-ring" data-testid={testId}>
       <div className="relative">
         <div
           ref={ref}
