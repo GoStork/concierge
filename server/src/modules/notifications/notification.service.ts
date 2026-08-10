@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger, OnModuleInit } from "@nestjs/common";
 import { createHash } from "crypto";
+import { BRAND_PRIMARY_FALLBACK } from "../../../../shared/brand-fallback";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatMoneyCents } from "../../lib/format-money";
 import { formatPhoneDisplay } from "../../lib/format-phone";
@@ -2926,7 +2927,7 @@ export class NotificationService implements OnModuleInit {
             `).join("")}
             <tr>
               <td style="text-align:left;padding:10px 8px 8px 0;font-size:14px;font-weight:700;color:#1f2937">Total</td>
-              <td style="text-align:right;padding:10px 0 8px 8px;font-size:16px;font-weight:700;color:${esc(brandData.brandColor || "#26584A")};white-space:nowrap">${esc(params.serviceAmountFormatted)}</td>
+              <td style="text-align:right;padding:10px 0 8px 8px;font-size:16px;font-weight:700;color:${esc(brandData.brandColor || BRAND_PRIMARY_FALLBACK)};white-space:nowrap">${esc(params.serviceAmountFormatted)}</td>
             </tr>
           </tbody>
         </table>`
@@ -3036,7 +3037,7 @@ export class NotificationService implements OnModuleInit {
             `).join("")}
             <tr>
               <td style="text-align:left;padding:10px 8px 8px 0;font-size:14px;font-weight:700;color:#1f2937">Total Paid</td>
-              <td style="text-align:right;padding:10px 0 8px 8px;font-size:16px;font-weight:700;color:${esc(brandData.brandColor || "#26584A")};white-space:nowrap">${esc(params.paidAmountFormatted)}</td>
+              <td style="text-align:right;padding:10px 0 8px 8px;font-size:16px;font-weight:700;color:${esc(brandData.brandColor || BRAND_PRIMARY_FALLBACK)};white-space:nowrap">${esc(params.paidAmountFormatted)}</td>
             </tr>
           </tbody>
         </table>`

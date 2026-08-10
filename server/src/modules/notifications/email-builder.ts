@@ -1,4 +1,5 @@
 import { getBaseUrl } from "../../lib/get-base-url";
+import { BRAND_PRIMARY_FALLBACK } from "../../../../shared/brand-fallback";
 
 /**
  * Shared branded-email builder. EVERY email sent by the platform must be
@@ -59,7 +60,7 @@ function shadeHex(hex: string, ratio: number): string {
  */
 export async function fetchEmailBrandData(prisma: { siteSettings: { findFirst: () => Promise<any> } }): Promise<Record<string, string>> {
   const defaults: Record<string, string> = {
-    brandColor: "#004D4D",
+    brandColor: BRAND_PRIMARY_FALLBACK,
     primaryForegroundColor: "#ffffff",
     secondaryColor: "#F0FAF5",
     accentColor: "#0DA4EA",

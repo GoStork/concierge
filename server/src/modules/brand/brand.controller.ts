@@ -17,10 +17,11 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { PrismaService } from "../prisma/prisma.service";
+import { BRAND_PRIMARY_FALLBACK } from "../../../../shared/brand-fallback";
 
 const DEFAULTS = {
   companyName: null,
-  primaryColor: "#004D4D",
+  primaryColor: BRAND_PRIMARY_FALLBACK,
   secondaryColor: "#F0FAF5",
   accentColor: "#0DA4EA",
   successColor: "#16a34a",

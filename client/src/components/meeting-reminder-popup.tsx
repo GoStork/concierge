@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { format, isToday } from "date-fns";
@@ -47,7 +48,7 @@ export function MeetingReminderPopup() {
   const location = useLocation();
   const [booking, setBooking] = useState<ImminentBooking | null>(null);
   const [visible, setVisible] = useState(false);
-  const brandColor = brand?.primaryColor || "#26584A";
+  const brandColor = brand?.primaryColor || BRAND_PRIMARY_FALLBACK;
 
   // Suppress on routes where a meeting popup would interrupt - video calls,
   // and the Stripe payment page (the parent has navigated there to pay, not

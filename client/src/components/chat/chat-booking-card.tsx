@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,7 @@ interface ChatBookingCardProps {
 export function ChatBookingCard({ booking, onUpdate, readOnly }: ChatBookingCardProps) {
   const { toast } = useToast();
   const { data: brand } = useBrandSettings();
-  const brandColor = brand?.primaryColor || "#004D4D";
+  const brandColor = brand?.primaryColor || BRAND_PRIMARY_FALLBACK;
   const queryClient = useQueryClient();
   const [showSuggest, setShowSuggest] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);

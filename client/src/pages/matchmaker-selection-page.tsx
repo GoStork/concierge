@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
@@ -94,13 +95,13 @@ export default function MatchmakerSelectionPage() {
                 src={getPhotoSrc(transitionMatchmaker.avatarUrl) || transitionMatchmaker.avatarUrl}
                 alt={transitionMatchmaker.name}
                 className="w-24 h-24 rounded-full object-cover border-4 absolute inset-0 z-10"
-                style={{ borderColor: brand?.primaryColor || "#004D4D" }}
+                style={{ borderColor: brand?.primaryColor || BRAND_PRIMARY_FALLBACK }}
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             )}
             <div
               className="w-24 h-24 rounded-full flex items-center justify-center text-primary-foreground text-3xl font-bold"
-              style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
+              style={{ backgroundColor: brand?.primaryColor || BRAND_PRIMARY_FALLBACK }}
             >
               {transitionMatchmaker.name.charAt(0)}
             </div>
@@ -180,7 +181,7 @@ export default function MatchmakerSelectionPage() {
               {isSelected && (
                 <div
                   className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center text-primary-foreground text-xs"
-                  style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
+                  style={{ backgroundColor: brand?.primaryColor || BRAND_PRIMARY_FALLBACK }}
                   data-testid={`matchmaker-selected-badge-${m.id}`}
                 >
                   ✓
@@ -200,7 +201,7 @@ export default function MatchmakerSelectionPage() {
                   />
                   <div
                     className="w-24 h-24 rounded-full flex items-center justify-center text-primary-foreground text-2xl font-bold"
-                    style={{ backgroundColor: brand?.primaryColor || "#004D4D" }}
+                    style={{ backgroundColor: brand?.primaryColor || BRAND_PRIMARY_FALLBACK }}
                   >
                     {m.name.charAt(0)}
                   </div>

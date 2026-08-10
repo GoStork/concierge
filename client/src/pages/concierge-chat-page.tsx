@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { ivfContextSearch } from "@/components/ivf-success-rates-section";
 import { CostSheetSidebarSection } from "@/components/chat/cost-sheet-sidebar-section";
@@ -3273,7 +3274,7 @@ export default function ConciergeChatPage({ inlineSessionId, inlineMatchmakerId,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const brandColor = brand?.primaryColor || "#004D4D";
+  const brandColor = brand?.primaryColor || BRAND_PRIMARY_FALLBACK;
 
   // Voice mode: gated by the admin Voice settings toggle; Eva sessions only
   // (never a provider/human chat). The mic button opens the inline takeover.

@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
@@ -37,7 +38,7 @@ export default function ConciergeSettingsTab() {
   const { toast } = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
-  const brandColor = brand?.primaryColor || "#004D4D";
+  const brandColor = brand?.primaryColor || BRAND_PRIMARY_FALLBACK;
 
   const roles: string[] = (user as any)?.roles || [];
   const isParent = roles.includes("PARENT");

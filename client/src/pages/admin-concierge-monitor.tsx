@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useState, useRef, useEffect, useMemo } from "react";
 import { journeyStageLabel } from "@shared/journey-ladder";
 import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
@@ -74,7 +75,7 @@ export default function AdminConciergeMonitor() {
   const { data: brand } = useBrandSettings();
   const queryClient = useQueryClient();
   const dispatch = useAppDispatch();
-  const brandColor = brand?.primaryColor || "#004D4D";
+  const brandColor = brand?.primaryColor || BRAND_PRIMARY_FALLBACK;
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
   const [searchParams, setSearchParams] = useSearchParams();
   const lastChatKey = user ? `lastAdminChatSessionId:${(user as any).id}` : null;

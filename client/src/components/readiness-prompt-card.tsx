@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 /**
  * In-chat readiness prompt card.
  * Rendered when a chat message has uiCardType === "readiness_prompt".
@@ -151,7 +152,7 @@ export function ReadinessPromptCard({ data, messageId, sessionId, messageContent
             variant="ghost"
             onClick={handleYesReady}
             className="transition-all hover:opacity-90 font-medium"
-            style={{ ...chipBase, ...(positiveChipStyle ?? { backgroundColor: brandColor ?? "#004D4D", color: "#ffffff", border: "none" }) }}
+            style={{ ...chipBase, ...(positiveChipStyle ?? { backgroundColor: brandColor ?? BRAND_PRIMARY_FALLBACK, color: "#ffffff", border: "none" }) }}
           >
             <ThumbsUp className="shrink-0" style={{ width: "13px", height: "13px", marginRight: "5px" }} />
             {data.buttonLabel}

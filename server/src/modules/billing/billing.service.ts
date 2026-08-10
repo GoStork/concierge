@@ -1,5 +1,6 @@
 import { asJson } from "../../../../shared/prisma-json";
 import { serviceTypeOfSession } from "../../../service-lines";
+import { platformPrimaryColor } from "../../../brand-color";
 import { Prisma } from "@prisma/client";
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { emitJourneyEvent, emitInvoiceJourneyEvent } from "../../../journey-events";
@@ -2629,7 +2630,9 @@ One important thing: ${who} is now on hold exclusively for you until ${deadline}
       },
       card,
       brand: {
-        primaryColor: brandSettings?.primaryColor || null,
+        // Falls back to GoStork's LIVE primary, not a hex typed here - the PDF
+        // otherwise printed a retired green for any agency without a brand colour.
+        primaryColor: brandSettings?.primaryColor || await platformPrimaryColor(this.prisma),
         logoBuffer,
         legalName: legalIdentity?.legalName || invoice.providerName,
         taxId: legalIdentity?.taxId || null,
@@ -3529,7 +3532,9 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
         },
         card,
         brand: {
-          primaryColor: brandSettings?.primaryColor || null,
+          // Falls back to GoStork's LIVE primary, not a hex typed here - the PDF
+          // otherwise printed a retired green for any agency without a brand colour.
+          primaryColor: brandSettings?.primaryColor || await platformPrimaryColor(this.prisma),
           logoBuffer,
           legalName: legalIdentity?.legalName || invoice.providerName,
           taxId: legalIdentity?.taxId || null,
@@ -3546,7 +3551,12 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
     // parent sees in their payment-request email + on /pay/{token}.
     // Inline styles only so the same markup looks right whether the
     // provider opens it in the browser or prints to PDF.
-    const brandColor = brandSettings?.primaryColor || "#26584A";
+    // The agency's own colour when they have set one - this is THEIR payment
+    // request, carrying their logo. Otherwise GoStork's live primary, read
+    // from SiteSettings rather than typed here, so it follows a rebrand. It
+    // used to fall back to #26584A, a green GoStork had already retired: every
+    // provider without a brand colour was billing in it.
+    const brandColor = brandSettings?.primaryColor || await platformPrimaryColor(this.prisma);
     const parentFirstName = invoice.parentUser?.name?.split(" ")[0] || (invoice.parentUser as any)?.firstName || "there";
     const escHtml = (s: string) =>
       String(s ?? "")

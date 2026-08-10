@@ -19,6 +19,7 @@
 
 import PDFDocument from "pdfkit";
 import { formatMoneyCents } from "../../lib/format-money";
+import { BRAND_PRIMARY_FALLBACK } from "../../../../shared/brand-fallback";
 
 export interface ReceiptInvoice {
   id: string;
@@ -67,7 +68,9 @@ export interface ReceiptBrand {
   taxId?: string | null;
 }
 
-const DEFAULT_BRAND_PRIMARY = "#26584A";
+// Last resort only: both callers now resolve GoStork's live primary before
+// they get here, so this is reached only if that read failed too.
+const DEFAULT_BRAND_PRIMARY = BRAND_PRIMARY_FALLBACK;
 const TEXT_DARK = "#1f2937";
 const TEXT_MUTED = "#6b7280";
 const BORDER = "#e5e7eb";

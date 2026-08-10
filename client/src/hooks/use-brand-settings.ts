@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { getPhotoSrc } from "@/lib/profile-utils";
@@ -205,7 +206,7 @@ export const BRAND_DEFAULTS: BrandSettings = {
   darkLogoWithNameUrl: null,
   faviconUrl: null,
   darkLogoUrl: null,
-  primaryColor: "#08726F",
+  primaryColor: BRAND_PRIMARY_FALLBACK,
   secondaryColor: "#F0FAF5",
   accentColor: "#8F51A3",
   successColor: "#16a34a",

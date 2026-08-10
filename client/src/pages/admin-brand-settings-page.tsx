@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useState, useEffect, useCallback, useRef, useMemo, ReactNode, CSSProperties } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -714,8 +715,8 @@ const NAV_PREVIEW_TABS: Array<{ icon: any; label: string }> = [
 ];
 
 function ChatBubblePreview({ form }: { form: BrandSettings }) {
-  const primary = form.primaryColor ?? "#004D4D";
-  const ownBg = form.chatBubbleOwnColor || (form.primaryColor ?? "#004D4D");
+  const primary = form.primaryColor ?? BRAND_PRIMARY_FALLBACK;
+  const ownBg = form.chatBubbleOwnColor || (form.primaryColor ?? BRAND_PRIMARY_FALLBACK);
   const aiBg = form.chatBubbleAiColor || (form.accentColor ?? "#C3A6C0");
   const providerBg = form.chatBubbleProviderColor || (form.secondaryColor ?? "#F3EBE1");
   const parentBg = form.chatBubbleParentColor || (form.accentColor ?? "#C3A6C0");
@@ -746,22 +747,22 @@ function ChatBubblePreview({ form }: { form: BrandSettings }) {
   const qrStyle = form.quickReplyColorStyle ?? "primary";
   const qrColor = qrStyle === "accent" ? (form.accentColor ?? "#0DA4EA")
     : qrStyle === "secondary" ? (form.secondaryColor ?? "#F0FAF5")
-    : (form.primaryColor ?? "#004D4D");
+    : (form.primaryColor ?? BRAND_PRIMARY_FALLBACK);
   const qrIsOutline = qrStyle === "outline";
   const qrIsSecondary = qrStyle === "secondary";
 
   const decStyle = form.quickReplyDeclineStyle ?? "secondary";
   const decColor = decStyle === "accent" ? (form.accentColor ?? "#0DA4EA")
     : decStyle === "secondary" ? (form.secondaryColor ?? "#F0FAF5")
-    : decStyle === "primary" ? (form.primaryColor ?? "#004D4D")
-    : (form.primaryColor ?? "#004D4D");
+    : decStyle === "primary" ? (form.primaryColor ?? BRAND_PRIMARY_FALLBACK)
+    : (form.primaryColor ?? BRAND_PRIMARY_FALLBACK);
   const decIsOutline = decStyle === "outline";
   const decIsSecondary = decStyle === "secondary";
 
   const multiStyle = form.quickReplyMultiStyle ?? "outline";
   const multiColor = multiStyle === "accent" ? (form.accentColor ?? "#0DA4EA")
     : multiStyle === "secondary" ? (form.secondaryColor ?? "#F0FAF5")
-    : (form.primaryColor ?? "#004D4D");
+    : (form.primaryColor ?? BRAND_PRIMARY_FALLBACK);
   const multiIsOutline = multiStyle === "outline";
   const multiIsSecondary = multiStyle === "secondary";
 
@@ -1925,10 +1926,10 @@ export function BrandSettingsForm({
                 <p className="t-helper">Controls the fill of the positive or multi-choice chips.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
                   {([
-                    { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
+                    { key: "primary", label: "Primary", bg: form.primaryColor ?? BRAND_PRIMARY_FALLBACK, text: "#ffffff", border: form.primaryColor ?? BRAND_PRIMARY_FALLBACK },
                     { key: "accent", label: "Accent", bg: form.accentColor ?? "#0DA4EA", text: "#ffffff", border: form.accentColor ?? "#0DA4EA" },
                     { key: "secondary", label: "Secondary", bg: form.secondaryColor ?? "#F0FAF5", text: "hsl(var(--foreground))", border: "hsl(var(--border))" },
-                    { key: "outline", label: "Outline", bg: "transparent", text: form.primaryColor ?? "#004D4D", border: form.primaryColor ?? "#004D4D" },
+                    { key: "outline", label: "Outline", bg: "transparent", text: form.primaryColor ?? BRAND_PRIMARY_FALLBACK, border: form.primaryColor ?? BRAND_PRIMARY_FALLBACK },
                   ] as const).map(({ key, label, bg, text, border }) => {
                     const selected = (form.quickReplyColorStyle ?? "primary") === key;
                     return (
@@ -1967,10 +1968,10 @@ export function BrandSettingsForm({
                 <p className="t-helper">Style of the second button when there are exactly 2 choices (e.g. Yes / No).</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
                   {([
-                    { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
+                    { key: "primary", label: "Primary", bg: form.primaryColor ?? BRAND_PRIMARY_FALLBACK, text: "#ffffff", border: form.primaryColor ?? BRAND_PRIMARY_FALLBACK },
                     { key: "accent", label: "Accent", bg: form.accentColor ?? "#0DA4EA", text: "#ffffff", border: form.accentColor ?? "#0DA4EA" },
                     { key: "secondary", label: "Secondary", bg: form.secondaryColor ?? "#F0FAF5", text: "hsl(var(--foreground))", border: "hsl(var(--border))" },
-                    { key: "outline", label: "Outline", bg: "transparent", text: form.primaryColor ?? "#004D4D", border: form.primaryColor ?? "#004D4D" },
+                    { key: "outline", label: "Outline", bg: "transparent", text: form.primaryColor ?? BRAND_PRIMARY_FALLBACK, border: form.primaryColor ?? BRAND_PRIMARY_FALLBACK },
                   ] as const).map(({ key, label, bg, text, border }) => {
                     const selected = (form.quickReplyDeclineStyle ?? "secondary") === key;
                     return (
@@ -2009,10 +2010,10 @@ export function BrandSettingsForm({
                 <p className="t-helper">Style of unselected options when the user can pick multiple choices (e.g. donor preferences).</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
                   {([
-                    { key: "primary", label: "Primary", bg: form.primaryColor ?? "#004D4D", text: "#ffffff", border: form.primaryColor ?? "#004D4D" },
+                    { key: "primary", label: "Primary", bg: form.primaryColor ?? BRAND_PRIMARY_FALLBACK, text: "#ffffff", border: form.primaryColor ?? BRAND_PRIMARY_FALLBACK },
                     { key: "accent", label: "Accent", bg: form.accentColor ?? "#0DA4EA", text: "#ffffff", border: form.accentColor ?? "#0DA4EA" },
                     { key: "secondary", label: "Secondary", bg: form.secondaryColor ?? "#F0FAF5", text: "hsl(var(--foreground))", border: "hsl(var(--border))" },
-                    { key: "outline", label: "Outline", bg: "transparent", text: form.primaryColor ?? "#004D4D", border: form.primaryColor ?? "#004D4D" },
+                    { key: "outline", label: "Outline", bg: "transparent", text: form.primaryColor ?? BRAND_PRIMARY_FALLBACK, border: form.primaryColor ?? BRAND_PRIMARY_FALLBACK },
                   ] as const).map(({ key, label, bg, text, border }) => {
                     const selected = (form.quickReplyMultiStyle ?? "outline") === key;
                     return (

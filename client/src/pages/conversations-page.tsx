@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { JourneyTimelineCard } from "@/components/journey/journey-timeline-card";
 import { journeyStageLabel } from "@shared/journey-ladder";
@@ -662,7 +663,7 @@ export default function ConversationsPage() {
   const isConciergeUrl = window.location.pathname === "/chat/concierge" || window.location.pathname === "/concierge";
   const queryClient = useQueryClient();
   const dispatch = useAppDispatch();
-  const brandColor = brand?.primaryColor || "#004D4D";
+  const brandColor = brand?.primaryColor || BRAND_PRIMARY_FALLBACK;
   const chatPalette = useMemo(() => deriveChatPalette(brandColor), [brandColor]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 

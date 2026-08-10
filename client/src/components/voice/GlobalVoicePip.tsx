@@ -1,3 +1,4 @@
+import { BRAND_PRIMARY_FALLBACK } from "@shared/brand-fallback";
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
@@ -54,7 +55,7 @@ export function GlobalVoicePip() {
 
   if (!visible) return null;
 
-  const brandColor = brand?.primaryColor || "#004D4D";
+  const brandColor = brand?.primaryColor || BRAND_PRIMARY_FALLBACK;
   const name = voice.meta?.personaName || "AI Concierge";
 
   return (
