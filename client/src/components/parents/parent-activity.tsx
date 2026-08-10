@@ -1247,13 +1247,19 @@ export function ParentActivitySection({ record, scope }: {
         )}
       </div>
 
+      {/* Same chrome as the note cards below - white card, same radius, border
+          and padding. These panels used a bg-secondary/40 tint, so composing a
+          note looked like a different kind of object from the note it was
+          about to become, and from the identical editor that opens when you
+          edit one in place. Next step gets it too: they are siblings in one
+          row and a tinted one beside a white one reads as a mistake. */}
       {composer === "note" && (
-        <div className="rounded-[var(--radius)] border bg-secondary/40 p-3" data-testid="panel-activity-note">
+        <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-note">
           <NoteComposer record={record} onPosted={() => setComposer(null)} />
         </div>
       )}
       {composer === "next_step" && (
-        <div className="rounded-[var(--radius)] border bg-secondary/40 p-3" data-testid="panel-activity-next-step">
+        <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-next-step">
           <ParentFollowUpPanel record={record} />
         </div>
       )}
