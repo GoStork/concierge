@@ -51,9 +51,10 @@ export function AgreementRow({
           : dead ? "hsl(var(--muted-foreground))"
           : "hsl(var(--brand-warning))",
       }}
-      // Same width cap as a sent attachment: a document tile is sized by the
-      // document, not by whatever column it happens to sit in.
-      className={`max-w-[300px]${dead ? " opacity-70" : ""}`}
+      // No width cap here: in the Documents rail this has to fill the column
+      // like the invoice and cost-sheet rows beside it. The timeline caps its
+      // own document tiles at the sent-attachment width instead.
+      className={dead ? "opacity-70" : undefined}
       testId={testId || `agreement-row-${agreement.id}`}
     />
   );

@@ -479,7 +479,7 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
       // agreement page. This used to be a status line plus a button gated on
       // a documentUrl the record query never selected - so the button could
       // not appear, and "Agreement sent" was a dead end.
-      <div className={shell} data-testid={`detail-agreement-${detail.agreementId}`}>
+      <div className={`${shell} [&>div]:max-w-[300px]`} data-testid={`detail-agreement-${detail.agreementId}`}>
         <AgreementRow
           agreement={{
             id: detail.agreementId,
@@ -500,7 +500,9 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
       // be a bespoke total-plus-button block, so one quote looked like two
       // different objects depending on which part of the page you were on -
       // and its file button opened the raw GCS url, which 403s.
-      <div className={shell} data-testid={`detail-cost-sheet-${detail.quoteId}`}>
+      // Capped to the sent-attachment width, like every document tile in the
+      // timeline - the rail is where they fill their column.
+      <div className={`${shell} [&>div]:max-w-[300px]`} data-testid={`detail-cost-sheet-${detail.quoteId}`}>
         <CostSheetRow
           quote={{
             id: detail.quoteId,
