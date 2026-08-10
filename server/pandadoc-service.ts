@@ -255,22 +255,11 @@ export async function fetchDocumentViewUrl(apiKey: string, documentId: string, r
  * every `status: "SENT"` write calls it and that no already-sent Agreement in
  * the database lacks a release.
  */
-/**
- * The service line a chat thread belongs to, as the Agreement/Invoice enum.
- * Sessions store human subject types ("Egg Donor"); everything downstream
- * keys on the enum.
- */
-export async function serviceTypeOfSession(sessionId: string | null | undefined): Promise<string | null> {
-  if (!sessionId) return null;
-  const s = await prisma.aiChatSession.findUnique({ where: { id: sessionId }, select: { subjectType: true } });
-  const t = (s?.subjectType || "").toLowerCase();
-  if (!t) return null;
-  if (t.includes("egg")) return "EGG_DONATION";
-  if (t.includes("surrog")) return "SURROGACY";
-  if (t.includes("sperm")) return "SPERM_DONATION";
-  if (t.includes("ivf") || t.includes("clinic") || t.includes("doctor")) return "IVF_CLINIC";
-  return null;
-}
+// Moved to server/service-lines.ts - quotes and invoices need the same answer
+// as agreements do, and it was never PandaDoc's to own. Imported (this file
+// still calls it) and re-exported so the existing import path keeps working.
+import { serviceTypeOfSession } from "./service-lines";
+export { serviceTypeOfSession };
 
 /**
  * A signed agreement retires the earlier unsigned attempts it replaced.

@@ -2487,6 +2487,12 @@ model ProviderQuote {
   costSheetFileName    String?
   notes                String?
   source               String    @default("PROVIDER") // "PROVIDER" | "ADMIN_OVERRIDE" | "AUTO_DRAFT_APPROVED"
+  // Which service line this quote prices - same enum as Agreement.serviceType
+  // and Invoice.serviceType, resolved from the thread at send time.
+  // Stamped rather than derived: over half of quotes are typed straight into
+  // a thread with no source cost sheet to inherit from, and a sheet covering
+  // several lines has no single answer anyway.
+  serviceType          String?
   createdByUserId      String?
   supersededAt         DateTime?
   // Phase 2 auto-draft additions:

@@ -728,7 +728,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         id: true, providerId: true, sessionId: true, totalCostCents: true,
         supersededAt: true, parentAcknowledgedAt: true, createdAt: true,
         costSheetFileUrl: true, costSheetFileName: true, notes: true,
-        paymentSchedule: true, source: true, sourceCostSheetId: true,
+        paymentSchedule: true, source: true, serviceType: true,
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -737,26 +737,6 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       select: { id: true, status: true, submittedAt: true, promptedAt: true },
     }).catch(() => null),
   ]);
-
-  // A quote carries no service of its own - it inherits the one from the cost
-  // sheet it was priced off, which is what the card's second row names. There
-  // is no Prisma relation between them (only a loose sourceCostSheetId), so
-  // this is one batched lookup, then flattened onto the quote so every
-  // consumer - Documents panel, timeline detail, money rollup - reads one
-  // field instead of each re-deriving it.
-  const sheetIds = Array.from(new Set(quotes.map((q: any) => q.sourceCostSheetId).filter(Boolean)));
-  const sheetById = new Map<string, any>(
-    sheetIds.length
-      ? (await prisma.providerCostSheet.findMany({
-          where: { id: { in: sheetIds as string[] } },
-          select: { id: true, subType: true, subTypes: true },
-        })).map((s: any) => [s.id, s])
-      : [],
-  );
-  for (const q of quotes as any[]) {
-    const sheet = q.sourceCostSheetId ? sheetById.get(q.sourceCostSheetId) : null;
-    q.serviceType = sheet?.subTypes?.[0] || sheet?.subType || null;
-  }
 
   // ── Access check ─────────────────────────────────────────────────────────
   // Same three-way test the endpoint this replaces used, but derived from data

@@ -1,4 +1,5 @@
 import { asJson } from "../../../../shared/prisma-json";
+import { serviceTypeOfSession } from "../../../service-lines";
 import {
   Body,
   Controller,
@@ -166,6 +167,7 @@ export class CostSheetAutoDraftController {
           costSheetFileName,
           notes,
           source: "AUTO_DRAFT_APPROVED",
+          serviceType: await serviceTypeOfSession(sessionId),
           createdByUserId: user.id || null,
           lineItems: lineItems as any,
           paymentSchedule: (paymentScheduleSnapshot ?? undefined) as any,

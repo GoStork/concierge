@@ -1,3 +1,4 @@
+import { serviceTypeOfSession } from "../../../service-lines";
 import {
   Body,
   Controller,
@@ -213,6 +214,7 @@ export class CostSheetController {
           lineItems: parsedLineItems ?? undefined,
           paymentSchedule: paymentScheduleSnapshot ?? undefined,
           source: isAdmin ? "ADMIN_OVERRIDE" : "PROVIDER",
+          serviceType: await serviceTypeOfSession(sessionId),
           createdByUserId: user.id || null,
         },
       });

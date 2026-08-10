@@ -1,4 +1,5 @@
 import { asJson } from "../../../../shared/prisma-json";
+import { serviceTypeOfSession } from "../../../service-lines";
 import { Prisma } from "@prisma/client";
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from "@nestjs/common";
 import { emitJourneyEvent, emitInvoiceJourneyEvent } from "../../../journey-events";
@@ -1228,6 +1229,7 @@ export class BillingService {
           totalCostCents: priceCents,
           notes: `${donorLabel} - ${bankTypeName} package (published total cost)`,
           source: "BANK_CHECKOUT",
+          serviceType: await serviceTypeOfSession(session!.id),
           paymentSchedule: (paymentScheduleSnapshot ?? undefined) as any,
         },
       });
