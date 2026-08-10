@@ -190,8 +190,14 @@ export function buildBrandedEmail(
   // column keeps the maximum room even on a narrow phone; date/time values get
   // an explicit nowrap so "Friday, July 24, 2026" and "11:30 AM PST" stay on
   // one line, while long values (names, notes) still break normally.
+  // The detail table sits on the CARD colour, not a tint of the page colour.
+  // It used to be cream-on-white, which read as a panel bolted into the middle
+  // of the email; the row separators already give it structure, so the tint was
+  // doing nothing but adding a second surface colour. Same reason the page
+  // behind the email is now white: brand colour belongs in the header band and
+  // the alert boxes, not smeared across every surface.
   const detailsHtml = opts.detailRows?.length
-    ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:${tintHex(brand.backgroundColor, 0.02)};border-radius:${brand.containerRadius};overflow:hidden;">
+    ? `<table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;background:${brand.cardColor};border-radius:${brand.containerRadius};overflow:hidden;">
 ${opts.detailRows.map(r => {
   const isDateTime = /\b(date|time)\b/i.test(r.label);
   const valueWrap = isDateTime ? "white-space:nowrap;" : "word-break:break-word;";
@@ -232,8 +238,8 @@ body { color-scheme: light; }
 }
 </style>
 </head>
-<body style="margin:0;padding:0;background-color:${tintHex(brand.backgroundColor, 0.03)};font-family:${brand.bodyFontStack};color-scheme:light;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:${tintHex(brand.backgroundColor, 0.03)};">
+<body style="margin:0;padding:0;background-color:${brand.cardColor};font-family:${brand.bodyFontStack};color-scheme:light;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:${brand.cardColor};">
 <tr><td align="center" style="padding:32px 16px;">
 <!--[if mso]><table width="600" cellpadding="0" cellspacing="0"><tr><td><![endif]-->
 <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:${brand.cardColor};border-radius:${brand.containerRadius};overflow:hidden;">
