@@ -20,7 +20,11 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiParam } 
 import { emitJourneyEvent } from "../../../journey-events";
 import { serviceKeysFromLabels } from "../../../../shared/service-keys";
 import { serviceLineOfSubject } from "../../../journey-timeline";
-import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel } from "../../../../shared/journey-ladder";
+import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel, MATCHED_ELSEWHERE_STAGE } from "../../../../shared/journey-ladder";
+import {
+  winnersByLine, matchedElsewhereAt, PRE_ENGAGEMENT_STAGES,
+  type CommitmentArtifact, type LineWinner,
+} from "../../../matched-elsewhere";
 import { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
@@ -1028,14 +1032,20 @@ export class UsersController {
       ids.length
         ? this.prisma.invoice.findMany({
             where: { parentUserId: { in: ids } },
-            select: { id: true, parentUserId: true, serviceType: true, serviceAmount: true, status: true, providerId: true },
+            // paidAt/createdAt are load-bearing for the Matched Elsewhere
+            // winner pass: an artifact with no timestamp is skipped outright,
+            // so a missing field here would silently mean "nobody ever won".
+            select: {
+              id: true, parentUserId: true, serviceType: true, serviceAmount: true,
+              status: true, providerId: true, paidAt: true, createdAt: true,
+            },
             orderBy: { createdAt: "desc" },
           })
         : [],
       ids.length
         ? this.prisma.agreement.findMany({
             where: { parentUserId: { in: ids } },
-            select: { id: true, parentUserId: true, status: true, documentType: true, serviceType: true, createdAt: true, providerId: true, supersededAt: true },
+            select: { id: true, parentUserId: true, status: true, documentType: true, serviceType: true, createdAt: true, signedAt: true, providerId: true, supersededAt: true },
             orderBy: { createdAt: "desc" },
           })
         : [],
@@ -1131,6 +1141,18 @@ export class UsersController {
     // Which orgs are working each line - feeds the admin table's Provider
     // column, aligned line-for-line with the Services stack.
     const lineProvidersByUser = new Map<string, Map<string, Set<string>>>();
+    /**
+     * Stage per (user, line, provider) - one level finer than the line rollup
+     * above, which deliberately collapses every org on a line into a single
+     * most-advanced stage.
+     *
+     * Needed for Matched Elsewhere: the rule is MATERIAL RELATIONSHIPS ONLY,
+     * and materiality is a fact about one org, not about the line. Without
+     * this an agency the family merely whispered at would be listed as having
+     * lost something it never had.
+     */
+    const providerStageByUser = new Map<string, Map<string, string>>();
+    const provStageKey = (line: string, providerId: string) => `${line}|${providerId}`;
     const bump = (userId: string, st: string | null, line = "", providerId?: string | null) => {
       if (!st) return;
       if (rank(st) > rank(statusByUser.get(userId) || null)) statusByUser.set(userId, st);
@@ -1143,6 +1165,10 @@ export class UsersController {
         set.add(providerId);
         pm.set(line, set);
         lineProvidersByUser.set(userId, pm);
+        const ps = providerStageByUser.get(userId) || new Map<string, string>();
+        const pk = provStageKey(line, providerId);
+        if (rank(st) > rank(ps.get(pk) || null)) ps.set(pk, st);
+        providerStageByUser.set(userId, ps);
       }
     };
     for (const cs of sessions) {
@@ -1193,10 +1219,67 @@ export class UsersController {
       for (const p of provs) lineProviderNameById.set(p.id, p.name);
     }
 
-    const serviceStatusesOf = (userId: string): { serviceKey: string | null; status: string; providerNames: string[] }[] => {
+    /**
+     * Who won each line, per parent. The admin sees every org, so unlike the
+     * provider table this needs no extra query - the invoices and agreements
+     * above are already unscoped.
+     *
+     * The admin's own line status is NOT rewritten to "Matched Elsewhere":
+     * from where they sit the family did not go elsewhere, it matched. What
+     * they need is which of the orgs listed on that line lost it, which is
+     * what `matchedElsewhereProviders` carries.
+     */
+    const winnersByUser = new Map<string, Map<string, LineWinner>>();
+    {
+      const artifacts = new Map<string, CommitmentArtifact[]>();
+      const add = (userId: string, art: CommitmentArtifact) => {
+        const list = artifacts.get(userId) || [];
+        list.push(art);
+        artifacts.set(userId, list);
+      };
+      for (const inv of invoices as any[]) {
+        if (inv.status !== "PAID") continue;
+        add(inv.parentUserId, {
+          providerId: inv.providerId,
+          serviceLine: lineOfServiceType(inv.serviceType),
+          at: inv.paidAt || inv.createdAt,
+        });
+      }
+      for (const a of agreements as any[]) {
+        if (a.status !== "SIGNED" || a.supersededAt) continue;
+        add(a.parentUserId, {
+          providerId: a.providerId,
+          serviceLine: lineOfServiceType(a.serviceType),
+          at: a.signedAt || a.createdAt,
+        });
+      }
+      for (const [uid, arts] of Array.from(artifacts.entries())) winnersByUser.set(uid, winnersByLine(arts));
+    }
+
+    const serviceStatusesOf = (userId: string): {
+      serviceKey: string | null; status: string; providerNames: string[]; matchedElsewhereProviders: string[];
+    }[] => {
       const m = lineStatusByUser.get(userId);
       if (!m) return [];
       const pm = lineProvidersByUser.get(userId);
+      const ps = providerStageByUser.get(userId);
+      const winners = winnersByUser.get(userId) || new Map<string, LineWinner>();
+      /** Orgs on this line that lost it - material relationships only. */
+      const lostOn = (...lines: string[]): string[] => {
+        const out = new Set<string>();
+        for (const l of lines) {
+          const winner = winners.get(l);
+          if (!winner) continue;
+          for (const id of Array.from(pm?.get(l) || [])) {
+            if (id === winner.providerId) continue;
+            const stage = ps?.get(provStageKey(l, id)) || null;
+            if (!stage || PRE_ENGAGEMENT_STAGES.has(stage)) continue;
+            const n = lineProviderNameById.get(id);
+            if (n) out.add(n);
+          }
+        }
+        return Array.from(out).sort();
+      };
       const namesOf = (...lines: string[]): string[] => {
         const out = new Set<string>();
         for (const l of lines) {
@@ -1210,12 +1293,25 @@ export class UsersController {
       const typed = Array.from(m.entries())
         .filter(([k]) => k !== "")
         .sort((a, b) => rank(b[1]) - rank(a[1]))
-        .map(([serviceKey, status]) => ({ serviceKey, status, providerNames: namesOf(serviceKey) }));
+        .map(([serviceKey, status]) => ({
+          serviceKey, status,
+          providerNames: namesOf(serviceKey),
+          matchedElsewhereProviders: lostOn(serviceKey),
+        }));
       const un = m.get("");
-      if (!typed.length) return un ? [{ serviceKey: null, status: un, providerNames: namesOf("") }] : [];
+      if (!typed.length) {
+        return un
+          ? [{ serviceKey: null, status: un, providerNames: namesOf(""), matchedElsewhereProviders: lostOn("") }]
+          : [];
+      }
       if (un && rank(un) > rank(typed[0].status)) {
         // Untyped fold carries its orgs along with its stage.
-        typed[0] = { ...typed[0], status: un, providerNames: namesOf(typed[0].serviceKey, "") };
+        typed[0] = {
+          ...typed[0],
+          status: un,
+          providerNames: namesOf(typed[0].serviceKey, ""),
+          matchedElsewhereProviders: lostOn(typed[0].serviceKey, ""),
+        };
       }
       return typed;
     };
@@ -1855,6 +1951,60 @@ export class UsersController {
       }
     }
 
+    // ---- Cross-provider outcome (Matched Elsewhere) ----
+    // Every other query in this endpoint is force-scoped to the caller's org,
+    // which is exactly why the provider who most needs to know they lost a
+    // family could never be told: they never load the rival artifact that beat
+    // them. This ONE query is deliberately unscoped - and nothing about the
+    // winner escapes it. Only "you lost this line, at this time" reaches a row;
+    // the rival's identity is used solely to exclude the winner from their own
+    // sweep. Same rule as server/matched-elsewhere.ts spells out.
+    const commitmentUserIds = Array.from(new Set([
+      ...chatSessions.map((cs: any) => cs.userId),
+      ...accountMembersList.map((m: any) => m.id),
+    ].filter(Boolean))) as string[];
+    const winnersByAccount = new Map<string, Map<string, LineWinner>>();
+    if (commitmentUserIds.length) {
+      const [paidInvoices, signedAgreements] = await Promise.all([
+        this.prisma.invoice.findMany({
+          where: { parentUserId: { in: commitmentUserIds }, status: "PAID" },
+          select: { parentUserId: true, providerId: true, serviceType: true, paidAt: true, createdAt: true },
+        }),
+        this.prisma.agreement.findMany({
+          where: { parentUserId: { in: commitmentUserIds }, status: "SIGNED", supersededAt: null },
+          select: { parentUserId: true, providerId: true, serviceType: true, signedAt: true, createdAt: true },
+        }),
+      ]);
+      const artifactsByAccount = new Map<string, CommitmentArtifact[]>();
+      const collect = (userId: string | null, art: CommitmentArtifact) => {
+        if (!userId) return;
+        const k = accountKey(userId);
+        const list = artifactsByAccount.get(k) || [];
+        list.push(art);
+        artifactsByAccount.set(k, list);
+      };
+      for (const inv of paidInvoices as any[]) {
+        collect(inv.parentUserId, {
+          providerId: inv.providerId,
+          // serviceType is display text on Invoice and the enum on Agreement -
+          // this resolver reads both, being substring-based.
+          serviceLine: serviceLineOfSubject(inv.serviceType),
+          at: inv.paidAt || inv.createdAt,
+        });
+      }
+      for (const agr of signedAgreements as any[]) {
+        collect(agr.parentUserId, {
+          providerId: agr.providerId,
+          serviceLine: serviceLineOfSubject(agr.serviceType),
+          at: agr.signedAt || agr.createdAt,
+        });
+      }
+      for (const [k, arts] of Array.from(artifactsByAccount.entries())) {
+        winnersByAccount.set(k, winnersByLine(arts));
+      }
+    }
+    const NO_WINNERS = new Map<string, LineWinner>();
+
     // Build the rows: one per chat session.
     const rows: any[] = [];
     const accountsWithSession = new Set<string>();
@@ -1899,12 +2049,28 @@ export class UsersController {
         connected: cs.status === "PROVIDER_CONNECTED" || !!cs.providerJoinedAt,
       });
 
+      // A provider who never got past browsing lost nothing, so they are never
+      // marked - `journeyStatus` null means no evidence at all.
+      const lostAt = matchedElsewhereAt(
+        winnersByAccount.get(key) || NO_WINNERS,
+        providerId,
+        rowLine,
+        !!journeyStatus && !PRE_ENGAGEMENT_STAGES.has(journeyStatus),
+      );
+
       rows.push({
         // Stable React key - use sessionId so multiple matches for the
         // same parent get distinct rows.
         rowId: cs.id,
         sessionId: cs.id,
-        matchStatus: journeyStatus,
+        // The loss IS the current state, exactly as the ladder renders it -
+        // a row still reading "Consultation Completed" invites the agency to
+        // keep chasing a family that has already signed with someone else.
+        matchStatus: lostAt ? MATCHED_ELSEWHERE_STAGE : journeyStatus,
+        // Kept so the row can still say how far this org actually got, and
+        // so filters/sorts on real stages are not silently rewritten.
+        journeyStatus,
+        matchedElsewhereAt: lostAt ? lostAt.toISOString() : null,
         chatStartedAt: cs.providerJoinedAt || cs.createdAt,
         // Parent fields are duplicated on every row that belongs to the
         // parent. UI keeps them visible per row so each row reads

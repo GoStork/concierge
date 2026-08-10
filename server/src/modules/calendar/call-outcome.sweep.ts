@@ -90,6 +90,24 @@ async function sendWinback(prisma: PrismaService, booking: SweepBooking, kind: "
   if (!booking.parentUserId || booking.winbackSentAt) return;
   if (isGoStorkHouseBooking(booking)) return;
 
+  // The family already committed to another provider on this line. Asking
+  // them to rebook with this one is the worst thing the automation can do -
+  // it reads as though nobody is paying attention. Claim the booking anyway
+  // so it is not reconsidered every ten minutes forever.
+  const { isLineLostToRival } = await import("../../../matched-elsewhere-sweep");
+  if (await isLineLostToRival(prisma, {
+    parentUserId: booking.parentUserId,
+    providerId: booking.providerUser?.provider?.id || null,
+    sessionId: booking.sessionId || null,
+  })) {
+    await prisma.booking.updateMany({
+      where: { id: booking.id, winbackSentAt: null },
+      data: { winbackSentAt: new Date(0) },
+    });
+    console.log(`[winback] Skipped ${kind} win-back for booking ${booking.id} - line matched elsewhere`);
+    return;
+  }
+
   const sessionId = await findEvaSessionForParent(prisma, booking.parentUserId);
   if (!sessionId) {
     console.log(`[winback] No Eva session for parent ${booking.parentUserId} - skipping booking ${booking.id}`);
@@ -412,6 +430,17 @@ export async function runWinbackSilenceSweep(prisma: PrismaService, notification
       });
       if (claim.count === 0) continue;
       if (responded) continue;
+      // Silence after a family committed elsewhere is not ghosting - it is an
+      // answer. Chasing it would nag the parent and mislead the admin queue.
+      const { isLineLostToRival } = await import("../../../matched-elsewhere-sweep");
+      if (booking.parentUserId && await isLineLostToRival(prisma, {
+        parentUserId: booking.parentUserId,
+        providerId: booking.providerUser?.provider?.id || null,
+        sessionId: booking.sessionId || null,
+      })) {
+        console.log(`[winback] Skipped silence nudge for booking ${booking.id} - line matched elsewhere`);
+        continue;
+      }
 
       const providerName = providerDisplayName(booking);
       const parentName = booking.parentUser?.name || booking.attendeeName || "A parent";

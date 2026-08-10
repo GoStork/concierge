@@ -14,7 +14,7 @@ import { ClearFiltersButton } from "@/components/clear-filters-button";
 import { FilterRow, FilterSearch, FilterDropdown, FilterDate } from "@/components/ui/filter-controls";
 import { SERVICE_LABELS, IP_FORM_FILTER_LABELS } from "./parent-cells";
 import { ServiceDot } from "@/components/ui/service-tag";
-import { JOURNEY_STAGE_LABELS } from "@shared/journey-ladder";
+import { JOURNEY_STAGE_LABELS, MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL } from "@shared/journey-ladder";
 
 export interface ParentsFilterState {
   q: string;
@@ -84,7 +84,14 @@ export function ParentsFilterBar({
           />
           <FilterDropdown
             label="All statuses"
-            options={Object.entries(JOURNEY_STAGE_LABELS)}
+            // Matched Elsewhere is appended rather than living in
+            // JOURNEY_STAGE_LABELS: it is a branch outcome, not a rung on the
+            // order ladder. Filterable because "who have I lost?" is the first
+            // thing an agency wants to clear out of their pipeline.
+            options={[
+              ...Object.entries(JOURNEY_STAGE_LABELS),
+              [MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL] as [string, string],
+            ]}
             selected={state.statuses}
             onChange={(next) => setParam("status", next.join(","))}
             testId={`${testIdPrefix}-status-filter`}

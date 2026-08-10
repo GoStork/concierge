@@ -44,6 +44,40 @@ import {
 } from "./parent-cells";
 import type { ParentTableRow } from "./parent-record-types";
 
+type ServiceLine = {
+  serviceKey: string | null;
+  status: string | null;
+  providerNames?: string[];
+  /** Orgs on this line the family did NOT choose. Admin view only. */
+  matchedElsewhereProviders?: string[];
+};
+
+/**
+ * The orgs working a line, with the ones that lost it struck through.
+ *
+ * The admin's line status is never rewritten to "Matched Elsewhere" - from
+ * where they sit the family matched, it did not go elsewhere. What the admin
+ * needs is WHICH of the listed orgs is still in play, which a flat
+ * comma-joined list actively obscured: three names beside "Agreement Signed"
+ * read as though all three signed.
+ */
+function ProviderNames({ names, lost }: { names?: string[]; lost?: string[] }) {
+  if (!names?.length) return <span className="t-helper">-</span>;
+  const lostSet = new Set(lost || []);
+  const title = lostSet.size
+    ? `${names.join(", ")} - matched elsewhere: ${Array.from(lostSet).join(", ")}`
+    : names.join(", ");
+  return (
+    <span className="truncate max-w-[160px] inline-block text-xs" title={title}>
+      {names.map((n, i) => (
+        <span key={n} className={lostSet.has(n) ? "text-muted-foreground line-through" : undefined}>
+          {i > 0 ? ", " : ""}{n}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /**
  * One entry per service line for the paired Services / Match Status stacks:
  * lines with journey artifacts first (each paired with its own stage), then
@@ -51,9 +85,8 @@ import type { ParentTableRow } from "./parent-record-types";
  * yet) with no status - so the admin view never drops a service the profile
  * declares just because it has no session yet.
  */
-function buildServiceLines(row: ParentTableRow): { serviceKey: string | null; status: string | null; providerNames?: string[] }[] {
-  const lines: { serviceKey: string | null; status: string | null; providerNames?: string[] }[] =
-    (row.serviceStatuses || []).map((ss) => ({ ...ss }));
+function buildServiceLines(row: ParentTableRow): ServiceLine[] {
+  const lines: ServiceLine[] = (row.serviceStatuses || []).map((ss) => ({ ...ss }));
   const seen = new Set(lines.map((l) => l.serviceKey).filter(Boolean));
   for (const svc of row.services || []) {
     // A declared interest is never status-less: the family is at least
@@ -362,19 +395,15 @@ export function ParentsTable({
                       <div className="flex flex-col gap-1 items-start">
                         {svcLines.map((ss) => (
                           <span key={ss.serviceKey || "untyped"} className="flex items-center h-[22px] text-xs">
-                            {ss.providerNames?.length
-                              ? <span className="truncate max-w-[160px]" title={ss.providerNames.join(", ")}>{ss.providerNames.join(", ")}</span>
-                              : <span className="t-helper">-</span>}
+                            <ProviderNames names={ss.providerNames} lost={ss.matchedElsewhereProviders} />
                           </span>
                         ))}
                       </div>
                     ) : (
-                      (() => {
-                        const names = svcLines[0]?.providerNames || [];
-                        return names.length
-                          ? <span className="text-xs truncate max-w-[160px] inline-block" title={names.join(", ")}>{names.join(", ")}</span>
-                          : <span className="t-helper">-</span>;
-                      })()
+                      <ProviderNames
+                        names={svcLines[0]?.providerNames}
+                        lost={svcLines[0]?.matchedElsewhereProviders}
+                      />
                     )}
                   </TableCell>
                 )}

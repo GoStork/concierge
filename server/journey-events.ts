@@ -105,7 +105,16 @@ export type JourneyEventType =
   | "CRM_FOLLOWUP_SET"
   | "CRM_FOLLOWUP_COMPLETED"
   | "CRM_OWNER_ASSIGNED"
-  | "CRM_TAG_ADDED";
+  | "CRM_TAG_ADDED"
+  // Cross-provider outcome (server/matched-elsewhere-sweep.ts). The marker
+  // that a losing provider has ALREADY been told they lost this line - the
+  // derived state is permanent, the telling must happen exactly once.
+  // providerId is the LOSER; the winner is never recorded here, because this
+  // row is readable by the provider it belongs to.
+  | "MATCHED_ELSEWHERE_NOTIFIED"
+  // GoStork has been alerted to a commitment (an invoice paid or an agreement
+  // signed). Doubles as the digest cursor.
+  | "COMMITMENT_ALERTED";
 
 export type JourneyActor = "parent" | "provider" | "system" | "admin";
 
@@ -146,6 +155,24 @@ export async function emitJourneyEvent(input: {
         metadata: (input.metadata as any) ?? undefined,
       },
     });
+
+    // A family committing is the business converting, so GoStork hears about
+    // it the moment it lands. Hooked HERE rather than at the five paid/signed
+    // call sites, which would have meant remembering to hook the sixth.
+    // Fire-and-forget: an alert must never fail a payment or a signature.
+    if (input.eventType === "INVOICE_PAID" || input.eventType === "AGREEMENT_SIGNED") {
+      const kind = input.eventType;
+      void (async () => {
+        try {
+          const { onCommitmentEmitted } = await import("./matched-elsewhere-sweep");
+          await onCommitmentEmitted(kind, {
+            parentUserId: input.parentUserId ?? null,
+            providerId: input.providerId ?? null,
+            metadata: input.metadata ?? null,
+          });
+        } catch { /* never surfaces to the caller */ }
+      })();
+    }
   } catch (e: any) {
     console.error(`[journey-events] Failed to emit ${input.eventType}: ${e?.message}`);
   }
@@ -165,16 +192,24 @@ export async function emitJourneyEvent(input: {
  * process re-check before the first had written anything. Same shape as the
  * review-prompt guard in server/review-prompts.ts.
  */
-export async function emitJourneyEventOnceForBooking(input: {
+interface OnceInput {
   eventType: JourneyEventType;
-  bookingId: string;
   parentAccountId?: string | null;
   parentUserId?: string | null;
   providerId?: string | null;
   sessionId?: string | null;
+  bookingId?: string | null;
   actorRole?: JourneyActor | null;
   metadata?: Record<string, unknown> | null;
-}): Promise<void> {
+}
+
+/** Shared skeleton: resolve the account, take the lock, re-check, insert. */
+async function emitOnce(
+  input: OnceInput,
+  lockKey: string,
+  dedupeWhere: Record<string, unknown>,
+  extraMetadata?: Record<string, unknown>,
+): Promise<boolean> {
   try {
     let accountId = input.parentAccountId || null;
     if (!accountId && input.parentUserId) {
@@ -184,15 +219,15 @@ export async function emitJourneyEventOnceForBooking(input: {
       });
       accountId = u?.parentAccountId || input.parentUserId;
     }
-    if (!accountId) return;
+    if (!accountId) return false;
 
-    const lockKey = `journey-event:${input.eventType}:${input.bookingId}`;
+    let written = false;
     await prisma.$transaction(async (tx) => {
       // $executeRaw, not $queryRaw: the lock function returns void, which
       // prisma's row deserializer rejects.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
       const prior = await tx.journeyEvent.findFirst({
-        where: { eventType: input.eventType, bookingId: input.bookingId },
+        where: { eventType: input.eventType, ...dedupeWhere } as any,
         select: { id: true },
       });
       if (prior) return;
@@ -201,16 +236,44 @@ export async function emitJourneyEventOnceForBooking(input: {
           parentAccountId: accountId as string,
           providerId: input.providerId || null,
           sessionId: input.sessionId || null,
-          bookingId: input.bookingId,
+          bookingId: input.bookingId || null,
           eventType: input.eventType,
           actorRole: input.actorRole || "system",
-          metadata: (input.metadata as any) ?? undefined,
+          metadata: { ...(input.metadata || {}), ...(extraMetadata || {}) } as any,
         },
       });
+      written = true;
     });
+    return written;
   } catch (e: any) {
     console.error(`[journey-events] Failed to emit-once ${input.eventType}: ${e?.message}`);
+    return false;
   }
+}
+
+export async function emitJourneyEventOnceForBooking(
+  input: OnceInput & { bookingId: string },
+): Promise<void> {
+  await emitOnce(input, `journey-event:${input.eventType}:${input.bookingId}`, { bookingId: input.bookingId });
+}
+
+/**
+ * Emit at most one event of this type per `onceKey`, ever - a durable
+ * "we already did this" marker for work that has no booking to hang off.
+ *
+ * Returns true only for the caller that actually wrote the row, so a sweep
+ * can use it as the claim on a side effect: whoever wins sends the email,
+ * and the machine that loses the race sends nothing.
+ */
+export async function emitJourneyEventOnceKeyed(
+  input: OnceInput & { onceKey: string },
+): Promise<boolean> {
+  return emitOnce(
+    input,
+    `journey-event:${input.eventType}:${input.onceKey}`,
+    { metadata: { path: ["onceKey"], equals: input.onceKey } },
+    { onceKey: input.onceKey },
+  );
 }
 
 /** Invoice-flavored emitter: loads the invoice and attributes the event. */

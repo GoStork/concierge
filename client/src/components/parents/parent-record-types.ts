@@ -284,7 +284,13 @@ export interface ParentTableRow {
    * consultation are both true). serviceKey null = untyped threads only.
    * Absent/single-entry rows render the plain matchStatus badge.
    */
-  serviceStatuses?: { serviceKey: string | null; status: string; providerNames?: string[] }[];
+  serviceStatuses?: {
+    serviceKey: string | null;
+    status: string;
+    providerNames?: string[];
+    /** Admin only: orgs on this line the family did not choose. */
+    matchedElsewhereProviders?: string[];
+  }[];
   /**
    * Everything the family SAID they are looking for, whether or not this
    * viewer is working on it. Rendered as extra service tags with no status

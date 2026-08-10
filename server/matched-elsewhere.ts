@@ -94,6 +94,9 @@ export function isCommittingAgreement(agr: {
  */
 export const PRE_ENGAGEMENT_STAGES = new Set(["registered", "exploring"]);
 
-/** The stage id and label the ladder and the Match Status pill both use. */
-export const MATCHED_ELSEWHERE_STAGE = "matched_elsewhere";
-export const MATCHED_ELSEWHERE_LABEL = "Matched Elsewhere";
+/**
+ * The stage id and label the ladder and the Match Status pill both use. Now
+ * defined in shared/journey-ladder.ts, because the client needs to label the
+ * pill too; re-exported here so server callers keep one import.
+ */
+export { MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL } from "../shared/journey-ladder";

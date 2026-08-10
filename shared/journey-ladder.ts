@@ -109,8 +109,26 @@ export function resolveJourneyStage(e: JourneyEvidence): JourneyStageId | null {
   return null;
 }
 
+/**
+ * The cross-provider outcome: this family committed to a DIFFERENT provider
+ * on this service line.
+ *
+ * Deliberately OUTSIDE JOURNEY_STAGE_ORDER. The order array is a rank ladder
+ * ("which rung is furthest along"), and this is not a rung - it is a branch
+ * that ends the journey sideways, like No Show or Canceled. Putting it in the
+ * order would make `rank()` treat it as more or less advanced than a real
+ * stage, and the most-advanced-wins rollups would start comparing a loss
+ * against a milestone.
+ *
+ * Lives here rather than in server/matched-elsewhere.ts (which re-exports it)
+ * so the tables' pills and the ladder read the same words.
+ */
+export const MATCHED_ELSEWHERE_STAGE = "matched_elsewhere";
+export const MATCHED_ELSEWHERE_LABEL = "Matched Elsewhere";
+
 export function journeyStageLabel(id: string | null | undefined): string | null {
   if (!id) return null;
+  if (id === MATCHED_ELSEWHERE_STAGE) return MATCHED_ELSEWHERE_LABEL;
   return JOURNEY_STAGE_LABELS[id as JourneyStageId] ?? null;
 }
 

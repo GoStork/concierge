@@ -19,7 +19,10 @@ import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-mo
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
 import { InvoiceRow } from "@/components/chat/invoice-row";
 import { AgreementRow } from "@/components/chat/agreement-row";
-import { JOURNEY_STAGE_LABELS, LEGACY_MATCH_STATUS_TO_STAGE } from "@shared/journey-ladder";
+import {
+  JOURNEY_STAGE_LABELS, LEGACY_MATCH_STATUS_TO_STAGE,
+  MATCHED_ELSEWHERE_STAGE, MATCHED_ELSEWHERE_LABEL,
+} from "@shared/journey-ladder";
 import { ServiceTag, normalizeServiceKey } from "@/components/ui/service-tag";
 
 export const SERVICE_LABELS: Record<string, string> = {
@@ -65,6 +68,10 @@ export function serviceEnumKey(raw: string | null | undefined): string | null {
  */
 export const JOURNEY_STATUS_LABELS: Record<string, string> = {
   ...JOURNEY_STAGE_LABELS,
+  // A branch outcome rather than a rung, which is why it is not in
+  // JOURNEY_STAGE_LABELS - but it does reach this badge, unlike No Show and
+  // Canceled, because it becomes the row's current state.
+  [MATCHED_ELSEWHERE_STAGE]: MATCHED_ELSEWHERE_LABEL,
   CONSULTATION_BOOKED: JOURNEY_STAGE_LABELS.consult_scheduled,
   PROVIDER_CONNECTED: JOURNEY_STAGE_LABELS.consult_scheduled,
   MATCH_CALL: JOURNEY_STAGE_LABELS.match_call_scheduled,
@@ -233,6 +240,7 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
     call: { bg: "hsl(var(--brand-warning) / 0.15)", fg: "hsl(var(--brand-warning))" },
     match: { bg: "hsl(var(--accent) / 0.15)", fg: "hsl(var(--accent))" },
     money: { bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
+    lost: { bg: "hsl(var(--muted-foreground) / 0.12)", fg: "hsl(var(--muted-foreground))" },
   };
   const toneFor: Record<string, { bg: string; fg: string }> = {
     registered: TONE.early,
@@ -245,6 +253,10 @@ export function MatchStatusBadge({ status }: { status: string | null | undefined
     // - No Show and Canceled live on the ladder and the attention chip, not
     // in the match-status vocabulary).
     doctor_call_scheduled: TONE.early,
+    // The one branch outcome that DOES reach this badge: the family committed
+    // to another provider on this line. Muted rather than red - it is a closed
+    // door, not an error, and nothing here is anyone's fault.
+    [MATCHED_ELSEWHERE_STAGE]: TONE.lost,
     doctor_call_completed: TONE.early,
     match_call_scheduled: TONE.call,
     matched: TONE.match,

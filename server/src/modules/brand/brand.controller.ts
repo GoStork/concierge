@@ -300,6 +300,17 @@ function validateBrandBody(body: any) {
     }
   }
 
+  // Not a brand field, but it rides this row and this endpoint. Whitelisted
+  // rather than passed through: the sweep switches behaviour on the exact
+  // string, so an unrecognised value would silently mean "no alerts at all".
+  if (body.commitmentAlertCadence !== undefined) {
+    const v = String(body.commitmentAlertCadence);
+    if (!["immediate", "daily", "weekly"].includes(v)) {
+      throw new ForbiddenException("commitmentAlertCadence must be immediate, daily or weekly");
+    }
+    body.commitmentAlertCadence = v;
+  }
+
   if (body.baseFontSize !== undefined) {
     const size = Number(body.baseFontSize);
     if (isNaN(size) || size < 10 || size > 24) {

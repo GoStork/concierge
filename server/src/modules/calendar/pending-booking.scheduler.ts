@@ -342,6 +342,17 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
         console.error(`[escrow-conversion] Cron error: ${err.message}`);
       }
     }
+    // Cross-provider outcome: tell each losing agency, once, that the family
+    // committed elsewhere on that line - and send GoStork's commitment digest
+    // when the cadence is daily/weekly (immediate sends from the paid/signed
+    // path itself, so this is a no-op then).
+    try {
+      const { runMatchedElsewhereSweep, runCommitmentDigestSweep } = await import("../../../matched-elsewhere-sweep");
+      await runMatchedElsewhereSweep(prisma, notifications);
+      await runCommitmentDigestSweep(prisma, notifications);
+    } catch (err: any) {
+      console.error(`[matched-elsewhere] Cron error: ${err.message}`);
+    }
     // Phase 8: post-handoff review check-ins (+1 reminder after 3 days).
     try {
       const { runReviewCheckinSweep } = await import("../../../review-prompts");

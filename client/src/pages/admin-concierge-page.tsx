@@ -123,6 +123,93 @@ function SystemSettingsCard() {
   );
 }
 
+/**
+ * How often GoStork hears that a family committed - an invoice paid or an
+ * agreement signed.
+ *
+ * "Immediate" sends from the paid/signed path itself, so it really is
+ * immediate; the digests are swept from the journey events already being
+ * written, which is why switching cadence needs no migration and never loses
+ * an event that landed under the other setting.
+ */
+function CommitmentAlertsCard() {
+  const { toast } = useToast();
+  const { data: brandSettings } = useBrandSettings();
+  const [pending, setPending] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const current = pending || (brandSettings as any)?.commitmentAlertCadence || "immediate";
+
+  const save = async (cadence: string) => {
+    if (cadence === current || saving) return;
+    setSaving(true);
+    setPending(cadence);
+    try {
+      await apiRequest("PUT", "/api/brand/settings", { commitmentAlertCadence: cadence });
+      await queryClient.invalidateQueries({ queryKey: ["/api/brand/settings"] });
+      setPending(null);
+      toast({ title: "Commitment alerts saved" });
+    } catch {
+      setPending(null);
+      toast({ title: "Failed to save settings", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="rounded-[var(--radius)] p-6" data-testid="card-commitment-alerts">
+      <div className="flex items-center gap-2.5 mb-1">
+        <Settings className="w-5 h-5 text-primary" />
+        <h3 className="font-display text-base font-semibold">Commitment Alerts</h3>
+      </div>
+      <p className="t-helper mb-4">
+        When GoStork hears that a family committed - an invoice paid or an agreement signed.
+      </p>
+
+      <div className="space-y-2">
+        <div
+          className="grid grid-cols-3 rounded-[var(--radius)] border border-border overflow-hidden sm:inline-grid sm:min-w-[380px]"
+          role="radiogroup"
+          aria-label="Commitment alert cadence"
+          data-testid="radio-commitment-cadence"
+        >
+          {([
+            ["immediate", "Immediate", "radio-cadence-immediate"],
+            ["daily", "Daily digest", "radio-cadence-daily"],
+            ["weekly", "Weekly digest", "radio-cadence-weekly"],
+          ] as const).map(([value, label, testId]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={current === value}
+              onClick={() => save(value)}
+              disabled={saving}
+              className={`px-4 py-2 text-sm font-medium transition-colors disabled:opacity-70 ${
+                current === value ? "bg-primary text-primary-foreground" : "bg-card text-foreground hover:bg-secondary"
+              }`}
+              data-testid={testId}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="t-helper">
+          {current === "immediate"
+            ? "Every paid invoice and signed agreement alerts the GoStork team as it happens"
+            : current === "daily"
+              ? "One summary a day of everything that converted"
+              : "One summary a week of everything that converted"}
+        </p>
+        <p className="t-helper">
+          Providers who lose a family on a service line are always told separately, once, and
+          never who won it.
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 const TTS_PROVIDER_LABELS: Record<string, string> = {
   elevenlabs: "ElevenLabs (most human)",
   openai: "OpenAI (budget)",
@@ -1540,6 +1627,8 @@ export default function AdminConciergePage() {
   return (
     <div className="space-y-6" data-testid="admin-concierge-page">
       <SystemSettingsCard />
+
+      <CommitmentAlertsCard />
 
       <VoiceSettingsCard />
 

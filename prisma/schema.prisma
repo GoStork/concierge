@@ -1641,6 +1641,12 @@ model SiteSettings {
   cardHeadingWeight  String?
   pageTitleSize      Int?
   pageTitleWeight    String?
+
+  // How often GoStork hears that a family committed (an invoice paid or an
+  // agreement signed): "immediate" | "daily" | "weekly". Immediate sends from
+  // the paid/signed path itself; the digests are swept from the journey
+  // events, so switching cadence needs no queue migration.
+  commitmentAlertCadence String? @default("immediate")
 }
 
 model Matchmaker {
