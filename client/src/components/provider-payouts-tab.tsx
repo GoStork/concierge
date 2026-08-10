@@ -703,8 +703,11 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
   return (
     <section className="space-y-6">
       {/* Business identity + address come from the Legal Identity tab.
-          Read-only here; provider edits them in one place upstream. */}
-      <div className="rounded-xl border p-4 bg-secondary/40 space-y-3">
+          Read-only here; provider edits them in one place upstream - the
+          "Edit in Legal Identity" link carries that, not a dimmer surface.
+          It was on secondary to recede against the editable cards, but a
+          cream panel between two white ones just read as unfinished. */}
+      <div className="rounded-xl border p-5 bg-card space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="font-semibold text-sm">Business identity</h3>
