@@ -173,7 +173,7 @@ export function InvoiceCard({ data, isParent = true, onPayInline, onEditResend, 
               type="button"
               onClick={onEditResend}
               disabled={actionPending}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border hover:bg-muted/50 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-card border hover:bg-muted/50 transition-colors disabled:opacity-50"
               style={{ borderColor: "hsl(var(--primary))", color: "hsl(var(--primary))" }}
               data-testid={`invoice-edit-${data.invoiceId}`}
             >
@@ -186,7 +186,7 @@ export function InvoiceCard({ data, isParent = true, onPayInline, onEditResend, 
               type="button"
               onClick={onCancel}
               disabled={actionPending}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-background border border-border hover:bg-muted/50 transition-colors text-foreground disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-card border border-border hover:bg-muted/50 transition-colors text-foreground disabled:opacity-50"
               data-testid={`invoice-cancel-${data.invoiceId}`}
             >
               <X className="w-3 h-3" />

@@ -1858,7 +1858,10 @@ RULES:
     },
     {
       key: "handoff_wrapup_bank",
-      label: "[Phase 7B] Handoff wrap-up - Donor Bank",
+      // "Donor Bank" was retired as a service: a sperm bank IS sperm donation
+      // and an egg bank IS egg donation. The section key stays (it addresses
+      // the bank LADDER, which has its own shape) - only the label changes.
+      label: "[Phase 7B] Handoff wrap-up - Egg & Sperm Banks",
       description: "What-happens-next bullets for egg/sperm bank purchases. {providerName} is replaced automatically.",
       content: `Here's what typically happens next:
 - {providerName} coordinates shipping your donor material to your clinic (or arranges storage)

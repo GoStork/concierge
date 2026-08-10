@@ -413,7 +413,7 @@ export function PaymentScheduleEditor({
           return (
             <div
               key={d.uid}
-              className="rounded-[var(--radius)] border border-border bg-background overflow-hidden"
+              className="rounded-[var(--radius)] border border-border bg-secondary overflow-hidden"
               data-testid={`tranche-row-${idx}`}
             >
               {/* Summary line - always visible */}
@@ -582,7 +582,7 @@ export function PaymentScheduleEditor({
                               "px-2 py-1 rounded-[var(--radius)] text-xs border transition-colors",
                               on
                                 ? "bg-accent text-accent-foreground border-accent"
-                                : "bg-background border-border hover:border-accent/50",
+                                : "bg-card border-border hover:border-accent/50",
                             )}
                             data-testid={`tranche-item-${idx}-${it.id}`}
                           >
@@ -640,7 +640,7 @@ export function PaymentScheduleEditor({
         )}
 
         {/* Sheet-level terms - inline expandable, no dialog */}
-        <div className="rounded-[var(--radius)] border border-border bg-background">
+        <div className="rounded-[var(--radius)] border border-border bg-secondary">
           <button type="button" className="w-full flex items-center justify-between p-3 text-left"
             onClick={() => setTermsOpen((v) => !v)} data-testid="btn-toggle-payment-terms">
             <span className="text-sm font-medium">Escrow and refund terms</span>

@@ -80,11 +80,17 @@ export interface JourneyOut {
   lastActivityAt: string | null;
 }
 
-const TYPE_LABEL: Record<JourneyOut["journeyType"], string> = {
+/**
+ * "bank" is deliberately absent. A bank journey wears its DONATION line's
+ * name (see typeLabel below) - a sperm bank is sperm donation, an egg bank is
+ * egg donation - so a "Donor Bank" entry here was a label that could never
+ * render, sitting one edit away from reintroducing a service the platform
+ * retired. Excluding it from the type makes that a compile error.
+ */
+const TYPE_LABEL: Record<Exclude<JourneyOut["journeyType"], "bank">, string> = {
   surrogacy: "Surrogacy",
   egg_donation: "Egg Donation",
   ivf: "IVF",
-  bank: "Donor Bank",
   legal: "Legal",
 };
 

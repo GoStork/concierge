@@ -527,7 +527,7 @@ function ProgramClassificationControls({
         <div className="flex items-center flex-shrink-0">
           {visibleLeaves.length > 0 && (
             <div className={cn(
-              "inline-flex gap-1 p-1 bg-background border-2 rounded-[var(--radius)] shadow-sm items-center",
+              "inline-flex gap-1 p-1 bg-secondary border-2 rounded-[var(--radius)] shadow-sm items-center",
               needsSubTypes ? "border-destructive" : "border-accent/40",
             )}>
               {visibleLeaves.map(leaf => {
@@ -579,7 +579,7 @@ function ProgramClassificationControls({
             trigger width keeps downstream slots column-aligned across rows. */}
         {eggDonorOn && !ivfSubtypeExcludesDonor && (
           <div className="flex items-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            <div className="inline-flex gap-1 p-1 bg-background border-2 border-accent/40 rounded-[var(--radius)] shadow-sm">
+            <div className="inline-flex gap-1 p-1 bg-secondary border-2 border-accent/40 rounded-[var(--radius)] shadow-sm">
               {EGG_DONOR_SUBTYPES.map(s => (
                 <button
                   key={`egg-donor-sub-${program.id}-${s.id}`}
@@ -606,7 +606,7 @@ function ProgramClassificationControls({
         {latestSheet && (
           <div
             className={cn(
-              "inline-flex gap-1 p-1 bg-background border-2 rounded-[var(--radius)] shadow-sm",
+              "inline-flex gap-1 p-1 bg-secondary border-2 rounded-[var(--radius)] shadow-sm",
               needsFixedCost ? "border-destructive" : "border-accent/40",
             )}
             onClick={(e) => e.stopPropagation()}
@@ -2221,7 +2221,7 @@ function SingleCostsTab({
             <CardTitle className="text-base flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-accent" />
               Pricing Tiers
-              <Badge variant="outline" className="text-xs bg-background border-accent/40 text-accent">
+              <Badge variant="outline" className="text-xs bg-card border-accent/40 text-accent">
                 {tierItems.length} option{tierItems.length === 1 ? "" : "s"}
               </Badge>
             </CardTitle>
@@ -2233,7 +2233,7 @@ function SingleCostsTab({
             {tierItems.map((tier) => (
               <div
                 key={`tier-${tier._editIdx}`}
-                className="flex items-center gap-3 p-3 rounded-[var(--radius)] bg-background border border-border"
+                className="flex items-center gap-3 p-3 rounded-[var(--radius)] bg-secondary border border-border"
                 data-testid={`tier-row-${tier._editIdx}`}
               >
                 <div className="flex-1">

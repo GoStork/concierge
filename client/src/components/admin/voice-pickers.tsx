@@ -120,7 +120,7 @@ function FilterChips({
       {label && <span className="t-helper w-14 shrink-0">{label}</span>}
       <button
         onClick={() => onSelect(null)}
-        className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-ui border transition-colors ${selected === null ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-secondary"}`}
+        className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-ui border transition-colors ${selected === null ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-secondary"}`}
       >
         All
       </button>
@@ -128,7 +128,7 @@ function FilterChips({
         <button
           key={v}
           onClick={() => onSelect(selected === v ? null : v)}
-          className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-ui border transition-colors ${selected === v ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-secondary"}`}
+          className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-ui border transition-colors ${selected === v ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-secondary"}`}
         >
           {cap(v)}
         </button>
@@ -249,7 +249,7 @@ export function VoicePicker({
       </Button>
 
       {open && (
-        <div className="border rounded-[var(--radius)] p-3 space-y-3 bg-background" data-testid={`${testId}-panel`}>
+        <div className="border rounded-[var(--radius)] p-3 space-y-3 bg-secondary" data-testid={`${testId}-panel`}>
           <div className="relative">
             <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -430,7 +430,7 @@ export function AvatarPicker({
       </Button>
 
       {open && (
-        <div className="border rounded-[var(--radius)] p-3 space-y-3 bg-background" data-testid={`${testId}-panel`}>
+        <div className="border rounded-[var(--radius)] p-3 space-y-3 bg-secondary" data-testid={`${testId}-panel`}>
           <div className="relative">
             <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -490,7 +490,7 @@ export function AvatarPicker({
                         e.stopPropagation();
                         setPreviewingId(previewingId === a.id ? null : a.id);
                       }}
-                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-background/85 border flex items-center justify-center text-primary hover:bg-background"
+                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-card/85 border flex items-center justify-center text-primary hover:bg-secondary"
                     >
                       {previewingId === a.id ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
                     </span>

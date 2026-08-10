@@ -162,7 +162,7 @@ export function SignaturePad({
           onClick={() => setMode("drawn")}
           disabled={disabled}
           className={`px-3 py-1.5 rounded-full text-sm border font-ui transition-colors inline-flex items-center gap-1.5 ${
-            mode === "drawn" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-foreground border-border hover:border-primary/50"
+            mode === "drawn" ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:border-primary/50"
           }`}
           data-testid="signature-mode-draw"
         >
@@ -173,7 +173,7 @@ export function SignaturePad({
           onClick={() => setMode("typed")}
           disabled={disabled}
           className={`px-3 py-1.5 rounded-full text-sm border font-ui transition-colors inline-flex items-center gap-1.5 ${
-            mode === "typed" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-foreground border-border hover:border-primary/50"
+            mode === "typed" ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:border-primary/50"
           }`}
           data-testid="signature-mode-type"
         >

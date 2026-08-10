@@ -135,7 +135,7 @@ export function CountryAutocompleteInput({
             className="flex h-9 w-full rounded-[var(--container-radius)] border border-border bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
           {open && suggestions.length > 0 && (
-            <ul className="absolute z-50 mt-1 w-full rounded-[var(--container-radius)] border border-border bg-background shadow-md">
+            <ul className="absolute z-50 mt-1 w-full rounded-[var(--container-radius)] border border-border bg-card shadow-md">
               {suggestions.map((country, i) => (
                 <li
                   key={country}
@@ -284,7 +284,7 @@ export function SingleCountryAutocompleteInput({
         )}
       />
       {open && suggestions.length > 0 && (
-        <ul className="absolute z-50 mt-1 w-full rounded-[var(--container-radius)] border border-border bg-background shadow-md">
+        <ul className="absolute z-50 mt-1 w-full rounded-[var(--container-radius)] border border-border bg-card shadow-md">
           {suggestions.map((country, i) => (
             <li
               key={country}

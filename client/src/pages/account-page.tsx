@@ -976,7 +976,7 @@ function AccountTab() {
                               className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
                                 editServices.includes(svc)
                                   ? "bg-primary text-primary-foreground border-primary"
-                                  : "bg-background text-foreground border-border hover:border-primary/50"
+                                  : "bg-card text-foreground border-border hover:border-primary/50"
                               }`}
                               data-testid={`btn-service-${svc.toLowerCase().replace(/\s+/g, "-")}`}
                             >
@@ -1144,7 +1144,7 @@ function AccountTab() {
                           {["Fertility Clinic", "Egg Donor", "Surrogate", "Sperm Donor"].map((svc) => {
                             const selected = (parentProfileQuery.data?.interestedServices || []).includes(svc);
                             return (
-                              <span key={svc} className={`px-3 py-1 text-sm rounded-full border font-ui ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border opacity-50"}`}>
+                              <span key={svc} className={`px-3 py-1 text-sm rounded-full border font-ui ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border opacity-50"}`}>
                                 {svc}
                               </span>
                             );
@@ -1570,7 +1570,7 @@ function ProfileSection({ title, editing, data, fields, forceShow, onEdit, onSav
                         className={`px-3 py-1 text-sm rounded-full border transition-colors font-ui ${
                           isSelected
                             ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-background text-foreground border-border"
+                            : "bg-card text-foreground border-border"
                         } ${isDisabled ? "opacity-60 cursor-default" : "hover:bg-secondary/60"}`}
                       >
                         {opt}

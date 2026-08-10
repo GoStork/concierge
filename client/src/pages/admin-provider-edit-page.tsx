@@ -733,7 +733,7 @@ export default function AdminProviderEditPage() {
   // provider keeps the section.
   const isGoStorkHouse = (provider?.name || "").trim().toLowerCase() === "gostork";
   const isSurrogacyAgency = showSurrogates;
-  const tabTriggerClass = "shrink-0 md:shrink md:flex-1 whitespace-nowrap h-full text-sm font-ui rounded-[var(--radius)] px-3 data-[state=active]:bg-background dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
+  const tabTriggerClass = "shrink-0 md:shrink md:flex-1 whitespace-nowrap h-full text-sm font-ui rounded-[var(--radius)] px-3 data-[state=active]:bg-card dark:data-[state=active]:bg-foreground/90 data-[state=active]:shadow data-[state=active]:text-primary data-[state=inactive]:text-muted-foreground dark:data-[state=inactive]:text-muted-foreground";
 
 
   return (
@@ -1040,7 +1040,7 @@ export default function AdminProviderEditPage() {
                     data-testid="input-partner-clinic-search"
                   />
                   {partnerClinicSearch.trim() && (
-                    <ul className="mt-1 w-full max-h-64 overflow-y-auto rounded-[var(--container-radius)] border border-border bg-background shadow-md">
+                    <ul className="mt-1 w-full max-h-64 overflow-y-auto rounded-[var(--container-radius)] border border-border bg-card shadow-md">
                       {(() => {
                         const q = partnerClinicSearch.trim().toLowerCase();
                         const matches = (allIvfClinics || [])

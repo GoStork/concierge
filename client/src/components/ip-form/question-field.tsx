@@ -250,7 +250,7 @@ function FileInput({ value, onChange, disabled, upload }: { value: FileValue | n
           {isImage ? (
             <img src={getPhotoSrc(value.url) || value.url} alt={value.name} className="w-14 h-14 rounded object-cover border border-border shrink-0" />
           ) : (
-            <div className="w-14 h-14 rounded bg-background border border-border flex items-center justify-center shrink-0">
+            <div className="w-14 h-14 rounded bg-secondary border border-border flex items-center justify-center shrink-0">
               <FileText className="w-6 h-6 text-primary" />
             </div>
           )}
@@ -321,7 +321,7 @@ function PhotosInput({ value, onChange, disabled }: { value: string[]; onChange:
                 <button
                   type="button"
                   onClick={() => onChange(value.filter((_, j) => j !== i))}
-                  className="absolute top-1.5 right-1.5 rounded-full bg-background/90 border border-border p-1 opacity-80 hover:opacity-100"
+                  className="absolute top-1.5 right-1.5 rounded-full bg-card/90 border border-border p-1 opacity-80 hover:opacity-100"
                   aria-label="Remove photo"
                   data-testid={`ipform-photo-remove-${i}`}
                 >
