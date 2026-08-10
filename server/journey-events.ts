@@ -151,6 +151,68 @@ export async function emitJourneyEvent(input: {
   }
 }
 
+/**
+ * Emit at most ONE event of this type for this booking, ever.
+ *
+ * The sweeps run on more than one machine against the same database and their
+ * 10-min crons fire in the same second, so a plain emit inside a sweep writes
+ * the row twice (~200ms apart) - a doubled card in the CRM timeline and a
+ * doubled count in the funnel. The advisory lock serializes writers on
+ * (eventType x booking) and the loser's re-check sees the winner's row.
+ *
+ * The insert MUST happen inside the transaction: pg_advisory_xact_lock is
+ * released at commit, so a claim-then-insert-after would let the second
+ * process re-check before the first had written anything. Same shape as the
+ * review-prompt guard in server/review-prompts.ts.
+ */
+export async function emitJourneyEventOnceForBooking(input: {
+  eventType: JourneyEventType;
+  bookingId: string;
+  parentAccountId?: string | null;
+  parentUserId?: string | null;
+  providerId?: string | null;
+  sessionId?: string | null;
+  actorRole?: JourneyActor | null;
+  metadata?: Record<string, unknown> | null;
+}): Promise<void> {
+  try {
+    let accountId = input.parentAccountId || null;
+    if (!accountId && input.parentUserId) {
+      const u = await prisma.user.findUnique({
+        where: { id: input.parentUserId },
+        select: { parentAccountId: true },
+      });
+      accountId = u?.parentAccountId || input.parentUserId;
+    }
+    if (!accountId) return;
+
+    const lockKey = `journey-event:${input.eventType}:${input.bookingId}`;
+    await prisma.$transaction(async (tx) => {
+      // $executeRaw, not $queryRaw: the lock function returns void, which
+      // prisma's row deserializer rejects.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const prior = await tx.journeyEvent.findFirst({
+        where: { eventType: input.eventType, bookingId: input.bookingId },
+        select: { id: true },
+      });
+      if (prior) return;
+      await tx.journeyEvent.create({
+        data: {
+          parentAccountId: accountId as string,
+          providerId: input.providerId || null,
+          sessionId: input.sessionId || null,
+          bookingId: input.bookingId,
+          eventType: input.eventType,
+          actorRole: input.actorRole || "system",
+          metadata: (input.metadata as any) ?? undefined,
+        },
+      });
+    });
+  } catch (e: any) {
+    console.error(`[journey-events] Failed to emit-once ${input.eventType}: ${e?.message}`);
+  }
+}
+
 /** Invoice-flavored emitter: loads the invoice and attributes the event. */
 export async function emitInvoiceJourneyEvent(
   invoiceId: string,

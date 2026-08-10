@@ -42,6 +42,7 @@ import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
+import { CostSheetRow } from "@/components/chat/cost-sheet-row";
 import { NoteComposer, ParentFollowUpPanel, useCrmMutation } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
@@ -495,14 +496,25 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
 
   if (detail.type === "cost_sheet") {
     return (
+      // The SAME card the Documents panel and the chat rail draw. This used to
+      // be a bespoke total-plus-button block, so one quote looked like two
+      // different objects depending on which part of the page you were on -
+      // and its file button opened the raw GCS url, which 403s.
       <div className={shell} data-testid={`detail-cost-sheet-${detail.quoteId}`}>
-        {money(detail.totalCostCents) && <Row label="Total">{money(detail.totalCostCents)}</Row>}
-        {detail.notes && <Row label="Notes">{detail.notes}</Row>}
-        {detail.fileUrl && (
-          <Button size="sm" variant="outline" className="mt-1" onClick={() => window.open(detail.fileUrl as string, "_blank", "noopener,noreferrer")} data-testid={`btn-cost-sheet-${detail.quoteId}`}>
-            <FileText className="w-3.5 h-3.5 mr-1.5" /> {detail.fileName || "Open cost sheet"}
-          </Button>
-        )}
+        <CostSheetRow
+          quote={{
+            id: detail.quoteId,
+            sessionId: detail.sessionId,
+            totalCostCents: detail.totalCostCents,
+            costSheetFileUrl: detail.costSheetFileUrl,
+            costSheetFileName: detail.costSheetFileName,
+            notes: detail.notes,
+            createdAt: detail.createdAt,
+            supersededAt: detail.supersededAt,
+            parentAcknowledgedAt: detail.parentAcknowledgedAt,
+          }}
+          testId={`cost-sheet-row-${detail.quoteId}`}
+        />
       </div>
     );
   }
@@ -1054,7 +1066,13 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
           <div className="flex items-baseline gap-x-2">
             <span className="text-sm font-medium font-ui shrink-0">{entry.title}</span>
             {entry.byline && <span className="t-helper truncate min-w-0">by {entry.byline}</span>}
-            {entry.org && <span className="t-helper truncate min-w-0">{entry.org}</span>}
+            {/* The org is only information when there is more than one of
+                them. An admin's timeline spans every provider, so each card
+                has to say whose it is; a provider sees nothing but their own
+                org, where repeating it on every row is pure noise. */}
+            {entry.org && viewerRole === "admin" && (
+              <span className="t-helper truncate min-w-0">{entry.org}</span>
+            )}
             <span className="ml-auto shrink-0 inline-flex items-center gap-3">
               {entry.note && (
                 <NoteHeaderActions

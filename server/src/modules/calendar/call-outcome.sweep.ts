@@ -1,7 +1,7 @@
 import { PrismaService } from "../prisma/prisma.service";
 import { resolveParentEvaSessionId } from "../../../parent-visibility";
 import { NotificationService } from "../notifications/notification.service";
-import { emitJourneyEvent, bookingEventType } from "../../../journey-events";
+import { emitJourneyEvent, emitJourneyEventOnceForBooking, bookingEventType } from "../../../journey-events";
 
 /**
  * Phase 7A: call outcomes + win-back.
@@ -364,7 +364,11 @@ export async function runCanceledNotRebookedSweep(prisma: PrismaService): Promis
         continue;
       }
 
-      await emitJourneyEvent({
+      // Once per booking, not once per server. sendWinback's claim protects
+      // the parent-visible message, but this emit sits ahead of it, so both
+      // machines' 10-min crons logged CANCELED_NOT_REBOOKED on the same tick
+      // (~200ms apart) - a doubled timeline card and a doubled funnel count.
+      await emitJourneyEventOnceForBooking({
         eventType: "CANCELED_NOT_REBOOKED",
         parentUserId: booking.parentUserId,
         providerId: orgProviderId,

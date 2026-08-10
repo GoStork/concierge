@@ -396,13 +396,22 @@ async function buildActivity(ctx: {
       ? quoteById.get(meta.quoteId || meta.costSheetId)
       : null;
     if (quote) {
+      // The shape the shared CostSheetRow reads, so a cost sheet in the
+      // timeline is the SAME card as in the Documents panel and the chat
+      // rail. sessionId is load-bearing: the file link mints a fresh signed
+      // URL per click at /api/sessions/:sessionId/cost-sheets/:id/file,
+      // because the raw GCS url 403s under uniform bucket-level access.
       entry.detail = {
         type: "cost_sheet",
         quoteId: quote.id,
+        sessionId: quote.sessionId ?? null,
         totalCostCents: money(quote.totalCostCents),
-        fileUrl: quote.costSheetFileUrl ?? null,
-        fileName: quote.costSheetFileName ?? null,
+        costSheetFileUrl: quote.costSheetFileUrl ?? null,
+        costSheetFileName: quote.costSheetFileName ?? null,
         notes: quote.notes ?? null,
+        createdAt: quote.createdAt,
+        supersededAt: quote.supersededAt ?? null,
+        parentAcknowledgedAt: quote.parentAcknowledgedAt ?? null,
       };
     }
 
