@@ -1,14 +1,13 @@
-import { Paperclip } from "lucide-react";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
+import { FileCard } from "./attachment-message-card";
 
 /**
- * One sent cost sheet, as a card.
+ * One sent cost sheet, as a document card.
  *
- * The chat sidebar has drawn cost-sheet history this way since it was built:
- * the amount, a CURRENT / Superseded state, the date, and the file. The parent
- * record was showing the same rows as a one-line coloured pill, so the same
- * quote looked like two different objects depending on which page you were on.
- * This is the single renderer for both.
+ * Draws as a FileCard - the same tile an attachment, an invoice and an
+ * agreement use - with a COSTS glyph band. Naming the paperwork rather than
+ * the file type is what makes the Documents rail scannable: everything in it
+ * is a PDF, so "PDF" distinguishes nothing.
  *
  * The file link needs the session, because the download route mints a fresh
  * signed URL per click (`/api/sessions/:sessionId/cost-sheets/:id/file`) - the
@@ -26,65 +25,44 @@ export function CostSheetRow({
   sessionId?: string | null;
   /** Admin only: which org sent it. Omitted where the surface already says. */
   providerName?: string | null;
-  /** Optional click-through. The file link stops propagation so it still works. */
+  /** Optional click-through, used where the card opens the originating chat. */
   onOpen?: () => void;
   testId?: string;
 }) {
   const superseded = !!quote.supersededAt;
   const acked = !superseded && !!quote.parentAcknowledgedAt;
   const session = sessionId || quote.sessionId || null;
-  const file = quote.costSheetFileUrl
-    ? { href: `/api/sessions/${session}/cost-sheets/${quote.id}/file`, name: quote.costSheetFileName || "File" }
+  const file = quote.costSheetFileUrl && session
+    ? {
+        url: `/api/sessions/${session}/cost-sheets/${quote.id}/file`,
+        name: quote.costSheetFileName || "Cost sheet.pdf",
+      }
     : null;
+  const when = new Date(quote.createdAt).toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
 
   return (
-    <div
-      className="rounded-md border p-2 text-xs space-y-0.5"
-      style={{
-        background: superseded ? "hsl(var(--muted) / 0.3)" : "hsl(var(--background))",
-        opacity: superseded ? 0.7 : 1,
-        cursor: onOpen ? "pointer" : undefined,
+    <FileCard
+      name={formatCents(quote.totalCostCents)}
+      glyph={{ label: "COSTS", accent: "hsl(var(--accent))" }}
+      subtitle={[when, quote.costSheetFileName, providerName, quote.notes]}
+      nameBreak="words"
+      status={{
+        label: superseded ? "Superseded" : acked ? "Acknowledged" : "Current",
+        // Acknowledged is settled, so it reads success. A sheet the family has
+        // not opened yet is the one that needs chasing, which is the same
+        // warning tone the parents table uses for it.
+        color: superseded
+          ? "hsl(var(--muted-foreground))"
+          : acked
+            ? "hsl(var(--brand-success))"
+            : "hsl(var(--brand-warning))",
       }}
-      onClick={onOpen ? (e) => { e.stopPropagation(); onOpen(); } : undefined}
-      data-testid={testId}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold">{formatCents(quote.totalCostCents)}</span>
-        {superseded ? (
-          <span className="t-micro-label">Superseded</span>
-        ) : (
-          <span
-            className="text-[10px] uppercase tracking-wide font-medium shrink-0"
-            // Acknowledged is settled, so it reads success. A sheet the family
-            // has not opened yet is the one that needs chasing, which is the
-            // same warning tone the parents table uses for it.
-            style={{ color: acked ? "hsl(var(--brand-success))" : "hsl(var(--brand-warning))" }}
-          >
-            {acked ? "Acknowledged" : "Current"}
-          </span>
-        )}
-      </div>
-      <div className="flex items-center justify-between gap-2 text-muted-foreground">
-        <span>
-          {new Date(quote.createdAt).toLocaleString("en-US", {
-            month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-          })}
-        </span>
-        {file && session && (
-          <a
-            href={file.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="hover:underline flex items-center gap-1 min-w-0"
-          >
-            <Paperclip className="w-3 h-3 shrink-0" />
-            <span className="truncate">{file.name}</span>
-          </a>
-        )}
-      </div>
-      {providerName && <p className="text-muted-foreground">{providerName}</p>}
-      {quote.notes && <p className="text-muted-foreground italic">{quote.notes}</p>}
-    </div>
+      download={file}
+      onClick={onOpen}
+      className={superseded ? "opacity-70" : undefined}
+      testId={testId || `cost-sheet-row-${quote.id}`}
+    />
   );
 }

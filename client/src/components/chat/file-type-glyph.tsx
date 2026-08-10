@@ -10,15 +10,34 @@ import { getFileTypeMeta } from "@/lib/file-type-icon";
 export function FileTypeGlyph({
   name,
   mimeType,
+  label: labelOverride,
+  accent: accentOverride,
   className,
 }: {
   name?: string | null;
   mimeType?: string | null;
+  /**
+   * Override the band text and color for documents that are not a file type
+   * but a KIND of paperwork - INVOICE, COSTS. They are generated PDFs, so
+   * "PDF" would say nothing that the row's amount and status do not; naming
+   * the paperwork is what makes the rail scannable at a glance.
+   */
+  label?: string;
+  accent?: string;
   className?: string;
 }) {
-  const { label, accent, kind } = getFileTypeMeta(name, mimeType);
-  // Shrink the badge font for longer labels (DOCX, PPTX) so they stay inside the band.
-  const fontSize = label.length <= 3 ? 9 : label.length === 4 ? 7.2 : 6.2;
+  const meta = getFileTypeMeta(name, mimeType);
+  const label = labelOverride ?? meta.label;
+  const accent = accentOverride ?? meta.accent;
+  const kind = labelOverride ?? meta.kind;
+  // Shrink the badge font for longer labels so they stay inside the band -
+  // the ladder ran out at 5 characters, so INVOICE (7) overflowed and lost
+  // its first and last letters to the band edges.
+  const fontSize = label.length <= 3 ? 9
+    : label.length === 4 ? 7.2
+    : label.length === 5 ? 6.2
+    : label.length === 6 ? 5.5
+    : 4.8;
 
   return (
     <svg

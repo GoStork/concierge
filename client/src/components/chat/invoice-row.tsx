@@ -1,15 +1,22 @@
 import { Link } from "react-router-dom";
-import { ExternalLink, FileText } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
+import { FileCard } from "./attachment-message-card";
 
 /**
- * One invoice, as a card.
+ * One invoice, as a document card.
  *
- * Extracted from the chat sidebar's Invoices section so the parent record's
- * Documents panel can draw the exact same row - the record was showing the
- * same invoice as a one-line coloured pill, so one document looked like two
- * different objects depending on the page. Same reason CostSheetRow exists.
+ * Draws as a FileCard - the same tile a sent attachment and an agreement use -
+ * because an invoice IS a generated PDF. The glyph band says INVOICE rather
+ * than PDF: every document in the rail is a PDF, so naming the file type says
+ * nothing the amount and status do not, while naming the PAPERWORK makes the
+ * column scannable at a glance.
+ *
+ * Shared by the chat sidebar's Invoices section and the parent record's
+ * Documents panel, so one invoice never looks like two different objects.
+ * Status styling stays in InvoiceStatusBadge (it also encodes medical
+ * clearance), passed straight through as the card's status node.
  */
 export function InvoiceRow({
   invoice,
@@ -29,50 +36,42 @@ export function InvoiceRow({
 }) {
   const isDead = ["CANCELLED", "EXPIRED"].includes(invoice.status);
   const isPayable = !!payLink && invoice.status === "AWAITING_PAYMENT";
+  const when = new Date(invoice.createdAt).toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+  const service = invoice.description
+    || (invoice.serviceType ? String(invoice.serviceType).replace(/_/g, " ").toLowerCase() : null);
+
   return (
-    <div
-      key={invoice.id}
-      className="rounded-md border p-2 text-xs space-y-0.5"
-      style={{
-        background: isDead ? "hsl(var(--muted) / 0.3)" : "hsl(var(--background))",
-        opacity: isDead ? 0.7 : 1,
-      }}
-      data-testid={testId || `invoice-row-${invoice.id}`}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold">{formatCents(invoice.serviceAmount)}</span>
-        <InvoiceStatusBadge status={invoice.status} medicalClearanceStatus={invoice.medicalClearanceStatus} />
-      </div>
-      <div className="flex items-center justify-between gap-2 text-muted-foreground">
-        <span>
-          {new Date(invoice.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-        </span>
-        {isPayable ? (
+    <FileCard
+      name={formatCents(invoice.serviceAmount)}
+      glyph={{ label: "INVOICE", accent: "hsl(var(--primary))" }}
+      subtitle={[when, service, providerName]}
+      nameBreak="words"
+      status={
+        <InvoiceStatusBadge
+          status={invoice.status}
+          medicalClearanceStatus={invoice.medicalClearanceStatus}
+        />
+      }
+      href={!isPayable && documentHref ? documentHref : null}
+      download={
+        !isPayable && documentHref
+          ? { url: documentHref, name: `${invoice.status === "PAID" ? "Receipt" : "Invoice"}.pdf` }
+          : null
+      }
+      action={
+        isPayable ? (
           <Link
             to={payLink as string}
-            className="flex items-center gap-1 font-medium hover:underline text-primary"
+            className="flex items-center gap-1 text-xs font-medium hover:underline text-primary whitespace-nowrap"
           >
             Pay now <ExternalLink className="w-3 h-3" />
           </Link>
-        ) : documentHref ? (
-          <a
-            href={documentHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1 hover:underline"
-          >
-            <FileText className="w-3 h-3 shrink-0" />
-            {invoice.status === "PAID" ? "Receipt" : "Invoice"}
-          </a>
-        ) : null}
-      </div>
-      {providerName && <p className="text-muted-foreground">{providerName}</p>}
-      {(invoice.description || invoice.serviceType) && (
-        <p className="text-muted-foreground italic truncate">
-          {invoice.description || String(invoice.serviceType).replace(/_/g, " ").toLowerCase()}
-        </p>
-      )}
-    </div>
+        ) : null
+      }
+      className={isDead ? "opacity-70" : undefined}
+      testId={testId || `invoice-row-${invoice.id}`}
+    />
   );
 }

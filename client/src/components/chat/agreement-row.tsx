@@ -42,6 +42,7 @@ export function AgreementRow({
       name={docLabel}
       mimeType="application/pdf"
       subtitle={["PDF Document", whenText, providerName]}
+      nameBreak="words"
       href={signed ? downloadUrl : dead ? null : `/agreements/${agreement.id}`}
       download={signed ? { url: downloadUrl, name: `${docLabel}.pdf` } : null}
       status={{
