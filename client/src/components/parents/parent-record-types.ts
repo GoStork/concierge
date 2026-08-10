@@ -184,7 +184,7 @@ export type ActivityDetail =
       contentStored: boolean;
     }
   | { type: "invoice"; invoiceId: string; status: string; amountCents: number | null; dueAt: string | null; paymentUrl: string | null; description: string | null }
-  | { type: "agreement"; agreementId: string; status: string; documentUrl: string | null; signerStatus: any }
+  | { type: "agreement"; agreementId: string; status: string; documentType: string | null; createdAt: string; signedAt: string | null }
   | { type: "cost_sheet"; quoteId: string; totalCostCents: number | null; fileUrl: string | null; fileName: string | null; notes: string | null }
   | { type: "review"; reviewId: string; rating: number | null; recommendation: string; bodyText: string | null; providerId: string; memberId: string | null; hasResponse: boolean; responseText: string | null }
   | { type: "whisper"; whisperId: string; question: string; answer: string | null; status: string }

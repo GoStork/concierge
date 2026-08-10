@@ -382,10 +382,13 @@ async function buildActivity(ctx: {
         type: "agreement",
         agreementId: agreement.id,
         status: agreement.status,
-        // pandaDocViewUrl is the signer-facing document; there is no separate
-        // stored PDF url on this model.
-        documentUrl: agreement.pandaDocViewUrl ?? null,
-        signerStatus: agreement.signerStatus ?? null,
+        // Enough for the shared AgreementRow to render, so an agreement in
+        // the timeline is the SAME openable card as in the Documents panel
+        // and the chat rail. It routes a signed one to the PDF download and
+        // anything else to the agreement page.
+        documentType: agreement.documentType ?? null,
+        createdAt: agreement.createdAt,
+        signedAt: agreement.signedAt ?? null,
       };
     }
 

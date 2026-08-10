@@ -41,6 +41,7 @@ import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
+import { AgreementRow } from "@/components/chat/agreement-row";
 import { NoteComposer, ParentFollowUpPanel, useCrmMutation } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
@@ -471,13 +472,23 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
 
   if (detail.type === "agreement") {
     return (
+      // The SAME card the Documents panel and the chat rail draw, so an
+      // agreement is one openable object wherever you meet it. It routes a
+      // signed agreement to the PDF download and anything else to the
+      // agreement page. This used to be a status line plus a button gated on
+      // a documentUrl the record query never selected - so the button could
+      // not appear, and "Agreement sent" was a dead end.
       <div className={shell} data-testid={`detail-agreement-${detail.agreementId}`}>
-        <Row label="Status">{titleCaseWords(detail.status)}</Row>
-        {detail.documentUrl && (
-          <Button size="sm" variant="outline" className="mt-1" onClick={() => window.open(detail.documentUrl as string, "_blank", "noopener,noreferrer")} data-testid={`btn-agreement-${detail.agreementId}`}>
-            <FileText className="w-3.5 h-3.5 mr-1.5" /> Open agreement
-          </Button>
-        )}
+        <AgreementRow
+          agreement={{
+            id: detail.agreementId,
+            status: detail.status,
+            documentType: detail.documentType,
+            createdAt: detail.createdAt,
+            signedAt: detail.signedAt,
+          }}
+          testId={`agreement-row-${detail.agreementId}`}
+        />
       </div>
     );
   }
@@ -503,34 +514,36 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
           {detail.rating != null ? `${detail.rating} / 5` : detail.recommendation.replace(/_/g, " ").toLowerCase()}
         </Row>
         {detail.bodyText && <p className="text-sm whitespace-pre-wrap break-words">{detail.bodyText}</p>}
-        {detail.hasResponse ? (
-          <Row label="Your reply">{detail.responseText}</Row>
-        ) : (
-          // Where the REPLY BOX actually lives. The provider profile only
-          // DISPLAYS reviews - ReviewsSection has no reply affordance - so
-          // sending a provider there handed them a button that led to a page
-          // where they could read their review and do nothing about it.
-          // ProviderReviewsPanel, which owns the reply and flag actions, is on
-          // /performance. Admins have no such panel, so they go to the profile,
-          // where ?review= now scrolls to the section (?tab=reviews was inert:
-          // that page has no tabs at all).
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-1"
-            onClick={() =>
-              navigate(
-                viewerRole === "provider"
-                  ? `/performance?tab=reviews&review=${detail.reviewId}`
-                  : `/providers/${detail.providerId}?review=${detail.reviewId}#parent-reviews-section`,
-              )
-            }
-            data-testid={`btn-review-reply-${detail.reviewId}`}
-          >
-            <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
-            {viewerRole === "provider" ? "Reply to review" : "Open review"}
-          </Button>
-        )}
+        {detail.hasResponse && <Row label="Your reply">{detail.responseText}</Row>}
+        {/* The action shows in BOTH states. It used to appear only when there
+            was no reply, so the moment you answered a review the card became
+            a dead end - you could read your own words but never get back to
+            the review to edit or flag it.
+
+            Where it goes: the provider profile only DISPLAYS reviews, so
+            sending a provider there handed them a page where they could read
+            the review and do nothing about it. ProviderReviewsPanel, which
+            owns reply and flag, is on /performance. Admins have no such
+            panel, so they go to the profile, where ?review= scrolls to the
+            section (?tab=reviews was inert - that page has no tabs). */}
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-1 bg-card"
+          onClick={() =>
+            navigate(
+              viewerRole === "provider"
+                ? `/performance?tab=reviews&review=${detail.reviewId}`
+                : `/providers/${detail.providerId}?review=${detail.reviewId}#parent-reviews-section`,
+            )
+          }
+          data-testid={`btn-review-reply-${detail.reviewId}`}
+        >
+          <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+          {viewerRole === "provider"
+            ? (detail.hasResponse ? "Open review" : "Reply to review")
+            : "Open review"}
+        </Button>
       </div>
     );
   }
