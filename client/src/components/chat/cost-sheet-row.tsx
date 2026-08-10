@@ -1,5 +1,6 @@
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { FileCard } from "./attachment-message-card";
+import { serviceLabel } from "@/components/ui/service-tag";
 
 /**
  * One sent cost sheet, as a document card.
@@ -46,7 +47,11 @@ export function CostSheetRow({
     <FileCard
       name={formatCents(quote.totalCostCents)}
       glyph={{ label: "COSTS", accent: "hsl(var(--accent))" }}
-      subtitle={[when, quote.costSheetFileName, providerName, quote.notes]}
+      // Date then service, matching the invoice and agreement cards. The
+      // filename is gone: the save button already leads to the file, and the
+      // name is near-identical between two sheets from the same agency, so it
+      // wrapped the row without telling you which quote you were looking at.
+      subtitle={[when, serviceLabel(quote.serviceType), providerName, quote.notes]}
       nameBreak="words"
       status={{
         label: superseded ? "Superseded" : acked ? "Acknowledged" : "Current",

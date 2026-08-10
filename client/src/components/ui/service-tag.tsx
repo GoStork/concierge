@@ -27,6 +27,19 @@ const CANON: Record<ServiceKey, { label: string; cssVar: string }> = {
   legal:          { label: "Legal",          cssVar: "--service-legal" },
 };
 
+/**
+ * The service's display name, for places that want the words without the
+ * chip - a document card's subtitle line. Same vocabulary as the tag, so
+ * "EGG_DONATION" and "Egg Donor Agency" both read "Egg Donation" wherever
+ * they appear. Unknown strings are tidied rather than dropped.
+ */
+export function serviceLabel(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const key = normalizeServiceKey(raw);
+  if (key) return CANON[key].label;
+  return String(raw).replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** Raw product strings -> canonical service key. Case/format insensitive. */
 export function normalizeServiceKey(raw: string | null | undefined): ServiceKey | null {
   if (!raw) return null;

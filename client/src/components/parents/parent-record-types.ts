@@ -184,7 +184,7 @@ export type ActivityDetail =
       contentStored: boolean;
     }
   | { type: "invoice"; invoiceId: string; status: string; amountCents: number | null; dueAt: string | null; paymentUrl: string | null; description: string | null }
-  | { type: "agreement"; agreementId: string; status: string; documentType: string | null; createdAt: string; signedAt: string | null }
+  | { type: "agreement"; agreementId: string; status: string; documentType: string | null; serviceType: string | null; createdAt: string; signedAt: string | null }
   | {
       type: "cost_sheet";
       quoteId: string;
@@ -192,6 +192,7 @@ export type ActivityDetail =
       totalCostCents: number | null;
       costSheetFileUrl: string | null;
       costSheetFileName: string | null;
+      serviceType: string | null;
       notes: string | null;
       createdAt: string;
       supersededAt: string | null;

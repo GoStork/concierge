@@ -485,6 +485,7 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
             id: detail.agreementId,
             status: detail.status,
             documentType: detail.documentType,
+            serviceType: detail.serviceType,
             createdAt: detail.createdAt,
             signedAt: detail.signedAt,
           }}
@@ -510,6 +511,7 @@ function DetailBlock({ detail, parentUserId, viewerRole, onChanged }: {
             totalCostCents: detail.totalCostCents,
             costSheetFileUrl: detail.costSheetFileUrl,
             costSheetFileName: detail.costSheetFileName,
+            serviceType: detail.serviceType,
             notes: detail.notes,
             createdAt: detail.createdAt,
             supersededAt: detail.supersededAt,

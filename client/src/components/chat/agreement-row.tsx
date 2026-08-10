@@ -1,4 +1,5 @@
 import { FileCard } from "./attachment-message-card";
+import { serviceLabel } from "@/components/ui/service-tag";
 
 /**
  * One agreement, as a card - the paperwork sibling of InvoiceRow and
@@ -41,7 +42,10 @@ export function AgreementRow({
     <FileCard
       name={docLabel}
       mimeType="application/pdf"
-      subtitle={["PDF Document", whenText, providerName]}
+      // Date then service, matching the invoice and cost-sheet cards. "PDF
+      // Document" said nothing the red PDF glyph does not already say, and it
+      // pushed the one fact that distinguishes two agreements off the row.
+      subtitle={[whenText, serviceLabel(agreement.serviceType), providerName]}
       nameBreak="words"
       href={signed ? downloadUrl : dead ? null : `/agreements/${agreement.id}`}
       download={signed ? { url: downloadUrl, name: `${docLabel}.pdf` } : null}

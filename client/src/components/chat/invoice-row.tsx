@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
+import { serviceLabel } from "@/components/ui/service-tag";
 import { FileCard } from "./attachment-message-card";
 
 /**
@@ -39,8 +40,9 @@ export function InvoiceRow({
   const when = new Date(invoice.createdAt).toLocaleString("en-US", {
     month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
   });
-  const service = invoice.description
-    || (invoice.serviceType ? String(invoice.serviceType).replace(/_/g, " ").toLowerCase() : null);
+  // One vocabulary across the three document cards, so the same service does
+  // not read "surrogacy" here and "Surrogacy" on the agreement beside it.
+  const service = invoice.description || serviceLabel(invoice.serviceType);
 
   return (
     <FileCard

@@ -1372,6 +1372,11 @@ export async function syncAgreementStatus(agreementId: string): Promise<{ status
       id: true, status: true, pandaDocDocumentId: true, signerStatus: true,
       sessionId: true, providerId: true, parentUserId: true,
       generatedByUserId: true,
+      // Required by supersedeReplacedAgreements below, which matches on
+      // (parent, provider, documentType) and only supersedes OLDER rows.
+      // They were never selected, so on this path - the poller, as opposed to
+      // the webhook - it ran with both undefined and superseded nothing.
+      documentType: true, createdAt: true,
       provider: { select: { name: true } },
       parentUser: { select: { name: true, firstName: true, lastName: true, email: true } },
     },
