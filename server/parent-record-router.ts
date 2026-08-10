@@ -436,41 +436,116 @@ parentRecordRouter.patch("/api/parents/:id/tasks/:tid", requireAuth, async (req,
   }
 });
 
-parentRecordRouter.post("/api/parents/:id/follow-up/:fid/complete", requireAuth, async (req, res) => {
+/**
+ * Complete a task.
+ *
+ * A SYSTEM task mirrors an artifact that is still sitting there unresolved, so
+ * closing one is not the same as doing the work. The client asks first and
+ * sends force:true; we record `dismissedUnresolved` so the history says what
+ * actually happened rather than showing a clean "done". MANUAL tasks are
+ * nobody's business but the person who wrote them - they just close.
+ */
+parentRecordRouter.post("/api/parents/:id/tasks/:tid/complete", requireAuth, async (req, res) => {
   try {
     const viewer = resolveCrmViewer(req.user as any);
     const accountKey = await assertCanReachParent(req.user as any, String(req.params.id));
-    const row = await prisma.parentTask.findUnique({ where: { id: String(req.params.fid) } });
-    if (!row) return res.status(404).json({ message: "Next step not found" });
+    const row = await prisma.parentTask.findUnique({ where: { id: String(req.params.tid) } });
+    if (!row) return res.status(404).json({ message: "Task not found" });
     if (!canMutateCrmRow(viewer, row as any)) return res.status(403).json({ message: "Forbidden" });
+
+    const unresolved = row.source === "SYSTEM";
+    if (unresolved && req.body?.force !== true) {
+      return res.status(409).json({
+        message: "This has not actually been done yet.",
+        needsConfirmation: true,
+        title: row.title,
+      });
+    }
+
     const updated = await prisma.parentTask.update({
       where: { id: row.id },
-      data: { status: "DONE", completedAt: new Date(), completedByUserId: viewer.userId },
+      data: {
+        status: "DONE",
+        completedAt: new Date(),
+        completedByUserId: viewer.userId,
+        dismissedUnresolved: unresolved,
+      },
     });
     emitJourneyEvent({
       eventType: "CRM_FOLLOWUP_COMPLETED",
       parentAccountId: accountKey,
       providerId: row.providerId,
       actorRole: viewer.isAdmin ? "admin" : "provider",
-      metadata: { followUpId: row.id, scope: row.scope },
+      metadata: { taskId: row.id, scope: row.scope, dismissedUnresolved: unresolved },
     });
     res.json(updated);
   } catch (e: any) {
-    fail(res, e, "complete follow-up");
+    fail(res, e, "complete task");
   }
 });
 
-parentRecordRouter.delete("/api/parents/:id/follow-up/:fid", requireAuth, async (req, res) => {
+parentRecordRouter.delete("/api/parents/:id/tasks/:tid", requireAuth, async (req, res) => {
   try {
     const viewer = resolveCrmViewer(req.user as any);
     await assertCanReachParent(req.user as any, String(req.params.id));
-    const row = await prisma.parentTask.findUnique({ where: { id: String(req.params.fid) } });
-    if (!row) return res.status(404).json({ message: "Next step not found" });
+    const row = await prisma.parentTask.findUnique({ where: { id: String(req.params.tid) } });
+    if (!row) return res.status(404).json({ message: "Task not found" });
     if (!canMutateCrmRow(viewer, row as any)) return res.status(403).json({ message: "Forbidden" });
     await prisma.parentTask.update({ where: { id: row.id }, data: { status: "CANCELED" } });
     res.json({ ok: true });
   } catch (e: any) {
-    fail(res, e, "cancel follow-up");
+    fail(res, e, "cancel task");
+  }
+});
+
+/**
+ * Who a task on this record can be handed to.
+ *
+ * An admin may assign across orgs (their call), so they see GoStork staff plus
+ * every org already working this family - never the whole user table. A
+ * provider sees only their own colleagues; offering them GoStork staff would
+ * leak an internal directory and let them push work at us.
+ */
+parentRecordRouter.get("/api/parents/:id/assignable", requireAuth, async (req, res) => {
+  try {
+    const viewer = resolveCrmViewer(req.user as any);
+    await assertCanReachParent(req.user as any, String(req.params.id));
+    if (!viewer.isAdmin) {
+      if (!viewer.providerId) return res.json({ users: [] });
+      const users = await prisma.user.findMany({
+        where: { providerId: viewer.providerId },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: "asc" },
+      });
+      return res.json({ users });
+    }
+    const record = await prisma.aiChatSession.findMany({
+      where: { userId: String(req.params.id) },
+      select: { providerId: true },
+    });
+    const providerIds = Array.from(new Set(record.map((r) => r.providerId).filter(Boolean))) as string[];
+    const [staff, admins] = await Promise.all([
+      providerIds.length
+        ? prisma.user.findMany({
+            where: { providerId: { in: providerIds } },
+            select: { id: true, name: true, email: true, provider: { select: { name: true } } },
+            orderBy: { name: "asc" },
+          })
+        : [],
+      prisma.user.findMany({
+        where: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
+    res.json({
+      users: [
+        ...admins.map((u: any) => ({ ...u, providerName: "GoStork" })),
+        ...staff.map((u: any) => ({ id: u.id, name: u.name, email: u.email, providerName: u.provider?.name || null })),
+      ],
+    });
+  } catch (e: any) {
+    fail(res, e, "assignable users");
   }
 });
 

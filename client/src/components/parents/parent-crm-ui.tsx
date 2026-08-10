@@ -164,121 +164,284 @@ export function NoteComposer({ record, onPosted, onCancel }: {
   );
 }
 
-// ─── Next step ──────────────────────────────────────────────────────────────
+// ─── Tasks ──────────────────────────────────────────────────────────────────
 
-function NextStepCard({
-  record, isAdmin, choice, existing,
-}: { record: ParentRecord; isAdmin: boolean; choice: ScopeChoice; existing: ParentRecord["crm"]["tasks"][number] | undefined }) {
-  const [editing, setEditing] = useState(false);
-  const [body, setBody] = useState(existing?.title || "");
-  const [dueAt, setDueAt] = useState<Date | undefined>(existing ? new Date(existing.dueAt) : undefined);
-  const mut = useCrmMutation(record.parent.id, () => setEditing(false));
-  const editable = isAdmin || choice.providerId === record.viewer.providerId;
+const TASK_TYPES: [string, string][] = [["TODO", "To-do"], ["CALL", "Call"], ["EMAIL", "Email"]];
+const TASK_PRIORITIES: [string, string][] = [
+  ["NONE", "None"], ["LOW", "Low"], ["MEDIUM", "Medium"], ["HIGH", "High"],
+];
+const REMINDER_CHOICES: [string, string][] = [
+  ["", "No reminder"], ["0", "At due time"], ["30", "30 minutes before"],
+  ["60", "1 hour before"], ["1440", "1 day before"], ["10080", "1 week before"],
+];
+/** Priority is a STATUS, so it uses the status tones, not the service palette. */
+const PRIORITY_TONE: Record<string, string | null> = {
+  NONE: null,
+  LOW: "hsl(var(--brand-success))",
+  MEDIUM: "hsl(var(--brand-warning))",
+  HIGH: "hsl(var(--destructive))",
+};
 
-  const quick = (days: number) => {
+export function taskTypeLabel(t: string): string {
+  return TASK_TYPES.find(([v]) => v === t)?.[1] || "To-do";
+}
+
+/** Due date + time in ONE control pair, kept as a real instant. */
+function dueParts(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
+
+/**
+ * Create or edit one task.
+ *
+ * Everything inline, no dialogs. The due date is stored as an absolute instant
+ * and every surface renders it with toLocaleString, so a task set by an owner
+ * in New York shows 8:00 AM to them and 5:00 AM to a coordinator in
+ * California - each person reads their own clock, which is the whole point.
+ */
+export function TaskEditor({ record, existing, onDone, onCancel }: {
+  record: ParentRecord;
+  existing?: ParentRecord["crm"]["tasks"][number];
+  onDone?: () => void;
+  onCancel?: () => void;
+}) {
+  const isAdmin = record.viewer.role === "admin";
+  const choices = scopeChoices(record, isAdmin);
+  const initial = existing ? new Date(existing.dueAt) : (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d;
+  })();
+  const p0 = dueParts(initial);
+  const [title, setTitle] = useState(existing?.title || "");
+  const [notes, setNotes] = useState(existing?.notes || "");
+  const [type, setType] = useState(existing?.type || "TODO");
+  const [priority, setPriority] = useState(existing?.priority || "NONE");
+  const [date, setDate] = useState(p0.date);
+  const [time, setTime] = useState(p0.time);
+  const [remind, setRemind] = useState(
+    existing?.reminderMinutesBefore === null || existing?.reminderMinutesBefore === undefined
+      ? "" : String(existing.reminderMinutesBefore),
+  );
+  const [assignee, setAssignee] = useState(existing?.assigneeUserId || "");
+  const [scopeKey, setScopeKey] = useState(choices[0]?.key || "gostork");
+  const chosen = choices.find((c) => c.key === scopeKey) || choices[0];
+  const mut = useCrmMutation(record.parent.id, () => onDone?.());
+
+  // Who this task can be handed to. GoStork may assign across orgs, so an
+  // admin sees every staff member on the record; a provider sees their own.
+  const { data: assignable } = useQuery<{ users: { id: string; name: string | null; email: string; providerName?: string | null }[] }>({
+    queryKey: ["/api/parents", record.parent.id, "assignable"],
+    queryFn: async () => {
+      const res = await fetch(`/api/parents/${record.parent.id}/assignable`, { credentials: "include" });
+      if (!res.ok) return { users: [] };
+      return res.json();
+    },
+  });
+
+  const quick = (days: number, hour = 9) => {
     const d = new Date();
     d.setDate(d.getDate() + days);
-    // End of the chosen DAY, not 5pm. A "Today" that lands at 17:00 is already
-    // overdue for anyone who clicks it after five, which turns the quick-pick
-    // into a way to manufacture a red chip.
-    d.setHours(23, 59, 59, 999);
-    setDueAt(d);
+    d.setHours(hour, 0, 0, 0);
+    const p = dueParts(d);
+    setDate(p.date);
+    setTime(p.time);
   };
 
-  if (!editing) {
+  const save = () => {
+    const dueAt = new Date(`${date}T${time || "09:00"}`);
+    if (!title.trim() || isNaN(dueAt.getTime())) return;
+    const payload = {
+      title: title.trim(),
+      notes: notes.trim() || null,
+      type, priority,
+      dueAt: dueAt.toISOString(),
+      reminderMinutesBefore: remind === "" ? null : Number(remind),
+      assigneeUserId: assignee || null,
+      scope: chosen?.scope,
+      providerId: chosen?.providerId,
+    };
+    mut.mutate(existing
+      ? { url: `/api/parents/${record.parent.id}/tasks/${existing.id}`, method: "PATCH", body: payload }
+      : { url: `/api/parents/${record.parent.id}/tasks`, method: "POST", body: payload });
+  };
+
+  const field = "h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui";
+
+  return (
+    <div className="space-y-2" data-testid="task-editor">
+      <Input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="What needs doing?"
+        data-testid="input-task-title"
+      />
+      <div className="flex flex-wrap items-center gap-1.5">
+        {[["Today", 0], ["Tomorrow", 1], ["In 3 days", 3], ["Next week", 7]].map(([label, d]) => (
+          <button
+            key={label as string}
+            type="button"
+            onClick={() => quick(d as number)}
+            className="text-xs font-ui px-2.5 py-1 rounded-full border border-border bg-card hover:bg-secondary transition-colors"
+            data-testid={`btn-task-quick-${d}`}
+          >
+            {label as string}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} data-testid="input-task-date" />
+        <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} data-testid="input-task-time" />
+        <select value={type} onChange={(e) => setType(e.target.value)} className={field} data-testid="select-task-type">
+          {TASK_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <select value={priority} onChange={(e) => setPriority(e.target.value)} className={field} data-testid="select-task-priority">
+          {TASK_PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l === "None" ? "No priority" : l}</option>)}
+        </select>
+        <select value={remind} onChange={(e) => setRemind(e.target.value)} className={field} data-testid="select-task-reminder">
+          {REMINDER_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={field} data-testid="select-task-assignee">
+          <option value="">Unassigned</option>
+          {(assignable?.users || []).map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name || u.email}{u.providerName ? ` - ${u.providerName}` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+      <Textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="Notes (optional)"
+        className="min-h-[60px] bg-card"
+        data-testid="input-task-notes"
+      />
+      {isAdmin && choices.length > 1 && (
+        <OptionPills
+          options={choices.map((c) => ({
+            value: c.key,
+            label: <span className="block truncate max-w-[200px] sm:max-w-[280px]" title={c.label}>{c.label}</span>,
+          }))}
+          value={scopeKey}
+          onChange={(v: string) => setScopeKey(v)}
+          testIdPrefix="pill-task-scope"
+        />
+      )}
+      <div className="flex items-center gap-2">
+        <Button size="sm" disabled={!title.trim() || mut.isPending} onClick={save} data-testid="btn-save-task">
+          {mut.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+          {existing ? "Save task" : "Add task"}
+        </Button>
+        {onCancel && <Button size="sm" variant="ghost" onClick={onCancel} data-testid="btn-cancel-task">Cancel</Button>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One open task, with its complete / edit controls.
+ *
+ * Completing a SYSTEM task whose artifact is still unresolved asks first -
+ * INLINE, the way deleting a note does, not in a dialog. If they go ahead the
+ * row records `dismissedUnresolved` so the history says what really happened:
+ * marked done, work not actually finished.
+ */
+export function TaskRow({ record, task, onChanged }: {
+  record: ParentRecord;
+  task: ParentRecord["crm"]["tasks"][number];
+  onChanged?: () => void;
+}) {
+  const [mode, setMode] = useState<"view" | "edit" | "confirm">("view");
+  const mut = useCrmMutation(record.parent.id, () => { setMode("view"); onChanged?.(); });
+  const due = new Date(task.dueAt);
+  const tone = PRIORITY_TONE[task.priority] || null;
+
+  const complete = (force: boolean) => mut.mutate({
+    url: `/api/parents/${record.parent.id}/tasks/${task.id}/complete`,
+    method: "POST",
+    body: { force },
+  });
+
+  if (mode === "edit") {
     return (
-      // A bordered card on the page's own surface, like every other block on
-      // this record. The cream fill made three small tinted rectangles float
-      // against white for no reason - overdue is the only state that earns a
-      // tint, because it means something.
-      <div
-        className="rounded-[var(--radius)] border bg-card p-4 space-y-2"
-        style={existing?.overdue
-          ? { background: "hsl(var(--brand-warning) / 0.06)", borderColor: "hsl(var(--brand-warning) / 0.4)" }
-          : undefined}
-        data-testid={`next-step-${choice.key}`}
-      >
-        <p className="t-micro-label">{isAdmin ? choice.label.replace("Share with ", "") : "Next step"}</p>
-        {existing ? (
-          <>
-            <p className="text-sm flex items-start gap-1.5">
-              {existing.overdue && <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />}
-              {existing.title}
-            </p>
-            <p className="t-helper" style={existing.overdue ? { color: "hsl(var(--brand-warning))" } : undefined}>
-              Due {new Date(existing.dueAt).toLocaleDateString()}
-            </p>
-            {editable && (
-              <div className="flex gap-2 pt-1">
-                <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid={`btn-next-step-edit-${choice.key}`}>Edit</Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => mut.mutate({ url: `/api/parents/${record.parent.id}/follow-up/${existing.id}/complete`, method: "POST" })}
-                  data-testid={`btn-next-step-done-${choice.key}`}
-                >
-                  Mark done
-                </Button>
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            <p className="t-helper">Nothing scheduled.</p>
-            {editable && (
-              <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid={`btn-next-step-set-${choice.key}`}>
-                Set next step
-              </Button>
-            )}
-          </>
-        )}
+      <div className="rounded-[var(--radius)] border bg-card p-3">
+        <TaskEditor record={record} existing={task} onDone={() => { setMode("view"); onChanged?.(); }} onCancel={() => setMode("view")} />
       </div>
     );
   }
 
   return (
-    <div className="rounded-[var(--radius)] border p-3 space-y-2" data-testid={`next-step-edit-${choice.key}`}>
-      <Input
-        value={body}
-        maxLength={120}
-        onChange={(e) => setBody(e.target.value)}
-        placeholder="Send the updated cost sheet"
-        data-testid={`input-next-step-${choice.key}`}
-      />
-      <OptionPills
-        options={[
-          { value: "0", label: "Today" },
-          { value: "1", label: "Tomorrow" },
-          { value: "3", label: "+3 days" },
-          { value: "7", label: "Next week" },
-        ]}
-        value=""
-        onChange={(v: string) => quick(Number(v))}
-        testIdPrefix={`pill-next-step-${choice.key}`}
-      />
-      {/* Inline, not inside a Popover: content being edited should not hide
-          behind a layer, and this has to survive the future native apps. */}
-      <CalendarPicker
-        mode="single"
-        selected={dueAt}
-        onSelect={setDueAt}
-        data-testid={`calendar-next-step-${choice.key}`}
-      />
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          disabled={!body.trim() || !dueAt || mut.isPending}
-          onClick={() => mut.mutate({
-            url: `/api/parents/${record.parent.id}/follow-up`,
-            method: "PUT",
-            body: { body, dueAt: dueAt?.toISOString(), scope: choice.scope, providerId: choice.providerId },
-          })}
-          data-testid={`btn-next-step-save-${choice.key}`}
-        >
-          Save
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
+    <div className="rounded-[var(--radius)] border bg-card p-3 space-y-1.5" data-testid={`task-${task.id}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{task.title}</p>
+          <p className="t-helper mt-0.5">
+            {taskTypeLabel(task.type)} - due {due.toLocaleString(undefined, {
+              month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+            })}
+            {task.assigneeName ? ` - ${task.assigneeName}` : ""}
+          </p>
+        </div>
+        <span className="shrink-0 inline-flex items-center gap-2">
+          {tone && (
+            <span className="text-[10px] uppercase tracking-wide font-medium" style={{ color: tone }}>
+              {task.priority}
+            </span>
+          )}
+          {task.overdue && (
+            <span className="text-[10px] uppercase tracking-wide font-medium" style={{ color: "hsl(var(--brand-warning))" }}>
+              Overdue
+            </span>
+          )}
+        </span>
       </div>
+      {task.notes && <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">{task.notes}</p>}
+      {mode === "confirm" ? (
+        <div className="rounded-[var(--radius)] border p-2.5 space-y-1.5" style={{ background: "hsl(var(--brand-warning) / 0.1)", borderColor: "hsl(var(--brand-warning) / 0.3)" }}>
+          <p className="text-xs font-medium" style={{ color: "hsl(var(--brand-warning))" }}>
+            This has not actually been done yet.
+          </p>
+          <p className="text-xs" style={{ color: "hsl(var(--brand-warning))", opacity: 0.9 }}>
+            {task.title} is still waiting. Mark it done anyway? The record will show it was
+            closed without the work being completed.
+          </p>
+          <div className="flex items-center gap-2 pt-0.5">
+            <Button size="sm" disabled={mut.isPending} onClick={() => complete(true)} data-testid={`btn-task-force-${task.id}`}>
+              Mark done anyway
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setMode("view")}>Keep it open</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-card"
+            disabled={mut.isPending}
+            onClick={() => (task.source === "SYSTEM" ? setMode("confirm") : complete(false))}
+            data-testid={`btn-task-complete-${task.id}`}
+          >
+            <Check className="w-3.5 h-3.5 mr-1.5" /> Done
+          </Button>
+          {task.deepLink && (
+            <Button size="sm" variant="ghost" onClick={() => { window.location.href = task.deepLink as string; }} data-testid={`btn-task-open-${task.id}`}>
+              Open
+            </Button>
+          )}
+          {task.source !== "SYSTEM" && (
+            <Button size="sm" variant="ghost" onClick={() => setMode("edit")} data-testid={`btn-task-edit-${task.id}`}>
+              Edit
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -491,22 +654,28 @@ export function ParentLeadOwner({ record }: { record: ParentRecord }) {
  * Next step and tags: the small stack of things you SET, as opposed to the
  * things that happened. Lives in the record's right rail.
  */
-export function ParentFollowUpPanel({ record }: { record: ParentRecord }) {
+export function ParentTaskPanel({ record }: { record: ParentRecord }) {
   const isAdmin = record.viewer.role === "admin";
   const choices = scopeChoices(record, isAdmin);
   const primary = choices[0];
+  const [adding, setAdding] = useState(false);
+  // Soonest first - a task list is read as "what is next", never as history.
+  const open = [...record.crm.tasks].sort(
+    (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime(),
+  );
   return (
     <div className="space-y-3">
       {/* Lead owner lives in the record header now - see ParentLeadOwner. */}
-      {choices.map((c) => (
-        <NextStepCard
-          key={c.key}
-          record={record}
-          isAdmin={isAdmin}
-          choice={c}
-          existing={record.crm.tasks.find((f) => f.scope === c.scope && f.providerId === c.providerId)}
-        />
-      ))}
+      {open.map((t) => <TaskRow key={t.id} record={record} task={t} />)}
+      {adding ? (
+        <div className="rounded-[var(--radius)] border bg-card p-3">
+          <TaskEditor record={record} onDone={() => setAdding(false)} onCancel={() => setAdding(false)} />
+        </div>
+      ) : (
+        <Button size="sm" variant="outline" className="bg-card" onClick={() => setAdding(true)} data-testid="btn-add-task">
+          <Plus className="w-3.5 h-3.5 mr-1.5" /> Add task
+        </Button>
+      )}
       {primary && <TagEditor record={record} isAdmin={isAdmin} choice={primary} />}
     </div>
   );

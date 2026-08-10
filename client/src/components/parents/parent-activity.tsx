@@ -43,7 +43,7 @@ import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
-import { NoteComposer, ParentFollowUpPanel, useCrmMutation } from "./parent-crm-ui";
+import { NoteComposer, ParentTaskPanel, useCrmMutation } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
 
@@ -1288,7 +1288,7 @@ export function ParentActivitySection({ record, scope }: {
       )}
       {composer === "next_step" && (
         <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-next-step">
-          <ParentFollowUpPanel record={record} />
+          <ParentTaskPanel record={record} />
         </div>
       )}
 
