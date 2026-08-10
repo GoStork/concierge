@@ -97,7 +97,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
   return (
     <div className="space-y-1.5">
       <Label>W-9 <span style={{ color: "hsl(var(--brand-error))" }}>*</span></Label>
-      <div className="flex items-center gap-3 rounded-[var(--radius)] border p-3 bg-background">
+      <div className="flex items-center gap-3 rounded-[var(--radius)] border p-3 bg-secondary/40">
         <FileText className="w-4 h-4 text-primary shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">W-9 Form</p>
@@ -133,6 +133,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
               <Button
                 variant="outline"
                 size="sm"
+                className="bg-card"
                 disabled={w9ResubmitMutation.isPending}
                 onClick={() => w9ResubmitMutation.mutate()}
                 title="Submit a new W-9"
@@ -145,6 +146,7 @@ export function ProviderW9Section({ providerId, mode }: ProviderW9SectionProps) 
               <Button
                 variant="outline"
                 size="sm"
+                className="bg-card"
                 disabled={w9SendMutation.isPending}
                 onClick={async () => {
                   const ok = await confirm({

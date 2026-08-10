@@ -240,6 +240,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         <Button
           variant="outline"
           size="sm"
+          className="bg-card"
           disabled={syncMutation.isPending}
           onClick={onSyncClick}
           title="Overwrite fields with the values from the signed W-9"
