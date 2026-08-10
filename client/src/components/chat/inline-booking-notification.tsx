@@ -138,8 +138,12 @@ export function InlineBookingNotification({
     ? `Consultation Call with ${booking.parentUser?.name || booking.attendeeName || "Parent"}`
     : orgName ? `Consultation Call with ${orgName}` : "Consultation Call";
 
+  // pt-3 on the embedded branch: its only caller (the parent chat card) wraps
+  // this in `px-4 pb-4` with no top padding, because every OTHER step of that
+  // widget carries its own `py-3`. This branch had none, so the status banner
+  // sat flush against the brand header strip.
   const cardChrome = (children: ReactNode) => embedded ? (
-    <div className="space-y-3" data-testid={`inline-booking-card-${booking.id}`}>{children}</div>
+    <div className="space-y-3 pt-3" data-testid={`inline-booking-card-${booking.id}`}>{children}</div>
   ) : (
     <div className="my-3" data-testid={`inline-booking-card-${booking.id}`}>
       <div
@@ -205,16 +209,23 @@ export function InlineBookingNotification({
   const statusBanner = status ? (() => {
     const t = TONE_STYLE[status.tone];
     const Icon = status.icon;
+    // Centred and hugging its own content rather than a full-width bar. The
+    // status is a badge, not a section: stretched edge to edge it read as
+    // another panel competing with the meeting details below it.
     return (
-      <div
-        className="flex items-start gap-2.5 rounded-[var(--radius)] border p-3"
-        style={{ background: t.bg, borderColor: t.bd }}
-        data-testid="booking-status-banner"
-      >
-        <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: t.fg }} />
-        <div className="min-w-0">
-          <p className="text-sm font-semibold leading-tight" style={{ color: t.fg }}>{status.label}</p>
-          {status.note && <p className="text-xs mt-0.5" style={{ color: t.fg, opacity: 0.85 }}>{status.note}</p>}
+      <div className="flex justify-center">
+        <div
+          className="inline-flex flex-col items-center gap-0.5 rounded-[var(--radius)] border px-4 py-2 text-center max-w-[92%]"
+          style={{ background: t.bg, borderColor: t.bd }}
+          data-testid="booking-status-banner"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Icon className="w-4 h-4 shrink-0" style={{ color: t.fg }} />
+            <span className="text-sm font-semibold leading-tight" style={{ color: t.fg }}>{status.label}</span>
+          </span>
+          {status.note && (
+            <span className="text-xs leading-snug" style={{ color: t.fg, opacity: 0.85 }}>{status.note}</span>
+          )}
         </div>
       </div>
     );
