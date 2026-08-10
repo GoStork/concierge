@@ -5220,6 +5220,11 @@ chatRouter.get("/api/agreements", requireAuth, async (req, res) => {
         id: true,
         status: true,
         documentType: true,
+        // The shared AgreementRow names the service on its second row, the
+        // same as the invoice and cost-sheet cards. Without this the chat
+        // rail and the agreements pages showed a bare date while the parent
+        // record - which selects it - showed "date - Surrogacy".
+        serviceType: true,
         pandaDocViewUrl: true,
         signedAt: true,
         rejectedAt: true,
@@ -5242,6 +5247,7 @@ chatRouter.get("/api/agreements", requireAuth, async (req, res) => {
         id: a.id,
         status: a.status,
         documentType: a.documentType,
+        serviceType: a.serviceType,
         pandaDocViewUrl: a.pandaDocViewUrl,
         signedAt: a.signedAt,
         rejectedAt: a.rejectedAt,
