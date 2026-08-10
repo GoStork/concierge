@@ -3588,7 +3588,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
 <title>Invoice ${escHtml(invoice.id.slice(0, 8))} - ${escHtml(invoice.providerName)}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body { margin: 0; padding: 24px; background: #f9fafb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1f2937; }
+  body { margin: 0; padding: 24px; background: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1f2937; }
   .doc { max-width: 720px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
   .header { background: ${escHtml(brandColor)}; color: white; padding: 48px 32px; text-align: center; }
   .header h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
@@ -3600,7 +3600,7 @@ ${parentLabel} said yes, and you confirmed on ${who}'s side - congratulations on
   .total-value { color: ${escHtml(brandColor)}; font-size: 22px; }
   .detail-grid { display: grid; grid-template-columns: 160px 1fr; gap: 12px 16px; margin-top: 24px; font-size: 14px; }
   .detail-grid dt { color: #6b7280; }
-  .footer { padding: 24px 32px; background: #f9fafb; font-size: 12px; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; }
+  .footer { padding: 24px 32px; background: #ffffff; font-size: 12px; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; }
   .provider-note { padding: 16px; background: #f3f4f6; border-radius: 8px; margin-top: 24px; font-size: 13px; color: #374151; }
 </style>
 </head><body>

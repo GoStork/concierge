@@ -667,7 +667,33 @@ function titleCaseWords(value: string): string {
  * Height is re-measured as images arrive, since an email is mostly images and
  * the first measurement lands before they have loaded.
  */
-function EmailFrame({ html, title, testId }: { html: string; title: string; testId: string }) {
+/**
+ * Flattens an email's SURFACE colours to white for this preview.
+ *
+ * Every email now builds white (email-builder.ts), but the timeline renders
+ * the bodyHtml that was STORED at send time - so every message sent before
+ * that keeps the cream it was sent with, and the activity feed reads as a
+ * patchwork of two eras. Rewriting the stored HTML is not an option: it is the
+ * record of what the family actually received.
+ *
+ * So the flattening happens here, at display, and touches nothing but page and
+ * table backgrounds. The brand header band, buttons, alert boxes and every
+ * word are still exactly what was sent - those live on <td>s and <div>s, which
+ * these selectors do not reach.
+ */
+const EMAIL_SURFACE_RESET = `<style>
+  html, body { background: #ffffff !important; }
+  body table { background-color: #ffffff !important; }
+</style>`;
+
+function whitenEmailSurfaces(html: string): string {
+  return /<head[^>]*>/i.test(html)
+    ? html.replace(/<head[^>]*>/i, (m) => m + EMAIL_SURFACE_RESET)
+    : EMAIL_SURFACE_RESET + html;
+}
+
+function EmailFrame({ html: rawHtml, title, testId }: { html: string; title: string; testId: string }) {
+  const html = whitenEmailSurfaces(rawHtml);
   const wrap = useRef<HTMLDivElement>(null);
   const ref = useRef<HTMLIFrameElement>(null);
   const [box, setBox] = useState({ height: 320, scale: 1 });
