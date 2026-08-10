@@ -159,114 +159,70 @@ export function InlineBookingNotification({
     </div>
   );
 
+  /**
+   * The meeting's state, said ONCE.
+   *
+   * It used to be said four times over: a 48px icon medallion, a headline, a
+   * pill repeating the headline, and a coloured banner at the foot of the card
+   * repeating it again - three of those stacked centred rows, so a cancelled
+   * meeting opened with a column of near-empty space before any fact about the
+   * meeting appeared.
+   *
+   * Now: one banner, tinted to the state, carrying the icon, the label and the
+   * sentence that actually tells you something. Tone comes from the state
+   * rather than from where the branch happened to sit, which is how No Show
+   * ended up grey at the foot of the card while its own header was amber.
+   */
+  const status: { icon: typeof X; label: string; note: string; tone: "destructive" | "warning" | "success" | "muted" } | null =
+    isParentCancelled ? { icon: X, label: "Parent cancelled", note: "This meeting was cancelled by the parent.", tone: "destructive" }
+    : isProviderCancelled ? { icon: X, label: "Provider cancelled", note: "This meeting was cancelled by the provider.", tone: "destructive" }
+    : isCancelled ? { icon: X, label: "Meeting cancelled", note: "This meeting has been cancelled.", tone: "destructive" }
+    : wasCompleted ? { icon: Check, label: "Meeting completed", note: "Both sides joined the meeting room.", tone: "muted" }
+    : isParentNoShow ? { icon: Clock, label: "Parent no show", note: "The provider joined the meeting room but the parent did not.", tone: "warning" }
+    : isProviderNoShow ? { icon: Clock, label: "Provider no show", note: "The parent joined the meeting room but the provider did not.", tone: "warning" }
+    : isNoShow ? { icon: Clock, label: "No show", note: "The scheduled time has passed and no one joined the meeting room.", tone: "warning" }
+    : isConfirmed ? { icon: Check, label: "Meeting confirmed", note: "You'll get a reminder before it starts.", tone: "success" }
+    : isRescheduled ? { icon: CalendarClock, label: "Meeting rescheduled", note: "This meeting was rescheduled. A new booking has been created.", tone: "muted" }
+    // The two live states are the ones where the reader's next action differs
+    // by role, so their sentence does too.
+    : isPending && isProvider ? {
+        icon: Clock, label: "Needs your confirmation",
+        note: `Requested by ${booking.attendeeName || booking.parentUser?.name || "the parent"}.`, tone: "warning",
+      }
+    : isPending ? {
+        icon: Clock, label: "Awaiting provider confirmation",
+        note: `We'll email you as soon as ${providerName} confirms.`, tone: "warning",
+      }
+    : null;
+
+  const TONE_STYLE = {
+    destructive: { fg: "hsl(var(--destructive))", bg: "hsl(var(--destructive) / 0.08)", bd: "hsl(var(--destructive) / 0.2)" },
+    warning: { fg: "hsl(var(--brand-warning))", bg: "hsl(var(--brand-warning) / 0.12)", bd: "hsl(var(--brand-warning) / 0.25)" },
+    success: { fg: "hsl(var(--brand-success))", bg: "hsl(var(--brand-success) / 0.12)", bd: "hsl(var(--brand-success) / 0.25)" },
+    muted: { fg: "hsl(var(--muted-foreground))", bg: "hsl(var(--muted) / 0.6)", bd: "hsl(var(--border))" },
+  } as const;
+
+  const statusBanner = status ? (() => {
+    const t = TONE_STYLE[status.tone];
+    const Icon = status.icon;
+    return (
+      <div
+        className="flex items-start gap-2.5 rounded-[var(--radius)] border p-3"
+        style={{ background: t.bg, borderColor: t.bd }}
+        data-testid="booking-status-banner"
+      >
+        <Icon className="w-4 h-4 shrink-0 mt-0.5" style={{ color: t.fg }} />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-tight" style={{ color: t.fg }}>{status.label}</p>
+          {status.note && <p className="text-xs mt-0.5" style={{ color: t.fg, opacity: 0.85 }}>{status.note}</p>}
+        </div>
+      </div>
+    );
+  })() : null;
+
   return cardChrome(<>
         <div className="space-y-3">
-          {/* Hero status display - matches parent /chat InlineBookingCalendar so all
-              three views (parent, provider, admin) show the same state visual. */}
-          <div className="text-center space-y-1 py-1">
-            {isParentCancelled ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
-                  <X className="w-6 h-6 text-destructive" />
-                </div>
-                <p className="font-bold text-sm">Parent Cancelled</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
-                  Parent Cancelled
-                </span>
-              </>
-            ) : isProviderCancelled ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
-                  <X className="w-6 h-6 text-destructive" />
-                </div>
-                <p className="font-bold text-sm">Provider Cancelled</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
-                  Provider Cancelled
-                </span>
-              </>
-            ) : isCancelled ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
-                  <X className="w-6 h-6 text-destructive" />
-                </div>
-                <p className="font-bold text-sm">Meeting Cancelled</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
-                  Cancelled
-                </span>
-              </>
-            ) : wasCompleted ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                  <Check className="w-6 h-6 text-muted-foreground" />
-                </div>
-                <p className="font-bold text-sm">Meeting Completed</p>
-                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
-                  Completed
-                </span>
-              </>
-            ) : isParentNoShow ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-[hsl(var(--brand-warning))]" />
-                </div>
-                <p className="font-bold text-sm">Parent No Show</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]">
-                  Parent No Show
-                </span>
-              </>
-            ) : isProviderNoShow ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-[hsl(var(--brand-warning))]" />
-                </div>
-                <p className="font-bold text-sm">Provider No Show</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]">
-                  Provider No Show
-                </span>
-              </>
-            ) : isNoShow ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-[hsl(var(--brand-warning))]" />
-                </div>
-                <p className="font-bold text-sm">No Show</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]">
-                  No Show
-                </span>
-              </>
-            ) : isConfirmed ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-success)/0.12)] flex items-center justify-center">
-                  <Check className="w-6 h-6 text-[hsl(var(--brand-success))]" />
-                </div>
-                <p className="font-bold text-sm">Confirmed</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-success)/0.12)] text-[hsl(var(--brand-success))]">
-                  Confirmed
-                </span>
-              </>
-            ) : isRescheduled ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
-                  <CalendarClock className="w-6 h-6 text-muted-foreground" />
-                </div>
-                <p className="font-bold text-sm">Rescheduled</p>
-                <span className="t-micro-label inline-block px-2 py-0.5 rounded-full bg-muted">
-                  Rescheduled
-                </span>
-              </>
-            ) : isPending ? (
-              <>
-                <div className="w-12 h-12 mx-auto rounded-full bg-[hsl(var(--brand-warning)/0.12)] flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-[hsl(var(--brand-warning))]" />
-                </div>
-                <p className="font-bold text-sm">Awaiting Confirmation</p>
-                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[hsl(var(--brand-warning)/0.12)] text-[hsl(var(--brand-warning))]">
-                  Pending
-                </span>
-              </>
-            ) : null}
-          </div>
-
+          {statusBanner}
           {/* Counterparty info + date/time - mirrors parent /chat InlineBookingCalendar
               so all three views (parent, provider, admin) show the same structure.
               From this viewer's perspective the counterparty is the OTHER party:
@@ -355,84 +311,6 @@ export function InlineBookingNotification({
               ))}
             </div>
           </div>
-
-          {isPending && !isNoShow && !isParentNoShow && !isProviderNoShow && isProvider && (
-            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-[hsl(var(--brand-warning))]">This meeting request needs your confirmation</p>
-              <p className="text-[11px] text-[hsl(var(--brand-warning))] mt-0.5">Requested by {booking.attendeeName || booking.parentUser?.name || "a parent"}.</p>
-            </div>
-          )}
-
-          {isPending && !isNoShow && !isParentNoShow && !isProviderNoShow && !isProvider && (
-            <div className="bg-[hsl(var(--brand-warning)/0.08)] border border-[hsl(var(--brand-warning)/0.3)] rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-[hsl(var(--brand-warning))]">Awaiting provider confirmation</p>
-              <p className="text-[11px] text-[hsl(var(--brand-warning))] mt-0.5">We'll send you an email once {providerName} confirms your booking.</p>
-            </div>
-          )}
-
-          {isConfirmed && !wasCompleted && !isNoShow && !isParentNoShow && !isProviderNoShow && (
-            <div className="bg-[hsl(var(--brand-success)/0.08)] border border-[hsl(var(--brand-success)/0.3)] rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-[hsl(var(--brand-success))]">Meeting confirmed</p>
-              <p className="text-[11px] text-[hsl(var(--brand-success))] mt-0.5">This meeting has been confirmed. You'll receive a reminder before it starts.</p>
-            </div>
-          )}
-
-          {wasCompleted && (
-            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="t-helper">Meeting completed</p>
-              <p className="t-helper mt-0.5">Both parties joined this consultation.</p>
-            </div>
-          )}
-
-          {isParentNoShow && (
-            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="t-helper">Parent no show</p>
-              <p className="t-helper mt-0.5">The provider joined the meeting room but the parent did not.</p>
-            </div>
-          )}
-
-          {isProviderNoShow && (
-            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="t-helper">Provider no show</p>
-              <p className="t-helper mt-0.5">The parent joined the meeting room but the provider did not.</p>
-            </div>
-          )}
-
-          {isNoShow && (
-            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="t-helper">No show</p>
-              <p className="t-helper mt-0.5">The scheduled time has passed and no one joined the meeting room.</p>
-            </div>
-          )}
-
-          {isParentCancelled && (
-            <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-destructive">Parent cancelled</p>
-              <p className="text-[11px] text-destructive/80 mt-0.5">This meeting was cancelled by the parent.</p>
-            </div>
-          )}
-
-          {isProviderCancelled && (
-            <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-destructive">Provider cancelled</p>
-              <p className="text-[11px] text-destructive/80 mt-0.5">This meeting was cancelled by the provider.</p>
-            </div>
-          )}
-
-          {isCancelled && !isParentCancelled && !isProviderCancelled && (
-            <div className="bg-destructive/5 border border-destructive/20 rounded-[var(--radius)] p-3">
-              <p className="text-xs font-medium text-destructive">Meeting cancelled</p>
-              <p className="text-[11px] text-destructive/80 mt-0.5">This meeting has been cancelled.</p>
-            </div>
-          )}
-
-          {isRescheduled && (
-            <div className="bg-muted/60 border border-border rounded-[var(--radius)] p-3">
-              <p className="t-helper">Meeting rescheduled</p>
-              <p className="t-helper mt-0.5">This meeting was rescheduled. A new booking has been created.</p>
-            </div>
-          )}
-
           {showSuggestForm && isPending && isProvider && !isNoShow && !isParentNoShow && !isProviderNoShow && (
             <div className="border border-border/50 rounded-[var(--radius)] p-3 space-y-2">
               <p className="text-sm font-medium">Suggest a new time</p>
