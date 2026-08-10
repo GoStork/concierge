@@ -209,14 +209,42 @@ ${opts.detailRows.map(r => {
   const alertHtml = opts.alertBox
     ? `<div style="background:${alertBg[opts.alertBox.type]};border-left:4px solid ${alertBorderColor[opts.alertBox.type]};padding:14px 16px;border-radius:4px;margin:16px 0;font-size:15px;font-family:${brand.bodyFontStack};color:${alertTextColor[opts.alertBox.type]};">${opts.alertBox.text}</div>` : "";
 
-  // Buttons stack vertically by default (one per row, centered). Never place
-  // them side by side: two buttons exceed a phone's viewport width, which
-  // widens the layout viewport and defeats the max-width media query that
-  // would have stacked them - the email then renders zoomed-out and tiny.
+  /**
+   * The PRIMARY button gets its own row. Any secondary buttons share one
+   * centred row on desktop and stack again under 480px.
+   *
+   * This replaces a blanket "never place buttons side by side", which was
+   * written after a real failure: a side-by-side pair wider than the phone
+   * widens the layout viewport, the max-width media query then never matches,
+   * and the whole email renders zoomed out and tiny. That danger is real, so
+   * the shape here is deliberately the safe version of it:
+   *
+   *   - only SECONDARY buttons pair up; the primary (Join, Pay) stays full
+   *     width, so the widest single element is unchanged
+   *   - the row is a shrink-to-fit table inside the 600px card, never a fixed
+   *     width, so it cannot push the card wider than the card already is
+   *   - the cells become display:block at <=480px, which is what actually
+   *     stacks them
+   *
+   * Secondary labels are short by nature (Reschedule, Cancel, View Details).
+   * If a caller ever pairs two long labels, the pair - not this layout - is
+   * the thing to reconsider.
+   */
+  const btnInner = (b: NonNullable<typeof opts.buttons>[number]) =>
+    `<table class="email-btn" cellpadding="0" cellspacing="0"><tr><td align="center" style="background:${btnColor(b.variant)};border-radius:${btnRadius};border:${btnBorder(b.variant)};"><a class="email-btn-a" href="${b.url}" style="display:inline-block;padding:14px 32px;color:${btnTextColor(b.variant)};text-decoration:none;font-weight:600;font-size:16px;font-family:${brand.bodyFontStack};">${b.label}</a></td></tr></table>`;
+
   const buttonsHtml = opts.buttons?.length
-    ? `<table class="email-btns" cellpadding="0" cellspacing="0" style="margin:20px auto;" align="center">${opts.buttons.map(b =>
-        `<tr><td align="center" style="padding:6px 0;"><table class="email-btn" cellpadding="0" cellspacing="0"><tr><td align="center" style="background:${btnColor(b.variant)};border-radius:${btnRadius};border:${btnBorder(b.variant)};"><a class="email-btn-a" href="${b.url}" style="display:inline-block;padding:14px 32px;color:${btnTextColor(b.variant)};text-decoration:none;font-weight:600;font-size:16px;font-family:${brand.bodyFontStack};">${b.label}</a></td></tr></table></td></tr>`
-      ).join("")}</table>` : "";
+    ? (() => {
+        const [primary, ...rest] = opts.buttons;
+        const primaryRow = `<tr><td align="center" style="padding:6px 0;">${btnInner(primary)}</td></tr>`;
+        const restRow = rest.length
+          ? `<tr><td align="center" style="padding:6px 0;"><table class="email-btn-row" cellpadding="0" cellspacing="0" align="center"><tr>${
+              rest.map(b => `<td class="email-btn-cell" align="center" style="padding:0 5px;">${btnInner(b)}</td>`).join("")
+            }</tr></table></td></tr>`
+          : "";
+        return `<table class="email-btns" cellpadding="0" cellspacing="0" style="margin:20px auto;" align="center">${primaryRow}${restRow}</table>`;
+      })()
+    : "";
 
   const footerHtml = opts.footer ? `<p style="color:${brand.mutedForegroundColor};font-size:13px;line-height:1.5;margin:24px 0 0;padding-top:16px;border-top:1px solid ${brand.borderColor};font-family:${brand.bodyFontStack};">${opts.footer}</p>` : "";
 
@@ -236,6 +264,10 @@ body { color-scheme: light; }
   table.email-btns { width: 100% !important; }
   table.email-btn { width: 100% !important; }
   a.email-btn-a { display: block !important; text-align: center !important; }
+  /* The secondary pair goes back to one per line on a phone. This is the rule
+     that actually stacks them - see the note above buttonsHtml. */
+  table.email-btn-row { width: 100% !important; }
+  td.email-btn-cell { display: block !important; width: 100% !important; padding: 6px 0 !important; }
 }
 </style>
 </head>
