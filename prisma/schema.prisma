@@ -166,8 +166,6 @@ model Provider {
   parentNotes                           ParentNote[]
   parentTasks                           ParentTask[]
   parentOwners                          ParentOwner[]
-  parentTagDefinitions                  ParentTagDefinition[]
-  parentTagAssignments                  ParentTagAssignment[]
 }
 
 /// Send log for the AI-written private parent briefing. Same "once per parent
@@ -2963,47 +2961,6 @@ model ParentOwner {
   @@index([ownerUserId, scope])
   @@index([providerId, parentAccountId])
   @@index([parentAccountId, scope])
-}
-
-/// Tag vocabulary. Each audience defines its own labels.
-model ParentTagDefinition {
-  id              String   @id @default(uuid())
-  /// GOSTORK | PROVIDER
-  scope           String
-  providerId      String?
-  label           String
-  /// Brand token NAME, never a hex - hardcoded colors are forbidden.
-  /// primary | secondary | accent | brand-success | brand-warning | muted
-  colorToken      String   @default("accent")
-  sortOrder       Int      @default(0)
-  isActive        Boolean  @default(true)
-  createdByUserId String?
-  createdAt       DateTime @default(now())
-
-  provider    Provider?             @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  assignments ParentTagAssignment[]
-
-  @@index([scope, providerId, isActive])
-}
-
-model ParentTagAssignment {
-  id               String   @id @default(uuid())
-  parentAccountId  String
-  tagId            String
-  /// Denormalised from the definition at write time (server-side - never
-  /// accepted from the client) so the list endpoints can filter by audience in
-  /// one indexed query with no join.
-  scope            String
-  providerId       String?
-  assignedByUserId String?
-  assignedAt       DateTime @default(now())
-
-  tag      ParentTagDefinition @relation(fields: [tagId], references: [id], onDelete: Cascade)
-  provider Provider?           @relation(fields: [providerId], references: [id], onDelete: Cascade)
-
-  @@unique([parentAccountId, tagId])
-  @@index([parentAccountId])
-  @@index([scope, providerId, parentAccountId])
 }
 
 // Phase 7A: append-only journey event log. Every notable event in a parent's

@@ -344,44 +344,6 @@ export function NextStepCell({
   );
 }
 
-export function TagsCell({
-  tags, limit = 2, testId,
-}: { tags?: { tagId: string; label: string; colorToken?: string }[] | null; limit?: number; testId?: string }) {
-  const list = tags || [];
-  if (list.length === 0) return <span className="t-helper">-</span>;
-  const shown = limit > 0 ? list.slice(0, limit) : list;
-  const extra = list.length - shown.length;
-  return (
-    // The width cap and the wrapping belong to the table column, where chips
-    // are capped to one or two. limit={0} means "show them all", which is the
-    // record page - there the cap made two services stack into two rows in a
-    // card 1800px wide.
-    <div
-      className={`flex gap-1 items-center ${limit > 0 ? "flex-wrap max-w-[170px]" : "flex-nowrap"}`}
-      data-testid={testId}
-    >
-      {shown.map((t) => (
-        <span
-          key={t.tagId}
-          className="text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
-          style={{ background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}
-        >
-          {t.label}
-        </span>
-      ))}
-      {extra > 0 && (
-        <span
-          className="text-xs font-ui px-1.5 py-0.5 rounded-full"
-          style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))" }}
-          title={list.slice(shown.length).map((t) => t.label).join(", ")}
-        >
-          +{extra}
-        </span>
-      )}
-    </div>
-  );
-}
-
 /**
  * Every sortable column, resolved in one place.
  *
@@ -410,7 +372,6 @@ export interface ParentSortSource {
   agreements?: unknown[] | null;
   owner?: { name?: string | null } | null;
   nextStep?: { dueAt: string } | null;
-  tags?: { label: string }[] | null;
 }
 
 export function parentSortValue(key: string, src: ParentSortSource): string | number | null {
@@ -433,7 +394,6 @@ export function parentSortValue(key: string, src: ParentSortSource): string | nu
     case "agreements": return src.agreements?.length || null;
     case "owner": return src.owner?.name || null;
     case "nextDue": return src.nextStep?.dueAt ? new Date(src.nextStep.dueAt).getTime() : null;
-    case "tags": return src.tags?.length ? src.tags.map((t) => t.label).sort().join(", ") : null;
     default: return null;
   }
 }
@@ -486,9 +446,8 @@ export function matchesCrmFilters(
   row: {
     owner?: { userId?: string; name?: string | null } | null;
     nextStep?: { dueAt: string; overdue: boolean } | null;
-    tags?: { label: string }[] | null;
   },
-  filters: { owner: string; next: string; tag: string },
+  filters: { owner: string; next: string },
   viewerUserId?: string | null,
 ): boolean {
   if (filters.owner !== "all") {
@@ -518,10 +477,6 @@ export function matchesCrmFilters(
         if (due > weekOut) return false;
       }
     }
-  }
-
-  if (filters.tag !== "all") {
-    if (!(row.tags || []).some((t) => t.label === filters.tag)) return false;
   }
 
   return true;

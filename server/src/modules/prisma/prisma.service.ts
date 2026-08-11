@@ -270,14 +270,6 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.parentOwner;
   }
 
-  get parentTagDefinition() {
-    return prisma.parentTagDefinition;
-  }
-
-  get parentTagAssignment() {
-    return prisma.parentTagAssignment;
-  }
-
   get journeyPreferences() {
     return prisma.journeyPreferences;
   }

@@ -168,11 +168,9 @@ const line = (l: string, v: any) => console.log(`  ${l.padEnd(32)} ${v}`);
     ck("admin sees both scopes", a.crm.notes.length >= provNotes.length);
   }
 
-  // Follow-ups and tags are scoped the same way and are just as disclosing.
-  ck("provider sees only its own follow-ups",
-    p.crm.followUps.every((f: any) => f.scope === "PROVIDER" && f.providerId === FC));
-  ck("provider sees only its own tags",
-    p.crm.tags.every((t: any) => t.scope === "PROVIDER" && t.providerId === FC));
+  // Tasks are scoped the same way and are just as disclosing.
+  ck("provider sees only its own tasks",
+    (p.crm.tasks || []).every((t: any) => t.scope === "PROVIDER" && t.providerId === FC));
   ck("provider sees only its own owner rows",
     p.crm.owners.every((o: any) => o.scope === "PROVIDER" && o.providerId === FC));
 

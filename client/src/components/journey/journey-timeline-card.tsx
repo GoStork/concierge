@@ -98,7 +98,6 @@ const EVENT_LABELS: Record<string, string> = {
   CRM_FOLLOWUP_SET: "Next step set",
   CRM_FOLLOWUP_COMPLETED: "Next step completed",
   CRM_OWNER_ASSIGNED: "Lead owner assigned",
-  CRM_TAG_ADDED: "Tag added",
 };
 
 function fmtDate(iso: string | null): string | null {

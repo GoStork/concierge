@@ -22,7 +22,6 @@ export interface ParentsFilterState {
   to: string;
   services: string[];
   statuses: string[];
-  tag: string;
   owner: string;
   next: string;
   /** "submitted" | "missing" | "all" - Intended Parent form state. */
@@ -30,7 +29,7 @@ export interface ParentsFilterState {
 }
 
 export function ParentsFilterBar({
-  state, setParam, setParams, onClear, tagVocabulary, ownerOptions, testIdPrefix,
+  state, setParam, setParams, onClear, ownerOptions, testIdPrefix,
 }: {
   state: ParentsFilterState;
   /** Write one param. An empty value removes it. */
@@ -38,12 +37,11 @@ export function ParentsFilterBar({
   /** Write several params in ONE update - successive single writes race. */
   setParams: (entries: Record<string, string>) => void;
   onClear: () => void;
-  tagVocabulary: { id: string; label: string }[];
   ownerOptions: { id: string; name?: string | null }[];
   testIdPrefix: string;
 }) {
   const hasActive = !!(state.q.trim() || state.from || state.to || state.services.length
-    || state.statuses.length || state.tag !== "all" || state.owner !== "all" || state.next !== "all"
+    || state.statuses.length || state.owner !== "all" || state.next !== "all"
     || state.form !== "all");
 
   // "My leads" and "No owner" are owner+next-step combinations, and they used to
@@ -103,14 +101,6 @@ export function ParentsFilterBar({
             selected={state.form === "all" ? [] : [state.form]}
             onChange={(next) => setParam("form", next[0] || "")}
             testId={`${testIdPrefix}-form-filter`}
-          />
-          <FilterDropdown
-            single
-            label="All tags"
-            options={tagVocabulary.map((t) => [t.label, t.label] as [string, string])}
-            selected={state.tag === "all" ? [] : [state.tag]}
-            onChange={(next) => setParam("tag", next[0] || "")}
-            testId={`${testIdPrefix}-tag-filter`}
           />
           <FilterDropdown
             single

@@ -2,7 +2,7 @@
  * The parent record's activity timeline: one chronological stream of
  * everything that has happened to this family, one card per entry.
  *
- * It replaces three separate sections (Notes, Next step and tags, and the
+ * It replaces three separate sections (Notes, Next steps, and the
  * collapsed "Recent activity" list under the ladder). Those split one story
  * across three places and hid the most useful half of it behind a disclosure
  * triangle - you could not see that a note was written the day after a
@@ -16,7 +16,7 @@
  * GET /api/journey/events returns metadata verbatim to providers and an
  * internal note must never travel that way (see journey-events.ts).
  *
- * So the feed merges the events with the real note / next-step / tag objects
+ * So the feed merges the events with the real note and next-step objects
  * from the record payload, which do carry their text and have already been
  * scoped and redacted server-side. The CRM_* events are dropped in the merge,
  * or every note would appear twice: once with its body and once as a bare
@@ -29,9 +29,9 @@ import { AttachmentMessageCard } from "@/components/chat/attachment-message-card
 import { SpecialMessageCard } from "@/components/chat/special-message-card";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, CalendarCheck, CalendarClock, CalendarX, Check, ChevronDown, ExternalLink,
+  AlertTriangle, CalendarCheck, CalendarClock, CalendarX, Check, ChevronDown, CircleCheck, ExternalLink,
   Clock, FileText, Filter, Mail, MessageSquare,
-  Pencil, Pin, Receipt, Sparkles, StickyNote, Tag as TagIcon, Trash2, TrendingUp, User, Video,
+  Pencil, Pin, Receipt, Sparkles, StickyNote, Trash2, TrendingUp, User, Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -43,7 +43,7 @@ import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
-import { NoteComposer, ParentTaskPanel, useCrmMutation } from "./parent-crm-ui";
+import { NoteComposer, ParentTaskComposer, ParentTaskPanel, useCrmMutation } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
 
@@ -58,13 +58,12 @@ import type { ActivityDetail, ParentRecord } from "./parent-record-types";
  * change nor something we sent, and filing it under either would be a lie
  * about who acted.
  */
-type ActivityKind = "note" | "next_step" | "tag" | "deal" | "ai" | "parent" | "message";
+type ActivityKind = "note" | "next_step" | "deal" | "ai" | "parent" | "message";
 
 const KIND_META: Record<ActivityKind, { label: string; icon: typeof StickyNote; tone: "accent" | "primary" | "muted" }> = {
   message: { label: "AI Activity", icon: Mail, tone: "accent" },
   note: { label: "Note", icon: StickyNote, tone: "accent" },
   next_step: { label: "Next step", icon: CalendarClock, tone: "primary" },
-  tag: { label: "Tag", icon: TagIcon, tone: "accent" },
   deal: { label: "Deal Activity", icon: TrendingUp, tone: "primary" },
   ai: { label: "AI Activity", icon: Sparkles, tone: "accent" },
   parent: { label: "Parent Activity", icon: User, tone: "muted" },
@@ -213,7 +212,7 @@ const CALL_ICONS: Record<string, typeof CalendarClock> = {
 /** These arrive with their real text from the record payload instead. */
 const SUPERSEDED_BY_PAYLOAD = new Set([
   "CRM_NOTE_ADDED", "CRM_NOTE_SHARED_WITH_PROVIDER",
-  "CRM_FOLLOWUP_SET", "CRM_FOLLOWUP_COMPLETED", "CRM_TAG_ADDED",
+  "CRM_FOLLOWUP_SET", "CRM_FOLLOWUP_COMPLETED",
 ]);
 
 interface Entry {
@@ -302,17 +301,6 @@ function buildEntries(record: ParentRecord): Entry[] {
           Due {new Date(f.dueAt).toLocaleDateString()}
         </span>
       ),
-    });
-  }
-
-  for (const t of record.crm.tags) {
-    if (!t.createdAt) continue;   // pre-dates the timestamp; the chip still shows in the header
-    out.push({
-      id: `tag-${t.id}`,
-      kind: "tag",
-      at: t.createdAt,
-      title: "Tag added",
-      body: t.label,
     });
   }
 
@@ -1188,7 +1176,7 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
   );
 }
 
-type Composer = "note" | "next_step" | null;
+type Composer = "note" | "task" | "next_step" | null;
 
 export function ParentActivitySection({ record, scope }: {
   record: ParentRecord;
@@ -1239,6 +1227,18 @@ export function ParentActivitySection({ record, scope }: {
               Cancel, next to Post, where the note's own edit controls are. */}
           <StickyNote className="w-3.5 h-3.5 mr-1.5" /> Create Note
         </Button>
+        {/* A task is an ACT on the record, the same kind of thing as writing a
+            note, so creating one sits beside Create Note rather than inside
+            the list of tasks that already exist. */}
+        <Button
+          variant={composer === "task" ? "default" : "outline"}
+          size="sm"
+          className={composer === "task" ? undefined : "bg-card"}
+          onClick={() => toggle("task")}
+          data-testid="btn-activity-add-task"
+        >
+          <CircleCheck className="w-3.5 h-3.5 mr-1.5" /> Create Task
+        </Button>
         <Button
           variant={composer === "next_step" ? "default" : "outline"}
           size="sm"
@@ -1246,7 +1246,7 @@ export function ParentActivitySection({ record, scope }: {
           onClick={() => toggle("next_step")}
           data-testid="btn-activity-add-next-step"
         >
-          <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Next step and tags
+          <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Next steps
           <ChevronDown className={cn("w-3 h-3 ml-1 transition-transform", composer === "next_step" && "rotate-180")} />
         </Button>
         {scope && scope.lines.length >= 2 && (
@@ -1282,6 +1282,15 @@ export function ParentActivitySection({ record, scope }: {
           <NoteComposer
             record={record}
             onPosted={() => setComposer(null)}
+            onCancel={() => setComposer(null)}
+          />
+        </div>
+      )}
+      {composer === "task" && (
+        <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-task">
+          <ParentTaskComposer
+            record={record}
+            onDone={() => setComposer(null)}
             onCancel={() => setComposer(null)}
           />
         </div>

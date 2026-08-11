@@ -1,5 +1,5 @@
 /**
- * The CRM controls on a parent record: notes, next step, lead owner, tags.
+ * The CRM controls on a parent record: notes, tasks, lead owner.
  *
  * Everything is inline. No dialogs, no popovers for content editing - the app
  * is built with native mobile in mind, where both translate badly, and a value
@@ -336,7 +336,7 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
       <div className="flex items-center gap-2">
         <Button size="sm" disabled={!title.trim() || mut.isPending} onClick={save} data-testid="btn-save-task">
           {mut.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
-          {existing ? "Save task" : "Add task"}
+          {existing ? "Save task" : "Create task"}
         </Button>
         {onCancel && <Button size="sm" variant="ghost" onClick={onCancel} data-testid="btn-cancel-task">Cancel</Button>}
       </div>
@@ -536,104 +536,6 @@ export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord;
   );
 }
 
-// ─── Tags ───────────────────────────────────────────────────────────────────
-
-const WARNING_TAGS = new Set(["at-risk", "overdue", "vip", "at risk"]);
-
-function TagEditor({ record, isAdmin, choice }: { record: ParentRecord; isAdmin: boolean; choice: ScopeChoice }) {
-  const [adding, setAdding] = useState(false);
-  const [label, setLabel] = useState("");
-  const mut = useCrmMutation(record.parent.id, () => { setAdding(false); setLabel(""); });
-
-  const { data: vocabulary = [] } = useQuery<any[]>({
-    queryKey: ["/api/parents/crm/tag-vocabulary"],
-    queryFn: async () => {
-      const res = await fetch("/api/parents/crm/tag-vocabulary", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: adding,
-    staleTime: 5 * 60_000,
-  });
-
-  const assignedIds = new Set(record.crm.tags.map((t) => t.tagId));
-  const suggestions = vocabulary.filter(
-    (v) => !assignedIds.has(v.id) && (!label || v.label.toLowerCase().includes(label.toLowerCase())),
-  );
-
-  async function createAndAssign() {
-    const created = await fetch("/api/parents/crm/tag-vocabulary", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label, scope: choice.scope, providerId: choice.providerId }),
-    }).then((r) => r.json());
-    if (created?.id) {
-      mut.mutate({ url: `/api/parents/${record.parent.id}/tags`, method: "POST", body: { tagId: created.id } });
-    }
-  }
-
-  return (
-    <div className="rounded-[var(--radius)] border bg-card p-4 space-y-2" data-testid="tag-editor">
-      <p className="t-micro-label">Tags</p>
-      <div className="flex flex-wrap gap-1.5">
-        {record.crm.tags.map((t) => {
-          const warn = WARNING_TAGS.has(t.label.toLowerCase());
-          return (
-            <span
-              key={t.id}
-              className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
-              style={warn
-                ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
-                : { background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}
-              data-testid={`tag-${t.tagId}`}
-            >
-              {t.label}
-              <button
-                type="button"
-                onClick={() => mut.mutate({ url: `/api/parents/${record.parent.id}/tags/${t.tagId}`, method: "DELETE" })}
-                data-testid={`btn-remove-tag-${t.tagId}`}
-                aria-label={`Remove ${t.label}`}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          );
-        })}
-        {!adding && (
-          <Button variant="outline" size="sm" onClick={() => setAdding(true)} data-testid="btn-add-tag">
-            <Plus className="w-3 h-3 mr-1" /> Add
-          </Button>
-        )}
-      </div>
-      {adding && (
-        <div className="space-y-2">
-          <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Tag name" data-testid="input-parent-tag" />
-          {suggestions.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {suggestions.slice(0, 8).map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  className="text-xs font-ui px-2 py-0.5 rounded-full border"
-                  onClick={() => mut.mutate({ url: `/api/parents/${record.parent.id}/tags`, method: "POST", body: { tagId: v.id } })}
-                  data-testid={`suggest-tag-${v.id}`}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2">
-            <Button size="sm" disabled={!label.trim()} onClick={createAndAssign} data-testid="btn-create-tag">Create and add</Button>
-            <Button variant="ghost" size="sm" onClick={() => setAdding(false)}>Cancel</Button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Panel ──────────────────────────────────────────────────────────────────
 
 /**
@@ -651,32 +553,35 @@ export function ParentLeadOwner({ record }: { record: ParentRecord }) {
 }
 
 /**
- * Next step and tags: the small stack of things you SET, as opposed to the
- * things that happened. Lives in the record's right rail.
+ * Next steps: the open tasks on this family, soonest first.
+ *
+ * Creating one lives on the activity toolbar beside Create Note - a task is
+ * something you DO to the record, the same kind of act as writing a note, so
+ * it belongs with the other actions rather than buried inside the list of
+ * tasks that already exist.
  */
 export function ParentTaskPanel({ record }: { record: ParentRecord }) {
-  const isAdmin = record.viewer.role === "admin";
-  const choices = scopeChoices(record, isAdmin);
-  const primary = choices[0];
-  const [adding, setAdding] = useState(false);
   // Soonest first - a task list is read as "what is next", never as history.
   const open = [...record.crm.tasks].sort(
     (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime(),
   );
+  if (!open.length) {
+    return (
+      <p className="t-helper" data-testid="tasks-empty">
+        Nothing scheduled. Create a task to give this family a next step.
+      </p>
+    );
+  }
   return (
     <div className="space-y-3">
-      {/* Lead owner lives in the record header now - see ParentLeadOwner. */}
       {open.map((t) => <TaskRow key={t.id} record={record} task={t} />)}
-      {adding ? (
-        <div className="rounded-[var(--radius)] border bg-card p-3">
-          <TaskEditor record={record} onDone={() => setAdding(false)} onCancel={() => setAdding(false)} />
-        </div>
-      ) : (
-        <Button size="sm" variant="outline" className="bg-card" onClick={() => setAdding(true)} data-testid="btn-add-task">
-          <Plus className="w-3.5 h-3.5 mr-1.5" /> Add task
-        </Button>
-      )}
-      {primary && <TagEditor record={record} isAdmin={isAdmin} choice={primary} />}
     </div>
   );
+}
+
+/** The task composer on its own, for the activity toolbar's Create Task. */
+export function ParentTaskComposer({
+  record, onDone, onCancel,
+}: { record: ParentRecord; onDone: () => void; onCancel: () => void }) {
+  return <TaskEditor record={record} onDone={onDone} onCancel={onCancel} />;
 }

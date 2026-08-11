@@ -106,14 +106,13 @@ export default function ParentDetailPage() {
 
   // The few panels that fetch OUTSIDE the record payload would otherwise
   // freeze: the app's global staleTime is Infinity, so without a nudge the
-  // admin contact-release block and the owner/tag option lists never see a
+  // admin contact-release block and the owner option list never see a
   // colleague's change. Ride them on the record poll - invalidation only
   // refetches queries actually mounted on this page.
   useEffect(() => {
     if (!dataUpdatedAt) return;
     qc.invalidateQueries({ queryKey: ["/api/admin/contact-releases"] });
     qc.invalidateQueries({ queryKey: ["/api/parents/crm/owner-options"] });
-    qc.invalidateQueries({ queryKey: ["/api/parents/crm/tag-vocabulary"] });
   }, [dataUpdatedAt, qc]);
 
   const isAdmin = record?.viewer.role === "admin";
@@ -329,10 +328,10 @@ export default function ParentDetailPage() {
 
                 {/* ── Middle: what happened, and what was said about it ──── */}
                 <div className={colClass("activity")} data-testid="record-col-activity">
-                  {/* One timeline, one card per thing that happened. Notes,
-                      next steps and tags are ACTIONS on it rather than
-                      sections of their own - writing a note adds an entry
-                      here, which is where you would look for it anyway. */}
+                  {/* One timeline, one card per thing that happened. Notes
+                      and tasks are ACTIONS on it rather than sections of
+                      their own - writing a note adds an entry here, which is
+                      where you would look for it anyway. */}
                   <RecordSection id="crm" title="Activity" frameless="always">
                     <ParentActivitySection
                       record={scopedRecord || record}

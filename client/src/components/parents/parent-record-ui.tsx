@@ -45,7 +45,7 @@ import type { ParentRecord } from "./parent-record-types";
  *
  * It used to store the open list, which meant every section added later was
  * absent from everyone's saved state and therefore rendered collapsed - the
- * "Next step and tags" section shipped closed for anyone who had ever opened
+ * "Next steps" section shipped closed for anyone who had ever opened
  * this page before. Persisting the exceptions makes a new section open by
  * default, which is what a new section should do.
  *
@@ -281,31 +281,19 @@ export function ParentRecordHeader({
 
       {/* Read-only mirror of the CRM state, so "what is next" is answerable
           without opening the notes panel. Clicking opens it. */}
-      {(nextStep || record.crm.tags.length > 0) && (
+      {nextStep && (
         <div className="flex flex-wrap items-center gap-2 pt-3 border-t">
-          {nextStep && (
-            <button
-              type="button"
-              onClick={onJumpToCrm}
-              className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
-              style={nextStep.overdue
-                ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
-                : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
-              data-testid="chip-record-next-step"
-            >
-              {nextStep.overdue ? "Overdue: " : "Next: "}{nextStep.title}
-            </button>
-          )}
-          {record.crm.tags.slice(0, 3).map((t) => (
-            <span
-              key={t.id}
-              className="text-xs font-ui px-2 py-0.5 rounded-full"
-              style={{ background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}
-              data-testid={`chip-record-tag-${t.tagId}`}
-            >
-              {t.label}
-            </span>
-          ))}
+          <button
+            type="button"
+            onClick={onJumpToCrm}
+            className="inline-flex items-center gap-1 text-xs font-ui px-2 py-0.5 rounded-full"
+            style={nextStep.overdue
+              ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
+              : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
+            data-testid="chip-record-next-step"
+          >
+            {nextStep.overdue ? "Overdue: " : "Next: "}{nextStep.title}
+          </button>
         </div>
       )}
 

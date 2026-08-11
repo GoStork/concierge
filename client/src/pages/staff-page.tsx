@@ -23,10 +23,6 @@ import {
 import { ParentsTable } from "@/components/parents/parents-table";
 import { ParentsFilterBar } from "@/components/parents/parents-filter-bar";
 
-/**
- * The tag vocabulary this viewer may filter by. Scoped server-side: an admin
- * gets every scope, a provider only their own org's labels.
- */
 function useOwnerOptions() {
   const { data = [] } = useQuery<any[]>({
     queryKey: ["/api/parents/crm/owner-options"],
@@ -38,19 +34,6 @@ function useOwnerOptions() {
     staleTime: 5 * 60_000,
   });
   return data as { id: string; name: string | null }[];
-}
-
-function useTagVocabulary() {
-  const { data = [] } = useQuery<any[]>({
-    queryKey: ["/api/parents/crm/tag-vocabulary"],
-    queryFn: async () => {
-      const res = await fetch("/api/parents/crm/tag-vocabulary", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    staleTime: 5 * 60_000,
-  });
-  return data as { id: string; label: string }[];
 }
 
 type StaffMember = {
@@ -88,7 +71,6 @@ export default function StaffPage() {
 
 function GostorkAdminUsersView() {
   const { user } = useAuth();
-  const tagVocabulary = useTagVocabulary();
   const ownerOptions = useOwnerOptions();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -115,7 +97,6 @@ function GostorkAdminUsersView() {
   const statusFilter = parseMulti(searchParams.get("status"));
   const ownerFilter = searchParams.get("owner") || "all";
   const nextFilter = searchParams.get("next") || "all";
-  const tagFilter = searchParams.get("tag") || "all";
   const formFilter = searchParams.get("form") || "all";
   const setParams = useCallback((entries: Record<string, string>) => {
     // One atomic update: successive single writes each build from the same
@@ -154,7 +135,7 @@ function GostorkAdminUsersView() {
     staleTime: 15_000,
   });
 
-  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter.length > 0 || statusFilter.length > 0 || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all" || formFilter !== "all";
+  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter.length > 0 || statusFilter.length > 0 || ownerFilter !== "all" || nextFilter !== "all" || formFilter !== "all";
 
   const filteredUsers = parentUsers.filter(member => {
     // Equality on enum keys, exactly like the provider table. This used to be a
@@ -163,7 +144,7 @@ function GostorkAdminUsersView() {
     if (!matchesMultiAny(serviceFilter, overview[member.id]?.serviceKeys)) return false;
     if (!matchesMulti(statusFilter, overview[member.id]?.matchStatus)) return false;
     if (!matchesIpForm(formFilter, overview[member.id]?.ipFormStatus)) return false;
-    if (!matchesCrmFilters(overview[member.id] || {}, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
+    if (!matchesCrmFilters(overview[member.id] || {}, { owner: ownerFilter, next: nextFilter }, user?.id)) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const fields = [
@@ -192,7 +173,7 @@ function GostorkAdminUsersView() {
     // (each built from the same stale params), so only the last key cleared.
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      for (const key of ["q", "from", "to", "svc", "status", "owner", "next", "tag", "form"]) next.delete(key);
+      for (const key of ["q", "from", "to", "svc", "status", "owner", "next", "form"]) next.delete(key);
       return next;
     }, { replace: true });
   }
@@ -208,7 +189,7 @@ function GostorkAdminUsersView() {
       serviceStatuses: o.serviceStatuses,
       createdAt: item.createdAt, updatedAt: o.updatedAt,
       costSheets: o.costSheets, invoices: o.invoices, agreements: o.agreements,
-      owner: o.owner, nextStep: o.nextStep, tags: o.tags,
+      owner: o.owner, nextStep: o.nextStep,
     });
   });
 
@@ -320,11 +301,10 @@ function GostorkAdminUsersView() {
       </div>
 
       <ParentsFilterBar
-        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, tag: tagFilter, owner: ownerFilter, next: nextFilter, form: formFilter }}
+        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, owner: ownerFilter, next: nextFilter, form: formFilter }}
         setParam={updateUsersParam}
         setParams={setParams}
         onClear={clearFilters}
-        tagVocabulary={tagVocabulary}
         ownerOptions={ownerOptions}
         testIdPrefix="admin-parents"
       />
@@ -356,7 +336,6 @@ function GostorkAdminUsersView() {
             isDisabled: member.isDisabled,
             owner: o.owner ?? null,
             nextStep: o.nextStep ?? null,
-            tags: o.tags || [],
           };
         })}
         sortConfig={sortConfig}
@@ -424,7 +403,6 @@ function GostorkAdminUsersView() {
 
 function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const { user } = useAuth();
-  const tagVocabulary = useTagVocabulary();
   const ownerOptions = useOwnerOptions();
   const [searchParams, setSearchParams] = useSearchParams();
   const searchQuery = searchParams.get("q") || "";
@@ -450,13 +428,12 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const setSearchQuery = (v: string) => setParam("q", v);
   const ownerFilter = searchParams.get("owner") || "all";
   const nextFilter = searchParams.get("next") || "all";
-  const tagFilter = searchParams.get("tag") || "all";
   const formFilter = searchParams.get("form") || "all";
-  const hasActiveFilters = !!(searchQuery || serviceFilter.length || statusFilter.length || dateFrom || dateTo || ownerFilter !== "all" || nextFilter !== "all" || tagFilter !== "all" || formFilter !== "all");
+  const hasActiveFilters = !!(searchQuery || serviceFilter.length || statusFilter.length || dateFrom || dateTo || ownerFilter !== "all" || nextFilter !== "all" || formFilter !== "all");
   const clearFilters = () => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      ["q", "svc", "status", "from", "to", "owner", "next", "tag", "form"].forEach(k => next.delete(k));
+      ["q", "svc", "status", "from", "to", "owner", "next", "form"].forEach(k => next.delete(k));
       return next;
     }, { replace: true });
   };
@@ -561,7 +538,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       // Status filter matches if ANY of the family's per-line statuses match.
       if (statusFilter.length && !(p.serviceStatuses || []).some((ss: any) => matchesMulti(statusFilter, ss.status))) return false;
       if (!matchesIpForm(formFilter, p.ipFormStatus)) return false;
-      if (!matchesCrmFilters(p, { owner: ownerFilter, next: nextFilter, tag: tagFilter }, user?.id)) return false;
+      if (!matchesCrmFilters(p, { owner: ownerFilter, next: nextFilter }, user?.id)) return false;
       if (dateFrom && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) < new Date(`${dateFrom}T00:00:00`))) return false;
       if (dateTo && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) > new Date(`${dateTo}T23:59:59`))) return false;
       if (!searchQuery.trim()) return true;
@@ -579,7 +556,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       matchStatus: p.matchStatus,
       createdAt: p.sessionCreatedAt, updatedAt: p.sessionUpdatedAt,
       costSheets: p.costSheets, invoices: p.invoices, agreements: p.agreements,
-      owner: p.owner, nextStep: p.nextStep, tags: p.tags,
+      owner: p.owner, nextStep: p.nextStep,
     }),
   );
 
@@ -593,11 +570,10 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       </div>
 
       <ParentsFilterBar
-        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, tag: tagFilter, owner: ownerFilter, next: nextFilter, form: formFilter }}
+        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, owner: ownerFilter, next: nextFilter, form: formFilter }}
         setParam={setParam}
         setParams={setParams}
         onClear={clearFilters}
-        tagVocabulary={tagVocabulary}
         ownerOptions={ownerOptions}
         testIdPrefix="provider-parents"
       />

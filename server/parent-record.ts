@@ -1227,7 +1227,7 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   const crmWhere = isAdmin
     ? { parentAccountId: accountKey }
     : { parentAccountId: accountKey, scope: "PROVIDER", providerId: scopeProviderId };
-  const [notes, followUps, owners, tagAssignments] = sections.has("crm")
+  const [notes, followUps, owners] = sections.has("crm")
     ? await Promise.all([
         prisma.parentNote.findMany({
           where: { ...crmWhere, deletedAt: null },
@@ -1235,12 +1235,8 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
         }),
         prisma.parentTask.findMany({ where: { ...crmWhere, status: "OPEN" }, orderBy: { dueAt: "asc" } }),
         prisma.parentOwner.findMany({ where: crmWhere }),
-        prisma.parentTagAssignment.findMany({
-          where: crmWhere,
-          include: { tag: { select: { id: true, label: true, colorToken: true, scope: true } } },
-        }),
       ])
-    : [[], [], [], []];
+    : [[], [], []];
 
   // The owner row snapshots the NAME so a renamed staff account never blanks an
   // existing byline, but a photo snapshot would go stale the first time someone
@@ -1421,17 +1417,6 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       notes: notes.map((n: any) => ({ ...n, body: sanitizeNoteHtml(n.body) })),
       tasks: followUps.map((f: any) => ({ ...f, overdue: new Date(f.dueAt).getTime() < now })),
       owners: ownersWithPhoto,
-      tags: tagAssignments.map((t: any) => ({
-        id: t.id,
-        tagId: t.tagId,
-        scope: t.scope,
-        providerId: t.providerId,
-        label: t.tag?.label ?? "",
-        colorToken: t.tag?.colorToken ?? "accent",
-        // The activity feed places tags chronologically like everything else.
-        createdAt: t.assignedAt,
-        assignedByUserId: t.assignedByUserId ?? null,
-      })),
     },
   };
 }

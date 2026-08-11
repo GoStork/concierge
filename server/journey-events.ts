@@ -105,7 +105,6 @@ export type JourneyEventType =
   | "CRM_FOLLOWUP_SET"
   | "CRM_FOLLOWUP_COMPLETED"
   | "CRM_OWNER_ASSIGNED"
-  | "CRM_TAG_ADDED"
   // Cross-provider outcome (server/matched-elsewhere-sweep.ts). The marker
   // that a losing provider has ALREADY been told they lost this line - the
   // derived state is permanent, the telling must happen exactly once.

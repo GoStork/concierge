@@ -52,7 +52,7 @@ async function accountKeyFor(parentUserId: string): Promise<string> {
 
 /**
  * Every CRM write re-proves the relationship. Without this, a provider could
- * attach notes and tags to a parent they have never met by guessing a user id.
+ * attach notes and tasks to a parent they have never met by guessing a user id.
  */
 async function assertCanReachParent(user: any, parentUserId: string): Promise<string> {
   await buildParentRecord(user, parentUserId, { sections: ["identity"] });
@@ -697,99 +697,5 @@ parentRecordRouter.get("/api/parents/crm/owner-options", requireAuth, async (req
     res.json(users);
   } catch (e: any) {
     fail(res, e, "owner options");
-  }
-});
-
-// ─── Tags ───────────────────────────────────────────────────────────────────
-
-parentRecordRouter.get("/api/parents/crm/tag-vocabulary", requireAuth, async (req, res) => {
-  try {
-    const viewer = resolveCrmViewer(req.user as any);
-    const where = viewer.isAdmin
-      ? { isActive: true }
-      : { isActive: true, scope: "PROVIDER", providerId: viewer.providerId as string };
-    const tags = await prisma.parentTagDefinition.findMany({
-      where,
-      orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
-    });
-    res.json(tags);
-  } catch (e: any) {
-    fail(res, e, "tag vocabulary");
-  }
-});
-
-parentRecordRouter.post("/api/parents/crm/tag-vocabulary", requireAuth, async (req, res) => {
-  try {
-    const viewer = resolveCrmViewer(req.user as any);
-    const target = resolveWriteTarget(viewer, req.body?.scope, req.body?.providerId);
-    const label = String(req.body?.label || "").trim();
-    if (!label) return res.status(400).json({ message: "A tag needs a label" });
-    const tag = await prisma.parentTagDefinition.create({
-      data: {
-        scope: target.scope,
-        providerId: target.providerId,
-        label,
-        colorToken: String(req.body?.colorToken || "accent"),
-        createdByUserId: viewer.userId,
-      },
-    });
-    res.json(tag);
-  } catch (e: any) {
-    fail(res, e, "create tag");
-  }
-});
-
-parentRecordRouter.post("/api/parents/:id/tags", requireAuth, async (req, res) => {
-  try {
-    const viewer = resolveCrmViewer(req.user as any);
-    const accountKey = await assertCanReachParent(req.user as any, String(req.params.id));
-    const tagId = String(req.body?.tagId || "");
-    const def = await prisma.parentTagDefinition.findUnique({ where: { id: tagId } });
-
-    // 404, not 403, for a tag the caller cannot see. Otherwise assignment
-    // becomes a probe for GoStork's private vocabulary: "it failed with 403"
-    // tells you the id exists.
-    const visible = def && (viewer.isAdmin || (def.scope === "PROVIDER" && def.providerId === viewer.providerId));
-    if (!visible) return res.status(404).json({ message: "Tag not found" });
-
-    const row = await prisma.parentTagAssignment.upsert({
-      where: { parentAccountId_tagId: { parentAccountId: accountKey, tagId: def!.id } },
-      create: {
-        parentAccountId: accountKey,
-        tagId: def!.id,
-        // Copied from the definition server-side, never from the client.
-        scope: def!.scope,
-        providerId: def!.providerId,
-        assignedByUserId: viewer.userId,
-      },
-      update: {},
-    });
-
-    emitJourneyEvent({
-      eventType: "CRM_TAG_ADDED",
-      parentAccountId: accountKey,
-      providerId: def!.providerId,
-      actorRole: viewer.isAdmin ? "admin" : "provider",
-      metadata: { tagId: def!.id, scope: def!.scope },
-    });
-    res.json(row);
-  } catch (e: any) {
-    fail(res, e, "add tag");
-  }
-});
-
-parentRecordRouter.delete("/api/parents/:id/tags/:tagId", requireAuth, async (req, res) => {
-  try {
-    const viewer = resolveCrmViewer(req.user as any);
-    const accountKey = await assertCanReachParent(req.user as any, String(req.params.id));
-    const row = await prisma.parentTagAssignment.findUnique({
-      where: { parentAccountId_tagId: { parentAccountId: accountKey, tagId: String(req.params.tagId) } },
-    });
-    if (!row) return res.status(404).json({ message: "Tag not found" });
-    if (!canMutateCrmRow(viewer, row as any)) return res.status(404).json({ message: "Tag not found" });
-    await prisma.parentTagAssignment.delete({ where: { id: row.id } });
-    res.json({ ok: true });
-  } catch (e: any) {
-    fail(res, e, "remove tag");
   }
 });

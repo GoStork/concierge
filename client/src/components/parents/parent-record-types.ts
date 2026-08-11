@@ -126,17 +126,6 @@ export interface CrmOwner {
   ownerPhotoUrl?: string | null;
 }
 
-export interface CrmTag {
-  id: string;
-  tagId: string;
-  scope: CrmScope;
-  providerId: string | null;
-  label: string;
-  colorToken: string;
-  /** assignedAt - the activity feed places tags chronologically. */
-  createdAt?: string;
-  assignedByUserId?: string | null;
-}
 
 export interface MoneyGroup {
   providerId: string;
@@ -274,7 +263,6 @@ export interface ParentRecord {
     notes: CrmNote[];
     tasks: CrmTask[];
     owners: CrmOwner[];
-    tags: CrmTag[];
   };
 }
 
@@ -320,5 +308,4 @@ export interface ParentTableRow {
   isDisabled?: boolean;
   owner?: { userId?: string; name: string | null } | null;
   nextStep?: { id: string; title: string; dueAt: string; priority?: string; type?: string; overdue: boolean } | null;
-  tags?: { tagId: string; label: string; colorToken: string }[];
 }

@@ -38,7 +38,6 @@ import {
   ParentInvoicesCell,
   SERVICE_LABELS,
   ServiceChips,
-  TagsCell,
   dedupeHouseholdPhones,
   isLiveInvoice,
 } from "./parent-cells";
@@ -237,7 +236,6 @@ export function ParentsTable({
             <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
             <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
             <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
-            <SortableTableHead label="Tags" sortKey="tags" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-tags" />
             {rowActions && <TableHead className="text-right whitespace-nowrap sticky right-0 z-20 bg-muted" style={pinR}>Actions</TableHead>}
           </TableRow>
         </TableHeader>
@@ -473,9 +471,6 @@ export function ParentsTable({
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap">
                   <NextStepCell nextStep={row.nextStep} testId={`cell-next-step-${row.id}`} />
-                </TableCell>
-                <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <TagsCell tags={row.tags} testId={`cell-tags-${row.id}`} />
                 </TableCell>
 
                 {rowActions && (
