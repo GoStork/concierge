@@ -22,6 +22,7 @@ import { parentAccountKey, resolveParentGates, resolveParentGatesBatch } from ".
 import { emitJourneyEvent } from "./journey-events";
 import { blockContactInfo } from "./contact-guard";
 import { sanitizeNoteHtml, noteHtmlToText } from "./note-html";
+import { reconcileTaskKeys } from "./task-materializer";
 
 export const parentRecordRouter = Router();
 
@@ -563,11 +564,15 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
     const providerId = user?.providerId;
     if (!providerId) return res.status(403).json({ message: "Forbidden" });
 
-    const rows = await prisma.parentTask.findMany({
+    const open = await prisma.parentTask.findMany({
       where: { providerId, status: "OPEN" },
       orderBy: { dueAt: "asc" },
       take: 200,
     });
+    // Anything the system can see is finished closes itself here rather than
+    // waiting for the next ten-minute sweep, so the queue is never telling
+    // someone to do what they just did.
+    const rows = await reconcileTaskKeys(prisma as any, open as any[]);
     if (!rows.length) return res.json({ tasks: [] });
 
     // Parent NAMES go through the same gate as everywhere else: a family who

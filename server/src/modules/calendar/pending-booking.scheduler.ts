@@ -361,7 +361,7 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
       const { runTaskMaterializeSweep } = await import("../../../task-materializer");
       await runTaskMaterializeSweep(prisma);
     } catch (err: any) {
-      console.error(`[tasks] Cron error: `);
+      console.error(`[tasks] Cron error: ${err.message}`);
     }
     // Task pushes: the per-task reminder, and the 8am digest which fires at
     // 8am in each assignee's own timezone rather than one server hour.
@@ -370,7 +370,7 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
       await runTaskReminderSweep(prisma, notifications);
       await runTaskDigestSweep(prisma, notifications);
     } catch (err: any) {
-      console.error(`[tasks] Reminder cron error: `);
+      console.error(`[tasks] Reminder cron error: ${err.message}`);
     }
     // Phase 8: post-handoff review check-ins (+1 reminder after 3 days).
     try {

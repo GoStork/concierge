@@ -57,6 +57,32 @@ const APPROVAL_TYPES = [
   "agreement_draft_approval", "provider_readiness_prompt",
 ];
 
+/**
+ * What "still outstanding" MEANS, per kind, in one place.
+ *
+ * Both readers below depend on these: the sweep, which asks the question for
+ * every artifact on the platform, and reconcileTaskKeys, which asks it for the
+ * handful of tasks someone is looking at right now. Written once so the two
+ * can never come to disagree about whether a piece of work is done.
+ */
+export const LIVE_WHERE = {
+  whisper: { status: "PENDING" },
+  // PUBLISHED only: a review still in moderation is not the provider's to
+  // answer yet, and providerReply is the field that says they have.
+  review: { providerReply: null, visibility: "PUBLIC", status: "PUBLISHED" },
+  agreement: { status: "SENT", supersededAt: null },
+} as const;
+
+/**
+ * An approval card is done when it has been resolved - approved, rejected or
+ * superseded, they all count, because the decision is the work. A readiness
+ * prompt is a question rather than a decision, so it is done when answered.
+ */
+export function isApprovalCardLive(cardType: string, data: any): boolean {
+  const d = data || {};
+  return cardType === "provider_readiness_prompt" ? !d.answered : !d.resolvedAt;
+}
+
 const KIND_TITLE: Record<QueueKind, (subject: string) => string> = {
   approval: (s) => `Review and approve: ${s}`,
   whisper: (s) => `Answer a question from ${s}`,
@@ -82,17 +108,15 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
       },
     }),
     db.silentQuery.findMany({
-      where: { status: "PENDING" },
+      where: { ...LIVE_WHERE.whisper },
       select: { id: true, providerId: true, createdAt: true, session: { select: { userId: true } } },
     }),
-    // PUBLISHED only: a review still in moderation is not the provider's to
-    // answer yet, and providerReply is the field that says they have.
     db.providerReview.findMany({
-      where: { providerReply: null, visibility: "PUBLIC", status: "PUBLISHED" },
+      where: { ...LIVE_WHERE.review },
       select: { id: true, providerId: true, parentAccountId: true, createdAt: true },
     }),
     db.agreement.findMany({
-      where: { status: "SENT", supersededAt: null },
+      where: { ...LIVE_WHERE.agreement },
       select: { id: true, providerId: true, parentUserId: true, documentType: true, createdAt: true },
     }),
   ]);
@@ -117,10 +141,7 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
     const uid = c.session?.userId;
     if (!pid || !uid) continue;
     const data = (c.uiCardData as any) || {};
-    // Same resolved test the queue endpoint uses: a readiness prompt is done
-    // when it has been answered, everything else when it has been resolved.
-    const resolved = c.uiCardType === "provider_readiness_prompt" ? !!data.answered : !!data.resolvedAt;
-    if (resolved) continue;
+    if (!isApprovalCardLive(c.uiCardType, data)) continue;
     items.push({
       systemKey: `approval:${c.id}`,
       providerId: pid,
@@ -260,5 +281,84 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
     }
   } catch (e: any) {
     console.error(`[tasks] materialize sweep failed: ${e?.message}`);
+  }
+}
+
+/**
+ * Close, right now, any of these tasks whose work is already done.
+ *
+ * The sweep above runs every ten minutes, which is fine for a queue nobody is
+ * watching and useless the moment someone IS: approve the agreement in the
+ * chat, come straight back to the family's record, and the task that sent you
+ * there is still sitting in the list. Ten minutes of a coordinator being told
+ * to do a thing they just did.
+ *
+ * So the two readers that show tasks - the family record and the Home queue -
+ * verify the handful of rows they are about to render, using the same
+ * predicates the sweep uses, and close what is finished before answering. Only
+ * SYSTEM tasks: a task somebody typed is theirs to close.
+ *
+ * Deliberately NOT wired into each act that resolves an artifact. There are a
+ * dozen of those - approve, reject, supersede, sign, void, answer, reply - and
+ * a rule that has to be remembered at a dozen call sites is a rule that gets
+ * missed at the thirteenth. Asking the question at the two places that display
+ * the answer cannot be forgotten by code written later.
+ *
+ * Returns the tasks that are genuinely still open.
+ */
+export async function reconcileTaskKeys<T extends { id: string; source?: string; systemKey?: string | null }>(
+  db: Db, tasks: T[],
+): Promise<T[]> {
+  const system = tasks.filter((t) => t.source === "SYSTEM" && t.systemKey);
+  if (!system.length) return tasks;
+
+  const idsOf = (kind: string) => system
+    .filter((t) => t.systemKey!.startsWith(`${kind}:`))
+    .map((t) => t.systemKey!.slice(kind.length + 1));
+
+  const [approvalIds, whisperIds, reviewIds, agreementIds] =
+    ["approval", "whisper", "review", "agreement"].map(idsOf);
+
+  try {
+    const [cards, whispers, reviews, agreements] = await Promise.all([
+      approvalIds.length
+        ? db.aiChatMessage.findMany({ where: { id: { in: approvalIds } }, select: { id: true, uiCardType: true, uiCardData: true } })
+        : [],
+      whisperIds.length
+        ? db.silentQuery.findMany({ where: { id: { in: whisperIds }, ...LIVE_WHERE.whisper }, select: { id: true } })
+        : [],
+      reviewIds.length
+        ? db.providerReview.findMany({ where: { id: { in: reviewIds }, ...LIVE_WHERE.review }, select: { id: true } })
+        : [],
+      agreementIds.length
+        ? db.agreement.findMany({ where: { id: { in: agreementIds }, ...LIVE_WHERE.agreement }, select: { id: true } })
+        : [],
+    ]);
+
+    const live = new Set<string>([
+      ...(cards as any[])
+        .filter((c) => isApprovalCardLive(c.uiCardType, c.uiCardData))
+        .map((c) => `approval:${c.id}`),
+      ...(whispers as any[]).map((w) => `whisper:${w.id}`),
+      ...(reviews as any[]).map((r) => `review:${r.id}`),
+      ...(agreements as any[]).map((a) => `agreement:${a.id}`),
+    ]);
+
+    // An artifact that no longer exists at all (a deleted draft) is not
+    // outstanding work either, so anything missing from `live` closes.
+    const doneIds = system.filter((t) => !live.has(t.systemKey!)).map((t) => t.id);
+    if (!doneIds.length) return tasks;
+
+    await db.parentTask.updateMany({
+      where: { id: { in: doneIds }, status: "OPEN" },
+      data: { status: "DONE", completedAt: new Date() },
+    });
+    const closed = new Set(doneIds);
+    return tasks.filter((t) => !closed.has(t.id));
+  } catch (e: any) {
+    // A reconcile that fails must not take the page down with it - the worst
+    // case is the ten-minute sweep closing it instead, which is where we were.
+    console.error(`[tasks] on-demand reconcile failed: ${e?.message}`);
+    return tasks;
   }
 }

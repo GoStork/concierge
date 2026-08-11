@@ -33,6 +33,7 @@ import {
 } from "./parent-privacy";
 import { isGostorkStaff } from "./parent-crm";
 import { sanitizeNoteHtml } from "./note-html";
+import { reconcileTaskKeys } from "./task-materializer";
 import { winbackMessageCopy } from "./src/modules/calendar/call-outcome.sweep";
 
 export class ParentRecordError extends Error {
@@ -1233,7 +1234,9 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
           where: { ...crmWhere, deletedAt: null },
           orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
         }),
-        prisma.parentTask.findMany({ where: { ...crmWhere, status: "OPEN" }, orderBy: { dueAt: "asc" } }),
+        prisma.parentTask.findMany({ where: { ...crmWhere, status: "OPEN" }, orderBy: { dueAt: "asc" } })
+          // Close what the system can already see is done, before showing it.
+          .then((rows: any[]) => reconcileTaskKeys(prisma as any, rows)),
         prisma.parentOwner.findMany({ where: crmWhere }),
       ])
     : [[], [], []];
