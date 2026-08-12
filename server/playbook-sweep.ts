@@ -171,10 +171,10 @@ export async function runPlaybookSweep(db: Db): Promise<void> {
       where: { isActive: true, isStarter: false },
       include: { steps: { orderBy: { sortOrder: "asc" } } },
     });
-    // Nobody has authored anything - nothing to fire, nothing to track. The
-    // recency window makes skipping snapshot upkeep here safe: when the first
-    // playbook appears, old history reads as old and stays quiet.
-    if (playbooks.length === 0) return;
+    // Snapshots are maintained even with ZERO playbooks authored: the silence
+    // sweep reads ParentStageSnapshot for each family's stage per line, so
+    // this table is platform state, not playbook bookkeeping. The recency
+    // window keeps a newly-authored playbook from firing on old history.
 
     // Every family engaged with a provider org. Bot accounts never open a
     // provider thread, so this set stays the size of the real customer base.

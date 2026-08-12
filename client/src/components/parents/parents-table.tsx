@@ -33,6 +33,7 @@ import {
   MatchStatusBadge,
   NextStepCell,
   OwnerCell,
+  QuietForCell,
   ParentAgreementsCell,
   ParentCostSheetsCell,
   ParentInvoicesCell,
@@ -164,8 +165,8 @@ export function ParentsTable({
   selectable = false, selectedIds, onToggleSelect, onToggleSelectAll,
   allVisibleSelected = false, someSelected = false, rowActions,
 }: ParentsTableProps) {
-  // checkbox + 12 shared + admin provider column + optional actions
-  const colSpan = 12 + (selectable ? 1 : 0) + (isAdmin ? 1 : 0) + (rowActions ? 1 : 0);
+  // checkbox + 13 shared (incl. Quiet for) + admin provider column + optional actions
+  const colSpan = 13 + (selectable ? 1 : 0) + (isAdmin ? 1 : 0) + (rowActions ? 1 : 0);
 
   // Every data column shows from xl up (user request: providers see the same
   // table admins do, Actions aside). Below xl the narrow set survives; the
@@ -245,6 +246,9 @@ export function ParentsTable({
             <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-created" />
             <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
             <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
+            {/* #5 Silence: days since the family's last touch, so the list can
+                be worked by silence rather than only by stage. */}
+            <SortableTableHead label="Quiet for" sortKey="quiet" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-quiet" />
             {rowActions && <TableHead className="text-right whitespace-nowrap sticky right-0 z-20 bg-muted" style={pinR}>Actions</TableHead>}
           </TableRow>
         </TableHeader>
@@ -491,8 +495,11 @@ export function ParentsTable({
                 <TableCell className="hidden xl:table-cell whitespace-nowrap">
                   <OwnerCell owner={row.owner} testId={`cell-owner-${row.id}`} />
                 </TableCell>
+                {/* Was a stray second Next-step cell with no header of its own,
+                    which shifted every row one column right of the header
+                    strip. The slot now carries the Quiet-for column. */}
                 <TableCell className="hidden xl:table-cell whitespace-nowrap">
-                  <NextStepCell nextStep={row.nextStep} testId={`cell-next-step-${row.id}`} />
+                  <QuietForCell lastTouchAt={row.lastTouchAt} testId={`cell-quiet-${row.id}`} />
                 </TableCell>
 
                 {rowActions && (

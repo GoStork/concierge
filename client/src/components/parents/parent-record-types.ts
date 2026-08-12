@@ -331,4 +331,6 @@ export interface ParentTableRow {
   /** Signup trust (admin only): QUARANTINED rows populate the "Needs review" queue. */
   trustState?: "TRUSTED" | "QUARANTINED" | string;
   trustReasons?: string[];
+  /** #5 Silence: the family's last touch (admin: any org; provider: own org). */
+  lastTouchAt?: string | null;
 }

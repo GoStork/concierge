@@ -38,6 +38,7 @@ import DocumentsTab from "@/components/documents-tab";
 import ProviderAutoReplyTab from "@/components/provider-auto-reply-tab";
 import ScrapersSummaryPage from "@/pages/scrapers-summary-page";
 import AccountPlaybooksPage from "@/pages/account-playbooks-page";
+import AccountAutomationPage from "@/pages/account-automation-page";
 import AdminTestRunnerPage from "@/pages/admin-test-runner-page";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -89,6 +90,7 @@ const allTabs = [
   { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
   { to: '/account/playbooks', label: 'Playbooks', icon: BookOpenCheck, roles: 'provider' as const },
+  { to: '/account/automation', label: 'Automation', icon: RefreshCw, roles: 'provider' as const },
   { to: '/account/ip-form-template', label: 'Parent Form', icon: ClipboardList, roles: 'admin' as const },
   { to: '/account/scrapers', label: 'Scrapers', icon: RefreshCw, roles: 'admin' as const },
   { to: '/account/test-runner', label: 'Test Runner', icon: FlaskConical, roles: 'admin' as const },
@@ -1763,7 +1765,7 @@ export default function AccountPage() {
     '/account', '/account/company', '/account/team', '/account/members',
     '/account/calendar', '/account/costs', '/account/documents', '/account/auto-replies',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors', '/account/doctors',
-    '/account/knowledge', '/account/concierge', '/account/playbooks', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers', '/account/test-runner',
+    '/account/knowledge', '/account/concierge', '/account/playbooks', '/account/automation', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers', '/account/test-runner',
   ];
 
   const tabs = [...allTabs, ...donorTabs].filter(tab => {
@@ -1901,6 +1903,9 @@ export default function AccountPage() {
         } />
         {(isProvider || isAdmin) && (
           <Route path="playbooks" element={<AccountPlaybooksPage />} />
+        )}
+        {(isProvider || isAdmin) && (
+          <Route path="automation" element={<AccountAutomationPage />} />
         )}
         {isAdmin && (
           <Route path="ip-form-template" element={<AdminIpFormTemplatePage />} />

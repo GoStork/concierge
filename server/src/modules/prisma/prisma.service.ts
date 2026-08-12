@@ -299,6 +299,15 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.parentStageSnapshot;
   }
 
+  // Silence signal (CRM Phase 9 §5).
+  get silenceConfig() {
+    return prisma.silenceConfig;
+  }
+
+  get silenceState() {
+    return prisma.silenceState;
+  }
+
   get journeyPreferences() {
     return prisma.journeyPreferences;
   }

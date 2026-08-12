@@ -1406,6 +1406,21 @@ export class UsersController {
       : [[], [], []];
     const ipFormByKey = new Map((ipForms as any[]).map((f: any) => [f.parentAccountId, f.status]));
 
+    // #5 Silence: the family's most recent touch with ANY org, from the
+    // sweep's cache - the admin "Quiet for" column reads days since this.
+    const adminLastTouchByKey = new Map<string, Date>();
+    if (crmKeys.length) {
+      const states = await this.prisma.silenceState.findMany({
+        where: { parentAccountId: { in: crmKeys } },
+        select: { parentAccountId: true, lastTouchAt: true },
+      }).catch(() => []);
+      for (const s of states as any[]) {
+        if (!s.lastTouchAt) continue;
+        const cur = adminLastTouchByKey.get(s.parentAccountId);
+        if (!cur || s.lastTouchAt > cur) adminLastTouchByKey.set(s.parentAccountId, s.lastTouchAt);
+      }
+    }
+
     // The owner row snapshots the name (so a rename never blanks a byline) but
     // not the photo - a photo snapshot goes stale the moment someone changes
     // theirs. Resolve it live; a missing photo falls back to initials.
@@ -1445,6 +1460,7 @@ export class UsersController {
         matchStatus: statusByUser.get(parent.id) || null,
         serviceStatuses: serviceStatusesOf(parent.id),
         ipFormStatus: ipFormByKey.get(crmKey) ?? null,
+        lastTouchAt: adminLastTouchByKey.get(crmKey) ?? null,
         owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
         nextStep: step
           ? { id: step.id, title: step.title, dueAt: step.dueAt, priority: step.priority, type: step.type, overdue: new Date(step.dueAt).getTime() < nowMs }
@@ -2175,7 +2191,7 @@ export class UsersController {
     // CRM state for this org only. Scoped in the WHERE clause, and read AFTER
     // the gate batch so it is keyed on exactly the same gateKeys - a row the
     // drop-filter below removes never gets its CRM state built at all.
-    const [crmOwners, crmFollowUps, ipForms] = gateKeys.length
+    const [crmOwners, crmFollowUps, ipForms, silenceStates] = gateKeys.length
       ? await Promise.all([
           this.prisma.parentOwner.findMany({
             where: { parentAccountId: { in: gateKeys }, scope: "PROVIDER", providerId },
@@ -2193,8 +2209,15 @@ export class UsersController {
             where: { parentAccountId: { in: gateKeys } },
             select: { parentAccountId: true, status: true },
           }),
+          // #5 Silence: the sweep's cached last touch with THIS org, for the
+          // "Quiet for" column.
+          this.prisma.silenceState.findMany({
+            where: { parentAccountId: { in: gateKeys }, providerId },
+            select: { parentAccountId: true, lastTouchAt: true },
+          }).catch(() => []),
         ])
-      : [[], [], []];
+      : [[], [], [], []];
+    const lastTouchByKey = new Map((silenceStates as any[]).map((s: any) => [s.parentAccountId, s.lastTouchAt]));
     const ipFormByKey = new Map((ipForms as any[]).map((f: any) => [f.parentAccountId, f.status]));
     // The partial unique indexes guarantee at most one owner and one OPEN
     // follow-up per key, so these are plain Maps with no dedup pass.
@@ -2230,6 +2253,7 @@ export class UsersController {
           // Staff data about the parent, not parent PII, so it sits outside
           // redactParentContact - but still only on rows that survive Gate A.
           ipFormStatus: ipFormByKey.get(crmKey) ?? null,
+          lastTouchAt: lastTouchByKey.get(crmKey) ?? null,
           owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
           nextStep: step
             ? { id: step.id, title: step.title, dueAt: step.dueAt, priority: step.priority, type: step.type, overdue: new Date(step.dueAt).getTime() < nowMs }

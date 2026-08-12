@@ -113,7 +113,13 @@ export type JourneyEventType =
   | "MATCHED_ELSEWHERE_NOTIFIED"
   // GoStork has been alerted to a commitment (an invoice paid or an agreement
   // signed). Doubles as the digest cursor.
-  | "COMMITMENT_ALERTED";
+  | "COMMITMENT_ALERTED"
+  // Silence signal (server/silence-sweep.ts). CHECKIN = Eva actually sent the
+  // warm check-in in the shared thread; SHADOW = the first-7-days dry run that
+  // records who WOULD have been messaged (visible to GoStork admin) and sends
+  // nothing. metadata: { line, quietDays, content }.
+  | "SILENCE_EVA_CHECKIN"
+  | "SILENCE_EVA_SHADOW";
 
 export type JourneyActor = "parent" | "provider" | "system" | "admin";
 

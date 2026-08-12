@@ -142,6 +142,9 @@ export function log(message: string, source = "nestjs") {
   // Stage playbooks (CRM Phase 9 §3): authoring CRUD + bulk apply.
   const { playbooksRouter } = await import("./playbooks-router");
   app.use(playbooksRouter);
+  // Silence-signal settings (CRM Phase 9 §5): /account/automation.
+  const { automationRouter } = await import("./automation-router");
+  app.use(automationRouter);
   // Cyber-security settings: per-country verification policy + the OTP abuse
   // log, born from the production toll-fraud signup wave (docs/crm-phase-9).
   const { securityRouter } = await import("./security-router");

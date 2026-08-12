@@ -393,10 +393,15 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
 export async function reconcileTaskKeys<T extends { id: string; source?: string; systemKey?: string | null }>(
   db: Db, tasks: T[],
 ): Promise<T[]> {
-  // Only the queue kinds this file owns - a playbook or silence task is not
-  // this reconciler's to close (silence has its own read-time reconcile).
-  const system = tasks.filter((t) => t.source === "SYSTEM" && t.systemKey && isQueueKey(t.systemKey));
-  if (!system.length) return tasks;
+  // Silence tasks close the moment the family (or the team) touches the
+  // thread again - checked here so a coordinator reading the record right
+  // after a reply is not told to chase a family that just answered.
+  const remaining = await reconcileSilenceTasks(db, tasks);
+
+  // Only the queue kinds this file owns - a playbook task has no artifact to
+  // reconcile against, and silence was handled above.
+  const system = remaining.filter((t) => t.source === "SYSTEM" && t.systemKey && isQueueKey(t.systemKey));
+  if (!system.length) return remaining;
 
   const idsOf = (kind: string) => system
     .filter((t) => t.systemKey!.startsWith(`${kind}:`))
@@ -433,7 +438,7 @@ export async function reconcileTaskKeys<T extends { id: string; source?: string;
     // outstanding work either, so anything missing from `live` closes.
     const done = system.filter((t) => !live.has(t.systemKey!));
     const doneIds = done.map((t) => t.id);
-    if (!doneIds.length) return tasks;
+    if (!doneIds.length) return remaining;
 
     await db.parentTask.updateMany({
       where: { id: { in: doneIds }, status: "OPEN" },
@@ -472,11 +477,57 @@ export async function reconcileTaskKeys<T extends { id: string; source?: string;
       }));
     }
     const closed = new Set(doneIds);
-    return tasks.filter((t) => !closed.has(t.id));
+    return remaining.filter((t) => !closed.has(t.id));
   } catch (e: any) {
     // A reconcile that fails must not take the page down with it - the worst
     // case is the ten-minute sweep closing it instead, which is where we were.
     console.error(`[tasks] on-demand reconcile failed: ${e?.message}`);
+    return remaining;
+  }
+}
+
+/**
+ * Silence tasks (silence:<accountKey>:<line>:<nth>) have no artifact - their
+ * "done" is the family or the team touching the thread again. Checked at
+ * read time with the cheapest honest signal: any human message on the org's
+ * threads after the task was raised. The 10-minute silence sweep is the
+ * backstop with the full last-touch definition.
+ */
+async function reconcileSilenceTasks<T extends { id: string; source?: string; systemKey?: string | null }>(
+  db: Db, tasks: T[],
+): Promise<T[]> {
+  const silence = tasks.filter(
+    (t: any) => t.source === "SYSTEM" && t.systemKey?.startsWith("silence:") && t.providerId,
+  ) as any[];
+  if (!silence.length) return tasks;
+  try {
+    const closedIds: string[] = [];
+    for (const t of silence) {
+      const acct = String(t.systemKey).split(":")[1];
+      if (!acct) continue;
+      const memberIds = (await db.user.findMany({
+        where: { OR: [{ parentAccountId: acct }, { id: acct }] },
+        select: { id: true },
+      })).map((u: any) => u.id);
+      const touched = await db.aiChatMessage.findFirst({
+        where: {
+          role: "user",
+          createdAt: { gt: t.createdAt },
+          session: { userId: { in: memberIds }, providerId: t.providerId },
+        },
+        select: { id: true },
+      });
+      if (touched) closedIds.push(t.id);
+    }
+    if (!closedIds.length) return tasks;
+    await db.parentTask.updateMany({
+      where: { id: { in: closedIds }, status: "OPEN" },
+      data: { status: "DONE", completedAt: new Date() },
+    });
+    const closed = new Set(closedIds);
+    return tasks.filter((t) => !closed.has(t.id));
+  } catch (e: any) {
+    console.error(`[tasks] silence reconcile failed: ${e?.message}`);
     return tasks;
   }
 }

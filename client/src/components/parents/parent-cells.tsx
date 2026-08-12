@@ -373,6 +373,30 @@ export interface ParentSortSource {
   agreements?: unknown[] | null;
   owner?: { name?: string | null } | null;
   nextStep?: { dueAt: string } | null;
+  lastTouchAt?: string | null;
+}
+
+/** #5 Silence: whole days since the family's last touch, or null when unknown. */
+export function quietDaysOf(lastTouchAt: string | Date | null | undefined): number | null {
+  if (!lastTouchAt) return null;
+  const t = new Date(lastTouchAt).getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
+}
+
+/**
+ * "Quiet for" cell: days since the last touch the silence sweep saw. Warm
+ * amber once it has been a week - the same signal the automation acts on.
+ */
+export function QuietForCell({ lastTouchAt, testId }: { lastTouchAt?: string | null; testId?: string }) {
+  const days = quietDaysOf(lastTouchAt);
+  if (days === null) return <span className="t-helper" data-testid={testId}>-</span>;
+  const label = days === 0 ? "Today" : days === 1 ? "1 day" : `${days} days`;
+  return (
+    <span className={days >= 7 ? "text-sm font-ui text-warning" : "t-helper"} data-testid={testId}>
+      {label}
+    </span>
+  );
 }
 
 export function parentSortValue(key: string, src: ParentSortSource): string | number | null {
@@ -395,6 +419,7 @@ export function parentSortValue(key: string, src: ParentSortSource): string | nu
     case "agreements": return src.agreements?.length || null;
     case "owner": return src.owner?.name || null;
     case "nextDue": return src.nextStep?.dueAt ? new Date(src.nextStep.dueAt).getTime() : null;
+    case "quiet": return quietDaysOf(src.lastTouchAt);
     default: return null;
   }
 }

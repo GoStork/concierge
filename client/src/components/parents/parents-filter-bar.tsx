@@ -26,7 +26,16 @@ export interface ParentsFilterState {
   next: string;
   /** "submitted" | "missing" | "all" - Intended Parent form state. */
   form: string;
+  /** #5 Silence: minimum days quiet ("3" | "7" | "14" | "30"), "all" = off. */
+  quiet?: string;
 }
+
+export const QUIET_FILTER_LABELS: Record<string, string> = {
+  "3": "Quiet 3+ days",
+  "7": "Quiet 7+ days",
+  "14": "Quiet 14+ days",
+  "30": "Quiet 30+ days",
+};
 
 export function ParentsFilterBar({
   state, setParam, setParams, onClear, ownerOptions, testIdPrefix, reviewPill,
@@ -44,7 +53,7 @@ export function ParentsFilterBar({
 }) {
   const hasActive = !!(state.q.trim() || state.from || state.to || state.services.length
     || state.statuses.length || state.owner !== "all" || state.next !== "all"
-    || state.form !== "all");
+    || state.form !== "all" || (state.quiet && state.quiet !== "all"));
 
   // "My leads" and "No owner" are owner+next-step combinations, and they used to
   // sit BOTH here as pills and inside the owners dropdown, which read as two
@@ -103,6 +112,14 @@ export function ParentsFilterBar({
             selected={state.form === "all" ? [] : [state.form]}
             onChange={(next) => setParam("form", next[0] || "")}
             testId={`${testIdPrefix}-form-filter`}
+          />
+          <FilterDropdown
+            single
+            label="Quiet for"
+            options={Object.entries(QUIET_FILTER_LABELS)}
+            selected={!state.quiet || state.quiet === "all" ? [] : [state.quiet]}
+            onChange={(next) => setParam("quiet", next[0] || "")}
+            testId={`${testIdPrefix}-quiet-filter`}
           />
           <FilterDropdown
             single

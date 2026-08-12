@@ -371,6 +371,16 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
     } catch (err: any) {
       console.error(`[playbooks] Cron error: ${err.message}`);
     }
+    // Silence signal: Eva check-in at the stage threshold (shadow for each
+    // org's first week), coordinator task at the threshold again, everything
+    // self-closing on reply. Runs AFTER the playbook sweep because it reads
+    // the ParentStageSnapshot rows that sweep maintains.
+    try {
+      const { runSilenceSweep } = await import("../../../silence-sweep");
+      await runSilenceSweep(prisma, notifications);
+    } catch (err: any) {
+      console.error(`[silence] Cron error: ${err.message}`);
+    }
     // Task pushes: the per-task reminder, and the 8am digest which fires at
     // 8am in each assignee's own timezone rather than one server hour.
     try {

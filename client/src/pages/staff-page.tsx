@@ -19,6 +19,7 @@ import {
   matchesMultiAny,
   parentSortValue,
   parseMulti,
+  quietDaysOf,
   serviceEnumKey,
   isLiveInvoice,
 } from "@/components/parents";
@@ -100,6 +101,7 @@ function GostorkAdminUsersView() {
   const ownerFilter = searchParams.get("owner") || "all";
   const nextFilter = searchParams.get("next") || "all";
   const formFilter = searchParams.get("form") || "all";
+  const quietFilter = searchParams.get("quiet") || "all";
   const reviewFilter = searchParams.get("review") === "1";
   const setParams = useCallback((entries: Record<string, string>) => {
     // One atomic update: successive single writes each build from the same
@@ -138,7 +140,7 @@ function GostorkAdminUsersView() {
     staleTime: 15_000,
   });
 
-  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter.length > 0 || statusFilter.length > 0 || ownerFilter !== "all" || nextFilter !== "all" || formFilter !== "all" || reviewFilter;
+  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter.length > 0 || statusFilter.length > 0 || ownerFilter !== "all" || nextFilter !== "all" || formFilter !== "all" || quietFilter !== "all" || reviewFilter;
 
   // Signups flagged at creation (per-IP velocity, etc.). Count drives the pill.
   const reviewCount = parentUsers.filter(m => (overview[m.id]?.trustState) === "QUARANTINED").length;
@@ -168,6 +170,10 @@ function GostorkAdminUsersView() {
     if (!matchesMulti(statusFilter, overview[member.id]?.matchStatus)) return false;
     if (!matchesIpForm(formFilter, overview[member.id]?.ipFormStatus)) return false;
     if (!matchesCrmFilters(overview[member.id] || {}, { owner: ownerFilter, next: nextFilter }, user?.id)) return false;
+    if (quietFilter !== "all") {
+      const days = quietDaysOf(overview[member.id]?.lastTouchAt);
+      if (days === null || days < Number(quietFilter)) return false;
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const fields = [
@@ -196,7 +202,7 @@ function GostorkAdminUsersView() {
     // (each built from the same stale params), so only the last key cleared.
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      for (const key of ["q", "from", "to", "svc", "status", "owner", "next", "form", "review"]) next.delete(key);
+      for (const key of ["q", "from", "to", "svc", "status", "owner", "next", "form", "quiet", "review"]) next.delete(key);
       return next;
     }, { replace: true });
   }
@@ -212,7 +218,7 @@ function GostorkAdminUsersView() {
       serviceStatuses: o.serviceStatuses,
       createdAt: item.createdAt, updatedAt: o.updatedAt,
       costSheets: o.costSheets, invoices: o.invoices, agreements: o.agreements,
-      owner: o.owner, nextStep: o.nextStep,
+      owner: o.owner, nextStep: o.nextStep, lastTouchAt: o.lastTouchAt,
     });
   });
 
@@ -434,7 +440,7 @@ function GostorkAdminUsersView() {
       </div>
 
       <ParentsFilterBar
-        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, owner: ownerFilter, next: nextFilter, form: formFilter }}
+        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, owner: ownerFilter, next: nextFilter, form: formFilter, quiet: quietFilter }}
         setParam={updateUsersParam}
         setParams={setParams}
         onClear={clearFilters}
@@ -476,6 +482,7 @@ function GostorkAdminUsersView() {
             nextStep: o.nextStep ?? null,
             trustState: o.trustState ?? "TRUSTED",
             trustReasons: o.trustReasons ?? [],
+            lastTouchAt: o.lastTouchAt ?? null,
           };
         })}
         sortConfig={sortConfig}
@@ -633,11 +640,12 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
   const ownerFilter = searchParams.get("owner") || "all";
   const nextFilter = searchParams.get("next") || "all";
   const formFilter = searchParams.get("form") || "all";
-  const hasActiveFilters = !!(searchQuery || serviceFilter.length || statusFilter.length || dateFrom || dateTo || ownerFilter !== "all" || nextFilter !== "all" || formFilter !== "all");
+  const quietFilter = searchParams.get("quiet") || "all";
+  const hasActiveFilters = !!(searchQuery || serviceFilter.length || statusFilter.length || dateFrom || dateTo || ownerFilter !== "all" || nextFilter !== "all" || formFilter !== "all" || quietFilter !== "all");
   const clearFilters = () => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      ["q", "svc", "status", "from", "to", "owner", "next", "form"].forEach(k => next.delete(k));
+      ["q", "svc", "status", "from", "to", "owner", "next", "form", "quiet"].forEach(k => next.delete(k));
       return next;
     }, { replace: true });
   };
@@ -743,6 +751,10 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       if (statusFilter.length && !(p.serviceStatuses || []).some((ss: any) => matchesMulti(statusFilter, ss.status))) return false;
       if (!matchesIpForm(formFilter, p.ipFormStatus)) return false;
       if (!matchesCrmFilters(p, { owner: ownerFilter, next: nextFilter }, user?.id)) return false;
+      if (quietFilter !== "all") {
+        const days = quietDaysOf(p.lastTouchAt);
+        if (days === null || days < Number(quietFilter)) return false;
+      }
       if (dateFrom && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) < new Date(`${dateFrom}T00:00:00`))) return false;
       if (dateTo && (!p.sessionCreatedAt || new Date(p.sessionCreatedAt) > new Date(`${dateTo}T23:59:59`))) return false;
       if (!searchQuery.trim()) return true;
@@ -760,7 +772,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       matchStatus: p.matchStatus,
       createdAt: p.sessionCreatedAt, updatedAt: p.sessionUpdatedAt,
       costSheets: p.costSheets, invoices: p.invoices, agreements: p.agreements,
-      owner: p.owner, nextStep: p.nextStep,
+      owner: p.owner, nextStep: p.nextStep, lastTouchAt: p.lastTouchAt,
     }),
   );
 
@@ -774,7 +786,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
       </div>
 
       <ParentsFilterBar
-        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, owner: ownerFilter, next: nextFilter, form: formFilter }}
+        state={{ q: searchQuery, from: dateFrom, to: dateTo, services: serviceFilter, statuses: statusFilter, owner: ownerFilter, next: nextFilter, form: formFilter, quiet: quietFilter }}
         setParam={setParam}
         setParams={setParams}
         onClear={clearFilters}
@@ -813,6 +825,7 @@ function ProviderParentContactsView({ providerId }: { providerId: string }) {
           owner: row.owner ?? null,
           nextStep: row.nextStep ?? null,
           tags: row.tags || [],
+          lastTouchAt: row.lastTouchAt ?? null,
         }))}
         sortConfig={sortConfig}
         onSort={handleSort}

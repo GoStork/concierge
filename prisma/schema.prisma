@@ -3074,6 +3074,49 @@ model ParentStageSnapshot {
   @@index([updatedAt])
 }
 
+// ─── Silence signal (CRM Phase 9 §5) ────────────────────────────────────────
+//
+// A family that simply goes quiet is invisible. The 10-minute sweep
+// (server/silence-sweep.ts) computes each family's last touch per org, and
+// when the quiet exceeds the stage's threshold: Eva sends one warm check-in
+// (SHADOW for the org's first 7 days - recorded, not sent), and if the quiet
+// continues past the threshold again, a SYSTEM task lands on the lead owner.
+
+/// Per-org silence automation settings, edited at /account/automation.
+/// The row with id "defaults" (providerId null) is GoStork's platform
+/// defaults; an org without its own row inherits it.
+model SilenceConfig {
+  id          String   @id @default(uuid())
+  providerId  String?  @unique
+  /// {stageId: days} overrides of SILENCE_DEFAULT_THRESHOLDS; null day = never.
+  thresholds  Json?
+  /// {serviceLine: boolean} - a missing line is ON.
+  lineEnabled Json?
+  /// Whether Eva's check-in step runs at all (an agency may want the task only).
+  evaEnabled  Boolean  @default(true)
+  enabled     Boolean  @default(true)
+  /// When silence went live for this org. Eva's parent-facing step runs in
+  /// SHADOW (computes + records, sends nothing) for the first 7 days after
+  /// this, then starts sending with no switch to flip.
+  shadowSince DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// The sweep's cached last-touch per (family x org) - what the "Quiet for"
+/// column reads. FK-by-convention like JourneyEvent.
+model SilenceState {
+  id              String    @id @default(uuid())
+  parentAccountId String
+  providerId      String
+  lastTouchAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([parentAccountId, providerId])
+  @@index([providerId, lastTouchAt])
+}
+
 /// Per-country verification policy, managed at /admin/security.
 ///
 /// A country with no row is ALLOWED - the world is open by default, because
