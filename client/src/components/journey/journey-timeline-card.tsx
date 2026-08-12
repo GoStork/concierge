@@ -445,6 +445,7 @@ export function JourneyTimelineCard({
   orientation = "vertical",
   serviceLine = null,
   live = false,
+  registeredFloor = false,
   testId = "journey-timeline",
 }: {
   /** Omit for the parent's own view (server resolves their account). */
@@ -481,6 +482,12 @@ export function JourneyTimelineCard({
    * non-live; they remount on navigation anyway.
    */
   live?: boolean;
+  /**
+   * Show a "Registered" baseline when there are no journey events yet, matching
+   * the parents-list floor (a family with an account but no milestones reads as
+   * Registered, not as "no activity"). Set on the record's Lead Status.
+   */
+  registeredFloor?: boolean;
   testId?: string;
 }) {
   const [eventsOpen, setEventsOpen] = useState(false);
@@ -528,6 +535,21 @@ export function JourneyTimelineCard({
     ? allJourneys.filter((j) => (j.serviceLine ?? j.journeyType) === serviceLine)
     : allJourneys;
   if (journeys.length === 0) {
+    // A family on a record IS registered - the parents list shows exactly this
+    // floor. "No activity" read as a bug next to a "Registered" pill in the list.
+    if (registeredFloor) {
+      return (
+        <div className="flex items-center gap-2" data-testid={`${testId}-registered`}>
+          <span
+            className="inline-flex items-center text-xs font-ui px-2.5 py-1 rounded-full"
+            style={{ background: "hsl(var(--brand-success) / 0.15)", color: "hsl(var(--brand-success))" }}
+          >
+            Registered
+          </span>
+          <span className="t-helper">No journey milestones yet - the family has an account and is exploring.</span>
+        </div>
+      );
+    }
     return <p className="t-helper" data-testid={`${testId}-empty`}>No journey activity yet.</p>;
   }
 

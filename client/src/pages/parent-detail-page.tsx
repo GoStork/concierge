@@ -293,6 +293,10 @@ export default function ParentDetailPage() {
                     <JourneyTimelineCard
                       parentUserId={record.parent.id}
                       providerId={isAdmin ? undefined : record.viewer.providerId || undefined}
+                      // A family on a record is registered by definition - show
+                      // that floor instead of "no activity", matching the list.
+                      registeredFloor
+                      live
                       // The service-line chips scope the ladders too - each
                       // journey carries its serviceLine (bank journeys count
                       // as egg or sperm donation by what the bank sells).

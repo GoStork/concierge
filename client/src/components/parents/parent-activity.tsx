@@ -44,7 +44,7 @@ import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
-import { NoteComposer, ParentTaskComposer, TaskCardBody, useCrmMutation } from "./parent-crm-ui";
+import { NoteComposer, ParentTaskComposer, TaskCardBody, useCrmMutation, ServiceLineSelect } from "./parent-crm-ui";
 import { ActivityBody, chatDeepLink } from "./parent-cells";
 import type { TaskMode } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
@@ -227,7 +227,7 @@ interface Entry {
   /** kind "task" only: the task itself, rendered with its own controls. */
   task?: ParentRecord["crm"]["tasks"][number];
   /** kind "note" only: the raw note plus whether the viewer may manage it. */
-  note?: { id: string; html: string; canManage: boolean; pinned: boolean };
+  note?: { id: string; html: string; canManage: boolean; pinned: boolean; serviceLine?: string | null; noteKind?: string; outcome?: string | null; durationMinutes?: number | null; occurredAt?: string | null };
   /** #4 Log a call: outcome + duration chips on a logged interaction. */
   loggedMeta?: { outcome: string | null; durationMinutes: number | null };
   /** The person who wrote it. Only notes have one. */
@@ -299,6 +299,13 @@ function buildEntries(record: ParentRecord): Entry[] {
         // The server re-checks on write; this only decides whether to DRAW
         // the buttons. Admins manage everything, authors their own.
         canManage: record.viewer.role === "admin" || (!!record.viewer.userId && n.authorUserId === record.viewer.userId),
+        // Carried so the edit form has the same service + kind controls the
+        // composer does.
+        serviceLine: n.serviceLine ?? null,
+        noteKind: n.kind || "NOTE",
+        outcome: n.outcome ?? null,
+        durationMinutes: n.durationMinutes ?? null,
+        occurredAt: n.occurredAt ?? null,
       },
       byline: n.authorName || "Staff",
       // The audience chip is an ADMIN affordance: admins write to several
@@ -1053,22 +1060,54 @@ function CardHeaderActions({ note, kind, mode, setMode, onDelete, onTogglePin, p
   );
 }
 
-function NoteEntryBody({ note, mode, draft, setDraft, onSave, onCancel, pending }: {
-  note: { id: string; html: string };
+function NoteEntryBody({ note, mode, draft, setDraft, onSave, onCancel, pending, serviceLines, parentUserId, mentionSource }: {
+  note: { id: string; html: string; serviceLine?: string | null; noteKind?: string; outcome?: string | null; durationMinutes?: number | null; occurredAt?: string | null };
   mode: NoteMode;
   draft: string;
   setDraft: (h: string) => void;
-  onSave: () => void;
+  onSave: (extra: { serviceLine: string | null; kind: string; outcome?: string; durationMinutes?: number; occurredAt?: string }) => void;
   onCancel: () => void;
   pending: boolean;
+  serviceLines?: string[];
+  parentUserId: string;
+  mentionSource?: () => Promise<{ id: string; name: string }[]>;
 }) {
   const hasText = !!draft.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  const [svc, setSvc] = useState<string>(note.serviceLine || "");
+  const [kind, setKind] = useState<string>(note.noteKind || "NOTE");
+  const [outcome, setOutcome] = useState<string>(note.outcome || "");
+  const [duration, setDuration] = useState<string>(note.durationMinutes != null ? String(note.durationMinutes) : "");
+  const [occurred, setOccurred] = useState<string>(note.occurredAt ? new Date(note.occurredAt).toISOString().slice(0, 16) : "");
   if (mode === "edit") {
+    const selectCls = "h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui";
     return (
       <div className="space-y-2" data-testid={`note-edit-${note.id}`}>
-        <RichTextEditor initialHtml={note.html} onChange={setDraft} testId={`note-editor-${note.id}`} />
+        <RichTextEditor initialHtml={note.html} onChange={setDraft} testId={`note-editor-${note.id}`} mentionSource={mentionSource} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <ServiceLineSelect value={svc} onChange={setSvc} lines={serviceLines} className={selectCls} testId={`note-edit-service-${note.id}`} />
+          <select value={kind} onChange={(e) => setKind(e.target.value)} className={selectCls} data-testid={`note-edit-kind-${note.id}`}>
+            <option value="NOTE">Note</option><option value="CALL">Call</option><option value="EMAIL">Email</option><option value="MEETING">Meeting</option>
+          </select>
+        </div>
+        {kind !== "NOTE" && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {kind === "CALL" && (
+              <>
+                <select value={outcome} onChange={(e) => setOutcome(e.target.value)} className={selectCls}>
+                  <option value="">Outcome…</option><option value="reached">Reached</option><option value="voicemail">Voicemail</option><option value="no_answer">No answer</option><option value="rescheduled">Rescheduled</option>
+                </select>
+                <input type="number" min={0} placeholder="min" value={duration} onChange={(e) => setDuration(e.target.value)} className={`${selectCls} w-20`} />
+              </>
+            )}
+            <input type="datetime-local" value={occurred} onChange={(e) => setOccurred(e.target.value)} className={selectCls} />
+          </div>
+        )}
         <div className="flex items-center gap-2">
-          <Button size="sm" disabled={!hasText || pending} onClick={onSave} data-testid={`btn-note-save-${note.id}`}>
+          <Button size="sm" disabled={!hasText || !svc || pending} onClick={() => onSave({
+            serviceLine: svc || null, kind,
+            ...(kind === "CALL" ? { outcome: outcome || undefined, durationMinutes: duration ? Number(duration) : undefined } : {}),
+            ...(kind !== "NOTE" && occurred ? { occurredAt: new Date(occurred).toISOString() } : {}),
+          })} data-testid={`btn-note-save-${note.id}`}>
             Save
           </Button>
           <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
@@ -1353,7 +1392,9 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
           draft={noteDraft}
           setDraft={setNoteDraft}
           pending={noteMut.isPending}
-          onSave={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { body: noteDraft } })}
+          serviceLines={serviceLines}
+          parentUserId={parentUserId}
+          onSave={(extra) => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { body: noteDraft, ...extra } })}
           onCancel={() => setNoteMode("view")}
         />
       ) : entry.task ? (

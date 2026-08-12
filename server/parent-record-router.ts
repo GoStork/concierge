@@ -453,6 +453,8 @@ parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (r
         body,
         bodyText,
         pinned: req.body?.pinned ?? existing.pinned,
+        // serviceLine editable on the note edit form; only overwrite when sent.
+        ...(req.body?.serviceLine !== undefined ? { serviceLine: readServiceLine(req.body.serviceLine) } : {}),
         ...(logged ? { kind: logged.kind, outcome: logged.outcome, durationMinutes: logged.durationMinutes, occurredAt: logged.occurredAt } : {}),
       },
     });
