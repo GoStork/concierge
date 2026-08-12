@@ -83,6 +83,29 @@ export function isApprovalCardLive(cardType: string, data: any): boolean {
   return cardType === "provider_readiness_prompt" ? !d.answered : !d.resolvedAt;
 }
 
+/**
+ * How long each kind of work gets before it counts as late.
+ *
+ * The due date used to be the moment the work APPEARED, which made every new
+ * task overdue on arrival - send an agreement and the task to chase it is
+ * already amber before you have left the page. Anchoring on when it appeared
+ * is still right (an item that has sat for a month should read as a month
+ * late); what was missing is the window in which doing it is simply on time.
+ *
+ * The numbers are the ones the rest of the product already implies: a whisper
+ * gets the two hours after which whisper-sla.scheduler starts nudging, an
+ * approval blocks the family's next step so it gets a day, a public review
+ * reply is worth writing well rather than fast, and an agreement sitting
+ * unsigned is the family's move for the best part of a week before anyone
+ * should be chasing it.
+ */
+const DUE_IN_HOURS: Record<QueueKind, number> = {
+  approval: 24,
+  whisper: 2,
+  review: 72,
+  agreement: 120,
+};
+
 const KIND_TITLE: Record<QueueKind, (subject: string) => string> = {
   approval: (s) => `Review and approve: ${s}`,
   whisper: (s) => `Answer a question from ${s}`,
@@ -243,10 +266,10 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
             title: item.title,
             type: item.kind === "whisper" || item.kind === "review" ? "EMAIL" : "TODO",
             priority: "NONE",
-            // Due when it appeared, not a day out: this work was already
-            // waiting before anyone raised a task for it, and dating it
-            // forward would hide how long it has been sitting.
-            dueAt: item.since,
+            // Anchored on when the work appeared, plus the window its kind
+            // gets - so a backlog item still reads as weeks late, and one
+            // raised a minute ago does not read as late at all.
+            dueAt: new Date(item.since.getTime() + DUE_IN_HOURS[item.kind] * 3_600_000),
             source: "SYSTEM",
             systemKey: item.systemKey,
             deepLink: item.deepLink,
