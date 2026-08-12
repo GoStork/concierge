@@ -86,6 +86,10 @@ export class AppEventsService {
         "IP_FORM_SUBMITTED",
         "IP_FORM_SENT_TO_PARENT",
         "IP_FORM_PHOTOCOPY_REQUEST",
+        // #7 @mentions: a colleague tagged you in a note or task. Written
+        // directly by the CRM router; surfaced here as a toast on next connect,
+        // exactly like the IP-form events above (lowercased to "crm_mention").
+        "CRM_MENTION",
       ];
 
       const unseen = await this.prisma.inAppNotification.findMany({

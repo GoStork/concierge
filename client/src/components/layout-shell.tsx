@@ -338,6 +338,27 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
     }
   }, [toast, dismiss, navigate]);
 
+  const handleMentionEvent = useCallback((data: any) => {
+    if (data.type !== "crm_mention") return;
+    playNotificationChime();
+    const { id: toastId } = toast({
+      title: `${data.mentioner || "A colleague"} mentioned you`,
+      description: `${data.parentName || "A family"}${data.snippet ? ` - ${data.snippet}` : ""}`,
+      variant: "default",
+      action: (
+        <Button
+          size="sm"
+          variant="default"
+          className="gap-1 shrink-0"
+          onClick={() => { dismiss(toastId); navigate(`/parents/${data.parentUserId}?sec=crm`); }}
+        >
+          View
+        </Button>
+      ),
+      duration: 30000,
+    });
+  }, [toast, dismiss, navigate]);
+
   const handleIpFormPartnerSignedEvent = useCallback((data: any) => {
     if (data.type !== "ip_form_partner_signed") return;
     playNotificationChime();
@@ -515,6 +536,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleIpFormPartnerSignedEvent(data);
         handleIpFormSubmittedEvent(data);
         handleIpFormSentEvent(data);
+        handleMentionEvent(data);
 
         handleIpFormPhotocopyRequestEvent(data);
       } catch {}
@@ -536,7 +558,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       sseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent, handleIpFormSubmittedEvent, handleIpFormSentEvent, handleIpFormPhotocopyRequestEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleHumanEscalationEvent, handleHumanConcludedEvent, handleProfileUpdatedEvent, handleChatSessionUpdatedEvent, handleParentReadyEvent, handleIpFormPartnerSignedEvent, handleIpFormSubmittedEvent, handleIpFormSentEvent, handleIpFormPhotocopyRequestEvent, handleMentionEvent]);
 
   const dispatch = useAppDispatch();
   const marketplaceTab = useAppSelector((state) => state.ui.marketplaceTab);
@@ -563,6 +585,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         handleHumanConcludedEvent(data);
         handleProfileUpdatedEvent(data);
         handleParentReadyEvent(data);
+        handleMentionEvent(data);
       } catch {}
     };
 
@@ -582,7 +605,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       es.close();
       costsSseRef.current = null;
     };
-  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent]);
+  }, [user, handleVideoJoinedEvent, handleBookingEvent, handleCostSheetEvent, handleMentionEvent]);
   const isProvider = hasProviderRole(roles);
   const isParent = roles.includes('PARENT');
   const isParentOnly = isParent && !isAdmin && !isProvider;
