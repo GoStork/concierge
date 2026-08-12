@@ -1260,6 +1260,7 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
       )}
       style={(entry.note?.pinned || entry.task?.pinned) ? { marginTop: "1.125rem" } : undefined}
       onClick={canOpenNoteEdit ? openNoteEdit : canOpenTaskEdit ? openTaskEdit : undefined}
+      id={`entry-${entry.id}`}
       data-testid={`activity-${entry.id}`}
     >
       {/* The header is also the way OUT: a card opens when you click its body,
@@ -1473,6 +1474,24 @@ export function ParentActivitySection({ record, scope, serviceLines }: {
   };
 
   const entries = useMemo(() => buildEntries(record), [record]);
+
+  // #1 Search deep-link: ?focus=<entryId> scrolls the timeline to that note or
+  // task and rings it briefly, so a search hit lands you ON the writing, not
+  // just on the page. Fires once per focus value, after entries have rendered.
+  const focusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const focus = new URLSearchParams(window.location.search).get("focus");
+    if (!focus || focusedRef.current === focus) return;
+    const el = document.getElementById(`entry-${focus}`);
+    if (!el) return;
+    focusedRef.current = focus;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.style.transition = "box-shadow 0.3s ease";
+    el.style.boxShadow = "0 0 0 2px hsl(var(--primary))";
+    const t = setTimeout(() => { el.style.boxShadow = ""; }, 2400);
+    return () => clearTimeout(t);
+  }, [entries]);
+
   // Soonest first - the Tasks section is read as "what is next", never as
   // history, which is the one thing that orders it differently from the feed.
   const openTasks = useMemo(

@@ -148,10 +148,14 @@ function GostorkAdminUsersView() {
   // name/email/phone filter above finds few rows (so it stays a "reach deeper"
   // affordance, never noise on a common name).
   const trimmedQuery = searchQuery.trim();
-  const { data: writtenSearch } = useQuery<{ results: { parentUserId: string; parentName: string; kind: string; snippet: string; at: string }[] }>({
+  const { data: writtenSearch } = useQuery<{ results: { parentUserId: string; parentName: string; kind: string; snippet: string; at: string; entryId: string }[] }>({
     queryKey: ["/api/parents/search", trimmedQuery],
     queryFn: async () => (await fetch(`/api/parents/search?q=${encodeURIComponent(trimmedQuery)}`, { credentials: "include" })).json(),
     enabled: trimmedQuery.length >= 3,
+    // Search must reflect the moment - the app's global staleTime is Infinity,
+    // which cached a query string's first (possibly empty) result forever.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   const writtenResults = trimmedQuery.length >= 3 ? (writtenSearch?.results || []) : [];
 
@@ -490,7 +494,7 @@ function GostorkAdminUsersView() {
                 key={`${r.parentUserId}-${i}`}
                 type="button"
                 className="w-full text-left flex items-start gap-2 rounded-md px-2.5 py-2 hover:bg-secondary transition-colors"
-                onClick={() => navigate(`/parents/${r.parentUserId}`)}
+                onClick={() => navigate(`/parents/${r.parentUserId}?sec=crm&focus=${r.entryId}`)}
                 data-testid={`search-result-${i}`}
               >
                 <span className="text-[10px] font-ui uppercase px-1.5 py-0.5 rounded-full bg-accent/15 shrink-0 mt-0.5" style={{ color: "hsl(var(--accent))" }}>{r.kind}</span>

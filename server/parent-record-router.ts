@@ -163,12 +163,12 @@ parentRecordRouter.get("/api/parents/search", requireAuth, async (req, res) => {
     const [notes, tasks] = await Promise.all([
       prisma.parentNote.findMany({
         where: { ...scope, deletedAt: null, bodyText: like },
-        select: { parentAccountId: true, kind: true, bodyText: true, createdAt: true },
+        select: { id: true, parentAccountId: true, kind: true, bodyText: true, createdAt: true },
         orderBy: { createdAt: "desc" }, take: 50,
       }),
       prisma.parentTask.findMany({
         where: { ...scope, OR: [{ title: like }, { notes: like }] },
-        select: { parentAccountId: true, title: true, notes: true, createdAt: true },
+        select: { id: true, parentAccountId: true, title: true, notes: true, createdAt: true },
         orderBy: { createdAt: "desc" }, take: 50,
       }),
     ]);
@@ -209,8 +209,8 @@ parentRecordRouter.get("/api/parents/search", requireAuth, async (req, res) => {
     };
 
     const results = [
-      ...notes.map((n) => ({ ...nameFor(n.parentAccountId), kind: n.kind === "NOTE" ? "note" : n.kind.toLowerCase(), snippet: snippet(n.bodyText), at: n.createdAt })),
-      ...tasks.map((t) => ({ ...nameFor(t.parentAccountId), kind: "task", snippet: snippet(t.title + (t.notes ? " - " + t.notes : "")), at: t.createdAt })),
+      ...notes.map((n) => ({ ...nameFor(n.parentAccountId), kind: n.kind === "NOTE" ? "note" : n.kind.toLowerCase(), snippet: snippet(n.bodyText), at: n.createdAt, entryId: `note-${n.id}` })),
+      ...tasks.map((t) => ({ ...nameFor(t.parentAccountId), kind: "task", snippet: snippet(t.title + (t.notes ? " - " + t.notes : "")), at: t.createdAt, entryId: `task-${t.id}` })),
     ].filter((r) => r.parentUserId)
       .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       .slice(0, 50);
