@@ -9,6 +9,7 @@ import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound,
 import { getPhotoSrc } from "@/lib/profile-utils";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { TurnstileWidget } from "@/components/ui/turnstile-widget";
 import { countryNameToIsoCode } from "@/lib/country-flag";
 
 // AI Intro service-to-visual config (inline version of OnboardingAiIntroPage)
@@ -64,6 +65,8 @@ function mapOtpSendError(code: string): string {
       return "This number appears to be unreachable. Please check and try again.";
     case "verify_failed":
       return "Failed to send verification code. Please try again in a moment.";
+    case "turnstile_failed":
+      return "We couldn't confirm you're human. Please wait a moment and try again.";
     default:
       return code || "Please check your number and try again.";
   }
@@ -181,6 +184,8 @@ export default function OnboardingPage() {
   const [otpSending, setOtpSending] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpChannel, setOtpChannel] = useState<"sms" | "whatsapp">("sms");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
 
   const [data, setData] = useState<OnboardingData>({
     email: "",
@@ -359,7 +364,7 @@ export default function OnboardingPage() {
       setOtpError(null);
       try {
         const fullPhone = data.phoneE164;
-        const res = await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone });
+        const res = await apiRequest("POST", "/api/auth/send-otp", { phone: fullPhone, turnstileToken });
         const result = await res.json();
         if (result.devCode) {
           (window as any).__devOtpCode = result.devCode;
@@ -378,6 +383,8 @@ export default function OnboardingPage() {
         setOtpError(mapOtpSendError(code));
       } finally {
         setOtpSending(false);
+        // Turnstile tokens are single-use - mint a fresh one for any retry/resend.
+        setTurnstileResetSignal((s) => s + 1);
       }
     } else if (step === 5) {
       const entered = data.otp.join("");
@@ -637,6 +644,11 @@ export default function OnboardingPage() {
               error={otpError}
             />
           )}
+          {step === 4 && (
+            <div className="mt-4">
+              <TurnstileWidget onToken={setTurnstileToken} resetSignal={turnstileResetSignal} />
+            </div>
+          )}
           {step === 5 && (
             <StepVerification
               otp={data.otp}
@@ -645,11 +657,12 @@ export default function OnboardingPage() {
               channel={otpChannel}
               onResend={async () => {
                 setOtpError(null);
-                const res = await apiRequest("POST", "/api/auth/send-otp", { phone: data.phoneE164 });
+                const res = await apiRequest("POST", "/api/auth/send-otp", { phone: data.phoneE164, turnstileToken });
                 const result = await res.json();
                 if (result.channel === "whatsapp" || result.channel === "sms") {
                   setOtpChannel(result.channel);
                 }
+                setTurnstileResetSignal((s) => s + 1);
               }}
               error={otpError}
             />

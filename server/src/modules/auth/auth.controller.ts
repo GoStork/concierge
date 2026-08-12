@@ -21,6 +21,7 @@ import { AuthService } from "./auth.service";
 import { NotificationService } from "../notifications/notification.service";
 import { LoginDto, LoginResponseDto, LogoutResponseDto, ErrorResponseDto } from "../../dto/auth.dto";
 import { getBaseUrl } from "../../lib/get-base-url";
+import { verifyTurnstile, turnstileSiteKey } from "../../../turnstile";
 
 @ApiTags("Auth")
 @Controller("api/auth")
@@ -124,18 +125,38 @@ export class AuthController {
     return { message: "Password has been reset successfully" };
   }
 
+  // Public, unauthenticated: the signup form fetches this before rendering the
+  // phone step. Returns the Turnstile site key (safe to expose) or null, so the
+  // client renders the bot-check widget only when it is configured.
+  @Get("turnstile-config")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Public Turnstile site key for the signup widget" })
+  turnstileConfig() {
+    return { siteKey: turnstileSiteKey() };
+  }
+
   @Post("send-otp")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Send OTP verification code via SMS or WhatsApp" })
-  async sendOtp(@Body() body: { phone: string }, @Req() req: Request) {
+  async sendOtp(@Body() body: { phone: string; turnstileToken?: string }, @Req() req: Request) {
     if (!body.phone?.trim()) {
       throw new BadRequestException("Phone number is required");
     }
+    // First hop only - the rest of x-forwarded-for is forgeable behind ngrok.
+    const ip = (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress) ?? null;
+
+    // Turnstile gate. A real signup carries a token minted by the widget in the
+    // form; a bot POSTing straight to this endpoint has none. Inert until the
+    // secret is set (verifyTurnstile returns ok), so dev/tests are unaffected.
+    const turnstile = await verifyTurnstile(body.turnstileToken, ip);
+    if (!turnstile.ok) {
+      this.logger.warn(`[turnstile] send-otp rejected: ${(turnstile.errorCodes || []).join(",") || "invalid token"}`);
+      throw new BadRequestException("turnstile_failed");
+    }
+
     try {
       const result = await this.authService.sendOtp(body.phone, {
-        // Behind ngrok/a proxy the socket address is the tunnel; the header
-        // carries the caller. First hop only - the rest is forgeable.
-        ip: (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress) ?? null,
+        ip,
         userAgent: (req.headers["user-agent"] as string) ?? null,
       });
       return { success: true, sent: result.sent, channel: result.channel, devCode: result.devCode };
