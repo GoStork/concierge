@@ -5,6 +5,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Plus, Trash2, Loader2, Ban, UserCheck, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -272,6 +274,51 @@ function GostorkAdminUsersView() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  // #6 Bulk actions. Owner + task apply per-family through the same endpoints a
+  // single row uses; every write reports how many landed.
+  const bulkOwnerMutation = useMutation({
+    mutationFn: async ({ ids, ownerUserId }: { ids: string[]; ownerUserId: string | null }) => {
+      const results = await Promise.allSettled(ids.map(id =>
+        apiRequest("PUT", `/api/parents/${id}/owner`, { scope: "GOSTORK", ownerUserId })));
+      return results.filter(r => r.status === "fulfilled").length;
+    },
+    onSuccess: (n) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/parents-overview"] });
+      setSelectedIds(new Set());
+      toast({ title: `Owner assigned to ${n} famil${n === 1 ? "y" : "ies"}`, variant: "success" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+  const [bulkTaskOpen, setBulkTaskOpen] = useState(false);
+  const [bulkTaskTitle, setBulkTaskTitle] = useState("");
+  const [bulkTaskDue, setBulkTaskDue] = useState("");
+  const bulkTaskMutation = useMutation({
+    mutationFn: async ({ ids, title, dueAt }: { ids: string[]; title: string; dueAt: string | null }) => {
+      const results = await Promise.allSettled(ids.map(id =>
+        apiRequest("POST", `/api/parents/${id}/tasks`, { title, scope: "GOSTORK", serviceLine: null, dueAt, priority: "MEDIUM", type: "TODO" })));
+      return results.filter(r => r.status === "fulfilled").length;
+    },
+    onSuccess: (n) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/parents-overview"] });
+      setSelectedIds(new Set()); setBulkTaskOpen(false); setBulkTaskTitle(""); setBulkTaskDue("");
+      toast({ title: `Task created for ${n} famil${n === 1 ? "y" : "ies"}`, variant: "success" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+  function exportSelectedCsv() {
+    const rows = sortedUsers.filter(u => selectedIds.has(u.id));
+    const header = ["Name", "Email", "Phone", "Match status", "Owner", "Created"];
+    const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [header.join(",")].concat(rows.map(u => [
+      u.name, u.email, u.mobileNumber, overview[u.id]?.matchStatus || "", overview[u.id]?.owner?.name || "", u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "",
+    ].map(esc).join(",")));
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `parents-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: `Exported ${rows.length} famil${rows.length === 1 ? "y" : "ies"}` });
+  }
+
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       await Promise.all(ids.map(id => apiRequest("DELETE", `/api/users/${id}`)));
@@ -318,9 +365,21 @@ function GostorkAdminUsersView() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {selectedIds.size > 0 && (
-            <Button variant="destructive" onClick={() => setShowBulkDeleteConfirm(true)} data-testid="button-delete-selected">
-              <Trash2 className="w-4 h-4 mr-2" /> Delete Selected ({selectedIds.size})
-            </Button>
+            <div className="flex items-center gap-2">
+              <span className="t-helper mr-1">{selectedIds.size} selected</span>
+              <Select value="" onValueChange={(v) => { if (v) bulkOwnerMutation.mutate({ ids: [...selectedIds], ownerUserId: v === "__none__" ? null : v }); }}>
+                <SelectTrigger className="h-9 w-auto bg-card px-3" data-testid="bulk-assign-owner"><span className="text-sm">Assign owner</span></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Unassigned</SelectItem>
+                  {ownerOptions.map((o: any) => <SelectItem key={o.id} value={o.id}>{o.name || "Unnamed"}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" className="bg-card" onClick={() => setBulkTaskOpen(true)} data-testid="bulk-create-task">New task</Button>
+              <Button variant="outline" className="bg-card" onClick={exportSelectedCsv} data-testid="bulk-export-csv">Export CSV</Button>
+              <Button variant="destructive" onClick={() => setShowBulkDeleteConfirm(true)} data-testid="button-delete-selected">
+                <Trash2 className="w-4 h-4 mr-2" /> Delete ({selectedIds.size})
+              </Button>
+            </div>
           )}
           <Button onClick={() => navigate("/users/new")} data-testid="button-add-staff">
             <Plus className="w-4 h-4 mr-2" /> Add Parent
@@ -444,6 +503,32 @@ function GostorkAdminUsersView() {
           </div>
         </div>
       )}
+
+      <Dialog open={bulkTaskOpen} onOpenChange={setBulkTaskOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New task for {selectedIds.size} famil{selectedIds.size === 1 ? "y" : "ies"}</DialogTitle>
+            <DialogDescription>One task is created on each selected record, each on its own timeline.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input placeholder="Task title" value={bulkTaskTitle} onChange={(e) => setBulkTaskTitle(e.target.value)} data-testid="bulk-task-title" />
+            <div className="flex items-center gap-2">
+              <span className="t-helper">Due</span>
+              <Input type="date" value={bulkTaskDue} onChange={(e) => setBulkTaskDue(e.target.value)} className="w-auto" data-testid="bulk-task-due" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkTaskOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!bulkTaskTitle.trim() || bulkTaskMutation.isPending}
+              onClick={() => bulkTaskMutation.mutate({ ids: [...selectedIds], title: bulkTaskTitle.trim(), dueAt: bulkTaskDue ? new Date(bulkTaskDue).toISOString() : null })}
+              data-testid="bulk-task-submit"
+            >
+              {bulkTaskMutation.isPending ? "Creating…" : "Create tasks"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!deleteMember} onOpenChange={(open) => { if (!open) setDeleteMember(null); }}>
         <DialogContent>
