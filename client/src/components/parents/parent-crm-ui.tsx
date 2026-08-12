@@ -211,11 +211,15 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
   const [kind, setKind] = useState<"NOTE" | "CALL" | "EMAIL" | "MEETING">("NOTE");
   const [outcome, setOutcome] = useState("");
   const [durationMinutes, setDurationMinutes] = useState("");
-  const [occurredAt, setOccurredAt] = useState("");
+  // Same split date + time inputs the task composer uses (not the combined
+  // datetime-local, which is a different, uglier native widget).
+  const [occurredDate, setOccurredDate] = useState("");
+  const [occurredTime, setOccurredTime] = useState("");
+  const occurredAtIso = occurredDate ? new Date(`${occurredDate}T${occurredTime || "09:00"}`).toISOString() : "";
   // Remounting the editor is how it clears - it is uncontrolled by design.
   const [editorKey, setEditorKey] = useState(0);
   const mut = useCrmMutation(record.parent.id, () => {
-    setBody(""); setEditorKey((k) => k + 1); setKind("NOTE"); setOutcome(""); setDurationMinutes(""); setOccurredAt("");
+    setBody(""); setEditorKey((k) => k + 1); setKind("NOTE"); setOutcome(""); setDurationMinutes(""); setOccurredDate(""); setOccurredTime("");
     onPosted?.();
   });
   const chosen = choices.find((c) => c.key === scopeKey) || choices[0];
@@ -311,11 +315,18 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
             </>
           )}
           <input
-            type="datetime-local"
-            value={occurredAt}
-            onChange={(e) => setOccurredAt(e.target.value)}
+            type="date"
+            value={occurredDate}
+            onChange={(e) => setOccurredDate(e.target.value)}
             className="h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
-            data-testid="input-note-occurred"
+            data-testid="input-note-occurred-date"
+          />
+          <input
+            type="time"
+            value={occurredTime}
+            onChange={(e) => setOccurredTime(e.target.value)}
+            className="h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
+            data-testid="input-note-occurred-time"
           />
         </div>
       )}
@@ -330,7 +341,7 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
               body, serviceLine, scope: chosen?.scope, providerId: chosen?.providerId,
               kind,
               ...(kind === "CALL" ? { outcome: outcome || undefined, durationMinutes: durationMinutes ? Number(durationMinutes) : undefined } : {}),
-              ...(kind !== "NOTE" && occurredAt ? { occurredAt: new Date(occurredAt).toISOString() } : {}),
+              ...(kind !== "NOTE" && occurredAtIso ? { occurredAt: occurredAtIso } : {}),
             },
           })}
           data-testid="btn-post-note"

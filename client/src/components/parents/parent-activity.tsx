@@ -44,7 +44,8 @@ import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
-import { NoteComposer, ParentTaskComposer, TaskCardBody, useCrmMutation, ServiceLineSelect } from "./parent-crm-ui";
+import { NoteComposer, ParentTaskComposer, TaskCardBody, useCrmMutation, ServiceLineSelect, SERVICE_LINE_LABELS } from "./parent-crm-ui";
+import { ServiceTag } from "@/components/ui/service-tag";
 import { ActivityBody, chatDeepLink } from "./parent-cells";
 import type { TaskMode } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
@@ -1077,7 +1078,10 @@ function NoteEntryBody({ note, mode, draft, setDraft, onSave, onCancel, pending,
   const [kind, setKind] = useState<string>(note.noteKind || "NOTE");
   const [outcome, setOutcome] = useState<string>(note.outcome || "");
   const [duration, setDuration] = useState<string>(note.durationMinutes != null ? String(note.durationMinutes) : "");
-  const [occurred, setOccurred] = useState<string>(note.occurredAt ? new Date(note.occurredAt).toISOString().slice(0, 16) : "");
+  const initOcc = note.occurredAt ? new Date(note.occurredAt) : null;
+  const [occurredDate, setOccurredDate] = useState<string>(initOcc ? initOcc.toISOString().slice(0, 10) : "");
+  const [occurredTime, setOccurredTime] = useState<string>(initOcc ? initOcc.toISOString().slice(11, 16) : "");
+  const occurredIso = occurredDate ? new Date(`${occurredDate}T${occurredTime || "09:00"}`).toISOString() : "";
   if (mode === "edit") {
     const selectCls = "h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui";
     return (
@@ -1099,14 +1103,15 @@ function NoteEntryBody({ note, mode, draft, setDraft, onSave, onCancel, pending,
                 <input type="number" min={0} placeholder="min" value={duration} onChange={(e) => setDuration(e.target.value)} className={`${selectCls} w-20`} />
               </>
             )}
-            <input type="datetime-local" value={occurred} onChange={(e) => setOccurred(e.target.value)} className={selectCls} />
+            <input type="date" value={occurredDate} onChange={(e) => setOccurredDate(e.target.value)} className={selectCls} />
+            <input type="time" value={occurredTime} onChange={(e) => setOccurredTime(e.target.value)} className={selectCls} />
           </div>
         )}
         <div className="flex items-center gap-2">
           <Button size="sm" disabled={!hasText || !svc || pending} onClick={() => onSave({
             serviceLine: svc || null, kind,
             ...(kind === "CALL" ? { outcome: outcome || undefined, durationMinutes: duration ? Number(duration) : undefined } : {}),
-            ...(kind !== "NOTE" && occurred ? { occurredAt: new Date(occurred).toISOString() } : {}),
+            ...(kind !== "NOTE" && occurredIso ? { occurredAt: occurredIso } : {}),
           })} data-testid={`btn-note-save-${note.id}`}>
             Save
           </Button>
@@ -1339,6 +1344,10 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
                 org, where repeating it on every row is pure noise. */}
             {entry.org && viewerRole === "admin" && (
               <span className="t-helper truncate min-w-0">{entry.org}</span>
+            )}
+            {/* Notes wear their service tag like tasks do. */}
+            {entry.note?.serviceLine && (
+              <span className="shrink-0"><ServiceTag service={SERVICE_LINE_LABELS[entry.note.serviceLine] || entry.note.serviceLine} /></span>
             )}
             <span className="ml-auto shrink-0 inline-flex items-center gap-3">
               {entry.note && (
