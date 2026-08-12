@@ -1340,7 +1340,7 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
   );
 }
 
-type Composer = "note" | "task" | "next_step" | null;
+type Composer = "note" | "task" | null;
 
 export function ParentActivitySection({ record, scope }: {
   record: ParentRecord;
@@ -1403,16 +1403,6 @@ export function ParentActivitySection({ record, scope }: {
         >
           <CircleCheck className="w-3.5 h-3.5 mr-1.5" /> Create Task
         </Button>
-        <Button
-          variant={composer === "next_step" ? "default" : "outline"}
-          size="sm"
-          className={composer === "next_step" ? undefined : "bg-card"}
-          onClick={() => toggle("next_step")}
-          data-testid="btn-activity-add-next-step"
-        >
-          <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Next steps
-          <ChevronDown className={cn("w-3 h-3 ml-1 transition-transform", composer === "next_step" && "rotate-180")} />
-        </Button>
         {scope && scope.lines.length >= 2 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1459,11 +1449,14 @@ export function ParentActivitySection({ record, scope }: {
           />
         </div>
       )}
-      {composer === "next_step" && (
-        <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-next-step">
-          <ParentTaskPanel record={record} onChanged={refetchRecord} />
-        </div>
-      )}
+      {/* Tasks are not a thing you toggle open. They are the first question
+          anyone opens a record to answer, so they sit at the top of the
+          timeline, above even a pinned note - a pin says "read this first",
+          and outstanding work outranks it. */}
+      <div className="space-y-2" data-testid="panel-activity-tasks">
+        <h3 className="t-section-title font-heading">Tasks</h3>
+        <ParentTaskPanel record={record} onChanged={refetchRecord} />
+      </div>
 
       {entries.length === 0 && (
         <div className="rounded-[var(--radius)] border bg-secondary/40 p-4">
