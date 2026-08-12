@@ -413,14 +413,23 @@ export function taskLinkTarget(href: string): { label: string; chat: boolean } {
 export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number] }) {
   const due = new Date(task.dueAt);
   const tone = PRIORITY_TONE[task.priority] || null;
-  const chip = "text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap";
+  // Tighter on a phone so all five facts stay on one line: the chips shrink,
+  // the date goes numeric and the assignee goes first-name. None of that costs
+  // anything on a desktop, where there is room for the long forms.
+  const chip = "text-[11px] sm:text-xs font-ui px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap";
   const finished = task.status !== "OPEN";
   // A finished task is not overdue, whatever its due date says - the deadline
   // stopped mattering the moment the work was done.
   const late = task.overdue && !finished;
+  const time = { hour: "numeric", minute: "2-digit" } as const;
+  const longDate = due.toLocaleString(undefined, { month: "short", day: "numeric", ...time });
+  const shortDate = due.toLocaleString(undefined, { month: "numeric", day: "numeric", ...time });
+  const firstName = (task.assigneeName || "").split(" ")[0];
   return (
-    <div className="flex flex-wrap items-center gap-1.5" data-testid={`task-chips-${task.id}`}>
-      <span className={chip} style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
+    <div className="flex flex-wrap items-center gap-1 sm:gap-1.5" data-testid={`task-chips-${task.id}`}>
+      {/* One colour per fact. Type and date both wore the cream and read as one
+          chip split in two. */}
+      <span className={chip} style={{ background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))" }}>
         {taskTypeLabel(task.type)}
       </span>
       {finished && (
@@ -445,11 +454,13 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
             part you would otherwise have to work out. */}
         {late && <AlertTriangle className="w-3 h-3" />}
         {late ? "Overdue " : ""}
-        {due.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+        <span className="sm:hidden">{shortDate}</span>
+        <span className="hidden sm:inline">{longDate}</span>
       </span>
       {task.assigneeName && (
         <span className={chip} style={{ background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}>
-          {task.assigneeName}
+          <span className="sm:hidden">{firstName}</span>
+          <span className="hidden sm:inline">{task.assigneeName}</span>
         </span>
       )}
       {/* Priority sits WITH the others rather than in the far corner: it is one

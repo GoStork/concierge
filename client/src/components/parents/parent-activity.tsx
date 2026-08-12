@@ -1229,7 +1229,7 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
     // sibling selector on the feed.
     <div
       className={cn(
-        "relative rounded-[var(--radius)] border bg-card p-3 space-y-1.5",
+        "relative rounded-[var(--radius)] border bg-card p-2.5 sm:p-3 space-y-1.5",
         (canOpenNoteEdit || canOpenTaskEdit) && "cursor-text hover:border-primary/40 transition-colors",
       )}
       style={(entry.note?.pinned || entry.task?.pinned) ? { marginTop: "1.125rem" } : undefined}
@@ -1528,7 +1528,7 @@ export function ParentActivitySection({ record, scope }: {
           a place rather than as loose cards that happen to be first - on the
           same surface the cards inside it use. */}
       <div
-        className="rounded-[var(--radius)] border bg-card p-3 space-y-2"
+        className="rounded-[var(--radius)] border bg-card p-2 sm:p-3 space-y-2"
         data-testid="panel-activity-tasks"
       >
         <h3 className="t-section-title font-heading">Tasks</h3>
