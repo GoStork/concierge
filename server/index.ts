@@ -24,6 +24,7 @@ import { startWhisperSlaScheduler } from "./src/modules/providers/whisper-sla.sc
 import { startPendingBookingScheduler } from "./src/modules/calendar/pending-booking.scheduler";
 import { startSponsorshipExpiryScheduler } from "./src/modules/sponsorship/sponsorship-expiry.scheduler";
 import { startRankSnapshotScheduler } from "./src/modules/sponsorship/rank-snapshot.scheduler";
+import { startTwilioAbuseWatchdog } from "./src/modules/security/twilio-abuse-watchdog.scheduler";
 import { SponsorshipService } from "./src/modules/sponsorship/sponsorship.service";
 import { NotificationService } from "./src/modules/notifications/notification.service";
 import { setNestApp } from "./nest-app-ref";
@@ -280,6 +281,7 @@ export function log(message: string, source = "nestjs") {
   startPendingBookingScheduler(prismaService, notificationService, nestApp.get(BillingService));
   startSponsorshipExpiryScheduler(prismaService, nestApp.get(SponsorshipService));
   startRankSnapshotScheduler(prismaService);
+  startTwilioAbuseWatchdog(prismaService, notificationService);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

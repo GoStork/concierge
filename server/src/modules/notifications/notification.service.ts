@@ -1575,6 +1575,61 @@ export class NotificationService implements OnModuleInit {
     this.logger.log(`[nightly-sync] Digest sent to ${recipients.length} admin(s): ${needsAttention.length} need attention, ${okCount} ok`);
   }
 
+  /**
+   * The Twilio abuse watchdog found a burst that looks like a bot wave.
+   * Emails every active GoStork admin; the once-per-hour claim lives in the
+   * scheduler, not here.
+   */
+  async sendSecurityAbuseAlert(params: {
+    windowMinutes: number;
+    total: number;
+    nonUsCa: number;
+    failed: number;
+    topDestinations: string[];
+    balance: string | null;
+  }) {
+    const admins = await this.prisma.user.findMany({
+      where: { roles: { has: "GOSTORK_ADMIN" }, isDisabled: false },
+      select: { email: true },
+    });
+    const recipients = admins.map((a) => a.email).filter(Boolean);
+    if (recipients.length === 0) {
+      this.logger.warn("[twilio-watchdog] Abuse burst detected but no admin emails to notify");
+      return;
+    }
+
+    const brandData = await this.getBrandData();
+    const detailRows = [
+      { label: "Messages in window", value: `${params.total} in ${params.windowMinutes} minutes` },
+      { label: "To numbers outside +1", value: String(params.nonUsCa) },
+      { label: "Failed / undelivered", value: String(params.failed) },
+      { label: "Top destinations", value: esc(params.topDestinations.join(", ") || "-") },
+      ...(params.balance ? [{ label: "Twilio balance", value: esc(params.balance) }] : []),
+    ];
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Verification Burst Detected",
+      greeting: "Hi team,",
+      body:
+        "The Twilio watchdog spotted an unusual burst of verification messages - the signature of the signup bot wave resuming. " +
+        "Failed sends are the geo block refusing blocked countries (not billed); sends to allowed countries go out and cost money.",
+      detailRows,
+      alertBox: {
+        text: "If this is not expected traffic, escalate the Cloudflare challenge on the signup pages to the interactive tier and review Twilio Monitor - Logs - Messaging.",
+        type: "warning",
+      },
+      buttons: [{ label: "Open Twilio Message Logs", url: "https://console.twilio.com/us1/monitor/logs/sms" }],
+      footer: "Sent at most once per hour by the abuse watchdog on the GoStork platform server.",
+    });
+
+    const subject = `Security alert: ${params.total} verification sends in ${params.windowMinutes} minutes`;
+    for (const to of recipients) {
+      await this.sendRawEmail(to, subject, html).catch((err: any) =>
+        this.logger.warn(`[twilio-watchdog] Alert email to ${to} failed: ${err.message}`),
+      );
+    }
+  }
+
   async sendVideoWaitingNotification(params: {
     booking: any;
     joinerRole: "provider" | "parent";
