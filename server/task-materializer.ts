@@ -173,6 +173,10 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
     : [];
   const acctOf = new Map<string, string>(users.map((u: any) => [u.id, u.parentAccountId || u.id]));
   const nameOf = new Map<string, string>(users.map((u: any) => [u.id, u.firstName || u.name || "a family"]));
+  // The full name is for the assignee line, where a person is named the way
+  // every other person on the page is. Titles keep the first name, which is
+  // how the product refers to a family in a sentence.
+  const fullNameOf = new Map<string, string>(users.map((u: any) => [u.id, u.name || u.firstName || "the family"]));
 
   for (const c of approvalCards as any[]) {
     const pid = c.session?.providerId;
@@ -248,7 +252,7 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
       kind: "agreement",
       serviceLine: serviceLineOfType(a.serviceType),
       waitingOnParent: true,
-      parentName: nameOf.get(a.parentUserId) || "the family",
+      parentName: fullNameOf.get(a.parentUserId) || "the family",
       since: a.createdAt,
     });
   }

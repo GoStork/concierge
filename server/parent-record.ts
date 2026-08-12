@@ -1263,9 +1263,15 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
   // changed theirs. Resolve it live instead - and a missing photo is fine, the
   // client falls back to a monogram.
   const ownerPhotoById = new Map<string, string | null>();
-  if (owners.length) {
+  // Owners AND task assignees: both wear a face on this page, and both get it
+  // from the same place, including the ProviderMember fallback below.
+  const facesNeeded = Array.from(new Set([
+    ...owners.map((o: any) => o.ownerUserId),
+    ...followUps.map((f: any) => f.assigneeUserId),
+  ].filter(Boolean))) as string[];
+  if (facesNeeded.length) {
     const ownerUsers = await prisma.user.findMany({
-      where: { id: { in: Array.from(new Set(owners.map((o: any) => o.ownerUserId))) } },
+      where: { id: { in: facesNeeded } },
       select: { id: true, photoUrl: true, name: true, providerId: true },
     });
     for (const u of ownerUsers) ownerPhotoById.set(u.id, u.photoUrl);
@@ -1403,12 +1409,16 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
     return lines.size ? Array.from(lines) : null;
   })();
 
+  // Redacted ONCE: the tasks below name the family from this, not from the raw
+  // row, so a chip cannot say what the header is withholding.
+  const parentPublic = redactParentContact(parent as any, gates) as any;
+
   return {
     // userId: so the client can offer Edit/Delete on the caller's OWN notes
     // without a per-note authorship query. The server re-checks on write.
     viewer: { role: isAdmin ? "admin" : "provider", providerId: scopeProviderId, serviceLines: viewerServiceLines, userId: user?.id ?? null },
     accountKey,
-    parent: redactParentContact(parent as any, gates),
+    parent: parentPublic,
     accountMembers: redactParentMembers(members as any, gates),
     // The IP form is the richest PII we hold - legal names, DOB, home address.
     // Withhold the responseId (the PDF handle) unless contact was released,
@@ -1437,6 +1447,19 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       notes: notes.map((n: any) => ({ ...n, body: sanitizeNoteHtml(n.body) })),
       tasks: followUps.map((f: any) => ({
         ...f,
+        // Whose face goes on the chip. Staff get their own photo (the same
+        // User -> ProviderMember fallback the owner chip uses); work that is
+        // the FAMILY's gets the family's, and their name comes from the
+        // redacted record rather than the stored snapshot, so a task can never
+        // name someone the rest of the page is withholding.
+        ...(f.assigneeUserId
+          ? { assigneePhotoUrl: ownerPhotoById.get(f.assigneeUserId) ?? null }
+          : f.systemKey?.startsWith("agreement:")
+            ? {
+                assigneeName: parentPublic?.name ?? f.assigneeName,
+                assigneePhotoUrl: parentPublic?.photoUrl ?? null,
+              }
+            : {}),
         // Same read-side sanitize as a note body, for the same reason: older
         // rows predate the editor and may hold literal markup.
         notes: f.notes ? sanitizeNoteHtml(f.notes) : f.notes,

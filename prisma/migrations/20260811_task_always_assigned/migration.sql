@@ -7,11 +7,13 @@ SET "assigneeName" = COALESCE(u."firstName", split_part(u.name, ' ', 1), 'the fa
     "assigneeUserId" = NULL
 FROM "Agreement" a
 JOIN "User" u ON u.id = a."parentUserId"
-WHERE t."systemKey" = 'agreement:' || a.id AND t.status = 'OPEN';
+WHERE t."systemKey" = 'agreement:' || a.id;
 
 -- Work that is the team's rather than one person's wears the org's name. It is
 -- not a user, so no reminder is ever addressed to it.
 UPDATE "ParentTask" t
 SET "assigneeName" = p.name
 FROM "Provider" p
-WHERE t."providerId" = p.id AND t.source = 'SYSTEM' AND t.status = 'OPEN' AND t."assigneeName" IS NULL;
+-- Every SYSTEM task, not just the open ones: a finished task still shows its
+-- chips on the timeline, and "no one" is not a true answer there either.
+WHERE t."providerId" = p.id AND t.source = 'SYSTEM' AND t."assigneeName" IS NULL;

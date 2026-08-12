@@ -563,7 +563,7 @@ export function taskLinkTarget(href: string): { label: string; chat: boolean } {
 export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number] }) {
   const due = new Date(task.dueAt);
   const tone = PRIORITY_TONE[task.priority] || null;
-  // Tighter on a phone so all five facts stay on one line: the chips shrink,
+  // Tighter on a phone so all the facts stay on one line: the chips shrink,
   // the date goes numeric and the assignee goes first-name. None of that costs
   // anything on a desktop, where there is room for the long forms.
   const chip = "text-[11px] sm:text-xs font-ui px-1.5 sm:px-2 py-0.5 rounded-full whitespace-nowrap";
@@ -575,29 +575,29 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
   const longDate = due.toLocaleString(undefined, { month: "short", day: "numeric", ...time });
   const shortDate = due.toLocaleString(undefined, { month: "numeric", day: "numeric", ...time });
   const firstName = (task.assigneeName || "").split(" ")[0];
+
+  /**
+   * The row reads who, by when, what it is about, how urgent - and last, how
+   * it ended.
+   *
+   * The colours deliberately avoid the service palette: those six MEAN a
+   * service - --accent is literally --service-surrogacy and --primary is a
+   * shade off --service-ivf - so a chip wearing one says "surrogacy" whatever
+   * its text reads. Kind and date take the neutrals, and the person takes a
+   * face instead of a colour, which cannot collide with a palette at all.
+   */
   return (
     <div className="flex flex-wrap items-center gap-1 sm:gap-1.5" data-testid={`task-chips-${task.id}`}>
-      {/* The line this belongs to, in the platform's own per-service colour -
-          the same tag the tables and the Interested In row use, so a service
-          looks the same everywhere it appears. */}
-      {task.serviceLine && <ServiceTag service={SERVICE_LINE_LABELS[task.serviceLine]} />}
-      {/* The remaining chips deliberately avoid the service palette. Those six
-          colours MEAN a service - --accent is literally --service-surrogacy,
-          and --primary is a shade off --service-ivf - so a chip wearing one
-          says "surrogacy" whatever its text reads. Kind and date take the
-          neutrals; the person takes a face instead of a colour. */}
-      <span className={chip} style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
-        {taskTypeLabel(task.type)}
-      </span>
-      {finished && (
-        <span
-          className={cn(chip, "inline-flex items-center gap-1")}
-          style={task.dismissedUnresolved
-            ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
-            : { background: "hsl(var(--brand-success) / 0.15)", color: "hsl(var(--brand-success))" }}
-        >
-          {task.dismissedUnresolved ? <AlertTriangle className="w-3 h-3" /> : <Check className="w-3 h-3" />}
-          {task.dismissedUnresolved ? "Marked done - work not finished" : "Done"}
+      {task.assigneeName && (
+        <span className={cn(chip, "inline-flex items-center gap-1.5 border pl-1")}>
+          <DoctorAvatar
+            name={task.assigneeName}
+            photoUrl={task.assigneePhotoUrl || null}
+            size={16}
+            rounded="9999px"
+          />
+          <span className="sm:hidden">{firstName}</span>
+          <span className="hidden sm:inline">{task.assigneeName}</span>
         </span>
       )}
       <span
@@ -614,20 +614,28 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
         <span className="sm:hidden">{shortDate}</span>
         <span className="hidden sm:inline">{longDate}</span>
       </span>
-      {task.assigneeName && (
-        // A person, not a category: the face is what tells them apart from the
-        // facts around them, so this needs no colour of its own at all.
-        <span className={cn(chip, "inline-flex items-center gap-1.5 border pl-1")}>
-          <DoctorMonogram name={task.assigneeName} size={16} rounded="9999px" />
-          <span className="sm:hidden">{firstName}</span>
-          <span className="hidden sm:inline">{task.assigneeName}</span>
-        </span>
-      )}
+      {/* The line it belongs to, in the platform's own per-service colour - the
+          same tag the tables and the Interested In row use. */}
+      {task.serviceLine && <ServiceTag service={SERVICE_LINE_LABELS[task.serviceLine]} />}
+      <span className={chip} style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
+        {taskTypeLabel(task.type)}
+      </span>
       {/* Priority sits WITH the others rather than in the far corner: it is one
           more fact about the task, and reading it meant crossing the card. */}
       {tone && (
         <span className={chip} style={{ background: `color-mix(in srgb, ${tone} 15%, transparent)`, color: tone }}>
           {taskPriorityLabel(task.priority)}
+        </span>
+      )}
+      {finished && (
+        <span
+          className={cn(chip, "inline-flex items-center gap-1")}
+          style={task.dismissedUnresolved
+            ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
+            : { background: "hsl(var(--brand-success) / 0.15)", color: "hsl(var(--brand-success))" }}
+        >
+          {task.dismissedUnresolved ? <AlertTriangle className="w-3 h-3" /> : <Check className="w-3 h-3" />}
+          {task.dismissedUnresolved ? "Marked done - work not finished" : "Done"}
         </span>
       )}
     </div>

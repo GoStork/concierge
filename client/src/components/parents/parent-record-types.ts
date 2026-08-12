@@ -107,6 +107,8 @@ export interface CrmTask {
   overdue: boolean;
   assigneeUserId: string | null;
   assigneeName: string | null;
+  /** Their face, when the platform has one - staff photo or the family's. */
+  assigneePhotoUrl?: string | null;
   /** MANUAL | SYSTEM - system tasks mirror an unresolved artifact. */
   source: string;
   /** SYSTEM only: where the work actually gets done. */

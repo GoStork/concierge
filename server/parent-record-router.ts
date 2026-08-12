@@ -660,6 +660,9 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
     res.json({
       tasks: rows.map((t) => {
         const who = nameByKey.get(t.parentAccountId);
+        // Work that is the FAMILY's wears the family's name as this viewer is
+        // allowed to see it - the gated one, not the stored snapshot.
+        const waitingOnParent = !t.assigneeUserId && t.systemKey?.startsWith("agreement:");
         return {
           id: t.id,
           title: t.title,
@@ -670,7 +673,7 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
           source: t.source,
           deepLink: t.deepLink,
           assigneeUserId: t.assigneeUserId,
-          assigneeName: t.assigneeName,
+          assigneeName: waitingOnParent ? (who?.name ?? t.assigneeName) : t.assigneeName,
           mine: t.assigneeUserId === user.id,
           parentName: who?.name || "A family",
           parentUserId: who?.parentUserId || null,
