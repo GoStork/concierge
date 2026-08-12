@@ -67,6 +67,7 @@ securityRouter.get("/api/admin/security/countries", requireGostorkAdmin, async (
       activity.set(g.isoCode, a);
     }
 
+    const phoneCodes = new Set<string>(getCountries());
     const countries = getCountries().map((iso) => {
       const row = policyOf.get(iso);
       const act = activity.get(iso);
@@ -81,7 +82,25 @@ securityRouter.get("/api/admin/security/countries", requireGostorkAdmin, async (
         sent7d: act?.sent ?? 0,
         blocked7d: act?.blocked ?? 0,
       };
-    }).sort((a, b) => a.name.localeCompare(b.name));
+    });
+    // Policy rows libphonenumber has no phone plan for - today that is "XX",
+    // Cloudflare's unknown-geolocation bucket, imported with the rest of the
+    // edge rule. They still belong on the page so an admin can see and change
+    // them, they just carry no calling code.
+    for (const row of rows) {
+      if (phoneCodes.has(row.isoCode as any)) continue;
+      countries.push({
+        isoCode: row.isoCode,
+        name: row.isoCode === "XX" ? "Unknown location (edge only)" : row.isoCode,
+        callingCode: "",
+        policy: row.policy,
+        reason: row.reason ?? null,
+        isException: true,
+        sent7d: 0,
+        blocked7d: 0,
+      });
+    }
+    countries.sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({ countries });
   } catch (e: any) {
@@ -92,7 +111,9 @@ securityRouter.get("/api/admin/security/countries", requireGostorkAdmin, async (
 securityRouter.put("/api/admin/security/countries/:iso", requireGostorkAdmin, async (req, res) => {
   try {
     const iso = String(req.params.iso || "").toUpperCase();
-    if (!(getCountries() as string[]).includes(iso)) {
+    // "XX" is Cloudflare's unknown-geolocation bucket - not a phone country,
+    // but a valid edge policy target.
+    if (!(getCountries() as string[]).includes(iso) && iso !== "XX") {
       return res.status(400).json({ message: "Unknown country code" });
     }
     const policy = String(req.body?.policy || "");
