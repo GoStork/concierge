@@ -127,12 +127,17 @@ export class AuthController {
   @Post("send-otp")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Send OTP verification code via SMS or WhatsApp" })
-  async sendOtp(@Body() body: { phone: string }) {
+  async sendOtp(@Body() body: { phone: string }, @Req() req: Request) {
     if (!body.phone?.trim()) {
       throw new BadRequestException("Phone number is required");
     }
     try {
-      const result = await this.authService.sendOtp(body.phone);
+      const result = await this.authService.sendOtp(body.phone, {
+        // Behind ngrok/a proxy the socket address is the tunnel; the header
+        // carries the caller. First hop only - the rest is forgeable.
+        ip: (String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress) ?? null,
+        userAgent: (req.headers["user-agent"] as string) ?? null,
+      });
       return { success: true, sent: result.sent, channel: result.channel, devCode: result.devCode };
     } catch (err: any) {
       throw new BadRequestException(err.message);

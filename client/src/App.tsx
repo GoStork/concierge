@@ -67,6 +67,7 @@ import ProviderParentFormsPage from "@/pages/provider-parent-forms-page";
 import W9SigningPage from "@/pages/w9-signing-page";
 import PaymentPage from "@/pages/payment-page";
 import AdminBillingPage from "@/pages/admin-billing-page";
+import AdminSecurityPage from "@/pages/admin-security-page";
 import MyInvoicesPage from "@/pages/my-invoices-page";
 import ParentHomePage from "@/pages/parent-home-page";
 import MyCostSheetsPage from "@/pages/my-cost-sheets-page";
@@ -210,6 +211,7 @@ function AppRoutes() {
         <Route path="/admin/test-runner" element={<Navigate to="/account/test-runner" replace />} />
         <Route path="/provider/conversations" element={<Navigate to="/chat" replace />} />
         <Route path="/admin/branding" element={<Navigate to="/account/branding" replace />} />
+        <Route path="/admin/security" element={<ProtectedRoute><AdminSecurityPage /></ProtectedRoute>} />
         <Route path="/account/*" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
         <Route path="/book/:slug" element={<BookingPage />} />
         <Route path="/booking/:token/confirm" element={<BookingActionPage action="confirm" />} />

@@ -262,6 +262,14 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.parentNote;
   }
 
+  get securityCountryPolicy() {
+    return prisma.securityCountryPolicy;
+  }
+
+  get otpAttempt() {
+    return prisma.otpAttempt;
+  }
+
   get parentTask() {
     return prisma.parentTask;
   }

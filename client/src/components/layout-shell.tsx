@@ -28,6 +28,7 @@ import {
   Heart,
   Flame,
   Loader2,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -1073,6 +1074,14 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
                     Settings
                   </Link>
                 </DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/admin/security" className="flex items-center gap-2 cursor-pointer" data-testid="menu-admin-security">
+                      <ShieldCheck className="w-4 h-4" />
+                      Security
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="flex items-center gap-2 text-destructive focus:text-destructive cursor-pointer"

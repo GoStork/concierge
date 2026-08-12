@@ -6,6 +6,7 @@ import { AuthService } from "./auth.service";
 import { LocalStrategy } from "./local.strategy";
 import { JwtStrategy } from "./jwt.strategy";
 import { SessionSerializer } from "./session.serializer";
+import { OtpGuardService } from "./otp-guard.service";
 import { NotificationModule } from "../notifications/notification.module";
 
 @Module({
@@ -18,7 +19,7 @@ import { NotificationModule } from "../notifications/notification.module";
     NotificationModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, LocalStrategy, JwtStrategy, SessionSerializer],
+  providers: [AuthService, LocalStrategy, JwtStrategy, SessionSerializer, OtpGuardService],
   exports: [AuthService],
 })
 export class AuthModule {}

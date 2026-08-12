@@ -3,6 +3,7 @@ import { JwtService } from "@nestjs/jwt";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { PrismaService } from "../prisma/prisma.service";
+import { OtpGuardService } from "./otp-guard.service";
 import { getTwilioClient } from "./twilio-client";
 import { parsePhoneIso, pickChannel, type VerificationChannel } from "./verification-channel";
 
@@ -24,6 +25,7 @@ export class AuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JwtService) private readonly jwtService: JwtService,
+    @Inject(OtpGuardService) private readonly otpGuard: OtpGuardService,
   ) {}
 
   async hashPassword(password: string): Promise<string> {
@@ -132,14 +134,32 @@ export class AuthService {
     return true;
   }
 
-  async sendOtp(phone: string): Promise<{ sent: boolean; channel: VerificationChannel; devCode?: string }> {
+  async sendOtp(
+    phone: string,
+    meta?: { ip?: string | null; userAgent?: string | null },
+  ): Promise<{ sent: boolean; channel: VerificationChannel; devCode?: string }> {
     const normalized = phone.replace(/\s+/g, "").replace(/[^\d+]/g, "");
     if (!normalized.startsWith("+") || normalized.length < 10) {
       throw new Error("phone_invalid");
     }
 
     const isoCode = parsePhoneIso(normalized);
-    const channel = pickChannel(isoCode);
+    const ip = meta?.ip ?? null;
+    const ua = meta?.userAgent ?? null;
+
+    // The abuse gate: country policy first, then the rate limits. Every
+    // decision is written to the log the admin page reads, so a burst is
+    // visible AS a burst rather than as a Twilio bill a month later.
+    const gate = await this.otpGuard.check(normalized, isoCode, ip);
+    if (!gate.ok) {
+      await this.otpGuard.record(
+        normalized, isoCode, ip, ua,
+        gate.reason === "country_blocked" ? "blocked_country" : "blocked_rate",
+      );
+      throw new Error(gate.reason);
+    }
+
+    const channel: VerificationChannel = gate.forceWhatsapp ? "whatsapp" : pickChannel(isoCode);
     const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
     const client = getTwilioClient();
 
@@ -149,19 +169,27 @@ export class AuthService {
         throw new Error("verify_failed");
       }
       this.logger.warn(`[OTP DEV] Verify SID missing — mock send to ${normalized} via ${channel}. Use code ${DEV_OTP_CODE}.`);
+      await this.otpGuard.record(normalized, isoCode, ip, ua, "sent", channel);
       return { sent: false, channel, devCode: DEV_OTP_CODE };
     }
 
-    await this.assertPhoneIsReachable(client, normalized);
+    try {
+      await this.assertPhoneIsReachable(client, normalized);
+    } catch (err: any) {
+      await this.otpGuard.record(normalized, isoCode, ip, ua, err?.message === "phone_voip" ? "blocked_voip" : "invalid");
+      throw err;
+    }
 
     try {
       const verification = await client.verify.v2
         .services(verifyServiceSid)
         .verifications.create({ to: normalized, channel });
       this.logger.log(`Verify sent to ${normalized.slice(0, -4)}**** via ${channel} (status=${verification.status})`);
+      await this.otpGuard.record(normalized, isoCode, ip, ua, "sent", channel);
       return { sent: true, channel };
     } catch (err: any) {
       this.logger.error(`Verify send failed: ${err?.code ?? "unknown"} ${err?.message ?? err}`);
+      await this.otpGuard.record(normalized, isoCode, ip, ua, "failed", channel);
       if (err?.code === 60200 || err?.code === 60205) throw new Error("phone_invalid");
       if (err?.code === 60203) throw new Error("phone_unreachable");
       throw new Error("verify_failed");

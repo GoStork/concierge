@@ -171,6 +171,13 @@ const CODE_TO_NAME_OVERRIDES: Record<string, string> = {
 };
 
 /** Converts an ISO 3166-1 alpha-2 code (e.g. "US") to the country name used in our pickers (e.g. "United States"). */
+/** ISO code straight to its flag emoji - the code IS the flag, no lookup. */
+export function countryCodeToFlag(code: string): string {
+  const c = (code || "").toUpperCase();
+  if (!/^[A-Z]{2}$/.test(c)) return "";
+  return String.fromCodePoint(...[...c].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
+}
+
 export function isoCodeToCountryName(code: string): string | null {
   const c = (code || "").trim().toUpperCase();
   if (c.length !== 2) return null;

@@ -2978,6 +2978,46 @@ model ParentOwner {
   @@index([parentAccountId, scope])
 }
 
+/// Per-country verification policy, managed at /admin/security.
+///
+/// A country with no row is ALLOWED - the world is open by default, because
+/// GoStork's families come from 125 countries and a blanket allowlist would
+/// turn away real parents. Rows exist to say something exceptional.
+model SecurityCountryPolicy {
+  /// ISO 3166-1 alpha-2, e.g. "ET".
+  isoCode         String   @id
+  /// ALLOWED | WHATSAPP_ONLY | BLOCKED
+  policy          String
+  /// Why, for whoever reads this list in a year.
+  reason          String?
+  updatedByUserId String?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+}
+
+/// Every verification attempt, for rate limiting and for the admin to see a
+/// burst as it happens. Phone numbers are stored masked - this is an abuse
+/// log, not a contact list.
+model OtpAttempt {
+  id          String   @id @default(uuid())
+  /// Last four digits only, prefixed by the calling code: "+251****5566".
+  phoneMasked String
+  /// The full number hashed, so repeat attempts can be counted without storing it.
+  phoneHash   String
+  isoCode     String?
+  ip          String?
+  userAgent   String?
+  /// sent | blocked_country | blocked_rate | blocked_voip | invalid | failed
+  outcome     String
+  channel     String?
+  createdAt   DateTime @default(now())
+
+  @@index([phoneHash, createdAt])
+  @@index([ip, createdAt])
+  @@index([isoCode, createdAt])
+  @@index([createdAt])
+}
+
 // Phase 7A: append-only journey event log. Every notable event in a parent's
 // journey with a provider - booking lifecycle + call outcomes, invoices,
 // agreements, matches, favorites, whispers, lawyer connect, bank checkout,
