@@ -1357,9 +1357,12 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
         <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>
       ) : null}
       {entry.extra}
+      {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} viewerRole={viewerRole} onChanged={onChanged} />}
       {/* Anything that happened IN a conversation offers the way back to it -
-          at the exact message when the card is about one. A task carries its
-          own link already, so it is excluded rather than given two. */}
+          at the exact message when the card is about one. LAST, under the
+          detail, because that is where every card keeps its actions: a task's
+          Done sits beside its own link, and a file's Open sits on the file.
+          A task is excluded here rather than given a second link. */}
       {entry.chat && !entry.task && (() => {
         const href = chatDeepLink(
           { sessionId: entry.chat.sessionId, parentUserId },
@@ -1380,7 +1383,6 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
           </div>
         ) : null;
       })()}
-      {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} viewerRole={viewerRole} onChanged={onChanged} />}
       {/* The footer label earns its place only when it ADDS something the
           header didn't say (e.g. "AI Activity" on an email). On a note it
           just repeated the title. */}

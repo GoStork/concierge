@@ -57,6 +57,8 @@ interface QueueItem {
   since: Date;
   /** Which line the work belongs to, so the record's scope filter can place it. */
   serviceLine: string | null;
+  /** The thread it came out of, when the deep link points somewhere else. */
+  chatSessionId?: string | null;
 }
 
 /**
@@ -153,7 +155,7 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
     }),
     db.agreement.findMany({
       where: { ...LIVE_WHERE.agreement },
-      select: { id: true, providerId: true, parentUserId: true, documentType: true, serviceType: true, createdAt: true },
+      select: { id: true, providerId: true, parentUserId: true, documentType: true, serviceType: true, sessionId: true, createdAt: true },
     }),
   ]);
 
@@ -240,6 +242,9 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
         `${a.documentType || "Agreement"} for ${nameOf.get(a.parentUserId) || "a family"}`,
       ),
       deepLink: `/agreements/${a.id}`,
+      // The agreement opens the document; this opens the conversation it was
+      // sent from, which is where the coordinator would chase it.
+      chatSessionId: a.sessionId,
       kind: "agreement",
       serviceLine: serviceLineOfType(a.serviceType),
       waitingOnParent: true,
@@ -304,6 +309,7 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
             source: "SYSTEM",
             systemKey: item.systemKey,
             deepLink: item.deepLink,
+            chatSessionId: item.chatSessionId ?? null,
             serviceLine: item.serviceLine,
             // Waiting on the family: it wears their name, and no user id, so
             // no reminder is ever addressed to a parent about the provider's

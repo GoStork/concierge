@@ -2935,6 +2935,10 @@ model ParentTask {
   systemKey             String?   @unique
   /// SYSTEM only: where the work is actually done (the Review link).
   deepLink              String?
+  /// SYSTEM only: the conversation this work came out of, when the deepLink
+  /// points somewhere else - an agreement task links to the agreement AND
+  /// back to the thread it was sent from.
+  chatSessionId         String?
   /// Completed while the underlying artifact was still unresolved - the
   /// coordinator was warned and chose to dismiss it anyway. Kept so the
   /// activity card can say so rather than showing a clean "done".

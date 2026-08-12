@@ -676,7 +676,21 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
       {readOnly || task.status !== "OPEN" ? (
         // Finished: the link to the artifact is still worth having, the
         // controls for doing the work are not.
-        task.status !== "OPEN" && task.deepLink ? <TaskOpenLink task={task} /> : null
+        task.status !== "OPEN" && (task.deepLink || task.chatSessionId) ? (
+          <div className="flex items-center gap-2">
+            {task.deepLink && <TaskOpenLink task={task} />}
+            {task.chatSessionId && !task.deepLink?.startsWith("/chat") && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { window.location.href = `/chat/${record.parent.id}/${task.chatSessionId}`; }}
+                data-testid={`btn-task-open-chat-${task.id}`}
+              >
+                <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Open chat
+              </Button>
+            )}
+          </div>
+        ) : null
       ) : mode === "confirm" ? (
         <div className="rounded-[var(--radius)] border p-2.5 space-y-1.5" style={{ background: "hsl(var(--brand-warning) / 0.1)", borderColor: "hsl(var(--brand-warning) / 0.3)" }}>
           <p className="text-xs font-medium" style={{ color: "hsl(var(--brand-warning))" }}>
@@ -709,6 +723,19 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
             <Check className="w-3.5 h-3.5 mr-1.5" /> Done
           </Button>
           {task.deepLink && <TaskOpenLink task={task} />}
+          {/* Its conversation, when the artifact link points somewhere else -
+              an agreement task opens the agreement AND the thread it was sent
+              from, beside Done where a task keeps its actions. */}
+          {task.chatSessionId && !task.deepLink?.startsWith("/chat") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => { window.location.href = `/chat/${record.parent.id}/${task.chatSessionId}`; }}
+              data-testid={`btn-task-open-chat-${task.id}`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Open chat
+            </Button>
+          )}
         </div>
       )}
     </div>

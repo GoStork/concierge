@@ -113,6 +113,8 @@ export interface CrmTask {
   deepLink: string | null;
   /** SYSTEM only: the artifact this mirrors, as "<kind>:<id>". */
   systemKey?: string | null;
+  /** SYSTEM only: the conversation this came out of, if the link points elsewhere. */
+  chatSessionId?: string | null;
   /** Completed while the artifact was still unresolved, on purpose. */
   dismissedUnresolved: boolean;
   /** At most one activity per record is pinned - a note OR a task. */
