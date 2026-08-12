@@ -967,7 +967,10 @@ function CardHeaderActions({ note, kind, mode, setMode, onDelete, onTogglePin, p
           // INHERITED like the title's rather than set to text-foreground -
           // the token is blue-tinted (15,23,41) while the title inherits the
           // page's near-black (10,10,10), and the mismatch showed.
-          className="shrink-0 inline-flex items-center gap-0.5 text-sm font-medium font-ui transition-colors hover:opacity-70 p-3 -m-3 sm:p-0 sm:m-0"
+          // Hover moves the COLOUR rather than fading the text: at 70% opacity
+          // it turned grey mid-reach and stopped matching the title it is
+          // meant to sit level with.
+          className="shrink-0 inline-flex items-center gap-0.5 text-sm font-medium font-ui transition-colors hover:text-primary p-3 -m-3 sm:p-0 sm:m-0"
           data-testid={`btn-${kind}-actions-${note.id}`}
         >
           Actions <ChevronDown className="w-3 h-3" />
