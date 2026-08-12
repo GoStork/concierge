@@ -88,6 +88,12 @@ export interface CrmNote {
   authorName: string | null;
   createdAt: string;
   updatedAt: string;
+  /** #4 Log a call: NOTE | CALL | EMAIL | MEETING (default NOTE). */
+  kind?: string;
+  outcome?: string | null;
+  durationMinutes?: number | null;
+  /** When the interaction happened (cards sort on this when present). */
+  occurredAt?: string | null;
 }
 
 /** A piece of work someone owes this family. Was CrmFollowUp. */

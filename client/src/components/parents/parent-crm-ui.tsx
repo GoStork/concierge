@@ -206,9 +206,18 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
   const [scopeKey, setScopeKey] = useState(choices[0]?.key || "gostork");
   const [body, setBody] = useState("");
   const [serviceLine, setServiceLine] = useState(defaultServiceLine(record, activeLine, serviceLines));
+  // #4 Log a call: a note with a kind. CALL reveals outcome + duration; any
+  // non-NOTE reveals "when did this happen".
+  const [kind, setKind] = useState<"NOTE" | "CALL" | "EMAIL" | "MEETING">("NOTE");
+  const [outcome, setOutcome] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("");
+  const [occurredAt, setOccurredAt] = useState("");
   // Remounting the editor is how it clears - it is uncontrolled by design.
   const [editorKey, setEditorKey] = useState(0);
-  const mut = useCrmMutation(record.parent.id, () => { setBody(""); setEditorKey((k) => k + 1); onPosted?.(); });
+  const mut = useCrmMutation(record.parent.id, () => {
+    setBody(""); setEditorKey((k) => k + 1); setKind("NOTE"); setOutcome(""); setDurationMinutes(""); setOccurredAt("");
+    onPosted?.();
+  });
   const chosen = choices.find((c) => c.key === scopeKey) || choices[0];
   const hasText = !!body.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
 
@@ -235,6 +244,17 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
           className="h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
           testId="select-note-service"
         />
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as any)}
+          className="h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
+          data-testid="select-note-kind"
+        >
+          <option value="NOTE">Note</option>
+          <option value="CALL">Call</option>
+          <option value="EMAIL">Email</option>
+          <option value="MEETING">Meeting</option>
+        </select>
         {isAdmin ? (
           <OptionPills
             // One line per pill. A provider like "Sperm Bank California |
@@ -257,6 +277,42 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
           null
         )}
       </div>
+      {/* Log-a-call detail: outcome + duration for a call, "when" for anything
+          that isn't a plain note (you log yesterday's call today). */}
+      {kind !== "NOTE" && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {kind === "CALL" && (
+            <>
+              <select
+                value={outcome}
+                onChange={(e) => setOutcome(e.target.value)}
+                className="h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
+                data-testid="select-note-outcome"
+              >
+                <option value="">Outcome…</option>
+                <option value="reached">Reached</option>
+                <option value="voicemail">Voicemail</option>
+                <option value="no_answer">No answer</option>
+                <option value="rescheduled">Rescheduled</option>
+              </select>
+              <input
+                type="number" min={0} placeholder="min"
+                value={durationMinutes}
+                onChange={(e) => setDurationMinutes(e.target.value)}
+                className="h-9 w-20 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
+                data-testid="input-note-duration"
+              />
+            </>
+          )}
+          <input
+            type="datetime-local"
+            value={occurredAt}
+            onChange={(e) => setOccurredAt(e.target.value)}
+            className="h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
+            data-testid="input-note-occurred"
+          />
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <Button
           size="sm"
@@ -264,12 +320,17 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
           onClick={() => mut.mutate({
             url: `/api/parents/${record.parent.id}/notes`,
             method: "POST",
-            body: { body, serviceLine, scope: chosen?.scope, providerId: chosen?.providerId },
+            body: {
+              body, serviceLine, scope: chosen?.scope, providerId: chosen?.providerId,
+              kind,
+              ...(kind === "CALL" ? { outcome: outcome || undefined, durationMinutes: durationMinutes ? Number(durationMinutes) : undefined } : {}),
+              ...(kind !== "NOTE" && occurredAt ? { occurredAt: new Date(occurredAt).toISOString() } : {}),
+            },
           })}
           data-testid="btn-post-note"
         >
           {mut.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
-          Post note
+          {kind === "NOTE" ? "Post note" : `Log ${kind.toLowerCase()}`}
         </Button>
         {onCancel && (
           <Button size="sm" variant="ghost" onClick={onCancel} data-testid="btn-cancel-note">

@@ -228,6 +228,8 @@ interface Entry {
   task?: ParentRecord["crm"]["tasks"][number];
   /** kind "note" only: the raw note plus whether the viewer may manage it. */
   note?: { id: string; html: string; canManage: boolean; pinned: boolean };
+  /** #4 Log a call: outcome + duration chips on a logged interaction. */
+  loggedMeta?: { outcome: string | null; durationMinutes: number | null };
   /** The person who wrote it. Only notes have one. */
   byline?: string | null;
   /** Which org the entry belongs to. NOT an author - see buildEntries. */
@@ -278,11 +280,18 @@ function buildEntries(record: ParentRecord): Entry[] {
   for (const n of record.crm.notes) {
     const org = record.providerOrgs.find((o) => o.providerId === n.providerId);
     const internal = n.scope === "GOSTORK";
+    // #4 Log a call: a kind makes the card title "Call logged" etc. and sorts
+    // the entry by when it actually happened, not when it was typed.
+    const logged = n.kind && n.kind !== "NOTE";
+    const kindTitle = n.kind === "CALL" ? "Call logged"
+      : n.kind === "EMAIL" ? "Email logged"
+      : n.kind === "MEETING" ? "Meeting logged" : "Note";
     out.push({
       id: `note-${n.id}`,
       kind: "note",
-      at: n.createdAt,
-      title: "Note",
+      at: (logged && n.occurredAt) ? n.occurredAt : n.createdAt,
+      title: kindTitle,
+      loggedMeta: logged ? { outcome: n.outcome || null, durationMinutes: n.durationMinutes ?? null } : undefined,
       note: {
         id: n.id,
         html: n.body,
@@ -1276,6 +1285,13 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-x-2">
             <span className="text-sm font-medium font-ui shrink-0">{entry.title}</span>
+            {entry.loggedMeta && (entry.loggedMeta.outcome || entry.loggedMeta.durationMinutes != null) && (
+              <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-ui px-1.5 py-0.5 rounded-full bg-secondary">
+                {entry.loggedMeta.outcome ? entry.loggedMeta.outcome.replace(/_/g, " ") : null}
+                {entry.loggedMeta.outcome && entry.loggedMeta.durationMinutes != null ? " · " : null}
+                {entry.loggedMeta.durationMinutes != null ? `${entry.loggedMeta.durationMinutes}m` : null}
+              </span>
+            )}
             {entry.byline && <span className="t-helper truncate min-w-0">by {entry.byline}</span>}
             {/* The org is only information when there is more than one of
                 them. An admin's timeline spans every provider, so each card

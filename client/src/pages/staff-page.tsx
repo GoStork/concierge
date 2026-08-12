@@ -141,6 +141,18 @@ function GostorkAdminUsersView() {
   // Signups flagged at creation (per-IP velocity, etc.). Count drives the pill.
   const reviewCount = parentUsers.filter(m => (overview[m.id]?.trustState) === "QUARANTINED").length;
 
+  // #1 Search that reaches what people wrote: note bodies + task text, scoped
+  // server-side. Fires only at 3+ chars, and only when the fast client-side
+  // name/email/phone filter above finds few rows (so it stays a "reach deeper"
+  // affordance, never noise on a common name).
+  const trimmedQuery = searchQuery.trim();
+  const { data: writtenSearch } = useQuery<{ results: { parentUserId: string; parentName: string; kind: string; snippet: string; at: string }[] }>({
+    queryKey: ["/api/parents/search", trimmedQuery],
+    queryFn: async () => (await fetch(`/api/parents/search?q=${encodeURIComponent(trimmedQuery)}`, { credentials: "include" })).json(),
+    enabled: trimmedQuery.length >= 3,
+  });
+  const writtenResults = trimmedQuery.length >= 3 ? (writtenSearch?.results || []) : [];
+
   const filteredUsers = parentUsers.filter(member => {
     if (reviewFilter && overview[member.id]?.trustState !== "QUARANTINED") return false;
     // Equality on enum keys, exactly like the provider table. This used to be a
@@ -407,6 +419,31 @@ function GostorkAdminUsersView() {
         }}
         emptyMessage={hasActiveFilters ? "No parents match your filters." : "No parents found."}
       />
+
+      {/* #1 Search: what the team wrote inside notes and tasks, unreachable by
+          the name/email/phone filter above. */}
+      {writtenResults.length > 0 && (
+        <div className="mt-6 rounded-[var(--radius)] border bg-card p-4">
+          <h3 className="t-section-title font-heading mb-3">Found in notes and tasks ({writtenResults.length})</h3>
+          <div className="space-y-1.5">
+            {writtenResults.map((r, i) => (
+              <button
+                key={`${r.parentUserId}-${i}`}
+                type="button"
+                className="w-full text-left flex items-start gap-2 rounded-md px-2.5 py-2 hover:bg-secondary transition-colors"
+                onClick={() => navigate(`/parents/${r.parentUserId}`)}
+                data-testid={`search-result-${i}`}
+              >
+                <span className="text-[10px] font-ui uppercase px-1.5 py-0.5 rounded-full bg-accent/15 shrink-0 mt-0.5" style={{ color: "hsl(var(--accent))" }}>{r.kind}</span>
+                <span className="min-w-0">
+                  <span className="text-sm font-medium">{r.parentName}</span>
+                  <span className="block t-helper truncate">{r.snippet}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Dialog open={!!deleteMember} onOpenChange={(open) => { if (!open) setDeleteMember(null); }}>
         <DialogContent>
