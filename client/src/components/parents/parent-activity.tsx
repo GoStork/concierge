@@ -1330,13 +1330,6 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-x-2">
             <span className="text-sm font-medium font-ui shrink-0">{entry.title}</span>
-            {entry.loggedMeta && (entry.loggedMeta.outcome || entry.loggedMeta.durationMinutes != null) && (
-              <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-ui px-1.5 py-0.5 rounded-full bg-secondary">
-                {entry.loggedMeta.outcome ? entry.loggedMeta.outcome.replace(/_/g, " ") : null}
-                {entry.loggedMeta.outcome && entry.loggedMeta.durationMinutes != null ? " · " : null}
-                {entry.loggedMeta.durationMinutes != null ? `${entry.loggedMeta.durationMinutes}m` : null}
-              </span>
-            )}
             {entry.byline && <span className="t-helper truncate min-w-0">by {entry.byline}</span>}
             {/* The org is only information when there is more than one of
                 them. An admin's timeline spans every provider, so each card
@@ -1344,10 +1337,6 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
                 org, where repeating it on every row is pure noise. */}
             {entry.org && viewerRole === "admin" && (
               <span className="t-helper truncate min-w-0">{entry.org}</span>
-            )}
-            {/* Notes wear their service tag like tasks do. */}
-            {entry.note?.serviceLine && (
-              <span className="shrink-0"><ServiceTag service={SERVICE_LINE_LABELS[entry.note.serviceLine] || entry.note.serviceLine} /></span>
             )}
             <span className="ml-auto shrink-0 inline-flex items-center gap-3">
               {entry.note && (
@@ -1406,7 +1395,21 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
           onSave={(extra) => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { body: noteDraft, ...extra } })}
           onCancel={() => setNoteMode("view")}
         />
-      ) : entry.task ? (
+      ) : null}
+      {/* Note chips at the BOTTOM, exactly like a task's - service tag, and for
+          a logged call the outcome + duration. Never in edit mode. */}
+      {entry.note && noteMode !== "edit" && (entry.note.serviceLine || entry.loggedMeta) && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+          {entry.note.serviceLine && <ServiceTag service={SERVICE_LINE_LABELS[entry.note.serviceLine] || entry.note.serviceLine} />}
+          {entry.loggedMeta?.outcome && (
+            <span className="inline-flex items-center text-[11px] font-ui px-2 py-0.5 rounded-full bg-secondary">{entry.loggedMeta.outcome.replace(/_/g, " ")}</span>
+          )}
+          {entry.loggedMeta?.durationMinutes != null && (
+            <span className="inline-flex items-center text-[11px] font-ui px-2 py-0.5 rounded-full bg-secondary">{entry.loggedMeta.durationMinutes}m</span>
+          )}
+        </div>
+      )}
+      {entry.task ? (
         <>
           {/* The task's own line, labelled like the fields on a message card -
               same shape, so a card of ours reads the same way whatever it is
