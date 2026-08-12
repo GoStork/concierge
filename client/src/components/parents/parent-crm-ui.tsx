@@ -22,6 +22,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { ActivityBody } from "./parent-cells";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import type { CrmScope, ParentRecord, ProviderOrg } from "./parent-record-types";
 
@@ -484,9 +485,13 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
   return (
     <div className="space-y-1.5">
       <TaskChips task={task} />
-      {/* The note is the task's own words, not metadata about it - same weight
-          as a note's body, which is what it is. */}
-      {task.notes && <p className="text-sm whitespace-pre-wrap break-words">{task.notes}</p>}
+      {/* The note is the task's own words, not metadata about it - so it sits
+          in the same framed block a note's body and a message's text do. */}
+      {task.notes && (
+        <ActivityBody className="whitespace-pre-wrap" testId={`task-notes-${task.id}`}>
+          {task.notes}
+        </ActivityBody>
+      )}
       {readOnly || task.status !== "OPEN" ? (
         // Finished: the link to the artifact is still worth having, the
         // controls for doing the work are not.

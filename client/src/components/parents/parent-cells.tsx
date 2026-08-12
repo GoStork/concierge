@@ -13,6 +13,7 @@
  * two contexts, per the no-fork rule in CLAUDE.md.
  */
 import { type ReactNode } from "react";
+import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Lock, Users } from "lucide-react";
 import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-monogram";
@@ -812,6 +813,32 @@ export function ParentAgreementsCell({
           title={agreements.slice(shown.length).map((agr) => `${agr.documentType} - ${agr.status}`).join("\n")}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * The framed block an activity card puts its words in.
+ *
+ * The message cards have always drawn what was actually SAID inside a border,
+ * which is what separates the content from the facts about it. Notes and tasks
+ * carry words too and were letting them run loose in the card, so the three
+ * kinds of card read as three different objects. One box, one look.
+ */
+export function ActivityBody({ children, className, testId }: {
+  children: ReactNode;
+  className?: string;
+  testId?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "text-sm break-words rounded-[calc(var(--radius)/2)] bg-card border px-2.5 py-2",
+        className,
+      )}
+      data-testid={testId}
+    >
+      {children}
     </div>
   );
 }

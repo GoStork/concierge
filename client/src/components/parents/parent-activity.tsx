@@ -45,6 +45,7 @@ import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
 import { NoteComposer, ParentTaskComposer, ParentTaskPanel, TaskCardBody, useCrmMutation } from "./parent-crm-ui";
+import { ActivityBody } from "./parent-cells";
 import type { TaskMode } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
@@ -1025,14 +1026,15 @@ function NoteEntryBody({ note, mode, draft, setDraft, onSave, onCancel, pending 
     );
   }
   return isRichNoteHtml(note.html) ? (
-    <div
-      className="text-sm break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3"
-      // Sanitized server-side on write and read - see server/note-html.ts.
-      dangerouslySetInnerHTML={{ __html: note.html }}
-      data-testid={`note-body-${note.id}`}
-    />
+    <ActivityBody testId={`note-body-${note.id}`}>
+      <div
+        className="[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3"
+        // Sanitized server-side on write and read - see server/note-html.ts.
+        dangerouslySetInnerHTML={{ __html: note.html }}
+      />
+    </ActivityBody>
   ) : (
-    <p className="text-sm whitespace-pre-wrap break-words" data-testid={`note-body-${note.id}`}>{note.html}</p>
+    <ActivityBody className="whitespace-pre-wrap" testId={`note-body-${note.id}`}>{note.html}</ActivityBody>
   );
 }
 
@@ -1279,9 +1281,10 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
         />
       ) : entry.task ? (
         <>
-          {taskMode !== "edit" && (
-            <p className="text-sm font-medium whitespace-pre-wrap break-words">{entry.task.title}</p>
-          )}
+          {/* The task's own line, labelled like the fields on a message card -
+              same shape, so a card of ours reads the same way whatever it is
+              about. Notes have no subject: their first line IS the subject. */}
+          {taskMode !== "edit" && <Row label="Subject">{entry.task.title}</Row>}
           <TaskCardBody
             record={record}
             task={entry.task}
