@@ -1540,6 +1540,37 @@ export class UsersController {
         overview[id].household = household;
       }
     }
+
+    // #2b Link-as-household: two accounts kept separate but SHOWN as one
+    // family. Runs AFTER the couples rollup so the shared-account badge
+    // keeps precedence; only the badge merges - each account keeps its own
+    // journey, so every aggregate above stays per-account.
+    {
+      const links = await this.prisma.parentHouseholdLink.findMany({
+        select: { aAccountId: true, bAccountId: true },
+      }).catch(() => []);
+      if (links.length) {
+        const byKey = new Map<string, typeof parents>();
+        for (const p of parents) {
+          const k = p.parentAccountId || p.id;
+          const list = byKey.get(k) || [];
+          list.push(p);
+          byKey.set(k, list);
+        }
+        for (const l of links as any[]) {
+          const combined = [...(byKey.get(l.aAccountId) || []), ...(byKey.get(l.bAccountId) || [])];
+          if (combined.length < 2) continue;
+          const household = {
+            memberIds: combined.map((m) => m.id),
+            memberNames: combined.map((m) => m.name || ""),
+            linked: true,
+          };
+          for (const m of combined) {
+            if (overview[m.id] && !overview[m.id].household) overview[m.id].household = household;
+          }
+        }
+      }
+    }
     return overview;
   }
 

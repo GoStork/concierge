@@ -299,6 +299,15 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.parentStageSnapshot;
   }
 
+  // Merge / link (CRM Phase 9 §2b).
+  get parentAccountMerge() {
+    return prisma.parentAccountMerge;
+  }
+
+  get parentHouseholdLink() {
+    return prisma.parentHouseholdLink;
+  }
+
   // Silence signal (CRM Phase 9 §5).
   get silenceConfig() {
     return prisma.silenceConfig;

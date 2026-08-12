@@ -11,7 +11,7 @@
  * /users/:id still exists for the account-admin job (password, roles,
  * calendars) and is reachable from the Account settings button in the header.
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMediaQuery } from "@/hooks/use-mobile";
@@ -33,6 +33,7 @@ import {
   InterestedProfilesSection,
 } from "@/components/parents";
 import type { ParentRecord } from "@/components/parents";
+import { MergeLinkMenu, ParentMergePanel, type MergeLinkMode } from "@/components/parents/parent-merge-panel";
 
 /**
  * The three columns, in reading order.
@@ -116,6 +117,9 @@ export default function ParentDetailPage() {
   }, [dataUpdatedAt, qc]);
 
   const isAdmin = record?.viewer.role === "admin";
+  // #2b: the Actions menu's merge/link picker, rendered inline below the
+  // header (no dialogs, per the house rule).
+  const [mergeMode, setMergeMode] = useState<MergeLinkMode | null>(null);
 
   // Service-line scope: ANY viewer - coordinator, provider admin, GoStork
   // admin - can focus the record on one service line (an admin often IS the
@@ -208,8 +212,14 @@ export default function ParentDetailPage() {
                   (by request) - see the scope prop on ParentActivitySection.
                   Same state, same page-wide effect. */}
               {record && isAdmin && <ParentRecordActions record={record} />}
+              {/* Merge (admin) / link-as-household (providers too) live under
+                  the same Actions menu that HubSpot puts them under. */}
+              {record && <MergeLinkMenu isAdmin={!!isAdmin} onOpen={setMergeMode} />}
             </div>
           </div>
+          {record && mergeMode && (
+            <ParentMergePanel record={record} mode={mergeMode} onClose={() => setMergeMode(null)} />
+          )}
           {isLoading && (
             <div className="flex flex-col items-center justify-center gap-3 py-12" data-testid="parent-record-loading">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -309,7 +319,6 @@ export default function ParentDetailPage() {
                       // spend. Below lg the rungs would be ~30px apart, so it
                       // stays the vertical ladder it was drawn as.
                       orientation={isWide ? "horizontal" : "vertical"}
-                      live
                       testId="record-journey"
                     />
                     </div>

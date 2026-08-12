@@ -432,6 +432,9 @@ model User {
   trustReasons           String[]                @default([])
   /// Source IP at signup (first x-forwarded-for hop), for per-IP velocity checks.
   signupIp               String?
+  /// #2b Merge: set on every login of an absorbed account, pointing at the
+  /// surviving record's primary user, so old links still resolve.
+  mergedIntoUserId       String?
   password               String?
   name                   String?
   firstName              String?
@@ -3072,6 +3075,41 @@ model ParentStageSnapshot {
 
   @@unique([parentAccountId, providerId, serviceLine])
   @@index([updatedAt])
+}
+
+// ─── Merge / link two families (CRM Phase 9 §2b) ────────────────────────────
+
+/// Audit row for an irreversible admin merge: who did it, when, and what
+/// moved. The absorbed users also carry mergedIntoUserId on User.
+model ParentAccountMerge {
+  id                 String   @id @default(uuid())
+  /// parentAccountKey of the record everything moved TO.
+  survivingAccountId String
+  /// parentAccountKey the rows were moved FROM.
+  absorbedAccountId  String
+  absorbedUserIds    String[] @default([])
+  performedByUserId  String
+  /// Row counts moved per table, for the audit trail.
+  metadata           Json?
+  createdAt          DateTime @default(now())
+
+  @@index([survivingAccountId])
+  @@index([absorbedAccountId])
+}
+
+/// The lighter action: two accounts stay separate but are SHOWN as one
+/// family (the household badge the parents table already draws). Undoable -
+/// deleting the row unlinks them. Keys are parentAccountKeys, stored sorted
+/// so one pair can never link twice.
+model ParentHouseholdLink {
+  id              String   @id @default(uuid())
+  aAccountId      String
+  bAccountId      String
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  @@unique([aAccountId, bAccountId])
+  @@index([bAccountId])
 }
 
 // ─── Silence signal (CRM Phase 9 §5) ────────────────────────────────────────

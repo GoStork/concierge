@@ -145,6 +145,9 @@ export function log(message: string, source = "nestjs") {
   // Silence-signal settings (CRM Phase 9 §5): /account/automation.
   const { automationRouter } = await import("./automation-router");
   app.use(automationRouter);
+  // Merge / link two families (CRM Phase 9 §2b) - manual only, never suggested.
+  const { mergeRouter } = await import("./merge-router");
+  app.use(mergeRouter);
   // Cyber-security settings: per-country verification policy + the OTP abuse
   // log, born from the production toll-fraud signup wave (docs/crm-phase-9).
   const { securityRouter } = await import("./security-router");
