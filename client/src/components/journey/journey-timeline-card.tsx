@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronUp, AlertTriangle, Loader2, X } from "lucide-react";
 import { ServiceTag } from "@/components/ui/service-tag";
+import { JOURNEY_STAGE_ORDER, JOURNEY_STAGE_LABELS } from "@shared/journey-ladder";
 
 /**
  * Phase 7A: the shared journey timeline.
@@ -531,26 +532,26 @@ export function JourneyTimelineCard({
     );
   }
   const allJourneys = timelineQuery.data?.journeys || [];
-  const journeys = serviceLine
+  let journeys = serviceLine
     ? allJourneys.filter((j) => (j.serviceLine ?? j.journeyType) === serviceLine)
     : allJourneys;
   if (journeys.length === 0) {
-    // A family on a record IS registered - the parents list shows exactly this
-    // floor. "No activity" read as a bug next to a "Registered" pill in the list.
+    // A family on a record IS registered. Rather than "no activity" (which read
+    // as a bug next to the list's "Registered" pill), render the real stage
+    // ladder with Registered as the current rung and the rest ahead of them.
     if (registeredFloor) {
-      return (
-        <div className="flex items-center gap-2" data-testid={`${testId}-registered`}>
-          <span
-            className="inline-flex items-center text-xs font-ui px-2.5 py-1 rounded-full"
-            style={{ background: "hsl(var(--brand-success) / 0.15)", color: "hsl(var(--brand-success))" }}
-          >
-            Registered
-          </span>
-          <span className="t-helper">No journey milestones yet - the family has an account and is exploring.</span>
-        </div>
-      );
+      journeys = [{
+        journeyType: "registered", serviceLine: null, typeLabel: "Journey",
+        providerId: "", providerName: "", providerLogo: null, sessionId: null,
+        currentStageId: "registered", attention: null, lastActivityAt: null,
+        stages: JOURNEY_STAGE_ORDER.map((id, i) => ({
+          id, label: JOURNEY_STAGE_LABELS[id], reachedAt: null,
+          state: (i === 0 ? "current" : "upcoming") as StageOut["state"],
+        })),
+      }];
+    } else {
+      return <p className="t-helper" data-testid={`${testId}-empty`}>No journey activity yet.</p>;
     }
-    return <p className="t-helper" data-testid={`${testId}-empty`}>No journey activity yet.</p>;
   }
 
   if (variant === "home") {

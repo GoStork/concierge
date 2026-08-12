@@ -920,13 +920,18 @@ parentRecordRouter.put("/api/parents/:id/owner", requireAuth, async (req, res) =
           },
         });
 
-    emitJourneyEvent({
-      eventType: "CRM_OWNER_ASSIGNED",
-      parentAccountId: accountKey,
-      providerId: target.providerId,
-      actorRole: viewer.isAdmin ? "admin" : "provider",
-      metadata: { ownerUserId: owner.id, scope: target.scope },
-    });
+    // Only record the event when the owner ACTUALLY changes - re-assigning the
+    // same person (a repeat click, or a bulk pass over a family already owned)
+    // must not stack duplicate "Lead owner assigned" rows on the timeline.
+    if (!existing || existing.ownerUserId !== owner.id) {
+      emitJourneyEvent({
+        eventType: "CRM_OWNER_ASSIGNED",
+        parentAccountId: accountKey,
+        providerId: target.providerId,
+        actorRole: viewer.isAdmin ? "admin" : "provider",
+        metadata: { ownerUserId: owner.id, scope: target.scope },
+      });
+    }
     res.json(row);
   } catch (e: any) {
     fail(res, e, "PUT owner");
