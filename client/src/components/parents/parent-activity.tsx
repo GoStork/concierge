@@ -1589,7 +1589,9 @@ export function ParentActivitySection({ record, scope, serviceLines }: {
         }}
         data-testid="panel-activity-tasks"
       >
-        <h3 className="t-section-title font-heading">Tasks</h3>
+        {/* Inset from the frame: the panel's own padding is small so the cards
+            sit wide, which left the heading almost on the corner radius. */}
+        <h3 className="t-section-title font-heading px-2 pt-0.5">Tasks</h3>
         {openTasks.length === 0 ? (
           <p className="t-helper" data-testid="tasks-empty">
             Nothing outstanding. Create a task to give this family a next step.

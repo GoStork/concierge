@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionPills } from "@/components/ui/option-pills";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
-import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
+import { DoctorAvatar, DoctorMonogram } from "@/components/marketplace/doctor-monogram";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ActivityBody } from "./parent-cells";
@@ -581,9 +581,12 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
           the same tag the tables and the Interested In row use, so a service
           looks the same everywhere it appears. */}
       {task.serviceLine && <ServiceTag service={SERVICE_LINE_LABELS[task.serviceLine]} />}
-      {/* One colour per fact. Type and date both wore the cream and read as one
-          chip split in two. */}
-      <span className={chip} style={{ background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))" }}>
+      {/* The remaining chips deliberately avoid the service palette. Those six
+          colours MEAN a service - --accent is literally --service-surrogacy,
+          and --primary is a shade off --service-ivf - so a chip wearing one
+          says "surrogacy" whatever its text reads. Kind and date take the
+          neutrals; the person takes a face instead of a colour. */}
+      <span className={chip} style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
         {taskTypeLabel(task.type)}
       </span>
       {finished && (
@@ -601,7 +604,7 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
         className={cn(chip, "inline-flex items-center gap-1")}
         style={late
           ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
-          : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
+          : { background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }}
       >
         {/* No "Due": a date on a task is its due date, and the word was the
             longest thing in the chip. Late still says so, because that is the
@@ -612,7 +615,10 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
         <span className="hidden sm:inline">{longDate}</span>
       </span>
       {task.assigneeName && (
-        <span className={chip} style={{ background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}>
+        // A person, not a category: the face is what tells them apart from the
+        // facts around them, so this needs no colour of its own at all.
+        <span className={cn(chip, "inline-flex items-center gap-1.5 border pl-1")}>
+          <DoctorMonogram name={task.assigneeName} size={16} rounded="9999px" />
           <span className="sm:hidden">{firstName}</span>
           <span className="hidden sm:inline">{task.assigneeName}</span>
         </span>
