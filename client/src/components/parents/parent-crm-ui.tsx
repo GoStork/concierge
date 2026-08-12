@@ -554,22 +554,6 @@ function TaskOpenLink({ task }: { task: ParentRecord["crm"]["tasks"][number] }) 
   );
 }
 
-/** One task in its own card - the Next steps list shape. */
-export function TaskRow({ record, task, onChanged, readOnly }: {
-  record: ParentRecord;
-  task: ParentRecord["crm"]["tasks"][number];
-  onChanged?: () => void;
-  readOnly?: boolean;
-}) {
-  const [mode, setMode] = useState<TaskMode>("view");
-  return (
-    <div className="rounded-[var(--radius)] border bg-card p-3 space-y-1.5" data-testid={`task-${task.id}`}>
-      {mode !== "edit" && <p className="text-sm font-medium">{task.title}</p>}
-      <TaskCardBody record={record} task={task} mode={mode} setMode={setMode} onChanged={onChanged} readOnly={readOnly} />
-    </div>
-  );
-}
-
 // ─── Owner ──────────────────────────────────────────────────────────────────
 
 export function OwnerPicker({ record, isAdmin, choice }: { record: ParentRecord; isAdmin: boolean; choice: ScopeChoice }) {
@@ -674,35 +658,6 @@ export function ParentLeadOwner({ record }: { record: ParentRecord }) {
   const primary = scopeChoices(record, isAdmin)[0];
   if (!primary) return null;
   return <OwnerPicker record={record} isAdmin={isAdmin} choice={primary} />;
-}
-
-/**
- * Next steps: everything still outstanding on this family, soonest first.
- *
- * Both kinds, one list - the work the product raised (the same rows the Home
- * queue shows) and the tasks a coordinator typed. That is what "what is next"
- * means; splitting them by who created them would just make someone check two
- * places.
- *
- * Finished tasks are NOT here. They drop into the timeline as their own card,
- * where the rest of the record's history lives.
- */
-export function ParentTaskPanel({ record, onChanged }: { record: ParentRecord; onChanged?: () => void }) {
-  const open = record.crm.tasks
-    .filter((t) => t.status === "OPEN")
-    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
-  if (!open.length) {
-    return (
-      <p className="t-helper" data-testid="tasks-empty">
-        Nothing outstanding. Create a task to give this family a next step.
-      </p>
-    );
-  }
-  return (
-    <div className="space-y-2">
-      {open.map((t) => <TaskRow key={t.id} record={record} task={t} onChanged={onChanged} />)}
-    </div>
-  );
 }
 
 /** The task composer on its own, for the activity toolbar's Create Task. */

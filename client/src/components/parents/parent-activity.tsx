@@ -44,7 +44,7 @@ import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
-import { NoteComposer, ParentTaskComposer, ParentTaskPanel, TaskCardBody, useCrmMutation } from "./parent-crm-ui";
+import { NoteComposer, ParentTaskComposer, TaskCardBody, useCrmMutation } from "./parent-crm-ui";
 import { ActivityBody } from "./parent-cells";
 import type { TaskMode } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
@@ -250,6 +250,26 @@ function fmt(iso: string): string {
   });
 }
 
+/**
+ * A task as a card.
+ *
+ * ONE definition, whether the task is open at the top of the page or finished
+ * further down it: same icon, same header, same Subject line, same Actions,
+ * same click-to-open. The Tasks section used to draw its own simpler row, so
+ * the identical task looked like two different objects depending on whether it
+ * had been done yet.
+ */
+function taskEntry(f: ParentRecord["crm"]["tasks"][number]): Entry {
+  return {
+    id: `task-${f.id}`,
+    at: f.completedAt || f.createdAt || f.dueAt,
+    kind: "task",
+    title: "Task",
+    body: f.title,
+    task: f,
+  };
+}
+
 function buildEntries(record: ParentRecord): Entry[] {
   const out: Entry[] = [];
 
@@ -288,21 +308,11 @@ function buildEntries(record: ParentRecord): Entry[] {
   }
 
   for (const f of record.crm.tasks) {
-    // Open tasks live in Next steps, where they can be worked. A task reaches
-    // the timeline when it is FINISHED - at which point it is history, like
-    // every other card here, and is placed by when it was done.
+    // Open tasks live in the Tasks section at the top, where they can be
+    // worked. A task reaches the timeline when it is FINISHED - at which point
+    // it is history, like every other card here, placed by when it was done.
     if (f.status === "OPEN") continue;
-    out.push({
-      id: `task-${f.id}`,
-      at: f.completedAt || f.createdAt || f.dueAt,
-      kind: "task",
-      title: "Task",
-      // The card renders the task itself: title in bold, then its chips, its
-      // note and its controls. A task is a thing you act on, like a note is a
-      // thing you edit - not a line of history about a thing.
-      body: f.title,
-      task: f,
-    });
+    out.push(taskEntry(f));
   }
 
   for (const ev of record.activity || []) {
@@ -1367,6 +1377,15 @@ export function ParentActivitySection({ record, scope }: {
   };
 
   const entries = useMemo(() => buildEntries(record), [record]);
+  // Soonest first - the Tasks section is read as "what is next", never as
+  // history, which is the one thing that orders it differently from the feed.
+  const openTasks = useMemo(
+    () => record.crm.tasks
+      .filter((t) => t.status === "OPEN")
+      .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
+      .map(taskEntry),
+    [record.crm.tasks],
+  );
 
   const toggle = (c: Exclude<Composer, null>) => setComposer((prev) => (prev === c ? null : c));
 
@@ -1462,7 +1481,24 @@ export function ParentActivitySection({ record, scope }: {
         data-testid="panel-activity-tasks"
       >
         <h3 className="t-section-title font-heading">Tasks</h3>
-        <ParentTaskPanel record={record} onChanged={refetchRecord} />
+        {openTasks.length === 0 ? (
+          <p className="t-helper" data-testid="tasks-empty">
+            Nothing outstanding. Create a task to give this family a next step.
+          </p>
+        ) : (
+          openTasks.map((e) => (
+            <EntryCard
+              key={e.id}
+              entry={e}
+              record={record}
+              parentUserId={record.parent.id}
+              parentName={record.parent.name ?? null}
+              parentPhotoUrl={record.parent.photoUrl ?? null}
+              viewerRole={record.viewer.role}
+              onChanged={refetchRecord}
+            />
+          ))
+        )}
       </div>
 
       {entries.length === 0 && (
