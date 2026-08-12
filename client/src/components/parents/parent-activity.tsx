@@ -1425,8 +1425,10 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
 
 type Composer = "note" | "task" | null;
 
-export function ParentActivitySection({ record, scope }: {
+export function ParentActivitySection({ record, scope, serviceLines }: {
   record: ParentRecord;
+  /** Every line this family has with this org, filter or no filter. */
+  serviceLines?: string[];
   /**
    * The page-wide service-line filter, relocated here from the page's top
    * right corner (by request) but unchanged in behavior: picking a line
@@ -1549,7 +1551,7 @@ export function ParentActivitySection({ record, scope }: {
           <NoteComposer
             record={record}
             activeLine={scope?.active}
-            serviceLines={scope?.lines}
+            serviceLines={serviceLines}
             onPosted={() => setComposer(null)}
             onCancel={() => setComposer(null)}
           />
@@ -1560,7 +1562,7 @@ export function ParentActivitySection({ record, scope }: {
           <ParentTaskComposer
             record={record}
             activeLine={scope?.active}
-            serviceLines={scope?.lines}
+            serviceLines={serviceLines}
             onDone={() => setComposer(null)}
             onCancel={() => setComposer(null)}
           />

@@ -343,6 +343,10 @@ export default function ParentDetailPage() {
                   <RecordSection id="crm" title="Activity" frameless="always">
                     <ParentActivitySection
                       record={scopedRecord || record}
+                      // The lines this family actually has with this org, always -
+                      // the composers file against them even when there is only
+                      // one, which is too few to be worth a filter control.
+                      serviceLines={availableLines}
                       scope={availableLines.length >= 2
                         ? { lines: availableLines, labels: LINE_LABELS, active: activeLine, onChange: setActiveLine }
                         : undefined}

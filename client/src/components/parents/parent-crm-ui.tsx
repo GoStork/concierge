@@ -13,7 +13,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, ExternalLink, Loader2, MessageSquare, Plus, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ExternalLink, Loader2, MessageSquare, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionPills } from "@/components/ui/option-pills";
@@ -46,7 +46,7 @@ export function defaultServiceLine(record: ParentRecord, activeLine?: string, li
   if (activeLine && activeLine !== "all") return activeLine;
   const mine = record.viewer.serviceLines;
   if (mine?.length === 1) return mine[0];
-  const options = pickerServiceLines(lines);
+  const options = pickerServiceLines(lines, record.viewer.serviceLines);
   return options.length === 1 ? options[0] : "";
 }
 
@@ -58,29 +58,69 @@ export function defaultServiceLine(record: ParentRecord, activeLine?: string, li
  * looking through - and filing a note against a different one is exactly what
  * you would open the picker to do.
  */
-export function pickerServiceLines(lines?: string[]): string[] {
+export function pickerServiceLines(lines?: string[], viewerLines?: string[] | null): string[] {
   const all = Object.keys(SERVICE_LINE_LABELS);
   const known = (lines || []).filter((l) => all.includes(l));
-  // A family with nothing filed yet still needs a full list to file against.
-  return known.length ? known : all;
+  if (known.length) return known;
+  // Nothing filed for this family yet: offer the lines the VIEWER covers
+  // rather than every line the platform has. Only a viewer who covers
+  // everything - an admin, a provider admin - sees the full list, which is
+  // the same rule the Activity filter follows.
+  const mine = (viewerLines || []).filter((l) => all.includes(l));
+  return mine.length ? mine : all;
 }
 
 /** The picker itself - one control, both composers. */
-export function ServiceLineSelect({ value, onChange, lines, className, testId }: {
+export function ServiceLineSelect({ value, onChange, lines, viewerLines, className, testId }: {
   value: string;
   onChange: (v: string) => void;
   /** The family's lines, from the page's unfiltered view. */
   lines?: string[];
+  /** The lines this viewer covers, for a family with nothing filed yet. */
+  viewerLines?: string[] | null;
   className?: string;
   testId?: string;
 }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={className} data-testid={testId}>
+    <SelectField value={value} onChange={onChange} className={className} testId={testId}>
       <option value="">Which service?</option>
-      {pickerServiceLines(lines).map((l) => (
+      {pickerServiceLines(lines, viewerLines).map((l) => (
         <option key={l} value={l}>{SERVICE_LINE_LABELS[l]}</option>
       ))}
-    </select>
+    </SelectField>
+  );
+}
+
+/**
+ * A select that wears the brand's chevron instead of the platform's.
+ *
+ * A native select puts its arrow hard against the right edge of the control,
+ * and the control is as wide as its LONGEST option - so a short choice left the
+ * arrow stranded on its own, far from the word it belongs to. Ours sits at a
+ * fixed distance from the text, like the filter buttons above it.
+ */
+export function SelectField({ value, onChange, className, testId, children }: {
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+  testId?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="relative inline-flex items-center">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        // Inline, not a utility: pr-7 and the field's pr-2 are the same
+        // specificity, so which one won came down to stylesheet order.
+        style={{ paddingRight: "1.75rem" }}
+        className={cn("appearance-none", className)}
+        data-testid={testId}
+      >
+        {children}
+      </select>
+      <ChevronDown className="w-3.5 h-3.5 absolute right-2 pointer-events-none opacity-70" />
+    </span>
   );
 }
 
@@ -189,6 +229,7 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
           value={serviceLine}
           onChange={setServiceLine}
           lines={serviceLines}
+          viewerLines={record.viewer.serviceLines}
           className="h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
           testId="select-note-service"
         />
@@ -371,7 +412,7 @@ export function TaskEditor({ record, existing, activeLine, serviceLines, onDone,
       : { url: `/api/parents/${record.parent.id}/tasks`, method: "POST", body: payload });
   };
 
-  const field = "h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui";
+  const field = "h-9 rounded-[var(--radius)] border border-border bg-card pl-2 pr-2 text-sm font-ui";
 
   return (
     <div className="space-y-2" data-testid="task-editor">
@@ -427,19 +468,20 @@ export function TaskEditor({ record, existing, activeLine, serviceLines, onDone,
           value={serviceLine}
           onChange={setServiceLine}
           lines={serviceLines}
+          viewerLines={record.viewer.serviceLines}
           className={field}
           testId="select-task-service"
         />
-        <select value={type} onChange={(e) => setType(e.target.value)} className={field} data-testid="select-task-type">
+        <SelectField value={type} onChange={setType} className={field} testId="select-task-type">
           {TASK_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select value={priority} onChange={(e) => setPriority(e.target.value)} className={field} data-testid="select-task-priority">
+        </SelectField>
+        <SelectField value={priority} onChange={setPriority} className={field} testId="select-task-priority">
           {TASK_PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l === "None" ? "No priority" : l}</option>)}
-        </select>
-        <select value={remind} onChange={(e) => setRemind(e.target.value)} className={field} data-testid="select-task-reminder">
+        </SelectField>
+        <SelectField value={remind} onChange={setRemind} className={field} testId="select-task-reminder">
           {REMINDER_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={field} data-testid="select-task-assignee">
+        </SelectField>
+        <SelectField value={assignee} onChange={setAssignee} className={field} testId="select-task-assignee">
           {/* No "Unassigned": see the state above. A task that came in wearing
               a name we cannot offer back (the family, on work that is theirs)
               keeps it rather than silently changing hands. */}
@@ -451,7 +493,7 @@ export function TaskEditor({ record, existing, activeLine, serviceLines, onDone,
               {u.name || u.email}{u.providerName ? ` - ${u.providerName}` : ""}
             </option>
           ))}
-        </select>
+        </SelectField>
       </div>
       {isAdmin && choices.length > 1 && (
         <OptionPills
