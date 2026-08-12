@@ -139,6 +139,9 @@ export function log(message: string, source = "nestjs") {
   // staff from one payload, plus the notes / next steps / owners / tags on it.
   const { parentRecordRouter } = await import("./parent-record-router");
   app.use(parentRecordRouter);
+  // Stage playbooks (CRM Phase 9 §3): authoring CRUD + bulk apply.
+  const { playbooksRouter } = await import("./playbooks-router");
+  app.use(playbooksRouter);
   // Cyber-security settings: per-country verification policy + the OTP abuse
   // log, born from the production toll-fraud signup wave (docs/crm-phase-9).
   const { securityRouter } = await import("./security-router");

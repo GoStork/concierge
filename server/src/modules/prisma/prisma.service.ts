@@ -286,6 +286,19 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.parentOwner;
   }
 
+  // Stage playbooks (CRM Phase 9 §3) + the sweep's stage snapshot.
+  get taskPlaybook() {
+    return prisma.taskPlaybook;
+  }
+
+  get taskPlaybookStep() {
+    return prisma.taskPlaybookStep;
+  }
+
+  get parentStageSnapshot() {
+    return prisma.parentStageSnapshot;
+  }
+
   get journeyPreferences() {
     return prisma.journeyPreferences;
   }

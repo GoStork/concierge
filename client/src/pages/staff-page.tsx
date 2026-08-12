@@ -293,6 +293,34 @@ function GostorkAdminUsersView() {
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
+  // #6/#3 Apply a playbook across the selection - for families who passed the
+  // trigger stage before the playbook existed. The server dedupes per step
+  // via the same systemKey the sweep uses, so re-applying is a no-op.
+  const { data: playbookData } = useQuery<{ playbooks: { id: string; name: string; isActive: boolean }[] }>({
+    queryKey: ["/api/playbooks"],
+    queryFn: async () => {
+      const res = await fetch("/api/playbooks", { credentials: "include" });
+      if (!res.ok) return { playbooks: [] };
+      return res.json();
+    },
+    staleTime: 0,
+  });
+  const applyPlaybookMutation = useMutation({
+    mutationFn: async ({ playbookId, ids }: { playbookId: string; ids: string[] }) => {
+      const res = await apiRequest("POST", `/api/playbooks/${playbookId}/apply`, { parentUserIds: ids });
+      return res.json() as Promise<{ applied: number; tasksCreated: number; failed: string[] }>;
+    },
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/parents-overview"] });
+      setSelectedIds(new Set());
+      toast({
+        title: `Playbook applied to ${r.applied} famil${r.applied === 1 ? "y" : "ies"}`,
+        description: `${r.tasksCreated} task${r.tasksCreated === 1 ? "" : "s"} created${r.failed.length ? `, ${r.failed.length} failed` : ""}.`,
+        variant: r.failed.length ? "destructive" : "success",
+      });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
   const [bulkTaskOpen, setBulkTaskOpen] = useState(false);
   const [bulkTaskTitle, setBulkTaskTitle] = useState("");
   const [bulkTaskDue, setBulkTaskDue] = useState("");
@@ -381,6 +409,18 @@ function GostorkAdminUsersView() {
                 </SelectContent>
               </Select>
               <Button variant="outline" className="bg-card" onClick={() => setBulkTaskOpen(true)} data-testid="bulk-create-task">New task</Button>
+              {(playbookData?.playbooks || []).filter(p => p.isActive).length > 0 && (
+                <Select value="" onValueChange={(v) => { if (v) applyPlaybookMutation.mutate({ playbookId: v, ids: [...selectedIds] }); }}>
+                  <SelectTrigger className="h-9 w-auto bg-card px-3 border rounded-[var(--radius)] text-sm font-medium text-foreground [&>span]:text-foreground" data-testid="bulk-apply-playbook">
+                    <span className="text-foreground">{applyPlaybookMutation.isPending ? "Applying…" : "Apply playbook"}</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(playbookData?.playbooks || []).filter(p => p.isActive).map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button variant="outline" className="bg-card" onClick={exportSelectedCsv} data-testid="bulk-export-csv">Export CSV</Button>
               <Button variant="destructive" onClick={() => setShowBulkDeleteConfirm(true)} data-testid="button-delete-selected">
                 <Trash2 className="w-4 h-4 mr-2" /> Delete ({selectedIds.size})

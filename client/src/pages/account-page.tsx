@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Link, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { formatMoneyDollars } from "@/lib/format-money";
-import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, Stethoscope, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet, FileSignature, ClipboardList, MessageSquarePlus } from "lucide-react";
+import { User, Building2, Users, Calendar, Camera, Loader2, Eye, EyeOff, Phone, Mail, Shield, CalendarPlus, AlertTriangle, Check, Pencil, Plus, Trash2, Palette, Egg, Baby, FlaskConical, Stethoscope, DollarSign, LogOut, Sparkles, Brain, RefreshCw, FileText, Wallet, FileSignature, ClipboardList, MessageSquarePlus, BookOpenCheck } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -37,6 +37,7 @@ import ConciergeSettingsTab from "@/components/concierge-settings-tab";
 import DocumentsTab from "@/components/documents-tab";
 import ProviderAutoReplyTab from "@/components/provider-auto-reply-tab";
 import ScrapersSummaryPage from "@/pages/scrapers-summary-page";
+import AccountPlaybooksPage from "@/pages/account-playbooks-page";
 import AdminTestRunnerPage from "@/pages/admin-test-runner-page";
 import { hasProviderRole, isParentAccountAdmin } from "@shared/roles";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -87,6 +88,7 @@ const allTabs = [
   { to: '/account/branding', label: 'Branding', icon: Palette, roles: 'branding' as const },
   { to: '/account/knowledge', label: 'Knowledge', icon: Brain, roles: 'knowledge' as const },
   { to: '/account/concierge', label: 'AI Concierge', icon: Sparkles, roles: 'concierge' as const },
+  { to: '/account/playbooks', label: 'Playbooks', icon: BookOpenCheck, roles: 'provider' as const },
   { to: '/account/ip-form-template', label: 'Parent Form', icon: ClipboardList, roles: 'admin' as const },
   { to: '/account/scrapers', label: 'Scrapers', icon: RefreshCw, roles: 'admin' as const },
   { to: '/account/test-runner', label: 'Test Runner', icon: FlaskConical, roles: 'admin' as const },
@@ -1761,7 +1763,7 @@ export default function AccountPage() {
     '/account', '/account/company', '/account/team', '/account/members',
     '/account/calendar', '/account/costs', '/account/documents', '/account/auto-replies',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors', '/account/doctors',
-    '/account/knowledge', '/account/concierge', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers', '/account/test-runner',
+    '/account/knowledge', '/account/concierge', '/account/playbooks', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers', '/account/test-runner',
   ];
 
   const tabs = [...allTabs, ...donorTabs].filter(tab => {
@@ -1897,6 +1899,9 @@ export default function AccountPage() {
         <Route path="concierge" element={
           isAdmin ? <AdminConciergePage /> : <ConciergeSettingsTab />
         } />
+        {(isProvider || isAdmin) && (
+          <Route path="playbooks" element={<AccountPlaybooksPage />} />
+        )}
         {isAdmin && (
           <Route path="ip-form-template" element={<AdminIpFormTemplatePage />} />
         )}

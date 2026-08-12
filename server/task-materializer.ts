@@ -80,6 +80,15 @@ const APPROVAL_TYPES = [
  * handful of tasks someone is looking at right now. Written once so the two
  * can never come to disagree about whether a piece of work is done.
  */
+/**
+ * The systemKey prefixes THIS file owns. Other producers write SYSTEM tasks
+ * too (playbook:, silence:) with lifecycles of their own; both reconcilers
+ * below must only ever close keys from this list, or every foreign task
+ * would be "stale" by definition and die on the next pass.
+ */
+const QUEUE_KINDS = ["approval", "whisper", "review", "agreement"] as const;
+const isQueueKey = (key: string) => QUEUE_KINDS.some((k) => key.startsWith(`${k}:`));
+
 export const LIVE_WHERE = {
   whisper: { status: "PENDING" },
   // PUBLISHED only: a review still in moderation is not the provider's to
@@ -334,12 +343,17 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
     }
 
     // Reconcile. Anything open whose artifact is gone gets closed - NOT
-    // deleted, so the record still shows the work happened.
+    // deleted, so the record still shows the work happened. ONLY the queue
+    // kinds this sweep raises: other SYSTEM producers (playbook:, silence:)
+    // have their own lifecycles, and closing their keys here would kill
+    // every one of their tasks within ten minutes of it being raised.
     const openSystem = await db.parentTask.findMany({
       where: { source: "SYSTEM", status: "OPEN" },
       select: { id: true, systemKey: true },
     });
-    const stale = openSystem.filter((t: any) => t.systemKey && !liveKeys.has(t.systemKey)).map((t: any) => t.id);
+    const stale = openSystem
+      .filter((t: any) => t.systemKey && isQueueKey(t.systemKey) && !liveKeys.has(t.systemKey))
+      .map((t: any) => t.id);
     if (stale.length) {
       await db.parentTask.updateMany({
         where: { id: { in: stale } },
@@ -379,15 +393,16 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
 export async function reconcileTaskKeys<T extends { id: string; source?: string; systemKey?: string | null }>(
   db: Db, tasks: T[],
 ): Promise<T[]> {
-  const system = tasks.filter((t) => t.source === "SYSTEM" && t.systemKey);
+  // Only the queue kinds this file owns - a playbook or silence task is not
+  // this reconciler's to close (silence has its own read-time reconcile).
+  const system = tasks.filter((t) => t.source === "SYSTEM" && t.systemKey && isQueueKey(t.systemKey));
   if (!system.length) return tasks;
 
   const idsOf = (kind: string) => system
     .filter((t) => t.systemKey!.startsWith(`${kind}:`))
     .map((t) => t.systemKey!.slice(kind.length + 1));
 
-  const [approvalIds, whisperIds, reviewIds, agreementIds] =
-    ["approval", "whisper", "review", "agreement"].map(idsOf);
+  const [approvalIds, whisperIds, reviewIds, agreementIds] = QUEUE_KINDS.map(idsOf);
 
   try {
     const [cards, whispers, reviews, agreements] = await Promise.all([

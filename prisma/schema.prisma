@@ -166,6 +166,7 @@ model Provider {
   parentNotes                           ParentNote[]
   parentTasks                           ParentTask[]
   parentOwners                          ParentOwner[]
+  taskPlaybooks                         TaskPlaybook[]
 }
 
 /// Send log for the AI-written private parent briefing. Same "once per parent
@@ -2995,6 +2996,82 @@ model ParentOwner {
   @@index([ownerUserId, scope])
   @@index([providerId, parentAccountId])
   @@index([parentAccountId, scope])
+}
+
+// ─── Stage playbooks (CRM Phase 9 §3) ───────────────────────────────────────
+//
+// "When a family reaches a stage, raise the steps that always follow."
+// Each org authors its own playbooks; GoStork authors starters (isStarter)
+// that orgs copy, plus its own operational playbooks that raise GOSTORK-scope
+// tasks. Firing happens in the 10-minute sweep (server/playbook-sweep.ts):
+// one ParentTask per step with systemKey = playbook:<stepId>:<accountKey>:<line>,
+// so the unique index makes firing once-only across both machines AND makes
+// dismissal permanent, exactly as the work-queue tasks behave.
+
+model TaskPlaybook {
+  id              String   @id @default(uuid())
+  /// The authoring org. Null = GoStork-authored (a starter template when
+  /// isStarter, otherwise an operational playbook raising GOSTORK-scope tasks).
+  providerId      String?
+  /// Starter templates are read-only to orgs and NEVER fire - they exist to
+  /// be copied ("Copy to my agency").
+  isStarter       Boolean  @default(false)
+  name            String
+  /// surrogacy | egg_donation | sperm_donation | ivf | legal. Null = any line.
+  serviceLine     String?
+  /// A JOURNEY_STAGE_ORDER id (shared/journey-ladder.ts).
+  triggerStage    String
+  isActive        Boolean  @default(true)
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  provider Provider?          @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  steps    TaskPlaybookStep[]
+
+  @@index([providerId, isActive])
+  @@index([isStarter, isActive])
+}
+
+model TaskPlaybookStep {
+  id                    String  @id @default(uuid())
+  playbookId            String
+  title                 String
+  /// Rich text, optional - same sanitised HTML the note composer produces.
+  notes                 String?
+  /// TODO | CALL | EMAIL
+  type                  String  @default("TODO")
+  /// NONE | LOW | MEDIUM | HIGH
+  priority              String  @default("NONE")
+  /// 0 = the day the stage is reached, 3 = three days later.
+  dueOffsetDays         Int     @default(0)
+  /// "09:00", interpreted in the assignee's own timezone at firing time.
+  dueTime               String?
+  reminderMinutesBefore Int?
+  sortOrder             Int     @default(0)
+
+  playbook TaskPlaybook @relation(fields: [playbookId], references: [id], onDelete: Cascade)
+
+  @@index([playbookId, sortOrder])
+}
+
+/// The last derived journey stage the playbook sweep saw for one
+/// (family x provider org x service line), so "newly reached" is a comparison
+/// rather than a guess. FK-by-convention like JourneyEvent - parentAccountId
+/// holds parentAccountKey(user), which for a solo parent is their User.id.
+model ParentStageSnapshot {
+  id              String   @id @default(uuid())
+  parentAccountId String
+  providerId      String
+  serviceLine     String
+  /// A JOURNEY_STAGE_ORDER id.
+  stage           String
+  reachedAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([parentAccountId, providerId, serviceLine])
+  @@index([updatedAt])
 }
 
 /// Per-country verification policy, managed at /admin/security.

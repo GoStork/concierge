@@ -363,6 +363,14 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
     } catch (err: any) {
       console.error(`[tasks] Cron error: ${err.message}`);
     }
+    // Stage playbooks: when a family's derived stage per line newly reaches a
+    // playbook's trigger, raise the steps. Idempotent via unique systemKey.
+    try {
+      const { runPlaybookSweep } = await import("../../../playbook-sweep");
+      await runPlaybookSweep(prisma);
+    } catch (err: any) {
+      console.error(`[playbooks] Cron error: ${err.message}`);
+    }
     // Task pushes: the per-task reminder, and the 8am digest which fires at
     // 8am in each assignee's own timezone rather than one server hour.
     try {
