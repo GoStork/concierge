@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { getCountries, getCountryCallingCode } from "libphonenumber-js";
 import { prisma } from "./db";
 import { isGostorkStaff } from "./parent-crm";
+import { cloudflareSyncStatus, syncBlockedCountriesToCloudflare } from "./cloudflare-sync";
 
 /**
  * /admin/security - the cyber-security settings surface.
@@ -18,8 +19,9 @@ import { isGostorkStaff } from "./parent-crm";
  *   WHATSAPP_ONLY  verification runs over WhatsApp, never SMS. WhatsApp has
  *                  no carrier revenue share, so there is nothing to farm -
  *                  and a real parent in that country can still sign up.
- *   BLOCKED        no verification message at all; the client offers email
- *                  verification instead.
+ *   BLOCKED        no verification message of any kind, which means no
+ *                  account: signup cannot complete without a verified phone.
+ *                  Deliberate - these are countries GoStork does not serve.
  *   ALLOWED        an explicit exception the other way - stored so an admin
  *                  can pin a country as trusted and leave a note saying why.
  *
@@ -104,6 +106,7 @@ securityRouter.put("/api/admin/security/countries/:iso", requireGostorkAdmin, as
     // keeping an exception that says nothing.
     if (policy === "ALLOWED" && !reason) {
       await prisma.securityCountryPolicy.deleteMany({ where: { isoCode: iso } });
+      syncBlockedCountriesToCloudflare().catch(() => {});
       return res.json({ isoCode: iso, policy: "ALLOWED", reason: null, isException: false });
     }
 
@@ -112,6 +115,10 @@ securityRouter.put("/api/admin/security/countries/:iso", requireGostorkAdmin, as
       create: { isoCode: iso, policy, reason, updatedByUserId: userId },
       update: { policy, reason, updatedByUserId: userId },
     });
+    // Push the change to the edge without holding up the response - the
+    // in-app gate is already updated, and the card on the page shows the
+    // edge's own status.
+    syncBlockedCountriesToCloudflare().catch(() => {});
     res.json({ ...row, isException: true });
   } catch (e: any) {
     res.status(500).json({ message: e?.message || "Failed to save policy" });
@@ -142,4 +149,12 @@ securityRouter.get("/api/admin/security/attempts", requireGostorkAdmin, async (_
   } catch (e: any) {
     res.status(500).json({ message: e?.message || "Failed to load attempts" });
   }
+});
+
+securityRouter.get("/api/admin/security/cloudflare", requireGostorkAdmin, async (_req, res) => {
+  res.json(await cloudflareSyncStatus());
+});
+
+securityRouter.post("/api/admin/security/cloudflare/sync", requireGostorkAdmin, async (_req, res) => {
+  res.json(await syncBlockedCountriesToCloudflare());
 });

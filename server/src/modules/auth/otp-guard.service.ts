@@ -21,8 +21,8 @@ import { PrismaService } from "../prisma/prisma.service";
  *                  admin can whitelist a country the risk list would catch)
  *   WHATSAPP_ONLY  never SMS - WhatsApp verification carries no carrier
  *                  revenue to farm, so it is safe even where SMS is not
- *   BLOCKED        no verification message of any kind; the client is told
- *                  to verify by email instead
+ *   BLOCKED        no verification message of any kind, which means no
+ *                  account - signup cannot complete without a verified phone
  *
  * The list is managed at /admin/security and cached here for a minute so the
  * gate adds no measurable latency to signup.

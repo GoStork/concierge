@@ -10,7 +10,8 @@
  */
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Search, ShieldAlert } from "lucide-react";
+import { Cloud, Loader2, RefreshCw, Search, ShieldAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -79,6 +80,25 @@ export default function AdminSecurityPage() {
     refetchInterval: 30_000,
   });
 
+  const { data: cf } = useQuery<{ ok: boolean; configured: boolean; message: string; blockedCount?: number }>({
+    queryKey: ["/api/admin/security/cloudflare"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/security/cloudflare", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load");
+      return res.json();
+    },
+  });
+  const cfSync = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/security/cloudflare/sync", { method: "POST", credentials: "include" });
+      return res.json();
+    },
+    onSuccess: (d: any) => {
+      qc.invalidateQueries({ queryKey: ["/api/admin/security/cloudflare"] });
+      toast({ title: d.ok ? "Cloudflare synced" : "Sync failed", description: d.message, variant: d.ok ? undefined : "destructive" });
+    },
+  });
+
   const setPolicy = useMutation({
     mutationFn: async ({ iso, policy, reason }: { iso: string; policy: string; reason: string | null }) => {
       const res = await fetch(`/api/admin/security/countries/${iso}`, {
@@ -136,6 +156,25 @@ export default function AdminSecurityPage() {
             <p className="text-2xl font-medium" style={s.tone ? { color: s.tone } : undefined}>{s.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* The edge. Our gate stops the OTP; Cloudflare stops the visit. A
+          block decided on this page is pushed there automatically - this card
+          is the edge's own account of itself. */}
+      <div className="rounded-[var(--radius)] border bg-card p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Cloud className="w-5 h-5 shrink-0" style={{ color: cf?.ok ? "hsl(var(--brand-success))" : "hsl(var(--brand-warning))" }} />
+          <div className="min-w-0 mr-auto">
+            <p className="text-sm font-medium">Cloudflare edge blocking</p>
+            <p className="t-helper">{cf?.message || "Checking..."}</p>
+          </div>
+          {cf?.configured && (
+            <Button size="sm" variant="outline" className="bg-card" disabled={cfSync.isPending} onClick={() => cfSync.mutate()} data-testid="btn-cloudflare-sync">
+              {cfSync.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
+              Sync now
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="rounded-[var(--radius)] border bg-card p-4 space-y-3">
