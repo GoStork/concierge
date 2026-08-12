@@ -54,7 +54,13 @@ interface ProviderTask {
   mine: boolean;
   parentName: string;
   parentUserId: string | null;
+  parentEmail?: string | null;
+  serviceLine?: string | null;
 }
+
+const SERVICE_LINE_SHORT: Record<string, string> = {
+  surrogacy: "Surrogacy", egg_donation: "Egg donation", sperm_donation: "Sperm donation", ivf: "IVF", legal: "Legal",
+};
 
 interface ProviderQueue {
   openApprovals: Array<{ messageId: string; sessionId: string; type: string; createdAt: string; parentName: string; documentType: string | null; totalCents: number | null }>;
@@ -284,6 +290,9 @@ export default function ProviderHomePage() {
                   : <CheckCircle2 className="w-4 h-4" />}
                 title={t.title}
                 detail={[
+                  // #2a: a second identifier so two same-named families read
+                  // apart - email when the org has it, else the service line.
+                  t.parentEmail || (t.serviceLine ? SERVICE_LINE_SHORT[t.serviceLine] || t.serviceLine : null),
                   t.overdue ? "Overdue" : `Due ${fmtWhen(t.dueAt)}`,
                   t.mine ? null : t.assigneeName,
                   t.priority !== "NONE" ? t.priority.toLowerCase() : null,

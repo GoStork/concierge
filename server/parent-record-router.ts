@@ -747,7 +747,7 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
       accountKeys.map((k) => ({ accountKey: k })),
       prisma as any,
     );
-    const nameByKey = new Map<string, { name: string; parentUserId: string }>();
+    const nameByKey = new Map<string, { name: string; parentUserId: string; email: string | null }>();
     for (const m of members as any[]) {
       const key = m.parentAccountId || m.id;
       if (nameByKey.has(key)) continue;
@@ -755,6 +755,9 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
       nameByKey.set(key, {
         name: g?.showIdentity ? (m.firstName || m.name || "Parent") : "Prospective Parent",
         parentUserId: m.id,
+        // #2a: a second identifier so two same-named families are distinct -
+        // the email only when this org has earned contact details (Gate B).
+        email: g?.showContact ? (m.email || null) : null,
       });
     }
 
@@ -779,6 +782,9 @@ parentRecordRouter.get("/api/provider/tasks", requireAuth, async (req, res) => {
           mine: t.assigneeUserId === user.id,
           parentName: who?.name || "A family",
           parentUserId: who?.parentUserId || null,
+          // #2a identifier: email when the org can see it, else the service line.
+          parentEmail: who?.email || null,
+          serviceLine: t.serviceLine || null,
         };
       }).sort((a, b) => (a.mine === b.mine ? 0 : a.mine ? -1 : 1)),
     });
