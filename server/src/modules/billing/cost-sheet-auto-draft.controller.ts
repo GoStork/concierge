@@ -220,6 +220,9 @@ export class CostSheetAutoDraftController {
           ...data,
           resolvedAt: new Date().toISOString(),
           resolvedAs: "approved",
+          // WHO approved it, so the task this card raises can close in their
+          // name rather than falling back to the org.
+          resolvedByUserId: (req.user as any)?.id ?? null,
           resultingQuoteId: quote.id,
         },
       },
@@ -269,6 +272,7 @@ export class CostSheetAutoDraftController {
           ...data,
           resolvedAt: new Date().toISOString(),
           resolvedAs: "rejected",
+          resolvedByUserId: user?.id ?? null,
           rejectionReason: typeof body.reason === "string" ? body.reason.trim() || null : null,
         },
       },

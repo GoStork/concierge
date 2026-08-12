@@ -1021,6 +1021,10 @@ export class BillingController {
           description,
           resolvedAt: new Date().toISOString(),
           resolvedAs: "approved",
+          // WHO approved it. The task this card raises closes in their name,
+          // so the record says which coordinator did the work rather than
+          // falling back to the org.
+          resolvedByUserId: user?.id ?? null,
           resultingInvoiceId: invoice.id,
         },
       },
@@ -1301,7 +1305,7 @@ export class BillingController {
     await this.db.aiChatMessage.update({
       where: { id: msg.id },
       data: {
-        uiCardData: { ...data, resolvedAt: new Date().toISOString(), resolvedAs: "rejected" },
+        uiCardData: { ...data, resolvedAt: new Date().toISOString(), resolvedAs: "rejected", resolvedByUserId: user?.id ?? null },
       },
     });
     this.logger.log(`Invoice draft ${messageId} rejected (session=${sessionId}, by=${user?.id})`);
@@ -1394,6 +1398,7 @@ export class BillingController {
           ...data,
           resolvedAt: new Date().toISOString(),
           resolvedAs: single ? "single" : "partner_added",
+          resolvedByUserId: user?.id ?? null,
           resultingAgreementId: agreement.id,
         },
       },
@@ -1450,6 +1455,7 @@ export class BillingController {
           ...data,
           resolvedAt: new Date().toISOString(),
           resolvedAs: "approved",
+          resolvedByUserId: user?.id ?? null,
           resultingAgreementId: agreement.id,
         },
       },
@@ -1472,7 +1478,7 @@ export class BillingController {
     await this.db.aiChatMessage.update({
       where: { id: msg.id },
       data: {
-        uiCardData: { ...data, resolvedAt: new Date().toISOString(), resolvedAs: "rejected" },
+        uiCardData: { ...data, resolvedAt: new Date().toISOString(), resolvedAs: "rejected", resolvedByUserId: user?.id ?? null },
       },
     });
     this.logger.log(`Agreement draft ${messageId} rejected (session=${sessionId}, by=${user?.id})`);

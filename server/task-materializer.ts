@@ -416,13 +416,46 @@ export async function reconcileTaskKeys<T extends { id: string; source?: string;
 
     // An artifact that no longer exists at all (a deleted draft) is not
     // outstanding work either, so anything missing from `live` closes.
-    const doneIds = system.filter((t) => !live.has(t.systemKey!)).map((t) => t.id);
+    const done = system.filter((t) => !live.has(t.systemKey!));
+    const doneIds = done.map((t) => t.id);
     if (!doneIds.length) return tasks;
 
     await db.parentTask.updateMany({
       where: { id: { in: doneIds }, status: "OPEN" },
       data: { status: "DONE", completedAt: new Date() },
     });
+
+    /**
+     * Close it in the name of whoever actually did it.
+     *
+     * An approval card records who approved or rejected it, so the task it
+     * raised should say that person did the work - not the org it fell back to
+     * when nobody owned the family. Only the approve/reject paths know a name;
+     * an agreement that simply got signed has none to offer, and keeps the one
+     * it had.
+     */
+    const resolvedBy = new Map<string, string>();
+    for (const c of cards as any[]) {
+      const uid = (c.uiCardData as any)?.resolvedByUserId;
+      if (uid) resolvedBy.set(`approval:${c.id}`, uid);
+    }
+    const toAttribute = done.filter((t) => resolvedBy.has(t.systemKey!));
+    if (toAttribute.length) {
+      const ids = Array.from(new Set(toAttribute.map((t) => resolvedBy.get(t.systemKey!)!)));
+      const people = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } });
+      const nameOf = new Map<string, string>(people.map((u: any) => [u.id, u.name || u.email]));
+      await Promise.all(toAttribute.map((t) => {
+        const uid = resolvedBy.get(t.systemKey!)!;
+        return db.parentTask.update({
+          where: { id: t.id },
+          data: {
+            completedByUserId: uid,
+            assigneeUserId: uid,
+            assigneeName: nameOf.get(uid) ?? undefined,
+          },
+        }).catch(() => {});
+      }));
+    }
     const closed = new Set(doneIds);
     return tasks.filter((t) => !closed.has(t.id));
   } catch (e: any) {
