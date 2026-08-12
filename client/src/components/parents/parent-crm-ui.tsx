@@ -494,6 +494,16 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
   readOnly?: boolean;
 }) {
   const mut = useCrmMutation(record.parent.id, () => { setMode("view"); onChanged?.(); });
+  /**
+   * Work that is the FAMILY's, not the org's. Closing it is still allowed -
+   * agreements get signed on paper, deals move offline, and a queue with no
+   * way out is a queue that lies forever - but the question has to say whose
+   * work it is, because "mark it done" here means "stop tracking whether they
+   * did it", which is a different thing from having done it yourself.
+   */
+  const waitingOnParent = task.source === "SYSTEM"
+    && !!task.systemKey?.startsWith("agreement:")
+    && !task.assigneeUserId;
 
   const complete = (force: boolean) => mut.mutate({
     url: `/api/parents/${record.parent.id}/tasks/${task.id}/complete`,
@@ -539,15 +549,18 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
       ) : mode === "confirm" ? (
         <div className="rounded-[var(--radius)] border p-2.5 space-y-1.5" style={{ background: "hsl(var(--brand-warning) / 0.1)", borderColor: "hsl(var(--brand-warning) / 0.3)" }}>
           <p className="text-xs font-medium" style={{ color: "hsl(var(--brand-warning))" }}>
-            This has not actually been done yet.
+            {waitingOnParent
+              ? `${task.assigneeName || "The family"} has not signed this yet.`
+              : "This has not actually been done yet."}
           </p>
           <p className="text-xs" style={{ color: "hsl(var(--brand-warning))", opacity: 0.9 }}>
-            {task.title} is still waiting. Mark it done anyway? The record will show it was
-            closed without the work being completed.
+            {waitingOnParent
+              ? "Closing it stops GoStork tracking the signature - it will not come back when they sign. Only do this if it was handled another way. The record will say it was closed unsigned."
+              : `${task.title} is still waiting. Mark it done anyway? The record will show it was closed without the work being completed.`}
           </p>
           <div className="flex items-center gap-2 pt-0.5">
             <Button size="sm" disabled={mut.isPending} onClick={() => complete(true)} data-testid={`btn-task-force-${task.id}`}>
-              Mark done anyway
+              {waitingOnParent ? "Stop tracking it" : "Mark done anyway"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setMode("view")}>Keep it open</Button>
           </div>

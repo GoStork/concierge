@@ -1083,6 +1083,15 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
   const noteMut = useCrmMutation(parentUserId, () => setNoteMode("view"));
   // Same story for a task: the card IS the editor, exactly as a note's is.
   const [taskMode, setTaskMode] = useState<TaskMode>("view");
+  /**
+   * The task menu's OWN state, separate from the card body's.
+   *
+   * They shared one variable, so pressing Done - which asks "this is not
+   * actually finished, close it anyway?" - simultaneously armed the menu's
+   * "Delete this task?" prompt, putting a delete button next to a confirm the
+   * user thought they were answering. Two questions, two states.
+   */
+  const [taskMenuMode, setTaskMenuMode] = useState<TaskMode>("view");
   /** Open = this card is currently showing an editor, whichever kind it is. */
   const isOpen = noteMode === "edit" || taskMode === "edit";
   /**
@@ -1294,8 +1303,10 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
                     canManage: entry.task.source !== "SYSTEM",
                   }}
                   kind="task"
-                  mode={taskMode}
-                  setMode={setTaskMode}
+                  // Editing hides the menu, so the body's edit state still
+                  // reaches it - everything else is the menu's own business.
+                  mode={taskMode === "edit" ? "edit" : taskMenuMode}
+                  setMode={(m) => (m === "edit" ? setTaskMode("edit") : setTaskMenuMode(m))}
                   pending={noteMut.isPending}
                   onStartEdit={() => setTaskMode("edit")}
                   onTogglePin={() => togglePin("task", entry.task!.id, !!entry.task!.pinned)}

@@ -109,6 +109,8 @@ export interface CrmTask {
   source: string;
   /** SYSTEM only: where the work actually gets done. */
   deepLink: string | null;
+  /** SYSTEM only: the artifact this mirrors, as "<kind>:<id>". */
+  systemKey?: string | null;
   /** Completed while the artifact was still unresolved, on purpose. */
   dismissedUnresolved: boolean;
   /** At most one activity per record is pinned - a note OR a task. */
