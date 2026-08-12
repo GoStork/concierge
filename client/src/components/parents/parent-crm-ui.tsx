@@ -440,8 +440,11 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
           ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
           : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
       >
+        {/* No "Due": a date on a task is its due date, and the word was the
+            longest thing in the chip. Late still says so, because that is the
+            part you would otherwise have to work out. */}
         {late && <AlertTriangle className="w-3 h-3" />}
-        {late ? "Overdue - due " : "Due "}
+        {late ? "Overdue " : ""}
         {due.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
       </span>
       {task.assigneeName && (
