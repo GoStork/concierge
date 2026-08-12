@@ -423,6 +423,10 @@ model ProfileEvent {
 model User {
   id                     String                  @id @default(uuid())
   email                  String                  @unique
+  /// Normalised form of email for alias/dedup detection (gmail dots+tags stripped). Nullable on rows created before this existed.
+  emailCanonical         String?
+  /// Signup risk state: TRUSTED (default) | PENDING | QUARANTINED. Quarantined = exists but gated from sensitive actions.
+  trustState             String                  @default("TRUSTED")
   password               String?
   name                   String?
   firstName              String?
@@ -486,6 +490,7 @@ model User {
   reservedSurrogates     Surrogate[]             @relation("SurrogateReservations")
   autoReplies            ProviderAutoReply[]     @relation("AutoReplyStaff")
   parentOwnerships       ParentOwner[]           @relation("ParentOwnerUser")
+  @@index([emailCanonical])
 }
 
 model UserDonorPreference {
@@ -2983,6 +2988,14 @@ model ParentOwner {
 /// A country with no row is ALLOWED - the world is open by default, because
 /// GoStork's families come from 125 countries and a blanket allowlist would
 /// turn away real parents. Rows exist to say something exceptional.
+model SecurityEmailAllow {
+  /// Canonical email exempted from alias/dedup limits (e.g. staff test inboxes). Aliases of this address may create unlimited accounts.
+  canonicalEmail  String   @id
+  note            String?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+}
+
 model SecurityCountryPolicy {
   /// ISO 3166-1 alpha-2, e.g. "ET".
   isoCode         String   @id

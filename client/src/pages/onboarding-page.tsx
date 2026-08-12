@@ -290,8 +290,10 @@ export default function OnboardingPage() {
           setShowLoading(false);
           setSubmitting(false);
           const msg = err.message || "";
-          if (msg.includes("Email already in use")) {
+          if (msg.includes("Email already in use") || msg.includes("email_alias_exists")) {
             setRegistrationError({ type: "emailExists" });
+          } else if (msg.includes("disposable_email")) {
+            setRegistrationError({ type: "message", message: "Please use a permanent email address - temporary/disposable inboxes aren't accepted." });
           } else {
             setRegistrationError({ type: "message", message: msg || "Registration failed. Please try again." });
           }

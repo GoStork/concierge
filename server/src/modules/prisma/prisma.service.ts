@@ -270,6 +270,10 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.otpAttempt;
   }
 
+  get securityEmailAllow() {
+    return prisma.securityEmailAllow;
+  }
+
   get parentTask() {
     return prisma.parentTask;
   }

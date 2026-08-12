@@ -3,6 +3,7 @@ import { getCountries, getCountryCallingCode } from "libphonenumber-js";
 import { prisma } from "./db";
 import { isGostorkStaff } from "./parent-crm";
 import { cloudflareSyncStatus, syncBlockedCountriesToCloudflare } from "./cloudflare-sync";
+import { normalizeEmail } from "./email-security";
 
 /**
  * /admin/security - the cyber-security settings surface.
@@ -178,4 +179,46 @@ securityRouter.get("/api/admin/security/cloudflare", requireGostorkAdmin, async 
 
 securityRouter.post("/api/admin/security/cloudflare/sync", requireGostorkAdmin, async (_req, res) => {
   res.json(await syncBlockedCountriesToCloudflare());
+});
+
+/**
+ * Email allowlist - canonical addresses exempt from the alias/dedup cap, so a
+ * staff test inbox can create unlimited `+tag` accounts. Everyone else is one
+ * account per canonical mailbox.
+ */
+securityRouter.get("/api/admin/security/email-allowlist", requireGostorkAdmin, async (_req, res) => {
+  try {
+    const rows = await prisma.securityEmailAllow.findMany({ orderBy: { createdAt: "desc" } });
+    res.json({ allowlist: rows });
+  } catch (e: any) {
+    res.status(500).json({ message: e?.message || "Failed to load allowlist" });
+  }
+});
+
+securityRouter.post("/api/admin/security/email-allowlist", requireGostorkAdmin, async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!email.includes("@")) return res.status(400).json({ message: "A valid email is required" });
+    // Store the CANONICAL form so any alias of it matches at signup.
+    const { canonical } = normalizeEmail(email);
+    const note = typeof req.body?.note === "string" ? req.body.note.trim() || null : null;
+    const row = await prisma.securityEmailAllow.upsert({
+      where: { canonicalEmail: canonical },
+      create: { canonicalEmail: canonical, note, createdByUserId: (req.user as any)?.id ?? null },
+      update: { note },
+    });
+    res.json(row);
+  } catch (e: any) {
+    res.status(500).json({ message: e?.message || "Failed to add to allowlist" });
+  }
+});
+
+securityRouter.delete("/api/admin/security/email-allowlist/:canonical", requireGostorkAdmin, async (req, res) => {
+  try {
+    const canonical = String(req.params.canonical || "").trim().toLowerCase();
+    await prisma.securityEmailAllow.deleteMany({ where: { canonicalEmail: canonical } });
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ message: e?.message || "Failed to remove from allowlist" });
+  }
 });

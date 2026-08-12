@@ -18,6 +18,7 @@ import {
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiParam } from "@nestjs/swagger";
 import { emitJourneyEvent } from "../../../journey-events";
+import { checkEmailForSignup, normalizeEmail } from "../../../email-security";
 import { serviceKeysFromLabels } from "../../../../shared/service-keys";
 import { serviceLineOfSubject } from "../../../journey-timeline";
 import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel, MATCHED_ELSEWHERE_STAGE } from "../../../../shared/journey-ladder";
@@ -2503,7 +2504,21 @@ export class UsersController {
       if (existing) {
         throw new BadRequestException("Email already in use");
       }
+      // Email hygiene: refuse disposable inboxes and alias-flooding (one account
+      // per canonical mailbox), except allowlisted staff test inboxes. Applies
+      // only to self-serve PARENT signups, never admin/provider-created users.
       const roles = Array.isArray(body.roles) ? body.roles : [input.role || "PARENT"];
+      const selfServeParent = roles.length === 1 && roles[0] === "PARENT";
+      let emailCanonical: string | null = null;
+      if (selfServeParent) {
+        const emailCheck = await checkEmailForSignup(this.prisma, input.email);
+        emailCanonical = emailCheck.canonical;
+        if (!emailCheck.ok) {
+          throw new BadRequestException(emailCheck.reason || "email_not_allowed");
+        }
+      } else {
+        emailCanonical = normalizeEmail(input.email).canonical;
+      }
       const hashedPassword = await this.authService.hashPassword(input.password);
       const isParent = roles.includes("PARENT") && !roles.some((r: string) => hasProviderRole([r]));
       let parentAccountId: string | null = null;
@@ -2514,6 +2529,7 @@ export class UsersController {
       const created = await this.prisma.user.create({
         data: {
           email: input.email,
+          emailCanonical,
           password: hashedPassword,
           name: input.name || null,
           mobileNumber: input.mobileNumber || null,
