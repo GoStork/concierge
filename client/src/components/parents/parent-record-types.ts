@@ -111,6 +111,8 @@ export interface CrmTask {
   deepLink: string | null;
   /** Completed while the artifact was still unresolved, on purpose. */
   dismissedUnresolved: boolean;
+  /** At most one activity per record is pinned - a note OR a task. */
+  pinned?: boolean;
   createdAt?: string;
   createdByUserId?: string | null;
 }

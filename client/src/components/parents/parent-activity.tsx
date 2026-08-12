@@ -31,9 +31,10 @@ import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle, CalendarCheck, CalendarClock, CalendarX, Check, ChevronDown, CircleCheck, ExternalLink,
   Clock, FileText, Filter, Mail, MessageSquare,
-  Pencil, Pin, Receipt, Sparkles, StickyNote, Trash2, TrendingUp, User, Video,
+  Loader2, Pencil, Pin, Receipt, Sparkles, StickyNote, Trash2, TrendingUp, User, Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ServiceDot } from "@/components/ui/service-tag";
 import { cn } from "@/lib/utils";
@@ -876,8 +877,53 @@ function formatSmsForDisplay(text: string): string {
  */
 type NoteMode = "view" | "edit" | "confirm";
 
-function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending, onStartEdit }: {
+/**
+ * The record has one pin, and something else is holding it.
+ *
+ * One of the few places a dialog earns its keep: pinning is a small act with a
+ * consequence somewhere else on the page - the thing you pinned yesterday
+ * silently stops being pinned - so it gets asked about rather than done. Two
+ * buttons, no fields, exactly the shape the no-modals rule leaves room for.
+ */
+function PinConflictDialog({ open, onOpenChange, holder, kind, onConfirm, pending }: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  /** What currently holds the pin - a note or a task. */
+  holder: "note" | "task";
+  /** What the viewer is trying to pin. */
+  kind: "note" | "task";
+  onConfirm: () => void;
+  pending: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" data-testid="dialog-pin-conflict">
+        <DialogHeader>
+          <DialogTitle className="font-display t-section-title">
+            There's already a pinned {holder} on this record.
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm">
+          You may only pin one activity at a time. Would you like to pin this {kind} instead?
+        </p>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button onClick={onConfirm} disabled={pending} data-testid="btn-pin-conflict-confirm">
+            {pending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+            Pin this {kind} instead
+          </Button>
+          <Button variant="outline" className="bg-card" onClick={() => onOpenChange(false)} data-testid="btn-pin-conflict-cancel">
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CardHeaderActions({ note, kind, mode, setMode, onDelete, onTogglePin, pending, onStartEdit }: {
   note: { id: string; canManage: boolean; pinned: boolean };
+  /** What the menu is acting on, so Delete asks about the right thing. */
+  kind: "note" | "task";
   mode: NoteMode;
   setMode: (m: NoteMode) => void;
   onDelete: () => void;
@@ -893,13 +939,13 @@ function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending
   if (mode === "confirm") {
     return (
       <span className="shrink-0 inline-flex items-center gap-2">
-        <span className="t-helper">Delete?</span>
+        <span className="t-helper">Delete this {kind}?</span>
         <button
           type="button"
           className="t-helper underline"
           style={{ color: "hsl(var(--destructive))" }}
           onClick={onDelete}
-          data-testid={`btn-note-delete-confirm-${note.id}`}
+          data-testid={`btn-${kind}-delete-confirm-${note.id}`}
         >
           {pending ? "Deleting..." : "Yes, delete"}
         </button>
@@ -922,17 +968,17 @@ function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending
           // the token is blue-tinted (15,23,41) while the title inherits the
           // page's near-black (10,10,10), and the mismatch showed.
           className="shrink-0 inline-flex items-center gap-0.5 text-sm font-medium font-ui transition-colors hover:opacity-70 p-3 -m-3 sm:p-0 sm:m-0"
-          data-testid={`btn-note-actions-${note.id}`}
+          data-testid={`btn-${kind}-actions-${note.id}`}
         >
           Actions <ChevronDown className="w-3 h-3" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onTogglePin} data-testid={`btn-note-pin-${note.id}`}>
+        <DropdownMenuItem onClick={onTogglePin} data-testid={`btn-${kind}-pin-${note.id}`}>
           <Pin className="w-3.5 h-3.5 mr-2" /> {note.pinned ? "Unpin" : "Pin"}
         </DropdownMenuItem>
         {note.canManage && (
-          <DropdownMenuItem onClick={onStartEdit} data-testid={`btn-note-edit-${note.id}`}>
+          <DropdownMenuItem onClick={onStartEdit} data-testid={`btn-${kind}-edit-${note.id}`}>
             <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
           </DropdownMenuItem>
         )}
@@ -940,7 +986,7 @@ function NoteHeaderActions({ note, mode, setMode, onDelete, onTogglePin, pending
           <DropdownMenuItem
             onClick={() => setMode("confirm")}
             className="text-[hsl(var(--destructive))] focus:text-[hsl(var(--destructive))]"
-            data-testid={`btn-note-delete-${note.id}`}
+            data-testid={`btn-${kind}-delete-${note.id}`}
           >
             <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
           </DropdownMenuItem>
@@ -998,6 +1044,29 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
   const [taskMode, setTaskMode] = useState<TaskMode>("view");
   /** Open = this card is currently showing an editor, whichever kind it is. */
   const isOpen = noteMode === "edit" || taskMode === "edit";
+  /**
+   * The record's single pin. Whatever holds it right now (if it is not this
+   * card) is what the viewer is about to displace, so the question can name it.
+   */
+  const pinHolder = useMemo(() => {
+    const note = record.crm.notes.find((n) => n.pinned && `note-${n.id}` !== entry.id);
+    if (note) return "note" as const;
+    const task = record.crm.tasks.find((t) => t.pinned && `task-${t.id}` !== entry.id);
+    return task ? ("task" as const) : null;
+  }, [record.crm.notes, record.crm.tasks, entry.id]);
+  const [pinAsking, setPinAsking] = useState(false);
+
+  const setPinned = (kind: "note" | "task", id: string, pinned: boolean) =>
+    noteMut.mutate({
+      url: `/api/parents/${parentUserId}/${kind === "note" ? "notes" : "tasks"}/${id}`,
+      method: "PATCH",
+      body: { pinned },
+    });
+  /** Unpinning never needs asking; pinning does, but only if someone else holds it. */
+  const togglePin = (kind: "note" | "task", id: string, currentlyPinned: boolean) => {
+    if (!currentlyPinned && pinHolder) return setPinAsking(true);
+    setPinned(kind, id, !currentlyPinned);
+  };
   const closeFromHeader = (e: React.MouseEvent) => {
     // Actions, the pin, a link in the byline - a real control in the header is
     // still itself, not a close button.
@@ -1113,7 +1182,7 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
         "relative rounded-[var(--radius)] border bg-card p-3 space-y-1.5",
         (canOpenNoteEdit || canOpenTaskEdit) && "cursor-text hover:border-primary/40 transition-colors",
       )}
-      style={entry.note?.pinned ? { marginTop: "1.125rem" } : undefined}
+      style={(entry.note?.pinned || entry.task?.pinned) ? { marginTop: "1.125rem" } : undefined}
       onClick={canOpenNoteEdit ? openNoteEdit : canOpenTaskEdit ? openTaskEdit : undefined}
       data-testid={`activity-${entry.id}`}
     >
@@ -1150,14 +1219,34 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
             )}
             <span className="ml-auto shrink-0 inline-flex items-center gap-3">
               {entry.note && (
-                <NoteHeaderActions
+                <CardHeaderActions
                   note={entry.note}
+                  kind="note"
                   mode={noteMode}
                   setMode={setNoteMode}
                   pending={noteMut.isPending}
                   onStartEdit={() => { setNoteDraft(entry.note!.html); setNoteMode("edit"); }}
-                  onTogglePin={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { pinned: !entry.note!.pinned } })}
+                  onTogglePin={() => togglePin("note", entry.note!.id, !!entry.note!.pinned)}
                   onDelete={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "DELETE" })}
+                />
+              )}
+              {entry.task && (
+                <CardHeaderActions
+                  note={{
+                    id: entry.task.id,
+                    pinned: !!entry.task.pinned,
+                    // A SYSTEM task's words are the product's, not a person's:
+                    // it can be pinned like anything else, but not rewritten or
+                    // deleted out from under the queue that raised it.
+                    canManage: entry.task.source !== "SYSTEM",
+                  }}
+                  kind="task"
+                  mode={taskMode}
+                  setMode={setTaskMode}
+                  pending={noteMut.isPending}
+                  onStartEdit={() => setTaskMode("edit")}
+                  onTogglePin={() => togglePin("task", entry.task!.id, !!entry.task!.pinned)}
+                  onDelete={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/tasks/${entry.task!.id}`, method: "DELETE" })}
                 />
               )}
             </span>
@@ -1203,7 +1292,21 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
       {/* LAST child on purpose: as the first child it would push margin-top
           from the card's space-y onto the real first row. Absolute, so order
           does not matter visually. */}
-      {entry.note?.pinned && (
+      <PinConflictDialog
+        open={pinAsking}
+        onOpenChange={setPinAsking}
+        holder={pinHolder || "note"}
+        kind={entry.task ? "task" : "note"}
+        pending={noteMut.isPending}
+        onConfirm={() => {
+          // The server hands the pin over atomically - it clears whoever held
+          // it in the same audience - so this only has to ask for it.
+          setPinAsking(false);
+          if (entry.task) setPinned("task", entry.task.id, true);
+          else if (entry.note) setPinned("note", entry.note.id, true);
+        }}
+      />
+      {(entry.note?.pinned || entry.task?.pinned) && (
         <span
           className="absolute left-1/2 -translate-x-1/2 w-7 h-7 rounded-full border bg-card flex items-center justify-center shadow-sm"
           // Inline, not -top-*: the card's space-y hands this LAST child a
@@ -1213,7 +1316,7 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
           // chip's midline rides exactly on the visible frame line.
           style={{ top: -15, marginTop: 0 }}
           title="Pinned"
-          data-testid={`note-pinned-${entry.note.id}`}
+          data-testid={`pinned-${entry.id}`}
         >
           {/* rotate-45 tips the head to the upper right, the way HubSpot
               draws a pin that is IN the board rather than lying beside it. */}

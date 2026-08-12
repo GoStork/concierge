@@ -206,6 +206,38 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
   }
 });
 
+
+/**
+ * Hand the record's ONE pin to this activity.
+ *
+ * A pinned thing is "the thing to read first", and a record can only have one
+ * of those - so pinning anything unpins whatever held it. It spans two tables
+ * because a note and a task compete for the same slot, which is also why this
+ * is code rather than a unique index.
+ *
+ * Scoped to the audience: GoStork's pin and an agency's pin are different
+ * records' worth of attention, and neither should be able to knock the other
+ * off a card it cannot even see.
+ */
+async function claimThePin(
+  parentAccountId: string,
+  scope: string,
+  providerId: string | null,
+  keep: { kind: "note" | "task"; id: string },
+): Promise<void> {
+  const where = { parentAccountId, scope, providerId, pinned: true };
+  await Promise.all([
+    prisma.parentNote.updateMany({
+      where: { ...where, ...(keep.kind === "note" ? { id: { not: keep.id } } : {}) },
+      data: { pinned: false },
+    }),
+    prisma.parentTask.updateMany({
+      where: { ...where, ...(keep.kind === "task" ? { id: { not: keep.id } } : {}) },
+      data: { pinned: false },
+    }),
+  ]);
+}
+
 parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (req, res) => {
   try {
     const viewer = resolveCrmViewer(req.user as any);
@@ -220,6 +252,9 @@ parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (r
     // check above still applies; only the note's words stay author-only.
     const pinOnly = req.body?.body === undefined && typeof req.body?.pinned === "boolean";
     if (pinOnly) {
+      if (req.body.pinned) {
+        await claimThePin(existing.parentAccountId, existing.scope, existing.providerId, { kind: "note", id: existing.id });
+      }
       const note = await prisma.parentNote.update({
         where: { id: existing.id },
         data: { pinned: !!req.body.pinned },
@@ -399,6 +434,21 @@ parentRecordRouter.patch("/api/parents/:id/tasks/:tid", requireAuth, async (req,
     const row = await prisma.parentTask.findUnique({ where: { id: String(req.params.tid) } });
     if (!row) return res.status(404).json({ message: "Task not found" });
     if (!canMutateCrmRow(viewer, row as any)) return res.status(403).json({ message: "Forbidden" });
+
+    // Pinning is not editing. It carries no text to validate, and it belongs
+    // to the record rather than to whoever typed the task - including for a
+    // SYSTEM task, which has no author at all but is often exactly the thing
+    // worth reading first.
+    if (req.body?.title === undefined && typeof req.body?.pinned === "boolean") {
+      if (req.body.pinned) {
+        await claimThePin(row.parentAccountId, row.scope, row.providerId, { kind: "task", id: row.id });
+      }
+      const pinned = await prisma.parentTask.update({
+        where: { id: row.id },
+        data: { pinned: !!req.body.pinned },
+      });
+      return res.json(pinned);
+    }
 
     const input = readTaskInput({ ...row, ...req.body });
     if (!input.title) return res.status(400).json({ message: "A task needs a title" });

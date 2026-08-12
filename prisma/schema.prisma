@@ -2917,6 +2917,9 @@ model ParentTask {
   assigneeName          String?
   completedAt           DateTime?
   completedByUserId     String?
+  /// Pinned to the top of the record. At most ONE activity - note or task -
+  /// is pinned per audience; the pin endpoint clears the others.
+  pinned                Boolean   @default(false)
   /// MANUAL | SYSTEM
   source                String    @default("MANUAL")
   /// SYSTEM only: the artifact this mirrors. Unique - the reconcile sweep
