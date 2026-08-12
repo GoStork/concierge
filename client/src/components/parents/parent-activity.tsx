@@ -1080,9 +1080,9 @@ function NoteEntryBody({ note, mode, draft, setDraft, onSave, onCancel, pending 
   );
 }
 
-function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, viewerRole, onChanged }: {
+function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, viewerRole, serviceLines, onChanged }: {
   entry: Entry; record: ParentRecord; parentUserId: string; parentName: string | null; parentPhotoUrl: string | null;
-  viewerRole: "provider" | "admin"; onChanged: () => void;
+  viewerRole: "provider" | "admin"; serviceLines?: string[]; onChanged: () => void;
 }) {
   // Note-only state, hosted here because the Edit/Delete links live in the
   // card HEADER while the editor they toggle renders in the body.
@@ -1350,6 +1350,9 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
             task={entry.task}
             mode={taskMode}
             setMode={setTaskMode}
+            // Editing a task offers the same lines creating one does. Without
+            // this the inline editor fell back to every line the platform has.
+            serviceLines={serviceLines}
             onChanged={onChanged}
           />
         </>
@@ -1575,10 +1578,15 @@ export function ParentActivitySection({ record, scope, serviceLines }: {
           timeline, above even a pinned note - a pin says "read this first",
           and outstanding work outranks it. */}
       {/* One frame around the heading and the work under it, so Tasks reads as
-          a place rather than as loose cards that happen to be first - on the
-          same surface the cards inside it use. */}
+          a place rather than as loose cards that happen to be first. The brand
+          teal at 6% - enough to separate the work from the history behind it,
+          light enough that the white cards still sit on top of it. */}
       <div
-        className="rounded-[var(--radius)] border bg-card p-2 sm:p-3 space-y-2"
+        className="rounded-[var(--radius)] border p-2 sm:p-3 space-y-2"
+        style={{
+          background: "hsl(var(--primary) / 0.06)",
+          borderColor: "hsl(var(--primary) / 0.18)",
+        }}
         data-testid="panel-activity-tasks"
       >
         <h3 className="t-section-title font-heading">Tasks</h3>
@@ -1596,6 +1604,7 @@ export function ParentActivitySection({ record, scope, serviceLines }: {
               parentName={record.parent.name ?? null}
               parentPhotoUrl={record.parent.photoUrl ?? null}
               viewerRole={record.viewer.role}
+              serviceLines={serviceLines}
               onChanged={refetchRecord}
             />
           ))
@@ -1618,6 +1627,7 @@ export function ParentActivitySection({ record, scope, serviceLines }: {
             parentName={record.parent.name ?? null}
             parentPhotoUrl={record.parent.photoUrl ?? null}
             viewerRole={record.viewer.role}
+            serviceLines={serviceLines}
             onChanged={refetchRecord}
           />
         ))}

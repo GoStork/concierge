@@ -13,7 +13,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, ChevronDown, ExternalLink, Loader2, MessageSquare, Plus, X } from "lucide-react";
+import { AlertTriangle, Check, ExternalLink, Loader2, MessageSquare, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionPills } from "@/components/ui/option-pills";
@@ -22,7 +22,9 @@ import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ActivityBody } from "./parent-cells";
+import { ServiceTag } from "@/components/ui/service-tag";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { CrmScope, ParentRecord, ProviderOrg } from "./parent-record-types";
 
 /** The record's service lines, in the vocabulary the scope filter uses. */
@@ -82,45 +84,45 @@ export function ServiceLineSelect({ value, onChange, lines, viewerLines, classNa
   testId?: string;
 }) {
   return (
-    <SelectField value={value} onChange={onChange} className={className} testId={testId}>
-      <option value="">Which service?</option>
-      {pickerServiceLines(lines, viewerLines).map((l) => (
-        <option key={l} value={l}>{SERVICE_LINE_LABELS[l]}</option>
-      ))}
-    </SelectField>
+    <SelectField
+      value={value}
+      onChange={onChange}
+      placeholder="Which service?"
+      options={pickerServiceLines(lines, viewerLines).map((l) => [l, SERVICE_LINE_LABELS[l]] as [string, string])}
+      className={className}
+      testId={testId}
+    />
   );
 }
 
 /**
- * A select that wears the brand's chevron instead of the platform's.
+ * The app's own dropdown, in the shape the task editor needs.
  *
- * A native select puts its arrow hard against the right edge of the control,
- * and the control is as wide as its LONGEST option - so a short choice left the
- * arrow stranded on its own, far from the word it belongs to. Ours sits at a
- * fixed distance from the text, like the filter buttons above it.
+ * These were native selects, which is fine on a desktop and wrong on a phone:
+ * iOS answers a <select> with its own full-width dark wheel, so picking a
+ * priority left GoStork entirely. The rest of the product uses this dropdown -
+ * the same one behind every filter - so the editor uses it too.
+ *
+ * Values are plain strings and never empty: Radix reserves the empty value for
+ * "nothing chosen", which is what `placeholder` is for.
  */
-export function SelectField({ value, onChange, className, testId, children }: {
+export function SelectField({ value, onChange, options, placeholder, className, testId }: {
   value: string;
   onChange: (v: string) => void;
+  options: [string, string][];
+  placeholder?: string;
   className?: string;
   testId?: string;
-  children: React.ReactNode;
 }) {
   return (
-    <span className="relative inline-flex items-center">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        // Inline, not a utility: pr-7 and the field's pr-2 are the same
-        // specificity, so which one won came down to stylesheet order.
-        style={{ paddingRight: "1.75rem" }}
-        className={cn("appearance-none", className)}
-        data-testid={testId}
-      >
-        {children}
-      </select>
-      <ChevronDown className="w-3.5 h-3.5 absolute right-2 pointer-events-none opacity-70" />
-    </span>
+    <Select value={value || undefined} onValueChange={onChange}>
+      <SelectTrigger className={cn("w-auto gap-1.5 bg-card px-2.5", className)} data-testid={testId}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -362,7 +364,10 @@ export function TaskEditor({ record, existing, activeLine, serviceLines, onDone,
   // Remounting is how the uncontrolled editor clears after a save.
   const [editorKey] = useState(0);
   const [assignee, setAssignee] = useState(
-    existing?.assigneeUserId || record.viewer.userId || "",
+    existing?.assigneeUserId
+      || (existing?.assigneeName && !existing?.assigneeUserId ? "keep" : "")
+      || record.viewer.userId
+      || "",
   );
   const [scopeKey, setScopeKey] = useState(choices[0]?.key || "gostork");
   const chosen = choices.find((c) => c.key === scopeKey) || choices[0];
@@ -403,7 +408,8 @@ export function TaskEditor({ record, existing, activeLine, serviceLines, onDone,
       serviceLine,
       dueAt: dueAt.toISOString(),
       reminderMinutesBefore: remind === "" ? null : Number(remind),
-      assigneeUserId: assignee || null,
+      // "keep" means the name it already wears - do not reassign it.
+      assigneeUserId: assignee === "keep" ? undefined : (assignee || null),
       scope: chosen?.scope,
       providerId: chosen?.providerId,
     };
@@ -472,28 +478,41 @@ export function TaskEditor({ record, existing, activeLine, serviceLines, onDone,
           className={field}
           testId="select-task-service"
         />
-        <SelectField value={type} onChange={setType} className={field} testId="select-task-type">
-          {TASK_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </SelectField>
-        <SelectField value={priority} onChange={setPriority} className={field} testId="select-task-priority">
-          {TASK_PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l === "None" ? "No priority" : l}</option>)}
-        </SelectField>
-        <SelectField value={remind} onChange={setRemind} className={field} testId="select-task-reminder">
-          {REMINDER_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </SelectField>
-        <SelectField value={assignee} onChange={setAssignee} className={field} testId="select-task-assignee">
-          {/* No "Unassigned": see the state above. A task that came in wearing
-              a name we cannot offer back (the family, on work that is theirs)
-              keeps it rather than silently changing hands. */}
-          {existing?.assigneeName && !existing?.assigneeUserId && (
-            <option value="">{existing.assigneeName}</option>
-          )}
-          {(assignable?.users || []).map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name || u.email}{u.providerName ? ` - ${u.providerName}` : ""}
-            </option>
-          ))}
-        </SelectField>
+        <SelectField value={type} onChange={setType} options={TASK_TYPES} className={field} testId="select-task-type" />
+        <SelectField
+          value={priority}
+          onChange={setPriority}
+          options={TASK_PRIORITIES.map(([v, l]) => [v, l === "None" ? "No priority" : l] as [string, string])}
+          className={field}
+          testId="select-task-priority"
+        />
+        <SelectField
+          // "" is a real choice here (no reminder) but not a legal dropdown
+          // value, so it travels as a word and converts back on the way out.
+          value={remind === "" ? "none" : remind}
+          onChange={(v) => setRemind(v === "none" ? "" : v)}
+          options={REMINDER_CHOICES.map(([v, l]) => [v === "" ? "none" : v, l] as [string, string])}
+          className={field}
+          testId="select-task-reminder"
+        />
+        <SelectField
+          value={assignee}
+          onChange={setAssignee}
+          placeholder="Assign to"
+          options={[
+            // A task that came in wearing a name we cannot offer back (the
+            // family, on work that is theirs) keeps it rather than silently
+            // changing hands.
+            ...(existing?.assigneeName && !existing?.assigneeUserId
+              ? [["keep", existing.assigneeName] as [string, string]] : []),
+            ...(assignable?.users || []).map((u) => [
+              u.id,
+              `${u.name || u.email}${u.providerName ? ` - ${u.providerName}` : ""}`,
+            ] as [string, string]),
+          ]}
+          className={field}
+          testId="select-task-assignee"
+        />
       </div>
       {isAdmin && choices.length > 1 && (
         <OptionPills
@@ -558,6 +577,10 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
   const firstName = (task.assigneeName || "").split(" ")[0];
   return (
     <div className="flex flex-wrap items-center gap-1 sm:gap-1.5" data-testid={`task-chips-${task.id}`}>
+      {/* The line this belongs to, in the platform's own per-service colour -
+          the same tag the tables and the Interested In row use, so a service
+          looks the same everywhere it appears. */}
+      {task.serviceLine && <ServiceTag service={SERVICE_LINE_LABELS[task.serviceLine]} />}
       {/* One colour per fact. Type and date both wore the cream and read as one
           chip split in two. */}
       <span className={chip} style={{ background: "hsl(var(--primary) / 0.12)", color: "hsl(var(--primary))" }}>
@@ -615,11 +638,13 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
  * row records `dismissedUnresolved` so the history says what really happened:
  * marked done, work not actually finished.
  */
-export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly }: {
+export function TaskCardBody({ record, task, mode, setMode, serviceLines, onChanged, readOnly }: {
   record: ParentRecord;
   task: ParentRecord["crm"]["tasks"][number];
   mode: TaskMode;
   setMode: (m: TaskMode) => void;
+  /** The family's lines, so editing offers what creating offers. */
+  serviceLines?: string[];
   onChanged?: () => void;
   /** The Next step view shows the same task; acting on it happens on its card. */
   readOnly?: boolean;
@@ -647,6 +672,7 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
       <TaskEditor
         record={record}
         existing={task}
+        serviceLines={serviceLines}
         onDone={() => { setMode("view"); onChanged?.(); }}
         onCancel={() => setMode("view")}
       />
