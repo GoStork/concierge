@@ -24,6 +24,8 @@ import { blockContactInfo } from "./contact-guard";
 import { sanitizeNoteHtml, noteHtmlToText } from "./note-html";
 import { reconcileTaskKeys } from "./task-materializer";
 import { readServiceLine } from "./service-lines";
+import { getBaseUrl } from "./src/lib/get-base-url";
+import { sendCrmEmail, mentionEmailHtml } from "./crm-email";
 
 export const parentRecordRouter = Router();
 
@@ -221,6 +223,65 @@ parentRecordRouter.get("/api/parents/search", requireAuth, async (req, res) => {
   }
 });
 
+/** #7 @mentions: the user ids tagged in a note body. */
+function extractMentionIds(html: string): string[] {
+  const ids = new Set<string>();
+  for (const m of String(html || "").matchAll(/data-mention-user-id="([^"]+)"/g)) ids.add(m[1]);
+  return [...ids];
+}
+
+/** Who may be @mentioned in a note at this scope - the note's own audience. */
+async function mentionableUsers(scope: string, providerId: string | null): Promise<{ id: string; name: string | null }[]> {
+  const or: any[] = [{ roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } }];
+  if (scope === "PROVIDER" && providerId) or.push({ providerId });
+  const rows = await prisma.user.findMany({
+    where: { OR: or, isDisabled: false },
+    select: { id: true, name: true, firstName: true },
+    take: 200,
+  });
+  return rows.map((u) => ({ id: u.id, name: u.name || u.firstName || null }));
+}
+
+/**
+ * Notify people newly @mentioned in a note - in-app + email, never yourself,
+ * only ids that are actually in the note's audience (a stray id is dropped).
+ */
+async function notifyNoteMentions(opts: {
+  html: string; previousHtml?: string | null; scope: string; providerId: string | null;
+  parentUserId: string; parentName: string; mentionerId: string; mentionerName: string;
+}): Promise<void> {
+  const now = extractMentionIds(opts.html);
+  const before = new Set(opts.previousHtml ? extractMentionIds(opts.previousHtml) : []);
+  const added = now.filter((id) => !before.has(id) && id !== opts.mentionerId);
+  if (!added.length) return;
+  const audience = new Set((await mentionableUsers(opts.scope, opts.providerId)).map((u) => u.id));
+  const targets = await prisma.user.findMany({
+    where: { id: { in: added.filter((id) => audience.has(id)) } },
+    select: { id: true, email: true, name: true },
+  });
+  const url = `${getBaseUrl()}/parents/${opts.parentUserId}?sec=crm`;
+  const noteText = noteHtmlToText(opts.html);
+  for (const t of targets) {
+    await prisma.inAppNotification.create({
+      data: { userId: t.id, eventType: "CRM_MENTION", payload: { parentUserId: opts.parentUserId, parentName: opts.parentName, mentioner: opts.mentionerName, snippet: noteText.slice(0, 160), url } },
+    }).catch(() => {});
+    if (t.email) {
+      await sendCrmEmail(t.email, `${opts.mentionerName} mentioned you on ${opts.parentName}`, mentionEmailHtml({ mentioner: opts.mentionerName, parentName: opts.parentName, noteText, url })).catch(() => {});
+    }
+  }
+}
+
+parentRecordRouter.get("/api/parents/:id/mentionable", requireAuth, async (req, res) => {
+  try {
+    const viewer = resolveCrmViewer(req.user as any);
+    await assertCanReachParent(req.user as any, String(req.params.id));
+    const target = resolveWriteTarget(viewer, req.query?.scope, req.query?.providerId as any);
+    res.json({ users: await mentionableUsers(target.scope, target.providerId) });
+  } catch (e: any) {
+    fail(res, e, "GET mentionable");
+  }
+});
+
 /** Log-a-call fields: a note with a kind. Validated + defaulted. */
 const NOTE_KINDS = new Set(["NOTE", "CALL", "EMAIL", "MEETING"]);
 const CALL_OUTCOMES = new Set(["reached", "voicemail", "no_answer", "rescheduled"]);
@@ -284,6 +345,14 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
         occurredAt: logged.occurredAt,
       },
     });
+
+    // #7 @mentions: notify anyone tagged in the new note (in-app + email).
+    const mentionParent = await prisma.user.findFirst({ where: { OR: [{ parentAccountId: accountKey }, { id: accountKey }], roles: { has: "PARENT" } }, select: { id: true, name: true } });
+    notifyNoteMentions({
+      html: body, scope: target.scope, providerId: target.providerId,
+      parentUserId: mentionParent?.id || accountKey, parentName: mentionParent?.name || "a family",
+      mentionerId: viewer.userId, mentionerName: viewer.name || "A colleague",
+    }).catch(() => {});
 
     emitJourneyEvent({
       eventType: target.scope === "PROVIDER" ? "CRM_NOTE_SHARED_WITH_PROVIDER" : "CRM_NOTE_ADDED",
@@ -387,6 +456,13 @@ parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (r
         ...(logged ? { kind: logged.kind, outcome: logged.outcome, durationMinutes: logged.durationMinutes, occurredAt: logged.occurredAt } : {}),
       },
     });
+    // #7: editing a note notifies only people added by this edit.
+    const mentionParent = await prisma.user.findFirst({ where: { OR: [{ parentAccountId: existing.parentAccountId }, { id: existing.parentAccountId }], roles: { has: "PARENT" } }, select: { id: true, name: true } });
+    notifyNoteMentions({
+      html: body, previousHtml: existing.body, scope: existing.scope, providerId: existing.providerId,
+      parentUserId: mentionParent?.id || existing.parentAccountId, parentName: mentionParent?.name || "a family",
+      mentionerId: viewer.userId, mentionerName: viewer.name || "A colleague",
+    }).catch(() => {});
     res.json(note);
   } catch (e: any) {
     fail(res, e, "PATCH note");

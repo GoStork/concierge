@@ -226,8 +226,14 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
       <RichTextEditor
         key={editorKey}
         onChange={setBody}
-        placeholder="What should the next person to open this record know?"
+        placeholder="What should the next person to open this record know? Type @ to mention a colleague."
         testId="input-crm-note"
+        mentionSource={async () => {
+          const params = new URLSearchParams({ scope: chosen?.scope || "GOSTORK", ...(chosen?.providerId ? { providerId: chosen.providerId } : {}) });
+          const res = await fetch(`/api/parents/${record.parent.id}/mentionable?${params}`, { credentials: "include" });
+          const d = await res.json();
+          return (d.users || []).map((u: any) => ({ id: u.id, name: u.name || "Unnamed" }));
+        }}
       />
       {/* Scope pills sit on their own row now. The actions below them mirror
           the edit-a-note controls exactly - same order, same variants, same

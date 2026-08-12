@@ -40,6 +40,10 @@ const NOTE_SANITIZE: sanitizeHtml.IOptions = {
   allowedAttributes: {
     a: ["href", "target", "rel"],
     img: ["src", "alt"],
+    // #7 @mentions: a mention is a span carrying the tagged user's id. The id
+    // is validated on write (only real, in-audience users survive); class is
+    // for styling only.
+    span: ["data-mention-user-id", "class"],
   },
   // http(s) plus same-origin relative paths (/uploads, /api/uploads/proxy).
   allowedSchemes: ["http", "https"],

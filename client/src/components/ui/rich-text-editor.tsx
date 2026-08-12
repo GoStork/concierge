@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { cn } from "@/lib/utils";
 
 /**
  * A small rich-text editor: bold / italic / underline, clear formatting,
@@ -32,11 +33,14 @@ export function RichTextEditor({
   onChange,
   placeholder,
   testId = "rich-text-editor",
+  mentionSource,
 }: {
   initialHtml?: string;
   onChange?: (html: string) => void;
   placeholder?: string;
   testId?: string;
+  /** #7 @mentions: returns the people who can see this note. Typing @ filters them. */
+  mentionSource?: () => Promise<{ id: string; name: string }[]>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const savedRange = useRef<Range | null>(null);
@@ -47,6 +51,61 @@ export function RichTextEditor({
   const [uploading, setUploading] = useState(false);
   const [empty, setEmpty] = useState(!initialHtml.replace(/<[^>]*>/g, "").trim());
   const { toast } = useToast();
+
+  // @mention typeahead state.
+  const mentionPeople = useRef<{ id: string; name: string }[] | null>(null);
+  const [mentionItems, setMentionItems] = useState<{ id: string; name: string }[]>([]);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionActive, setMentionActive] = useState(0);
+  const mentionAnchor = useRef<{ node: Node; start: number; end: number } | null>(null);
+
+  const closeMention = () => { setMentionOpen(false); mentionAnchor.current = null; };
+
+  const detectMention = async () => {
+    if (!mentionSource) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return closeMention();
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return closeMention();
+    const text = node.textContent || "";
+    const caret = range.startOffset;
+    // A trailing "@word" immediately before the caret, not mid-word.
+    const before = text.slice(0, caret);
+    const m = before.match(/(^|\s)@([\p{L}0-9'.\- ]{0,30})$/u);
+    if (!m) return closeMention();
+    const query = m[2].trim().toLowerCase();
+    if (!mentionPeople.current) mentionPeople.current = await mentionSource().catch(() => []);
+    const items = (mentionPeople.current || [])
+      .filter((p) => p.name && p.name.toLowerCase().includes(query))
+      .slice(0, 6);
+    if (!items.length) return closeMention();
+    mentionAnchor.current = { node, start: caret - (m[2].length + 1), end: caret };
+    setMentionItems(items); setMentionActive(0); setMentionOpen(true);
+  };
+
+  const insertMention = (item: { id: string; name: string }) => {
+    const a = mentionAnchor.current;
+    if (!a || !ref.current) return closeMention();
+    const range = document.createRange();
+    range.setStart(a.node, a.start);
+    range.setEnd(a.node, a.end);
+    range.deleteContents();
+    const span = document.createElement("span");
+    span.setAttribute("data-mention-user-id", item.id);
+    span.className = "mention";
+    span.textContent = `@${item.name}`;
+    const space = document.createTextNode(" ");
+    range.insertNode(space);
+    range.insertNode(span);
+    // Caret after the inserted space.
+    const sel = window.getSelection();
+    const after = document.createRange();
+    after.setStartAfter(space); after.collapse(true);
+    sel?.removeAllRanges(); sel?.addRange(after);
+    closeMention();
+    emit();
+  };
 
   useEffect(() => {
     // Seed once. Re-seeding on every prop change would fight the caret.
@@ -167,13 +226,36 @@ export function RichTextEditor({
           contentEditable
           role="textbox"
           aria-multiline="true"
-          onInput={emit}
-          onBlur={saveSelection}
-          className="min-h-[140px] max-h-[420px] overflow-y-auto px-3 py-2 text-sm outline-none break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3"
+          onInput={() => { emit(); detectMention(); }}
+          onKeyUp={(e) => { if (!["ArrowUp", "ArrowDown", "Enter"].includes(e.key)) detectMention(); }}
+          onKeyDown={(e) => {
+            if (!mentionOpen) return;
+            if (e.key === "ArrowDown") { e.preventDefault(); setMentionActive((i) => Math.min(i + 1, mentionItems.length - 1)); }
+            else if (e.key === "ArrowUp") { e.preventDefault(); setMentionActive((i) => Math.max(i - 1, 0)); }
+            else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); insertMention(mentionItems[mentionActive]); }
+            else if (e.key === "Escape") { e.preventDefault(); closeMention(); }
+          }}
+          onBlur={() => { saveSelection(); setTimeout(closeMention, 150); }}
+          className="min-h-[140px] max-h-[420px] overflow-y-auto px-3 py-2 text-sm outline-none break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_.mention]:text-primary [&_.mention]:font-medium"
           data-testid={`${testId}-input`}
         />
         {empty && placeholder && (
           <p className="absolute top-2 left-3 text-sm text-muted-foreground pointer-events-none">{placeholder}</p>
+        )}
+        {mentionOpen && mentionItems.length > 0 && (
+          <div className="absolute z-30 left-3 top-8 w-52 rounded-[var(--radius)] border bg-card shadow-md py-1" data-testid="mention-dropdown">
+            {mentionItems.map((it, i) => (
+              <button
+                key={it.id}
+                type="button"
+                className={cn("w-full text-left px-3 py-1.5 text-sm", i === mentionActive ? "bg-secondary" : "hover:bg-secondary")}
+                onMouseDown={(e) => { e.preventDefault(); insertMention(it); }}
+                data-testid={`mention-option-${it.id}`}
+              >
+                @{it.name}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 

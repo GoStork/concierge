@@ -372,7 +372,9 @@ function GostorkAdminUsersView() {
             <div className="flex items-center gap-2">
               <span className="t-helper mr-1">{selectedIds.size} selected</span>
               <Select value="" onValueChange={(v) => { if (v) bulkOwnerMutation.mutate({ ids: [...selectedIds], ownerUserId: v === "__none__" ? null : v }); }}>
-                <SelectTrigger className="h-9 w-auto bg-card px-3" data-testid="bulk-assign-owner"><span className="text-sm">Assign owner</span></SelectTrigger>
+                <SelectTrigger className="h-9 w-auto bg-card px-3 border rounded-[var(--radius)] text-sm font-medium text-foreground [&>span]:text-foreground" data-testid="bulk-assign-owner">
+                  <span className="text-foreground">Assign owner</span>
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">Unassigned</SelectItem>
                   {ownerOptions.map((o: any) => <SelectItem key={o.id} value={o.id}>{o.name || "Unnamed"}</SelectItem>)}
