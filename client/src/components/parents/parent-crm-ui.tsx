@@ -181,6 +181,23 @@ export function useCrmMutation(parentUserId: string, onDone?: () => void) {
   });
 }
 
+/**
+ * #7 @mentions: the fetch that feeds the @-typeahead in a note or task editor.
+ *
+ * One helper, every editor - the new-note composer, the note EDIT form and the
+ * task composer all mention the same audience the same way. The audience is the
+ * note/task's own scope, so a GoStork-internal note offers GoStork staff and a
+ * shared note offers that org's people too - exactly who can read it.
+ */
+export function buildMentionSource(parentUserId: string, scope: string, providerId: string | null) {
+  return async () => {
+    const params = new URLSearchParams({ scope: scope || "GOSTORK", ...(providerId ? { providerId } : {}) });
+    const res = await fetch(`/api/parents/${parentUserId}/mentionable?${params}`, { credentials: "include" });
+    const d = await res.json();
+    return (d.users || []).map((u: any) => ({ id: u.id, name: u.name || "Unnamed" }));
+  };
+}
+
 // ─── Notes ──────────────────────────────────────────────────────────────────
 
 /**
@@ -232,12 +249,7 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
         onChange={setBody}
         placeholder="What should the next person to open this record know? Type @ to mention a colleague."
         testId="input-crm-note"
-        mentionSource={async () => {
-          const params = new URLSearchParams({ scope: chosen?.scope || "GOSTORK", ...(chosen?.providerId ? { providerId: chosen.providerId } : {}) });
-          const res = await fetch(`/api/parents/${record.parent.id}/mentionable?${params}`, { credentials: "include" });
-          const d = await res.json();
-          return (d.users || []).map((u: any) => ({ id: u.id, name: u.name || "Unnamed" }));
-        }}
+        mentionSource={buildMentionSource(record.parent.id, chosen?.scope || "GOSTORK", chosen?.providerId ?? null)}
       />
       {/* Scope pills sit on their own row now. The actions below them mirror
           the edit-a-note controls exactly - same order, same variants, same
@@ -516,8 +528,9 @@ export function TaskEditor({ record, existing, activeLine, serviceLines, onDone,
         key={editorKey}
         initialHtml={existing?.notes || ""}
         onChange={setNotes}
-        placeholder="Notes (optional)"
+        placeholder="Notes (optional). Type @ to mention a colleague."
         testId="input-task-notes"
+        mentionSource={buildMentionSource(record.parent.id, chosen?.scope || "GOSTORK", chosen?.providerId ?? null)}
       />
       <div className="flex flex-wrap items-center gap-1.5">
         {([["Today", 0], ["Tomorrow", 1], ["In 3 days", 3], ["Next week", 7]] as [string, number][]).map(([label, d]) => {

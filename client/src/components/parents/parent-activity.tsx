@@ -44,7 +44,7 @@ import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
-import { NoteComposer, ParentTaskComposer, TaskCardBody, useCrmMutation, ServiceLineSelect, SERVICE_LINE_LABELS } from "./parent-crm-ui";
+import { NoteComposer, ParentTaskComposer, TaskCardBody, useCrmMutation, ServiceLineSelect, SERVICE_LINE_LABELS, buildMentionSource } from "./parent-crm-ui";
 import { ServiceTag } from "@/components/ui/service-tag";
 import { ActivityBody, chatDeepLink } from "./parent-cells";
 import type { TaskMode } from "./parent-crm-ui";
@@ -1392,6 +1392,7 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
           pending={noteMut.isPending}
           serviceLines={serviceLines}
           parentUserId={parentUserId}
+          mentionSource={buildMentionSource(parentUserId, entry.note.scope, entry.note.providerId)}
           onSave={(extra) => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { body: noteDraft, ...extra } })}
           onCancel={() => setNoteMode("view")}
         />
