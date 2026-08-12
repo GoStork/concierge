@@ -45,7 +45,7 @@ import type { ParentRecord } from "./parent-record-types";
  *
  * It used to store the open list, which meant every section added later was
  * absent from everyone's saved state and therefore rendered collapsed - the
- * "Next steps" section shipped closed for anyone who had ever opened
+ * "Next step" section shipped closed for anyone who had ever opened
  * this page before. Persisting the exceptions makes a new section open by
  * default, which is what a new section should do.
  *

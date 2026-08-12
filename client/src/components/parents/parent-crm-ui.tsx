@@ -21,6 +21,7 @@ import { OptionPills } from "@/components/ui/option-pills";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import type { CrmScope, ParentRecord, ProviderOrg } from "./parent-record-types";
 
@@ -186,6 +187,13 @@ export function taskTypeLabel(t: string): string {
   return TASK_TYPES.find(([v]) => v === t)?.[1] || "To-do";
 }
 
+export function taskPriorityLabel(p: string): string {
+  return TASK_PRIORITIES.find(([v]) => v === p)?.[1] || "";
+}
+
+/** view | edit | confirm - hoisted so a host card can own the state. */
+export type TaskMode = "view" | "edit" | "confirm";
+
 /** Due date + time in ONE control pair, kept as a real instant. */
 function dueParts(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -244,11 +252,15 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
     },
   });
 
-  const quick = (days: number, hour = 9) => {
+  /** What a quick-pick resolves to, so the pill can show it is the one chosen. */
+  const quickParts = (days: number, hour = 9) => {
     const d = new Date();
     d.setDate(d.getDate() + days);
     d.setHours(hour, 0, 0, 0);
-    const p = dueParts(d);
+    return dueParts(d);
+  };
+  const quick = (days: number) => {
+    const p = quickParts(days);
     setDate(p.date);
     setTime(p.time);
   };
@@ -282,17 +294,30 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
         data-testid="input-task-title"
       />
       <div className="flex flex-wrap items-center gap-1.5">
-        {[["Today", 0], ["Tomorrow", 1], ["In 3 days", 3], ["Next week", 7]].map(([label, d]) => (
-          <button
-            key={label as string}
-            type="button"
-            onClick={() => quick(d as number)}
-            className="text-xs font-ui px-2.5 py-1 rounded-full border border-border bg-card hover:bg-secondary transition-colors"
-            data-testid={`btn-task-quick-${d}`}
-          >
-            {label as string}
-          </button>
-        ))}
+        {([["Today", 0], ["Tomorrow", 1], ["In 3 days", 3], ["Next week", 7]] as [string, number][]).map(([label, d]) => {
+          // Selected when the date AND time still match what this pill sets -
+          // pick Tomorrow, then edit the time, and it stops claiming to be
+          // Tomorrow-at-nine, because it no longer is.
+          const p = quickParts(d);
+          const on = date === p.date && time === p.time;
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => quick(d)}
+              className={cn(
+                "text-xs font-ui px-2.5 py-1 rounded-full border transition-colors",
+                on
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card hover:bg-secondary",
+              )}
+              aria-pressed={on}
+              data-testid={`btn-task-quick-${d}`}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} data-testid="input-task-date" />
@@ -345,22 +370,68 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
 }
 
 /**
- * One open task, with its complete / edit controls.
+ * The chips that describe a task: what kind of thing it is, when it is due,
+ * whose it is, how urgent.
+ *
+ * One fact per chip rather than a single grey sentence - "Call - due Aug 12,
+ * 9:00 AM - Jered Mercer" made four separate answers read as one run-on, and
+ * the urgent one was in a different corner of the card entirely.
+ */
+export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number] }) {
+  const due = new Date(task.dueAt);
+  const tone = PRIORITY_TONE[task.priority] || null;
+  const chip = "text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap";
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" data-testid={`task-chips-${task.id}`}>
+      <span className={chip} style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
+        {taskTypeLabel(task.type)}
+      </span>
+      <span
+        className={cn(chip, "inline-flex items-center gap-1")}
+        style={task.overdue
+          ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
+          : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
+      >
+        {task.overdue && <AlertTriangle className="w-3 h-3" />}
+        {task.overdue ? "Overdue - due " : "Due "}
+        {due.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+      </span>
+      {task.assigneeName && (
+        <span className={chip} style={{ background: "hsl(var(--accent) / 0.15)", color: "hsl(var(--accent))" }}>
+          {task.assigneeName}
+        </span>
+      )}
+      {/* Priority sits WITH the others rather than in the far corner: it is one
+          more fact about the task, and reading it meant crossing the card. */}
+      {tone && (
+        <span className={chip} style={{ background: `color-mix(in srgb, ${tone} 15%, transparent)`, color: tone }}>
+          {taskPriorityLabel(task.priority)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A task's insides: chips, its note, and the controls - without any card
+ * chrome, so the activity timeline can host it inside an entry card and the
+ * Next step view can show the same thing.
  *
  * Completing a SYSTEM task whose artifact is still unresolved asks first -
  * INLINE, the way deleting a note does, not in a dialog. If they go ahead the
  * row records `dismissedUnresolved` so the history says what really happened:
  * marked done, work not actually finished.
  */
-export function TaskRow({ record, task, onChanged }: {
+export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly }: {
   record: ParentRecord;
   task: ParentRecord["crm"]["tasks"][number];
+  mode: TaskMode;
+  setMode: (m: TaskMode) => void;
   onChanged?: () => void;
+  /** The Next step view shows the same task; acting on it happens on its card. */
+  readOnly?: boolean;
 }) {
-  const [mode, setMode] = useState<"view" | "edit" | "confirm">("view");
   const mut = useCrmMutation(record.parent.id, () => { setMode("view"); onChanged?.(); });
-  const due = new Date(task.dueAt);
-  const tone = PRIORITY_TONE[task.priority] || null;
 
   const complete = (force: boolean) => mut.mutate({
     url: `/api/parents/${record.parent.id}/tasks/${task.id}/complete`,
@@ -370,39 +441,22 @@ export function TaskRow({ record, task, onChanged }: {
 
   if (mode === "edit") {
     return (
-      <div className="rounded-[var(--radius)] border bg-card p-3">
-        <TaskEditor record={record} existing={task} onDone={() => { setMode("view"); onChanged?.(); }} onCancel={() => setMode("view")} />
-      </div>
+      <TaskEditor
+        record={record}
+        existing={task}
+        onDone={() => { setMode("view"); onChanged?.(); }}
+        onCancel={() => setMode("view")}
+      />
     );
   }
 
   return (
-    <div className="rounded-[var(--radius)] border bg-card p-3 space-y-1.5" data-testid={`task-${task.id}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{task.title}</p>
-          <p className="t-helper mt-0.5">
-            {taskTypeLabel(task.type)} - due {due.toLocaleString(undefined, {
-              month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-            })}
-            {task.assigneeName ? ` - ${task.assigneeName}` : ""}
-          </p>
-        </div>
-        <span className="shrink-0 inline-flex items-center gap-2">
-          {tone && (
-            <span className="text-[10px] uppercase tracking-wide font-medium" style={{ color: tone }}>
-              {task.priority}
-            </span>
-          )}
-          {task.overdue && (
-            <span className="text-[10px] uppercase tracking-wide font-medium" style={{ color: "hsl(var(--brand-warning))" }}>
-              Overdue
-            </span>
-          )}
-        </span>
-      </div>
-      {task.notes && <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">{task.notes}</p>}
-      {mode === "confirm" ? (
+    <div className="space-y-1.5">
+      <TaskChips task={task} />
+      {/* The note is the task's own words, not metadata about it - same weight
+          as a note's body, which is what it is. */}
+      {task.notes && <p className="text-sm whitespace-pre-wrap break-words">{task.notes}</p>}
+      {readOnly ? null : mode === "confirm" ? (
         <div className="rounded-[var(--radius)] border p-2.5 space-y-1.5" style={{ background: "hsl(var(--brand-warning) / 0.1)", borderColor: "hsl(var(--brand-warning) / 0.3)" }}>
           <p className="text-xs font-medium" style={{ color: "hsl(var(--brand-warning))" }}>
             This has not actually been done yet.
@@ -435,13 +489,24 @@ export function TaskRow({ record, task, onChanged }: {
               Open
             </Button>
           )}
-          {task.source !== "SYSTEM" && (
-            <Button size="sm" variant="ghost" onClick={() => setMode("edit")} data-testid={`btn-task-edit-${task.id}`}>
-              Edit
-            </Button>
-          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** One task in its own card - the Next step view's shape. */
+export function TaskRow({ record, task, onChanged, readOnly }: {
+  record: ParentRecord;
+  task: ParentRecord["crm"]["tasks"][number];
+  onChanged?: () => void;
+  readOnly?: boolean;
+}) {
+  const [mode, setMode] = useState<TaskMode>("view");
+  return (
+    <div className="rounded-[var(--radius)] border bg-card p-3 space-y-1.5" data-testid={`task-${task.id}`}>
+      {mode !== "edit" && <p className="text-sm font-medium">{task.title}</p>}
+      <TaskCardBody record={record} task={task} mode={mode} setMode={setMode} onChanged={onChanged} readOnly={readOnly} />
     </div>
   );
 }
@@ -553,19 +618,18 @@ export function ParentLeadOwner({ record }: { record: ParentRecord }) {
 }
 
 /**
- * Next steps: the open tasks on this family, soonest first.
+ * The next step: the ONE thing due soonest on this family.
  *
- * Creating one lives on the activity toolbar beside Create Note - a task is
- * something you DO to the record, the same kind of act as writing a note, so
- * it belongs with the other actions rather than buried inside the list of
- * tasks that already exist.
+ * Tasks themselves live on the timeline, each in its own card the way notes
+ * do - this is a view, not a second place to work, so it answers "what is
+ * next" and hands the doing back to the card. Showing the whole list here as
+ * well made the same task appear twice with two sets of buttons.
  */
 export function ParentTaskPanel({ record }: { record: ParentRecord }) {
-  // Soonest first - a task list is read as "what is next", never as history.
-  const open = [...record.crm.tasks].sort(
+  const next = [...record.crm.tasks].sort(
     (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime(),
-  );
-  if (!open.length) {
+  )[0];
+  if (!next) {
     return (
       <p className="t-helper" data-testid="tasks-empty">
         Nothing scheduled. Create a task to give this family a next step.
@@ -573,8 +637,9 @@ export function ParentTaskPanel({ record }: { record: ParentRecord }) {
     );
   }
   return (
-    <div className="space-y-3">
-      {open.map((t) => <TaskRow key={t.id} record={record} task={t} />)}
+    <div className="space-y-2">
+      <TaskRow record={record} task={next} readOnly />
+      <p className="t-helper">Its card is on the timeline below - mark it done or edit it there.</p>
     </div>
   );
 }

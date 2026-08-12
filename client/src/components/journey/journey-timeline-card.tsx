@@ -95,8 +95,8 @@ const EVENT_LABELS: Record<string, string> = {
   // timeline fell back to rendering the raw key as "crm_owner_assigned".
   CRM_NOTE_ADDED: "Internal note added",
   CRM_NOTE_SHARED_WITH_PROVIDER: "Note shared with provider",
-  CRM_FOLLOWUP_SET: "Next step set",
-  CRM_FOLLOWUP_COMPLETED: "Next step completed",
+  CRM_FOLLOWUP_SET: "Task set",
+  CRM_FOLLOWUP_COMPLETED: "Task completed",
   CRM_OWNER_ASSIGNED: "Lead owner assigned",
 };
 

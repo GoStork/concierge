@@ -2,7 +2,7 @@
  * The parent record's activity timeline: one chronological stream of
  * everything that has happened to this family, one card per entry.
  *
- * It replaces three separate sections (Notes, Next steps, and the
+ * It replaces three separate sections (Notes, tasks, and the
  * collapsed "Recent activity" list under the ladder). Those split one story
  * across three places and hid the most useful half of it behind a disclosure
  * triangle - you could not see that a note was written the day after a
@@ -43,7 +43,8 @@ import { formatPhoneDisplay } from "@/lib/phone-countries";
 import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
-import { NoteComposer, ParentTaskComposer, ParentTaskPanel, useCrmMutation } from "./parent-crm-ui";
+import { NoteComposer, ParentTaskComposer, ParentTaskPanel, TaskCardBody, useCrmMutation } from "./parent-crm-ui";
+import type { TaskMode } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
 
@@ -58,12 +59,12 @@ import type { ActivityDetail, ParentRecord } from "./parent-record-types";
  * change nor something we sent, and filing it under either would be a lie
  * about who acted.
  */
-type ActivityKind = "note" | "next_step" | "deal" | "ai" | "parent" | "message";
+type ActivityKind = "note" | "task" | "deal" | "ai" | "parent" | "message";
 
 const KIND_META: Record<ActivityKind, { label: string; icon: typeof StickyNote; tone: "accent" | "primary" | "muted" }> = {
   message: { label: "AI Activity", icon: Mail, tone: "accent" },
   note: { label: "Note", icon: StickyNote, tone: "accent" },
-  next_step: { label: "Next step", icon: CalendarClock, tone: "primary" },
+  task: { label: "Task", icon: CircleCheck, tone: "primary" },
   deal: { label: "Deal Activity", icon: TrendingUp, tone: "primary" },
   ai: { label: "AI Activity", icon: Sparkles, tone: "accent" },
   parent: { label: "Parent Activity", icon: User, tone: "muted" },
@@ -221,6 +222,8 @@ interface Entry {
   at: string;
   title: string;
   body?: string | null;
+  /** kind "task" only: the task itself, rendered with its own controls. */
+  task?: ParentRecord["crm"]["tasks"][number];
   /** kind "note" only: the raw note plus whether the viewer may manage it. */
   note?: { id: string; html: string; canManage: boolean; pinned: boolean };
   /** The person who wrote it. Only notes have one. */
@@ -284,23 +287,17 @@ function buildEntries(record: ParentRecord): Entry[] {
 
   for (const f of record.crm.tasks) {
     out.push({
-      id: `followup-${f.id}`,
+      id: `task-${f.id}`,
       // Placed by when it was SET, not when it is due - this is a history, and
-      // a next step due next month did not happen next month.
+      // a task due next month did not happen next month.
       at: f.createdAt || f.dueAt,
-      kind: "next_step",
-      title: "Next step set",
+      kind: "task",
+      title: "Task",
+      // The card renders the task itself: title in bold, then its chips, its
+      // note and its controls. A task is a thing you act on, like a note is a
+      // thing you edit - not a line of history about a thing.
       body: f.title,
-      byline: f.assigneeName || null,
-      extra: (
-        <span
-          className="inline-flex items-center gap-1 text-xs font-ui"
-          style={f.overdue ? { color: "hsl(var(--brand-warning))" } : undefined}
-        >
-          {f.overdue && <AlertTriangle className="w-3 h-3" />}
-          Due {new Date(f.dueAt).toLocaleDateString()}
-        </span>
-      ),
+      task: f,
     });
   }
 
@@ -988,8 +985,8 @@ function NoteEntryBody({ note, mode, draft, setDraft, onSave, onCancel, pending 
   );
 }
 
-function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole, onChanged }: {
-  entry: Entry; parentUserId: string; parentName: string | null; parentPhotoUrl: string | null;
+function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, viewerRole, onChanged }: {
+  entry: Entry; record: ParentRecord; parentUserId: string; parentName: string | null; parentPhotoUrl: string | null;
   viewerRole: "provider" | "admin"; onChanged: () => void;
 }) {
   // Note-only state, hosted here because the Edit/Delete links live in the
@@ -997,6 +994,8 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
   const [noteMode, setNoteMode] = useState<NoteMode>("view");
   const [noteDraft, setNoteDraft] = useState("");
   const noteMut = useCrmMutation(parentUserId, () => setNoteMode("view"));
+  // Same story for a task: the card IS the editor, exactly as a note's is.
+  const [taskMode, setTaskMode] = useState<TaskMode>("view");
 
   /**
    * A note opens for editing when you click it - the whole card is the
@@ -1005,6 +1004,18 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
    * offering an edit that would be refused.
    */
   const canOpenNoteEdit = !!entry.note?.canManage && noteMode === "view";
+  /**
+   * A task opens the same way. SYSTEM tasks are the product's own words about
+   * work it is tracking, so they stay inert - editing the title of "Review and
+   * approve: cost sheet" would just make the queue lie.
+   */
+  const canOpenTaskEdit = !!entry.task && entry.task.source !== "SYSTEM" && taskMode === "view";
+  const openTaskEdit = (e: React.MouseEvent) => {
+    const el = e.target as HTMLElement;
+    if (el.closest('a,button,input,textarea,select,[role="menuitem"],[role="menu"],[contenteditable="true"]')) return;
+    if ((window.getSelection()?.toString() || "").length > 0) return;
+    setTaskMode("edit");
+  };
   const openNoteEdit = (e: React.MouseEvent) => {
     const el = e.target as HTMLElement;
     // Never swallow a real control. A note body can hold links and uploaded
@@ -1091,10 +1102,10 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
     <div
       className={cn(
         "relative rounded-[var(--radius)] border bg-card p-3 space-y-1.5",
-        canOpenNoteEdit && "cursor-text hover:border-primary/40 transition-colors",
+        (canOpenNoteEdit || canOpenTaskEdit) && "cursor-text hover:border-primary/40 transition-colors",
       )}
       style={entry.note?.pinned ? { marginTop: "1.125rem" } : undefined}
-      onClick={canOpenNoteEdit ? openNoteEdit : undefined}
+      onClick={canOpenNoteEdit ? openNoteEdit : canOpenTaskEdit ? openTaskEdit : undefined}
       data-testid={`activity-${entry.id}`}
     >
       <div className="flex items-center gap-2.5">
@@ -1143,6 +1154,19 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
           onSave={() => noteMut.mutate({ url: `/api/parents/${parentUserId}/notes/${entry.note!.id}`, method: "PATCH", body: { body: noteDraft } })}
           onCancel={() => setNoteMode("view")}
         />
+      ) : entry.task ? (
+        <>
+          {taskMode !== "edit" && (
+            <p className="text-sm font-medium whitespace-pre-wrap break-words">{entry.task.title}</p>
+          )}
+          <TaskCardBody
+            record={record}
+            task={entry.task}
+            mode={taskMode}
+            setMode={setTaskMode}
+            onChanged={onChanged}
+          />
+        </>
       ) : entry.body ? (
         <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>
       ) : null}
@@ -1151,7 +1175,7 @@ function EntryCard({ entry, parentUserId, parentName, parentPhotoUrl, viewerRole
       {/* The footer label earns its place only when it ADDS something the
           header didn't say (e.g. "AI Activity" on an email). On a note it
           just repeated the title. */}
-      {!entry.note && <p className="t-helper">{meta.label}</p>}
+      {!entry.note && !entry.task && <p className="t-helper">{meta.label}</p>}
       {/* LAST child on purpose: as the first child it would push margin-top
           from the card's space-y onto the real first row. Absolute, so order
           does not matter visually. */}
@@ -1246,7 +1270,7 @@ export function ParentActivitySection({ record, scope }: {
           onClick={() => toggle("next_step")}
           data-testid="btn-activity-add-next-step"
         >
-          <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Next steps
+          <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Next step
           <ChevronDown className={cn("w-3 h-3 ml-1 transition-transform", composer === "next_step" && "rotate-180")} />
         </Button>
         {scope && scope.lines.length >= 2 && (
@@ -1275,7 +1299,7 @@ export function ParentActivitySection({ record, scope }: {
           and padding. These panels used a bg-secondary/40 tint, so composing a
           note looked like a different kind of object from the note it was
           about to become, and from the identical editor that opens when you
-          edit one in place. Next step gets it too: they are siblings in one
+          edit one in place. The task composer gets it too: they are siblings in one
           row and a tinted one beside a white one reads as a mistake. */}
       {composer === "note" && (
         <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-note">
@@ -1312,6 +1336,7 @@ export function ParentActivitySection({ record, scope }: {
           <EntryCard
             key={e.id}
             entry={e}
+            record={record}
             parentUserId={record.parent.id}
             parentName={record.parent.name ?? null}
             parentPhotoUrl={record.parent.photoUrl ?? null}
