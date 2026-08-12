@@ -487,14 +487,16 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
 
   return (
     <div className="space-y-1.5">
-      <TaskChips task={task} />
-      {/* The note is the task's own words, not metadata about it - so it sits
-          in the same framed block a note's body and a message's text do. */}
+      {/* Subject, then the task's own words, then the facts about it - the same
+          order the composer asks for them in, and the same reason: what the
+          task IS reads as one thought, rather than being split in half by
+          its type, date, assignee and priority. */}
       {task.notes && (
         <ActivityBody className="whitespace-pre-wrap" testId={`task-notes-${task.id}`}>
           {task.notes}
         </ActivityBody>
       )}
+      <TaskChips task={task} />
       {readOnly || task.status !== "OPEN" ? (
         // Finished: the link to the artifact is still worth having, the
         // controls for doing the work are not.
