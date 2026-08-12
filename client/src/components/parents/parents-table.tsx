@@ -238,13 +238,13 @@ export function ParentsTable({
                 print their name on every line. */}
             {isAdmin && <SortableTableHead label="Provider" sortKey="provider" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-provider" />}
             <SortableTableHead label="Match Status" sortKey="status" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-status" />
+            <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
             <SortableTableHead label="Cost Sheets" sortKey="costSheets" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-cost-sheets" />
             <SortableTableHead label="Invoices" sortKey="invoices" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden lg:table-cell" data-testid="sort-invoices" />
             <SortableTableHead label="Agreements" sortKey="agreements" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-agreements" />
             <SortableTableHead label="Created" sortKey="created" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-created" />
             <SortableTableHead label="Updated" sortKey="updated" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-updated" />
             <SortableTableHead label="Owner" sortKey="owner" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-owner" />
-            <SortableTableHead label="Next step" sortKey="nextDue" currentSort={sortConfig} onSort={onSort} className="whitespace-nowrap hidden xl:table-cell" data-testid="sort-next-step" />
             {rowActions && <TableHead className="text-right whitespace-nowrap sticky right-0 z-20 bg-muted" style={pinR}>Actions</TableHead>}
           </TableRow>
         </TableHeader>
@@ -443,6 +443,9 @@ export function ParentsTable({
                     // still Registered - never a blank status.
                     <MatchStatusBadge status={row.matchStatus ?? (row.services?.length ? "registered" : null)} />
                   )}
+                </TableCell>
+                <TableCell className="hidden xl:table-cell whitespace-nowrap">
+                  <NextStepCell nextStep={row.nextStep} testId={`cell-next-step-${row.id}`} />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   {/* Superseded sheets are history, not state - the record's

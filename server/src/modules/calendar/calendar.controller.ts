@@ -52,6 +52,7 @@ import {
   providerRequiresPreliminaryAck,
 } from "../../../consultation-gates";
 import { findConnectedProviderSession } from "../../../parent-visibility";
+import { assertNotQuarantined } from "../../../trust-gate";
 import {
   GATES_CLOSED, calendarAttendeesFor, parentAccountKey, parentDisplayName,
   redactBookingForProvider, releasedAccountIds, resolveParentGates, resolveParentGatesBatch,
@@ -1128,6 +1129,8 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
   @UseGuards(SessionOrJwtGuard)
   async createBooking(@Req() req: Request, @Body() body: any) {
     const user = req.user as any;
+    // Quarantined signups can't book - fail fast before any provisioning.
+    await assertNotQuarantined(this.prisma, { userId: user.id, trustState: user.trustState });
 
     if (!body.scheduledAt) throw new BadRequestException("Date and time are required");
     if (!body.subject?.trim()) throw new BadRequestException("Subject is required");
@@ -1206,6 +1209,11 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
      *  in her lifecycle emails. */
     attendeeDetails?: Record<string, { name?: string; phone?: string }> | null;
   }) {
+    // Runtime quarantine gate: a flagged signup cannot book a call or a
+    // consultation (both flow through here) until an admin approves it. Covers
+    // every booking path - the HTTP endpoint, the AI consultation flow, video.
+    await assertNotQuarantined(this.prisma, { userId: input.parentUserId });
+
     // Callers pass the provider's shared link (or null) - upgrade video
     // bookings to a per-booking Daily room; external links pass through.
     const meetingUrl = input.meetingType === "video"

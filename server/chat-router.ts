@@ -1200,6 +1200,10 @@ chatRouter.post("/api/admin/concierge-sessions/:id/message", requireAuth, async 
 chatRouter.post("/api/consultation/request-callback", requireAuth, async (req, res) => {
   try {
     const user = req.user as any;
+    // Quarantined signups can't hand their details to a provider until reviewed.
+    if (user?.trustState === "QUARANTINED") {
+      return res.status(403).json({ message: "account_under_review" });
+    }
     const { providerId, providerName, name, email, message } = req.body;
     if (!providerId || !name || !email) {
       return res.status(400).json({ message: "Missing required fields" });
