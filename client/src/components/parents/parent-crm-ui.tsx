@@ -294,6 +294,16 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
         placeholder="What needs doing?"
         data-testid="input-task-title"
       />
+      {/* What the task IS - its subject, then its words - reads first and
+          together. The scheduling controls are settings ABOUT that, so they
+          come after it rather than splitting it in half. */}
+      <Textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="Notes (optional)"
+        className="min-h-[60px] bg-card"
+        data-testid="input-task-notes"
+      />
       <div className="flex flex-wrap items-center gap-1.5">
         {([["Today", 0], ["Tomorrow", 1], ["In 3 days", 3], ["Next week", 7]] as [string, number][]).map(([label, d]) => {
           // Selected when the date AND time still match what this pill sets -
@@ -341,13 +351,6 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
           ))}
         </select>
       </div>
-      <Textarea
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        placeholder="Notes (optional)"
-        className="min-h-[60px] bg-card"
-        data-testid="input-task-notes"
-      />
       {isAdmin && choices.length > 1 && (
         <OptionPills
           options={choices.map((c) => ({
