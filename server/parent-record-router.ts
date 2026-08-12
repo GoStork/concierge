@@ -23,6 +23,7 @@ import { emitJourneyEvent } from "./journey-events";
 import { blockContactInfo } from "./contact-guard";
 import { sanitizeNoteHtml, noteHtmlToText } from "./note-html";
 import { reconcileTaskKeys } from "./task-materializer";
+import { readServiceLine } from "./service-lines";
 
 export const parentRecordRouter = Router();
 
@@ -182,6 +183,7 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
         scope: target.scope,
         providerId: target.providerId,
         body,
+        serviceLine: readServiceLine(req.body?.serviceLine),
         pinned: !!req.body?.pinned,
         authorUserId: viewer.userId,
         authorName: viewer.name,
@@ -335,6 +337,7 @@ function readTaskInput(body: any) {
     // Task notes carry the same rich text a note's body does, and go through
     // the same sanitizer - they are rendered as HTML on the card.
     notes: body?.notes ? (sanitizeNoteHtml(String(body.notes)) || null) : null,
+    serviceLine: readServiceLine(body?.serviceLine),
     type,
     priority,
     dueAt,
@@ -407,6 +410,7 @@ parentRecordRouter.post("/api/parents/:id/tasks", requireAuth, async (req, res) 
         reminderMinutesBefore: input.reminderMinutesBefore,
         assigneeUserId: assignee.assigneeUserId,
         assigneeName: assignee.assigneeName,
+        serviceLine: input.serviceLine,
         createdByUserId: viewer.userId,
       },
     });
@@ -479,6 +483,7 @@ parentRecordRouter.patch("/api/parents/:id/tasks/:tid", requireAuth, async (req,
         reminderMinutesBefore: input.reminderMinutesBefore,
         assigneeUserId: assignee.assigneeUserId,
         assigneeName: assignee.assigneeName,
+        serviceLine: input.serviceLine,
         // A re-dated or re-timed task earns a fresh reminder.
         reminderSentAt: input.dueAt.getTime() !== new Date(row.dueAt).getTime() ? null : row.reminderSentAt,
       },

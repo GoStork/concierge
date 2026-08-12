@@ -166,6 +166,14 @@ export default function ParentDetailPage() {
     const inLine = (line: string | null) => !line || line === activeLine;
     return {
       ...record,
+      // Notes and tasks are part of the record like everything else. They were
+      // left out of the scope, so an egg-donation task sat in the surrogacy
+      // view with nothing to say it did not belong there.
+      crm: {
+        ...record.crm,
+        notes: record.crm.notes.filter((n) => inLine(n.serviceLine ?? null)),
+        tasks: record.crm.tasks.filter((t) => inLine(t.serviceLine ?? null)),
+      },
       activity: record.activity.filter((e) => inLine(e.serviceLine ?? null)),
       conversations: record.conversations.filter((c) => inLine(kindLine(c.subjectKind))),
       savedProfiles: record.savedProfiles.filter((p) => inLine(kindLine(p.subjectKind))),

@@ -45,7 +45,7 @@ import { renderRichText } from "@/lib/render-rich-text";
 import { AgreementRow } from "@/components/chat/agreement-row";
 import { CostSheetRow } from "@/components/chat/cost-sheet-row";
 import { NoteComposer, ParentTaskComposer, TaskCardBody, useCrmMutation } from "./parent-crm-ui";
-import { ActivityBody } from "./parent-cells";
+import { ActivityBody, chatDeepLink } from "./parent-cells";
 import type { TaskMode } from "./parent-crm-ui";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { ActivityDetail, ParentRecord } from "./parent-record-types";
@@ -238,6 +238,8 @@ interface Entry {
   detail?: ActivityDetail | null;
   /** Raw event type, so the card can pick an icon for what actually happened. */
   eventType?: string;
+  /** The thread this happened in, so the card can open it where it happened. */
+  chat?: { sessionId: string; messageId?: string | null } | null;
   /** Concierge persona, for the avatar on an AI Activity card. */
   aiName?: string | null;
   aiAvatarUrl?: string | null;
@@ -332,6 +334,12 @@ function buildEntries(record: ParentRecord): Entry[] {
       org: ev.providerName,
       detail: ev.detail,
       eventType: ev.eventType,
+      // Every event knows its thread; the ones that ARE a message know where
+      // in it, so "Open chat" lands on the thing the card is about rather
+      // than at the bottom of the conversation.
+      chat: ev.sessionId
+        ? { sessionId: ev.sessionId, messageId: (ev.detail as any)?.messageId ?? null }
+        : null,
       aiName: ev.aiName,
       aiAvatarUrl: ev.aiAvatarUrl,
     });
@@ -1349,6 +1357,29 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
         <p className="text-sm whitespace-pre-wrap break-words">{entry.body}</p>
       ) : null}
       {entry.extra}
+      {/* Anything that happened IN a conversation offers the way back to it -
+          at the exact message when the card is about one. A task carries its
+          own link already, so it is excluded rather than given two. */}
+      {entry.chat && !entry.task && (() => {
+        const href = chatDeepLink(
+          { sessionId: entry.chat.sessionId, parentUserId },
+          viewerRole === "admin",
+          entry.chat.messageId || undefined,
+        );
+        return href ? (
+          <div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="-ml-2"
+              onClick={() => { window.location.href = href; }}
+              data-testid={`btn-activity-open-chat-${entry.id}`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Open chat
+            </Button>
+          </div>
+        ) : null;
+      })()}
       {entry.detail && <DetailBlock detail={entry.detail} parentUserId={parentUserId} viewerRole={viewerRole} onChanged={onChanged} />}
       {/* The footer label earns its place only when it ADDS something the
           header didn't say (e.g. "AI Activity" on an email). On a note it
@@ -1517,6 +1548,8 @@ export function ParentActivitySection({ record, scope }: {
         <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-note">
           <NoteComposer
             record={record}
+            activeLine={scope?.active}
+            serviceLines={scope?.lines}
             onPosted={() => setComposer(null)}
             onCancel={() => setComposer(null)}
           />
@@ -1526,6 +1559,8 @@ export function ParentActivitySection({ record, scope }: {
         <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-task">
           <ParentTaskComposer
             record={record}
+            activeLine={scope?.active}
+            serviceLines={scope?.lines}
             onDone={() => setComposer(null)}
             onCancel={() => setComposer(null)}
           />

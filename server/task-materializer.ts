@@ -23,6 +23,9 @@
  * They were shown exactly what was still outstanding and said do it anyway;
  * raising it again would be arguing with them every ten minutes.
  */
+import { serviceLineOfType } from "./service-lines";
+import { serviceLineOfSubject } from "./journey-timeline";
+
 type Db = any;
 
 /** The kinds of work the queue knows how to raise. */
@@ -52,6 +55,8 @@ interface QueueItem {
   kind: QueueKind;
   /** When the work appeared, so an old item is visibly old. */
   since: Date;
+  /** Which line the work belongs to, so the record's scope filter can place it. */
+  serviceLine: string | null;
 }
 
 /**
@@ -135,12 +140,12 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
       where: { uiCardType: { in: APPROVAL_TYPES }, session: { providerId: { not: null } } },
       select: {
         id: true, uiCardType: true, uiCardData: true, createdAt: true,
-        session: { select: { id: true, providerId: true, userId: true } },
+        session: { select: { id: true, providerId: true, userId: true, subjectType: true } },
       },
     }),
     db.silentQuery.findMany({
       where: { ...LIVE_WHERE.whisper },
-      select: { id: true, providerId: true, createdAt: true, session: { select: { userId: true } } },
+      select: { id: true, providerId: true, createdAt: true, session: { select: { userId: true, subjectType: true } } },
     }),
     db.providerReview.findMany({
       where: { ...LIVE_WHERE.review },
@@ -148,7 +153,7 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
     }),
     db.agreement.findMany({
       where: { ...LIVE_WHERE.agreement },
-      select: { id: true, providerId: true, parentUserId: true, documentType: true, createdAt: true },
+      select: { id: true, providerId: true, parentUserId: true, documentType: true, serviceType: true, createdAt: true },
     }),
   ]);
 
@@ -186,6 +191,9 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
           ),
       deepLink: `/chat/${uid}/${c.session.id}`,
       kind: "approval",
+      // The card carries the line it was drafted for; the thread's subject is
+      // the fallback for older cards that do not.
+      serviceLine: serviceLineOfType(data.serviceType) || serviceLineOfSubject(c.session.subjectType),
       since: c.createdAt,
     });
   }
@@ -202,6 +210,7 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
       title: KIND_TITLE.whisper("a prospective parent"),
       deepLink: "/chat",
       kind: "whisper",
+      serviceLine: serviceLineOfSubject(w.session?.subjectType),
       since: w.createdAt,
     });
   }
@@ -215,6 +224,8 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
       title: KIND_TITLE.review("a family"),
       deepLink: "/performance?tab=reviews",
       kind: "review",
+      // A review is about the org, not one line of work.
+      serviceLine: null,
       since: r.createdAt,
     });
   }
@@ -230,6 +241,7 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
       ),
       deepLink: `/agreements/${a.id}`,
       kind: "agreement",
+      serviceLine: serviceLineOfType(a.serviceType),
       waitingOnParent: true,
       parentName: nameOf.get(a.parentUserId) || "the family",
       since: a.createdAt,
@@ -292,6 +304,7 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
             source: "SYSTEM",
             systemKey: item.systemKey,
             deepLink: item.deepLink,
+            serviceLine: item.serviceLine,
             // Waiting on the family: it wears their name, and no user id, so
             // no reminder is ever addressed to a parent about the provider's
             // work queue.

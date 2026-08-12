@@ -77,6 +77,8 @@ export interface SavedProfileRow {
 }
 
 export interface CrmNote {
+  /** surrogacy | egg_donation | sperm_donation | ivf | legal. Null = unfiled. */
+  serviceLine?: string | null;
   id: string;
   scope: CrmScope;
   providerId: string | null;
@@ -115,6 +117,8 @@ export interface CrmTask {
   dismissedUnresolved: boolean;
   /** At most one activity per record is pinned - a note OR a task. */
   pinned?: boolean;
+  /** surrogacy | egg_donation | sperm_donation | ivf | legal. Null = unfiled. */
+  serviceLine?: string | null;
   /** Set when it was finished - the moment it takes its place in the timeline. */
   completedAt?: string | null;
   createdAt?: string;

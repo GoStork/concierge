@@ -2861,6 +2861,9 @@ model ParentNote {
   /// Required when scope = PROVIDER, always null when scope = GOSTORK.
   providerId       String?
   body             String
+  /// The service line this note is about - same vocabulary as ParentTask and
+  /// the record's scope filter. Null = unattributed, and always shown.
+  serviceLine      String?
   pinned           Boolean   @default(false)
   authorUserId     String
   /// Snapshot. A renamed or deleted staff account must not blank an existing
@@ -2917,6 +2920,11 @@ model ParentTask {
   assigneeName          String?
   completedAt           DateTime?
   completedByUserId     String?
+  /// Which service line this belongs to (surrogacy | egg_donation |
+  /// sperm_donation | ivf | legal) - the SAME vocabulary the record's scope
+  /// filter uses, so a task follows the line it is about. Null = unattributed,
+  /// which the filter always shows rather than hides.
+  serviceLine           String?
   /// Pinned to the top of the record. At most ONE activity - note or task -
   /// is pinned per audience; the pin endpoint clears the others.
   pinned                Boolean   @default(false)

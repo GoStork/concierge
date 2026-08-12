@@ -25,6 +25,65 @@ import { ActivityBody } from "./parent-cells";
 import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { CrmScope, ParentRecord, ProviderOrg } from "./parent-record-types";
 
+/** The record's service lines, in the vocabulary the scope filter uses. */
+export const SERVICE_LINE_LABELS: Record<string, string> = {
+  surrogacy: "Surrogacy",
+  egg_donation: "Egg Donation",
+  sperm_donation: "Sperm Donation",
+  ivf: "IVF",
+  legal: "Legal",
+};
+
+/**
+ * Which line a new note or task should start on.
+ *
+ * The filter you are looking through is the strongest signal - file it where
+ * you are working. Failing that, a coordinator who covers exactly one line has
+ * only one answer, and a family with only one line likewise. Anything else is
+ * a real choice and stays empty until it is made.
+ */
+export function defaultServiceLine(record: ParentRecord, activeLine?: string, lines?: string[]): string {
+  if (activeLine && activeLine !== "all") return activeLine;
+  const mine = record.viewer.serviceLines;
+  if (mine?.length === 1) return mine[0];
+  const options = pickerServiceLines(lines);
+  return options.length === 1 ? options[0] : "";
+}
+
+/**
+ * The lines the picker offers.
+ *
+ * These come from the page's UNFILTERED view of the family. Deriving them from
+ * the record the composer is handed would offer only the line you are already
+ * looking through - and filing a note against a different one is exactly what
+ * you would open the picker to do.
+ */
+export function pickerServiceLines(lines?: string[]): string[] {
+  const all = Object.keys(SERVICE_LINE_LABELS);
+  const known = (lines || []).filter((l) => all.includes(l));
+  // A family with nothing filed yet still needs a full list to file against.
+  return known.length ? known : all;
+}
+
+/** The picker itself - one control, both composers. */
+export function ServiceLineSelect({ value, onChange, lines, className, testId }: {
+  value: string;
+  onChange: (v: string) => void;
+  /** The family's lines, from the page's unfiltered view. */
+  lines?: string[];
+  className?: string;
+  testId?: string;
+}) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={className} data-testid={testId}>
+      <option value="">Which service?</option>
+      {pickerServiceLines(lines).map((l) => (
+        <option key={l} value={l}>{SERVICE_LINE_LABELS[l]}</option>
+      ))}
+    </select>
+  );
+}
+
 interface ScopeChoice {
   key: string;
   scope: CrmScope;
@@ -90,8 +149,12 @@ export function useCrmMutation(parentUserId: string, onDone?: () => void) {
  * everything else that happened, so it needs the box to type in without a
  * second copy of the list underneath it.
  */
-export function NoteComposer({ record, onPosted, onCancel }: {
+export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCancel }: {
   record: ParentRecord;
+  /** The line being viewed, which is where a new note files itself. */
+  activeLine?: string;
+  /** Every line this family has, unfiltered - the picker's options. */
+  serviceLines?: string[];
   onPosted?: () => void;
   /** Closes the composer without posting. Omit where it is always open. */
   onCancel?: () => void;
@@ -100,6 +163,7 @@ export function NoteComposer({ record, onPosted, onCancel }: {
   const choices = scopeChoices(record, isAdmin);
   const [scopeKey, setScopeKey] = useState(choices[0]?.key || "gostork");
   const [body, setBody] = useState("");
+  const [serviceLine, setServiceLine] = useState(defaultServiceLine(record, activeLine, serviceLines));
   // Remounting the editor is how it clears - it is uncontrolled by design.
   const [editorKey, setEditorKey] = useState(0);
   const mut = useCrmMutation(record.parent.id, () => { setBody(""); setEditorKey((k) => k + 1); onPosted?.(); });
@@ -119,6 +183,15 @@ export function NoteComposer({ record, onPosted, onCancel }: {
           bottom-left position - so posting a new note and saving an edited one
           are the same gesture in the same place. */}
       <div className="flex items-center gap-2 flex-wrap">
+        {/* Which line the note is about - the same question the task composer
+            asks, and the same reason: the record filters by it. */}
+        <ServiceLineSelect
+          value={serviceLine}
+          onChange={setServiceLine}
+          lines={serviceLines}
+          className="h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
+          testId="select-note-service"
+        />
         {isAdmin ? (
           <OptionPills
             // One line per pill. A provider like "Sperm Bank California |
@@ -144,11 +217,11 @@ export function NoteComposer({ record, onPosted, onCancel }: {
       <div className="flex items-center gap-2">
         <Button
           size="sm"
-          disabled={!hasText || mut.isPending}
+          disabled={!hasText || !serviceLine || mut.isPending}
           onClick={() => mut.mutate({
             url: `/api/parents/${record.parent.id}/notes`,
             method: "POST",
-            body: { body, scope: chosen?.scope, providerId: chosen?.providerId },
+            body: { body, serviceLine, scope: chosen?.scope, providerId: chosen?.providerId },
           })}
           data-testid="btn-post-note"
         >
@@ -211,9 +284,13 @@ function dueParts(d: Date) {
  * in New York shows 8:00 AM to them and 5:00 AM to a coordinator in
  * California - each person reads their own clock, which is the whole point.
  */
-export function TaskEditor({ record, existing, onDone, onCancel }: {
+export function TaskEditor({ record, existing, activeLine, serviceLines, onDone, onCancel }: {
   record: ParentRecord;
   existing?: ParentRecord["crm"]["tasks"][number];
+  /** The line being viewed, which is where a new task files itself. */
+  activeLine?: string;
+  /** Every line this family has, unfiltered - the picker's options. */
+  serviceLines?: string[];
   onDone?: () => void;
   onCancel?: () => void;
 }) {
@@ -238,6 +315,9 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
   );
   // Somebody owns every task. A new one starts with whoever is creating it
   // rather than in an "Unassigned" pile that no queue ever surfaces.
+  const [serviceLine, setServiceLine] = useState(
+    existing?.serviceLine || defaultServiceLine(record, activeLine, serviceLines),
+  );
   // Remounting is how the uncontrolled editor clears after a save.
   const [editorKey] = useState(0);
   const [assignee, setAssignee] = useState(
@@ -273,11 +353,13 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
 
   const save = () => {
     const dueAt = new Date(`${date}T${time || "09:00"}`);
-    if (!title.trim() || isNaN(dueAt.getTime())) return;
+    // A task belongs to a line of work. Nothing is filed nowhere.
+    if (!title.trim() || !serviceLine || isNaN(dueAt.getTime())) return;
     const payload = {
       title: title.trim(),
       notes: notes.trim() || null,
       type, priority,
+      serviceLine,
       dueAt: dueAt.toISOString(),
       reminderMinutesBefore: remind === "" ? null : Number(remind),
       assigneeUserId: assignee || null,
@@ -341,6 +423,13 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
       <div className="flex flex-wrap items-center gap-2">
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} data-testid="input-task-date" />
         <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} data-testid="input-task-time" />
+        <ServiceLineSelect
+          value={serviceLine}
+          onChange={setServiceLine}
+          lines={serviceLines}
+          className={field}
+          testId="select-task-service"
+        />
         <select value={type} onChange={(e) => setType(e.target.value)} className={field} data-testid="select-task-type">
           {TASK_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
@@ -376,7 +465,7 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
         />
       )}
       <div className="flex items-center gap-2">
-        <Button size="sm" disabled={!title.trim() || mut.isPending} onClick={save} data-testid="btn-save-task">
+        <Button size="sm" disabled={!title.trim() || !serviceLine || mut.isPending} onClick={save} data-testid="btn-save-task">
           {mut.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
           {existing ? "Save task" : "Create task"}
         </Button>
@@ -710,7 +799,18 @@ export function ParentLeadOwner({ record }: { record: ParentRecord }) {
 
 /** The task composer on its own, for the activity toolbar's Create Task. */
 export function ParentTaskComposer({
-  record, onDone, onCancel,
-}: { record: ParentRecord; onDone: () => void; onCancel: () => void }) {
-  return <TaskEditor record={record} onDone={onDone} onCancel={onCancel} />;
+  record, activeLine, serviceLines, onDone, onCancel,
+}: {
+  record: ParentRecord; activeLine?: string; serviceLines?: string[];
+  onDone: () => void; onCancel: () => void;
+}) {
+  return (
+    <TaskEditor
+      record={record}
+      activeLine={activeLine}
+      serviceLines={serviceLines}
+      onDone={onDone}
+      onCancel={onCancel}
+    />
+  );
 }
