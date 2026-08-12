@@ -595,6 +595,16 @@ parentRecordRouter.post("/api/parents/:id/tasks", requireAuth, async (req, res) 
       },
     });
 
+    // #7 @mentions: a task's notes carry the same @-tags a note does. Reuse
+    // the note notifier - mentions live in the notes HTML, scoped to the task's
+    // own audience, and self-mentions are dropped inside it.
+    const mentionParent = await prisma.user.findFirst({ where: { OR: [{ parentAccountId: accountKey }, { id: accountKey }], roles: { has: "PARENT" } }, select: { id: true, name: true } });
+    notifyNoteMentions({
+      html: input.notes || "", scope: target.scope, providerId: target.providerId,
+      parentUserId: mentionParent?.id || accountKey, parentName: mentionParent?.name || "a family",
+      mentionerId: viewer.userId, mentionerName: viewer.name || "A colleague",
+    }).catch(() => {});
+
     emitJourneyEvent({
       eventType: "CRM_FOLLOWUP_SET",
       parentAccountId: accountKey,
@@ -668,6 +678,16 @@ parentRecordRouter.patch("/api/parents/:id/tasks/:tid", requireAuth, async (req,
         reminderSentAt: input.dueAt.getTime() !== new Date(row.dueAt).getTime() ? null : row.reminderSentAt,
       },
     });
+
+    // #7 @mentions: notify only people newly tagged in the edited notes -
+    // previousHtml is the task's old notes, so re-saving never re-pings.
+    const mentionParent = await prisma.user.findFirst({ where: { OR: [{ parentAccountId: accountKey }, { id: accountKey }], roles: { has: "PARENT" } }, select: { id: true, name: true } });
+    notifyNoteMentions({
+      html: input.notes || "", previousHtml: row.notes, scope: row.scope, providerId: row.providerId,
+      parentUserId: mentionParent?.id || accountKey, parentName: mentionParent?.name || "a family",
+      mentionerId: viewer.userId, mentionerName: viewer.name || "A colleague",
+    }).catch(() => {});
+
     res.json(updated);
   } catch (e: any) {
     fail(res, e, "update task");
