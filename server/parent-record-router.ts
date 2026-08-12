@@ -146,6 +146,94 @@ parentRecordRouter.get("/api/parents/:id/notes", requireAuth, async (req, res) =
   }
 });
 
+/**
+ * Search #1 - reach what people wrote. ILIKE over note bodies (plain-text
+ * form, so a tag name never matches) and task subjects/notes, scoped to the
+ * viewer's audience: an admin sees everything, a provider only PROVIDER rows
+ * on their own org - a GOSTORK note NEVER surfaces to a provider.
+ */
+parentRecordRouter.get("/api/parents/search", requireAuth, async (req, res) => {
+  try {
+    const viewer = resolveCrmViewer(req.user as any);
+    const q = String(req.query?.q || "").trim();
+    if (q.length < 3) return res.json({ results: [] });
+    const scope = viewer.isAdmin ? {} : { scope: "PROVIDER", providerId: viewer.providerId };
+    const like = { contains: q, mode: "insensitive" as const };
+
+    const [notes, tasks] = await Promise.all([
+      prisma.parentNote.findMany({
+        where: { ...scope, deletedAt: null, bodyText: like },
+        select: { parentAccountId: true, kind: true, bodyText: true, createdAt: true },
+        orderBy: { createdAt: "desc" }, take: 50,
+      }),
+      prisma.parentTask.findMany({
+        where: { ...scope, OR: [{ title: like }, { notes: like }] },
+        select: { parentAccountId: true, title: true, notes: true, createdAt: true },
+        orderBy: { createdAt: "desc" }, take: 50,
+      }),
+    ]);
+
+    const keys = Array.from(new Set([...notes, ...tasks].map((r) => r.parentAccountId)));
+    if (!keys.length) return res.json({ results: [] });
+    // Resolve each accountKey (parentAccountId ?? userId) to a parent user +
+    // gated name. One login per key is enough to name and link the family.
+    const users = await prisma.user.findMany({
+      where: { OR: [{ parentAccountId: { in: keys } }, { id: { in: keys } }], roles: { has: "PARENT" } },
+      select: { id: true, name: true, parentAccountId: true },
+    });
+    const userByKey = new Map<string, { id: string; name: string | null }>();
+    for (const u of users) {
+      const k = u.parentAccountId || u.id;
+      if (!userByKey.has(k)) userByKey.set(k, { id: u.id, name: u.name });
+    }
+    // Gate the displayed names for providers (admins see all).
+    const gates = viewer.isAdmin
+      ? null
+      : await resolveParentGatesBatch(viewer.providerId!, keys.map((k) => ({ accountKey: k, sessionStatus: null, siblingStatuses: [], hasBooking: true })), prisma as any).catch(() => null);
+    const gateByKey = new Map<string, any>();
+    if (gates) keys.forEach((k, i) => gateByKey.set(k, (gates as any)[i]));
+
+    const snippet = (text: string | null) => {
+      const t = (text || "").replace(/\s+/g, " ").trim();
+      const i = t.toLowerCase().indexOf(q.toLowerCase());
+      if (i < 0) return t.slice(0, 120);
+      const start = Math.max(0, i - 40);
+      return (start > 0 ? "…" : "") + t.slice(start, start + 120) + (t.length > start + 120 ? "…" : "");
+    };
+    const nameFor = (k: string) => {
+      const u = userByKey.get(k);
+      if (!u) return { parentUserId: null, parentName: "A family" };
+      const g = gateByKey.get(k);
+      const showName = viewer.isAdmin || (g?.showIdentity ?? true);
+      return { parentUserId: u.id, parentName: showName ? (u.name || "A family") : "Prospective Parent" };
+    };
+
+    const results = [
+      ...notes.map((n) => ({ ...nameFor(n.parentAccountId), kind: n.kind === "NOTE" ? "note" : n.kind.toLowerCase(), snippet: snippet(n.bodyText), at: n.createdAt })),
+      ...tasks.map((t) => ({ ...nameFor(t.parentAccountId), kind: "task", snippet: snippet(t.title + (t.notes ? " - " + t.notes : "")), at: t.createdAt })),
+    ].filter((r) => r.parentUserId)
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 50);
+
+    res.json({ results });
+  } catch (e: any) {
+    fail(res, e, "GET parents search");
+  }
+});
+
+/** Log-a-call fields: a note with a kind. Validated + defaulted. */
+const NOTE_KINDS = new Set(["NOTE", "CALL", "EMAIL", "MEETING"]);
+const CALL_OUTCOMES = new Set(["reached", "voicemail", "no_answer", "rescheduled"]);
+function readNoteKind(body: any): { kind: string; outcome: string | null; durationMinutes: number | null; occurredAt: Date | null } {
+  const kind = NOTE_KINDS.has(String(body?.kind)) ? String(body.kind) : "NOTE";
+  const outcome = kind === "CALL" && CALL_OUTCOMES.has(String(body?.outcome)) ? String(body.outcome) : null;
+  const dur = kind === "CALL" && Number.isFinite(Number(body?.durationMinutes)) ? Math.max(0, Math.round(Number(body.durationMinutes))) : null;
+  // Anything but a plain note can have happened in the past; default to now.
+  const at = kind !== "NOTE" ? (body?.occurredAt ? new Date(body.occurredAt) : new Date()) : (body?.occurredAt ? new Date(body.occurredAt) : null);
+  const occurredAt = at && !isNaN(at.getTime()) ? at : (kind !== "NOTE" ? new Date() : null);
+  return { kind, outcome, durationMinutes: dur, occurredAt };
+}
+
 parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) => {
   try {
     const viewer = resolveCrmViewer(req.user as any);
@@ -177,17 +265,23 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
       }, "note")) return;
     }
 
+    const logged = readNoteKind(req.body);
     const note = await prisma.parentNote.create({
       data: {
         parentAccountId: accountKey,
         scope: target.scope,
         providerId: target.providerId,
         body,
+        bodyText,
         serviceLine: readServiceLine(req.body?.serviceLine),
         pinned: !!req.body?.pinned,
         authorUserId: viewer.userId,
         authorName: viewer.name,
         authorProviderId: viewer.providerId,
+        kind: logged.kind,
+        outcome: logged.outcome,
+        durationMinutes: logged.durationMinutes,
+        occurredAt: logged.occurredAt,
       },
     });
 
@@ -281,9 +375,17 @@ parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (r
     // scope and providerId are IMMUTABLE. Re-scoping a GOSTORK note to PROVIDER
     // by edit would disclose it to an agency with nothing on the record saying
     // it happened. Deleting and re-creating leaves that trail.
+    // Kind/outcome/occurredAt are editable on a logged interaction; kind itself
+    // is only re-read when the client sends it (composer edit), else preserved.
+    const logged = req.body?.kind !== undefined ? readNoteKind(req.body) : null;
     const note = await prisma.parentNote.update({
       where: { id: existing.id },
-      data: { body, pinned: req.body?.pinned ?? existing.pinned },
+      data: {
+        body,
+        bodyText,
+        pinned: req.body?.pinned ?? existing.pinned,
+        ...(logged ? { kind: logged.kind, outcome: logged.outcome, durationMinutes: logged.durationMinutes, occurredAt: logged.occurredAt } : {}),
+      },
     });
     res.json(note);
   } catch (e: any) {

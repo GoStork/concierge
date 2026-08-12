@@ -2871,6 +2871,15 @@ model ParentNote {
   /// Required when scope = PROVIDER, always null when scope = GOSTORK.
   providerId       String?
   body             String
+  /// Plain-text form of body (HTML stripped) for search - never matches a tag name.
+  bodyText         String?
+  /// NOTE | CALL | EMAIL | MEETING - a logged interaction is a note with a kind.
+  kind             String    @default("NOTE")
+  /// Calls only: reached | voicemail | no_answer | rescheduled.
+  outcome          String?
+  durationMinutes  Int?
+  /// When the interaction happened (editable; defaults to now). Cards sort on this.
+  occurredAt       DateTime?
   /// The service line this note is about - same vocabulary as ParentTask and
   /// the record's scope filter. Null = unattributed, and always shown.
   serviceLine      String?
