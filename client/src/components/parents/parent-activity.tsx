@@ -948,6 +948,9 @@ function CardHeaderActions({ note, kind, mode, setMode, onDelete, onTogglePin, p
   // the parent record, not the author (HubSpot semantics), so a colleague
   // covering the lead can pin or unpin too. Only Edit and Delete - the
   // note's words - stay author-only via canManage.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  /** Whether this menu was reached by pointer, which decides the ring below. */
+  const byPointer = useRef(false);
   if (mode === "edit") return null;
   if (mode === "confirm") {
     return (
@@ -970,7 +973,10 @@ function CardHeaderActions({ note, kind, mode, setMode, onDelete, onTogglePin, p
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
+          onPointerDown={() => { byPointer.current = true; }}
+          onKeyDown={() => { byPointer.current = false; }}
           // p-3 -m-3 below sm: an invisible 44px-class hit area around the
           // small text (Apple's minimum tap target). The visual layout is
           // unchanged - the negative margin swallows the padding - but a
@@ -983,13 +989,31 @@ function CardHeaderActions({ note, kind, mode, setMode, onDelete, onTogglePin, p
           // Hover moves the COLOUR rather than fading the text: at 70% opacity
           // it turned grey mid-reach and stopped matching the title it is
           // meant to sit level with.
-          className="shrink-0 inline-flex items-center gap-0.5 text-sm font-medium font-ui transition-colors hover:text-primary p-3 -m-3 sm:p-0 sm:m-0"
+          // The browser's own focus ring is a hard blue box the brand never
+          // uses. Keyboard focus still shows - as our ring - and a mouse click
+          // shows nothing, via onCloseAutoFocus below.
+          className="shrink-0 inline-flex items-center gap-0.5 text-sm font-medium font-ui transition-colors hover:text-primary p-3 -m-3 sm:p-0 sm:m-0 rounded-[calc(var(--radius)/3)] focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-2"
           data-testid={`btn-${kind}-actions-${note.id}`}
         >
           Actions <ChevronDown className="w-3 h-3" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent
+        align="end"
+        /**
+         * Closing the menu handed focus back to the trigger the way a keyboard
+         * would, so a mouse user got a focus ring around Actions for no reason
+         * they could see. We hand it back ourselves instead: programmatic focus
+         * only draws the ring when the person has actually been using the
+         * keyboard, which is exactly who it is for.
+         */
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          // A mouse user is looking at where they clicked, not at a focus ring;
+          // a keyboard user needs their place back, and gets it.
+          if (!byPointer.current) triggerRef.current?.focus({ preventScroll: true });
+        }}
+      >
         <DropdownMenuItem onClick={onTogglePin} data-testid={`btn-${kind}-pin-${note.id}`}>
           <Pin className="w-3.5 h-3.5 mr-2" /> {note.pinned ? "Unpin" : "Pin"}
         </DropdownMenuItem>
