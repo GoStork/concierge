@@ -285,7 +285,7 @@ export default function ProviderHomePage() {
                 title={t.title}
                 detail={[
                   t.overdue ? "Overdue" : `Due ${fmtWhen(t.dueAt)}`,
-                  t.mine ? null : (t.assigneeName || "Unassigned"),
+                  t.mine ? null : t.assigneeName,
                   t.priority !== "NONE" ? t.priority.toLowerCase() : null,
                 ].filter(Boolean).join(" - ")}
                 // Same naming as the task's own card: say where it goes.

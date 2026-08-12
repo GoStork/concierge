@@ -237,7 +237,11 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
     existing?.reminderMinutesBefore === null || existing?.reminderMinutesBefore === undefined
       ? "" : String(existing.reminderMinutesBefore),
   );
-  const [assignee, setAssignee] = useState(existing?.assigneeUserId || "");
+  // Somebody owns every task. A new one starts with whoever is creating it
+  // rather than in an "Unassigned" pile that no queue ever surfaces.
+  const [assignee, setAssignee] = useState(
+    existing?.assigneeUserId || record.viewer.userId || "",
+  );
   const [scopeKey, setScopeKey] = useState(choices[0]?.key || "gostork");
   const chosen = choices.find((c) => c.key === scopeKey) || choices[0];
   const mut = useCrmMutation(record.parent.id, () => onDone?.());
@@ -343,7 +347,12 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
           {REMINDER_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
         <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={field} data-testid="select-task-assignee">
-          <option value="">Unassigned</option>
+          {/* No "Unassigned": see the state above. A task that came in wearing
+              a name we cannot offer back (the family, on work that is theirs)
+              keeps it rather than silently changing hands. */}
+          {existing?.assigneeName && !existing?.assigneeUserId && (
+            <option value="">{existing.assigneeName}</option>
+          )}
           {(assignable?.users || []).map((u) => (
             <option key={u.id} value={u.id}>
               {u.name || u.email}{u.providerName ? ` - ${u.providerName}` : ""}

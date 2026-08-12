@@ -1104,11 +1104,7 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
    * work it is tracking, so they stay inert - editing the title of "Review and
    * approve: cost sheet" would just make the queue lie.
    */
-  const canOpenTaskEdit = !!entry.task
-    && entry.task.source !== "SYSTEM"
-    // Finished tasks are history. Rewriting one would rewrite what happened.
-    && entry.task.status === "OPEN"
-    && taskMode === "view";
+  const canOpenTaskEdit = !!entry.task && entry.task.source !== "SYSTEM" && taskMode === "view";
   const openTaskEdit = (e: React.MouseEvent) => {
     const el = e.target as HTMLElement;
     if (el.closest('a,button,input,textarea,select,[role="menuitem"],[role="menu"],[contenteditable="true"]')) return;
@@ -1258,9 +1254,11 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
                     pinned: !!entry.task.pinned,
                     // A SYSTEM task's words are the product's, not a person's:
                     // it can be pinned like anything else, but not rewritten or
-                    // deleted out from under the queue that raised it. A
-                    // finished task is history and is not rewritten either.
-                    canManage: entry.task.source !== "SYSTEM" && entry.task.status === "OPEN",
+                    // deleted out from under the queue that raised it. Being
+                    // finished changes nothing - a typo in yesterday's task is
+                    // still worth fixing, and its menu should not be a dead
+                    // end holding one item.
+                    canManage: entry.task.source !== "SYSTEM",
                   }}
                   kind="task"
                   mode={taskMode}
@@ -1394,7 +1392,11 @@ export function ParentActivitySection({ record, scope }: {
       {/* Actions on the timeline, not sections of their own. Inline panels,
           never a dialog - the house rule, and a note you have to open a modal
           to write is a note nobody writes. */}
-      <div className="flex flex-wrap gap-2">
+      {/* One row on a phone. Three full labels need 393px and a phone column
+          gives 343, so the verb drops below sm - the icon already says
+          "create", and Note / Task / Services keep each button a word rather
+          than a guess. */}
+      <div className="flex flex-nowrap gap-1.5 sm:gap-2 [&_button]:min-w-0">
         {/* Outline buttons are transparent, which reads fine on a white card
             but disappears into the sand page these sit directly on - same
             fix as the mobile record tabs: explicit card fill. */}
@@ -1408,7 +1410,8 @@ export function ParentActivitySection({ record, scope }: {
           {/* No chevron: this opens a composer, it does not open a menu, and
               the caret promised a dropdown that never existed. Closing it is
               Cancel, next to Post, where the note's own edit controls are. */}
-          <StickyNote className="w-3.5 h-3.5 mr-1.5" /> Create Note
+          <StickyNote className="w-3.5 h-3.5 mr-1.5" />
+          <span className="hidden sm:inline">Create&nbsp;</span>Note
         </Button>
         {/* A task is an ACT on the record, the same kind of thing as writing a
             note, so creating one sits beside Create Note rather than inside
@@ -1420,14 +1423,22 @@ export function ParentActivitySection({ record, scope }: {
           onClick={() => toggle("task")}
           data-testid="btn-activity-add-task"
         >
-          <CircleCheck className="w-3.5 h-3.5 mr-1.5" /> Create Task
+          <CircleCheck className="w-3.5 h-3.5 mr-1.5" />
+          <span className="hidden sm:inline">Create&nbsp;</span>Task
         </Button>
         {scope && scope.lines.length >= 2 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="bg-card" data-testid="btn-activity-scope">
                 <Filter className="w-3.5 h-3.5 mr-1.5" />
-                {scope.active === "all" ? "All services" : scope.labels[scope.active] || scope.active}
+                <span className="truncate">
+                  {scope.active === "all" ? (
+                    <>
+                      <span className="hidden sm:inline">All services</span>
+                      <span className="sm:hidden">Services</span>
+                    </>
+                  ) : (scope.labels[scope.active] || scope.active)}
+                </span>
                 <ChevronDown className="w-3 h-3 ml-1" />
               </Button>
             </DropdownMenuTrigger>
@@ -1473,11 +1484,10 @@ export function ParentActivitySection({ record, scope }: {
           timeline, above even a pinned note - a pin says "read this first",
           and outstanding work outranks it. */}
       {/* One frame around the heading and the work under it, so Tasks reads as
-          a place rather than as loose cards that happen to be first. No fill:
-          the cards inside are the white surfaces, and a second one behind them
-          would flatten them into it. */}
+          a place rather than as loose cards that happen to be first - on the
+          same surface the cards inside it use. */}
       <div
-        className="rounded-[var(--radius)] border p-3 space-y-2"
+        className="rounded-[var(--radius)] border bg-card p-3 space-y-2"
         data-testid="panel-activity-tasks"
       >
         <h3 className="t-section-title font-heading">Tasks</h3>

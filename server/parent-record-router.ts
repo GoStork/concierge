@@ -373,7 +373,10 @@ parentRecordRouter.post("/api/parents/:id/tasks", requireAuth, async (req, res) 
       return res.status(400).json({ message: "A task needs a valid due date" });
     }
 
-    const assignee = await resolveAssignee(req.body?.assigneeUserId);
+    // Every task belongs to somebody. Left blank, it is the creator's - they
+    // are the one who just decided it needed doing, and "Unassigned" is a
+    // queue nobody reads.
+    const assignee = await resolveAssignee(req.body?.assigneeUserId || viewer.userId);
     // Assigning to someone at a provider org makes this THEIR task, so it is
     // written at that org's scope no matter who created it - otherwise a
     // GoStork-scoped row would be invisible to the person meant to do it.

@@ -37,6 +37,14 @@ type QueueKind = "approval" | "whisper" | "review" | "agreement";
 interface QueueItem {
   /** Unique per artifact - the whole dedupe story. */
   systemKey: string;
+  /**
+   * Waiting on the FAMILY rather than the org. An agreement sitting unsigned
+   * is the parent's move; saying so is the difference between "nobody owns
+   * this" and "this is not yours to do yet".
+   */
+  waitingOnParent?: boolean;
+  /** First name, for the assignee line when the family is the one to act. */
+  parentName?: string;
   providerId: string;
   parentAccountId: string;
   title: string;
@@ -222,6 +230,8 @@ export async function collectQueueItems(db: Db): Promise<QueueItem[]> {
       ),
       deepLink: `/agreements/${a.id}`,
       kind: "agreement",
+      waitingOnParent: true,
+      parentName: nameOf.get(a.parentUserId) || "the family",
       since: a.createdAt,
     });
   }
@@ -240,9 +250,9 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
     const items = await collectQueueItems(db);
     const liveKeys = new Set(items.map((i) => i.systemKey));
 
-    // Lead owners decide assignment. Falling back to unassigned is deliberate:
-    // a task nobody owns is still visible to the whole org, whereas guessing
-    // an assignee would put work in someone's queue that was never theirs.
+    // Lead owners decide assignment. Every task ends up with a NAME on it:
+    // there is no such thing as work nobody is waiting on, and "Unassigned"
+    // is a queue nobody reads.
     const accountIds = Array.from(new Set(items.map((i) => i.parentAccountId)));
     const owners = accountIds.length
       ? await db.parentOwner.findMany({
@@ -253,6 +263,15 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
     const ownerOf = new Map<string, { id: string; name: string | null }>(
       owners.map((o: any) => [`${o.parentAccountId}|${o.providerId}`, { id: o.ownerUserId, name: o.ownerName }]),
     );
+
+    // The org's own name, for work that is the team's rather than one
+    // person's. It is not a user, so nothing gets emailed to it - it is the
+    // honest answer to "whose is this" when the family has no lead owner yet.
+    const providerIds = Array.from(new Set(items.map((i) => i.providerId)));
+    const providers = providerIds.length
+      ? await db.provider.findMany({ where: { id: { in: providerIds } }, select: { id: true, name: true } })
+      : [];
+    const orgName = new Map<string, string>(providers.map((p: any) => [p.id, p.name]));
 
     let raised = 0;
     for (const item of items) {
@@ -273,8 +292,13 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
             source: "SYSTEM",
             systemKey: item.systemKey,
             deepLink: item.deepLink,
-            assigneeUserId: owner?.id ?? null,
-            assigneeName: owner?.name ?? null,
+            // Waiting on the family: it wears their name, and no user id, so
+            // no reminder is ever addressed to a parent about the provider's
+            // work queue.
+            assigneeUserId: item.waitingOnParent ? null : (owner?.id ?? null),
+            assigneeName: item.waitingOnParent
+              ? (item.parentName || "the family")
+              : (owner?.name ?? orgName.get(item.providerId) ?? "the team"),
             createdByUserId: owner?.id ?? "system",
           },
         });
