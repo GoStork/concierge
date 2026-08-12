@@ -996,6 +996,15 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
   const noteMut = useCrmMutation(parentUserId, () => setNoteMode("view"));
   // Same story for a task: the card IS the editor, exactly as a note's is.
   const [taskMode, setTaskMode] = useState<TaskMode>("view");
+  /** Open = this card is currently showing an editor, whichever kind it is. */
+  const isOpen = noteMode === "edit" || taskMode === "edit";
+  const closeFromHeader = (e: React.MouseEvent) => {
+    // Actions, the pin, a link in the byline - a real control in the header is
+    // still itself, not a close button.
+    if ((e.target as HTMLElement).closest('a,button,[role="menuitem"],[role="menu"]')) return;
+    setNoteMode("view");
+    setTaskMode("view");
+  };
 
   /**
    * A note opens for editing when you click it - the whole card is the
@@ -1108,7 +1117,22 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
       onClick={canOpenNoteEdit ? openNoteEdit : canOpenTaskEdit ? openTaskEdit : undefined}
       data-testid={`activity-${entry.id}`}
     >
-      <div className="flex items-center gap-2.5">
+      {/* The header is also the way OUT: a card opens when you click its body,
+          so its top row - type, date, the frame around them - closes it again.
+          Without that the only exit from an editor you opened by clicking was
+          to hunt for Cancel. */}
+      <div
+        className={cn(
+          "flex items-center gap-2.5",
+          // Same line the email card's detail block draws, for the same
+          // reason: the type and date read as a card header rather than as the
+          // first line of the content. Only where the body is our own writing -
+          // a detail block brings its own rule and two would stack.
+          (entry.note || entry.task) && "pb-2.5 border-b border-border/60",
+          isOpen && "cursor-pointer",
+        )}
+        onClick={isOpen ? closeFromHeader : undefined}
+      >
         {avatar}
         {/* Title row never wraps: byline (and org) truncate before Actions
             ever leaves the top-right corner - on a phone a wrapped second

@@ -13,7 +13,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, Loader2, Plus, X } from "lucide-react";
+import { AlertTriangle, Check, ExternalLink, Loader2, MessageSquare, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -370,6 +370,22 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
 }
 
 /**
+ * What the deep link on a task actually opens, so the button can say so.
+ *
+ * "Open" told you nothing: the same word took you to a chat, an agreement or
+ * the reviews page. Naming the destination - with the same icon pairing the
+ * interested-profiles rail uses - means the button is readable before you
+ * press it.
+ */
+export function taskLinkTarget(href: string): { label: string; chat: boolean } {
+  if (href.startsWith("/chat")) return { label: "Open chat", chat: true };
+  if (href.startsWith("/agreements")) return { label: "Open agreement", chat: false };
+  if (href.startsWith("/invoices")) return { label: "Open invoice", chat: false };
+  if (href.startsWith("/performance")) return { label: "Open reviews", chat: false };
+  return { label: "Open", chat: false };
+}
+
+/**
  * The chips that describe a task: what kind of thing it is, when it is due,
  * whose it is, how urgent.
  *
@@ -484,11 +500,22 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
           >
             <Check className="w-3.5 h-3.5 mr-1.5" /> Done
           </Button>
-          {task.deepLink && (
-            <Button size="sm" variant="ghost" onClick={() => { window.location.href = task.deepLink as string; }} data-testid={`btn-task-open-${task.id}`}>
-              Open
-            </Button>
-          )}
+          {task.deepLink && (() => {
+            const target = taskLinkTarget(task.deepLink);
+            return (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { window.location.href = task.deepLink as string; }}
+                data-testid={`btn-task-open-${task.id}`}
+              >
+                {target.chat
+                  ? <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+                  : <ExternalLink className="w-3.5 h-3.5 mr-1.5" />}
+                {target.label}
+              </Button>
+            );
+          })()}
         </div>
       )}
     </div>

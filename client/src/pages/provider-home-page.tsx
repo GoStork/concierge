@@ -39,6 +39,7 @@ import { QueueRow, SectionHeader } from "@/components/home/home-sections";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { derivePayoutStatus } from "@/lib/payout-status";
+import { taskLinkTarget } from "@/components/parents/parent-crm-ui";
 
 interface ProviderTask {
   id: string;
@@ -287,7 +288,8 @@ export default function ProviderHomePage() {
                   t.mine ? null : (t.assigneeName || "Unassigned"),
                   t.priority !== "NONE" ? t.priority.toLowerCase() : null,
                 ].filter(Boolean).join(" - ")}
-                cta={t.source === "SYSTEM" ? "Review" : "Open"}
+                // Same naming as the task's own card: say where it goes.
+                cta={t.deepLink ? taskLinkTarget(t.deepLink).label : "Open"}
                 onClick={() => navigate(t.deepLink || (t.parentUserId ? `/parents/${t.parentUserId}` : "/parents"))}
               />
             ))}
