@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Plus, Trash2, Loader2, Ban, UserCheck } from "lucide-react";
+import { Plus, Trash2, Loader2, Ban, UserCheck, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTableSort } from "@/components/sortable-table-head";
 import MembersTable from "@/components/members-table";
@@ -98,6 +98,7 @@ function GostorkAdminUsersView() {
   const ownerFilter = searchParams.get("owner") || "all";
   const nextFilter = searchParams.get("next") || "all";
   const formFilter = searchParams.get("form") || "all";
+  const reviewFilter = searchParams.get("review") === "1";
   const setParams = useCallback((entries: Record<string, string>) => {
     // One atomic update: successive single writes each build from the same
     // stale params, so only the last one survives.
@@ -135,9 +136,13 @@ function GostorkAdminUsersView() {
     staleTime: 15_000,
   });
 
-  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter.length > 0 || statusFilter.length > 0 || ownerFilter !== "all" || nextFilter !== "all" || formFilter !== "all";
+  const hasActiveFilters = searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "" || serviceFilter.length > 0 || statusFilter.length > 0 || ownerFilter !== "all" || nextFilter !== "all" || formFilter !== "all" || reviewFilter;
+
+  // Signups flagged at creation (per-IP velocity, etc.). Count drives the pill.
+  const reviewCount = parentUsers.filter(m => (overview[m.id]?.trustState) === "QUARANTINED").length;
 
   const filteredUsers = parentUsers.filter(member => {
+    if (reviewFilter && overview[member.id]?.trustState !== "QUARANTINED") return false;
     // Equality on enum keys, exactly like the provider table. This used to be a
     // substring match on free-text labels, so the same dropdown behaved
     // differently depending on which role was looking at it.
@@ -173,7 +178,7 @@ function GostorkAdminUsersView() {
     // (each built from the same stale params), so only the last key cleared.
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      for (const key of ["q", "from", "to", "svc", "status", "owner", "next", "form"]) next.delete(key);
+      for (const key of ["q", "from", "to", "svc", "status", "owner", "next", "form", "review"]) next.delete(key);
       return next;
     }, { replace: true });
   }
@@ -244,6 +249,17 @@ function GostorkAdminUsersView() {
     },
   });
 
+  const approveTrustMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiRequest("POST", "/api/admin/security/trust-state", { userId, trustState: "TRUSTED" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/parents-overview"] });
+      toast({ title: "Signup approved", description: "Cleared from the review queue.", variant: "success" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       await Promise.all(ids.map(id => apiRequest("DELETE", `/api/users/${id}`)));
@@ -307,6 +323,11 @@ function GostorkAdminUsersView() {
         onClear={clearFilters}
         ownerOptions={ownerOptions}
         testIdPrefix="admin-parents"
+        reviewPill={{
+          active: reviewFilter,
+          count: reviewCount,
+          onToggle: () => updateUsersParam("review", reviewFilter ? "" : "1"),
+        }}
       />
 
       <ParentsTable
@@ -336,6 +357,8 @@ function GostorkAdminUsersView() {
             isDisabled: member.isDisabled,
             owner: o.owner ?? null,
             nextStep: o.nextStep ?? null,
+            trustState: o.trustState ?? "TRUSTED",
+            trustReasons: o.trustReasons ?? [],
           };
         })}
         sortConfig={sortConfig}
@@ -354,6 +377,19 @@ function GostorkAdminUsersView() {
           return (
             <div className="flex items-center justify-end gap-1">
               {/* No edit button - clicking anywhere on the row opens the record */}
+              {row.trustState === "QUARANTINED" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-success hover:text-success"
+                  onClick={() => approveTrustMutation.mutate(member.id)}
+                  disabled={approveTrustMutation.isPending}
+                  title="Approve - clear from review queue"
+                  data-testid={`button-approve-trust-${member.id}`}
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"

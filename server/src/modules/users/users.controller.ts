@@ -19,6 +19,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiParam } from "@nestjs/swagger";
 import { emitJourneyEvent } from "../../../journey-events";
 import { checkEmailForSignup, normalizeEmail } from "../../../email-security";
+import { evaluateSignupRisk } from "../../../signup-risk";
 import { serviceKeysFromLabels } from "../../../../shared/service-keys";
 import { serviceLineOfSubject } from "../../../journey-timeline";
 import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel, MATCHED_ELSEWHERE_STAGE } from "../../../../shared/journey-ladder";
@@ -1001,7 +1002,7 @@ export class UsersController {
     }
     const parents = await this.prisma.user.findMany({
       where: { roles: { has: "PARENT" } },
-      select: { id: true, name: true, parentAccountId: true },
+      select: { id: true, name: true, parentAccountId: true, trustState: true, trustReasons: true, createdAt: true },
     });
     const ids = parents.map(p => p.id);
     const accountIds = Array.from(new Set(parents.map(p => p.parentAccountId).filter(Boolean))) as string[];
@@ -1448,6 +1449,11 @@ export class UsersController {
         nextStep: step
           ? { id: step.id, title: step.title, dueAt: step.dueAt, priority: step.priority, type: step.type, overdue: new Date(step.dueAt).getTime() < nowMs }
           : null,
+        // Signup trust: per-login, not merged across a household - each login
+        // is flagged on its own signal. Feeds the /parents "Needs review" queue.
+        trustState: (parent as any).trustState || "TRUSTED",
+        trustReasons: (parent as any).trustReasons || [],
+        signupAt: (parent as any).createdAt || null,
       };
     }
     for (const q of quotes) {
@@ -2495,7 +2501,7 @@ export class UsersController {
   @ApiBody({ type: CreateUserDto })
   @ApiResponse({ status: 201, description: "User created", type: UserResponseDto })
   @ApiResponse({ status: 400, description: "Validation error or email in use", type: ErrorResponseDto })
-  async createUser(@Body() body: any) {
+  async createUser(@Body() body: any, @Req() req: Request) {
     try {
       const input = insertUserSchema.parse(body);
       const existing = await this.prisma.user.findUnique({
@@ -2526,6 +2532,16 @@ export class UsersController {
         const account = await this.prisma.parentAccount.create({ data: {} });
         parentAccountId = account.id;
       }
+      // Per-IP velocity → soft quarantine (self-serve parents only). Never a
+      // hard block: a flagged account still exists, it just lands in the
+      // /parents review queue for a one-click approve.
+      const signupIp = selfServeParent
+        ? ((String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress) ?? null)
+        : null;
+      const risk = selfServeParent
+        ? await evaluateSignupRisk(this.prisma, { ip: signupIp, turnstilePassed: true })
+        : { trustState: "TRUSTED" as const, reasons: [] as string[] };
+
       const created = await this.prisma.user.create({
         data: {
           email: input.email,
@@ -2537,6 +2553,9 @@ export class UsersController {
           providerId: input.providerId || null,
           parentAccountId,
           parentAccountRole: isParent ? "INTENDED_PARENT_1" : null,
+          trustState: risk.trustState,
+          trustReasons: risk.reasons,
+          signupIp,
         },
       });
       const dailyRoomUrl = await this.provisionVideoRoom(created.id, roles);

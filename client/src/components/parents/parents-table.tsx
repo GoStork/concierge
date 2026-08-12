@@ -84,6 +84,15 @@ function ProviderNames({ names, lost }: { names?: string[]; lost?: string[] }) {
  * yet) with no status - so the admin view never drops a service the profile
  * declares just because it has no session yet.
  */
+const TRUST_REASON_LABELS: Record<string, string> = {
+  ip_velocity: "Many signups from one IP",
+  no_turnstile: "No bot-check token",
+  disposable_email: "Disposable email",
+};
+function trustReasonLabel(code: string): string {
+  return TRUST_REASON_LABELS[code] || code;
+}
+
 function buildServiceLines(row: ParentTableRow): ServiceLine[] {
   const lines: ServiceLine[] = (row.serviceStatuses || []).map((ss) => ({ ...ss }));
   const seen = new Set(lines.map((l) => l.serviceKey).filter(Boolean));
@@ -313,6 +322,16 @@ export function ParentsTable({
                         data-testid={`badge-disabled-${row.id}`}
                       >
                         Disabled
+                      </span>
+                    )}
+                    {row.trustState === "QUARANTINED" && (
+                      <span
+                        className="shrink-0 inline-flex items-center text-[10px] font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
+                        style={{ background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }}
+                        title={(row.trustReasons || []).map(trustReasonLabel).join(", ") || "Flagged for review"}
+                        data-testid={`badge-review-${row.id}`}
+                      >
+                        Review
                       </span>
                     )}
                   </div>

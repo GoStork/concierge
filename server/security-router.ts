@@ -222,3 +222,49 @@ securityRouter.delete("/api/admin/security/email-allowlist/:canonical", requireG
     res.status(500).json({ message: e?.message || "Failed to remove from allowlist" });
   }
 });
+
+/**
+ * Approve or quarantine a flagged signup from the /parents review queue.
+ * TRUSTED clears the flag (and its reasons); QUARANTINED re-flags manually.
+ */
+securityRouter.post("/api/admin/security/trust-state", requireGostorkAdmin, async (req, res) => {
+  try {
+    const userId = String(req.body?.userId || "");
+    const trustState = String(req.body?.trustState || "");
+    if (!userId || !["TRUSTED", "QUARANTINED"].includes(trustState)) {
+      return res.status(400).json({ message: "userId and trustState (TRUSTED|QUARANTINED) required" });
+    }
+    const row = await prisma.user.update({
+      where: { id: userId },
+      data: { trustState, ...(trustState === "TRUSTED" ? { trustReasons: [] } : {}) },
+      select: { id: true, trustState: true, trustReasons: true },
+    });
+    res.json(row);
+  } catch (e: any) {
+    res.status(500).json({ message: e?.message || "Failed to update trust state" });
+  }
+});
+
+/** Editable knobs. Today: the per-IP signup cap that flips a signup to review. */
+securityRouter.get("/api/admin/security/settings", requireGostorkAdmin, async (_req, res) => {
+  try {
+    const row = await prisma.securitySetting.findUnique({ where: { key: "ip_signup_cap_per_day" } });
+    res.json({ ipSignupCapPerDay: row ? parseInt(row.value, 10) || 5 : 5 });
+  } catch (e: any) {
+    res.status(500).json({ message: e?.message || "Failed to load settings" });
+  }
+});
+
+securityRouter.put("/api/admin/security/settings", requireGostorkAdmin, async (req, res) => {
+  try {
+    const cap = Math.max(1, Math.min(1000, parseInt(String(req.body?.ipSignupCapPerDay), 10) || 5));
+    await prisma.securitySetting.upsert({
+      where: { key: "ip_signup_cap_per_day" },
+      create: { key: "ip_signup_cap_per_day", value: String(cap) },
+      update: { value: String(cap) },
+    });
+    res.json({ ipSignupCapPerDay: cap });
+  } catch (e: any) {
+    res.status(500).json({ message: e?.message || "Failed to save settings" });
+  }
+});

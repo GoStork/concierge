@@ -427,6 +427,10 @@ model User {
   emailCanonical         String?
   /// Signup risk state: TRUSTED (default) | PENDING | QUARANTINED. Quarantined = exists but gated from sensitive actions.
   trustState             String                  @default("TRUSTED")
+  /// Reasons the signup was flagged (ip_velocity, no_turnstile, ...), for the /parents review queue.
+  trustReasons           String[]                @default([])
+  /// Source IP at signup (first x-forwarded-for hop), for per-IP velocity checks.
+  signupIp               String?
   password               String?
   name                   String?
   firstName              String?
@@ -491,6 +495,7 @@ model User {
   autoReplies            ProviderAutoReply[]     @relation("AutoReplyStaff")
   parentOwnerships       ParentOwner[]           @relation("ParentOwnerUser")
   @@index([emailCanonical])
+  @@index([signupIp])
 }
 
 model UserDonorPreference {
@@ -2994,6 +2999,13 @@ model SecurityEmailAllow {
   note            String?
   createdByUserId String?
   createdAt       DateTime @default(now())
+}
+
+model SecuritySetting {
+  /// e.g. "ip_signup_cap_per_day". Small editable knobs for /admin/security.
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 model SecurityCountryPolicy {

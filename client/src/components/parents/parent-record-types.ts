@@ -322,4 +322,7 @@ export interface ParentTableRow {
   isDisabled?: boolean;
   owner?: { userId?: string; name: string | null } | null;
   nextStep?: { id: string; title: string; dueAt: string; priority?: string; type?: string; overdue: boolean } | null;
+  /** Signup trust (admin only): QUARANTINED rows populate the "Needs review" queue. */
+  trustState?: "TRUSTED" | "QUARANTINED" | string;
+  trustReasons?: string[];
 }

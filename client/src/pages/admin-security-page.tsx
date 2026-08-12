@@ -117,6 +117,50 @@ export default function AdminSecurityPage() {
     onError: (e: any) => toast({ title: "Could not save", description: e.message, variant: "destructive" }),
   });
 
+  // Email allowlist - canonicals that may create unlimited aliases (test inboxes).
+  const { data: allowData } = useQuery<{ allowlist: { canonicalEmail: string; note: string | null; createdAt: string }[] }>({
+    queryKey: ["/api/admin/security/email-allowlist"],
+    queryFn: async () => (await fetch("/api/admin/security/email-allowlist", { credentials: "include" })).json(),
+  });
+  const [newAllowEmail, setNewAllowEmail] = useState("");
+  const addAllow = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await fetch("/api/admin/security/email-allowlist", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.message || "Failed");
+      return res.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/admin/security/email-allowlist"] }); setNewAllowEmail(""); },
+    onError: (e: any) => toast({ title: "Could not add", description: e.message, variant: "destructive" }),
+  });
+  const removeAllow = useMutation({
+    mutationFn: async (canonical: string) => {
+      await fetch(`/api/admin/security/email-allowlist/${encodeURIComponent(canonical)}`, { method: "DELETE", credentials: "include" });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/admin/security/email-allowlist"] }),
+  });
+
+  // Per-IP signup cap: above this, a new signup is quarantined for review.
+  const { data: settings } = useQuery<{ ipSignupCapPerDay: number }>({
+    queryKey: ["/api/admin/security/settings"],
+    queryFn: async () => (await fetch("/api/admin/security/settings", { credentials: "include" })).json(),
+  });
+  const [capDraft, setCapDraft] = useState<string>("");
+  const saveCap = useMutation({
+    mutationFn: async (cap: number) => {
+      const res = await fetch("/api/admin/security/settings", {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ipSignupCapPerDay: cap }),
+      });
+      return res.json();
+    },
+    onSuccess: (d: any) => { qc.invalidateQueries({ queryKey: ["/api/admin/security/settings"] }); toast({ title: `IP signup cap set to ${d.ipSignupCapPerDay}/day` }); },
+  });
+
   const countries = countryData?.countries || [];
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -174,6 +218,81 @@ export default function AdminSecurityPage() {
               Sync now
             </Button>
           )}
+        </div>
+      </div>
+
+      {/* Signup protection: per-IP cap + the alias/test-inbox allowlist. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-[var(--radius)] border bg-card p-4 space-y-3">
+          <h2 className="t-section-title font-heading">Signup rate</h2>
+          <p className="t-helper">
+            More than this many new accounts from one IP in a day gets the extra ones
+            flagged for review (not blocked). A household makes 1-2; a script makes dozens.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={1}
+              className="w-24 bg-card"
+              value={capDraft !== "" ? capDraft : String(settings?.ipSignupCapPerDay ?? 5)}
+              onChange={(e) => setCapDraft(e.target.value)}
+              data-testid="input-ip-signup-cap"
+            />
+            <span className="t-helper">accounts / IP / day</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="bg-card ml-auto"
+              disabled={saveCap.isPending || capDraft === "" || Number(capDraft) === settings?.ipSignupCapPerDay}
+              onClick={() => saveCap.mutate(Math.max(1, parseInt(capDraft, 10) || 5))}
+              data-testid="btn-save-ip-cap"
+            >
+              {saveCap.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-[var(--radius)] border bg-card p-4 space-y-3">
+          <h2 className="t-section-title font-heading">Email allowlist</h2>
+          <p className="t-helper">
+            Addresses here may create unlimited aliases (<code>+tag</code>, dots) - for staff
+            test inboxes. Everyone else gets one account per mailbox; disposable domains are refused.
+          </p>
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => { e.preventDefault(); if (newAllowEmail.trim()) addAllow.mutate(newAllowEmail.trim()); }}
+          >
+            <Input
+              type="email"
+              placeholder="name@gmail.com"
+              className="bg-card"
+              value={newAllowEmail}
+              onChange={(e) => setNewAllowEmail(e.target.value)}
+              data-testid="input-allowlist-email"
+            />
+            <Button size="sm" type="submit" variant="outline" className="bg-card shrink-0" disabled={addAllow.isPending || !newAllowEmail.trim()} data-testid="btn-add-allowlist">
+              {addAllow.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Add"}
+            </Button>
+          </form>
+          <div className="space-y-1.5">
+            {(allowData?.allowlist || []).length === 0 ? (
+              <p className="t-helper">No allowlisted addresses.</p>
+            ) : (
+              (allowData?.allowlist || []).map((a) => (
+                <div key={a.canonicalEmail} className="flex items-center gap-2 text-sm rounded-md bg-secondary px-2.5 py-1.5">
+                  <span className="font-mono text-xs mr-auto truncate" title={a.note || undefined}>{a.canonicalEmail}</span>
+                  <button
+                    type="button"
+                    className="t-helper hover:text-destructive transition-colors"
+                    onClick={() => removeAllow.mutate(a.canonicalEmail)}
+                    data-testid={`btn-remove-allowlist-${a.canonicalEmail}`}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 

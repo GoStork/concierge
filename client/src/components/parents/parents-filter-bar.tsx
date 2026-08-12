@@ -29,7 +29,7 @@ export interface ParentsFilterState {
 }
 
 export function ParentsFilterBar({
-  state, setParam, setParams, onClear, ownerOptions, testIdPrefix,
+  state, setParam, setParams, onClear, ownerOptions, testIdPrefix, reviewPill,
 }: {
   state: ParentsFilterState;
   /** Write one param. An empty value removes it. */
@@ -38,6 +38,8 @@ export function ParentsFilterBar({
   setParams: (entries: Record<string, string>) => void;
   onClear: () => void;
   ownerOptions: { id: string; name?: string | null }[];
+  /** Admin only: the "Needs review" signup-quarantine quick filter. */
+  reviewPill?: { active: boolean; count: number; onToggle: () => void };
   testIdPrefix: string;
 }) {
   const hasActive = !!(state.q.trim() || state.from || state.to || state.services.length
@@ -141,6 +143,25 @@ export function ParentsFilterBar({
             </button>
           );
         })}
+        {reviewPill && (reviewPill.count > 0 || reviewPill.active) && (
+          <button
+            type="button"
+            className="text-xs font-ui px-2.5 py-1 rounded-full border bg-card transition-colors inline-flex items-center gap-1.5"
+            style={reviewPill.active
+              ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))", borderColor: "hsl(var(--brand-warning) / 0.5)" }
+              : { color: "hsl(var(--brand-warning))", borderColor: "hsl(var(--brand-warning) / 0.35)" }}
+            onClick={reviewPill.onToggle}
+            data-testid="quick-filter-review"
+          >
+            Needs review
+            <span
+              className="rounded-full px-1.5 text-[10px] font-medium"
+              style={{ background: "hsl(var(--brand-warning) / 0.2)" }}
+            >
+              {reviewPill.count}
+            </span>
+          </button>
+        )}
       </div>
     </>
   );
