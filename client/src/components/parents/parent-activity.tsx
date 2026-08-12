@@ -1453,7 +1453,14 @@ export function ParentActivitySection({ record, scope }: {
           anyone opens a record to answer, so they sit at the top of the
           timeline, above even a pinned note - a pin says "read this first",
           and outstanding work outranks it. */}
-      <div className="space-y-2" data-testid="panel-activity-tasks">
+      {/* One frame around the heading and the work under it, so Tasks reads as
+          a place rather than as loose cards that happen to be first. No fill:
+          the cards inside are the white surfaces, and a second one behind them
+          would flatten them into it. */}
+      <div
+        className="rounded-[var(--radius)] border p-3 space-y-2"
+        data-testid="panel-activity-tasks"
+      >
         <h3 className="t-section-title font-heading">Tasks</h3>
         <ParentTaskPanel record={record} onChanged={refetchRecord} />
       </div>
