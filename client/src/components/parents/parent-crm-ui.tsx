@@ -397,19 +397,34 @@ export function TaskChips({ task }: { task: ParentRecord["crm"]["tasks"][number]
   const due = new Date(task.dueAt);
   const tone = PRIORITY_TONE[task.priority] || null;
   const chip = "text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap";
+  const finished = task.status !== "OPEN";
+  // A finished task is not overdue, whatever its due date says - the deadline
+  // stopped mattering the moment the work was done.
+  const late = task.overdue && !finished;
   return (
     <div className="flex flex-wrap items-center gap-1.5" data-testid={`task-chips-${task.id}`}>
       <span className={chip} style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}>
         {taskTypeLabel(task.type)}
       </span>
+      {finished && (
+        <span
+          className={cn(chip, "inline-flex items-center gap-1")}
+          style={task.dismissedUnresolved
+            ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
+            : { background: "hsl(var(--brand-success) / 0.15)", color: "hsl(var(--brand-success))" }}
+        >
+          {task.dismissedUnresolved ? <AlertTriangle className="w-3 h-3" /> : <Check className="w-3 h-3" />}
+          {task.dismissedUnresolved ? "Marked done - work not finished" : "Done"}
+        </span>
+      )}
       <span
         className={cn(chip, "inline-flex items-center gap-1")}
-        style={task.overdue
+        style={late
           ? { background: "hsl(var(--brand-warning) / 0.15)", color: "hsl(var(--brand-warning))" }
           : { background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
       >
-        {task.overdue && <AlertTriangle className="w-3 h-3" />}
-        {task.overdue ? "Overdue - due " : "Due "}
+        {late && <AlertTriangle className="w-3 h-3" />}
+        {late ? "Overdue - due " : "Due "}
         {due.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
       </span>
       {task.assigneeName && (
@@ -472,7 +487,11 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
       {/* The note is the task's own words, not metadata about it - same weight
           as a note's body, which is what it is. */}
       {task.notes && <p className="text-sm whitespace-pre-wrap break-words">{task.notes}</p>}
-      {readOnly ? null : mode === "confirm" ? (
+      {readOnly || task.status !== "OPEN" ? (
+        // Finished: the link to the artifact is still worth having, the
+        // controls for doing the work are not.
+        task.status !== "OPEN" && task.deepLink ? <TaskOpenLink task={task} /> : null
+      ) : mode === "confirm" ? (
         <div className="rounded-[var(--radius)] border p-2.5 space-y-1.5" style={{ background: "hsl(var(--brand-warning) / 0.1)", borderColor: "hsl(var(--brand-warning) / 0.3)" }}>
           <p className="text-xs font-medium" style={{ color: "hsl(var(--brand-warning))" }}>
             This has not actually been done yet.
@@ -500,29 +519,32 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
           >
             <Check className="w-3.5 h-3.5 mr-1.5" /> Done
           </Button>
-          {task.deepLink && (() => {
-            const target = taskLinkTarget(task.deepLink);
-            return (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => { window.location.href = task.deepLink as string; }}
-                data-testid={`btn-task-open-${task.id}`}
-              >
-                {target.chat
-                  ? <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
-                  : <ExternalLink className="w-3.5 h-3.5 mr-1.5" />}
-                {target.label}
-              </Button>
-            );
-          })()}
+          {task.deepLink && <TaskOpenLink task={task} />}
         </div>
       )}
     </div>
   );
 }
 
-/** One task in its own card - the Next step view's shape. */
+/** The task's link to wherever its work actually happens. */
+function TaskOpenLink({ task }: { task: ParentRecord["crm"]["tasks"][number] }) {
+  const target = taskLinkTarget(task.deepLink as string);
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      onClick={() => { window.location.href = task.deepLink as string; }}
+      data-testid={`btn-task-open-${task.id}`}
+    >
+      {target.chat
+        ? <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+        : <ExternalLink className="w-3.5 h-3.5 mr-1.5" />}
+      {target.label}
+    </Button>
+  );
+}
+
+/** One task in its own card - the Next steps list shape. */
 export function TaskRow({ record, task, onChanged, readOnly }: {
   record: ParentRecord;
   task: ParentRecord["crm"]["tasks"][number];
@@ -645,28 +667,30 @@ export function ParentLeadOwner({ record }: { record: ParentRecord }) {
 }
 
 /**
- * The next step: the ONE thing due soonest on this family.
+ * Next steps: everything still outstanding on this family, soonest first.
  *
- * Tasks themselves live on the timeline, each in its own card the way notes
- * do - this is a view, not a second place to work, so it answers "what is
- * next" and hands the doing back to the card. Showing the whole list here as
- * well made the same task appear twice with two sets of buttons.
+ * Both kinds, one list - the work the product raised (the same rows the Home
+ * queue shows) and the tasks a coordinator typed. That is what "what is next"
+ * means; splitting them by who created them would just make someone check two
+ * places.
+ *
+ * Finished tasks are NOT here. They drop into the timeline as their own card,
+ * where the rest of the record's history lives.
  */
-export function ParentTaskPanel({ record }: { record: ParentRecord }) {
-  const next = [...record.crm.tasks].sort(
-    (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime(),
-  )[0];
-  if (!next) {
+export function ParentTaskPanel({ record, onChanged }: { record: ParentRecord; onChanged?: () => void }) {
+  const open = record.crm.tasks
+    .filter((t) => t.status === "OPEN")
+    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+  if (!open.length) {
     return (
       <p className="t-helper" data-testid="tasks-empty">
-        Nothing scheduled. Create a task to give this family a next step.
+        Nothing outstanding. Create a task to give this family a next step.
       </p>
     );
   }
   return (
     <div className="space-y-2">
-      <TaskRow record={record} task={next} readOnly />
-      <p className="t-helper">Its card is on the timeline below - mark it done or edit it there.</p>
+      {open.map((t) => <TaskRow key={t.id} record={record} task={t} onChanged={onChanged} />)}
     </div>
   );
 }

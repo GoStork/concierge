@@ -233,7 +233,11 @@ export function ParentRecordHeader({
 }) {
   const dense = useDense();
   const photoSrc = record.parent.photoUrl ? getPhotoSrc(record.parent.photoUrl) : null;
-  const nextStep = record.crm.tasks[0];
+  // The soonest OPEN one. The payload now carries finished tasks too, for the
+  // timeline, and "Next: <something already done>" is worse than no chip.
+  const nextStep = record.crm.tasks
+    .filter((t) => t.status === "OPEN")
+    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())[0];
 
   return (
     // NOT collapsible, matching every other record section (by request).

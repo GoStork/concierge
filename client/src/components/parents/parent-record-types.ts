@@ -113,6 +113,8 @@ export interface CrmTask {
   dismissedUnresolved: boolean;
   /** At most one activity per record is pinned - a note OR a task. */
   pinned?: boolean;
+  /** Set when it was finished - the moment it takes its place in the timeline. */
+  completedAt?: string | null;
   createdAt?: string;
   createdByUserId?: string | null;
 }

@@ -287,11 +287,13 @@ function buildEntries(record: ParentRecord): Entry[] {
   }
 
   for (const f of record.crm.tasks) {
+    // Open tasks live in Next steps, where they can be worked. A task reaches
+    // the timeline when it is FINISHED - at which point it is history, like
+    // every other card here, and is placed by when it was done.
+    if (f.status === "OPEN") continue;
     out.push({
       id: `task-${f.id}`,
-      // Placed by when it was SET, not when it is due - this is a history, and
-      // a task due next month did not happen next month.
-      at: f.createdAt || f.dueAt,
+      at: f.completedAt || f.createdAt || f.dueAt,
       kind: "task",
       title: "Task",
       // The card renders the task itself: title in bold, then its chips, its
@@ -1090,7 +1092,11 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
    * work it is tracking, so they stay inert - editing the title of "Review and
    * approve: cost sheet" would just make the queue lie.
    */
-  const canOpenTaskEdit = !!entry.task && entry.task.source !== "SYSTEM" && taskMode === "view";
+  const canOpenTaskEdit = !!entry.task
+    && entry.task.source !== "SYSTEM"
+    // Finished tasks are history. Rewriting one would rewrite what happened.
+    && entry.task.status === "OPEN"
+    && taskMode === "view";
   const openTaskEdit = (e: React.MouseEvent) => {
     const el = e.target as HTMLElement;
     if (el.closest('a,button,input,textarea,select,[role="menuitem"],[role="menu"],[contenteditable="true"]')) return;
@@ -1240,8 +1246,9 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
                     pinned: !!entry.task.pinned,
                     // A SYSTEM task's words are the product's, not a person's:
                     // it can be pinned like anything else, but not rewritten or
-                    // deleted out from under the queue that raised it.
-                    canManage: entry.task.source !== "SYSTEM",
+                    // deleted out from under the queue that raised it. A
+                    // finished task is history and is not rewritten either.
+                    canManage: entry.task.source !== "SYSTEM" && entry.task.status === "OPEN",
                   }}
                   kind="task"
                   mode={taskMode}
@@ -1400,7 +1407,7 @@ export function ParentActivitySection({ record, scope }: {
           onClick={() => toggle("next_step")}
           data-testid="btn-activity-add-next-step"
         >
-          <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Next step
+          <CalendarClock className="w-3.5 h-3.5 mr-1.5" /> Next steps
           <ChevronDown className={cn("w-3 h-3 ml-1 transition-transform", composer === "next_step" && "rotate-180")} />
         </Button>
         {scope && scope.lines.length >= 2 && (
@@ -1451,7 +1458,7 @@ export function ParentActivitySection({ record, scope }: {
       )}
       {composer === "next_step" && (
         <div className="rounded-[var(--radius)] border bg-card p-3" data-testid="panel-activity-next-step">
-          <ParentTaskPanel record={record} />
+          <ParentTaskPanel record={record} onChanged={refetchRecord} />
         </div>
       )}
 

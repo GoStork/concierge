@@ -1234,9 +1234,26 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
           where: { ...crmWhere, deletedAt: null },
           orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
         }),
-        prisma.parentTask.findMany({ where: { ...crmWhere, status: "OPEN" }, orderBy: { dueAt: "asc" } })
-          // Close what the system can already see is done, before showing it.
-          .then((rows: any[]) => reconcileTaskKeys(prisma as any, rows)),
+        // Open AND closed. What is open belongs in the Next steps list; what
+        // is finished drops into the timeline as history, which is the same
+        // shape a note takes and the reason both live in one payload.
+        prisma.parentTask
+          .findMany({
+            where: { ...crmWhere, status: { in: ["OPEN", "DONE"] } },
+            orderBy: { dueAt: "asc" },
+            take: 200,
+          })
+          .then(async (rows: any[]) => {
+            const open = rows.filter((r) => r.status === "OPEN");
+            // Close what the system can already see is done, before showing it -
+            // and keep the ones it just closed, now as completed history.
+            const stillOpen = await reconcileTaskKeys(prisma as any, open);
+            const stillOpenIds = new Set(stillOpen.map((r: any) => r.id));
+            return rows.map((r) =>
+              r.status === "OPEN" && !stillOpenIds.has(r.id)
+                ? { ...r, status: "DONE", completedAt: r.completedAt || new Date() }
+                : r);
+          }),
         prisma.parentOwner.findMany({ where: crmWhere }),
       ])
     : [[], [], []];
