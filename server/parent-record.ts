@@ -1435,7 +1435,13 @@ export async function buildParentRecord(user: any, parentUserId: string, opts: B
       // Read-side sanitize: legacy plain-text notes may contain literal
       // markup, and the client renders tag-shaped bodies as HTML.
       notes: notes.map((n: any) => ({ ...n, body: sanitizeNoteHtml(n.body) })),
-      tasks: followUps.map((f: any) => ({ ...f, overdue: new Date(f.dueAt).getTime() < now })),
+      tasks: followUps.map((f: any) => ({
+        ...f,
+        // Same read-side sanitize as a note body, for the same reason: older
+        // rows predate the editor and may hold literal markup.
+        notes: f.notes ? sanitizeNoteHtml(f.notes) : f.notes,
+        overdue: new Date(f.dueAt).getTime() < now,
+      })),
       owners: ownersWithPhoto,
     },
   };

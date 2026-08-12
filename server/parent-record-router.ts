@@ -208,12 +208,12 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
 
 
 /**
- * Hand the record's ONE pin to this activity.
+ * Hand the pin to this activity - one per KIND.
  *
- * A pinned thing is "the thing to read first", and a record can only have one
- * of those - so pinning anything unpins whatever held it. It spans two tables
- * because a note and a task compete for the same slot, which is also why this
- * is code rather than a unique index.
+ * A pinned note is the note to read first, and a pinned task is the task to
+ * do first. They live in different parts of the page and answer different
+ * questions, so they do not compete: pinning a task unpins only other tasks,
+ * and a note only other notes.
  *
  * Scoped to the audience: GoStork's pin and an agency's pin are different
  * records' worth of attention, and neither should be able to knock the other
@@ -225,17 +225,14 @@ async function claimThePin(
   providerId: string | null,
   keep: { kind: "note" | "task"; id: string },
 ): Promise<void> {
-  const where = { parentAccountId, scope, providerId, pinned: true };
-  await Promise.all([
-    prisma.parentNote.updateMany({
-      where: { ...where, ...(keep.kind === "note" ? { id: { not: keep.id } } : {}) },
-      data: { pinned: false },
-    }),
-    prisma.parentTask.updateMany({
-      where: { ...where, ...(keep.kind === "task" ? { id: { not: keep.id } } : {}) },
-      data: { pinned: false },
-    }),
-  ]);
+  // Written out per model rather than through a variable: the two delegates
+  // are different types, and a union of them is not callable.
+  const where = { parentAccountId, scope, providerId, pinned: true, id: { not: keep.id } };
+  if (keep.kind === "note") {
+    await prisma.parentNote.updateMany({ where, data: { pinned: false } });
+  } else {
+    await prisma.parentTask.updateMany({ where, data: { pinned: false } });
+  }
 }
 
 parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (req, res) => {
@@ -335,7 +332,9 @@ function readTaskInput(body: any) {
     : (REMINDER_OFFSETS.includes(Number(raw)) ? Number(raw) : null);
   return {
     title,
-    notes: body?.notes ? String(body.notes) : null,
+    // Task notes carry the same rich text a note's body does, and go through
+    // the same sanitizer - they are rendered as HTML on the card.
+    notes: body?.notes ? (sanitizeNoteHtml(String(body.notes)) || null) : null,
     type,
     priority,
     dueAt,
@@ -390,7 +389,7 @@ parentRecordRouter.post("/api/parents/:id/tasks", requireAuth, async (req, res) 
     // ParentContactRelease is deliberately withholding.
     if (target.scope === "PROVIDER" && target.providerId) {
       const g = await resolveParentGates(target.providerId, accountKey, { sessionStatus: null, hasBooking: true });
-      if (!g.showContact && blockContactInfo(res, `${input.title}\n${input.notes || ""}`, "parent task", {
+      if (!g.showContact && blockContactInfo(res, `${input.title}\n${noteHtmlToText(input.notes || "")}`, "parent task", {
         parentAccountId: accountKey, providerId: target.providerId, authorUserId: viewer.userId,
       }, "note")) return;
     }
@@ -464,7 +463,7 @@ parentRecordRouter.patch("/api/parents/:id/tasks/:tid", requireAuth, async (req,
 
     if (row.scope === "PROVIDER" && row.providerId) {
       const g = await resolveParentGates(row.providerId, accountKey, { sessionStatus: null, hasBooking: true });
-      if (!g.showContact && blockContactInfo(res, `${input.title}\n${input.notes || ""}`, "parent task", {
+      if (!g.showContact && blockContactInfo(res, `${input.title}\n${noteHtmlToText(input.notes || "")}`, "parent task", {
         parentAccountId: accountKey, providerId: row.providerId, authorUserId: viewer.userId,
       }, "note")) return;
     }

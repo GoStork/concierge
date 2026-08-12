@@ -1062,15 +1062,24 @@ function EntryCard({ entry, record, parentUserId, parentName, parentPhotoUrl, vi
   /** Open = this card is currently showing an editor, whichever kind it is. */
   const isOpen = noteMode === "edit" || taskMode === "edit";
   /**
-   * The record's single pin. Whatever holds it right now (if it is not this
-   * card) is what the viewer is about to displace, so the question can name it.
+   * Whatever already holds the pin FOR THIS KIND - the thing this card would
+   * displace, so the question can name it.
+   *
+   * Notes and tasks do not compete: a pinned note is the note to read first
+   * and a pinned task is the task to do first, they live in different parts of
+   * the page, and pinning one has no business quietly unpinning the other.
    */
   const pinHolder = useMemo(() => {
-    const note = record.crm.notes.find((n) => n.pinned && `note-${n.id}` !== entry.id);
-    if (note) return "note" as const;
-    const task = record.crm.tasks.find((t) => t.pinned && `task-${t.id}` !== entry.id);
-    return task ? ("task" as const) : null;
-  }, [record.crm.notes, record.crm.tasks, entry.id]);
+    if (entry.task) {
+      return record.crm.tasks.some((t) => t.pinned && `task-${t.id}` !== entry.id)
+        ? ("task" as const) : null;
+    }
+    if (entry.note) {
+      return record.crm.notes.some((n) => n.pinned && `note-${n.id}` !== entry.id)
+        ? ("note" as const) : null;
+    }
+    return null;
+  }, [record.crm.notes, record.crm.tasks, entry.id, entry.note, entry.task]);
   const [pinAsking, setPinAsking] = useState(false);
 
   const setPinned = (kind: "note" | "task", id: string, pinned: boolean) =>
@@ -1380,7 +1389,10 @@ export function ParentActivitySection({ record, scope }: {
   const openTasks = useMemo(
     () => record.crm.tasks
       .filter((t) => t.status === "OPEN")
-      .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
+      .sort((a, b) =>
+        // Pinned first - that is what pinning a task means here - then soonest.
+        (Number(!!b.pinned) - Number(!!a.pinned))
+        || (new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()))
       .map(taskEntry),
     [record.crm.tasks],
   );
@@ -1410,8 +1422,12 @@ export function ParentActivitySection({ record, scope }: {
           {/* No chevron: this opens a composer, it does not open a menu, and
               the caret promised a dropdown that never existed. Closing it is
               Cancel, next to Post, where the note's own edit controls are. */}
+          {/* ONE flex child for the label. The button is a flex row with an
+              8px gap, so splitting "Create" from "Note" put that gap inside
+              the words. */}
           <StickyNote className="w-3.5 h-3.5 mr-1.5" />
-          <span className="hidden sm:inline">Create&nbsp;</span>Note
+          <span className="hidden sm:inline">Create Note</span>
+          <span className="sm:hidden">Note</span>
         </Button>
         {/* A task is an ACT on the record, the same kind of thing as writing a
             note, so creating one sits beside Create Note rather than inside
@@ -1424,7 +1440,8 @@ export function ParentActivitySection({ record, scope }: {
           data-testid="btn-activity-add-task"
         >
           <CircleCheck className="w-3.5 h-3.5 mr-1.5" />
-          <span className="hidden sm:inline">Create&nbsp;</span>Task
+          <span className="hidden sm:inline">Create Task</span>
+          <span className="sm:hidden">Task</span>
         </Button>
         {scope && scope.lines.length >= 2 && (
           <DropdownMenu>

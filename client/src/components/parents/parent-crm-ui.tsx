@@ -16,14 +16,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, ExternalLink, Loader2, MessageSquare, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { OptionPills } from "@/components/ui/option-pills";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ActivityBody } from "./parent-cells";
-import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { RichTextEditor, isRichNoteHtml } from "@/components/ui/rich-text-editor";
 import type { CrmScope, ParentRecord, ProviderOrg } from "./parent-record-types";
 
 interface ScopeChoice {
@@ -239,6 +238,8 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
   );
   // Somebody owns every task. A new one starts with whoever is creating it
   // rather than in an "Unassigned" pile that no queue ever surfaces.
+  // Remounting is how the uncontrolled editor clears after a save.
+  const [editorKey] = useState(0);
   const [assignee, setAssignee] = useState(
     existing?.assigneeUserId || record.viewer.userId || "",
   );
@@ -301,12 +302,15 @@ export function TaskEditor({ record, existing, onDone, onCancel }: {
       {/* What the task IS - its subject, then its words - reads first and
           together. The scheduling controls are settings ABOUT that, so they
           come after it rather than splitting it in half. */}
-      <Textarea
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
+      {/* The same editor a note gets. A task's notes are notes - bold, lists,
+          links and attachments are as useful under "call her back" as they are
+          on the record's own timeline. */}
+      <RichTextEditor
+        key={editorKey}
+        initialHtml={existing?.notes || ""}
+        onChange={setNotes}
         placeholder="Notes (optional)"
-        className="min-h-[60px] bg-card"
-        data-testid="input-task-notes"
+        testId="input-task-notes"
       />
       <div className="flex flex-wrap items-center gap-1.5">
         {([["Today", 0], ["Tomorrow", 1], ["In 3 days", 3], ["Next week", 7]] as [string, number][]).map(([label, d]) => {
@@ -501,8 +505,16 @@ export function TaskCardBody({ record, task, mode, setMode, onChanged, readOnly 
           task IS reads as one thought, rather than being split in half by
           its type, date, assignee and priority. */}
       {task.notes && (
-        <ActivityBody className="whitespace-pre-wrap" testId={`task-notes-${task.id}`}>
-          {task.notes}
+        <ActivityBody testId={`task-notes-${task.id}`}>
+          {isRichNoteHtml(task.notes) ? (
+            <div
+              className="[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:underline [&_a]:text-primary [&_img]:max-w-full [&_img]:rounded-[var(--radius)] [&_img]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:pl-3"
+              // Sanitized server-side on write and on read - see note-html.ts.
+              dangerouslySetInnerHTML={{ __html: task.notes }}
+            />
+          ) : (
+            <span className="whitespace-pre-wrap">{task.notes}</span>
+          )}
         </ActivityBody>
       )}
       <TaskChips task={task} />
