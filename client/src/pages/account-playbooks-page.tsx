@@ -165,11 +165,13 @@ function PlaybookEditor({ existing, isAdmin, onClose }: {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {/* max-w-sm rather than -md so the two toggles share this row with
+            the name and pickers instead of the starter wrapping underneath. */}
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder='Name, e.g. "Matched - surrogacy handoff"'
-          className="max-w-md"
+          className="max-w-sm"
           data-testid="input-playbook-name"
         />
         <SelectField
@@ -186,12 +188,12 @@ function PlaybookEditor({ existing, isAdmin, onClose }: {
           className={field}
           testId="select-playbook-stage"
         />
-        <label className="flex items-center gap-2 text-sm font-ui">
+        <label className="flex items-center gap-2 text-sm font-ui whitespace-nowrap">
           <Switch checked={isActive} onCheckedChange={setIsActive} data-testid="switch-playbook-active" />
           Active
         </label>
         {isAdmin && (
-          <label className="flex items-center gap-2 text-sm font-ui" title="Starters never fire; agencies copy them.">
+          <label className="flex items-center gap-2 text-sm font-ui whitespace-nowrap" title="Starters never fire; agencies copy them.">
             <Switch checked={isStarter} onCheckedChange={setIsStarter} data-testid="switch-playbook-starter" />
             Offer as GoStork starter
           </label>
