@@ -262,7 +262,12 @@ export function RichTextEditor({
               <button
                 key={it.id}
                 type="button"
-                className={cn("w-full text-left px-3 py-1.5 text-sm", i === mentionActive ? "bg-secondary" : "hover:bg-secondary")}
+                className={cn("w-full text-left px-3 py-1.5 text-sm", i === mentionActive ? "bg-secondary" : "")}
+                // The highlight follows the mouse: moving over an option makes
+                // it the selected one, so hover and the keyboard cursor are
+                // always the same row - not a stuck first item plus a second
+                // hover colour.
+                onMouseEnter={() => setMentionActive(i)}
                 onMouseDown={(e) => { e.preventDefault(); insertMention(it); }}
                 data-testid={`mention-option-${it.id}`}
               >
