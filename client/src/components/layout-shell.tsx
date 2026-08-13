@@ -116,6 +116,9 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const { data: brandSettings } = useBrandSettings();
   const sseRef = useRef<EventSource | null>(null);
   const costsSseRef = useRef<EventSource | null>(null);
+  // #7 @mentions: rows already toasted this session, so a reconnect (which
+  // re-drains un-cleared mentions) does not re-pop the same toast.
+  const toastedMentions = useRef<Set<string>>(new Set());
 
   const isEmbedded = new URLSearchParams(location.search).get("embedded") === "1";
   if (isEmbedded) {
@@ -340,18 +343,34 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
 
   const handleMentionEvent = useCallback((data: any) => {
     if (data.type !== "crm_mention") return;
+    // The drain re-streams an un-cleared mention on every reconnect (so it
+    // survives a logged-out spell); toast each row only once per session.
+    if (data.notificationId) {
+      if (toastedMentions.current.has(data.notificationId)) {
+        queryClient.invalidateQueries({ queryKey: ["/api/me/mentions"] });
+        return;
+      }
+      toastedMentions.current.add(data.notificationId);
+    }
+    // Keep the home widget in step with what just arrived.
+    queryClient.invalidateQueries({ queryKey: ["/api/me/mentions"] });
+    const focus = data.entryId ? `&focus=${encodeURIComponent(data.entryId)}` : "";
+    const open = () => {
+      dismiss(toastId);
+      // Opening it clears it from the home widget too.
+      if (data.notificationId) {
+        fetch(`/api/me/mentions/${data.notificationId}/seen`, { method: "POST", credentials: "include" })
+          .then(() => queryClient.invalidateQueries({ queryKey: ["/api/me/mentions"] })).catch(() => {});
+      }
+      navigate(`/parents/${data.parentUserId}?sec=crm${focus}`);
+    };
     playNotificationChime();
     const { id: toastId } = toast({
       title: `${data.mentioner || "A colleague"} mentioned you`,
       description: `${data.parentName || "A family"}${data.snippet ? ` - ${data.snippet}` : ""}`,
       variant: "default",
       action: (
-        <Button
-          size="sm"
-          variant="default"
-          className="gap-1 shrink-0"
-          onClick={() => { dismiss(toastId); navigate(`/parents/${data.parentUserId}?sec=crm`); }}
-        >
+        <Button size="sm" variant="default" className="gap-1 shrink-0" onClick={open}>
           View
         </Button>
       ),

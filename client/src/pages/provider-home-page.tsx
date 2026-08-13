@@ -36,6 +36,7 @@ import {
 import { AgreementRows } from "@/components/agreements-list";
 import { StarDisplay } from "@/components/reviews/reviews-ui";
 import { QueueRow, SectionHeader } from "@/components/home/home-sections";
+import { MentionsCard } from "@/components/home/mentions-card";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { derivePayoutStatus } from "@/lib/payout-status";
@@ -265,6 +266,9 @@ export default function ProviderHomePage() {
         <h1 className="text-2xl font-heading">Welcome back, {firstName}</h1>
         <p className="t-helper mt-1">Everything that needs your attention, in one place.</p>
       </div>
+
+      {/* Someone tagged you - shown above the work queue, cleared on open. */}
+      <MentionsCard />
 
       {/* Work queue */}
       <Card className="p-5 space-y-3">

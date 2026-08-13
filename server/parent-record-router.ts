@@ -249,6 +249,8 @@ async function mentionableUsers(scope: string, providerId: string | null): Promi
 async function notifyNoteMentions(opts: {
   html: string; previousHtml?: string | null; scope: string; providerId: string | null;
   parentUserId: string; parentName: string; mentionerId: string; mentionerName: string;
+  /** The timeline anchor to scroll to - `note-<id>` or `task-<id>`. */
+  entryId?: string;
 }): Promise<void> {
   const now = extractMentionIds(opts.html);
   const before = new Set(opts.previousHtml ? extractMentionIds(opts.previousHtml) : []);
@@ -259,11 +261,14 @@ async function notifyNoteMentions(opts: {
     where: { id: { in: added.filter((id) => audience.has(id)) } },
     select: { id: true, email: true, name: true },
   });
-  const url = `${getBaseUrl()}/parents/${opts.parentUserId}?sec=crm`;
+  // Land them on the exact note/task, not just the record - the same
+  // ?focus=<entryId> scroll the search results use.
+  const focus = opts.entryId ? `&focus=${encodeURIComponent(opts.entryId)}` : "";
+  const url = `${getBaseUrl()}/parents/${opts.parentUserId}?sec=crm${focus}`;
   const noteText = noteHtmlToText(opts.html);
   for (const t of targets) {
     await prisma.inAppNotification.create({
-      data: { userId: t.id, eventType: "CRM_MENTION", payload: { parentUserId: opts.parentUserId, parentName: opts.parentName, mentioner: opts.mentionerName, snippet: noteText.slice(0, 160), url } },
+      data: { userId: t.id, eventType: "CRM_MENTION", payload: { parentUserId: opts.parentUserId, parentName: opts.parentName, mentioner: opts.mentionerName, snippet: noteText.slice(0, 160), url, entryId: opts.entryId || null } },
     }).catch(() => {});
     if (t.email) {
       await sendCrmEmail(t.email, `${opts.mentionerName} mentioned you on ${opts.parentName}`, mentionEmailHtml({ mentioner: opts.mentionerName, parentName: opts.parentName, noteText, url })).catch(() => {});
@@ -279,6 +284,42 @@ parentRecordRouter.get("/api/parents/:id/mentionable", requireAuth, async (req, 
     res.json({ users: await mentionableUsers(target.scope, target.providerId) });
   } catch (e: any) {
     fail(res, e, "GET mentionable");
+  }
+});
+
+/**
+ * #7 @mentions - the current user's un-cleared mentions, for the home widget.
+ *
+ * A mention has no persistent home other than this: it is not a task, so it
+ * never joins the work queue. We read the CRM_MENTION notifications this person
+ * has not yet cleared (`seen` is the cleared flag - the SSE drain deliberately
+ * leaves mentions unseen so they survive the toast). Newest first.
+ */
+parentRecordRouter.get("/api/me/mentions", requireAuth, async (req, res) => {
+  try {
+    const viewer = resolveCrmViewer(req.user as any);
+    const rows = await prisma.inAppNotification.findMany({
+      where: { userId: viewer.userId, eventType: "CRM_MENTION", seen: false },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    });
+    res.json({ mentions: rows.map((r) => ({ id: r.id, createdAt: r.createdAt, ...(r.payload as any) })) });
+  } catch (e: any) {
+    fail(res, e, "GET my mentions");
+  }
+});
+
+/** Clear one mention - opening it or dismissing it marks it seen. */
+parentRecordRouter.post("/api/me/mentions/:id/seen", requireAuth, async (req, res) => {
+  try {
+    const viewer = resolveCrmViewer(req.user as any);
+    await prisma.inAppNotification.updateMany({
+      where: { id: String(req.params.id), userId: viewer.userId, eventType: "CRM_MENTION" },
+      data: { seen: true },
+    });
+    res.json({ ok: true });
+  } catch (e: any) {
+    fail(res, e, "clear mention");
   }
 });
 
@@ -352,6 +393,7 @@ parentRecordRouter.post("/api/parents/:id/notes", requireAuth, async (req, res) 
       html: body, scope: target.scope, providerId: target.providerId,
       parentUserId: mentionParent?.id || accountKey, parentName: mentionParent?.name || "a family",
       mentionerId: viewer.userId, mentionerName: viewer.name || "A colleague",
+      entryId: `note-${note.id}`,
     }).catch(() => {});
 
     emitJourneyEvent({
@@ -464,6 +506,7 @@ parentRecordRouter.patch("/api/parents/:id/notes/:noteId", requireAuth, async (r
       html: body, previousHtml: existing.body, scope: existing.scope, providerId: existing.providerId,
       parentUserId: mentionParent?.id || existing.parentAccountId, parentName: mentionParent?.name || "a family",
       mentionerId: viewer.userId, mentionerName: viewer.name || "A colleague",
+      entryId: `note-${existing.id}`,
     }).catch(() => {});
     res.json(note);
   } catch (e: any) {
@@ -603,6 +646,7 @@ parentRecordRouter.post("/api/parents/:id/tasks", requireAuth, async (req, res) 
       html: input.notes || "", scope: target.scope, providerId: target.providerId,
       parentUserId: mentionParent?.id || accountKey, parentName: mentionParent?.name || "a family",
       mentionerId: viewer.userId, mentionerName: viewer.name || "A colleague",
+      entryId: `task-${row.id}`,
     }).catch(() => {});
 
     emitJourneyEvent({
@@ -686,6 +730,7 @@ parentRecordRouter.patch("/api/parents/:id/tasks/:tid", requireAuth, async (req,
       html: input.notes || "", previousHtml: row.notes, scope: row.scope, providerId: row.providerId,
       parentUserId: mentionParent?.id || accountKey, parentName: mentionParent?.name || "a family",
       mentionerId: viewer.userId, mentionerName: viewer.name || "A colleague",
+      entryId: `task-${row.id}`,
     }).catch(() => {});
 
     res.json(updated);

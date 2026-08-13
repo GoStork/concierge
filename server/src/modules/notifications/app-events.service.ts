@@ -104,10 +104,17 @@ export class AppEventsService {
 
       if (unseen.length === 0) return [];
 
-      await this.prisma.inAppNotification.updateMany({
-        where: { id: { in: unseen.map((n) => n.id) } },
-        data: { seen: true },
-      });
+      // A mention is toasted here but NOT marked seen: `seen` is the "cleared
+      // from the home widget" flag, and clearing is the user's to do (open it
+      // or dismiss it). Everything else is a fire-once toast, marked seen so it
+      // never re-pops. The client de-dupes mention re-toasts within a session.
+      const toMarkSeen = unseen.filter((n) => n.eventType !== "CRM_MENTION").map((n) => n.id);
+      if (toMarkSeen.length) {
+        await this.prisma.inAppNotification.updateMany({
+          where: { id: { in: toMarkSeen } },
+          data: { seen: true },
+        });
+      }
 
       return unseen.map(
         (n) =>
@@ -115,6 +122,9 @@ export class AppEventsService {
             data: JSON.stringify({
               // Normalize to lowercase so client handlers match (e.g. "HUMAN_ESCALATION" -> "human_escalation")
               type: n.eventType.toLowerCase(),
+              // The row id lets the client de-dupe re-toasts and clear the
+              // mention when it is opened.
+              notificationId: n.id,
               ...(n.payload as Record<string, any>),
             }),
           }) as MessageEvent,

@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { StarDisplay } from "@/components/reviews/reviews-ui";
 import { QueueRow, SectionHeader, StatTile } from "@/components/home/home-sections";
+import { MentionsCard } from "@/components/home/mentions-card";
 import { formatMoneyCents as formatCents } from "@/lib/format-money";
 import { derivePayoutStatus } from "@/lib/payout-status";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
@@ -211,6 +212,9 @@ export default function AdminHomePage() {
         <h1 className="text-2xl font-heading">Welcome back, {firstName}</h1>
         <p className="t-helper mt-1">The full picture - every parent, provider, and journey on the platform.</p>
       </div>
+
+      {/* Someone tagged you - shown above the queue, cleared on open. */}
+      <MentionsCard />
 
       {/* Needs attention: escalations, unconfirmed meetings, overdue deposits, failed payouts */}
       <Card className="p-5 space-y-3">
