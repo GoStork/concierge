@@ -68,11 +68,18 @@ export function RichTextEditor({
     const range = sel.getRangeAt(0);
     const node = range.startContainer;
     if (node.nodeType !== Node.TEXT_NODE) return closeMention();
+    // Never re-offer inside a chip that was already inserted. Without this the
+    // caret sitting in the text after "@Eran Amir" keeps matching the name and
+    // a second Enter wraps the chip in itself.
+    if ((node.parentElement as HTMLElement | null)?.closest?.(".mention")) return closeMention();
     const text = node.textContent || "";
     const caret = range.startOffset;
-    // A trailing "@word" immediately before the caret, not mid-word.
+    // A trailing "@name" immediately before the caret, not mid-word. At most
+    // two words: a full name is searchable ("@Eran Am"), but the match STOPS
+    // there rather than swallowing the rest of the sentence - which is what
+    // kept the dropdown open after a mention was already chosen.
     const before = text.slice(0, caret);
-    const m = before.match(/(^|\s)@([\p{L}0-9'.\- ]{0,30})$/u);
+    const m = before.match(/(^|\s)@([\p{L}0-9'.\-]{0,30}(?: [\p{L}0-9'.\-]{0,30})?)$/u);
     if (!m) return closeMention();
     const query = m[2].trim().toLowerCase();
     if (!mentionPeople.current) mentionPeople.current = await mentionSource().catch(() => []);
@@ -84,27 +91,34 @@ export function RichTextEditor({
     setMentionItems(items); setMentionActive(0); setMentionOpen(true);
   };
 
-  const insertMention = (item: { id: string; name: string }) => {
+  const insertMention = (item?: { id: string; name: string }) => {
     const a = mentionAnchor.current;
-    if (!a || !ref.current) return closeMention();
-    const range = document.createRange();
-    range.setStart(a.node, a.start);
-    range.setEnd(a.node, a.end);
-    range.deleteContents();
-    const span = document.createElement("span");
-    span.setAttribute("data-mention-user-id", item.id);
-    span.className = "mention";
-    span.textContent = `@${item.name}`;
-    const space = document.createTextNode(" ");
-    range.insertNode(space);
-    range.insertNode(span);
-    // Caret after the inserted space.
-    const sel = window.getSelection();
-    const after = document.createRange();
-    after.setStartAfter(space); after.collapse(true);
-    sel?.removeAllRanges(); sel?.addRange(after);
-    closeMention();
-    emit();
+    // A missing item (stale highlight index) must still close the list - it
+    // used to throw here, which left the dropdown stuck open.
+    if (!item || !a || !ref.current) return closeMention();
+    // The list closes even if the DOM work below throws - a stuck-open
+    // dropdown is worse than a missed chip, and that is the bug this hit.
+    try {
+      const range = document.createRange();
+      range.setStart(a.node, a.start);
+      range.setEnd(a.node, a.end);
+      range.deleteContents();
+      const span = document.createElement("span");
+      span.setAttribute("data-mention-user-id", item.id);
+      span.className = "mention";
+      span.textContent = `@${item.name}`;
+      const space = document.createTextNode(" ");
+      range.insertNode(space);
+      range.insertNode(span);
+      // Caret after the inserted space.
+      const sel = window.getSelection();
+      const after = document.createRange();
+      after.setStartAfter(space); after.collapse(true);
+      sel?.removeAllRanges(); sel?.addRange(after);
+      emit();
+    } finally {
+      closeMention();
+    }
   };
 
   useEffect(() => {
