@@ -1,11 +1,12 @@
 /**
- * /account/automation - every automation the org runs, in one place:
+ * /account/automation - every automation the org runs, in one place
+ * (top to bottom):
  *
- *   #silence    - the silence signal (CRM Phase 9 §5): per-stage quiet
- *                 thresholds, per-service-line on/off, Eva's check-in step.
- *   #auto-reply - booking auto-reply rules (moved from its own tab).
  *   #billing    - the deposit-to-agreement pipeline: cost sheet draft on
  *                 booking, invoice draft on parent-ready, agreement mode.
+ *   #auto-reply - booking auto-reply rules (moved from its own tab).
+ *   #silence    - the silence signal (CRM Phase 9 §5): per-stage quiet
+ *                 thresholds, per-service-line on/off, Eva's check-in step.
  *
  * Deep links land on a section via ?section=<id> (URL param per the
  * tab/view-state rule); the Documents tab links here for agreement mode.
@@ -386,17 +387,17 @@ export default function AccountAutomationPage() {
 
   return (
     <div className="space-y-10 max-w-3xl" data-testid="automation-page">
-      <SilenceSection />
       {providerId && (
         <>
+          <BillingAutomationSection />
           <div className="border-t border-border" />
           <div id="auto-reply" className="scroll-mt-24">
             <ProviderAutoReplyTab />
           </div>
           <div className="border-t border-border" />
-          <BillingAutomationSection />
         </>
       )}
+      <SilenceSection />
     </div>
   );
 }

@@ -94,7 +94,7 @@ export default function DocumentsTab() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-heading">Documents & Agreements</h1>
+        <h1 className="text-2xl font-heading">Agreements</h1>
         <p className="t-helper mt-1">
           Upload your agreement template{multiService ? "s" : ""} and manage contracts sent to parents.
         </p>
