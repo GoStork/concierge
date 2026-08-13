@@ -126,6 +126,58 @@ export function resolveJourneyStage(e: JourneyEvidence): JourneyStageId | null {
 export const MATCHED_ELSEWHERE_STAGE = "matched_elsewhere";
 export const MATCHED_ELSEWHERE_LABEL = "Matched Elsewhere";
 
+/**
+ * The pre-ladder step a freshly registered family is actually on: finishing
+ * the AI concierge's intake questions. Not a rung (the ladder starts at
+ * Registered and intake completion is chat state, not journey evidence), but
+ * it IS the family's next step until curation fires - so the next-step
+ * derivation below can surface it between Registered and Exploring Profiles.
+ * "Complete" = any of the account's Eva sessions has tier2Active (the intake
+ * state machine finished and the matchmaker took over).
+ */
+export const ONBOARDING_STEP = { id: "onboarding", label: "Onboarding" } as const;
+
+/**
+ * The MAIN rungs each service line's ladder actually has, for next-step
+ * derivation. Mirrors the per-type ladders in server/journey-timeline.ts
+ * (branch rungs excluded - a branch is never "the next step"): agency lines
+ * have the Match Call/Matched rungs, IVF has the Doctor Call pair instead,
+ * and only surrogacy requires the Intended Parent Form.
+ */
+const LINE_NEXT_LADDERS: Record<string, readonly JourneyStageId[]> = {
+  SURROGACY: ["registered", "exploring", "consult_scheduled", "consult_completed", "ip_form_submitted", "match_call_scheduled", "matched", "invoice_sent", "invoice_paid", "agreement_sent", "agreement_signed", "handed_off"],
+  EGG_DONATION: ["registered", "exploring", "consult_scheduled", "consult_completed", "match_call_scheduled", "matched", "invoice_sent", "invoice_paid", "agreement_sent", "agreement_signed", "handed_off"],
+  SPERM_DONATION: ["registered", "exploring", "consult_scheduled", "consult_completed", "match_call_scheduled", "matched", "invoice_sent", "invoice_paid", "agreement_sent", "agreement_signed", "handed_off"],
+  IVF_CLINIC: ["registered", "exploring", "consult_scheduled", "consult_completed", "doctor_call_scheduled", "doctor_call_completed", "invoice_sent", "invoice_paid", "agreement_sent", "agreement_signed", "handed_off"],
+};
+
+/**
+ * The step AFTER the family's current stage on their line's ladder - the
+ * "Next Step" the CRM table shows when no explicit task exists, and the
+ * per-terminal to-do the parent Home derives. null only when the journey is
+ * over (handed off) or sideways (matched elsewhere - there is no forward
+ * step to sell). A null/unknown stage counts as Registered: a family always
+ * has a next step, which is the point.
+ */
+export function nextJourneyStep(
+  stageId: string | null | undefined,
+  lineKey?: string | null,
+  opts?: { onboardingPending?: boolean },
+): { id: string; label: string } | null {
+  const stage = stageId || "registered";
+  if (stage === MATCHED_ELSEWHERE_STAGE) return null;
+  if (stage === "registered" && opts?.onboardingPending) return ONBOARDING_STEP;
+  const ladder = (lineKey && LINE_NEXT_LADDERS[lineKey]) || JOURNEY_STAGE_ORDER;
+  // Rank through the FULL order rather than indexOf on the line ladder: the
+  // rolled-up stage can name a rung the line's ladder does not have (e.g. a
+  // match_call stage against an IVF-keyed family) - the next step is then the
+  // first line rung ranked above it.
+  const rank = (id: string) => (JOURNEY_STAGE_ORDER as readonly string[]).indexOf(id);
+  const stageRank = rank(stage);
+  const next = ladder.find((id) => rank(id) > stageRank);
+  return next ? { id: next, label: JOURNEY_STAGE_LABELS[next] } : null;
+}
+
 export function journeyStageLabel(id: string | null | undefined): string | null {
   if (!id) return null;
   if (id === MATCHED_ELSEWHERE_STAGE) return MATCHED_ELSEWHERE_LABEL;

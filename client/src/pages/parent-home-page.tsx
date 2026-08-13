@@ -43,6 +43,7 @@ interface DashboardQueue {
   callsToReschedule?: Array<{ sessionId: string; missedAt: string | null; callLabel: string; providerName: string | null; subjectLabel: string | null }>;
   ipFormPending?: Array<{ responseId: string; promptedAt: string; signedSlots: number[]; hasSecondParent: boolean; lastSectionKey?: string | null }>;
   ipForm?: { responseId: string; status: string; signedSlots: number[]; hasSecondParent: boolean; lastSectionKey?: string | null } | null;
+  journeyNextSteps?: Array<{ serviceLine: string; typeLabel: string; providerName: string | null; sessionId: string | null; stepId: string; label: string }>;
 }
 
 function fmtWhen(iso: string) {
@@ -132,6 +133,24 @@ export default function ParentHomePage() {
 
   const unreadMessages = chatSessions.reduce((sum, cs) => sum + (cs.unreadCount || 0), 0);
 
+  // One next-step to-do per journey terminal (server-derived from the same
+  // ladder the Your Journeys card renders): Onboarding right after signup,
+  // then Exploring Profiles, and so on - one entry per service line.
+  const journeyNextSteps = queue?.journeyNextSteps || [];
+  const journeyStepCopy = (s: NonNullable<DashboardQueue["journeyNextSteps"]>[number]) => {
+    const svc = `${s.typeLabel}${s.providerName ? ` with ${s.providerName}` : ""}`;
+    switch (s.stepId) {
+      case "onboarding":
+        return { title: `Finish your onboarding with ${conciergeName}`, detail: `${svc}: answer a few questions so we can find your best matches`, cta: "Continue", to: "/chat" };
+      case "exploring":
+        return { title: `Start exploring profiles for your ${s.typeLabel} journey`, detail: `${conciergeName} has matches ready to show you`, cta: "Explore", to: "/marketplace" };
+      case "invoice_paid":
+        return { title: `Next step: ${s.label}`, detail: `${svc}: your invoice is waiting for payment`, cta: "View billing", to: "/my/billing" };
+      default:
+        return { title: `Next step: ${s.label}`, detail: `${svc} journey`, cta: "Open chat", to: s.sessionId ? `/chat/${s.sessionId}` : "/chat" };
+    }
+  };
+
   const actionCount =
     unpaidInvoices.length +
     (queue?.awaitingMySignature.length || 0) +
@@ -140,6 +159,7 @@ export default function ParentHomePage() {
     (queue?.ipFormPending?.length || 0) +
     unackedCostSheets.length +
     callsToReschedule.length +
+    journeyNextSteps.length +
     (unreadMessages > 0 ? 1 : 0);
 
   return (
@@ -265,6 +285,22 @@ export default function ParentHomePage() {
                 onClick={() => navigate(`/chat/${cs.sessionId}?msg=quote:${cs.id}`)}
               />
             ))}
+            {/* Per-terminal next steps LAST: the concrete items above are
+                things blocking on the parent right now; these are the
+                standing "here's what comes next" per journey. */}
+            {journeyNextSteps.map((s) => {
+              const c = journeyStepCopy(s);
+              return (
+                <QueueRow
+                  key={`journey-step-${s.serviceLine}-${s.providerName || "none"}`}
+                  icon={<Map className="w-4 h-4" />}
+                  title={c.title}
+                  detail={c.detail}
+                  cta={c.cta}
+                  onClick={() => navigate(c.to)}
+                />
+              );
+            })}
           </div>
         )}
       </Card>

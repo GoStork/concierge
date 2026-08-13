@@ -321,8 +321,18 @@ export function OwnerCell({ owner, testId }: { owner?: { name: string | null; ph
 
 export function NextStepCell({
   nextStep, testId,
-}: { nextStep?: { title: string; dueAt: string; overdue: boolean } | null; testId?: string }) {
+}: { nextStep?: { title: string; dueAt: string | null; overdue: boolean } | null; testId?: string }) {
   if (!nextStep) return <span className="t-helper">-</span>;
+  // A journey-derived step (no explicit task) has no due date - it is a
+  // direction, not a deadline. Title only, no date chip.
+  if (!nextStep.dueAt) {
+    const shortTitle = nextStep.title.length > 24 ? `${nextStep.title.slice(0, 24)}...` : nextStep.title;
+    return (
+      <span className="inline-flex items-center whitespace-nowrap text-sm" title={nextStep.title} data-testid={testId}>
+        {shortTitle}
+      </span>
+    );
+  }
   const due = new Date(nextStep.dueAt);
   const today = new Date();
   const isToday = due.toDateString() === today.toDateString();

@@ -22,7 +22,7 @@ import { checkEmailForSignup, normalizeEmail } from "../../../email-security";
 import { evaluateSignupRisk } from "../../../signup-risk";
 import { serviceKeysFromLabels } from "../../../../shared/service-keys";
 import { serviceLineOfSubject } from "../../../journey-timeline";
-import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel, MATCHED_ELSEWHERE_STAGE } from "../../../../shared/journey-ladder";
+import { JOURNEY_STAGE_ORDER, LEGACY_MATCH_STATUS_TO_STAGE, resolveJourneyStage, journeyStageLabel, MATCHED_ELSEWHERE_STAGE, nextJourneyStep } from "../../../../shared/journey-ladder";
 import {
   winnersByLine, matchedElsewhereAt, PRE_ENGAGEMENT_STAGES,
   type CommitmentArtifact, type LineWinner,
@@ -1440,6 +1440,22 @@ export class UsersController {
       // that org's business. Earliest due wins, and the query is already sorted.
       if (f.scope === "GOSTORK" && !nextStepByKey.has(f.parentAccountId)) nextStepByKey.set(f.parentAccountId, f);
     }
+    // Journey-derived fallback: the Next Step column is never empty. When no
+    // explicit GoStork task exists, the family's next rung on their journey
+    // ladder is the step - Onboarding (finish the concierge's intake
+    // questions) right after registration, then Exploring Profiles and so on.
+    // "Onboarded" = any of the account's Eva threads reached tier2Active.
+    const onboardedAccounts = new Set<string>();
+    if (crmKeys.length) {
+      const tier2 = await this.prisma.aiChatSession.findMany({
+        where: {
+          tier2Active: true,
+          user: { OR: [{ parentAccountId: { in: crmKeys } }, { id: { in: crmKeys } }] },
+        },
+        select: { user: { select: { id: true, parentAccountId: true } } },
+      }).catch(() => []);
+      for (const s of tier2 as any[]) onboardedAccounts.add(s.user.parentAccountId || s.user.id);
+    }
     const nowMs = Date.now();
 
     const overview: Record<string, any> = {};
@@ -1449,10 +1465,19 @@ export class UsersController {
       const owner = ownerByKey.get(crmKey);
       const step = nextStepByKey.get(crmKey);
       const svcLabels = profileServices.length ? profileServices : (chatServicesByUser.get(parent.id) || []);
+      const svcKeys = toServiceKeys(svcLabels);
+      // Derived Next Step (no open task): the rung after the family's current
+      // journey stage, on their primary line's ladder. dueAt stays null - a
+      // derived step is a direction, not a deadline.
+      const derivedStep = nextJourneyStep(
+        statusByUser.get(parent.id) || null,
+        svcKeys[0] || null,
+        { onboardingPending: !onboardedAccounts.has(crmKey) },
+      );
       overview[parent.id] = {
         services: svcLabels,
         // Enum keys, so the admin table filters exactly like the provider one.
-        serviceKeys: toServiceKeys(svcLabels),
+        serviceKeys: svcKeys,
         costSheets: [],
         invoices: [],
         agreements: [],
@@ -1464,6 +1489,8 @@ export class UsersController {
         owner: owner ? { userId: owner.ownerUserId, name: owner.ownerName, photoUrl: ownerPhotoById.get(owner.ownerUserId) ?? null } : null,
         nextStep: step
           ? { id: step.id, title: step.title, dueAt: step.dueAt, priority: step.priority, type: step.type, overdue: new Date(step.dueAt).getTime() < nowMs }
+          : derivedStep
+          ? { id: `journey-${derivedStep.id}`, title: derivedStep.label, dueAt: null, priority: null, type: "JOURNEY", overdue: false, derived: true }
           : null,
         // Signup trust: per-login, not merged across a household - each login
         // is flagged on its own signal. Feeds the /parents "Needs review" queue.

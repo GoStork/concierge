@@ -4639,7 +4639,40 @@ chatRouter.get("/api/my/dashboard-queue", requireAuth, async (req, res) => {
           }
         : null;
 
-    res.json({ pendingProposals, awaitingMySignature, prepDocs, callsToReschedule, ipFormPending, ipForm });
+    // ---- Next step per journey terminal ----
+    // Every open journey (registered-placeholder terminals included) surfaces
+    // its next rung as a to-do on the Home action queue. A freshly registered
+    // family's first step is finishing the concierge's intake questions
+    // ("Onboarding") - complete once any of the account's Eva threads has
+    // tier2Active (curation fired). Journeys that are over (handed off) or
+    // went sideways (matched elsewhere) surface nothing.
+    const { buildJourneyTimelines } = await import("./journey-timeline");
+    const { ONBOARDING_STEP } = await import("../shared/journey-ladder");
+    const { journeys } = await buildJourneyTimelines(me?.parentAccountId || user.id, { registeredPlaceholders: true });
+    const onboarded = await prisma.aiChatSession.findFirst({
+      where: { userId: { in: memberIds }, tier2Active: true },
+      select: { id: true },
+    });
+    const journeyNextSteps = journeys.flatMap((j) => {
+      const step =
+        j.currentStageId === "registered" && !onboarded
+          ? ONBOARDING_STEP
+          // The journey's OWN stages beat the generic line ladder: they
+          // already carry this journey's exact rung shape (escrow rungs,
+          // dropped optionals). First upcoming main-line rung = next step.
+          : j.stages.find((st) => st.state === "upcoming" && !st.branch) || null;
+      if (!step) return [];
+      return [{
+        serviceLine: j.serviceLine,
+        typeLabel: j.typeLabel,
+        providerName: j.providerName || null,
+        sessionId: j.sessionId,
+        stepId: step.id,
+        label: step.label,
+      }];
+    });
+
+    res.json({ pendingProposals, awaitingMySignature, prepDocs, callsToReschedule, ipFormPending, ipForm, journeyNextSteps });
   } catch (e: any) {
     console.error("Parent dashboard queue error:", e);
     res.status(500).json({ message: e.message });
