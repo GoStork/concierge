@@ -1558,6 +1558,12 @@ export function ParentActivitySection({ record, scope, serviceLines }: {
       if (cancelled) return;
       if (paint()) {
         focusedRef.current = focus;
+        // Consume the deep-link: drop ?focus from the URL once we have landed,
+        // so a refresh or a bookmark does not scroll to and re-ring the same
+        // entry on every load. sec=crm and the rest of the query stay.
+        const url = new URL(window.location.href);
+        url.searchParams.delete("focus");
+        window.history.replaceState(window.history.state, "", url.toString());
         // Re-centre as content below finishes laying out.
         timers.push(window.setTimeout(paint, 350));
         timers.push(window.setTimeout(paint, 900));
