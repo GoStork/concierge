@@ -168,13 +168,14 @@ function PlaybookEditor({ existing, isAdmin, onClose }: {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {/* max-w-sm rather than -md so the two toggles share this row with
-            the name and pickers instead of the starter wrapping underneath. */}
+        {/* The name FLEXES rather than holding a fixed width: it yields
+            exactly the space the pickers and both toggles need, so the
+            starter toggle sits on this row instead of wrapping under it. */}
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder='Name, e.g. "Matched - surrogacy handoff"'
-          className="max-w-sm"
+          className="flex-1 min-w-[200px]"
           data-testid="input-playbook-name"
         />
         <SelectField
