@@ -271,7 +271,7 @@ async function notifyNoteMentions(opts: {
       data: { userId: t.id, eventType: "CRM_MENTION", payload: { parentUserId: opts.parentUserId, parentName: opts.parentName, mentioner: opts.mentionerName, snippet: noteText.slice(0, 160), url, entryId: opts.entryId || null } },
     }).catch(() => {});
     if (t.email) {
-      await sendCrmEmail(t.email, `${opts.mentionerName} mentioned you on ${opts.parentName}`, mentionEmailHtml({ mentioner: opts.mentionerName, parentName: opts.parentName, noteText, url })).catch(() => {});
+      await sendCrmEmail(t.email, `${opts.mentionerName} mentioned you on ${opts.parentName}`, await mentionEmailHtml({ mentioner: opts.mentionerName, parentName: opts.parentName, noteText, url })).catch(() => {});
     }
   }
 }
