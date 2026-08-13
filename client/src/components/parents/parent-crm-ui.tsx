@@ -145,7 +145,9 @@ export function missingRequired(parts: { label: string; ok: boolean }[]): string
 /** The line itself, so both composers render it identically. */
 export function MissingRequiredHint({ text, testId }: { text: string | null; testId?: string }) {
   if (!text) return null;
-  return <span className="t-helper" data-testid={testId}>{text}</span>;
+  // Brand-warning, not muted grey - it is telling you the form is not done yet,
+  // so it has to be readable. Matches the ring on the field it points at.
+  return <span className="text-sm font-ui font-medium text-[hsl(var(--brand-warning))]" data-testid={testId}>{text}</span>;
 }
 
 /**
