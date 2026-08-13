@@ -207,6 +207,9 @@ function PlaybookEditor({ existing, isAdmin, onClose }: {
                 value={s.title}
                 onChange={(e) => setStep(i, { title: e.target.value })}
                 placeholder='Step, e.g. "Send the intended parent form"'
+                // The base Input is bg-transparent; on this cream step card
+                // every control in the row states bg-card so they all match.
+                className="bg-card"
                 data-testid={`input-step-title-${i}`}
               />
               <Button variant="ghost" size="sm" disabled={i === 0} onClick={() => move(i, -1)} data-testid={`btn-step-up-${i}`}>
@@ -239,7 +242,7 @@ function PlaybookEditor({ existing, isAdmin, onClose }: {
                   value={s.dueOffsetDays}
                   onChange={(v) => setStep(i, { dueOffsetDays: v })}
                   allowDecimal={false}
-                  className="w-16 h-9"
+                  className="w-16 h-9 bg-card"
                   data-testid={`input-step-offset-${i}`}
                 />
                 day(s) after the stage, at
