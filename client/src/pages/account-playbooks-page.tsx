@@ -152,7 +152,10 @@ function PlaybookEditor({ existing, isAdmin, onClose }: {
       return next;
     });
 
-  const field = "h-9 rounded-[var(--radius)] border border-border bg-card pl-2 pr-2 text-sm font-ui";
+  // text-foreground stated explicitly: the native time input (and the number
+  // box below) otherwise render in the browser's own control color, visibly
+  // lighter than the select labels sitting beside them in the same row.
+  const field = "h-9 rounded-[var(--radius)] border border-border bg-card pl-2 pr-2 text-sm font-ui text-foreground";
   const canSave = name.trim().length > 0 && steps.some((s) => s.title.trim());
 
   return (
@@ -244,7 +247,7 @@ function PlaybookEditor({ existing, isAdmin, onClose }: {
                   value={s.dueOffsetDays}
                   onChange={(v) => setStep(i, { dueOffsetDays: v })}
                   allowDecimal={false}
-                  className="w-16 h-9 bg-card"
+                  className="w-16 h-9 bg-card text-sm text-foreground"
                   data-testid={`input-step-offset-${i}`}
                 />
                 day(s) after the stage, at
