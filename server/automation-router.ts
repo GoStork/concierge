@@ -64,6 +64,81 @@ automationRouter.get("/api/automation/silence", requireAuth, async (req, res) =>
   }
 });
 
+/**
+ * Provider self-service billing/document automation flags. autoCostSheetDraft
+ * and autoInvoiceDraft live in Provider.autoFeaturesEnabled - the same JSON
+ * the GoStork admin card writes, so either side's flip is visible to both.
+ * Each flow still sits behind its global ConciergePromptSection kill switch
+ * (gate 1); the response exposes those so the UI can say when a flow is
+ * paused platform-wide regardless of the provider's own toggle.
+ */
+const FEATURE_GATES: Record<string, string> = {
+  autoCostSheetDraft: "auto_cost_sheet_on_booking",
+  autoInvoiceDraft: "auto_invoice_on_ready",
+  agreementAutomation: "auto_agreement_on_paid",
+};
+
+automationRouter.get("/api/automation/features", requireAuth, async (req, res) => {
+  try {
+    const w = who(req, res);
+    if (!w) return;
+    if (!w.providerId) return res.status(403).json({ message: "Provider account required" });
+    const [provider, gateRows] = await Promise.all([
+      prisma.provider.findUnique({
+        where: { id: w.providerId },
+        select: { agreementAutomation: true, autoFeaturesEnabled: true },
+      }),
+      prisma.conciergePromptSection.findMany({
+        where: { key: { in: Object.values(FEATURE_GATES) } },
+        select: { key: true, isActive: true },
+      }),
+    ]);
+    if (!provider) return res.status(404).json({ message: "Provider not found" });
+    const flags = (provider.autoFeaturesEnabled as any) || {};
+    const gateActive = new Map(gateRows.map((g) => [g.key, g.isActive]));
+    res.json({
+      autoCostSheetDraft: flags.autoCostSheetDraft === true,
+      autoInvoiceDraft: flags.autoInvoiceDraft === true,
+      agreementAutomation: provider.agreementAutomation ?? null,
+      adminAutoAgreementDraft: flags.autoAgreementDraft === true,
+      gates: Object.fromEntries(
+        Object.entries(FEATURE_GATES).map(([field, key]) => [field, gateActive.get(key) === true]),
+      ),
+    });
+  } catch (e: any) {
+    console.error("[automation] GET features:", e);
+    res.status(500).json({ message: e?.message || "Server error" });
+  }
+});
+
+automationRouter.put("/api/automation/features", requireAuth, async (req, res) => {
+  try {
+    const w = who(req, res);
+    if (!w) return;
+    if (!w.providerId) return res.status(403).json({ message: "Provider account required" });
+    const body = req.body || {};
+    const existing = await prisma.provider.findUnique({
+      where: { id: w.providerId },
+      select: { autoFeaturesEnabled: true },
+    });
+    if (!existing) return res.status(404).json({ message: "Provider not found" });
+    const current = (existing.autoFeaturesEnabled as any) || {};
+    const next = {
+      ...current,
+      ...(typeof body.autoCostSheetDraft === "boolean" ? { autoCostSheetDraft: body.autoCostSheetDraft } : {}),
+      ...(typeof body.autoInvoiceDraft === "boolean" ? { autoInvoiceDraft: body.autoInvoiceDraft } : {}),
+    };
+    await prisma.provider.update({
+      where: { id: w.providerId },
+      data: { autoFeaturesEnabled: next },
+    });
+    res.json({ ok: true, autoCostSheetDraft: next.autoCostSheetDraft === true, autoInvoiceDraft: next.autoInvoiceDraft === true });
+  } catch (e: any) {
+    console.error("[automation] PUT features:", e);
+    res.status(500).json({ message: e?.message || "Server error" });
+  }
+});
+
 automationRouter.put("/api/automation/silence", requireAuth, async (req, res) => {
   try {
     const w = who(req, res);

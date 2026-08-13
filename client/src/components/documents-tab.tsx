@@ -11,14 +11,13 @@
  * fully automated), which overrides the GoStork-admin rollout toggle.
  */
 
-import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileText, RefreshCw, Zap } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { PandaDocTemplateEditor } from "./pandadoc-template-editor";
 import { AgreementRows } from "./agreements-list";
 
@@ -57,24 +56,6 @@ const SERVICE_LABELS: Record<string, string> = {
   OTHER: "Agreement",
 };
 
-const AUTOMATION_OPTIONS: Array<{ value: string; label: string; description: string }> = [
-  {
-    value: "off",
-    label: "Off - I'll send agreements manually",
-    description: "Nothing happens automatically. Send agreements from the + menu in each chat.",
-  },
-  {
-    value: "approval",
-    label: "Draft for my approval",
-    description: "When a parent's deposit payment clears, your AI concierge drafts the agreement and posts it in the chat for you to approve before it's sent for signature.",
-  },
-  {
-    value: "auto_send",
-    label: "Fully automated",
-    description: "When a parent's deposit payment clears, the agreement is generated AND sent for signature immediately - no approval step.",
-  },
-];
-
 function fileNameFromUrl(url: string | null): string | null {
   if (!url) return null;
   return decodeURIComponent(url.split("/").pop()?.split("?")[0] || "agreement-template");
@@ -83,7 +64,6 @@ function fileNameFromUrl(url: string | null): string | null {
 export default function DocumentsTab() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const { toast } = useToast();
   const providerId = (user as any)?.providerId || "";
 
   const { data: tpl, isLoading: tplLoading } = useQuery<TemplatesResponse>({
@@ -94,24 +74,6 @@ export default function DocumentsTab() {
   const { data: agreements = [], isLoading: agreementsLoading, refetch } = useQuery<Agreement[]>({
     queryKey: ["/api/agreements"],
     enabled: !!providerId,
-  });
-
-  // The provider's effective automation choice: their own setting wins; when
-  // unset, the GoStork rollout toggle maps on -> approval, off -> off.
-  const effectiveMode = tpl?.agreementAutomation ?? (tpl?.adminAutoAgreementDraft ? "approval" : "off");
-  const [pendingMode, setPendingMode] = useState<string | null>(null);
-  const selectedMode = pendingMode ?? effectiveMode;
-
-  const automationMutation = useMutation({
-    mutationFn: async (mode: string) => apiRequest("PUT", "/api/agreements/automation", { mode }),
-    onSuccess: () => {
-      toast({ title: "Automation setting saved" });
-      queryClient.invalidateQueries({ queryKey: ["/api/agreements/templates"] });
-    },
-    onError: (err: any) => {
-      setPendingMode(null);
-      toast({ title: "Failed to save", description: err?.message || "Try again.", variant: "destructive" });
-    },
   });
 
   if (tplLoading) {
@@ -208,42 +170,16 @@ export default function DocumentsTab() {
         />
       )}
 
-      {/* Automation - the provider's own choice overrides GoStork's rollout toggle */}
-      <Card className="p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-heading">Agreement Automation</h2>
-        </div>
-        <p className="t-helper">
-          Choose what happens when a parent's deposit payment clears.
+      {/* Agreement automation moved to the consolidated Automation tab. */}
+      <Card className="p-4 flex items-center gap-3" data-testid="card-agreement-automation-pointer">
+        <Zap className="w-5 h-5 text-primary shrink-0" />
+        <p className="text-sm font-ui">
+          Looking for Agreement Automation? It now lives with your other automations on the{" "}
+          <Link to="/account/automation?section=billing" className="underline text-primary">
+            Automation tab
+          </Link>
+          .
         </p>
-        <div className="space-y-2">
-          {AUTOMATION_OPTIONS.map(opt => (
-            <label
-              key={opt.value}
-              className={`flex items-start gap-3 p-3 rounded-[var(--radius)] border cursor-pointer transition-colors ${
-                selectedMode === opt.value ? "border-primary bg-secondary/50" : "border-border hover:bg-secondary/30"
-              }`}
-            >
-              <input
-                type="radio"
-                name="agreement-automation"
-                value={opt.value}
-                checked={selectedMode === opt.value}
-                onChange={() => {
-                  setPendingMode(opt.value);
-                  automationMutation.mutate(opt.value);
-                }}
-                className="mt-0.5 accent-primary"
-                data-testid={`radio-agreement-automation-${opt.value}`}
-              />
-              <span>
-                <span className="block text-sm font-medium">{opt.label}</span>
-                <span className="t-helper block mt-0.5">{opt.description}</span>
-              </span>
-            </label>
-          ))}
-        </div>
       </Card>
 
       {/* Section E - Sent Agreements. Heading above a flush table card -
