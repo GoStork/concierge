@@ -355,7 +355,10 @@ function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
   }
   const headerBits = (
     <>
-      {showProviderName && (
+      {/* A registered-placeholder journey (no provider attached yet) has an
+          empty providerName - render only the service tag until a provider
+          joins the line and the named ladder replaces it. */}
+      {showProviderName && journey.providerName && (
         <p className="text-xs font-medium font-ui truncate min-w-0" title={journey.providerName}>
           {journey.providerName}
         </p>
@@ -401,7 +404,7 @@ function JourneyBlock({ journey, showProviderName, horizontal, cols }: {
               ladder's rungs start wherever its tag ended ("EGG DONATION" is
               wider than "SURROGACY"). */}
           <div className={`shrink-0 flex flex-col items-start gap-1 pt-1 ${showProviderName ? "w-[180px]" : "w-[130px]"}`}>
-            {showProviderName && (
+            {showProviderName && journey.providerName && (
               <p className="text-xs font-medium font-ui truncate w-full" title={journey.providerName}>
                 {journey.providerName}
               </p>
@@ -535,6 +538,19 @@ export function JourneyTimelineCard({
   let journeys = serviceLine
     ? allJourneys.filter((j) => (j.serviceLine ?? j.journeyType) === serviceLine)
     : allJourneys;
+  // Ladders of the SAME service line sit adjacent (two egg-donation
+  // journeys read as one comparison, not two strays). Service lines keep
+  // their first-occurrence order; journeys keep their order within a line.
+  const lineOrder: string[] = [];
+  for (const j of journeys) {
+    const line = j.serviceLine ?? j.journeyType;
+    if (!lineOrder.includes(line)) lineOrder.push(line);
+  }
+  journeys = [...journeys].sort(
+    (a, b) =>
+      lineOrder.indexOf(a.serviceLine ?? a.journeyType) -
+      lineOrder.indexOf(b.serviceLine ?? b.journeyType),
+  );
   if (journeys.length === 0) {
     // A family on a record IS registered. Rather than "no activity" (which read
     // as a bug next to the list's "Registered" pill), render the real stage

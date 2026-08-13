@@ -159,6 +159,17 @@ export async function buildJourneyTimelines(
      */
     sessionId?: string | null;
     includePreStages?: boolean;
+    /**
+     * Emit a provider-less "Registered" ladder for every service line the
+     * family signed up for (IntendedParentProfile.interestedServices) that
+     * has no real provider journey yet. A parent who registered FOR a
+     * service is on that journey from day one - the terminal opens at
+     * Registered with no provider name, and the moment a provider journey
+     * exists on that line the real (named) ladder takes its place.
+     * Opt-in from the timeline endpoint only: the funnel, playbook sweep,
+     * and review gating must keep seeing real provider journeys only.
+     */
+    registeredPlaceholders?: boolean;
   },
 ): Promise<{ registeredAt: string | null; journeys: JourneyOut[] }> {
   const members = await prisma.user.findMany({
@@ -381,6 +392,43 @@ export async function buildJourneyTimelines(
   const visibleBuckets = opts?.providerId
     ? derivedBuckets.filter((b) => b.providerId === opts.providerId)
     : derivedBuckets;
+
+  // ---- Registered-service placeholders (see opts.registeredPlaceholders) ----
+  // An EMPTY bucket per uncovered interested line rides the normal derivation
+  // below, so the placeholder ladder is the real ladder for that service
+  // (IVF's Doctor Call rungs, surrogacy's Parent Form rung, ...) with
+  // Registered as the only evidenced rung - never a second hand-rolled shape.
+  if (opts?.registeredPlaceholders && !opts?.providerId && !opts?.sessionId) {
+    const profile = await prisma.intendedParentProfile
+      .findUnique({ where: { parentAccountId }, select: { interestedServices: true } })
+      .catch(() => null);
+    const { serviceKeysFromLabels } = await import("../shared/service-keys");
+    const LINE_BY_KEY: Record<string, string> = {
+      SURROGACY: "surrogacy", EGG_DONATION: "egg_donation",
+      SPERM_DONATION: "sperm_donation", IVF_CLINIC: "ivf",
+    };
+    // Service names that steer classifyJourneyType/lineOfBucket onto the
+    // right ladder for a bucket with no sessions to speak for it.
+    const SERVICE_NAMES_BY_LINE: Record<string, string[]> = {
+      surrogacy: ["Surrogacy Agency"], egg_donation: ["Egg Donor Agency"],
+      sperm_donation: ["Sperm Bank"], ivf: ["IVF Clinic"],
+    };
+    const coveredLines = new Set(
+      derivedBuckets.map((b) => lineOfBucket(b, classifyJourneyType(b.serviceNames, b.subjectTypes))),
+    );
+    const interestedLines = serviceKeysFromLabels(profile?.interestedServices)
+      .map((k) => LINE_BY_KEY[k])
+      .filter(Boolean);
+    for (const line of interestedLines) {
+      if (coveredLines.has(line)) continue;
+      visibleBuckets.push({
+        providerId: "", providerName: "", providerLogo: null,
+        serviceNames: SERVICE_NAMES_BY_LINE[line], subjectTypes: [],
+        depositMilestone: null,
+        sessions: [], bookings: [], invoices: [], agreements: [], events: [],
+      });
+    }
+  }
 
   // ---- Derive each journey ----
   const journeys: JourneyOut[] = [];

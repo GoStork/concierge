@@ -368,7 +368,16 @@ chatRouter.get("/api/journey/timeline", requireAuth, async (req, res) => {
     // the chat sidebars pass it so a profile thread that never advanced
     // doesn't inherit the org-level "Handed Off" ladder.
     const sessionId = (req.query.sessionId as string) || null;
-    const result = await buildJourneyTimelines(parentAccountId!, { providerId: providerScope, sessionId });
+    // registeredPlaceholders: the terminals a parent's signup itself opens -
+    // one provider-less "Registered" ladder per interested service line with
+    // no real journey yet. Only on the unscoped relationship view (parent
+    // Home / admin record); provider- and session-scoped sidebars are about
+    // one org's thread and skip them.
+    const result = await buildJourneyTimelines(parentAccountId!, {
+      providerId: providerScope,
+      sessionId,
+      registeredPlaceholders: !providerScope && !sessionId,
+    });
     res.json(result);
   } catch (e: any) {
     console.error("[journey-timeline] failed:", e?.message);
