@@ -228,45 +228,50 @@ export function ServiceChips({
 // ACTIVE (anonymous Q&A) shouldn't reach the table - the server filters it
 // out so the agency only sees parents who've actually committed to a
 // consultation. Anything unexpected falls through to a neutral pill.
+// Stage tones, shared by the Match Status badge and the derived Next Step
+// pill so the two columns speak one color language. Early stages green,
+// match milestones accent, money primary.
+const STAGE_TONE = {
+  early: { bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
+  call: { bg: "hsl(var(--brand-warning) / 0.15)", fg: "hsl(var(--brand-warning))" },
+  match: { bg: "hsl(var(--accent) / 0.15)", fg: "hsl(var(--accent))" },
+  money: { bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
+  lost: { bg: "hsl(var(--muted-foreground) / 0.12)", fg: "hsl(var(--muted-foreground))" },
+};
+
+// Tone per stage id (shared stage vocabulary). Green like the other on-track
+// stages; amber is reserved for states that need chasing (branch rungs - No
+// Show, Canceled - never reach these pills at all). matched_elsewhere is the
+// one branch outcome that does: muted rather than red - a closed door, not an
+// error. "onboarding" is the pre-ladder next step (finish the concierge's
+// intake questions) the derived Next Step pill shows.
+const STAGE_TONE_FOR: Record<string, { bg: string; fg: string }> = {
+  onboarding: STAGE_TONE.early,
+  registered: STAGE_TONE.early,
+  exploring: STAGE_TONE.early,
+  consult_scheduled: STAGE_TONE.early,
+  consult_completed: STAGE_TONE.early,
+  ip_form_submitted: STAGE_TONE.early,
+  doctor_call_scheduled: STAGE_TONE.early,
+  [MATCHED_ELSEWHERE_STAGE]: STAGE_TONE.lost,
+  doctor_call_completed: STAGE_TONE.early,
+  match_call_scheduled: STAGE_TONE.call,
+  matched: STAGE_TONE.match,
+  invoice_sent: STAGE_TONE.money,
+  invoice_paid: STAGE_TONE.money,
+  agreement_sent: STAGE_TONE.money,
+  agreement_signed: STAGE_TONE.money,
+  handed_off: STAGE_TONE.money,
+};
+
 export function MatchStatusBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="t-helper">-</span>;
   // Journey ladder (server derives the most-advanced stage per session):
   // Call Booked -> Connected -> Match Call -> Matched -> Deposit Paid ->
-  // Agreement Signed. Early stages green, match milestones accent/primary.
-  // Keyed on the shared stage ids. Legacy enum values stay mapped so a row
-  // written before the ladder was unified still renders a coloured pill
-  // instead of falling through to the neutral "unknown" case.
-  const TONE = {
-    early: { bg: "hsl(var(--brand-success) / 0.12)", fg: "hsl(var(--brand-success))" },
-    call: { bg: "hsl(var(--brand-warning) / 0.15)", fg: "hsl(var(--brand-warning))" },
-    match: { bg: "hsl(var(--accent) / 0.15)", fg: "hsl(var(--accent))" },
-    money: { bg: "hsl(var(--primary) / 0.12)", fg: "hsl(var(--primary))" },
-    lost: { bg: "hsl(var(--muted-foreground) / 0.12)", fg: "hsl(var(--muted-foreground))" },
-  };
-  const toneFor: Record<string, { bg: string; fg: string }> = {
-    registered: TONE.early,
-    exploring: TONE.early,
-    consult_scheduled: TONE.early,
-    consult_completed: TONE.early,
-    ip_form_submitted: TONE.early,
-    // Green like the other on-track stages. Amber is reserved for states
-    // that need chasing (and the branch rungs never reach this badge at all
-    // - No Show and Canceled live on the ladder and the attention chip, not
-    // in the match-status vocabulary).
-    doctor_call_scheduled: TONE.early,
-    // The one branch outcome that DOES reach this badge: the family committed
-    // to another provider on this line. Muted rather than red - it is a closed
-    // door, not an error, and nothing here is anyone's fault.
-    [MATCHED_ELSEWHERE_STAGE]: TONE.lost,
-    doctor_call_completed: TONE.early,
-    match_call_scheduled: TONE.call,
-    matched: TONE.match,
-    invoice_sent: TONE.money,
-    invoice_paid: TONE.money,
-    agreement_sent: TONE.money,
-    agreement_signed: TONE.money,
-    handed_off: TONE.money,
-  };
+  // Agreement Signed. Keyed on the shared stage ids. Legacy enum values stay
+  // mapped so a row written before the ladder was unified still renders a
+  // coloured pill instead of falling through to the neutral "unknown" case.
+  const toneFor = STAGE_TONE_FOR;
   const stage = LEGACY_MATCH_STATUS_TO_STAGE[status] || status;
   const tone = toneFor[stage];
   const label = JOURNEY_STATUS_LABELS[stage] || JOURNEY_STATUS_LABELS[status];
@@ -321,15 +326,22 @@ export function OwnerCell({ owner, testId }: { owner?: { name: string | null; ph
 
 export function NextStepCell({
   nextStep, testId,
-}: { nextStep?: { title: string; dueAt: string | null; overdue: boolean } | null; testId?: string }) {
+}: { nextStep?: { id?: string; title: string; dueAt: string | null; overdue: boolean } | null; testId?: string }) {
   if (!nextStep) return <span className="t-helper">-</span>;
   // A journey-derived step (no explicit task) has no due date - it is a
-  // direction, not a deadline. Title only, no date chip.
+  // direction, not a deadline. Rendered as a stage-toned pill, the same
+  // vocabulary as the Match Status column beside it (id "journey-<stage>").
   if (!nextStep.dueAt) {
-    const shortTitle = nextStep.title.length > 24 ? `${nextStep.title.slice(0, 24)}...` : nextStep.title;
+    const stage = (nextStep.id || "").replace(/^journey-/, "");
+    const tone = STAGE_TONE_FOR[stage] || { bg: "hsl(var(--secondary))", fg: "hsl(var(--foreground))" };
     return (
-      <span className="inline-flex items-center whitespace-nowrap text-sm" title={nextStep.title} data-testid={testId}>
-        {shortTitle}
+      <span
+        className="inline-flex items-center text-xs font-ui px-2 py-0.5 rounded-full whitespace-nowrap"
+        style={{ background: tone.bg, color: tone.fg }}
+        title={nextStep.title}
+        data-testid={testId}
+      >
+        {nextStep.title}
       </span>
     );
   }
