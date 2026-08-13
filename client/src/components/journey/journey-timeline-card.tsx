@@ -571,28 +571,38 @@ export function JourneyTimelineCard({
   }
 
   if (variant === "home") {
-    // Every journey the parent is running sits side by side on one row (up to
-    // 5 across on a wide screen), instead of stacking two-up and pushing the
-    // rest of the dashboard down. Classes are spelled out because Tailwind
-    // can't see interpolated column counts.
-    const colClass =
-      journeys.length >= 5
-        ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
-        : journeys.length === 4
-        ? "sm:grid-cols-2 lg:grid-cols-4"
-        : journeys.length === 3
-        ? "sm:grid-cols-2 lg:grid-cols-3"
-        : "sm:grid-cols-2";
+    // Below lg the vertical cards sit side by side (up to two across) -
+    // horizontal rungs would be ~30px apart there. Classes are spelled out
+    // because Tailwind can't see interpolated column counts.
+    const colClass = "sm:grid-cols-2";
+    // Same rung-index alignment rule as the record page: every ladder's
+    // column width comes from the LONGEST ladder, so rung N lands on the
+    // same vertical line across journeys.
+    const homeCols = Math.max(
+      ...journeys.map((jj) => jj.stages.filter((st) => !isBranchStage(st)).length),
+    );
     return (
-      <div className={`grid gap-4 ${colClass}`} data-testid={testId}>
-        {/* min-w-0 on each cell: grid items default to min-width:auto, so
-            without it a non-wrapping provider name widens its column past the
-            viewport (that's what broke the mobile layout). */}
-        {journeys.map((j) => (
-          <div key={`${j.journeyType}-${j.providerId}`} className="min-w-0 rounded-[var(--radius)] border bg-secondary/40 p-4">
-            <JourneyBlock journey={j} showProviderName />
-          </div>
-        ))}
+      <div data-testid={testId}>
+        {/* Desktop: the same horizontal ladder the provider and admin Lead
+            Status use - one full-width row per journey (by request), instead
+            of the vertical cards side by side. */}
+        <div className="hidden lg:block space-y-3">
+          {journeys.map((j) => (
+            <div key={`${j.journeyType}-${j.providerId}`} className="min-w-0 rounded-[var(--radius)] border bg-secondary/40 p-4">
+              <JourneyBlock journey={j} showProviderName horizontal cols={homeCols} />
+            </div>
+          ))}
+        </div>
+        <div className={`grid gap-4 lg:hidden ${colClass}`}>
+          {/* min-w-0 on each cell: grid items default to min-width:auto, so
+              without it a non-wrapping provider name widens its column past the
+              viewport (that's what broke the mobile layout). */}
+          {journeys.map((j) => (
+            <div key={`${j.journeyType}-${j.providerId}`} className="min-w-0 rounded-[var(--radius)] border bg-secondary/40 p-4">
+              <JourneyBlock journey={j} showProviderName />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
