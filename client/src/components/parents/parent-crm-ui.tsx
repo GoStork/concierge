@@ -126,6 +126,38 @@ export function SelectField({ value, onChange, options, placeholder, className, 
   );
 }
 
+/**
+ * Why the save button is not clickable yet.
+ *
+ * A disabled button that will not say what it wants is a guessing game: the
+ * composer has seven controls and only two of them are required, all styled
+ * alike. This names the missing ones in the order they appear, and returns null
+ * the moment the form is good - so the line simply disappears rather than
+ * turning into a "looks fine" message nobody needs to read.
+ */
+export function missingRequired(parts: { label: string; ok: boolean }[]): string | null {
+  const missing = parts.filter((p) => !p.ok).map((p) => p.label);
+  if (!missing.length) return null;
+  const list = missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(", ")} and ${missing[missing.length - 1]}`;
+  return `${list[0].toUpperCase()}${list.slice(1)} to continue.`;
+}
+
+/** The line itself, so both composers render it identically. */
+export function MissingRequiredHint({ text, testId }: { text: string | null; testId?: string }) {
+  if (!text) return null;
+  return <span className="t-helper" data-testid={testId}>{text}</span>;
+}
+
+/**
+ * A required field that has not been filled in yet.
+ *
+ * Reads as "this one needs you" without shouting: the brand warning tone on the
+ * ring and text, dropped the instant a value is chosen so a completed form is
+ * visually quiet again. Optional pills (priority, reminder) never get this, and
+ * that contrast is the whole point.
+ */
+export const NEEDED_FIELD_CLS = "ring-1 ring-[hsl(var(--brand-warning))] text-[hsl(var(--brand-warning))]";
+
 interface ScopeChoice {
   key: string;
   scope: CrmScope;
@@ -263,7 +295,7 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
           onChange={setServiceLine}
           lines={serviceLines}
           viewerLines={record.viewer.serviceLines}
-          className="h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui"
+          className={cn("h-9 rounded-[var(--radius)] border border-border bg-card px-2 text-sm font-ui", !serviceLine && NEEDED_FIELD_CLS)}
           testId="select-note-service"
         />
         <select
@@ -366,6 +398,13 @@ export function NoteComposer({ record, activeLine, serviceLines, onPosted, onCan
             Cancel
           </Button>
         )}
+        <MissingRequiredHint
+          text={missingRequired([
+            { label: kind === "NOTE" ? "write the note" : "write what happened", ok: hasText },
+            { label: "pick a service", ok: !!serviceLine },
+          ])}
+          testId="hint-note-required"
+        />
       </div>
     </div>
   );
@@ -566,7 +605,9 @@ export function TaskEditor({ record, existing, activeLine, serviceLines, onDone,
           onChange={setServiceLine}
           lines={serviceLines}
           viewerLines={record.viewer.serviceLines}
-          className={field}
+          // Required, and it used to look exactly like the optional pills
+          // beside it - so it read as "already fine" and quietly blocked save.
+          className={cn(field, !serviceLine && NEEDED_FIELD_CLS)}
           testId="select-task-service"
         />
         <SelectField value={type} onChange={setType} options={TASK_TYPES} className={field} testId="select-task-type" />
@@ -622,6 +663,13 @@ export function TaskEditor({ record, existing, activeLine, serviceLines, onDone,
           {existing ? "Save task" : "Create task"}
         </Button>
         {onCancel && <Button size="sm" variant="ghost" onClick={onCancel} data-testid="btn-cancel-task">Cancel</Button>}
+        <MissingRequiredHint
+          text={missingRequired([
+            { label: "add a subject", ok: !!title.trim() },
+            { label: "pick a service", ok: !!serviceLine },
+          ])}
+          testId="hint-task-required"
+        />
       </div>
     </div>
   );
