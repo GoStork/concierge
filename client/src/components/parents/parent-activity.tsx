@@ -1529,21 +1529,49 @@ export function ParentActivitySection({ record, scope, serviceLines }: {
 
   const entries = useMemo(() => buildEntries(record), [record]);
 
-  // #1 Search deep-link: ?focus=<entryId> scrolls the timeline to that note or
-  // task and rings it briefly, so a search hit lands you ON the writing, not
-  // just on the page. Fires once per focus value, after entries have rendered.
+  // Deep-link (search results, @mention toast/email): ?focus=<entryId> scrolls
+  // the timeline to that note or task and rings it, so you land ON the writing.
+  //
+  // This has to survive two races that a single attempt lost: the entry may not
+  // be in the DOM yet (the ?sec=crm section is still expanding, or the record
+  // is still loading), and the page keeps growing under the first scroll as the
+  // side column's images lay out - which left you parked above the real note
+  // with no highlight. So: retry until the entry exists, then re-centre and
+  // re-paint a couple of times as things settle.
   const focusedRef = useRef<string | null>(null);
   useEffect(() => {
     const focus = new URLSearchParams(window.location.search).get("focus");
     if (!focus || focusedRef.current === focus) return;
-    const el = document.getElementById(`entry-${focus}`);
-    if (!el) return;
-    focusedRef.current = focus;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.style.transition = "box-shadow 0.3s ease";
-    el.style.boxShadow = "0 0 0 2px hsl(var(--primary))";
-    const t = setTimeout(() => { el.style.boxShadow = ""; }, 2400);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    const timers: number[] = [];
+    const paint = (): boolean => {
+      const el = document.getElementById(`entry-${focus}`) as HTMLElement | null;
+      if (!el) return false;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.style.transition = "box-shadow 0.3s ease";
+      el.style.borderRadius = "var(--radius)";
+      el.style.boxShadow = "0 0 0 3px hsl(var(--primary))";
+      return true;
+    };
+    let tries = 0;
+    const tick = () => {
+      if (cancelled) return;
+      if (paint()) {
+        focusedRef.current = focus;
+        // Re-centre as content below finishes laying out.
+        timers.push(window.setTimeout(paint, 350));
+        timers.push(window.setTimeout(paint, 900));
+        // Then let the ring fade.
+        timers.push(window.setTimeout(() => {
+          const el = document.getElementById(`entry-${focus}`) as HTMLElement | null;
+          if (el) el.style.boxShadow = "";
+        }, 4000));
+        return;
+      }
+      if (tries++ < 40) timers.push(window.setTimeout(tick, 100)); // up to ~4s
+    };
+    tick();
+    return () => { cancelled = true; timers.forEach(clearTimeout); };
   }, [entries]);
 
   // Soonest first - the Tasks section is read as "what is next", never as
