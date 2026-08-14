@@ -20,7 +20,6 @@ import LocationAutocomplete from "@/components/location-autocomplete";
 import { CountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MembersTable from "@/components/members-table";
-import CompanyTab from "@/components/company-tab";
 import DocumentsTab from "@/components/documents-tab";
 import DoctorsDatabasePanel from "@/components/doctors-database-panel";
 import ProviderKnowledgeTab from "@/components/provider-knowledge-tab";
@@ -34,6 +33,7 @@ import { ProviderBillingTab } from "@/components/provider-billing-tab";
 import { AdminProviderPayoutsView } from "@/components/admin-provider-payouts-view";
 import { SponsorshipDashboard } from "@/components/sponsorship/sponsorship-dashboard";
 import { ProviderLegalIdentityTab } from "@/components/provider-legal-identity-tab";
+import ProviderParentFormTab from "@/components/ip-form/provider-form-tab";
 import { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -140,7 +140,7 @@ type ScrapedData = {
   teamMembers: ScrapedTeamMember[];
 };
 
-const VALID_TABS = ["profile", "company", "users", "calendar", "egg-donors", "surrogates", "sperm-donors", "costs", "agreements", "doctors", "knowledge", "ai-concierge", "playbooks", "automation", "legal-identity", "billing", "payouts", "sponsorship", "branding", "auto-replies"];
+const VALID_TABS = ["profile", "company", "users", "calendar", "egg-donors", "surrogates", "sperm-donors", "costs", "agreements", "parent-form", "doctors", "knowledge", "ai-concierge", "playbooks", "automation", "legal-identity", "billing", "payouts", "sponsorship", "branding", "auto-replies"];
 
 export default function AdminProviderEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -155,8 +155,9 @@ export default function AdminProviderEditPage() {
 
   const rawTab = VALID_TABS.includes(searchParams.get("tab") || "") ? searchParams.get("tab")! : "profile";
   // Auto-reply was consolidated into the Automation tab (same as the provider
-  // side); old ?tab=auto-replies links land there.
-  const currentTab = rawTab === "auto-replies" ? "automation" : rawTab;
+  // side); old ?tab=auto-replies links land there. Company was folded into
+  // Profile (one admin editor, a strict superset of the provider's view).
+  const currentTab = rawTab === "auto-replies" ? "automation" : rawTab === "company" ? "profile" : rawTab;
   const handleTabChange = (value: string) => setSearchParams({ tab: value }, { replace: true });
 
   const sensors = useSensors(
@@ -216,8 +217,8 @@ export default function AdminProviderEditPage() {
   const [lgbtqCare, setLgbtqCare] = useState(false);
   const [clinicOffersVideo, setClinicOffersVideo] = useState(false);
   const [biometricMatchingAuthorized, setBiometricMatchingAuthorized] = useState(false);
-  const [collectsIntendedParentForm, setCollectsIntendedParentForm] = useState(false);
-  const [requiresIdPhotocopy, setRequiresIdPhotocopy] = useState(false);
+  // Intended Parent Form collection moved to the Parent Form tab (shared
+  // ProviderParentFormTab component saves those flags itself).
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editYearFounded, setEditYearFounded] = useState("");
@@ -265,6 +266,10 @@ export default function AdminProviderEditPage() {
   const [ivfSurrogatePlacentaPrevia, setIvfSurrogatePlacentaPrevia] = useState(false);
   const [ivfSurrogatePreeclampsia, setIvfSurrogatePreeclampsia] = useState(false);
   const [ivfSurrogateMentalHealthHistory, setIvfSurrogateMentalHealthHistory] = useState("");
+  // Scheduling & Consultations - folded in from the provider-side Company tab
+  // so this Profile editor is a strict superset of what the provider sees.
+  const [consultationBookingUrl, setConsultationBookingUrl] = useState("");
+  const [consultationIframeEnabled, setConsultationIframeEnabled] = useState(false);
 
   useEffect(() => {
     if (provider) {
@@ -281,9 +286,9 @@ export default function AdminProviderEditPage() {
       setLgbtqCare(provider.lgbtqCare || false);
       setClinicOffersVideo(provider.offersVideoVisits ?? true);
       setBiometricMatchingAuthorized((provider as any).biometricMatchingAuthorized ?? true);
-      setCollectsIntendedParentForm((provider as any).collectsIntendedParentForm ?? false);
-      setRequiresIdPhotocopy((provider as any).requiresIdPhotocopy ?? false);
       setEditWebsite(provider.websiteUrl || "");
+      setConsultationBookingUrl((provider as any).consultationBookingUrl || "");
+      setConsultationIframeEnabled((provider as any).consultationIframeEnabled || false);
       setEditEmail(provider.email || "");
       setEditPhone(provider.phone || "");
       setEditYearFounded(provider.yearFounded ? String(provider.yearFounded) : "");
@@ -366,7 +371,7 @@ export default function AdminProviderEditPage() {
     }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, lgbtqCare, clinicOffersVideo, biometricMatchingAuthorized, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, partnerProviderIds, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert, collectsIntendedParentForm, requiresIdPhotocopy]);
+  }, [initialized, editName, editAbout, editWebsite, editEmail, editPhone, editYearFounded, editLogoUrl, editLocations, editTeamMembers, consultationBookingUrl, consultationIframeEnabled, lgbtqCare, clinicOffersVideo, biometricMatchingAuthorized, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, partnerProviderIds, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
 
   const editScrapeMutation = useMutation({
     mutationFn: async (url: string) => {
@@ -397,6 +402,8 @@ export default function AdminProviderEditPage() {
       name: editName,
       about: editAbout || null,
       websiteUrl: editWebsite || null,
+      consultationBookingUrl: consultationBookingUrl || null,
+      consultationIframeEnabled,
       offersVideoVisits: clinicOffersVideo,
       biometricMatchingAuthorized,
       email: editEmail || null,
@@ -436,8 +443,6 @@ export default function AdminProviderEditPage() {
       ivfSurrogatePlacentaPrevia,
       ivfSurrogatePreeclampsia,
       ivfSurrogateMentalHealthHistory: ivfSurrogateMentalHealthHistory || null,
-      collectsIntendedParentForm,
-      requiresIdPhotocopy,
     };
 
     try {
@@ -764,7 +769,6 @@ export default function AdminProviderEditPage() {
         <div className="overflow-x-auto w-full">
         <TabsList className="h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border min-w-full justify-start">
           <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
-          <TabsTrigger value="company" className={tabTriggerClass} data-testid="tab-edit-company">Company</TabsTrigger>
           <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>
           <TabsTrigger value="calendar" className={tabTriggerClass} data-testid="tab-edit-calendar">Calendar</TabsTrigger>
           {showEggDonors && <TabsTrigger value="egg-donors" className={tabTriggerClass} data-testid="tab-edit-egg-donors">Egg Donors</TabsTrigger>}
@@ -775,6 +779,7 @@ export default function AdminProviderEditPage() {
             Costs
           </TabsTrigger>
           <TabsTrigger value="agreements" className={tabTriggerClass} data-testid="tab-edit-agreements">Agreements</TabsTrigger>
+          <TabsTrigger value="parent-form" className={tabTriggerClass} data-testid="tab-edit-parent-form">Parent Form</TabsTrigger>
           {isIvfClinic && <TabsTrigger value="doctors" className={tabTriggerClass} data-testid="tab-edit-doctors">Doctors</TabsTrigger>}
           <TabsTrigger value="knowledge" className={tabTriggerClass} data-testid="tab-edit-knowledge">Knowledge</TabsTrigger>
           <TabsTrigger value="ai-concierge" className={tabTriggerClass} data-testid="tab-edit-ai-concierge">AI Concierge</TabsTrigger>
@@ -784,7 +789,7 @@ export default function AdminProviderEditPage() {
             Automation
           </TabsTrigger>
           <TabsTrigger value="legal-identity" className={tabTriggerClass} data-testid="tab-edit-legal-identity">
-            Legal Identity
+            Legal
           </TabsTrigger>
           <TabsTrigger value="billing" className={tabTriggerClass} data-testid="tab-edit-billing">
             Billing
@@ -865,20 +870,7 @@ export default function AdminProviderEditPage() {
                   </span>
                 </label>
               )}
-              <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
-                <Checkbox className="mt-0.5" checked={collectsIntendedParentForm} onCheckedChange={(v) => setCollectsIntendedParentForm(!!v)} data-testid="checkbox-edit-collects-ip-form" />
-                <span>
-                  <span className="font-ui">Collects the Intended Parent Form</span> - after a consultation, parents are prompted to complete the form and this provider can download it. Surrogacy agencies get the full form; other providers (e.g. international IVF clinics) get the short version (basic info + ID).
-                </span>
-              </label>
-              {collectsIntendedParentForm && (
-                <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
-                  <Checkbox className="mt-0.5" checked={requiresIdPhotocopy} onCheckedChange={(v) => setRequiresIdPhotocopy(!!v)} data-testid="checkbox-edit-requires-id-photocopy" />
-                  <span>
-                    <span className="font-ui">Requires a copy of each parent's ID document</span> - parents must upload a photo/scan of their passport or government ID. Requested automatically when this provider connects, even if the form was already submitted.
-                  </span>
-                </label>
-              )}
+              {/* Intended Parent Form collection checkboxes moved to the Parent Form tab. */}
               <div className="space-y-2">
                 <Label>Phone</Label>
                 <div className="relative">
@@ -903,6 +895,37 @@ export default function AdminProviderEditPage() {
                   />
                 </div>
               </div>
+            </Card>
+
+            <Card className="p-6 space-y-4">
+              <h3 className="text-lg font-heading flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-primary" /> Scheduling & Consultations
+              </h3>
+              <div className="space-y-2">
+                <Label>Consultation Booking Link</Label>
+                <div className="relative">
+                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    value={consultationBookingUrl}
+                    onChange={e => setConsultationBookingUrl(e.target.value)}
+                    placeholder="https://calendly.com/your-link or https://acuity.com/..."
+                    className="pl-9"
+                    data-testid="input-edit-consultation-booking-url"
+                  />
+                </div>
+                <p className="t-helper">
+                  A Calendly, Acuity, or other scheduling link parents can book consultations through.
+                </p>
+              </div>
+              <label className="flex items-center gap-3 pt-2 cursor-pointer">
+                <Checkbox
+                  checked={consultationIframeEnabled}
+                  onCheckedChange={(checked) => setConsultationIframeEnabled(checked === true)}
+                  disabled={!consultationBookingUrl}
+                  data-testid="toggle-edit-consultation-iframe"
+                />
+                <span className="text-sm font-ui">Enable in-app booking (load scheduling page within GoStork)</span>
+              </label>
             </Card>
 
             <Card className="p-6 space-y-4">
@@ -1598,10 +1621,6 @@ export default function AdminProviderEditPage() {
           </form>
         </TabsContent>
 
-        <TabsContent value="company">
-          <CompanyTab providerId={provider.id} />
-        </TabsContent>
-
         <TabsContent value="users">
           <MembersTable context="provider" providerId={provider.id} currentUserId="" canManage isAdmin compact />
         </TabsContent>
@@ -1612,6 +1631,10 @@ export default function AdminProviderEditPage() {
 
         <TabsContent value="agreements">
           <DocumentsTab providerId={provider.id} />
+        </TabsContent>
+
+        <TabsContent value="parent-form">
+          <ProviderParentFormTab providerId={provider.id} mode="admin" />
         </TabsContent>
 
         {isIvfClinic && (

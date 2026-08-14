@@ -163,16 +163,42 @@ export async function buildIpFormPdfForProvider(opts: {
   const response = await prisma.ipFormResponse.findUnique({ where: { id: opts.responseId } });
   if (!response) throw new Error("Response not found");
 
+  // Global template questions only - custom questions of OTHER providers must
+  // never print on this provider's PDF; this provider's own are merged below.
   let sections = (await prisma.ipFormSection.findMany({
     where: { isActive: true },
     orderBy: { sortOrder: "asc" },
-    include: { questions: { orderBy: { sortOrder: "asc" } } },
+    include: { questions: { where: { providerId: null }, orderBy: { sortOrder: "asc" } } },
   })) as unknown as PdfSection[];
   // Restrict to the provider's program (surrogacy agency -> surrogacy sections;
   // IVF clinic -> core + ivf). A core section (no appliesTo) always shows.
   if (opts.programTypes && opts.programTypes.length) {
     const pt = opts.programTypes;
     sections = sections.filter((s) => !(s.appliesTo || []).length || (s.appliesTo || []).some((t) => pt.includes(t)));
+  }
+  // Per-provider Parent Form adjustments: drop hidden sections/questions,
+  // apply label/help overrides, merge this provider's custom questions.
+  if (opts.providerId) {
+    const [overrides, customQs] = await Promise.all([
+      prisma.ipFormProviderOverride.findMany({ where: { providerId: opts.providerId } }),
+      prisma.ipFormQuestion.findMany({ where: { providerId: opts.providerId }, orderBy: { sortOrder: "asc" } }),
+    ]);
+    if (overrides.length || customQs.length) {
+      const byTarget = new Map(overrides.map((o) => [`${o.targetType}:${o.targetId}`, o]));
+      sections = sections
+        .filter((s) => !byTarget.get(`section:${s.id}`)?.hidden)
+        .map((s) => {
+          let questions = s.questions.filter((q) => !byTarget.get(`question:${q.id}`)?.hidden);
+          questions = questions.map((q) => {
+            const o = byTarget.get(`question:${q.id}`);
+            return o ? { ...q, label: o.label ?? q.label } : q;
+          });
+          const custom = customQs.filter((q) => q.sectionId === s.id) as unknown as PdfQuestion[];
+          if (custom.length) questions = [...questions, ...custom].sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+          const so = byTarget.get(`section:${s.id}`);
+          return { ...s, title: so?.label || s.title, questions };
+        });
+    }
   }
 
   const answers = (await prisma.ipFormAnswer.findMany({ where: { responseId: response.id } })) as unknown as PdfAnswer[];

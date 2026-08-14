@@ -86,20 +86,73 @@ async function accountOf(userId: string): Promise<{ accountId: string; memberIds
   return { accountId, memberIds };
 }
 
-/** Active template, ordered, questions nested. */
-export async function loadIpFormTemplate(includeInactive = false) {
+/**
+ * Active template, ordered, questions nested. GLOBAL questions only by
+ * default (providerId null) - provider-specific custom questions are merged
+ * in per account by applyProviderAdjustments. Write paths (answer upserts)
+ * pass includeProviderQuestions so custom-question answers still validate.
+ */
+export async function loadIpFormTemplate(includeInactive = false, includeProviderQuestions = false) {
   const where = includeInactive ? {} : { isActive: true };
   const sections = await prisma.ipFormSection.findMany({
     where,
     orderBy: { sortOrder: "asc" },
     include: {
       questions: {
-        where: includeInactive ? {} : { isActive: true },
+        where: {
+          ...(includeInactive ? {} : { isActive: true }),
+          ...(includeProviderQuestions ? {} : { providerId: null }),
+        },
         orderBy: { sortOrder: "asc" },
       },
     },
   });
   return sections;
+}
+
+/**
+ * Apply per-provider Parent Form adjustments to a set of global sections.
+ *
+ * providerIds = the form-collecting providers connected to the account. A
+ * global section/question is dropped only when EVERY collecting provider
+ * hides it (one provider still needing it means the parent must answer).
+ * Label/help/required overrides apply only when exactly one provider
+ * collects - with several, the global wording is the only unambiguous one.
+ * Custom questions from any collecting provider are merged into their
+ * section by sortOrder.
+ */
+async function applyProviderAdjustments(sections: any[], providerIds: string[]): Promise<any[]> {
+  if (!providerIds.length) return sections;
+  const [overrides, customQs] = await Promise.all([
+    prisma.ipFormProviderOverride.findMany({ where: { providerId: { in: providerIds } } }),
+    prisma.ipFormQuestion.findMany({ where: { providerId: { in: providerIds }, isActive: true }, orderBy: { sortOrder: "asc" } }),
+  ]);
+  if (!overrides.length && !customQs.length) return sections;
+  const n = providerIds.length;
+  const hiddenCount = new Map<string, number>();
+  for (const o of overrides) {
+    if (!o.hidden) continue;
+    const k = `${o.targetType}:${o.targetId}`;
+    hiddenCount.set(k, (hiddenCount.get(k) || 0) + 1);
+  }
+  const single = n === 1 ? new Map(overrides.map((o) => [`${o.targetType}:${o.targetId}`, o])) : null;
+  const out: any[] = [];
+  for (const s of sections) {
+    if ((hiddenCount.get(`section:${s.id}`) || 0) >= n) continue;
+    let questions = (s.questions || []).filter((q: any) => (hiddenCount.get(`question:${q.id}`) || 0) < n);
+    if (single) {
+      questions = questions.map((q: any) => {
+        const o = single.get(`question:${q.id}`);
+        if (!o) return q;
+        return { ...q, label: o.label ?? q.label, helpText: o.helpText ?? q.helpText, required: o.required ?? q.required };
+      });
+    }
+    const custom = customQs.filter((q) => q.sectionId === s.id);
+    if (custom.length) questions = [...questions, ...custom].sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+    const sectionTitle = single?.get(`section:${s.id}`)?.label;
+    out.push({ ...s, title: sectionTitle || s.title, questions });
+  }
+  return out;
 }
 
 async function getOrCreateResponse(accountId: string) {
@@ -267,7 +320,7 @@ async function providerHasSurrogacyService(providerId: string): Promise<boolean>
  * currently flagged (legacy data / pre-toggle prompts), so existing surrogacy
  * parents keep seeing the full form.
  */
-async function accountProgramTypes(memberIds: string[]): Promise<string[]> {
+async function accountCollectingProviders(memberIds: string[]): Promise<{ id: string; requiresIdPhotocopy: boolean }[]> {
   const [sessions, bookings] = await Promise.all([
     prisma.aiChatSession.findMany({ where: { userId: { in: memberIds }, providerId: { not: null } }, select: { providerId: true } }),
     prisma.booking.findMany({ where: { parentUserId: { in: memberIds } }, select: { providerUser: { select: { providerId: true } } } }),
@@ -275,13 +328,17 @@ async function accountProgramTypes(memberIds: string[]): Promise<string[]> {
   const providerIds = new Set<string>();
   for (const s of sessions) if (s.providerId) providerIds.add(s.providerId);
   for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
-  if (!providerIds.size) return ["surrogacy"];
-  const collecting = await prisma.provider.findMany({
+  if (!providerIds.size) return [];
+  return prisma.provider.findMany({
     where: { id: { in: [...providerIds] }, collectsIntendedParentForm: true },
-    select: { id: true },
+    select: { id: true, requiresIdPhotocopy: true },
   });
+}
+
+async function accountProgramTypes(memberIds: string[], collecting?: { id: string }[]): Promise<string[]> {
+  const rows = collecting ?? (await accountCollectingProviders(memberIds));
   const types = new Set<string>();
-  for (const p of collecting) for (const t of await providerProgramTypes(p.id)) types.add(t);
+  for (const p of rows) for (const t of await providerProgramTypes(p.id)) types.add(t);
   return types.size ? [...types] : ["surrogacy"];
 }
 
@@ -292,21 +349,13 @@ function sectionAppliesToPrograms(section: { appliesTo?: string[] | null }, prog
   return tags.some((t) => programTypes.includes(t));
 }
 
-/** Whether any connected provider requires an ID photocopy. */
-async function accountRequiresIdPhotocopy(memberIds: string[]): Promise<boolean> {
-  const [sessions, bookings] = await Promise.all([
-    prisma.aiChatSession.findMany({ where: { userId: { in: memberIds }, providerId: { not: null } }, select: { providerId: true } }),
-    prisma.booking.findMany({ where: { parentUserId: { in: memberIds } }, select: { providerUser: { select: { providerId: true } } } }),
-  ]);
-  const providerIds = new Set<string>();
-  for (const s of sessions) if (s.providerId) providerIds.add(s.providerId);
-  for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
-  if (!providerIds.size) return false;
-  const req = await prisma.provider.findFirst({
-    where: { id: { in: [...providerIds] }, collectsIntendedParentForm: true, requiresIdPhotocopy: true },
-    select: { id: true },
-  });
-  return !!req;
+/** Sections + adjustments the account actually fills, given its collecting providers. */
+async function effectiveSectionsForAccount(memberIds: string[]): Promise<{ sections: any[]; programTypes: string[]; collecting: { id: string; requiresIdPhotocopy: boolean }[] }> {
+  const collecting = await accountCollectingProviders(memberIds);
+  const programTypes = await accountProgramTypes(memberIds, collecting);
+  let sections = (await loadIpFormTemplate()).filter((s) => sectionAppliesToPrograms(s as any, programTypes));
+  sections = await applyProviderAdjustments(sections, collecting.map((c) => c.id));
+  return { sections, programTypes, collecting };
 }
 
 /** Full legal names from answers (fallback: account member names). */
@@ -355,16 +404,16 @@ ipFormRouter.get("/api/ip-form", requireAuth, async (req, res) => {
   const user = (req as any).user;
   try {
     const { accountId, memberIds } = await accountOf(user.id);
-    const [allSections, rawResponse] = await Promise.all([loadIpFormTemplate(), getOrCreateResponse(accountId)]);
+    const rawResponse = await getOrCreateResponse(accountId);
     // Always open with two-vs-solo reflecting IP1's current marital status
     // (unless manually overridden), so the inference is right from load.
     const response = await reconcileHasSecondParent(rawResponse);
     const { answers, signatures } = await loadResponseBundle(response.id);
     // Show only the sections the account's connected providers actually need
-    // (surrogacy agency -> full form; IVF clinic -> basic info + ID/photocopy).
-    const programTypes = await accountProgramTypes(memberIds);
-    const sections = allSections.filter((s) => sectionAppliesToPrograms(s as any, programTypes));
-    const idPhotocopyRequired = await accountRequiresIdPhotocopy(memberIds);
+    // (surrogacy agency -> full form; IVF clinic -> basic info + ID/photocopy),
+    // with each collecting provider's adjustments (hidden/custom questions).
+    const { sections, programTypes, collecting } = await effectiveSectionsForAccount(memberIds);
+    const idPhotocopyRequired = collecting.some((c) => c.requiresIdPhotocopy);
     const guestToken = await prisma.ipFormGuestToken.findFirst({
       where: { responseId: response.id, revokedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" },
@@ -499,7 +548,8 @@ ipFormRouter.patch("/api/ip-form/answers", requireAuth, async (req, res) => {
     if (!items.length) return res.status(400).json({ message: "answers array required" });
     if (items.length > 100) return res.status(400).json({ message: "Too many answers in one batch" });
 
-    const sections = await loadIpFormTemplate();
+    // Include provider custom questions so their answers upsert too.
+    const sections = await loadIpFormTemplate(false, true);
     const questionMeta = new Map<string, { section: any; question: any }>();
     for (const s of sections) for (const q of s.questions) questionMeta.set(q.id, { section: s, question: q });
 
@@ -623,10 +673,10 @@ ipFormRouter.post("/api/ip-form/submit", requireAuth, async (req, res) => {
     // have changed right before submit).
     const effective = await reconcileHasSecondParent(response);
     // Validate only the sections the parent actually fills (their providers'
-    // program types). The ID photocopy is a supplemental doc, never a submit
-    // blocker - it's requested separately when a provider needs it.
-    const programTypes = await accountProgramTypes(memberIds);
-    const sections = (await loadIpFormTemplate()).filter((s) => sectionAppliesToPrograms(s as any, programTypes));
+    // program types + per-provider adjustments). The ID photocopy is a
+    // supplemental doc, never a submit blocker - it's requested separately
+    // when a provider needs it.
+    const { sections } = await effectiveSectionsForAccount(memberIds);
     const { answers, signatures } = await loadResponseBundle(response.id);
     const missing = findMissingRequired(sections, answers as any, effective.hasSecondParent);
     const missingSignatures: number[] = [];
@@ -688,7 +738,15 @@ ipFormRouter.get("/api/ip-form/guest/:token", guestThrottle, async (req, res) =>
   try {
     const tokenRow = await validGuestToken(String(req.params.token));
     if (!tokenRow) return res.status(404).json({ message: "This link is no longer valid" });
-    const sections = await loadIpFormTemplate();
+    // Guests see the same effective form as the account (program filter +
+    // per-provider adjustments), resolved from the response's account.
+    const guestMemberIds = (
+      await prisma.user.findMany({
+        where: { OR: [{ parentAccountId: tokenRow.response.parentAccountId }, { id: tokenRow.response.parentAccountId }] },
+        select: { id: true },
+      })
+    ).map((u) => u.id);
+    const { sections } = await effectiveSectionsForAccount(guestMemberIds);
     const { answers, signatures } = await loadResponseBundle(tokenRow.responseId);
     res.json({
       sections,
@@ -718,7 +776,7 @@ ipFormRouter.patch("/api/ip-form/guest/:token/answers", guestThrottle, async (re
 
     // A submitted form only accepts supplemental docs (the ID photocopy file).
     const submitted = tokenRow.response.status === "SUBMITTED";
-    const sections = await loadIpFormTemplate();
+    const sections = await loadIpFormTemplate(false, true);
     const questionMeta = new Map<string, { section: any; question: any }>();
     for (const s of sections) for (const q of s.questions) questionMeta.set(q.id, { section: s, question: q });
 
@@ -1018,10 +1076,11 @@ ipFormRouter.get("/api/admin/ip-form-template", requireAuth, requireGostorkAdmin
 
 ipFormRouter.post("/api/admin/ip-form-sections", requireAuth, requireGostorkAdmin, async (req, res) => {
   try {
-    const { title, description, perParent, excludeFromSurrogatePdf } = req.body || {};
+    const { title, description, perParent, excludeFromSurrogatePdf, appliesTo } = req.body || {};
     if (!title?.trim()) return res.status(400).json({ message: "title required" });
     const key = `custom_${crypto.randomBytes(4).toString("hex")}`;
     const max = await prisma.ipFormSection.aggregate({ _max: { sortOrder: true } });
+    const KNOWN = ["surrogacy", "ivf"];
     const section = await prisma.ipFormSection.create({
       data: {
         key,
@@ -1029,6 +1088,8 @@ ipFormRouter.post("/api/admin/ip-form-sections", requireAuth, requireGostorkAdmi
         description: description?.trim() || null,
         perParent: !!perParent,
         excludeFromSurrogatePdf: !!excludeFromSurrogatePdf,
+        // Sections added from a program tab start scoped to that program.
+        appliesTo: Array.isArray(appliesTo) ? [...new Set(appliesTo.filter((t: any) => typeof t === "string" && KNOWN.includes(t)))] : [],
         sortOrder: (max._max.sortOrder || 0) + 10,
       },
     });
@@ -1110,6 +1171,172 @@ ipFormRouter.put("/api/admin/ip-form-questions/:id", requireAuth, requireGostork
     const question = await prisma.ipFormQuestion.update({ where: { id: String(req.params.id) }, data });
     res.json({ question });
   } catch (e: any) {
+    res.status(500).json({ message: "Failed to update question" });
+  }
+});
+
+// ─── Per-provider Parent Form configuration ──────────────────────────────────
+// GoStork admins manage any provider (admin provider edit page > Parent Form
+// tab); a provider manages its own ONLY when Provider.canEditParentForm is on
+// (the GoStork-controlled toggle). Reads are open to the provider itself so
+// the settings tab can render read-only.
+
+const VALID_WIDGETS = ["text", "textarea", "yes_no", "dropdown", "date", "address", "phone", "number", "photos", "file"];
+
+async function providerFormAccess(req: Request, res: Response, write: boolean): Promise<{ providerId: string; provider: any } | null> {
+  const user = (req as any).user;
+  const providerId = String(req.params.providerId || "");
+  const provider = await prisma.provider.findUnique({
+    where: { id: providerId },
+    select: { id: true, name: true, collectsIntendedParentForm: true, requiresIdPhotocopy: true, canEditParentForm: true },
+  });
+  if (!provider) {
+    res.status(404).json({ message: "Provider not found" });
+    return null;
+  }
+  const admin = rolesOf(user).includes("GOSTORK_ADMIN");
+  const own = user.providerId === providerId;
+  if (!admin && !own) {
+    res.status(403).json({ message: "Forbidden" });
+    return null;
+  }
+  if (write && !admin && !provider.canEditParentForm) {
+    res.status(403).json({ message: "GoStork has not enabled Parent Form editing for your organization" });
+    return null;
+  }
+  return { providerId, provider };
+}
+
+ipFormRouter.get("/api/ip-form/provider-config/:providerId", requireAuth, async (req, res) => {
+  try {
+    const access = await providerFormAccess(req, res, false);
+    if (!access) return;
+    const user = (req as any).user;
+    const admin = rolesOf(user).includes("GOSTORK_ADMIN");
+    const programTypes = await providerProgramTypes(access.providerId);
+    // The provider's applicable slice of the global template (active only).
+    let sections = await loadIpFormTemplate();
+    if (programTypes.length) sections = sections.filter((s) => sectionAppliesToPrograms(s as any, programTypes));
+    const [overrides, customQuestions] = await Promise.all([
+      prisma.ipFormProviderOverride.findMany({ where: { providerId: access.providerId } }),
+      prisma.ipFormQuestion.findMany({ where: { providerId: access.providerId, isActive: true }, orderBy: { sortOrder: "asc" } }),
+    ]);
+    res.json({
+      provider: access.provider,
+      programTypes,
+      sections,
+      overrides,
+      customQuestions,
+      canEdit: admin || !!access.provider.canEditParentForm,
+      isAdmin: admin,
+    });
+  } catch (e: any) {
+    console.error(`[ip-form] provider-config GET failed: ${e?.message}`);
+    res.status(500).json({ message: "Failed to load Parent Form configuration" });
+  }
+});
+
+/**
+ * Upsert one override. Body: { targetType, targetId, hidden?, label?,
+ * helpText?, required? }. All-default payloads delete the row (back to the
+ * global template).
+ */
+ipFormRouter.put("/api/ip-form/provider-config/:providerId/override", requireAuth, async (req, res) => {
+  try {
+    const access = await providerFormAccess(req, res, true);
+    if (!access) return;
+    const { targetType, targetId } = req.body || {};
+    if (!["section", "question"].includes(targetType) || !targetId) {
+      return res.status(400).json({ message: "targetType (section|question) and targetId required" });
+    }
+    // Overrides only make sense for GLOBAL template rows - a provider's own
+    // custom question is edited directly via the questions endpoints.
+    if (targetType === "section") {
+      const s = await prisma.ipFormSection.findUnique({ where: { id: String(targetId) }, select: { id: true } });
+      if (!s) return res.status(404).json({ message: "Section not found" });
+    } else {
+      const q = await prisma.ipFormQuestion.findUnique({ where: { id: String(targetId) }, select: { id: true, providerId: true } });
+      if (!q) return res.status(404).json({ message: "Question not found" });
+      if (q.providerId) return res.status(400).json({ message: "Custom questions are edited directly, not via overrides" });
+    }
+    const hidden = !!req.body?.hidden;
+    const label = typeof req.body?.label === "string" && req.body.label.trim() ? req.body.label.trim() : null;
+    const helpText = typeof req.body?.helpText === "string" && req.body.helpText.trim() ? req.body.helpText.trim() : null;
+    const required = typeof req.body?.required === "boolean" ? req.body.required : null;
+    if (!hidden && label === null && helpText === null && required === null) {
+      await prisma.ipFormProviderOverride.deleteMany({
+        where: { providerId: access.providerId, targetType, targetId: String(targetId) },
+      });
+      return res.json({ cleared: true });
+    }
+    const override = await prisma.ipFormProviderOverride.upsert({
+      where: { providerId_targetType_targetId: { providerId: access.providerId, targetType, targetId: String(targetId) } },
+      create: { providerId: access.providerId, targetType, targetId: String(targetId), hidden, label, helpText, required },
+      update: { hidden, label, helpText, required },
+    });
+    res.json({ override });
+  } catch (e: any) {
+    console.error(`[ip-form] provider-config override failed: ${e?.message}`);
+    res.status(500).json({ message: "Failed to save adjustment" });
+  }
+});
+
+/** Add a provider-specific custom question to a global section. */
+ipFormRouter.post("/api/ip-form/provider-config/:providerId/questions", requireAuth, async (req, res) => {
+  try {
+    const access = await providerFormAccess(req, res, true);
+    if (!access) return;
+    const { sectionId, label, helpText, widget, options, required, perParent } = req.body || {};
+    if (!sectionId || !label?.trim() || !widget) return res.status(400).json({ message: "sectionId, label and widget required" });
+    if (!VALID_WIDGETS.includes(widget)) return res.status(400).json({ message: "Invalid widget" });
+    const section = await prisma.ipFormSection.findUnique({ where: { id: String(sectionId) }, select: { id: true } });
+    if (!section) return res.status(404).json({ message: "Section not found" });
+    const key = `prov_${crypto.randomBytes(5).toString("hex")}`;
+    const max = await prisma.ipFormQuestion.aggregate({ where: { sectionId: String(sectionId) }, _max: { sortOrder: true } });
+    const question = await prisma.ipFormQuestion.create({
+      data: {
+        sectionId: String(sectionId),
+        providerId: access.providerId,
+        key,
+        label: label.trim(),
+        helpText: helpText?.trim() || null,
+        widget,
+        options: Array.isArray(options) && options.length ? options : undefined,
+        required: !!required,
+        perParent: !!perParent,
+        sortOrder: (max._max.sortOrder || 0) + 10,
+      },
+    });
+    res.json({ question });
+  } catch (e: any) {
+    console.error(`[ip-form] provider-config question create failed: ${e?.message}`);
+    res.status(500).json({ message: "Failed to add question" });
+  }
+});
+
+/** Edit / deactivate a provider's own custom question. */
+ipFormRouter.put("/api/ip-form/provider-config/:providerId/questions/:questionId", requireAuth, async (req, res) => {
+  try {
+    const access = await providerFormAccess(req, res, true);
+    if (!access) return;
+    const existing = await prisma.ipFormQuestion.findUnique({ where: { id: String(req.params.questionId) }, select: { id: true, providerId: true } });
+    if (!existing || existing.providerId !== access.providerId) return res.status(404).json({ message: "Question not found" });
+    const { label, helpText, widget, options, required, perParent, isActive } = req.body || {};
+    const data: any = {};
+    if (typeof label === "string" && label.trim()) data.label = label.trim();
+    if (helpText !== undefined) data.helpText = helpText?.trim() || null;
+    if (typeof widget === "string") {
+      if (!VALID_WIDGETS.includes(widget)) return res.status(400).json({ message: "Invalid widget" });
+      data.widget = widget;
+    }
+    if (options !== undefined) data.options = Array.isArray(options) && options.length ? options : null;
+    if (typeof required === "boolean") data.required = required;
+    if (typeof perParent === "boolean") data.perParent = perParent;
+    if (typeof isActive === "boolean") data.isActive = isActive;
+    const question = await prisma.ipFormQuestion.update({ where: { id: existing.id }, data });
+    res.json({ question });
+  } catch (e: any) {
+    console.error(`[ip-form] provider-config question update failed: ${e?.message}`);
     res.status(500).json({ message: "Failed to update question" });
   }
 });

@@ -9,6 +9,7 @@
  * their questions. Inline editing, no dialogs.
  */
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -76,10 +77,23 @@ interface AdminSection {
   questions: AdminQuestion[];
 }
 
+const PROGRAMS = [
+  { value: "surrogacy", label: "Surrogacy Agencies", blurb: "The full parent profile form surrogacy agencies send to surrogate candidates." },
+  { value: "ivf", label: "IVF Clinics", blurb: "The shorter intake IVF clinics receive (basic info, ID, clinic details)." },
+] as const;
+
 export default function AdminIpFormTemplatePage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // Which of the two forms is being edited - URL param so back returns here.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const program: "surrogacy" | "ivf" = searchParams.get("program") === "ivf" ? "ivf" : "surrogacy";
+  const setProgram = (p: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("program", p);
+    setSearchParams(next, { replace: true });
+  };
 
   const roles: string[] = (user as any)?.roles || [];
   const isAdmin = roles.includes("GOSTORK_ADMIN");
@@ -88,7 +102,9 @@ export default function AdminIpFormTemplatePage() {
     queryKey: ["/api/admin/ip-form-template"],
     enabled: isAdmin,
   });
-  const sections = data?.sections || [];
+  const allSections = data?.sections || [];
+  // The section list for the selected form: core (all programs) + this program's.
+  const sections = allSections.filter((s) => !(s.appliesTo || []).length || (s.appliesTo || []).includes(program));
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/admin/ip-form-template"] });
 
@@ -99,22 +115,29 @@ export default function AdminIpFormTemplatePage() {
   }
 
   const moveSection = async (index: number, dir: -1 | 1) => {
-    const ids = sections.map((s) => s.id);
+    // Swap within the visible (program-filtered) list, but send the FULL
+    // global order so the other program's sections keep their positions.
     const target = index + dir;
-    if (target < 0 || target >= ids.length) return;
-    [ids[index], ids[target]] = [ids[target], ids[index]];
+    if (target < 0 || target >= sections.length) return;
+    const ids = allSections.map((s) => s.id);
+    const a = ids.indexOf(sections[index].id);
+    const b = ids.indexOf(sections[target].id);
+    [ids[a], ids[b]] = [ids[b], ids[a]];
     await apiRequest("PUT", "/api/admin/ip-form-template/reorder", { sectionIds: ids });
     refresh();
   };
 
   const addSection = async () => {
     try {
-      await apiRequest("POST", "/api/admin/ip-form-sections", { title: "New Section" });
+      // New sections start scoped to the form being edited.
+      await apiRequest("POST", "/api/admin/ip-form-sections", { title: "New Section", appliesTo: [program] });
       refresh();
     } catch (e: any) {
       toast({ title: "Could not add section", description: e?.message, variant: "destructive" });
     }
   };
+
+  const activeProgram = PROGRAMS.find((p) => p.value === program)!;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-4 pb-24 md:pb-8" data-testid="admin-ip-form-template-page">
@@ -123,16 +146,37 @@ export default function AdminIpFormTemplatePage() {
           <ClipboardList className="w-5 h-5" />
         </div>
         <div className="flex-1">
-          <h1 className="text-2xl font-heading font-bold">Intended Parent Form Template</h1>
+          <h1 className="text-2xl font-heading font-bold">Intended Parent Form Templates</h1>
           <p className="t-helper">
-            The master template every family fills. Changes apply immediately to new answers; deactivating keeps historical answers
-            intact. "Hidden from surrogate PDF" controls what the surrogate-safe download strips.
+            The master templates families fill. Changes apply immediately to new answers; deactivating keeps historical answers
+            intact. "Hidden from surrogate PDF" controls what the surrogate-safe download strips. Per-provider adjustments live in
+            each provider's Parent Form tab.
           </p>
         </div>
         <Button onClick={addSection} data-testid="ipform-admin-add-section">
           <Plus className="w-4 h-4 mr-1.5" /> Add section
         </Button>
       </div>
+
+      {/* One template per program: surrogacy agencies vs IVF clinics. */}
+      <div className="flex items-center gap-2" data-testid="ipform-program-tabs">
+        {PROGRAMS.map((p) => (
+          <button
+            key={p.value}
+            type="button"
+            onClick={() => setProgram(p.value)}
+            data-testid={`ipform-program-tab-${p.value}`}
+            className={`px-4 py-2 rounded-[var(--radius)] text-sm font-ui border transition-colors ${
+              program === p.value
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-secondary text-foreground border-border hover:bg-accent/20"
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <p className="t-helper">{activeProgram.blurb} Sections marked "all programs" appear on both forms.</p>
 
       {isLoading ? (
         <div className="flex justify-center py-16">

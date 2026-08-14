@@ -70,6 +70,10 @@ model Provider {
   // download it), and does it require a photocopy of each parent's ID document.
   collectsIntendedParentForm            Boolean                     @default(false)
   requiresIdPhotocopy                   Boolean                     @default(false)
+  // GoStork-controlled: may this provider edit its own Parent Form
+  // adjustments (per-provider overrides + custom questions)? Toggled only by
+  // GoStork admins from the admin provider Parent Form tab.
+  canEditParentForm                     Boolean                     @default(false)
   biometricMatchingAuthorizedAt         DateTime?
   // Legal Services Phase 1: states the firm is licensed in (USPS codes,
   // e.g. ["CA","NY"]). Drives Stage 3a state-match check for LAWYER
@@ -3333,6 +3337,10 @@ model IpFormQuestion {
   // equals conditionalTriggerValue (covers every "If yes, please explain").
   conditionalOnQuestionId String?
   conditionalTriggerValue String?
+  // Provider-specific custom question: null = global template question; set =
+  // asked only when this provider collects the family's form, and printed
+  // only on this provider's PDF.
+  providerId              String?
   sortOrder               Int      @default(0)
   isActive                Boolean  @default(true)
   createdAt               DateTime @default(now())
@@ -3342,6 +3350,27 @@ model IpFormQuestion {
   answers IpFormAnswer[]
 
   @@index([sectionId, sortOrder])
+  @@index([providerId])
+}
+
+// Per-provider adjustments to the global Parent Form template: hide a
+// section/question, or override a question's label/help/required for this
+// provider's parents + PDF. Edited by GoStork admins (admin provider Parent
+// Form tab) and by the provider itself when Provider.canEditParentForm is on.
+model IpFormProviderOverride {
+  id         String   @id @default(uuid())
+  providerId String
+  targetType String // "section" | "question"
+  targetId   String // IpFormSection.id or IpFormQuestion.id
+  hidden     Boolean  @default(false)
+  label      String? // question label / section title override
+  helpText   String?
+  required   Boolean? // null = inherit the template's required flag
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([providerId, targetType, targetId])
+  @@index([providerId])
 }
 
 // One per parent account (FK-by-convention like JourneyEvent).

@@ -28,7 +28,9 @@ import { ProviderPayoutsTab } from "@/components/provider-payouts-tab";
 import { SponsorshipDashboard } from "@/components/sponsorship/sponsorship-dashboard";
 import { SponsorshipPlanManager } from "@/components/sponsorship/sponsorship-plan-manager";
 import { ProviderLegalIdentityTab } from "@/components/provider-legal-identity-tab";
+import ProviderParentFormTab from "@/components/ip-form/provider-form-tab";
 import { CalendarSettings as CalendarSettingsComponent } from "@/components/calendar/calendar-settings";
+import { AdminCalendarTable } from "@/components/calendar/admin-calendar-table";
 import BrandSettingsTab, { BrandSettingsForm } from "@/pages/admin-brand-settings-page";
 import AdminConciergePage from "@/pages/admin-concierge-page";
 import AdminIpFormTemplatePage from "@/pages/admin-ip-form-template-page";
@@ -76,11 +78,11 @@ const PARTNER_GENDER_OPTIONS = [
 const allTabs = [
   { to: '/account', label: 'My Account', icon: User, end: true, roles: null },
   { to: '/account/company', label: 'Company', icon: Building2, roles: 'provider' as const },
-  { to: '/account/documents', label: 'Documents', icon: FileText, roles: 'provider' as const },
+  { to: '/account/documents', label: 'Agreements', icon: FileText, roles: 'provider' as const },
   { to: '/account/team', label: 'Team', icon: Users, roles: 'provider' as const },
   { to: '/account/members', label: 'Members', icon: Users, roles: 'parent' as const },
   { to: '/account/calendar', label: 'Calendar', icon: Calendar, roles: null },
-  { to: '/account/legal-identity', label: 'Legal Identity', icon: FileSignature, roles: 'provider' as const },
+  { to: '/account/legal-identity', label: 'Legal', icon: FileSignature, roles: 'provider' as const },
   { to: '/account/billing', label: 'Billing', icon: DollarSign, roles: 'billing' as const },
   { to: '/account/payouts', label: 'Payouts', icon: Wallet, roles: 'billing' as const },
   { to: '/account/sponsorship', label: 'Sponsorship', icon: Sparkles, roles: 'sponsorship' as const },
@@ -90,6 +92,10 @@ const allTabs = [
   { to: '/account/playbooks', label: 'Playbooks', icon: BookOpenCheck, roles: 'provider' as const },
   { to: '/account/automation', label: 'Automation', icon: RefreshCw, roles: 'provider' as const },
   { to: '/account/ip-form-template', label: 'Parent Form', icon: ClipboardList, roles: 'admin' as const },
+  // Provider self-service view of THEIR Parent Form (read-only unless GoStork
+  // enabled canEditParentForm) - admins manage per-provider forms from the
+  // admin provider edit page instead.
+  { to: '/account/parent-form', label: 'Parent Form', icon: ClipboardList, roles: 'provider-form' as const },
   { to: '/account/scrapers', label: 'Scrapers', icon: RefreshCw, roles: 'admin' as const },
   { to: '/account/test-runner', label: 'Test Runner', icon: FlaskConical, roles: 'admin' as const },
 ];
@@ -1693,6 +1699,13 @@ function TeamTab() {
 
 
 function CalendarTab() {
+  const { user } = useAuth();
+  const roles: string[] = (user as any)?.roles || [];
+  // GoStork staff manage everyone's calendars from one table (their own row
+  // included - clicking it opens their own configuration).
+  if (roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_CONCIERGE")) {
+    return <AdminCalendarTable />;
+  }
   return <CalendarSettingsComponent />;
 }
 
@@ -1761,7 +1774,7 @@ export default function AccountPage() {
 
   const providerTabOrder = [
     '/account', '/account/company', '/account/team', '/account/members',
-    '/account/calendar', '/account/costs', '/account/documents',
+    '/account/calendar', '/account/costs', '/account/documents', '/account/parent-form',
     '/account/egg-donors', '/account/surrogates', '/account/sperm-donors', '/account/doctors',
     '/account/knowledge', '/account/concierge', '/account/playbooks', '/account/automation', '/account/legal-identity', '/account/billing', '/account/payouts', '/account/branding', '/account/scrapers', '/account/test-runner',
   ];
@@ -1783,6 +1796,7 @@ export default function AccountPage() {
     if (tab.roles === 'knowledge') return isProvider && !isAdmin;
     if (tab.roles === 'concierge') return isAdmin || isParent || isProvider;
     if (tab.roles === 'admin') return isAdmin;
+    if (tab.roles === 'provider-form') return isProvider && !isAdmin && !!providerId;
     return true;
   }).sort((a, b) => {
     const ai = providerTabOrder.indexOf(a.to);
@@ -1912,6 +1926,9 @@ export default function AccountPage() {
         )}
         {isAdmin && (
           <Route path="ip-form-template" element={<AdminIpFormTemplatePage />} />
+        )}
+        {isProvider && !isAdmin && providerId && (
+          <Route path="parent-form" element={<ProviderParentFormTab providerId={providerId} mode="provider" />} />
         )}
         {isAdmin && (
           <Route path="scrapers/*" element={<ScrapersSummaryPage />} />

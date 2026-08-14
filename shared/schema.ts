@@ -212,6 +212,9 @@ export const insertProviderSchema = z.object({
   // Intended Parent Form collection + ID photocopy requirement
   collectsIntendedParentForm: z.boolean().optional(),
   requiresIdPhotocopy: z.boolean().optional(),
+  // GoStork-controlled: provider may edit its own Parent Form adjustments.
+  // Stripped for non-admin callers in the provider update controller.
+  canEditParentForm: z.boolean().optional(),
   // IVF Clinic matching requirements
   ivfTwinsAllowed: z.boolean().optional(),
   ivfGenderSelectionAllowed: z.boolean().nullable().optional(),

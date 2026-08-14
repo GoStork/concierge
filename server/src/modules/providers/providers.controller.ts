@@ -1487,6 +1487,13 @@ export class ProvidersController {
     }
     try {
       const input = insertProviderSchema.partial().parse(body);
+      // Parent Form governance fields are GoStork-only: a provider must not
+      // grant itself edit rights or flip its form-collection flags.
+      if (!isAdmin) {
+        delete (input as any).canEditParentForm;
+        delete (input as any).collectsIntendedParentForm;
+        delete (input as any).requiresIdPhotocopy;
+      }
       // Biometric-matching authorization transition: stamp the attestation time
       // and (re)index or remove this agency's donor/surrogate faces.
       let bioTransition: boolean | null = null;
