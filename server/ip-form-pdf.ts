@@ -175,6 +175,11 @@ export async function buildIpFormPdfForProvider(opts: {
   if (opts.programTypes && opts.programTypes.length) {
     const pt = opts.programTypes;
     sections = sections.filter((s) => !(s.appliesTo || []).length || (s.appliesTo || []).some((t) => pt.includes(t)));
+    // IVF clinic download: shared sections' default copy mentions surrogates -
+    // print the surrogate-free descriptionIvf variant instead.
+    if (pt.includes("ivf") && !pt.includes("surrogacy")) {
+      sections = sections.map((s: any) => (s.descriptionIvf ? { ...s, description: s.descriptionIvf } : s));
+    }
   }
   // Per-provider Parent Form adjustments: drop hidden sections/questions,
   // apply label/help overrides, merge this provider's custom questions.

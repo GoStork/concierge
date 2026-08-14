@@ -115,7 +115,7 @@ model Provider {
   ivfSurrogatePreeclampsia              Boolean?
   ivfSurrogateMentalHealthHistory       String?
   // Surrogacy Agency matching requirements
-  partnerProviderIds                    Json? // Array of linked IVF clinic provider IDs (for international surrogacy programs)
+  partnerProviderIds                    Json? // Array of linked partner provider IDs. On a surrogacy agency: its partner IVF clinics (bundled costs + two-call booking, domestic or international). On an IVF clinic: the surrogacy agencies it works with EXCLUSIVELY (the AI only offers these to that clinic's parents).
   surrogacyCitizensNotAllowed           Json?
   surrogacyTwinsAllowed                 Boolean                     @default(false)
   surrogacyStayAfterBirthMonths         Int?
@@ -3300,6 +3300,10 @@ model IpFormSection {
   key                     String   @unique // stable: "profile" | "clinic" | "embryo" | "personal_info" | "expectations" | "delivery" | "letter" | "photos" | "private" | "acknowledgment"
   title                   String
   description             String? // e.g. private section: "This information will NOT be shared with the surrogate."
+  // Copy variant for IVF-only contexts (family has no surrogacy program /
+  // IVF clinic PDF): shared sections' default copy mentions surrogates,
+  // which is wrong on a clinic-only form. Null = use description.
+  descriptionIvf          String?
   sortOrder               Int      @default(0)
   // Whole section repeats once per parent (personal_info, acknowledgment).
   perParent               Boolean  @default(false)

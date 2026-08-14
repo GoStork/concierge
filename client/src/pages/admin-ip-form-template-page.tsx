@@ -69,6 +69,7 @@ interface AdminSection {
   key: string;
   title: string;
   description: string | null;
+  descriptionIvf: string | null;
   perParent: boolean;
   excludeFromSurrogatePdf: boolean;
   appliesTo: string[];
@@ -187,6 +188,7 @@ export default function AdminIpFormTemplatePage() {
           <SectionEditor
             key={section.id}
             section={section}
+            program={program}
             allSections={sections}
             expanded={!!expanded[section.id]}
             onToggle={() => setExpanded((p) => ({ ...p, [section.id]: !p[section.id] }))}
@@ -203,6 +205,7 @@ export default function AdminIpFormTemplatePage() {
 
 function SectionEditor({
   section,
+  program,
   allSections,
   expanded,
   onToggle,
@@ -212,6 +215,7 @@ function SectionEditor({
   refresh,
 }: {
   section: AdminSection;
+  program: "surrogacy" | "ivf";
   allSections: AdminSection[];
   expanded: boolean;
   onToggle: () => void;
@@ -223,9 +227,18 @@ function SectionEditor({
   const { toast } = useToast();
   const [title, setTitle] = useState(section.title);
   const [description, setDescription] = useState(section.description || "");
+  const [descriptionIvf, setDescriptionIvf] = useState(section.descriptionIvf || "");
   const [saving, setSaving] = useState(false);
 
-  const dirty = title !== section.title || description !== (section.description || "");
+  // Shared sections (all programs) carry an optional IVF copy variant so the
+  // clinic form never mentions surrogates. Shown while editing the IVF form.
+  const isShared = !(section.appliesTo || []).length;
+  const showIvfCopy = isShared && program === "ivf";
+
+  const dirty =
+    title !== section.title ||
+    description !== (section.description || "") ||
+    descriptionIvf !== (section.descriptionIvf || "");
 
   const save = async (patch: any) => {
     setSaving(true);
@@ -303,6 +316,14 @@ function SectionEditor({
               <Label className="t-form-label-sm">Description (shown to parents; acknowledgment legal text lives here - {"{{AGENCY_NAME}}"} is replaced per agency)</Label>
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
             </div>
+            {showIvfCopy && (
+              <div className="space-y-1">
+                <Label className="t-form-label-sm">
+                  IVF clinic copy - shown instead of the description above on the IVF clinic form and PDF (no surrogate wording). Blank = same text as above.
+                </Label>
+                <Textarea value={descriptionIvf} onChange={(e) => setDescriptionIvf(e.target.value)} rows={2} data-testid={`ipform-ivf-description-${section.key}`} />
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-5">
               <label className="flex items-center gap-2 text-sm">
                 <Switch checked={section.perParent} onCheckedChange={(v) => save({ perParent: v })} /> Repeats per parent
@@ -311,7 +332,7 @@ function SectionEditor({
                 <Switch checked={section.excludeFromSurrogatePdf} onCheckedChange={(v) => save({ excludeFromSurrogatePdf: v })} /> Hidden from surrogate PDF
               </label>
               {dirty && (
-                <Button size="sm" disabled={saving} onClick={() => save({ title, description })}>
+                <Button size="sm" disabled={saving} onClick={() => save({ title, description, descriptionIvf })}>
                   {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />} Save
                 </Button>
               )}

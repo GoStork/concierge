@@ -37,6 +37,8 @@ export interface DefaultIpFormSection {
   key: string;
   title: string;
   description?: string;
+  /** Surrogate-free copy variant used in IVF-only contexts (clinic form/PDF). */
+  descriptionIvf?: string;
   perParent?: boolean;
   excludeFromSurrogatePdf?: boolean;
   /** Program types this section applies to. Empty/undefined = core (all parents). */
@@ -61,6 +63,10 @@ export function maritalImpliesTwoParents(value: unknown): boolean {
 /** Legal text for the acknowledgment section. {{AGENCY_NAME}} is replaced with the downloading agency's name at PDF render time. */
 export const IP_FORM_ACKNOWLEDGMENT_TEXT =
   "By submitting this questionnaire, I certify the information I provided on and in connection with this form is true and correct to the best of my knowledge. I am giving {{AGENCY_NAME}} permission to share this information with potential surrogates for the purpose of matching. I also understand that any false statements or deliberate omissions on this form may subject me to legal actions for fraudulent misrepresentation.";
+
+/** IVF-clinic variant: no surrogate/matching language - the form only goes to the clinic. */
+export const IP_FORM_ACKNOWLEDGMENT_TEXT_IVF =
+  "By submitting this questionnaire, I certify the information I provided on and in connection with this form is true and correct to the best of my knowledge. I am giving {{AGENCY_NAME}} permission to use this information in connection with my care and treatment planning. I also understand that any false statements or deliberate omissions on this form may subject me to legal actions for fraudulent misrepresentation.";
 
 export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
   return [
@@ -307,6 +313,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
       key: "private",
       title: "Private Information",
       description: "This information will NOT be shared with the surrogate.",
+      descriptionIvf: "This information is private and will be shared only with your fertility clinic.",
       excludeFromSurrogatePdf: true,
       questions: [
         // Per-parent ID block
@@ -377,6 +384,7 @@ export function getDefaultIpFormTemplate(): DefaultIpFormSection[] {
       key: "acknowledgment",
       title: "Acknowledgment and Understanding",
       description: IP_FORM_ACKNOWLEDGMENT_TEXT,
+      descriptionIvf: IP_FORM_ACKNOWLEDGMENT_TEXT_IVF,
       perParent: true,
       // Signatures + legal certification are agency records, not part of the
       // surrogate-facing packet.
@@ -411,6 +419,7 @@ export async function ensureIpFormTemplateSeeded(): Promise<void> {
             key: def.key,
             title: def.title,
             description: def.description || null,
+            descriptionIvf: def.descriptionIvf || null,
             sortOrder: (s + 1) * 10,
             perParent: !!def.perParent,
             excludeFromSurrogatePdf: !!def.excludeFromSurrogatePdf,

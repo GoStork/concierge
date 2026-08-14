@@ -349,12 +349,26 @@ function sectionAppliesToPrograms(section: { appliesTo?: string[] | null }, prog
   return tags.some((t) => programTypes.includes(t));
 }
 
+/**
+ * IVF-only contexts (no surrogacy program in play) get each section's
+ * descriptionIvf copy - the shared default wording mentions surrogates,
+ * which must never appear on a clinic-only form or PDF.
+ */
+export function swapIvfDescriptions<T extends { description?: string | null; descriptionIvf?: string | null }>(
+  sections: T[],
+  programTypes: string[] | null | undefined,
+): T[] {
+  if (!programTypes || !programTypes.includes("ivf") || programTypes.includes("surrogacy")) return sections;
+  return sections.map((s) => (s.descriptionIvf ? { ...s, description: s.descriptionIvf } : s));
+}
+
 /** Sections + adjustments the account actually fills, given its collecting providers. */
 async function effectiveSectionsForAccount(memberIds: string[]): Promise<{ sections: any[]; programTypes: string[]; collecting: { id: string; requiresIdPhotocopy: boolean }[] }> {
   const collecting = await accountCollectingProviders(memberIds);
   const programTypes = await accountProgramTypes(memberIds, collecting);
   let sections = (await loadIpFormTemplate()).filter((s) => sectionAppliesToPrograms(s as any, programTypes));
   sections = await applyProviderAdjustments(sections, collecting.map((c) => c.id));
+  sections = swapIvfDescriptions(sections, programTypes);
   return { sections, programTypes, collecting };
 }
 
@@ -1101,10 +1115,11 @@ ipFormRouter.post("/api/admin/ip-form-sections", requireAuth, requireGostorkAdmi
 
 ipFormRouter.put("/api/admin/ip-form-sections/:id", requireAuth, requireGostorkAdmin, async (req, res) => {
   try {
-    const { title, description, perParent, excludeFromSurrogatePdf, isActive, appliesTo } = req.body || {};
+    const { title, description, descriptionIvf, perParent, excludeFromSurrogatePdf, isActive, appliesTo } = req.body || {};
     const data: any = {};
     if (typeof title === "string" && title.trim()) data.title = title.trim();
     if (description !== undefined) data.description = description?.trim() || null;
+    if (descriptionIvf !== undefined) data.descriptionIvf = descriptionIvf?.trim() || null;
     if (typeof perParent === "boolean") data.perParent = perParent;
     if (typeof excludeFromSurrogatePdf === "boolean") data.excludeFromSurrogatePdf = excludeFromSurrogatePdf;
     if (typeof isActive === "boolean") data.isActive = isActive;
@@ -1214,9 +1229,11 @@ ipFormRouter.get("/api/ip-form/provider-config/:providerId", requireAuth, async 
     const user = (req as any).user;
     const admin = rolesOf(user).includes("GOSTORK_ADMIN");
     const programTypes = await providerProgramTypes(access.providerId);
-    // The provider's applicable slice of the global template (active only).
+    // The provider's applicable slice of the global template (active only),
+    // with IVF-only copy variants swapped in for clinic-only providers.
     let sections = await loadIpFormTemplate();
     if (programTypes.length) sections = sections.filter((s) => sectionAppliesToPrograms(s as any, programTypes));
+    sections = swapIvfDescriptions(sections, programTypes);
     const [overrides, customQuestions] = await Promise.all([
       prisma.ipFormProviderOverride.findMany({ where: { providerId: access.providerId } }),
       prisma.ipFormQuestion.findMany({ where: { providerId: access.providerId, isActive: true }, orderBy: { sortOrder: "asc" } }),
