@@ -1,7 +1,11 @@
 import { asJson } from "../../../../shared/prisma-json";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { getAutomationDefaults, resolveAutoFlag } from "../../../automation-defaults";
+import { getAutomationDefaults, resolveDocMode } from "../../../automation-defaults";
+import { NotificationService } from "../notifications/notification.service";
+import { resolveQuotePaymentSchedule } from "../costs/payment-schedule.service";
+import { serviceTypeOfSession } from "../../../service-lines";
+import { formatMoneyCents } from "../../lib/format-money";
 import { StorageService } from "../storage/storage.service";
 import { extractFromChatMessages } from "./cost-sheet-chat-extractor";
 import { findProviderTypeIdForDonorType } from "../costs/total-cost.utils";
@@ -41,7 +45,7 @@ import {
 //   Gate 2 (per-provider): Provider.autoFeaturesEnabled.autoCostSheetDraft === true
 
 interface AutoDraftResult {
-  status: "drafted" | "skipped";
+  status: "drafted" | "sent" | "skipped";
   reason?: string;
   messageId?: string;
 }
@@ -84,6 +88,7 @@ export class CostSheetAutoDraftService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(StorageService) private readonly storage: StorageService,
+    @Inject(NotificationService) private readonly notifications: NotificationService,
   ) {}
 
   async tryAutoDraftForBooking(bookingId: string): Promise<AutoDraftResult> {
@@ -108,9 +113,8 @@ export class CostSheetAutoDraftService {
       if (!providerId) return this.skip("no_provider");
 
       const defaults = await getAutomationDefaults(this.prisma);
-      if (!resolveAutoFlag((booking.providerUser?.provider as any)?.autoFeaturesEnabled, "autoCostSheetDraft", defaults)) {
-        return this.skip("provider_opted_out");
-      }
+      const mode = resolveDocMode((booking.providerUser?.provider as any)?.autoFeaturesEnabled, "costSheet", defaults);
+      if (mode === "off") return this.skip("provider_opted_out");
 
       const gate1 = await this.prisma.conciergePromptSection.findUnique({
         where: { key: "auto_cost_sheet_on_booking" },
@@ -159,7 +163,9 @@ export class CostSheetAutoDraftService {
       });
       if (existingQuote) return this.skip("quote_already_exists");
 
-      return this.draftCore(session, providerId, booking.parentUser.parentAccountId ?? null, `booking=${bookingId}`, false);
+      return this.draftCore(session, providerId, booking.parentUser.parentAccountId ?? null, `booking=${bookingId}`, false, {
+        autoSend: mode === "auto_send",
+      });
     } catch (err: any) {
       this.logger.warn(`Auto-draft error for booking ${bookingId}: ${err.message}`);
       return this.skip("error:" + (err.message || "unknown"));
@@ -215,6 +221,7 @@ export class CostSheetAutoDraftService {
     parentAccountId: string | null,
     logTag: string,
     supersedePending: boolean,
+    opts: { autoSend?: boolean } = {},
   ): Promise<AutoDraftResult> {
     try {
       // Existing unresolved draft cards in this session.
@@ -466,6 +473,39 @@ export class CostSheetAutoDraftService {
       }
       if (toDraft.length === 0) return this.skip("all_matching_sheets_already_pending_or_zero");
 
+      // Fully-automated mode sends WITHOUT an approval card - but only when
+      // exactly ONE sheet matches. Several matches mean the approval step is
+      // doing real work (picking the right program), so we fall back to
+      // approval cards rather than auto-send competing quotes.
+      if (opts.autoSend && toDraft.length === 1) {
+        const { sheet, lineItems, totalCostCents } = toDraft[0];
+        const quote = await this.sendQuoteFromDraft({
+          sessionId: session.id,
+          lineItems,
+          totalCostCents,
+          notes: null,
+          costSheetFileUrl: sheet.fileUrl || (sheet.filePath ? this.storage.publicUrlFor(sheet.filePath) : null),
+          costSheetFileName: sheet.originalFileName || null,
+          sourceCostSheetId: sheet.id,
+          autoDraftedAt: new Date(),
+          source: "AUTO_SENT",
+          createdByUserId: null,
+        });
+        // The provider still gets a word of context - after the fact.
+        await this.prisma.aiChatMessage.create({
+          data: {
+            sessionId: session.id,
+            role: "assistant",
+            content: `A consultation was just booked in this chat, so per your fully-automated cost sheet setting I sent the parent a quote (${formatMoneyCents(totalCostCents)}) from your approved cost sheet. You can Edit & Resend from the card below if anything needs adjusting.`,
+            senderType: "system",
+            senderName: "GoStork",
+            uiCardType: "provider_only",
+          },
+        });
+        this.logger.log(`Auto-SENT: ${logTag} session=${session.id} sheet=${sheet.id} quote=${quote.id} total=${formatMoneyCents(totalCostCents)}`);
+        return { status: "sent", messageId: undefined };
+      }
+
       // Never drop approval cards on the provider without a word of context.
       // A provider-only intro (hidden from the parent by the chat-router
       // uiCardType filter) explains what was prepared, why, and what to do.
@@ -546,6 +586,123 @@ export class CostSheetAutoDraftService {
       this.logger.warn(`Auto-draft error for ${logTag}: ${err.message}`);
       return this.skip("error:" + (err.message || "unknown"));
     }
+  }
+
+  /**
+   * Create the real ProviderQuote from drafted values and deliver it: the
+   * shared core of the provider's Approve button AND the fully-automated
+   * send. One implementation so payment-schedule snapshots, dual-voice card
+   * copy, and parent notifications never drift between the two paths.
+   */
+  async sendQuoteFromDraft(args: {
+    sessionId: string;
+    lineItems: LineItemDraft[];
+    totalCostCents: number;
+    notes: string | null;
+    costSheetFileUrl: string | null;
+    costSheetFileName: string | null;
+    sourceCostSheetId: string | null;
+    autoDraftedAt: Date | null;
+    source: string;
+    createdByUserId: string | null;
+  }) {
+    const session = await this.prisma.aiChatSession.findUnique({
+      where: { id: args.sessionId },
+      select: {
+        id: true,
+        userId: true,
+        providerId: true,
+        provider: { select: { id: true, name: true } },
+        user: { select: { email: true, name: true, firstName: true, mobileNumber: true } },
+      },
+    });
+    if (!session?.providerId) throw new Error("Session has no provider");
+
+    // Snapshot the installment plan, exactly as the manual send does - a
+    // parent's experience must not depend on which path sent the quote.
+    const paymentScheduleSnapshot = await resolveQuotePaymentSchedule(this.prisma, session.providerId, {
+      sessionId: args.sessionId,
+      preferredSheetId: args.sourceCostSheetId || null,
+    });
+
+    // Supersede prior active quotes for this session, then create the new one.
+    const quote = await this.prisma.$transaction(async (tx: any) => {
+      await tx.providerQuote.updateMany({
+        where: { sessionId: args.sessionId, supersededAt: null },
+        data: { supersededAt: new Date() },
+      });
+      return tx.providerQuote.create({
+        data: {
+          sessionId: args.sessionId,
+          providerId: session.providerId!,
+          parentUserId: session.userId,
+          totalCostCents: args.totalCostCents,
+          costSheetFileUrl: args.costSheetFileUrl,
+          costSheetFileName: args.costSheetFileName,
+          notes: args.notes,
+          source: args.source,
+          serviceType: await serviceTypeOfSession(args.sessionId),
+          createdByUserId: args.createdByUserId,
+          lineItems: args.lineItems as any,
+          paymentSchedule: (paymentScheduleSnapshot ?? undefined) as any,
+          sourceCostSheetId: args.sourceCostSheetId,
+          autoDraftedAt: args.autoDraftedAt ?? new Date(),
+        },
+      });
+    });
+
+    // The regular cost_sheet card, visible to BOTH parties.
+    await this.prisma.aiChatMessage.create({
+      data: {
+        sessionId: args.sessionId,
+        role: "assistant",
+        content: `${session.provider?.name || "Your provider"} sent you a cost sheet. Total: ${formatMoneyCents(args.totalCostCents)}${
+          paymentScheduleSnapshot ? ". It includes a payment schedule so you can see what is due and when." : ""
+        }`,
+        senderType: "system",
+        senderName: session.provider?.name || "Provider",
+        uiCardType: "cost_sheet",
+        uiCardData: asJson({
+          quoteId: quote.id,
+          providerName: session.provider?.name || null,
+          totalCostCents: args.totalCostCents,
+          costSheetFileUrl: args.costSheetFileUrl,
+          costSheetFileName: args.costSheetFileName,
+          notes: quote.notes,
+          lineItems: args.lineItems,
+          parentAcknowledgedAt: null,
+          sentAt: quote.createdAt.toISOString(),
+          source: args.source,
+          paymentSchedule: paymentScheduleSnapshot ?? null,
+          // The provider reads this same card - nobody should read about
+          // themselves in the third person in their own chat.
+          providerContent: `You sent a cost sheet. Total: ${formatMoneyCents(args.totalCostCents)}${
+            paymentScheduleSnapshot
+              ? `, with a ${paymentScheduleSnapshot.tranches.length}-payment schedule attached.`
+              : "."
+          }`,
+        }),
+      },
+    });
+
+    // Parent notifications (email + SMS) - same path as the manual flow.
+    if (session.user?.email) {
+      await this.notifications
+        .sendCostSheetReadyToParent({
+          parentUserId: session.userId,
+          parentName: session.user.name || session.user.firstName || "there",
+          parentEmail: session.user.email,
+          parentPhone: session.user.mobileNumber,
+          providerName: session.provider?.name || "Your provider",
+          providerId: session.providerId,
+          sessionId: args.sessionId,
+          totalCostFormatted: formatMoneyCents(args.totalCostCents),
+          hasFile: false,
+        })
+        .catch((err: any) => this.logger.error(`Cost-sheet parent notification failed: ${err.message}`));
+    }
+
+    return quote;
   }
 
   /** Every login on this family's account. Partners share threads. */

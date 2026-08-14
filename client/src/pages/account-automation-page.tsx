@@ -37,41 +37,93 @@ interface SilenceSettings {
   lineEnabled: Record<string, boolean>;
 }
 
-interface AutomationDefaultValues {
-  autoCostSheetDraft: boolean;
-  autoInvoiceDraft: boolean;
+type FlowKey = "costSheetAutomation" | "invoiceAutomation" | "agreementAutomation";
+
+interface AutomationModeValues {
+  costSheetAutomation: string;
+  invoiceAutomation: string;
   agreementAutomation: string;
 }
 
 interface AutomationFeatures {
   isAdminDefaults: boolean;
-  defaults: AutomationDefaultValues;
-  effective: AutomationDefaultValues;
+  defaults: AutomationModeValues;
+  effective: AutomationModeValues;
   /** Org mode only; null = inherit the platform default. */
-  overrides?: {
-    autoCostSheetDraft: boolean | null;
-    autoInvoiceDraft: boolean | null;
-    agreementAutomation: string | null;
-  };
+  overrides?: Record<FlowKey, string | null>;
   legacyAutoAgreementDraft?: boolean;
   gates: Record<string, boolean>;
 }
 
-const AGREEMENT_OPTIONS: Array<{ value: string; label: string; description: string }> = [
+interface FlowOption { value: string; label: string; description: string }
+
+/** Every flow is the same ladder; only the trigger and artifact change. */
+const FLOW_GROUPS: Array<{ key: FlowKey; title: string; trigger: string; options: FlowOption[] }> = [
   {
-    value: "off",
-    label: "Off - I'll send agreements manually",
-    description: "Nothing happens automatically. Send agreements from the + menu in each chat.",
+    key: "costSheetAutomation",
+    title: "Cost sheet automation",
+    trigger: "Choose what happens when a parent books a consultation.",
+    options: [
+      {
+        value: "off",
+        label: "Off - I'll send cost sheets manually",
+        description: "Nothing happens automatically. Send cost sheets from the + menu in each chat.",
+      },
+      {
+        value: "approval",
+        label: "Draft for my approval",
+        description: "The AI concierge drafts a personalized quote from the approved cost sheets and posts it in the chat for approval before the family sees it.",
+      },
+      {
+        value: "auto_send",
+        label: "Fully automated",
+        description: "The quote is generated and sent to the family immediately - no approval step. If more than one cost sheet matches, drafts are posted for approval instead so the right program gets picked.",
+      },
+    ],
   },
   {
-    value: "approval",
-    label: "Draft for my approval",
-    description: "When a parent's deposit payment clears, your AI concierge drafts the agreement and posts it in the chat for you to approve before it's sent for signature.",
+    key: "invoiceAutomation",
+    title: "Invoice automation",
+    trigger: "Choose what happens when a family confirms they're ready to move forward. Match-call deposits always send immediately - their 24-hour reservation window can't wait for an approval.",
+    options: [
+      {
+        value: "off",
+        label: "Off - I'll send invoices manually",
+        description: "Nothing happens automatically. Send invoices from the billing panel in each chat.",
+      },
+      {
+        value: "approval",
+        label: "Draft for my approval",
+        description: "A deposit invoice is drafted from the approved quote and posted in the chat for approval before it's sent.",
+      },
+      {
+        value: "auto_send",
+        label: "Fully automated",
+        description: "The invoice is created and sent to the family immediately - no approval step.",
+      },
+    ],
   },
   {
-    value: "auto_send",
-    label: "Fully automated",
-    description: "When a parent's deposit payment clears, the agreement is generated AND sent for signature immediately - no approval step.",
+    key: "agreementAutomation",
+    title: "Agreement automation",
+    trigger: "Choose what happens when a parent's deposit payment clears.",
+    options: [
+      {
+        value: "off",
+        label: "Off - I'll send agreements manually",
+        description: "Nothing happens automatically. Send agreements from the + menu in each chat.",
+      },
+      {
+        value: "approval",
+        label: "Draft for my approval",
+        description: "The AI concierge drafts the agreement and posts it in the chat for approval before it's sent for signature.",
+      },
+      {
+        value: "auto_send",
+        label: "Fully automated",
+        description: "The agreement is generated AND sent for signature immediately - no approval step.",
+      },
+    ],
   },
 ];
 
@@ -261,79 +313,35 @@ function BillingAutomationSection({ orgId }: { orgId?: string }) {
     staleTime: 0,
   });
 
+  // One pending value per flow so a click renders instantly while saving.
+  const [pending, setPending] = useState<Partial<Record<FlowKey, string>>>({});
   const saveFeature = useMutation({
-    mutationFn: async (patch: {
-      autoCostSheetDraft?: boolean | null;
-      autoInvoiceDraft?: boolean | null;
-      agreementAutomation?: string | null;
-    }) => apiRequest("PUT", withOrg("/api/automation/features", orgId), patch),
+    mutationFn: async (patch: Partial<Record<FlowKey, string | null>>) =>
+      apiRequest("PUT", withOrg("/api/automation/features", orgId), patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/automation/features"] });
       queryClient.invalidateQueries({ queryKey: ["/api/agreements/templates"] });
       toast({ title: "Automation setting saved" });
-      setPendingMode(null);
+      setPending({});
     },
     onError: (e: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/automation/features"] });
-      setPendingMode(null);
+      setPending({});
       toast({ title: "Could not save", description: e?.message, variant: "destructive" });
     },
   });
 
   const isDefaultsMode = data?.isAdminDefaults === true;
-  // Selected radio: the org's own override, else "approval" when the legacy
-  // rollout flag pins it, else "use the GoStork default". Defaults mode just
-  // shows the default value itself.
-  const settledMode = isDefaultsMode
-    ? data?.defaults.agreementAutomation ?? "off"
-    : data?.overrides?.agreementAutomation ?? (data?.legacyAutoAgreementDraft ? "approval" : USE_DEFAULT);
-  const [pendingMode, setPendingMode] = useState<string | null>(null);
-  const selectedMode = pendingMode ?? settledMode;
 
-  /** One toggle row that knows whether the org is inheriting or overriding. */
-  const FlagRow = ({ flag, title, helper }: {
-    flag: "autoCostSheetDraft" | "autoInvoiceDraft";
-    title: string;
-    helper: string;
-  }) => {
-    if (!data) return null;
-    const override = data.overrides?.[flag] ?? null;
-    const defaultOn = data.defaults[flag];
-    const checked = isDefaultsMode ? defaultOn : data.effective[flag];
-    return (
-      <label className="flex items-center justify-between gap-3 text-sm font-ui">
-        <span>
-          {title}
-          <span className="block t-helper">{helper}</span>
-          {!isDefaultsMode && (
-            override === null ? (
-              <span className="block t-helper" data-testid={`inherit-note-${flag}`}>
-                Following GoStork's default (currently {defaultOn ? "on" : "off"}).
-              </span>
-            ) : (
-              <span className="block t-helper" data-testid={`override-note-${flag}`}>
-                Overriding GoStork's default ({defaultOn ? "on" : "off"}).{" "}
-                <button
-                  type="button"
-                  className="underline text-primary"
-                  onClick={(e) => { e.preventDefault(); saveFeature.mutate({ [flag]: null }); }}
-                  data-testid={`btn-reset-${flag}`}
-                >
-                  Reset to default
-                </button>
-              </span>
-            )
-          )}
-          <GatePausedNote active={data.gates[flag] !== false} />
-        </span>
-        <Switch
-          checked={checked}
-          disabled={saveFeature.isPending}
-          onCheckedChange={(v) => saveFeature.mutate({ [flag]: v })}
-          data-testid={`switch-${flag === "autoCostSheetDraft" ? "auto-cost-sheet" : "auto-invoice"}`}
-        />
-      </label>
-    );
+  // Selected radio per flow: the org's own override, else "approval" when
+  // the legacy agreement rollout flag pins it, else "use the GoStork
+  // default". Defaults mode shows the default value itself.
+  const selectedFor = (flow: FlowKey): string => {
+    if (pending[flow] !== undefined) return pending[flow]!;
+    if (!data) return USE_DEFAULT;
+    if (isDefaultsMode) return data.defaults[flow] ?? "off";
+    return data.overrides?.[flow]
+      ?? (flow === "agreementAutomation" && data.legacyAutoAgreementDraft ? "approval" : USE_DEFAULT);
   };
 
   if (isError) {
@@ -358,17 +366,6 @@ function BillingAutomationSection({ orgId }: { orgId?: string }) {
     );
   }
 
-  const agreementOptions = isDefaultsMode
-    ? AGREEMENT_OPTIONS
-    : [
-        {
-          value: USE_DEFAULT,
-          label: `Use GoStork default (currently: ${MODE_LABELS[data.defaults.agreementAutomation] || "Off"})`,
-          description: "Follow whatever GoStork sets platform-wide. Pick any option below to lock your own choice instead.",
-        },
-        ...AGREEMENT_OPTIONS,
-      ];
-
   return (
     <div className="space-y-6">
       <SectionHeading
@@ -377,59 +374,63 @@ function BillingAutomationSection({ orgId }: { orgId?: string }) {
         subtitle={`The paperwork pipeline, automated end to end: a cost sheet when a call is booked, an invoice when the family is ready, and the agreement when their deposit clears.${isDefaultsMode ? " You are editing the platform defaults; each agency can override them." : ""}`}
       />
 
-      <div className="rounded-[var(--radius)] border border-border bg-card p-4 space-y-3">
-        <FlagRow
-          flag="autoCostSheetDraft"
-          title="Cost sheet draft on booking"
-          helper="When a parent books a consultation, the AI concierge drafts a personalized cost sheet and posts it in the chat for the provider to approve before the family sees it."
-        />
-        <FlagRow
-          flag="autoInvoiceDraft"
-          title="Invoice draft on parent-ready"
-          helper="When a family signals they are ready to move forward, a deposit invoice is drafted and posted in the chat for the provider to approve before it's sent."
-        />
-      </div>
-
-      <div className="rounded-[var(--radius)] border border-border bg-card p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-primary" />
-          <h3 className="text-sm font-heading">Agreement automation</h3>
-        </div>
-        <p className="t-helper">Choose what happens when a parent's deposit payment clears.</p>
-        <GatePausedNote active={data.gates.agreementAutomation !== false} />
-        <div className="space-y-2">
-          {agreementOptions.map(opt => (
-            <label
-              key={opt.value}
-              className={`flex items-start gap-3 p-3 rounded-[var(--radius)] border cursor-pointer transition-colors ${
-                selectedMode === opt.value ? "border-primary bg-secondary/50" : "border-border hover:bg-secondary/30"
-              }`}
-            >
-              <input
-                type="radio"
-                name="agreement-automation"
-                value={opt.value}
-                checked={selectedMode === opt.value}
-                onChange={() => {
-                  setPendingMode(opt.value);
-                  saveFeature.mutate({ agreementAutomation: opt.value === USE_DEFAULT ? null : opt.value });
-                }}
-                className="mt-0.5 accent-primary"
-                data-testid={`radio-agreement-automation-${opt.value === USE_DEFAULT ? "default" : opt.value}`}
-              />
-              <span>
-                <span className="block text-sm font-medium">{opt.label}</span>
-                <span className="t-helper block mt-0.5">{opt.description}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-        <p className="t-helper flex items-center gap-1.5">
-          <FileText className="w-3.5 h-3.5" />
-          Agreement templates and signature fields live on the{" "}
-          <Link to="/account/documents" className="underline text-primary">Documents tab</Link>.
-        </p>
-      </div>
+      {FLOW_GROUPS.map(group => {
+        const options: FlowOption[] = isDefaultsMode
+          ? group.options
+          : [
+              {
+                value: USE_DEFAULT,
+                label: `Use GoStork default (currently: ${MODE_LABELS[data.defaults[group.key]] || "Off"})`,
+                description: "Follow whatever GoStork sets platform-wide. Pick any option below to lock your own choice instead.",
+              },
+              ...group.options,
+            ];
+        const selected = selectedFor(group.key);
+        return (
+          <div key={group.key} className="rounded-[var(--radius)] border border-border bg-card p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-heading">{group.title}</h3>
+            </div>
+            <p className="t-helper">{group.trigger}</p>
+            <GatePausedNote active={data.gates[group.key] !== false} />
+            <div className="space-y-2">
+              {options.map(opt => (
+                <label
+                  key={opt.value}
+                  className={`flex items-start gap-3 p-3 rounded-[var(--radius)] border cursor-pointer transition-colors ${
+                    selected === opt.value ? "border-primary bg-secondary/50" : "border-border hover:bg-secondary/30"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={group.key}
+                    value={opt.value}
+                    checked={selected === opt.value}
+                    onChange={() => {
+                      setPending(prev => ({ ...prev, [group.key]: opt.value }));
+                      saveFeature.mutate({ [group.key]: opt.value === USE_DEFAULT ? null : opt.value });
+                    }}
+                    className="mt-0.5 accent-primary"
+                    data-testid={`radio-${group.key}-${opt.value === USE_DEFAULT ? "default" : opt.value}`}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">{opt.label}</span>
+                    <span className="t-helper block mt-0.5">{opt.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {group.key === "agreementAutomation" && (
+              <p className="t-helper flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" />
+                Agreement templates and signature fields live on the{" "}
+                <Link to="/account/documents" className="underline text-primary">Documents tab</Link>.
+              </p>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

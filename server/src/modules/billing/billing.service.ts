@@ -20,7 +20,7 @@ import {
   generateAndAnnounceAgreement,
   maybeCompleteHandoff,
 } from "../../../agreement-flow";
-import { getAutomationDefaults, resolveAutoFlag } from "../../../automation-defaults";
+import { getAutomationDefaults, resolveDocMode } from "../../../automation-defaults";
 import { resolveAgreementTemplate, agreementDocumentType } from "../../../pandadoc-service";
 import { resolveParentEvaSessionId } from "../../../parent-visibility";
 import { resolveQuotePaymentSchedule } from "../costs/payment-schedule.service";
@@ -671,9 +671,11 @@ export class BillingService {
    *
    * Two-gate check (mirrors the cost-sheet auto-draft):
    *   Gate 1 - ConciergePromptSection "auto_invoice_on_ready".isActive
-   *   Gate 2 - Provider.autoFeaturesEnabled.autoInvoiceDraft === true
-   * Either gate off -> { status: "legacy" } and the caller runs the old
-   * direct createInvoiceFromReadiness path unchanged.
+   *   Gate 2 - effective mode from resolveDocMode (org override -> legacy
+   *   autoInvoiceDraft flag -> AutomationDefaults.invoiceAutomation):
+   *   "auto_send" -> { status: "legacy" }, the caller runs the old direct
+   *   createInvoiceFromReadiness path; "approval" -> draft card; "off" ->
+   *   nothing fires, the provider invoices manually.
    *
    * Match-call deposits (surrogate on a hard 24h reservation window) always
    * take the legacy direct path - a provider approval gate would eat into
@@ -713,10 +715,13 @@ export class BillingService {
       select: { isActive: true },
     });
     if (!gate1?.isActive) return { status: "legacy" };
+    // Mode ladder: auto_send = the legacy DIRECT send (the caller runs
+    // createInvoiceFromReadiness unchanged); approval = draft card; off =
+    // nothing fires and the provider invoices manually from the panel.
     const defaults = await getAutomationDefaults(this.prisma);
-    if (!resolveAutoFlag(session.provider.autoFeaturesEnabled, "autoInvoiceDraft", defaults)) {
-      return { status: "legacy" };
-    }
+    const mode = resolveDocMode(session.provider.autoFeaturesEnabled, "invoice", defaults);
+    if (mode === "auto_send") return { status: "legacy" };
+    if (mode === "off") return { status: "skipped", reason: "AUTOMATION_OFF" };
 
     // Idempotency: one pending draft card per session, ever.
     const existingDrafts = await this.prisma.aiChatMessage.findMany({

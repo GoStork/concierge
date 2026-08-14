@@ -3541,9 +3541,12 @@ model ProfileSaveAudit {
 /// inherit). GoStork admin edits this row from /account/automation.
 model AutomationDefaults {
   id                  String   @id @default("defaults")
-  autoCostSheetDraft  Boolean  @default(false)
-  autoInvoiceDraft    Boolean  @default(false)
-  /// "off" | "approval" | "auto_send"
+  /// All three are "off" | "approval" | "auto_send". Invoice defaults to
+  /// auto_send because that IS the historical base behavior: before the
+  /// draft-approval flow existed, a parent confirming readiness always got
+  /// the invoice directly (createInvoiceFromReadiness).
+  costSheetAutomation String   @default("off")
+  invoiceAutomation   String   @default("auto_send")
   agreementAutomation String   @default("off")
   updatedAt           DateTime @updatedAt
 }

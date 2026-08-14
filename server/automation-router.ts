@@ -14,7 +14,14 @@ import { isGostorkStaff, isProviderStaff } from "./parent-crm";
 import { JOURNEY_STAGE_ORDER } from "../shared/journey-ladder";
 import { SILENCE_DEFAULT_THRESHOLDS, resolveSilenceConfig } from "./silence-sweep";
 import { SERVICE_LINES } from "./service-lines";
-import { getAutomationDefaults, resolveAutoFlag, resolveAgreementMode, type AgreementMode } from "./automation-defaults";
+import {
+  getAutomationDefaults,
+  docModeOverride,
+  resolveDocMode,
+  resolveAgreementMode,
+  isAutomationMode,
+  DOC_MODE_KEYS,
+} from "./automation-defaults";
 
 export const automationRouter = Router();
 
@@ -73,16 +80,17 @@ automationRouter.get("/api/automation/silence", requireAuth, async (req, res) =>
 });
 
 /**
- * Provider self-service billing/document automation flags. autoCostSheetDraft
- * and autoInvoiceDraft live in Provider.autoFeaturesEnabled - the same JSON
- * the GoStork admin card writes, so either side's flip is visible to both.
- * Each flow still sits behind its global ConciergePromptSection kill switch
- * (gate 1); the response exposes those so the UI can say when a flow is
- * paused platform-wide regardless of the provider's own toggle.
+ * Provider self-service billing/document automation modes (each a ladder:
+ * off / approval / auto_send). Cost sheet + invoice overrides live in
+ * Provider.autoFeaturesEnabled JSON, agreement mode in its own column; null
+ * / absent = inherit the AutomationDefaults row. Each flow still sits
+ * behind its global ConciergePromptSection kill switch (gate 1); the
+ * response exposes those so the UI can say when a flow is paused
+ * platform-wide regardless of anyone's setting.
  */
 const FEATURE_GATES: Record<string, string> = {
-  autoCostSheetDraft: "auto_cost_sheet_on_booking",
-  autoInvoiceDraft: "auto_invoice_on_ready",
+  costSheetAutomation: "auto_cost_sheet_on_booking",
+  invoiceAutomation: "auto_invoice_on_ready",
   agreementAutomation: "auto_agreement_on_paid",
 };
 
@@ -104,9 +112,6 @@ function featuresTarget(req: Request, res: Response): { defaults: true } | { def
   res.status(403).json({ message: "Forbidden" });
   return null;
 }
-
-const isAgreementMode = (v: unknown): v is AgreementMode =>
-  v === "off" || v === "approval" || v === "auto_send";
 
 async function gateStates() {
   const rows = await prisma.conciergePromptSection.findMany({
@@ -135,17 +140,18 @@ automationRouter.get("/api/automation/features", requireAuth, async (req, res) =
     const flags = (provider.autoFeaturesEnabled as any) || {};
     res.json({
       isAdminDefaults: false,
-      // Raw overrides; null = inherit the platform default.
+      // Explicit org choices; null = inherit the platform default. Legacy
+      // boolean flags count as explicit choices (docModeOverride maps them).
       overrides: {
-        autoCostSheetDraft: typeof flags.autoCostSheetDraft === "boolean" ? flags.autoCostSheetDraft : null,
-        autoInvoiceDraft: typeof flags.autoInvoiceDraft === "boolean" ? flags.autoInvoiceDraft : null,
-        agreementAutomation: isAgreementMode(provider.agreementAutomation) ? provider.agreementAutomation : null,
+        costSheetAutomation: docModeOverride(flags, "costSheet"),
+        invoiceAutomation: docModeOverride(flags, "invoice"),
+        agreementAutomation: isAutomationMode(provider.agreementAutomation) ? provider.agreementAutomation : null,
       },
       legacyAutoAgreementDraft: flags.autoAgreementDraft === true,
       defaults,
       effective: {
-        autoCostSheetDraft: resolveAutoFlag(flags, "autoCostSheetDraft", defaults),
-        autoInvoiceDraft: resolveAutoFlag(flags, "autoInvoiceDraft", defaults),
+        costSheetAutomation: resolveDocMode(flags, "costSheet", defaults),
+        invoiceAutomation: resolveDocMode(flags, "invoice", defaults),
         agreementAutomation: resolveAgreementMode(provider, defaults),
       },
       gates,
@@ -161,22 +167,24 @@ automationRouter.put("/api/automation/features", requireAuth, async (req, res) =
     const t = featuresTarget(req, res);
     if (!t) return;
     const body = req.body || {};
-    for (const k of ["autoCostSheetDraft", "autoInvoiceDraft"] as const) {
-      if (body[k] !== undefined && typeof body[k] !== "boolean" && body[k] !== null) {
-        return res.status(400).json({ message: `${k} must be true, false, or null` });
+    const MODE_FIELDS = ["costSheetAutomation", "invoiceAutomation", "agreementAutomation"] as const;
+    for (const k of MODE_FIELDS) {
+      if (body[k] !== undefined && body[k] !== null && !isAutomationMode(body[k])) {
+        return res.status(400).json({ message: `${k} must be off, approval, auto_send, or null` });
       }
-    }
-    if (body.agreementAutomation !== undefined && body.agreementAutomation !== null && !isAgreementMode(body.agreementAutomation)) {
-      return res.status(400).json({ message: "agreementAutomation must be off, approval, auto_send, or null" });
     }
 
     if (t.defaults) {
-      // Platform defaults have no "inherit" - null resets to built-in off.
+      // Platform defaults have no "inherit" - null resets to the built-in.
       const data = {
-        ...(body.autoCostSheetDraft !== undefined ? { autoCostSheetDraft: body.autoCostSheetDraft === true } : {}),
-        ...(body.autoInvoiceDraft !== undefined ? { autoInvoiceDraft: body.autoInvoiceDraft === true } : {}),
+        ...(body.costSheetAutomation !== undefined
+          ? { costSheetAutomation: isAutomationMode(body.costSheetAutomation) ? body.costSheetAutomation : "off" }
+          : {}),
+        ...(body.invoiceAutomation !== undefined
+          ? { invoiceAutomation: isAutomationMode(body.invoiceAutomation) ? body.invoiceAutomation : "auto_send" }
+          : {}),
         ...(body.agreementAutomation !== undefined
-          ? { agreementAutomation: isAgreementMode(body.agreementAutomation) ? body.agreementAutomation : "off" }
+          ? { agreementAutomation: isAutomationMode(body.agreementAutomation) ? body.agreementAutomation : "off" }
           : {}),
       };
       await prisma.automationDefaults.upsert({
@@ -194,9 +202,14 @@ automationRouter.put("/api/automation/features", requireAuth, async (req, res) =
     });
     if (!existing) return res.status(404).json({ message: "Provider not found" });
     const next = { ...((existing.autoFeaturesEnabled as any) || {}) };
-    for (const k of ["autoCostSheetDraft", "autoInvoiceDraft"] as const) {
-      if (body[k] === null) delete next[k]; // back to inheriting the default
-      else if (typeof body[k] === "boolean") next[k] = body[k];
+    for (const flow of ["costSheet", "invoice"] as const) {
+      const key = DOC_MODE_KEYS[flow];
+      if (body[key] === undefined) continue;
+      // Any explicit write retires the legacy boolean so the mode key is
+      // the single source of truth from then on.
+      delete next[flow === "costSheet" ? "autoCostSheetDraft" : "autoInvoiceDraft"];
+      if (body[key] === null) delete next[key]; // back to inheriting
+      else next[key] = body[key];
     }
     // Explicitly choosing "use the GoStork default" also clears the legacy
     // rollout flag, which would otherwise pin the org to "approval".

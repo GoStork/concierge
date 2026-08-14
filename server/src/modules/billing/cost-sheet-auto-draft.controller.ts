@@ -1,5 +1,3 @@
-import { asJson } from "../../../../shared/prisma-json";
-import { serviceTypeOfSession } from "../../../service-lines";
 import {
   Body,
   Controller,
@@ -22,7 +20,6 @@ import { CostSheetAutoDraftService } from "./cost-sheet-auto-draft.service";
 import { prisma } from "../../../db";
 import { formatMoneyCents } from "../../lib/format-money";
 import { canSendProviderMessage } from "../../../../shared/roles";
-import { resolveQuotePaymentSchedule } from "../costs/payment-schedule.service";
 
 // Phase 2 cost-sheet auto-draft endpoints.
 //
@@ -142,74 +139,21 @@ export class CostSheetAutoDraftController {
     const costSheetFileUrl = attachFile ? (data.fileUrl || null) : null;
     const costSheetFileName = attachFile ? (data.fileName || null) : null;
 
-    // Snapshot the installment plan, exactly as the manual send does - a
-    // parent's experience must not depend on which button the provider
-    // pressed. This path knows the source sheet, so it targets that one
-    // rather than falling back to the provider's most recent.
-    const paymentScheduleSnapshot = await resolveQuotePaymentSchedule(this.db, session.providerId!, {
+    // Shared core with the fully-automated path: payment-schedule snapshot,
+    // supersede + create quote, dual-voice cost_sheet card, parent
+    // notifications. One implementation in the service so the two paths
+    // never drift.
+    const quote = await this.autoDraft.sendQuoteFromDraft({
       sessionId,
-      preferredSheetId: data.sourceCostSheetId || null,
-    });
-
-    // Supersede prior active quotes for this session, then create the new one.
-    const quote = await this.db.$transaction(async tx => {
-      await tx.providerQuote.updateMany({
-        where: { sessionId, supersededAt: null },
-        data: { supersededAt: new Date() },
-      });
-      return tx.providerQuote.create({
-        data: {
-          sessionId,
-          providerId: session.providerId!,
-          parentUserId: session.userId,
-          totalCostCents,
-          costSheetFileUrl,
-          costSheetFileName,
-          notes,
-          source: "AUTO_DRAFT_APPROVED",
-          serviceType: await serviceTypeOfSession(sessionId),
-          createdByUserId: user.id || null,
-          lineItems: lineItems as any,
-          paymentSchedule: (paymentScheduleSnapshot ?? undefined) as any,
-          sourceCostSheetId: data.sourceCostSheetId || null,
-          autoDraftedAt: data.autoDraftedAt ? new Date(data.autoDraftedAt) : new Date(),
-        },
-      });
-    });
-
-    // Post the regular cost_sheet card visible to BOTH parties.
-    await this.db.aiChatMessage.create({
-      data: {
-        sessionId,
-        role: "assistant",
-        content: `${session.provider?.name || "Your provider"} sent you a cost sheet. Total: ${formatMoneyCents(totalCostCents)}${
-          paymentScheduleSnapshot ? ". It includes a payment schedule so you can see what is due and when." : ""
-        }`,
-        senderType: "system",
-        senderName: session.provider?.name || "Provider",
-        uiCardType: "cost_sheet",
-        uiCardData: asJson({
-          quoteId: quote.id,
-          providerName: session.provider?.name || null,
-          totalCostCents,
-          costSheetFileUrl,
-          costSheetFileName,
-          notes: quote.notes,
-          lineItems,
-          parentAcknowledgedAt: null,
-          sentAt: quote.createdAt.toISOString(),
-          source: "AUTO_DRAFT_APPROVED",
-          paymentSchedule: paymentScheduleSnapshot ?? null,
-          // The provider reads this same card, so it needs their side of the
-          // sentence too - nobody should read about themselves in the third
-          // person in their own chat.
-          providerContent: `You sent a cost sheet. Total: ${formatMoneyCents(totalCostCents)}${
-            paymentScheduleSnapshot
-              ? `, with a ${paymentScheduleSnapshot.tranches.length}-payment schedule attached.`
-              : "."
-          }`,
-        }),
-      },
+      lineItems,
+      totalCostCents,
+      notes,
+      costSheetFileUrl,
+      costSheetFileName,
+      sourceCostSheetId: data.sourceCostSheetId || null,
+      autoDraftedAt: data.autoDraftedAt ? new Date(data.autoDraftedAt) : new Date(),
+      source: "AUTO_DRAFT_APPROVED",
+      createdByUserId: user.id || null,
     });
 
     // Mark the draft card resolved (kept for audit trail).
@@ -227,23 +171,6 @@ export class CostSheetAutoDraftController {
         },
       },
     });
-
-    // Fire parent notifications (email + SMS) - same path as manual flow.
-    if (session.user?.email) {
-      await this.notifications
-        .sendCostSheetReadyToParent({
-          parentUserId: session.userId,
-          parentName: session.user.name || session.user.firstName || "there",
-          parentEmail: session.user.email,
-          parentPhone: session.user.mobileNumber,
-          providerName: session.provider?.name || "Your provider",
-          providerId: session.providerId!,
-          sessionId,
-          totalCostFormatted: formatMoneyCents(totalCostCents),
-          hasFile: false,
-        })
-        .catch(err => this.logger.error(`Cost-sheet parent notification failed: ${err.message}`));
-    }
 
     this.logger.log(
       `Auto-draft approved: session=${sessionId} quote=${quote.id} total=${formatMoneyCents(totalCostCents)}`,
