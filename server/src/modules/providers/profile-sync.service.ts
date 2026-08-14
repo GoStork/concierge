@@ -377,11 +377,32 @@ function generateJobId(): string {
   return `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// A UA string alone is a weak disguise: Cloudflare and similar edge WAFs score
+// requests on the WHOLE header set, and a "Chrome" UA arriving with no
+// Accept-Language, no Sec-Fetch-* and no client hints reads as automation. That
+// scoring is what intermittently 403s the Eggspecting nightly sync (Jul 28 and
+// Aug 14 2026) while the same request passes on other nights - identical code,
+// different edge verdict. These headers are what Chrome 120 actually sends on a
+// top-level navigation, so we stop standing out on the trivially-fixable axes.
+//
+// Deliberately NOT setting Accept-Encoding: undici adds and transparently
+// decompresses its own. Setting it by hand risks handing raw brotli bytes to
+// every HTML parser in this file.
 const DEFAULT_HEADERS: Record<string, string> = {
   "User-Agent":
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   Accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Cache-Control": "max-age=0",
+  "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"macOS"',
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
 };
 
 // Classify an error as a transient network blip worth one retry, vs. a hard
@@ -485,7 +506,41 @@ function extractSetCookies(response: Response): string[] {
 
 type AuthResult =
   | { ok: true; cookies: string }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; wafBlocked?: boolean };
+
+/**
+ * Detect an edge/WAF BLOCK page (Cloudflare & friends) as distinct from a real
+ * captcha widget on a real login form.
+ *
+ * This MUST be checked before detectCaptcha. Cloudflare's block page embeds the
+ * origin site's own reCAPTCHA script, so a naive captcha match labels a WAF
+ * block as "(reCAPTCHA page)" - which is exactly what happened on the Eggspecting
+ * nightly syncs of Jul 28 and Aug 14 2026. Both nights we successfully bought 9
+ * captcha tokens from 2captcha and were still 403'd at the edge, while the error
+ * text sent us investigating the captcha vendor instead of the WAF. A blocked
+ * request is NOT a solvable captcha: no amount of token-buying opens it.
+ *
+ * Detection keys strictly on BLOCK-PAGE markers, never on the mere presence of
+ * "cloudflare" - the vast majority of these agency sites sit behind Cloudflare
+ * while serving a perfectly normal login form (Eggspecting's working login page
+ * matches none of these markers, verified against the live 200 response).
+ */
+function detectWafBlock(html: string): string | null {
+  const lower = html.toLowerCase();
+  if (lower.includes("sorry, you have been blocked")) return "Cloudflare block (firewall rule)";
+  if (lower.includes("attention required") && lower.includes("cloudflare")) return "Cloudflare block";
+  if (lower.includes("error code 1020")) return "Cloudflare block (error 1020: access denied)";
+  if (lower.includes("error code 1015") || lower.includes("you are being rate limited")) {
+    return "Cloudflare block (error 1015: rate limited)";
+  }
+  if (lower.includes("cdn-cgi/challenge-platform") || lower.includes("__cf_chl")) {
+    return "Cloudflare JS challenge";
+  }
+  if (lower.includes("just a moment") && lower.includes("cloudflare")) return "Cloudflare JS challenge";
+  if (lower.includes("cf-error-details") || lower.includes("cf-error-overview")) return "Cloudflare error page";
+  if (lower.includes("cloudflare ray id")) return "Cloudflare block";
+  return null;
+}
 
 function detectCaptcha(html: string): string | null {
   const lower = html.toLowerCase();
@@ -634,6 +689,15 @@ export async function authenticateAndGetCookies(
     // into the POST body. We fail loudly (rather than silently importing zero
     // profiles) when a captcha is present but no solver key is configured.
     let recaptchaToken: string | null = null;
+    // A WAF block on the login GET means the form we just "read" is really an
+    // edge error page. Bail before spending money at the solver - the sitekey we
+    // would extract belongs to a page we were never allowed to reach.
+    const loginGetBlock = detectWafBlock(loginHtml);
+    if (loginGetBlock) {
+      const reason = `${loginGetBlock} on the login page (status=${loginResp.status}) - the request never reached the site's login form`;
+      console.error(`[donor-sync] Login blocked at the edge - ${reason}`);
+      return { ok: false, reason, wafBlocked: true };
+    }
     const loginCaptcha = detectCaptcha(loginHtml);
     if (loginCaptcha === "reCAPTCHA") {
       const sitekey = extractRecaptchaSitekey(loginHtml);
@@ -703,6 +767,10 @@ export async function authenticateAndGetCookies(
         Cookie: cookieHeader,
         Referer: loginPageUrl,
         Origin: loginUrl.origin,
+        // A form POST carrying Referer+Origin is by definition same-origin, so
+        // the default "none" (address-bar navigation) would contradict the rest
+        // of the request - exactly the inconsistency a WAF scores against us.
+        "Sec-Fetch-Site": "same-origin",
       },
       body: body.toString(),
       redirect: "manual",
@@ -724,6 +792,8 @@ export async function authenticateAndGetCookies(
         headers: {
           ...DEFAULT_HEADERS,
           Cookie: allCookies.join("; "),
+          Referer: loginPageUrl,
+          "Sec-Fetch-Site": "same-origin",
         },
         redirect: "manual",
       });
@@ -734,6 +804,12 @@ export async function authenticateAndGetCookies(
     } else if (authResp.status === 200) {
       const responseText = await authResp.text();
       const lower = responseText.toLowerCase();
+      const postBlock = detectWafBlock(responseText);
+      if (postBlock) {
+        const reason = `${postBlock} on the login POST (status=200)`;
+        console.error(`[donor-sync] Login blocked at the edge - ${reason}`);
+        return { ok: false, reason, wafBlocked: true };
+      }
       const captcha = detectCaptcha(responseText);
       if (captcha) {
         const reason = `${captcha} required on POST response (status=200)`;
@@ -764,15 +840,28 @@ export async function authenticateAndGetCookies(
       // Capture rate-limit and other HTTP errors with as much detail as possible
       const retryAfter = authResp.headers.get("retry-after");
       let bodySnippet = "";
+      let wafBlocked = false;
       try {
         const body = await authResp.text();
+        // WAF first: a Cloudflare block page carries the origin's reCAPTCHA
+        // script, so checking captcha first mislabels the block (see detectWafBlock).
+        const block = detectWafBlock(body);
         const captcha = detectCaptcha(body);
-        if (captcha) bodySnippet = ` (${captcha} page)`;
+        if (block) {
+          wafBlocked = true;
+          bodySnippet = ` (${block}; cf-ray: ${authResp.headers.get("cf-ray") || "none"})`;
+        } else if (captcha) bodySnippet = ` (${captcha} page)`;
         else bodySnippet = ` (body: ${body.slice(0, 200).replace(/\s+/g, " ").trim()}...)`;
       } catch { /* ignore */ }
+      // A bare 403 from a Cloudflare-fronted origin is a block even when the body
+      // is empty or non-standard.
+      if (!wafBlocked && authResp.status === 403 && /cloudflare/i.test(authResp.headers.get("server") || "")) {
+        wafBlocked = true;
+        bodySnippet += ` (403 from a Cloudflare edge; cf-ray: ${authResp.headers.get("cf-ray") || "none"})`;
+      }
       const reason = `unexpected HTTP status ${authResp.status}${retryAfter ? ` (Retry-After: ${retryAfter})` : ""}${bodySnippet}`;
       console.error(`[donor-sync] Login failed - ${reason}`);
-      return { ok: false, reason };
+      return { ok: false, reason, wafBlocked };
     }
 
     const cookieMap = new Map<string, string>();
@@ -1724,7 +1813,18 @@ export async function persistSinglePhoto(
       const result = await withPhotoFetchSlot(async () => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 20000);
-        const fetchHeaders: Record<string, string> = { ...DEFAULT_HEADERS, Accept: "image/*" };
+        // Photo requests are subresource loads, not navigations - keep the
+        // Sec-Fetch-* triple consistent with that or the header set contradicts
+        // itself (a "document" navigation asking for image/*).
+        const fetchHeaders: Record<string, string> = {
+          ...DEFAULT_HEADERS,
+          Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+          "Sec-Fetch-Dest": "image",
+          "Sec-Fetch-Mode": "no-cors",
+          "Sec-Fetch-Site": "same-origin",
+        };
+        delete fetchHeaders["Sec-Fetch-User"];
+        delete fetchHeaders["Upgrade-Insecure-Requests"];
         if (sendCookies) fetchHeaders["Cookie"] = sendCookies;
         try {
           const resp = await fetch(url, {
@@ -4776,6 +4876,19 @@ async function runSyncJob(
           break;
         }
         authFailures.push({ candidate, reason: result.reason });
+        // The edge blocked us, so the remaining candidates are the same closed
+        // door on the same origin. Trying them cannot succeed, and each one
+        // buys another captcha solve and pushes our IP further up the WAF's
+        // threat score - which is how one Eggspecting block turned into 9 paid
+        // solves across 3 retries. Stop at the first block.
+        if (result.wafBlocked) {
+          console.error(
+            `[donor-sync] Edge block detected at ${candidate} - skipping the remaining ${
+              loginCandidates.length - loginCandidates.indexOf(candidate) - 1
+            } login candidate(s) on this origin`,
+          );
+          break;
+        }
       }
       if (!authenticated) {
         job.status = "failed";
