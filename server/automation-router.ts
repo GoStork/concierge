@@ -14,6 +14,7 @@ import { isGostorkStaff, isProviderStaff } from "./parent-crm";
 import { JOURNEY_STAGE_ORDER } from "../shared/journey-ladder";
 import { SILENCE_DEFAULT_THRESHOLDS, resolveSilenceConfig } from "./silence-sweep";
 import { SERVICE_LINES } from "./service-lines";
+import { getAutomationDefaults, resolveAutoFlag, resolveAgreementMode, type AgreementMode } from "./automation-defaults";
 
 export const automationRouter = Router();
 
@@ -26,7 +27,14 @@ function requireAuth(req: Request, res: Response, next: () => void) {
 
 function who(req: Request, res: Response): { isAdmin: boolean; providerId: string | null } | null {
   const user = req.user as any;
-  if (isGostorkStaff(user)) return { isAdmin: true, providerId: null };
+  if (isGostorkStaff(user)) {
+    // GoStork staff may act on behalf of a specific provider org (admin
+    // provider edit page) by passing ?providerId=; without it they edit
+    // platform defaults as before.
+    const target = typeof req.query?.providerId === "string" ? req.query.providerId : "";
+    if (target) return { isAdmin: false, providerId: target };
+    return { isAdmin: true, providerId: null };
+  }
   if (isProviderStaff(user)) return { isAdmin: false, providerId: user.providerId };
   res.status(403).json({ message: "Forbidden" });
   return null;
@@ -79,49 +87,68 @@ const FEATURE_GATES: Record<string, string> = {
 };
 
 /**
- * Unlike the silence config, these flags always live on a Provider row - a
- * GoStork admin whose account is linked to the house provider edits that
- * org's flags, not platform defaults. So the org comes straight from the
- * user's own providerId, whatever their role.
+ * Whose billing automation is being edited. Mirrors the silence signal:
+ * GoStork staff without ?providerId= edit the PLATFORM DEFAULTS every org
+ * inherits; with ?providerId= (admin provider edit page) they act on that
+ * org; provider staff always act on their own org.
  */
-function featureProviderId(req: Request, res: Response): string | null {
+function featuresTarget(req: Request, res: Response): { defaults: true } | { defaults: false; providerId: string } | null {
   const user = req.user as any;
-  if (!isGostorkStaff(user) && !isProviderStaff(user)) {
-    res.status(403).json({ message: "Forbidden" });
-    return null;
+  if (isGostorkStaff(user)) {
+    const target = typeof req.query?.providerId === "string" ? req.query.providerId : "";
+    return target ? { defaults: false, providerId: target } : { defaults: true };
   }
-  if (!user?.providerId) {
-    res.status(403).json({ message: "Provider account required" });
-    return null;
+  if (isProviderStaff(user) && user.providerId) {
+    return { defaults: false, providerId: user.providerId as string };
   }
-  return user.providerId as string;
+  res.status(403).json({ message: "Forbidden" });
+  return null;
+}
+
+const isAgreementMode = (v: unknown): v is AgreementMode =>
+  v === "off" || v === "approval" || v === "auto_send";
+
+async function gateStates() {
+  const rows = await prisma.conciergePromptSection.findMany({
+    where: { key: { in: Object.values(FEATURE_GATES) } },
+    select: { key: true, isActive: true },
+  });
+  const active = new Map(rows.map((g) => [g.key, g.isActive]));
+  return Object.fromEntries(
+    Object.entries(FEATURE_GATES).map(([field, key]) => [field, active.get(key) === true]),
+  );
 }
 
 automationRouter.get("/api/automation/features", requireAuth, async (req, res) => {
   try {
-    const providerId = featureProviderId(req, res);
-    if (!providerId) return;
-    const [provider, gateRows] = await Promise.all([
-      prisma.provider.findUnique({
-        where: { id: providerId },
-        select: { agreementAutomation: true, autoFeaturesEnabled: true },
-      }),
-      prisma.conciergePromptSection.findMany({
-        where: { key: { in: Object.values(FEATURE_GATES) } },
-        select: { key: true, isActive: true },
-      }),
-    ]);
+    const t = featuresTarget(req, res);
+    if (!t) return;
+    const [defaults, gates] = await Promise.all([getAutomationDefaults(prisma), gateStates()]);
+    if (t.defaults) {
+      return res.json({ isAdminDefaults: true, defaults, effective: defaults, gates });
+    }
+    const provider = await prisma.provider.findUnique({
+      where: { id: t.providerId },
+      select: { agreementAutomation: true, autoFeaturesEnabled: true },
+    });
     if (!provider) return res.status(404).json({ message: "Provider not found" });
     const flags = (provider.autoFeaturesEnabled as any) || {};
-    const gateActive = new Map(gateRows.map((g) => [g.key, g.isActive]));
     res.json({
-      autoCostSheetDraft: flags.autoCostSheetDraft === true,
-      autoInvoiceDraft: flags.autoInvoiceDraft === true,
-      agreementAutomation: provider.agreementAutomation ?? null,
-      adminAutoAgreementDraft: flags.autoAgreementDraft === true,
-      gates: Object.fromEntries(
-        Object.entries(FEATURE_GATES).map(([field, key]) => [field, gateActive.get(key) === true]),
-      ),
+      isAdminDefaults: false,
+      // Raw overrides; null = inherit the platform default.
+      overrides: {
+        autoCostSheetDraft: typeof flags.autoCostSheetDraft === "boolean" ? flags.autoCostSheetDraft : null,
+        autoInvoiceDraft: typeof flags.autoInvoiceDraft === "boolean" ? flags.autoInvoiceDraft : null,
+        agreementAutomation: isAgreementMode(provider.agreementAutomation) ? provider.agreementAutomation : null,
+      },
+      legacyAutoAgreementDraft: flags.autoAgreementDraft === true,
+      defaults,
+      effective: {
+        autoCostSheetDraft: resolveAutoFlag(flags, "autoCostSheetDraft", defaults),
+        autoInvoiceDraft: resolveAutoFlag(flags, "autoInvoiceDraft", defaults),
+        agreementAutomation: resolveAgreementMode(provider, defaults),
+      },
+      gates,
     });
   } catch (e: any) {
     console.error("[automation] GET features:", e);
@@ -131,25 +158,57 @@ automationRouter.get("/api/automation/features", requireAuth, async (req, res) =
 
 automationRouter.put("/api/automation/features", requireAuth, async (req, res) => {
   try {
-    const providerId = featureProviderId(req, res);
-    if (!providerId) return;
+    const t = featuresTarget(req, res);
+    if (!t) return;
     const body = req.body || {};
+    for (const k of ["autoCostSheetDraft", "autoInvoiceDraft"] as const) {
+      if (body[k] !== undefined && typeof body[k] !== "boolean" && body[k] !== null) {
+        return res.status(400).json({ message: `${k} must be true, false, or null` });
+      }
+    }
+    if (body.agreementAutomation !== undefined && body.agreementAutomation !== null && !isAgreementMode(body.agreementAutomation)) {
+      return res.status(400).json({ message: "agreementAutomation must be off, approval, auto_send, or null" });
+    }
+
+    if (t.defaults) {
+      // Platform defaults have no "inherit" - null resets to built-in off.
+      const data = {
+        ...(body.autoCostSheetDraft !== undefined ? { autoCostSheetDraft: body.autoCostSheetDraft === true } : {}),
+        ...(body.autoInvoiceDraft !== undefined ? { autoInvoiceDraft: body.autoInvoiceDraft === true } : {}),
+        ...(body.agreementAutomation !== undefined
+          ? { agreementAutomation: isAgreementMode(body.agreementAutomation) ? body.agreementAutomation : "off" }
+          : {}),
+      };
+      await prisma.automationDefaults.upsert({
+        where: { id: "defaults" },
+        create: { id: "defaults", ...data },
+        update: data,
+      });
+      const defaults = await getAutomationDefaults(prisma);
+      return res.json({ ok: true, isAdminDefaults: true, defaults });
+    }
+
     const existing = await prisma.provider.findUnique({
-      where: { id: providerId },
+      where: { id: t.providerId },
       select: { autoFeaturesEnabled: true },
     });
     if (!existing) return res.status(404).json({ message: "Provider not found" });
-    const current = (existing.autoFeaturesEnabled as any) || {};
-    const next = {
-      ...current,
-      ...(typeof body.autoCostSheetDraft === "boolean" ? { autoCostSheetDraft: body.autoCostSheetDraft } : {}),
-      ...(typeof body.autoInvoiceDraft === "boolean" ? { autoInvoiceDraft: body.autoInvoiceDraft } : {}),
-    };
+    const next = { ...((existing.autoFeaturesEnabled as any) || {}) };
+    for (const k of ["autoCostSheetDraft", "autoInvoiceDraft"] as const) {
+      if (body[k] === null) delete next[k]; // back to inheriting the default
+      else if (typeof body[k] === "boolean") next[k] = body[k];
+    }
+    // Explicitly choosing "use the GoStork default" also clears the legacy
+    // rollout flag, which would otherwise pin the org to "approval".
+    if (body.agreementAutomation === null) delete next.autoAgreementDraft;
     await prisma.provider.update({
-      where: { id: providerId },
-      data: { autoFeaturesEnabled: next },
+      where: { id: t.providerId },
+      data: {
+        autoFeaturesEnabled: next,
+        ...(body.agreementAutomation !== undefined ? { agreementAutomation: body.agreementAutomation } : {}),
+      },
     });
-    res.json({ ok: true, autoCostSheetDraft: next.autoCostSheetDraft === true, autoInvoiceDraft: next.autoInvoiceDraft === true });
+    res.json({ ok: true });
   } catch (e: any) {
     console.error("[automation] PUT features:", e);
     res.status(500).json({ message: e?.message || "Server error" });

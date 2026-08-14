@@ -37,11 +37,23 @@ interface SilenceSettings {
   lineEnabled: Record<string, boolean>;
 }
 
-interface AutomationFeatures {
+interface AutomationDefaultValues {
   autoCostSheetDraft: boolean;
   autoInvoiceDraft: boolean;
-  agreementAutomation: string | null;
-  adminAutoAgreementDraft: boolean;
+  agreementAutomation: string;
+}
+
+interface AutomationFeatures {
+  isAdminDefaults: boolean;
+  defaults: AutomationDefaultValues;
+  effective: AutomationDefaultValues;
+  /** Org mode only; null = inherit the platform default. */
+  overrides?: {
+    autoCostSheetDraft: boolean | null;
+    autoInvoiceDraft: boolean | null;
+    agreementAutomation: string | null;
+  };
+  legacyAutoAgreementDraft?: boolean;
   gates: Record<string, boolean>;
 }
 
@@ -81,12 +93,17 @@ function GatePausedNote({ active }: { active: boolean }) {
   );
 }
 
-function SilenceSection() {
+// Admin-on-behalf-of mode: the admin provider edit page passes the target
+// provider's id and every automation call carries ?providerId=.
+const withOrg = (url: string, orgId?: string) =>
+  orgId ? `${url}${url.includes("?") ? "&" : "?"}providerId=${encodeURIComponent(orgId)}` : url;
+
+function SilenceSection({ orgId }: { orgId?: string }) {
   const { toast } = useToast();
   const { data, isLoading } = useQuery<SilenceSettings>({
-    queryKey: ["/api/automation/silence"],
+    queryKey: ["/api/automation/silence", orgId || "me"],
     queryFn: async () => {
-      const res = await fetch("/api/automation/silence", { credentials: "include" });
+      const res = await fetch(withOrg("/api/automation/silence", orgId), { credentials: "include" });
       if (!res.ok) throw new Error("Could not load automation settings");
       return res.json();
     },
@@ -112,7 +129,7 @@ function SilenceSection() {
 
   const save = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("PUT", "/api/automation/silence", {
+      const res = await apiRequest("PUT", withOrg("/api/automation/silence", orgId), {
         enabled,
         evaEnabled,
         thresholds: Object.fromEntries(
@@ -218,50 +235,106 @@ function SilenceSection() {
   );
 }
 
+const MODE_LABELS: Record<string, string> = {
+  off: "Off",
+  approval: "Draft for approval",
+  auto_send: "Fully automated",
+};
+const USE_DEFAULT = "__default__";
+
 /**
- * The deposit-to-agreement pipeline's three automations. Cost sheet and
- * invoice drafts always post an approval card in the chat before anything
- * reaches the parent; agreement mode has its own manual/approval/auto ladder.
+ * The deposit-to-agreement pipeline's three automations, cascading like the
+ * silence signal: GoStork admin (no orgId, no own org context) edits the
+ * platform defaults; a provider org inherits them until it overrides. Cost
+ * sheet and invoice drafts always post an approval card in the chat before
+ * anything reaches the parent; agreement mode has its own ladder.
  */
-function BillingAutomationSection() {
+function BillingAutomationSection({ orgId }: { orgId?: string }) {
   const { toast } = useToast();
   const { data, isLoading, isError, error } = useQuery<AutomationFeatures>({
-    queryKey: ["/api/automation/features"],
+    queryKey: ["/api/automation/features", orgId || "me"],
+    queryFn: async () => {
+      const res = await fetch(withOrg("/api/automation/features", orgId), { credentials: "include" });
+      if (!res.ok) throw new Error("Could not load billing automation settings");
+      return res.json();
+    },
     staleTime: 0,
   });
 
   const saveFeature = useMutation({
-    mutationFn: async (patch: { autoCostSheetDraft?: boolean; autoInvoiceDraft?: boolean }) =>
-      apiRequest("PUT", "/api/automation/features", patch),
+    mutationFn: async (patch: {
+      autoCostSheetDraft?: boolean | null;
+      autoInvoiceDraft?: boolean | null;
+      agreementAutomation?: string | null;
+    }) => apiRequest("PUT", withOrg("/api/automation/features", orgId), patch),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/automation/features"] });
-      toast({ title: "Automation setting saved" });
-    },
-    onError: (e: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/automation/features"] });
-      toast({ title: "Could not save", description: e?.message, variant: "destructive" });
-    },
-  });
-
-  // The provider's effective agreement choice: their own setting wins; when
-  // unset, the GoStork rollout toggle maps on -> approval, off -> off.
-  const effectiveMode = data?.agreementAutomation ?? (data?.adminAutoAgreementDraft ? "approval" : "off");
-  const [pendingMode, setPendingMode] = useState<string | null>(null);
-  const selectedMode = pendingMode ?? effectiveMode;
-
-  const saveAgreementMode = useMutation({
-    mutationFn: async (mode: string) => apiRequest("PUT", "/api/agreements/automation", { mode }),
-    onSuccess: () => {
-      toast({ title: "Automation setting saved" });
       queryClient.invalidateQueries({ queryKey: ["/api/automation/features"] });
       queryClient.invalidateQueries({ queryKey: ["/api/agreements/templates"] });
+      toast({ title: "Automation setting saved" });
       setPendingMode(null);
     },
     onError: (e: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/automation/features"] });
       setPendingMode(null);
       toast({ title: "Could not save", description: e?.message, variant: "destructive" });
     },
   });
+
+  const isDefaultsMode = data?.isAdminDefaults === true;
+  // Selected radio: the org's own override, else "approval" when the legacy
+  // rollout flag pins it, else "use the GoStork default". Defaults mode just
+  // shows the default value itself.
+  const settledMode = isDefaultsMode
+    ? data?.defaults.agreementAutomation ?? "off"
+    : data?.overrides?.agreementAutomation ?? (data?.legacyAutoAgreementDraft ? "approval" : USE_DEFAULT);
+  const [pendingMode, setPendingMode] = useState<string | null>(null);
+  const selectedMode = pendingMode ?? settledMode;
+
+  /** One toggle row that knows whether the org is inheriting or overriding. */
+  const FlagRow = ({ flag, title, helper }: {
+    flag: "autoCostSheetDraft" | "autoInvoiceDraft";
+    title: string;
+    helper: string;
+  }) => {
+    if (!data) return null;
+    const override = data.overrides?.[flag] ?? null;
+    const defaultOn = data.defaults[flag];
+    const checked = isDefaultsMode ? defaultOn : data.effective[flag];
+    return (
+      <label className="flex items-center justify-between gap-3 text-sm font-ui">
+        <span>
+          {title}
+          <span className="block t-helper">{helper}</span>
+          {!isDefaultsMode && (
+            override === null ? (
+              <span className="block t-helper" data-testid={`inherit-note-${flag}`}>
+                Following GoStork's default (currently {defaultOn ? "on" : "off"}).
+              </span>
+            ) : (
+              <span className="block t-helper" data-testid={`override-note-${flag}`}>
+                Overriding GoStork's default ({defaultOn ? "on" : "off"}).{" "}
+                <button
+                  type="button"
+                  className="underline text-primary"
+                  onClick={(e) => { e.preventDefault(); saveFeature.mutate({ [flag]: null }); }}
+                  data-testid={`btn-reset-${flag}`}
+                >
+                  Reset to default
+                </button>
+              </span>
+            )
+          )}
+          <GatePausedNote active={data.gates[flag] !== false} />
+        </span>
+        <Switch
+          checked={checked}
+          disabled={saveFeature.isPending}
+          onCheckedChange={(v) => saveFeature.mutate({ [flag]: v })}
+          data-testid={`switch-${flag === "autoCostSheetDraft" ? "auto-cost-sheet" : "auto-invoice"}`}
+        />
+      </label>
+    );
+  };
 
   if (isError) {
     return (
@@ -285,47 +358,36 @@ function BillingAutomationSection() {
     );
   }
 
+  const agreementOptions = isDefaultsMode
+    ? AGREEMENT_OPTIONS
+    : [
+        {
+          value: USE_DEFAULT,
+          label: `Use GoStork default (currently: ${MODE_LABELS[data.defaults.agreementAutomation] || "Off"})`,
+          description: "Follow whatever GoStork sets platform-wide. Pick any option below to lock your own choice instead.",
+        },
+        ...AGREEMENT_OPTIONS,
+      ];
+
   return (
     <div className="space-y-6">
       <SectionHeading
         id="billing"
         title="Documents & billing"
-        subtitle="The paperwork pipeline, automated end to end: a cost sheet when a call is booked, an invoice when the family is ready, and the agreement when their deposit clears."
+        subtitle={`The paperwork pipeline, automated end to end: a cost sheet when a call is booked, an invoice when the family is ready, and the agreement when their deposit clears.${isDefaultsMode ? " You are editing the platform defaults; each agency can override them." : ""}`}
       />
 
       <div className="rounded-[var(--radius)] border border-border bg-card p-4 space-y-3">
-        <label className="flex items-center justify-between gap-3 text-sm font-ui">
-          <span>
-            Cost sheet draft on booking
-            <span className="block t-helper">
-              When a parent books a consultation, your AI concierge drafts a personalized cost sheet
-              and posts it in the chat for you to approve before the family sees it.
-            </span>
-            <GatePausedNote active={data.gates.autoCostSheetDraft !== false} />
-          </span>
-          <Switch
-            checked={data.autoCostSheetDraft}
-            disabled={saveFeature.isPending}
-            onCheckedChange={(v) => saveFeature.mutate({ autoCostSheetDraft: v })}
-            data-testid="switch-auto-cost-sheet"
-          />
-        </label>
-        <label className="flex items-center justify-between gap-3 text-sm font-ui">
-          <span>
-            Invoice draft on parent-ready
-            <span className="block t-helper">
-              When a family signals they are ready to move forward, a deposit invoice is drafted and
-              posted in the chat for you to approve before it's sent.
-            </span>
-            <GatePausedNote active={data.gates.autoInvoiceDraft !== false} />
-          </span>
-          <Switch
-            checked={data.autoInvoiceDraft}
-            disabled={saveFeature.isPending}
-            onCheckedChange={(v) => saveFeature.mutate({ autoInvoiceDraft: v })}
-            data-testid="switch-auto-invoice"
-          />
-        </label>
+        <FlagRow
+          flag="autoCostSheetDraft"
+          title="Cost sheet draft on booking"
+          helper="When a parent books a consultation, the AI concierge drafts a personalized cost sheet and posts it in the chat for the provider to approve before the family sees it."
+        />
+        <FlagRow
+          flag="autoInvoiceDraft"
+          title="Invoice draft on parent-ready"
+          helper="When a family signals they are ready to move forward, a deposit invoice is drafted and posted in the chat for the provider to approve before it's sent."
+        />
       </div>
 
       <div className="rounded-[var(--radius)] border border-border bg-card p-4 space-y-3">
@@ -336,7 +398,7 @@ function BillingAutomationSection() {
         <p className="t-helper">Choose what happens when a parent's deposit payment clears.</p>
         <GatePausedNote active={data.gates.agreementAutomation !== false} />
         <div className="space-y-2">
-          {AGREEMENT_OPTIONS.map(opt => (
+          {agreementOptions.map(opt => (
             <label
               key={opt.value}
               className={`flex items-start gap-3 p-3 rounded-[var(--radius)] border cursor-pointer transition-colors ${
@@ -350,10 +412,10 @@ function BillingAutomationSection() {
                 checked={selectedMode === opt.value}
                 onChange={() => {
                   setPendingMode(opt.value);
-                  saveAgreementMode.mutate(opt.value);
+                  saveFeature.mutate({ agreementAutomation: opt.value === USE_DEFAULT ? null : opt.value });
                 }}
                 className="mt-0.5 accent-primary"
-                data-testid={`radio-agreement-automation-${opt.value}`}
+                data-testid={`radio-agreement-automation-${opt.value === USE_DEFAULT ? "default" : opt.value}`}
               />
               <span>
                 <span className="block text-sm font-medium">{opt.label}</span>
@@ -374,9 +436,12 @@ function BillingAutomationSection() {
 
 const SECTION_IDS = ["silence", "auto-reply", "billing"] as const;
 
-export default function AccountAutomationPage() {
+export default function AccountAutomationPage({ providerId: providerIdProp }: { providerId?: string } = {}) {
   const { user } = useAuth();
-  const providerId = (user as any)?.providerId || "";
+  // orgId is set only in admin-on-behalf-of mode (admin provider edit page);
+  // providerId keeps its original meaning for the provider's own settings.
+  const orgId = providerIdProp;
+  const providerId = providerIdProp || (user as any)?.providerId || "";
   const [searchParams] = useSearchParams();
   const section = searchParams.get("section");
   const scrolledRef = useRef<string | null>(null);
@@ -399,19 +464,23 @@ export default function AccountAutomationPage() {
     attempt();
   }, [section]);
 
+  // GoStork staff with no org context edit the platform defaults, so the
+  // billing section renders for them even without a linked provider org.
+  const isGostorkAdmin = (((user as any)?.roles || []) as string[]).some((r) => r === "GOSTORK_ADMIN" || r === "GOSTORK_CONCIERGE");
+
   return (
     <div className="space-y-10 max-w-3xl" data-testid="automation-page">
+      {(providerId || isGostorkAdmin) && <BillingAutomationSection orgId={orgId} />}
       {providerId && (
         <>
-          <BillingAutomationSection />
           <div className="border-t border-border" />
           <div id="auto-reply" className="scroll-mt-24">
-            <ProviderAutoReplyTab />
+            <ProviderAutoReplyTab providerId={orgId} />
           </div>
           <div className="border-t border-border" />
         </>
       )}
-      <SilenceSection />
+      <SilenceSection orgId={orgId} />
     </div>
   );
 }

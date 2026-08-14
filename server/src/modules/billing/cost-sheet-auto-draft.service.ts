@@ -1,6 +1,7 @@
 import { asJson } from "../../../../shared/prisma-json";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { getAutomationDefaults, resolveAutoFlag } from "../../../automation-defaults";
 import { StorageService } from "../storage/storage.service";
 import { extractFromChatMessages } from "./cost-sheet-chat-extractor";
 import { findProviderTypeIdForDonorType } from "../costs/total-cost.utils";
@@ -106,8 +107,8 @@ export class CostSheetAutoDraftService {
       const providerId = booking.providerUser?.providerId;
       if (!providerId) return this.skip("no_provider");
 
-      const autoFeatures = (booking.providerUser?.provider as any)?.autoFeaturesEnabled || {};
-      if (autoFeatures?.autoCostSheetDraft !== true) {
+      const defaults = await getAutomationDefaults(this.prisma);
+      if (!resolveAutoFlag((booking.providerUser?.provider as any)?.autoFeaturesEnabled, "autoCostSheetDraft", defaults)) {
         return this.skip("provider_opted_out");
       }
 

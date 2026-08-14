@@ -18,10 +18,16 @@ import { ArrowLeft, Building2, Loader2, Pencil, Globe, Phone, Calendar, Sparkles
 import { useToast } from "@/hooks/use-toast";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { CountryAutocompleteInput } from "@/components/ui/country-autocomplete-input";
-import { ProviderAutoFeaturesCard } from "@/components/provider-auto-features-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import ProviderAutoReplyTab from "@/components/provider-auto-reply-tab";
 import MembersTable from "@/components/members-table";
+import CompanyTab from "@/components/company-tab";
+import DocumentsTab from "@/components/documents-tab";
+import DoctorsDatabasePanel from "@/components/doctors-database-panel";
+import ProviderKnowledgeTab from "@/components/provider-knowledge-tab";
+import ConciergeSettingsTab from "@/components/concierge-settings-tab";
+import AccountPlaybooksPage from "@/pages/account-playbooks-page";
+import AccountAutomationPage from "@/pages/account-automation-page";
+import { AdminCalendarTable } from "@/components/calendar/admin-calendar-table";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
 import { ProviderBillingTab } from "@/components/provider-billing-tab";
@@ -134,7 +140,7 @@ type ScrapedData = {
   teamMembers: ScrapedTeamMember[];
 };
 
-const VALID_TABS = ["profile", "users", "egg-donors", "surrogates", "sperm-donors", "costs", "legal-identity", "billing", "payouts", "sponsorship", "branding", "auto-replies"];
+const VALID_TABS = ["profile", "company", "users", "calendar", "egg-donors", "surrogates", "sperm-donors", "costs", "agreements", "doctors", "knowledge", "ai-concierge", "playbooks", "automation", "legal-identity", "billing", "payouts", "sponsorship", "branding", "auto-replies"];
 
 export default function AdminProviderEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -147,7 +153,10 @@ export default function AdminProviderEditPage() {
   const isGostorkDeveloper = user?.roles?.includes("GOSTORK_DEVELOPER") ?? false;
   const canToggleTestData = isGostorkAdmin || isGostorkDeveloper;
 
-  const currentTab = VALID_TABS.includes(searchParams.get("tab") || "") ? searchParams.get("tab")! : "profile";
+  const rawTab = VALID_TABS.includes(searchParams.get("tab") || "") ? searchParams.get("tab")! : "profile";
+  // Auto-reply was consolidated into the Automation tab (same as the provider
+  // side); old ?tab=auto-replies links land there.
+  const currentTab = rawTab === "auto-replies" ? "automation" : rawTab;
   const handleTabChange = (value: string) => setSearchParams({ tab: value }, { replace: true });
 
   const sensors = useSensors(
@@ -755,13 +764,24 @@ export default function AdminProviderEditPage() {
         <div className="overflow-x-auto w-full">
         <TabsList className="h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border min-w-full justify-start">
           <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
+          <TabsTrigger value="company" className={tabTriggerClass} data-testid="tab-edit-company">Company</TabsTrigger>
           <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>
+          <TabsTrigger value="calendar" className={tabTriggerClass} data-testid="tab-edit-calendar">Calendar</TabsTrigger>
           {showEggDonors && <TabsTrigger value="egg-donors" className={tabTriggerClass} data-testid="tab-edit-egg-donors">Egg Donors</TabsTrigger>}
           {showSurrogates && <TabsTrigger value="surrogates" className={tabTriggerClass} data-testid="tab-edit-surrogates">Surrogates</TabsTrigger>}
           {showSpermDonors && <TabsTrigger value="sperm-donors" className={tabTriggerClass} data-testid="tab-edit-sperm-donors">Sperm Donors</TabsTrigger>}
           <TabsTrigger value="costs" className={tabTriggerClass} data-testid="tab-edit-costs">
             <DollarSign className="w-4 h-4 mr-1.5 inline" />
             Costs
+          </TabsTrigger>
+          <TabsTrigger value="agreements" className={tabTriggerClass} data-testid="tab-edit-agreements">Agreements</TabsTrigger>
+          {isIvfClinic && <TabsTrigger value="doctors" className={tabTriggerClass} data-testid="tab-edit-doctors">Doctors</TabsTrigger>}
+          <TabsTrigger value="knowledge" className={tabTriggerClass} data-testid="tab-edit-knowledge">Knowledge</TabsTrigger>
+          <TabsTrigger value="ai-concierge" className={tabTriggerClass} data-testid="tab-edit-ai-concierge">AI Concierge</TabsTrigger>
+          <TabsTrigger value="playbooks" className={tabTriggerClass} data-testid="tab-edit-playbooks">Playbooks</TabsTrigger>
+          <TabsTrigger value="automation" className={tabTriggerClass} data-testid="tab-edit-automation">
+            <MessageSquarePlus className="w-4 h-4 mr-1.5 inline" />
+            Automation
           </TabsTrigger>
           <TabsTrigger value="legal-identity" className={tabTriggerClass} data-testid="tab-edit-legal-identity">
             Legal Identity
@@ -779,10 +799,6 @@ export default function AdminProviderEditPage() {
           <TabsTrigger value="branding" className={tabTriggerClass} data-testid="tab-edit-branding">
             <Palette className="w-4 h-4 mr-1.5 inline" />
             Branding
-          </TabsTrigger>
-          <TabsTrigger value="auto-replies" className={tabTriggerClass} data-testid="tab-edit-auto-replies">
-            <MessageSquarePlus className="w-4 h-4 mr-1.5 inline" />
-            Auto-Reply
           </TabsTrigger>
         </TabsList>
         </div>
@@ -1570,11 +1586,6 @@ export default function AdminProviderEditPage() {
               </Card>
             )}
 
-            {/* Phase 2: GoStork-admin-only automation feature flags. */}
-            {isGostorkAdmin && (
-              <ProviderAutoFeaturesCard providerId={provider.id} initial={provider.autoFeaturesEnabled} />
-            )}
-
             <SaveBar
               visible={isDirty}
               position="fixed"
@@ -1587,8 +1598,42 @@ export default function AdminProviderEditPage() {
           </form>
         </TabsContent>
 
+        <TabsContent value="company">
+          <CompanyTab providerId={provider.id} />
+        </TabsContent>
+
         <TabsContent value="users">
           <MembersTable context="provider" providerId={provider.id} currentUserId="" canManage isAdmin compact />
+        </TabsContent>
+
+        <TabsContent value="calendar">
+          <AdminCalendarTable providerId={provider.id} />
+        </TabsContent>
+
+        <TabsContent value="agreements">
+          <DocumentsTab providerId={provider.id} />
+        </TabsContent>
+
+        {isIvfClinic && (
+          <TabsContent value="doctors">
+            <DoctorsDatabasePanel providerId={provider.id} />
+          </TabsContent>
+        )}
+
+        <TabsContent value="knowledge">
+          <ProviderKnowledgeTab providerId={provider.id} />
+        </TabsContent>
+
+        <TabsContent value="ai-concierge">
+          <ConciergeSettingsTab readOnly />
+        </TabsContent>
+
+        <TabsContent value="playbooks">
+          <AccountPlaybooksPage providerId={provider.id} />
+        </TabsContent>
+
+        <TabsContent value="automation">
+          <AccountAutomationPage providerId={provider.id} />
         </TabsContent>
 
         {showEggDonors && (
@@ -1629,10 +1674,6 @@ export default function AdminProviderEditPage() {
 
         <TabsContent value="branding">
           <ProviderBrandingTab providerId={provider.id} brandingEnabled={provider.brandingEnabled ?? false} provider={provider} />
-        </TabsContent>
-
-        <TabsContent value="auto-replies">
-          <ProviderAutoReplyTab providerId={provider.id} />
         </TabsContent>
 
         <TabsContent value="billing">

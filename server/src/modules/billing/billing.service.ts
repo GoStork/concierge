@@ -20,6 +20,7 @@ import {
   generateAndAnnounceAgreement,
   maybeCompleteHandoff,
 } from "../../../agreement-flow";
+import { getAutomationDefaults, resolveAutoFlag } from "../../../automation-defaults";
 import { resolveAgreementTemplate, agreementDocumentType } from "../../../pandadoc-service";
 import { resolveParentEvaSessionId } from "../../../parent-visibility";
 import { resolveQuotePaymentSchedule } from "../costs/payment-schedule.service";
@@ -712,8 +713,10 @@ export class BillingService {
       select: { isActive: true },
     });
     if (!gate1?.isActive) return { status: "legacy" };
-    const autoFeatures = (session.provider.autoFeaturesEnabled as any) || {};
-    if (autoFeatures.autoInvoiceDraft !== true) return { status: "legacy" };
+    const defaults = await getAutomationDefaults(this.prisma);
+    if (!resolveAutoFlag(session.provider.autoFeaturesEnabled, "autoInvoiceDraft", defaults)) {
+      return { status: "legacy" };
+    }
 
     // Idempotency: one pending draft card per session, ever.
     const existingDrafts = await this.prisma.aiChatMessage.findMany({
@@ -822,7 +825,7 @@ export class BillingService {
       select: { isActive: true },
     });
     if (!gate1?.isActive) return { status: "off" };
-    const mode = effectiveAgreementMode(invoice.provider);
+    const mode = effectiveAgreementMode(invoice.provider, await getAutomationDefaults(this.prisma));
     if (mode === "off") return { status: "off" };
 
     // Idempotency: one live agreement per session (any status except the

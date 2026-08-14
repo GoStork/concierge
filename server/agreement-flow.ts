@@ -5,6 +5,7 @@ import {
   agreementDocumentType,
 } from "./pandadoc-service";
 import { getBaseUrl as getAppBaseUrl } from "./src/lib/get-base-url";
+import { resolveAgreementMode, type AutomationDefaultsShape } from "./automation-defaults";
 
 // Shared agreement generation + announcement flow, used by:
 //  - the manual provider route (POST /api/agreements/generate-from-template)
@@ -21,19 +22,16 @@ export class PaymentRequiredError extends Error {
 }
 
 /**
- * Effective agreement-automation mode for a provider. The provider's own
- * setting (agreementAutomation) overrides the GoStork-admin rollout toggle
- * (autoFeaturesEnabled.autoAgreementDraft); when the provider never chose,
- * the admin toggle maps on -> "approval", off -> "off".
+ * Effective agreement-automation mode for a provider: their own setting,
+ * else the legacy GoStork-admin rollout toggle (=== true -> "approval"),
+ * else the platform default (AutomationDefaults row). Callers fetch the
+ * defaults once via getAutomationDefaults() and pass them in.
  */
-export function effectiveAgreementMode(provider: {
-  agreementAutomation?: string | null;
-  autoFeaturesEnabled?: unknown;
-}): "off" | "approval" | "auto_send" {
-  const own = provider.agreementAutomation;
-  if (own === "off" || own === "approval" || own === "auto_send") return own;
-  const auto = (provider.autoFeaturesEnabled as { autoAgreementDraft?: boolean } | null)?.autoAgreementDraft;
-  return auto === true ? "approval" : "off";
+export function effectiveAgreementMode(
+  provider: { agreementAutomation?: string | null; autoFeaturesEnabled?: unknown },
+  defaults: AutomationDefaultsShape,
+): "off" | "approval" | "auto_send" {
+  return resolveAgreementMode(provider, defaults);
 }
 
 // Maps an AiChatSession.subjectType to the agreement service type; falls back

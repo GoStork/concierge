@@ -149,6 +149,7 @@ model Provider {
   providerQuotes                        ProviderQuote[]
   bankAccount                           ProviderBankAccount?
   w9                                    ProviderW9?
+  gostorkAgreements                     ProviderAgreement[]
   // Profile sponsorship: when sponsoredUntil > now() the provider's own top-level
   // profile (clinic/agency) is boosted in the marketplace. sponsorBoostSeed is
   // bumped on each (de)activation to drive the rotating sponsored-order shuffle.
@@ -2665,6 +2666,51 @@ model ProviderW9 {
   @@index([providerId])
 }
 
+// GoStork -> Provider service agreement: the contract each provider signs with
+// GoStork itself (not the parent-facing Agreement model, which needs a parent +
+// chat session). Mirrors ProviderW9's lifecycle, plus per-provider CUSTOM
+// template support and history - re-sending supersedes the previous live row
+// instead of deleting it, so signed copies stay downloadable for audit.
+model ProviderAgreement {
+  id                         String    @id @default(uuid())
+  providerId                 String
+  pandaDocDocumentId         String?   @unique
+  pandaDocViewUrl            String?
+  /// DRAFT (custom template being configured, not sent) | AWAITING_GOSTORK
+  /// (sent; GoStork fills referral fees + signs first) | SENT (provider's
+  /// turn) | COMPLETED | ERROR
+  status                     String    @default("DRAFT")
+  /// DEFAULT = the global GoStork Provider Service Agreement template (house
+  /// provider's agreement template fields). CUSTOM = this row carries its own
+  /// uploaded file + PandaDoc template, edited just for this provider.
+  templateSource             String    @default("DEFAULT")
+  customTemplateUrl          String?
+  customTemplateOriginalName String?
+  customPandaDocTemplateId   String?
+  customPandaDocRoles        String? // JSON array of role names with fields
+  /// Provider-side signer (Client role).
+  signerEmail                String?
+  signerUserId               String?
+  /// GoStork-side signer (GoStork role) - the admin who sent it.
+  gostorkSignerEmail         String?
+  gostorkCompletedAt         DateTime?
+  /// Set when the provider notification email + Home task went out (after the
+  /// GoStork signer completed). Guards the webhook against double-notifying.
+  providerNotifiedAt         DateTime?
+  requestedByUserId          String?
+  requestedAt                DateTime?
+  completedAt                DateTime?
+  /// Set when a newer agreement for the same provider is sent. Superseded rows
+  /// stay for the audit trail; tables render them muted.
+  supersededAt               DateTime?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, status])
+}
+
 // ─── Profile Sponsorship ─────────────────────────────────────────────────────
 // Providers pay GoStork monthly to boost their profiles in the marketplace.
 // Two products: SLOT_BUNDLE (a pool of slots filled with individual sub-profiles
@@ -3486,4 +3532,18 @@ model ProfileSaveAudit {
 
   @@index([parentAccountId, createdAt])
   @@index([sessionId])
+}
+
+/// Platform defaults for the billing/document automations (one row, id
+/// "defaults"), the base every provider org inherits unless it saved its own
+/// override: autoFeaturesEnabled.autoCostSheetDraft / autoInvoiceDraft
+/// (JSON key absent = inherit) and Provider.agreementAutomation (null =
+/// inherit). GoStork admin edits this row from /account/automation.
+model AutomationDefaults {
+  id                  String   @id @default("defaults")
+  autoCostSheetDraft  Boolean  @default(false)
+  autoInvoiceDraft    Boolean  @default(false)
+  /// "off" | "approval" | "auto_send"
+  agreementAutomation String   @default("off")
+  updatedAt           DateTime @updatedAt
 }

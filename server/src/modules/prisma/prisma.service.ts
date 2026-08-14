@@ -317,6 +317,11 @@ export class PrismaService implements OnModuleDestroy {
     return prisma.silenceState;
   }
 
+  // Platform defaults for billing/document automations.
+  get automationDefaults() {
+    return prisma.automationDefaults;
+  }
+
   get journeyPreferences() {
     return prisma.journeyPreferences;
   }

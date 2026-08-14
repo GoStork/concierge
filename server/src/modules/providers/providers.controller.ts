@@ -1530,46 +1530,10 @@ export class ProvidersController {
     }
   }
 
-  // Phase 2: GoStork-admin-only endpoint to flip per-provider automation
-  // feature flags. Parents and provider staff cannot self-enable - we want
-  // to control which providers go live with each automation incrementally.
-  @Patch(":id/auto-features")
-  @UseGuards(SessionOrJwtGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: "Update a provider's automation feature flags (GOSTORK_ADMIN only)" })
-  async updateAutoFeatures(
-    @Param("id") id: string,
-    @Body() body: {
-      autoCostSheetDraft?: boolean;
-      autoInvoiceDraft?: boolean;
-      autoAgreementDraft?: boolean;
-    },
-    @Req() req: Request,
-  ) {
-    const user = req.user as any;
-    const roles: string[] = user?.roles || [];
-    if (!roles.includes("GOSTORK_ADMIN") && !roles.includes("GOSTORK_CONCIERGE")) {
-      throw new ForbiddenException("Only GoStork admins can flip provider automation flags");
-    }
-    const existing = await this.prisma.provider.findUnique({
-      where: { id },
-      select: { autoFeaturesEnabled: true },
-    });
-    if (!existing) throw new ForbiddenException("Provider not found");
-    const current = (existing.autoFeaturesEnabled as any) || {};
-    const next = {
-      ...current,
-      ...(typeof body.autoCostSheetDraft === "boolean" ? { autoCostSheetDraft: body.autoCostSheetDraft } : {}),
-      ...(typeof body.autoInvoiceDraft === "boolean" ? { autoInvoiceDraft: body.autoInvoiceDraft } : {}),
-      ...(typeof body.autoAgreementDraft === "boolean" ? { autoAgreementDraft: body.autoAgreementDraft } : {}),
-    };
-    const updated = await this.prisma.provider.update({
-      where: { id },
-      data: { autoFeaturesEnabled: next },
-      select: { id: true, autoFeaturesEnabled: true },
-    });
-    return updated;
-  }
+  // The Phase 2 per-provider automation rollout endpoint
+  // (PATCH :id/auto-features) is gone: billing automation now cascades from
+  // AutomationDefaults with per-org overrides, all managed through
+  // PUT /api/automation/features (admins pass ?providerId=).
 
   @Delete(":id")
   @UseGuards(SessionOrJwtGuard)
@@ -1623,6 +1587,11 @@ export class ProvidersController {
         await tx.surrogacyAgencyProfile.delete({ where: { id: surrogacyProfile.id } });
       }
       await tx.aiChatSession.updateMany({ where: { providerId: id }, data: { providerId: null } });
+      await tx.providerParentBriefing.deleteMany({ where: { providerId: id } });
+      await tx.providerAutoReplySend.deleteMany({ where: { providerId: id } });
+      await tx.providerAutoReply.deleteMany({ where: { providerId: id } });
+      await tx.providerReview.deleteMany({ where: { providerId: id } });
+      await tx.sponsorship.deleteMany({ where: { providerId: id } });
       await tx.syncLog.deleteMany({ where: { providerId: id } });
       await tx.ivfSuccessRate.deleteMany({ where: { providerId: id } });
       await tx.providerBrandSettings.deleteMany({ where: { providerId: id } });
