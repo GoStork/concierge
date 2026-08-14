@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { FileText, RefreshCw, Zap } from "lucide-react";
 import { PandaDocTemplateEditor } from "./pandadoc-template-editor";
 import { AgreementRows } from "./agreements-list";
+import { AdminProviderAgreements } from "./admin-provider-agreements";
 
 interface Agreement {
   id: string;
@@ -61,18 +62,40 @@ function fileNameFromUrl(url: string | null): string | null {
   return decodeURIComponent(url.split("/").pop()?.split("?")[0] || "agreement-template");
 }
 
-export default function DocumentsTab() {
+export default function DocumentsTab({ providerId: providerIdProp }: { providerId?: string } = {}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const providerId = (user as any)?.providerId || "";
+  // Admin-on-behalf-of mode: the admin provider edit page passes the target
+  // provider's id, and every agreements call carries ?providerId= so the
+  // admin sees and edits exactly what that provider sees.
+  const adminForProvider = !!providerIdProp;
+  const providerId = providerIdProp || (user as any)?.providerId || "";
+  const qs = adminForProvider ? `?providerId=${encodeURIComponent(providerId)}` : "";
+  const withOrg = (url: string) =>
+    adminForProvider ? `${url}${url.includes("?") ? "&" : "?"}providerId=${encodeURIComponent(providerId)}` : url;
+  // GoStork admins use this tab to manage the DEFAULT provider service
+  // agreement template (stored on the house provider row their account is
+  // linked to) and to send/track contracts - not to manage parent agreements.
+  // When impersonating a specific provider they get the provider view instead.
+  const isGoStorkAdmin = !adminForProvider && !!(user as any)?.roles?.includes?.("GOSTORK_ADMIN");
 
   const { data: tpl, isLoading: tplLoading } = useQuery<TemplatesResponse>({
-    queryKey: ["/api/agreements/templates"],
+    queryKey: ["/api/agreements/templates", providerId || "me"],
+    queryFn: async () => {
+      const res = await fetch(withOrg("/api/agreements/templates"), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load agreement templates");
+      return res.json();
+    },
     enabled: !!providerId,
   });
 
   const { data: agreements = [], isLoading: agreementsLoading, refetch } = useQuery<Agreement[]>({
-    queryKey: ["/api/agreements"],
+    queryKey: ["/api/agreements", providerId || "me"],
+    queryFn: async () => {
+      const res = await fetch(withOrg("/api/agreements"), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load agreements");
+      return res.json();
+    },
     enabled: !!providerId,
   });
 
@@ -89,14 +112,16 @@ export default function DocumentsTab() {
   const multiService = serviceTypes.length > 1;
   const rowByService = new Map((tpl?.templates || []).map(t => [t.serviceType, t]));
 
-  const invalidateTemplates = () => queryClient.invalidateQueries({ queryKey: ["/api/agreements/templates"] });
+  const invalidateTemplates = () => queryClient.invalidateQueries({ queryKey: ["/api/agreements/templates", providerId || "me"] });
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-heading">Agreements</h1>
         <p className="t-helper mt-1">
-          Upload your agreement template{multiService ? "s" : ""} and manage contracts sent to parents.
+          {isGoStorkAdmin
+            ? "Configure the GoStork Provider Service Agreement template, send it to providers, and track every signature."
+            : `Upload your agreement template${multiService ? "s" : ""} and manage contracts sent to parents.`}
         </p>
       </div>
 
@@ -113,7 +138,7 @@ export default function DocumentsTab() {
           const fromLegacy = !row?.agreementTemplateUrl && isFirst && !!tpl?.legacy.agreementTemplateUrl;
           const filename = row?.agreementTemplateOriginalName
             ?? (fromLegacy ? tpl?.legacy.agreementTemplateOriginalName ?? fileNameFromUrl(url) : fileNameFromUrl(url));
-          const svcParam = fromLegacy ? "" : `?serviceType=${st}`;
+          const svcParam = fromLegacy ? qs : `?serviceType=${st}${adminForProvider ? `&providerId=${encodeURIComponent(providerId)}` : ""}`;
           return (
             <PandaDocTemplateEditor
               key={st}
@@ -126,13 +151,13 @@ export default function DocumentsTab() {
               pandaDocTemplateId={templateId}
               templateFilename={filename}
               saveTemplate={async ({ url: newUrl, originalName }) => {
-                await apiRequest("PUT", `/api/agreements/templates/${st}`, {
+                await apiRequest("PUT", `/api/agreements/templates/${st}${qs}`, {
                   agreementTemplateUrl: newUrl,
                   agreementTemplateOriginalName: originalName,
                 });
               }}
               deleteTemplate={async () => {
-                await apiRequest("DELETE", `/api/agreements/template${fromLegacy ? "" : `?serviceType=${st}`}`);
+                await apiRequest("DELETE", withOrg(`/api/agreements/template${fromLegacy ? "" : `?serviceType=${st}`}`));
               }}
               syncEndpoint={`/api/agreements/sync-template${svcParam}`}
               editorSessionEndpoint={`/api/agreements/template-editor-session${svcParam}`}
@@ -158,11 +183,11 @@ export default function DocumentsTab() {
             });
           }}
           deleteTemplate={async () => {
-            await apiRequest("DELETE", "/api/agreements/template");
+            await apiRequest("DELETE", withOrg("/api/agreements/template"));
           }}
-          syncEndpoint="/api/agreements/sync-template"
-          editorSessionEndpoint="/api/agreements/template-editor-session"
-          refreshRolesEndpoint="/api/agreements/refresh-roles"
+          syncEndpoint={withOrg("/api/agreements/sync-template")}
+          editorSessionEndpoint={withOrg("/api/agreements/template-editor-session")}
+          refreshRolesEndpoint={withOrg("/api/agreements/refresh-roles")}
           onAfterChange={() => {
             invalidateTemplates();
             queryClient.invalidateQueries({ queryKey: ["/api/providers/:id", providerId] });
@@ -170,7 +195,12 @@ export default function DocumentsTab() {
         />
       )}
 
+      {/* GoStork admin: send + track provider service agreements. The parent
+          agreement sections below are provider self-service concerns. */}
+      {isGoStorkAdmin && <AdminProviderAgreements />}
+
       {/* Agreement automation moved to the consolidated Automation tab. */}
+      {!isGoStorkAdmin && (
       <Card className="p-4 flex items-center gap-3" data-testid="card-agreement-automation-pointer">
         <Zap className="w-5 h-5 text-primary shrink-0" />
         <p className="text-sm font-ui">
@@ -181,9 +211,11 @@ export default function DocumentsTab() {
           .
         </p>
       </Card>
+      )}
 
-      {/* Section E - Sent Agreements. Heading above a flush table card -
-          the Team table's shape, shared with every settings table. */}
+      {/* Section E - Sent Agreements (parent-facing). Hidden for GoStork
+          admins - their provider sends live in the tracking table above. */}
+      {!isGoStorkAdmin && (
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -209,6 +241,7 @@ export default function DocumentsTab() {
           }))}
         />
       </section>
+      )}
     </div>
   );
 }

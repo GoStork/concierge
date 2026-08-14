@@ -6,6 +6,7 @@ import {
   Put,
   Body,
   Param,
+  Query,
   Req,
   Inject,
   UseGuards,
@@ -99,6 +100,16 @@ export class KnowledgeController {
     res.redirect(302, url);
   }
 
+  // GoStork admins may manage a specific provider's knowledge base from the
+  // admin provider edit page by passing ?providerId=; everyone else is scoped
+  // to their own org.
+  private effectiveProviderId(user: any, queryProviderId?: string): string | null {
+    const roles: string[] = user.roles || [];
+    const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_DEVELOPER");
+    if (isAdmin && queryProviderId) return queryProviderId;
+    return user.providerId || null;
+  }
+
   @Post("upload")
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
@@ -107,6 +118,7 @@ export class KnowledgeController {
   async uploadDocument(
     @UploadedFile() file: any,
     @Req() req: Request,
+    @Query("providerId") queryProviderId?: string,
   ) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
@@ -131,7 +143,7 @@ export class KnowledgeController {
       const result = await this.knowledgeService.ingestDocument(
         file.buffer,
         file.originalname,
-        user.providerId || null,
+        this.effectiveProviderId(user, queryProviderId),
         1,
       );
 
@@ -146,9 +158,10 @@ export class KnowledgeController {
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Sync provider website content for AI knowledge" })
-  async syncWebsite(@Req() req: Request) {
+  async syncWebsite(@Req() req: Request, @Query("providerId") queryProviderId?: string) {
     const user = req.user as any;
-    if (!user.providerId) {
+    const providerId = this.effectiveProviderId(user, queryProviderId);
+    if (!providerId) {
       throw new ForbiddenException("Only providers can sync website");
     }
     const r: string[] = user.roles || [];
@@ -157,7 +170,7 @@ export class KnowledgeController {
     }
 
     const provider = await this.prisma.provider.findUnique({
-      where: { id: user.providerId },
+      where: { id: providerId },
       select: { websiteUrl: true },
     });
 
@@ -169,7 +182,7 @@ export class KnowledgeController {
 
     const result = await this.knowledgeService.ingestWebsite(
       provider.websiteUrl,
-      user.providerId,
+      providerId,
     );
 
     return { success: true, url: provider.websiteUrl, ...result };
@@ -179,7 +192,7 @@ export class KnowledgeController {
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "List provider's knowledge base documents" })
-  async listDocuments(@Req() req: Request) {
+  async listDocuments(@Req() req: Request, @Query("providerId") queryProviderId?: string) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
     const isAdmin = roles.includes("GOSTORK_ADMIN") || roles.includes("GOSTORK_DEVELOPER");
@@ -188,7 +201,7 @@ export class KnowledgeController {
     }
 
     const docs =
-      await this.knowledgeService.getProviderDocuments(user.providerId || null);
+      await this.knowledgeService.getProviderDocuments(this.effectiveProviderId(user, queryProviderId));
     return docs;
   }
 
@@ -199,6 +212,7 @@ export class KnowledgeController {
   async deleteDocument(
     @Param("fileName") fileName: string,
     @Req() req: Request,
+    @Query("providerId") queryProviderId?: string,
   ) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
@@ -208,7 +222,7 @@ export class KnowledgeController {
     }
 
     const deleted = await this.knowledgeService.deleteProviderDocument(
-      user.providerId || null,
+      this.effectiveProviderId(user, queryProviderId),
       decodeURIComponent(fileName),
     );
 
@@ -354,7 +368,7 @@ export class KnowledgeController {
   @UseGuards(SessionOrJwtGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "List pending whisper questions for provider" })
-  async listWhispers(@Req() req: Request) {
+  async listWhispers(@Req() req: Request, @Query("providerId") queryProviderId?: string) {
     const user = req.user as any;
     const roles: string[] = user.roles || [];
     const isAdmin = roles.includes("GOSTORK_ADMIN");
@@ -362,8 +376,9 @@ export class KnowledgeController {
       throw new ForbiddenException("Only providers or admins can view whisper questions");
     }
 
+    const effectiveId = this.effectiveProviderId(user, queryProviderId);
     return this.prisma.silentQuery.findMany({
-      where: user.providerId ? { providerId: user.providerId } : {},
+      where: effectiveId ? { providerId: effectiveId } : {},
       orderBy: { createdAt: "desc" },
       select: {
         id: true,

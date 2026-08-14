@@ -99,9 +99,16 @@ export class LegalIdentityService {
     });
   }
 
-  /** Full row for the UI. */
+  /** Full row for the UI, plus the provider's display name so the form
+   *  can show it as the placeholder example in Legal name / Legal
+   *  business name instead of a generic made-up company. */
   async get(providerId: string) {
-    return await this.getOrCreate(providerId);
+    const row = await this.getOrCreate(providerId);
+    const provider = await this.prisma.provider.findUnique({
+      where: { id: providerId },
+      select: { name: true },
+    });
+    return { ...row, companyName: provider?.name?.trim() || null };
   }
 
   /**

@@ -6,24 +6,38 @@ import { Upload, FileText, Globe, Trash2, Loader2, CheckCircle, Brain, MessageCi
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-export default function ProviderKnowledgeTab() {
+export default function ProviderKnowledgeTab({ providerId }: { providerId?: string } = {}) {
   const { toast } = useToast();
   const [dragOver, setDragOver] = useState(false);
   const [answerInputs, setAnswerInputs] = useState<Record<string, string>>({});
+  // Admin-on-behalf-of mode: the admin provider edit page passes the target
+  // provider's id and every knowledge call carries ?providerId=.
+  const withOrg = (url: string) =>
+    providerId ? `${url}${url.includes("?") ? "&" : "?"}providerId=${encodeURIComponent(providerId)}` : url;
 
   const documentsQuery = useQuery<any[]>({
-    queryKey: ["/api/knowledge/documents"],
+    queryKey: ["/api/knowledge/documents", providerId || "me"],
+    queryFn: async () => {
+      const res = await fetch(withOrg("/api/knowledge/documents"), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load documents");
+      return res.json();
+    },
   });
 
   const whispersQuery = useQuery<any[]>({
-    queryKey: ["/api/knowledge/whispers"],
+    queryKey: ["/api/knowledge/whispers", providerId || "me"],
+    queryFn: async () => {
+      const res = await fetch(withOrg("/api/knowledge/whispers"), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load whisper questions");
+      return res.json();
+    },
   });
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/knowledge/upload", {
+      const res = await fetch(withOrg("/api/knowledge/upload"), {
         method: "POST",
         credentials: "include",
         body: formData,
@@ -45,7 +59,7 @@ export default function ProviderKnowledgeTab() {
 
   const syncMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/knowledge/sync-website");
+      const res = await apiRequest("POST", withOrg("/api/knowledge/sync-website"));
       return res.json();
     },
     onSuccess: (data: any) => {
@@ -59,7 +73,7 @@ export default function ProviderKnowledgeTab() {
 
   const deleteMutation = useMutation({
     mutationFn: async (fileName: string) => {
-      const res = await apiRequest("DELETE", `/api/knowledge/documents/${encodeURIComponent(fileName)}`);
+      const res = await apiRequest("DELETE", withOrg(`/api/knowledge/documents/${encodeURIComponent(fileName)}`));
       return res.json();
     },
     onSuccess: () => {

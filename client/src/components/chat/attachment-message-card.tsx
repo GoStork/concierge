@@ -200,9 +200,16 @@ export function FileCard({
             <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5">
               {/* The separator trails its own segment rather than leading the
                   next one, so a wrapped line starts on a word instead of on a
-                  stray dot. */}
+                  stray dot. Short segments stay atomic (a date must never
+                  strand "PM" on its own line), but a long free-text segment -
+                  a cost sheet's notes line - CANNOT be nowrap: with no break
+                  opportunity it ran straight out of the card in the ~280px
+                  rail. Those wrap internally instead, anywhere if needed. */}
               {parts.map((p, i) => (
-                <span key={i} className="t-helper whitespace-nowrap">
+                <span
+                  key={i}
+                  className={`t-helper ${p.length <= 28 ? "whitespace-nowrap" : "min-w-0 [overflow-wrap:anywhere]"}`}
+                >
                   {i < parts.length - 1 ? `${p} ·` : p}
                 </span>
               ))}

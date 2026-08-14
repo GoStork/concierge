@@ -45,6 +45,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { getPhotoSrc } from "@/lib/profile-utils";
+import { PartnerProvidersCard } from "@/components/partner-providers-card";
 
 /**
  * Prisma hands back `Json?` columns as JsonValue, which is anything. These
@@ -134,13 +135,15 @@ function SortableItem({ id, children, disabled, readOnly }: { id: string; childr
   );
 }
 
-export default function CompanyTab() {
+export default function CompanyTab({ providerId: providerIdProp }: { providerId?: string } = {}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const providerId = (user as any)?.providerId;
+  // Admin-on-behalf-of mode: the admin provider edit page passes the target
+  // provider's id so GoStork admins edit that company, not the house org.
+  const providerId = providerIdProp || (user as any)?.providerId;
   const roles = (user as any)?.roles || [];
   const isGostorkAdmin = roles.includes("GOSTORK_ADMIN");
   const isProvider = hasProviderRole(roles) || isGostorkAdmin;
@@ -175,6 +178,9 @@ export default function CompanyTab() {
   const [ivfAcceptingPatients, setIvfAcceptingPatients] = useState<string[]>([]);
   const [ivfEggDonorType, setIvfEggDonorType] = useState("");
   const [surrogacyCitizensNotAllowed, setSurrogacyCitizensNotAllowed] = useState<string[]>([]);
+  // Partner providers: an agency's partner IVF clinics, or a clinic's
+  // exclusive partner surrogacy agencies (shared PartnerProvidersCard).
+  const [partnerProviderIds, setPartnerProviderIds] = useState<string[]>([]);
   const [surrogacyTwinsAllowed, setSurrogacyTwinsAllowed] = useState(false);
   const [surrogacyStayAfterBirthMonths, setSurrogacyStayAfterBirthMonths] = useState("");
   const [surrogacyBirthCertificateListing, setSurrogacyBirthCertificateListing] = useState<string[]>([]);
@@ -311,6 +317,7 @@ export default function CompanyTab() {
       setIvfSurrogatePlacentaPrevia(provider.ivfSurrogatePlacentaPrevia ?? false);
       setIvfSurrogatePreeclampsia(provider.ivfSurrogatePreeclampsia ?? false);
       setIvfSurrogateMentalHealthHistory(provider.ivfSurrogateMentalHealthHistory || "");
+      setPartnerProviderIds(Array.isArray((provider as any).partnerProviderIds) ? (provider as any).partnerProviderIds : []);
       setInitialized(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -321,7 +328,7 @@ export default function CompanyTab() {
     if (isInitializingRef.current) { isInitializingRef.current = false; setIsDirty(false); return; }
     setIsDirty(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, locations, teamMembers, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert]);
+  }, [initialized, name, about, logoUrl, websiteUrl, phone, yearFounded, consultationBookingUrl, consultationIframeEnabled, locations, teamMembers, ivfSurrogateAgeRange, ivfSurrogateBmiRange, ivfSurrogateDeliveriesRange, ivfSurrogateMaxCSections, ivfSurrogateMaxMiscarriages, ivfSurrogateMaxAbortions, ivfSurrogateMaxYearsFromLastPregnancy, ivfSurrogateMonthsPostVaginal, ivfSurrogateCovidVaccination, ivfSurrogateGdDiet, ivfSurrogateGdMedication, ivfSurrogateHighBloodPressure, ivfSurrogatePlacentaPrevia, ivfSurrogatePreeclampsia, ivfSurrogateMentalHealthHistory, ivfTwinsAllowed, ivfGenderSelectionAllowed, ivfTransferFromOtherClinics, ivfMaxAgeIp1, ivfMaxAgeIp2, ivfBiologicalConnection, ivfAcceptingPatients, ivfEggDonorType, surrogacyCitizensNotAllowed, surrogacyTwinsAllowed, surrogacyStayAfterBirthMonths, surrogacyBirthCertificateListing, surrogacySurrogateRemovableFromCert, partnerProviderIds]);
 
   if ((!isProvider && !isGostorkAdmin) || !providerId) {
     return (
@@ -367,6 +374,7 @@ export default function CompanyTab() {
         // Clinic marketplace self-entry
         offersVideoVisits: clinicOffersVideo,
         ...(hasDonorServices ? { biometricMatchingAuthorized } : {}),
+        ...(isIvfClinic || isSurrogacyAgency ? { partnerProviderIds: partnerProviderIds.length > 0 ? partnerProviderIds : null } : {}),
         // IVF Parents Matching Requirements
         ivfTwinsAllowed,
         ivfGenderSelectionAllowed,
@@ -726,6 +734,16 @@ export default function CompanyTab() {
       </Card>
       )}
 
+      {!isGoStorkHouse && (isIvfClinic || isSurrogacyAgency) && (
+        <PartnerProvidersCard
+          editingType={isSurrogacyAgency ? "surrogacy-agency" : "ivf-clinic"}
+          selfId={providerId}
+          value={partnerProviderIds}
+          onChange={setPartnerProviderIds}
+          readOnly={readOnly}
+        />
+      )}
+
       {hasDonorServices && (
         <Card className="p-6 space-y-4">
           <h2 className="text-lg font-heading flex items-center gap-2">
@@ -905,9 +923,19 @@ export default function CompanyTab() {
 
       {(isIvfClinic || isGoStorkHouse) && (
         <Card className="p-6 space-y-6">
-          <h2 className="text-lg font-heading flex items-center gap-2">
-            <Check className="w-5 h-5 text-primary" /> Surrogate Matching Requirements
-          </h2>
+          <div className="space-y-1">
+            <h2 className="text-lg font-heading flex items-center gap-2">
+              <Check className="w-5 h-5 text-primary" />
+              {isGoStorkHouse ? "Platform Surrogate Minimums (ASRM)" : "Surrogate Matching Requirements"}
+            </h2>
+            {isGoStorkHouse && (
+              <p className="t-helper">
+                These values are the platform-wide ASRM minimums. Surrogates who fail them are
+                automatically hidden from ALL parents across every agency - this is not a
+                per-provider preference.
+              </p>
+            )}
+          </div>
           <div className="space-y-2">
             <Label>Age Range of Surrogate: <span className="text-primary font-ui">{ivfSurrogateAgeRange[0]} - {ivfSurrogateAgeRange[1]} years</span></Label>
             <Slider

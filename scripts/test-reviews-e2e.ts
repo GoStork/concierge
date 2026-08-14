@@ -51,6 +51,8 @@ function hdr(auth: string) {
 
 async function main() {
   const prisma = await getDB();
+  const { purgeLeftoverTestUsers } = await import("./lib/purge-test-users.js");
+  await purgeLeftoverTestUsers(prisma).catch((e: any) => console.warn("[purge-test-users] sweep failed:", e?.message || e));
   const created: { reviewIds: string[]; bookingId?: string; userIds: string[]; accountId?: string } = { reviewIds: [], userIds: [] };
   let providerId = "";
   let memberId: string | null = null;

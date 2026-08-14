@@ -358,8 +358,11 @@ export function startPendingBookingScheduler(prisma: PrismaService, notification
     // unique systemKey means the other machine running this same tick is a
     // no-op rather than a duplicate.
     try {
-      const { runTaskMaterializeSweep } = await import("../../../task-materializer");
+      const { runTaskMaterializeSweep, runCalendarConnectionTaskSweep } = await import("../../../task-materializer");
       await runTaskMaterializeSweep(prisma);
+      // Connect/reconnect-your-calendar tasks for provider staff. Same
+      // idempotency story: unique systemKey (calconn:<userId>).
+      await runCalendarConnectionTaskSweep(prisma);
     } catch (err: any) {
       console.error(`[tasks] Cron error: ${err.message}`);
     }

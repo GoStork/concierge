@@ -335,6 +335,8 @@ const CASES: { id: string; name: string; run: (db: Client) => Promise<void> }[] 
 
   const db = new Client({ connectionString: dbUrl });
   await db.connect();
+  const { purgeLeftoverTestUsersPg } = await import("./lib/purge-test-users.js");
+  await purgeLeftoverTestUsersPg(db).catch((e: any) => console.warn("[purge-test-users] sweep failed:", e?.message || e));
   const suiteStart = Date.now();
   await reportToDashboard({ type: "run_start", testIds: toRun.map((c) => c.id), filter: "journey" });
   try {

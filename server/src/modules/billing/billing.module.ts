@@ -3,6 +3,7 @@ import { BillingService } from "./billing.service";
 import { BillingController } from "./billing.controller";
 import { CostSheetController } from "./cost-sheet.controller";
 import { W9Controller } from "./w9.controller";
+import { ProviderAgreementController } from "./provider-agreement.controller";
 import { ConnectService } from "./connect.service";
 import { ConnectController } from "./connect.controller";
 import { LegalIdentityService } from "./legal-identity.service";
@@ -19,6 +20,7 @@ import { SponsorshipModule } from "../sponsorship/sponsorship.module";
     BillingController,
     CostSheetController,
     W9Controller,
+    ProviderAgreementController,
     ConnectController,
     LegalIdentityController,
     CostSheetAutoDraftController,

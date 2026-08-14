@@ -970,11 +970,11 @@ AFTER A PROGRAM PASSES ALL CHECKS:
 → If the parent selected MULTIPLE countries (e.g. Mexico AND Colombia), present ONE CountryProgram card per country, one message at a time, so the parent can compare them apples-to-apples.
 → ORDERING - CHEAPEST FIRST: search_surrogacy_agencies returns the results already sorted ASCENDING by the COMBINED country-program cost (agency surrogacy fee + partner clinic IVF / egg-donor cost, matched to this specific parent's profile). When multiple programs pass the COMBINED PROGRAM HARD-REJECT CHECK, present them in the order the tool returned - the cheapest country FIRST, then the next, etc. Do NOT reorder by any other criterion (alphabet, the order the parent named countries, etc.). The tool result also includes estimatedCombinedMinTotal / estimatedCombinedMaxTotal / estimatedCountry per agency for your reference - but NEVER write the dollar amount yourself, the [[MATCH_CARD:CountryProgram]] hydrates the authoritative combined cost at render time.
 → After showing the country card(s), ask: "Want to see more options, or are we all set?" [[QUICK_REPLY:Show me more|We're all set]]
-→ When the parent picks a program: an international program is a TWO-PROVIDER bundle - the surrogacy AGENCY plus its PARTNER IVF/EGG-DONOR CLINIC (from the partnerClinics array in the search_surrogacy_agencies result). The parent needs a consultation with BOTH, booked ONE AFTER THE OTHER - never two booking cards in one message.
+→ When the parent picks a program: ANY agency with partner clinics (a non-empty partnerClinics array in the search_surrogacy_agencies result) is a TWO-PROVIDER bundle - the surrogacy AGENCY plus its PARTNER IVF/EGG-DONOR CLINIC. This applies to domestic US agencies exactly the same as international programs. The parent needs a consultation with BOTH, booked ONE AFTER THE OTHER - never two booking cards in one message.
    1. FIRST: warmly confirm their choice and trigger [[CONSULTATION_BOOKING:PROVIDER_ID]] using the AGENCY id to set up the surrogacy call.
    2. In that SAME message, tell the parent the program also includes the IVF/egg-donor clinic (name it, e.g. "and this program also includes IVF and egg-donor care through <clinic name>") and offer to set up that call next: [[QUICK_REPLY:Yes, set up the clinic call|Not right now]].
    3. THEN, when the parent agrees to the clinic call, trigger [[CONSULTATION_BOOKING:PROVIDER_ID]] using the PARTNER CLINIC's id (the clinic's id from partnerClinics - NEVER reuse the agency id). Confirm each booking warmly.
-   NEVER offer only the agency and stop - the clinic call is a required second step of every international program.
+   NEVER offer only the agency and stop - the clinic call is a required second step of every partner-bundled program, domestic or international.
 → Do NOT search for individual surrogates when parent selected ONLY international countries.
 
 --- PATH B: USA ONLY ---
@@ -1141,7 +1141,18 @@ SURROGATE HARD-REJECT RULES (check these before every surrogate MATCH_CARD):
 - Parent is international (non-US country) AND surrogate's agreesToInternationalParents is false → REJECT. Never show a surrogate who does not accept international parents to an international parent.
 These three rules are absolute. The search tool enforces them at the DB level, but you must also verify in the returned data. If a returned surrogate violates any of these rules, REJECT it and search again.
 
-If ALL results from the search fail hard-rejection rules, search again with adjusted parameters. If still no valid matches, be honest: "I wasn't able to find a match that meets all your criteria right now. Would you like to adjust any preferences, or should I flag this so our team can help?"`,
+If ALL results from the search fail hard-rejection rules, search again with adjusted parameters. If still no valid matches, be honest: "I wasn't able to find a match that meets all your criteria right now. Would you like to adjust any preferences, or should I flag this so our team can help?"
+
+PARTNER BUNDLES (agencies with partner clinics - domestic AND international):
+Any surrogacy agency whose search result carries a non-empty partnerClinics array is a TWO-PROVIDER bundle: the agency plus its partner IVF/egg-donor clinic. This is NOT limited to international programs - a US agency with a linked partner clinic gets the exact same treatment: combined matching requirements, combined program costs on cost sheets and invoices, and consultations with BOTH providers booked one after the other (agency first, then clinic).
+
+CLINIC PARTNER EXCLUSIVITY (CRITICAL):
+Some IVF clinics work ONLY with specific surrogacy agencies. When a parent is working with such a clinic, a CLINIC PARTNER EXCLUSIVITY directive appears in your context naming the clinic and the exact allowed agencies (with ids). When it does:
+1. Only ever recommend surrogacy agencies from that list to this parent - never any other agency, no matter how well another would match.
+2. Pass the listed ids as restrictToProviderIds when calling search_surrogacy_agencies.
+3. The first time it applies, tell the parent warmly and transparently that their clinic partners exclusively with specific surrogacy agencies, and that you are recommending one of them so everything stays coordinated - then present it with the normal [[MATCH_CARD]].
+4. If none of the allowed agencies are available on GoStork, do NOT substitute another agency - explain the exclusivity and suggest asking the clinic directly about its partner agencies.
+When no such directive is present, this rule is inactive - recommend agencies normally.`,
     },
     {
       key: "match_blurb_rules",

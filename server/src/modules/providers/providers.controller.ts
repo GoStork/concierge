@@ -1079,13 +1079,41 @@ export class ProvidersController {
   @ApiOperation({ summary: "List all approved IVF clinic providers (for partner clinic picker)" })
   async listIvfClinics(@Req() req: Request) {
     const user = req.user as any;
-    if (!user?.roles?.includes("GOSTORK_ADMIN") && !user?.roles?.includes("GOSTORK_DEVELOPER")) {
+    // Provider staff use this too (Company tab partner picker) - the payload
+    // is only approved providers' names + cities, all marketplace-public.
+    if (!user?.roles?.includes("GOSTORK_ADMIN") && !user?.roles?.includes("GOSTORK_DEVELOPER") && !user?.providerId) {
       throw new ForbiddenException("Forbidden");
     }
     return this.prisma.provider.findMany({
       where: {
         services: {
           some: { providerType: { name: "IVF Clinic" }, status: "APPROVED" },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        locations: { select: { city: true, state: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+      },
+      orderBy: { name: "asc" },
+    });
+  }
+
+  @Get("by-type/surrogacy-agency")
+  @UseGuards(SessionOrJwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "List all approved surrogacy agency providers (for the clinic partner-agency picker)" })
+  async listSurrogacyAgencies(@Req() req: Request) {
+    const user = req.user as any;
+    // Provider staff use this too (Company tab partner picker) - the payload
+    // is only approved providers' names + cities, all marketplace-public.
+    if (!user?.roles?.includes("GOSTORK_ADMIN") && !user?.roles?.includes("GOSTORK_DEVELOPER") && !user?.providerId) {
+      throw new ForbiddenException("Forbidden");
+    }
+    return this.prisma.provider.findMany({
+      where: {
+        services: {
+          some: { providerType: { name: "Surrogacy Agency" }, status: "APPROVED" },
         },
       },
       select: {

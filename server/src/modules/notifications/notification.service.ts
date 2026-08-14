@@ -52,6 +52,8 @@ export type NotificationChannel =
   | "consultation_ended"
   | "billing_admin"
   | "w9_request"
+  | "provider_agreement_request"
+  | "provider_agreement_completed"
   | "w9_completed"
   | "sponsorship_payment_request"
   | "sponsorship_activated"
@@ -2884,6 +2886,99 @@ export class NotificationService implements OnModuleInit {
           .catch(e => this.logger.error(`Failed to send W-9 request email to ${r.email}: ${e.message}`));
       }
     }
+  }
+
+  /** GoStork provider service agreement: notify the provider's billing/admin
+   *  users that the contract is ready for their signature. Sent AFTER the
+   *  GoStork signer completed (fees filled in), never on initial creation. */
+  async sendProviderAgreementRequestNotification(params: {
+    providerId: string;
+    providerName: string;
+    /** GoStork page that loads the embedded signing session. */
+    signingUrl: string;
+    fallbackSigner: { userId: string | null; email: string; name: string };
+  }) {
+    const brandData = await this.getBrandData();
+    const companyName = brandData.companyName;
+    const subject = `Action required: sign your ${companyName} agreement`;
+
+    const roleUsers = await this.prisma.user.findMany({
+      where: {
+        providerId: params.providerId,
+        isDisabled: false,
+        roles: { hasSome: ["PROVIDER_ADMIN", "BILLING_MANAGER"] },
+      },
+      select: { id: true, email: true, name: true, firstName: true },
+    });
+
+    let recipients: { userId: string | null; email: string; firstName: string }[] = roleUsers
+      .filter(u => !!u.email)
+      .map(u => ({ userId: u.id, email: u.email as string, firstName: getFirstName(u.firstName || u.name || "") || "there" }));
+
+    if (recipients.length === 0 && params.fallbackSigner.email) {
+      recipients = [{
+        userId: params.fallbackSigner.userId,
+        email: params.fallbackSigner.email,
+        firstName: getFirstName(params.fallbackSigner.name) || "there",
+      }];
+    }
+
+    for (const r of recipients) {
+      const html = buildBrandedEmail(brandData, {
+        title: "Your Agreement Is Ready to Sign",
+        greeting: `Hi ${r.firstName},`,
+        body: `${this.escapeHtml(companyName)} has prepared the service agreement for <strong>${this.escapeHtml(params.providerName)}</strong>. The referral-fee terms are filled in - please review and sign using the button below.`,
+        alertBox: { text: "Your signed agreement is required to activate your partnership with " + this.escapeHtml(companyName) + ".", type: "info" },
+        buttons: [{ label: "Review & Sign Agreement", url: params.signingUrl }],
+        footer: "If you have any questions about this agreement, please reply to this email.",
+      });
+
+      if (r.userId) {
+        await this.dispatchNotification({
+          userId: r.userId,
+          type: "EMAIL",
+          channel: "provider_agreement_request",
+          recipient: r.email,
+          subject,
+          body: html,
+        }).catch(e => this.logger.error(`Failed to send agreement request email to ${r.email}: ${e.message}`));
+      } else {
+        await this.sendRawEmail(r.email, subject, html)
+          .catch(e => this.logger.error(`Failed to send agreement request email to ${r.email}: ${e.message}`));
+      }
+    }
+  }
+
+  /** Tell a GoStork admin the provider signed the GoStork service agreement. */
+  async sendProviderAgreementCompletedNotification(params: {
+    adminUserId: string;
+    adminEmail: string;
+    adminName: string | null;
+    providerName: string;
+    /** Deep-links the button to the exact row (?agreement=<id> scroll+highlight). */
+    agreementId: string;
+  }) {
+    const brandData = await this.getBrandData();
+    const firstName = params.adminName ? getFirstName(params.adminName) : "there";
+    const subject = `Agreement signed - ${params.providerName}`;
+
+    const html = buildBrandedEmail(brandData, {
+      title: "Agreement Signed",
+      greeting: `Hi ${firstName},`,
+      body: `<strong>${this.escapeHtml(params.providerName)}</strong> has signed the GoStork Provider Service Agreement. The executed contract is ready to view and download from the Agreements tab.`,
+      alertBox: { text: "The fully signed agreement is ready to download.", type: "success" },
+      buttons: [{ label: "View Sent Contracts", url: `${getBaseUrl()}/account/documents?agreement=${params.agreementId}` }],
+      footer: "You can download the signed agreement from the Agreements tab at any time.",
+    });
+
+    await this.dispatchNotification({
+      userId: params.adminUserId,
+      type: "EMAIL",
+      channel: "provider_agreement_completed",
+      recipient: params.adminEmail,
+      subject,
+      body: html,
+    }).catch(e => this.logger.error(`Failed to send agreement completed email to ${params.adminEmail}: ${e.message}`));
   }
 
   async sendW9CompletedNotification(params: {

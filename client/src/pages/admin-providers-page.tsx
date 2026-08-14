@@ -78,7 +78,7 @@ function providerAutomations(p: any): { cost_sheet: boolean; invoice: boolean; a
 const SETUP_COLUMNS = [
   { key: "team", label: "Team", tab: "users" },
   { key: "costs", label: "Costs", tab: "costs" },
-  { key: "legalIdentity", label: "Legal Identity", tab: "legal-identity" },
+  { key: "legalIdentity", label: "Legal", tab: "legal-identity" },
   { key: "billing", label: "Billing", tab: "billing" },
   { key: "payouts", label: "Payouts", tab: "payouts" },
   { key: "autoReply", label: "Auto Reply", tab: "auto-replies" },

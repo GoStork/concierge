@@ -28,7 +28,14 @@ function requireAuth(req: Request, res: Response, next: () => void) {
 /** Staff only - a parent has no playbooks to author. */
 function requireStaff(req: Request, res: Response): { isAdmin: boolean; providerId: string | null; userId: string } | null {
   const user = req.user as any;
-  if (isGostorkStaff(user)) return { isAdmin: true, providerId: null, userId: user.id };
+  if (isGostorkStaff(user)) {
+    // GoStork staff may manage a specific provider's playbooks (admin
+    // provider edit page) via ?providerId=; without it they manage the
+    // starter/global set as before.
+    const target = typeof req.query?.providerId === "string" ? req.query.providerId : "";
+    if (target) return { isAdmin: false, providerId: target, userId: user.id };
+    return { isAdmin: true, providerId: null, userId: user.id };
+  }
   if (isProviderStaff(user)) return { isAdmin: false, providerId: user.providerId, userId: user.id };
   res.status(403).json({ message: "Forbidden" });
   return null;

@@ -190,6 +190,7 @@ export default function ParentHomePage() {
             {callsToReschedule.map((c: any) => (
               <QueueRow
                 key={`reschedule-${c.sessionId}`}
+                tone="task"
                 icon={<CalendarClock className="w-4 h-4" />}
                 title={`Reschedule your ${c.callLabel} with ${c.providerName || "your provider"}${c.subjectLabel ? ` (${c.subjectLabel})` : ""}`}
                 detail={c.missedAt ? `The call on ${fmtWhen(c.missedAt)} was missed - pick a new time in chat` : "Your last call was missed - pick a new time in chat"}
@@ -200,6 +201,7 @@ export default function ParentHomePage() {
             {unpaidInvoices.map((inv: any) => (
               <QueueRow
                 key={inv.id}
+                tone="task"
                 icon={<Receipt className="w-4 h-4" />}
                 title={`Invoice from ${inv.providerName || "your provider"} - ${formatCents(inv.serviceAmount, inv.currency)}`}
                 detail={inv.dueAt ? `Due ${fmtWhen(inv.dueAt)}` : "Awaiting your payment"}
@@ -213,6 +215,7 @@ export default function ParentHomePage() {
               return (
                 <QueueRow
                   key={`ipform-${f.responseId}`}
+                  tone="task"
                   icon={<FileText className="w-4 h-4" />}
                   title={readyToSubmit ? "Submit your Intended Parent Form" : "Finish your Intended Parent Form"}
                   detail={
@@ -230,6 +233,7 @@ export default function ParentHomePage() {
             {(queue?.awaitingMySignature || []).map(a => (
               <QueueRow
                 key={a.agreementId}
+                tone="task"
                 icon={<FileSignature className="w-4 h-4" />}
                 title={`${a.documentType}${a.providerName ? ` from ${a.providerName}` : ""}`}
                 detail="Waiting for your signature"
@@ -240,6 +244,7 @@ export default function ParentHomePage() {
             {(queue?.pendingProposals || []).map(p => (
               <QueueRow
                 key={p.messageId}
+                tone="task"
                 icon={<CalendarClock className="w-4 h-4" />}
                 title={`Pick a time for your ${p.callLabel}${p.subjectLabel ? ` with ${p.subjectLabel}` : ""}`}
                 detail={p.providerName ? `Proposed by ${p.providerName}` : "Time options are waiting in your chat"}
@@ -278,6 +283,7 @@ export default function ParentHomePage() {
             {unackedCostSheets.map((cs: any) => (
               <QueueRow
                 key={cs.id}
+                tone="task"
                 icon={<FileText className="w-4 h-4" />}
                 title={`Cost sheet from ${cs.providerName || "your provider"} - ${formatCents(cs.totalCostCents)}`}
                 detail="Review it in your chat"
@@ -293,6 +299,7 @@ export default function ParentHomePage() {
               return (
                 <QueueRow
                   key={`journey-step-${s.serviceLine}-${s.providerName || "none"}`}
+                  tone="task"
                   icon={<Map className="w-4 h-4" />}
                   title={c.title}
                   detail={c.detail}

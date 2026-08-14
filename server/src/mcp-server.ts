@@ -1275,6 +1275,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               items: { type: "string" },
               description: "Array of provider IDs to exclude (already shown to parent).",
             },
+            restrictToProviderIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "HARD filter: only return agencies whose id is in this list. Used when the parent's IVF clinic works exclusively with specific partner surrogacy agencies - the server directive supplies the ids.",
+            },
           },
         },
       },
@@ -3237,9 +3242,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_surrogacy_agencies") {
-      const { agencyLocation, servesParentFromCountry, twinsAllowed, limit: rawLimit, excludeIds } = args as any;
+      const { agencyLocation, servesParentFromCountry, twinsAllowed, limit: rawLimit, excludeIds, restrictToProviderIds } = args as any;
       const take = Math.min(rawLimit || 5, 10);
       const excludeSet = new Set<string>(Array.isArray(excludeIds) ? excludeIds : []);
+      // Clinic partner exclusivity: when the parent's IVF clinic only works
+      // with specific agencies, the directive passes their ids and nothing
+      // outside the list may be returned.
+      const restrictIds = Array.isArray(restrictToProviderIds)
+        ? (restrictToProviderIds as any[]).map(String).filter(Boolean)
+        : [];
 
       const baseAgencyWhere: any = {
         services: {
@@ -3248,6 +3259,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             status: "APPROVED",
           },
         },
+        ...(restrictIds.length > 0 ? { id: { in: restrictIds } } : {}),
       };
 
       const agencySelect = {

@@ -1,9 +1,12 @@
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SortableTableHead, useTableSort } from "@/components/sortable-table-head";
-import { ExternalLink, FileSignature } from "lucide-react";
+import { ExternalLink, FileSignature, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 // Shared agreement status badge + row list. Used by the provider Documents
@@ -90,15 +93,35 @@ export function AgreementRows({
 }) {
   const navigate = useNavigate();
   // The list variant keeps the caller's order (home pages show "latest first");
-  // only the settings table exposes headers, so only it re-orders.
+  // only the settings table exposes headers, so only it re-orders - and only
+  // it gets the search + status filter bar.
   const { sortConfig, handleSort, sortData } = useTableSort();
-  const sortedItems = sortData(items, (item, key) => {
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  // Agreement Type options come from the rows themselves - each provider only
+  // sees the document types they actually send.
+  const typeOptions = useMemo(
+    () => Array.from(new Set(items.map(i => i.documentType).filter(Boolean))).sort(),
+    [items],
+  );
+  const filteredItems = useMemo(() => {
+    if (variant !== "table") return items;
+    const q = search.trim().toLowerCase();
+    return items.filter(i => {
+      if (statusFilter !== "all" && i.status !== statusFilter) return false;
+      if (typeFilter !== "all" && i.documentType !== typeFilter) return false;
+      if (!q) return true;
+      return [i.title, i.providerName, i.documentType].some(v => (v || "").toLowerCase().includes(q));
+    });
+  }, [items, variant, search, statusFilter, typeFilter]);
+  const sortedItems = sortData(filteredItems, (item, key) => {
     switch (key) {
       case "name": return (item.title || "").toLowerCase();
       case "provider": return (item.providerName || "").toLowerCase();
       case "type": return (item.documentType || "").toLowerCase();
-      // Sent sorts by the date the cell leads with, not the signed line under it.
       case "sent": return item.createdAt ? new Date(item.createdAt).getTime() : null;
+      case "signed": return item.signedAt ? new Date(item.signedAt).getTime() : null;
       case "status": return item.status || "";
       default: return null;
     }
@@ -128,6 +151,46 @@ export function AgreementRows({
     const fmtDate = (d: string) =>
       new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     return (
+      <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-72">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search name, agreement..."
+            className="pl-9 bg-card"
+            data-testid="agreements-list-search"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[220px] bg-card" data-testid="agreements-list-status-filter">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="SENT">Sent - Awaiting Signature</SelectItem>
+            <SelectItem value="SIGNED">Signed</SelectItem>
+            <SelectItem value="REJECTED">Rejected</SelectItem>
+            <SelectItem value="EXPIRED">Expired</SelectItem>
+            <SelectItem value="CREATED">Created - Not Sent</SelectItem>
+            <SelectItem value="ERROR">Error</SelectItem>
+          </SelectContent>
+        </Select>
+        {typeOptions.length > 1 && (
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[220px] bg-card" data-testid="agreements-list-type-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All agreement types</SelectItem>
+              {typeOptions.map(t => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
@@ -137,6 +200,7 @@ export function AgreementRows({
                 {hasProvider && <SortableTableHead label="Provider" sortKey="provider" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />}
                 <SortableTableHead label="Agreement" sortKey="type" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <SortableTableHead label="Sent" sortKey="sent" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
+                <SortableTableHead label="Signed" sortKey="signed" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <SortableTableHead label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} className="whitespace-nowrap" />
                 <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
               </TableRow>
@@ -152,10 +216,8 @@ export function AgreementRows({
                   <TableCell className="font-medium whitespace-nowrap">{item.title}</TableCell>
                   {hasProvider && <TableCell className="t-helper whitespace-nowrap">{item.providerName || "-"}</TableCell>}
                   <TableCell className="t-helper whitespace-nowrap">{item.documentType}</TableCell>
-                  <TableCell className="t-helper whitespace-nowrap">
-                    {fmtDate(item.createdAt)}
-                    {item.signedAt && <span className="block">Signed {fmtDate(item.signedAt)}</span>}
-                  </TableCell>
+                  <TableCell className="t-helper whitespace-nowrap">{fmtDate(item.createdAt)}</TableCell>
+                  <TableCell className="t-helper whitespace-nowrap">{item.signedAt ? fmtDate(item.signedAt) : "-"}</TableCell>
                   <TableCell className="whitespace-nowrap">
                     {agreementStatusBadge(item.status)}
                     {item.progressLabel && (
@@ -176,10 +238,18 @@ export function AgreementRows({
                   </TableCell>
                 </TableRow>
               ))}
+              {!sortedItems.length && (
+                <TableRow>
+                  <TableCell colSpan={hasProvider ? 7 : 6} className="text-center text-sm text-muted-foreground py-6">
+                    No agreements match your search or filter.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>
       </Card>
+      </div>
     );
   }
 

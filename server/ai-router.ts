@@ -3457,6 +3457,50 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
       },
       select: { providerId: true, provider: { select: { name: true } } },
     }).catch(() => [] as any[]);
+    // CLINIC PARTNER EXCLUSIVITY: an IVF clinic the family is working with
+    // (booked or connected) may work ONLY with specific surrogacy agencies
+    // (Provider.partnerProviderIds on the CLINIC row). Resolved here so the
+    // directive below can restrict agency recommendations to that list.
+    const clinicExclusivityPromise = (async () => {
+      const sessions = await prisma.aiChatSession.findMany({
+        where: {
+          userId: { in: accountMemberIds },
+          providerId: { not: null },
+          status: { in: ["CONSULTATION_BOOKED", "PROVIDER_CONNECTED"] },
+        },
+        select: { providerId: true },
+      });
+      const providerIds = Array.from(new Set(sessions.map((s) => s.providerId).filter(Boolean))) as string[];
+      if (!providerIds.length) return [];
+      const clinics = await prisma.provider.findMany({
+        where: {
+          id: { in: providerIds },
+          services: { some: { providerType: { name: "IVF Clinic" }, status: "APPROVED" } },
+        },
+        select: { id: true, name: true, partnerProviderIds: true },
+      });
+      const out: Array<{ clinicId: string; clinicName: string; agencies: Array<{ id: string; name: string }> }> = [];
+      for (const c of clinics) {
+        const partnerIds = Array.isArray(c.partnerProviderIds)
+          ? (c.partnerProviderIds as any[]).map(String).filter(Boolean)
+          : [];
+        if (!partnerIds.length) continue;
+        // Only the partners that are surrogacy agencies matter here - a
+        // clinic row could in principle link other provider types.
+        const agencies = await prisma.provider.findMany({
+          where: {
+            id: { in: partnerIds },
+            services: { some: { providerType: { name: "Surrogacy Agency" }, status: "APPROVED" } },
+          },
+          select: { id: true, name: true },
+        });
+        if (agencies.length) out.push({ clinicId: c.id, clinicName: c.name, agencies });
+      }
+      return out;
+    })().catch((e: any) => {
+      console.error(`[clinic-exclusivity] lookup failed: ${e?.message}`);
+      return [] as Array<{ clinicId: string; clinicName: string; agencies: Array<{ id: string; name: string }> }>;
+    });
     const upcomingProviderConsultPromise = prisma.booking.findFirst({
       where: {
         parentUserId: { in: accountMemberIds },
@@ -3779,6 +3823,19 @@ aiRouter.post("/chat", async (req: Request, res: Response) => {
 3. AFTER the parent answers the why-question, acknowledge their reason empathetically and THEN proceed with the NORMAL matching flow (search tools + [[MATCH_CARD]]). Tailor to the answer: if the match fell through or they are unhappy with the agency, be supportive (never defensive of the agency) and include profiles from OTHER agencies; if they want a second journey in parallel, celebrate that and search normally.
 4. RESTART MARKER: if (and ONLY if) the parent's answer means their completed journey ENDED and they are starting over - the match fell through, or they are unhappy and leaving the agency - include the hidden tag [[JOURNEY_RESTART:PROVIDER_ID]] in that same reply, using the provider id from this list: ${handedOffProviders.map(([id, n]) => `${n} = ${id}`).join("; ")}. Do NOT emit it for "second journey in parallel" or "just exploring" - the existing journey continues in those cases.
 5. Everything else stays fully available - other journeys, general questions, and a NEW journey of a DIFFERENT type needs no why-question at all.`);
+      }
+
+      // CLINIC PARTNER EXCLUSIVITY: the family's IVF clinic works only with
+      // specific surrogacy agencies. Agency recommendations must stay inside
+      // that list, with a warm explanation to the parent.
+      const clinicExclusivity = await clinicExclusivityPromise;
+      for (const ce of clinicExclusivity) {
+        const agencyList = ce.agencies.map((a) => `${a.name} = ${a.id}`).join("; ");
+        parts.push(`CLINIC PARTNER EXCLUSIVITY (CRITICAL): the parent is working with the IVF clinic ${ce.clinicName}, and ${ce.clinicName} works ONLY with these partner surrogacy agencies: ${agencyList}. Rules:
+1. If this parent needs a surrogacy agency (their surrogacy journey runs through ${ce.clinicName}), you may ONLY recommend agencies from that list. NEVER show, mention, or offer any other surrogacy agency in this lane.
+2. When calling search_surrogacy_agencies for this parent, ALWAYS pass restrictToProviderIds with exactly these ids: [${ce.agencies.map((a) => `"${a.id}"`).join(", ")}].
+3. The FIRST time you recommend an agency under this rule, tell the parent warmly and transparently WHY - e.g. "${ce.clinicName} partners exclusively with ${ce.agencies.length === 1 ? "one surrogacy agency" : "a specific set of surrogacy agencies"}, so to keep everything coordinated under one roof I'm recommending ${ce.agencies.length === 1 ? ce.agencies[0].name : "one of their partner agencies"}" - then present it with the normal [[MATCH_CARD]].
+4. If the search returns none of these agencies (not on GoStork or filtered out), do NOT substitute a different agency. Explain that ${ce.clinicName} works only with its own partner agencies and warmly suggest the parent ask the clinic directly about them - or, if the parent prefers an independent agency choice, note that it may mean working with a different clinic.`);
       }
 
       // POST-BOOKING CALL PREP: once a consultation is booked (journeyStage flips to

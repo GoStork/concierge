@@ -563,10 +563,71 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // GoStork staff may inspect and edit another user's calendar configuration
+  // by passing ?forUser=<userId> on the config-scoped endpoints below. OAuth
+  // connect flows are excluded - only the target user can authorize those.
+  private async resolveConfigUser(req: Request, forUser?: string): Promise<any> {
+    const user = req.user as any;
+    if (!forUser || forUser === user.id) return user;
+    const isAdmin = user.roles?.includes("GOSTORK_ADMIN") || user.roles?.includes("GOSTORK_CONCIERGE");
+    if (!isAdmin) throw new ForbiddenException("Not authorized to manage another user's calendar");
+    const target = await this.prisma.user.findUnique({ where: { id: forUser } });
+    if (!target) throw new NotFoundException("User not found");
+    return target;
+  }
+
+  // Admin table of everyone who can hold a calendar (provider staff + GoStork
+  // staff) with their connection status. Optional ?providerId= scopes to one
+  // provider's team (used on the admin provider edit page).
+  @Get("admin/users")
+  @UseGuards(SessionOrJwtGuard)
+  async listCalendarUsers(@Req() req: Request, @Query("providerId") providerId?: string) {
+    const viewer = req.user as any;
+    const isAdmin = viewer.roles?.includes("GOSTORK_ADMIN") || viewer.roles?.includes("GOSTORK_CONCIERGE");
+    if (!isAdmin) throw new ForbiddenException("Not authorized");
+
+    const where: any = providerId
+      ? { providerId }
+      : { OR: [{ providerId: { not: null } }, { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } }] };
+
+    const users = await this.prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        roles: true,
+        providerId: true,
+        provider: { select: { name: true } },
+        scheduleConfig: { select: { timezone: true, bookingPageSlug: true, meetingDuration: true } },
+        calendarConnections: {
+          where: { NOT: { calendarId: "__pending__" } },
+          select: { provider: true, email: true, connected: true, tokenValid: true, isBookingCalendar: true },
+        },
+      },
+      orderBy: [{ name: "asc" }],
+    });
+
+    return users.map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      roles: u.roles,
+      providerId: u.providerId,
+      providerName: u.provider?.name || null,
+      isGoStorkStaff: (u.roles || []).some((r: string) => r === "GOSTORK_ADMIN" || r === "GOSTORK_CONCIERGE"),
+      timezone: u.scheduleConfig?.timezone || null,
+      bookingPageSlug: u.scheduleConfig?.bookingPageSlug || null,
+      hasScheduleConfig: !!u.scheduleConfig,
+      connections: u.calendarConnections,
+      connected: u.calendarConnections.some(c => c.connected),
+    }));
+  }
+
   @Get("config")
   @UseGuards(SessionOrJwtGuard)
-  async getConfig(@Req() req: Request, @Query("browserTimezone") browserTimezone?: string) {
-    const user = req.user as any;
+  async getConfig(@Req() req: Request, @Query("browserTimezone") browserTimezone?: string, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     let config = await this.prisma.scheduleConfig.findUnique({
       where: { userId: user.id },
       include: { availabilitySlots: { orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }] } },
@@ -621,8 +682,8 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
   @Put("config")
   @UseGuards(SessionOrJwtGuard)
-  async updateConfig(@Req() req: Request, @Body() body: any) {
-    const user = req.user as any;
+  async updateConfig(@Req() req: Request, @Body() body: any, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     const config = await this.prisma.scheduleConfig.findUnique({ where: { userId: user.id } });
     if (!config) throw new NotFoundException("Schedule config not found");
 
@@ -672,8 +733,8 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
 
   @Put("availability")
   @UseGuards(SessionOrJwtGuard)
-  async updateAvailability(@Req() req: Request, @Body() body: { slots: any[] }) {
-    const user = req.user as any;
+  async updateAvailability(@Req() req: Request, @Body() body: { slots: any[] }, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     const config = await this.prisma.scheduleConfig.findUnique({ where: { userId: user.id } });
     if (!config) throw new NotFoundException("Schedule config not found");
 
@@ -1258,6 +1319,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     );
     this.fireMatchCallPrep(booking as any).catch((e: any) =>
       this.logger?.error?.(`fireMatchCallPrep failed for booking ${booking.id}: ${e.message}`) ?? console.error(e.message));
+    // GoStork concierge calls get GoStork's own greeting in the parent's Eva
+    // chat. Self-gates on the host being GoStork staff; deduped once-per-parent.
+    this.fireGoStorkConciergeAutoReply(booking as any).catch(() => {});
 
     return booking;
   }
@@ -1387,6 +1451,9 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
     );
     this.fireMatchCallPrep(updated).catch((e: any) =>
       console.error(`[match-call-prep] failed for booking ${updated.id}: ${e.message}`));
+    // GoStork concierge calls get GoStork's own greeting in the parent's Eva
+    // chat. Self-gates on the host being GoStork staff; deduped once-per-parent.
+    this.fireGoStorkConciergeAutoReply(updated as any).catch(() => {});
     return updated;
   }
 
@@ -1460,6 +1527,73 @@ export class CalendarController implements OnModuleInit, OnModuleDestroy {
       data: { status: "AVAILABLE" },
     });
     if (res.count > 0) this.logger.log(`Surrogate ${session.subjectProfileId} status -> AVAILABLE (match call ${booking.id} cancelled)`);
+  }
+
+  /**
+   * GoStork's own booking auto-reply. Concierge calls ("Talk to GoStork Team"
+   * -> [[CONCIERGE_CALENDAR]] card) are hosted by GoStork staff and never pass
+   * through createConsultationChatSession, so the provider auto-reply hook
+   * there can't reach them. This posts the house provider's configured
+   * auto-reply (Automation tab on the GoStork account) into the parent's own
+   * Eva chat - the thread the calendar card lives in. sendForBooking's
+   * once-per-parent dedupe and contact guard apply unchanged. Never blocks
+   * the booking.
+   */
+  private async fireGoStorkConciergeAutoReply(booking: { id: string; parentUserId?: string | null; providerUserId?: string | null; scheduledAt?: Date | null; meetingSubtype?: string | null; attendeeName?: string | null; bookerTimezone?: string | null }) {
+    try {
+      if (!booking.parentUserId || !booking.providerUserId) return;
+      const host = await this.prisma.user.findUnique({
+        where: { id: booking.providerUserId },
+        select: { id: true, name: true, providerId: true, roles: true, provider: { select: { id: true, name: true } } },
+      });
+      const isStaff = !!(host?.roles || []).some((r: string) => r === "GOSTORK_ADMIN" || r === "GOSTORK_CONCIERGE");
+      const isHouse = (host?.provider?.name || "").trim().toLowerCase() === "gostork";
+      if (!isStaff && !isHouse) return;
+
+      // The house provider row holds GoStork's auto-reply config.
+      let houseProviderId = isHouse ? host?.providerId || null : null;
+      if (!houseProviderId) {
+        const envId = process.env.GOSTORK_PROVIDER_ID;
+        const house = envId
+          ? await this.prisma.provider.findUnique({ where: { id: envId }, select: { id: true } })
+          : await this.prisma.provider.findFirst({ where: { name: { equals: "GoStork", mode: "insensitive" } }, select: { id: true } });
+        houseProviderId = house?.id || null;
+      }
+      if (!houseProviderId) return;
+
+      const parent = await this.prisma.user.findUnique({
+        where: { id: booking.parentUserId },
+        select: { name: true, parentAccountId: true },
+      });
+      const memberIds = parent?.parentAccountId
+        ? (await this.prisma.user.findMany({ where: { parentAccountId: parent.parentAccountId }, select: { id: true } })).map(u => u.id)
+        : [booking.parentUserId];
+      const evaSession = await this.prisma.aiChatSession.findFirst({
+        where: { userId: { in: memberIds }, sessionType: "PARENT", status: "ACTIVE" },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      });
+      if (!evaSession) return;
+
+      await this.autoReply.sendForBooking({
+        providerId: houseProviderId,
+        staffUserId: host?.id || null,
+        sessionId: evaSession.id,
+        parentUserId: booking.parentUserId,
+        parentAccountId: parent?.parentAccountId || null,
+        parentName: parent?.name || booking.attendeeName || "Parent",
+        providerName: "GoStork",
+        staffName: host?.name || null,
+        subjectType: null,
+        subjectProfileId: null,
+        bookingId: booking.id,
+        scheduledAt: booking.scheduledAt || null,
+        bookerTimezone: (booking as any).bookerTimezone || null,
+        meetingSubtype: booking.meetingSubtype || null,
+      });
+    } catch (e: any) {
+      this.logger.warn(`[auto-reply] GoStork concierge auto-reply failed for booking ${booking?.id}: ${e?.message}`);
+    }
   }
 
   private async fireMatchCallPrep(booking: { id: string; meetingSubtype?: string | null; parentUserId?: string | null; providerUserId?: string | null; scheduledAt: Date; providerUser?: { providerId?: string | null; provider?: { name?: string | null } | null } | null }) {
@@ -3059,8 +3193,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Get("overrides")
   @UseGuards(SessionOrJwtGuard)
-  async getOverrides(@Req() req: Request) {
-    const user = req.user as any;
+  async getOverrides(@Req() req: Request, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     return this.prisma.availabilityOverride.findMany({
       where: { userId: user.id },
       orderBy: { date: "asc" },
@@ -3069,8 +3203,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Post("overrides")
   @UseGuards(SessionOrJwtGuard)
-  async upsertOverride(@Req() req: Request, @Body() body: any) {
-    const user = req.user as any;
+  async upsertOverride(@Req() req: Request, @Body() body: any, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     if (!body.date) throw new BadRequestException("date is required");
 
     const date = new Date(body.date + "T00:00:00");
@@ -3101,8 +3235,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Delete("overrides/:id")
   @UseGuards(SessionOrJwtGuard)
-  async deleteOverride(@Req() req: Request, @Param("id") id: string) {
-    const user = req.user as any;
+  async deleteOverride(@Req() req: Request, @Param("id") id: string, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     const override = await this.prisma.availabilityOverride.findUnique({ where: { id } });
     if (!override) throw new NotFoundException("Override not found");
     if (override.userId !== user.id) throw new ForbiddenException("Not authorized");
@@ -3112,8 +3246,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Get("event-overrides")
   @UseGuards(SessionOrJwtGuard)
-  async getEventFreeOverrides(@Req() req: Request) {
-    const user = req.user as any;
+  async getEventFreeOverrides(@Req() req: Request, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     return this.prisma.eventFreeOverride.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
@@ -3162,8 +3296,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Get("connections")
   @UseGuards(SessionOrJwtGuard)
-  async getConnections(@Req() req: Request) {
-    const user = req.user as any;
+  async getConnections(@Req() req: Request, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     return this.prisma.calendarConnection.findMany({
       where: { userId: user.id, NOT: { calendarId: "__pending__" } },
       select: {
@@ -3212,8 +3346,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Patch("connections/:id")
   @UseGuards(SessionOrJwtGuard)
-  async updateConnection(@Req() req: Request, @Param("id") id: string, @Body() body: any) {
-    const user = req.user as any;
+  async updateConnection(@Req() req: Request, @Param("id") id: string, @Body() body: any, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     const conn = await this.prisma.calendarConnection.findUnique({ where: { id } });
     if (!conn) throw new NotFoundException("Connection not found");
     if (conn.userId !== user.id) throw new ForbiddenException("Not authorized");
@@ -3244,8 +3378,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Delete("connections/:id")
   @UseGuards(SessionOrJwtGuard)
-  async deleteConnection(@Req() req: Request, @Param("id") id: string) {
-    const user = req.user as any;
+  async deleteConnection(@Req() req: Request, @Param("id") id: string, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     const conn = await this.prisma.calendarConnection.findUnique({ where: { id } });
     if (!conn) throw new NotFoundException("Connection not found");
     if (conn.userId !== user.id) throw new ForbiddenException("Not authorized");
@@ -3255,8 +3389,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Get("google/status")
   @UseGuards(SessionOrJwtGuard)
-  async getGoogleStatus(@Req() req: Request) {
-    const user = req.user as any;
+  async getGoogleStatus(@Req() req: Request, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     const configured = this.googleCalendar.isConfigured();
     const connected = await this.googleCalendar.hasConnection(user.id);
     return { configured, connected };
@@ -3264,8 +3398,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Get("google/health")
   @UseGuards(SessionOrJwtGuard)
-  async checkGoogleHealth(@Req() req: Request) {
-    const user = req.user as any;
+  async checkGoogleHealth(@Req() req: Request, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     if (!this.googleCalendar.isConfigured()) {
       return { healthy: false, error: "Google OAuth is not configured" };
     }
@@ -3504,8 +3638,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Get("microsoft/status")
   @UseGuards(SessionOrJwtGuard)
-  async getMicrosoftStatus(@Req() req: Request) {
-    const user = req.user as any;
+  async getMicrosoftStatus(@Req() req: Request, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     const configured = this.microsoftCalendar.isConfigured();
     const connected = await this.microsoftCalendar.hasConnection(user.id);
     return { configured, connected };
@@ -3513,8 +3647,8 @@ I'll check in with you right after the call. You've got this!`;
 
   @Get("microsoft/health")
   @UseGuards(SessionOrJwtGuard)
-  async checkMicrosoftHealth(@Req() req: Request) {
-    const user = req.user as any;
+  async checkMicrosoftHealth(@Req() req: Request, @Query("forUser") forUser?: string) {
+    const user = await this.resolveConfigUser(req, forUser);
     if (!this.microsoftCalendar.isConfigured()) {
       return { healthy: false, error: "Microsoft OAuth is not configured" };
     }

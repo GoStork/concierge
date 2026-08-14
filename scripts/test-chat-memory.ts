@@ -17,6 +17,8 @@ const check = (name: string, ok: boolean, detail?: string) => {
 async function main() {
   const { prisma } = await import("../server/db.js");
   const { maybeUpdateSessionSummary, memoryBlock, captureExplicitMemory } = await import("../server/concierge-memory.js");
+  const { purgeLeftoverTestUsers } = await import("./lib/purge-test-users.js");
+  await purgeLeftoverTestUsers(prisma).catch((e: any) => console.warn("[purge-test-users] sweep failed:", e?.message || e));
 
   const account = await prisma.parentAccount.create({ data: {} });
   const user = await prisma.user.create({ data: { email: `test-mem-${Date.now()}@gostork-test.com`, name: "Memory Tester", password: "x", parentAccountId: account.id } });

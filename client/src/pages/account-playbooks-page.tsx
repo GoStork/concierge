@@ -77,6 +77,12 @@ function stageLabel(id: string): string {
   return JOURNEY_STAGE_LABELS[id as JourneyStageId] || id;
 }
 
+// Admin-on-behalf-of mode: the admin provider edit page passes the target
+// provider's id, and every playbooks call carries ?providerId= so GoStork
+// staff manage that agency's playbooks instead of the starter set.
+const withOrg = (url: string, providerId?: string) =>
+  providerId ? `${url}${url.includes("?") ? "&" : "?"}providerId=${encodeURIComponent(providerId)}` : url;
+
 /** The plain sentence the spec asks for: what will actually happen. */
 function previewSentence(name: string, serviceLine: string | null, triggerStage: string, steps: StepDraft[]): string {
   const line = serviceLine ? SERVICE_LINE_LABELS[serviceLine] || serviceLine : "any service";
@@ -90,10 +96,11 @@ function previewSentence(name: string, serviceLine: string | null, triggerStage:
   return `When a family reaches ${stageLabel(triggerStage)} on ${line}, ${n === 1 ? "this task appears" : `these ${n} tasks appear`}, due ${when}, on the lead owner.`;
 }
 
-function PlaybookEditor({ existing, isAdmin, onClose }: {
+function PlaybookEditor({ existing, isAdmin, onClose, providerId }: {
   existing: Playbook | null;
   isAdmin: boolean;
   onClose: () => void;
+  providerId?: string;
 }) {
   const { toast } = useToast();
   const [name, setName] = useState(existing?.name || "");
@@ -128,7 +135,7 @@ function PlaybookEditor({ existing, isAdmin, onClose }: {
       };
       const res = await apiRequest(
         existing ? "PATCH" : "POST",
-        existing ? `/api/playbooks/${existing.id}` : "/api/playbooks",
+        withOrg(existing ? `/api/playbooks/${existing.id}` : "/api/playbooks", providerId),
         payload,
       );
       return res.json();
@@ -290,12 +297,12 @@ function PlaybookEditor({ existing, isAdmin, onClose }: {
   );
 }
 
-function PlaybookCard({ pb, isAdmin, onEdit }: { pb: Playbook; isAdmin: boolean; onEdit?: () => void }) {
+function PlaybookCard({ pb, isAdmin, onEdit, providerId }: { pb: Playbook; isAdmin: boolean; onEdit?: () => void; providerId?: string }) {
   const { toast } = useToast();
   const readOnly = pb.isStarter && !isAdmin;
 
   const del = useMutation({
-    mutationFn: async () => apiRequest("DELETE", `/api/playbooks/${pb.id}`),
+    mutationFn: async () => apiRequest("DELETE", withOrg(`/api/playbooks/${pb.id}`, providerId)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/playbooks"] });
       toast({ title: "Playbook deleted" });
@@ -303,7 +310,7 @@ function PlaybookCard({ pb, isAdmin, onEdit }: { pb: Playbook; isAdmin: boolean;
     onError: (e: any) => toast({ title: "Could not delete", description: e?.message, variant: "destructive" }),
   });
   const copy = useMutation({
-    mutationFn: async () => apiRequest("POST", `/api/playbooks/${pb.id}/copy`),
+    mutationFn: async () => apiRequest("POST", withOrg(`/api/playbooks/${pb.id}/copy`, providerId)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/playbooks"] });
       toast({ title: "Copied to your agency", description: "The copy is yours to edit and is active now." });
@@ -355,13 +362,13 @@ function PlaybookCard({ pb, isAdmin, onEdit }: { pb: Playbook; isAdmin: boolean;
   );
 }
 
-export default function AccountPlaybooksPage() {
+export default function AccountPlaybooksPage({ providerId }: { providerId?: string } = {}) {
   const [editing, setEditing] = useState<Playbook | null | "new">(null);
 
   const { data, isLoading } = useQuery<{ playbooks: Playbook[]; starters: Playbook[]; isAdmin: boolean }>({
-    queryKey: ["/api/playbooks"],
+    queryKey: ["/api/playbooks", providerId || "me"],
     queryFn: async () => {
-      const res = await fetch("/api/playbooks", { credentials: "include" });
+      const res = await fetch(withOrg("/api/playbooks", providerId), { credentials: "include" });
       if (!res.ok) throw new Error("Could not load playbooks");
       return res.json();
     },
@@ -384,6 +391,7 @@ export default function AccountPlaybooksPage() {
         <PlaybookEditor
           existing={editing === "new" ? null : editing}
           isAdmin={isAdmin}
+          providerId={providerId}
           onClose={() => setEditing(null)}
         />
       ) : (
@@ -408,7 +416,7 @@ export default function AccountPlaybooksPage() {
               </p>
             )}
             {(data?.playbooks || []).map((pb) => (
-              <PlaybookCard key={pb.id} pb={pb} isAdmin={isAdmin} onEdit={() => setEditing(pb)} />
+              <PlaybookCard key={pb.id} pb={pb} isAdmin={isAdmin} providerId={providerId} onEdit={() => setEditing(pb)} />
             ))}
           </div>
 
@@ -416,7 +424,7 @@ export default function AccountPlaybooksPage() {
             <div className="space-y-2">
               <h3 className="text-sm font-heading text-muted-foreground">GoStork starters</h3>
               {(data?.starters || []).map((pb) => (
-                <PlaybookCard key={pb.id} pb={pb} isAdmin={isAdmin} onEdit={isAdmin ? () => setEditing(pb) : undefined} />
+                <PlaybookCard key={pb.id} pb={pb} isAdmin={isAdmin} providerId={providerId} onEdit={isAdmin ? () => setEditing(pb) : undefined} />
               ))}
             </div>
           )}

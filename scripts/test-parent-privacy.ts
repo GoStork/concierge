@@ -519,6 +519,9 @@ async function cleanup() {
   console.log(`🔒 Parent Privacy (two gates, end to end)`);
   console.log(`   Running: ${toRun.length} of ${CASES.length} cases\n`);
 
+  const { purgeLeftoverTestUsers } = await import("./lib/purge-test-users.js");
+  await purgeLeftoverTestUsers(await db()).catch((e: any) => console.warn("[purge-test-users] sweep failed:", e?.message || e));
+
   const suiteStart = Date.now();
   await reportToDashboard({ type: "run_start", testIds: toRun.map((c) => c.id), filter: "parent-privacy" });
   for (const c of toRun) {

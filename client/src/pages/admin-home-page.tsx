@@ -200,6 +200,7 @@ export default function AdminHomePage() {
   };
 
   const queueCount =
+    (((data as any)?.signedProviderAgreements?.length as number) || 0) +
     (data?.escalations.length || 0) +
     (data?.pendingMeetings?.length || 0) +
     (data?.dueInvoices.filter(i => i.overdue).length || 0) +
@@ -231,9 +232,22 @@ export default function AdminHomePage() {
           </div>
         ) : (
           <div className="space-y-2">
+            {/* Good news first: a provider executed the GoStork agreement. */}
+            {((data as any)?.signedProviderAgreements || []).map((a: any) => (
+              <QueueRow
+                key={a.taskKey}
+                icon={<FileSignature className="w-4 h-4" />}
+                title={`${a.providerName} signed the GoStork agreement`}
+                detail={`Signed ${fmtWhen(a.completedAt)} - the executed contract is ready to download`}
+                cta="Open"
+                onClick={() => navigate(`/account/documents?agreement=${a.id}`)}
+                onDismiss={() => dismiss.mutate(a.taskKey)}
+              />
+            ))}
             {((data as any)?.flaggedReviews || []).map((r: any) => (
               <QueueRow
                 key={r.taskKey}
+                tone="task"
                 icon={<Star className="w-4 h-4" />}
                 title={`${r.providerName || "A provider"} flagged a ${r.rating ?? "?"}-star review for re-check`}
                 detail={r.flagReason ? `"${r.flagReason}" - flagged ${fmtWhen(r.flaggedAt)}` : `Flagged ${fmtWhen(r.flaggedAt)}`}
@@ -245,6 +259,7 @@ export default function AdminHomePage() {
             {(data?.escalations || []).map(e => (
               <QueueRow
                 key={e.sessionId}
+                tone="task"
                 icon={<Headphones className="w-4 h-4" />}
                 title={`${e.parentName} asked for a human${e.providerName ? ` (${e.providerName} journey)` : ""}`}
                 detail={`Waiting since ${fmtWhen(e.updatedAt)}`}
@@ -256,6 +271,7 @@ export default function AdminHomePage() {
             {(data?.pendingMeetings || []).map(b => (
               <QueueRow
                 key={b.id}
+                tone="task"
                 icon={<CalendarClock className="w-4 h-4" />}
                 title={`${b.parentName}'s "${b.subject || "meeting"}" is awaiting confirmation`}
                 detail={`Host: ${b.hostName} - ${fmtWhen(b.scheduledAt)}`}
@@ -267,6 +283,7 @@ export default function AdminHomePage() {
             {(data?.dueInvoices || []).filter(i => i.overdue).map(inv => (
               <QueueRow
                 key={inv.id}
+                tone="task"
                 icon={<Receipt className="w-4 h-4" />}
                 title={`${inv.parentName}'s ${formatCents(inv.amountCents)} deposit is past its deadline`}
                 detail={`${inv.providerName || "Provider"} - was due ${fmtWhen(inv.dueAt)}`}
@@ -278,6 +295,7 @@ export default function AdminHomePage() {
             {(data?.failedPayouts || []).map(fp => (
               <QueueRow
                 key={fp.id}
+                tone="task"
                 icon={<Landmark className="w-4 h-4" />}
                 title={`Payout of ${formatCents(fp.amountCents)} to ${fp.providerName || "provider"} failed`}
                 detail={`${fp.parentName}'s invoice - failed ${fmtWhen(fp.payoutFailedAt)}${fp.payoutFailureReason ? ` - ${fp.payoutFailureReason}` : ""}`}

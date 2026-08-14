@@ -2237,6 +2237,10 @@ async function main() {
 
   console.log(`\n🧪 GoStork AI Concierge Test Suite`);
   console.log(`   Base URL: ${BASE_URL}`);
+  {
+    const { purgeLeftoverTestUsers } = await import("./lib/purge-test-users.js");
+    await purgeLeftoverTestUsers(await getDB()).catch((e: any) => console.warn("[purge-test-users] sweep failed:", e?.message || e));
+  }
   if (SERVER_POOL.length > 0) {
     console.log(`   Server pool: ${SERVER_POOL.length} backends - ${SERVER_POOL.join(", ")}`);
   }

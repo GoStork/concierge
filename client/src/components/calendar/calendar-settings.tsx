@@ -105,9 +105,15 @@ type CalendarConnectionType = {
   tokenValid: boolean;
 };
 
-export function CalendarSettings() {
+export function CalendarSettings({ forUserId }: { forUserId?: string } = {}) {
   const { toast } = useToast();
   const { user: authUser } = useAuth();
+  // Admin mode: GoStork staff managing another user's calendar configuration.
+  // Every config read/write carries ?forUser=; OAuth connect flows are hidden
+  // because only the target user can authorize their own Google/Microsoft/
+  // Apple account.
+  const wu = (url: string) =>
+    forUserId ? `${url}${url.includes("?") ? "&" : "?"}forUser=${encodeURIComponent(forUserId)}` : url;
   // Parent-only users get just the Connected Calendars section (same providers
   // and connect flows as providers) - booking link, scheduling rules,
   // availability, and overrides are host-side concepts they don't have.
@@ -169,19 +175,19 @@ export function CalendarSettings() {
   }, []);
 
   const { data: config, isLoading } = useQuery<ConfigData>({
-    queryKey: ["/api/calendar/config"],
+    queryKey: ["/api/calendar/config", forUserId || "me"],
     queryFn: async () => {
       const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const res = await fetch(`/api/calendar/config?browserTimezone=${encodeURIComponent(browserTz)}`, { credentials: "include" });
+      const res = await fetch(wu(`/api/calendar/config?browserTimezone=${encodeURIComponent(browserTz)}`), { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch config");
       return res.json();
     },
   });
 
   const { data: overrides } = useQuery<Override[]>({
-    queryKey: ["/api/calendar/overrides"],
+    queryKey: ["/api/calendar/overrides", forUserId || "me"],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/overrides", { credentials: "include" });
+      const res = await fetch(wu("/api/calendar/overrides"), { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch overrides");
       return res.json();
     },
@@ -189,18 +195,18 @@ export function CalendarSettings() {
   });
 
   const { data: connections } = useQuery<CalendarConnectionType[]>({
-    queryKey: ["/api/calendar/connections"],
+    queryKey: ["/api/calendar/connections", forUserId || "me"],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/connections", { credentials: "include" });
+      const res = await fetch(wu("/api/calendar/connections"), { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch connections");
       return res.json();
     },
   });
 
   const { data: googleStatus } = useQuery<{ configured: boolean; connected: boolean }>({
-    queryKey: ["/api/calendar/google/status"],
+    queryKey: ["/api/calendar/google/status", forUserId || "me"],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/google/status", { credentials: "include" });
+      const res = await fetch(wu("/api/calendar/google/status"), { credentials: "include" });
       if (!res.ok) return { configured: false, connected: false };
       return res.json();
     },
@@ -210,18 +216,18 @@ export function CalendarSettings() {
   const hasMicrosoftConnection = (connections || []).some((c: any) => c.provider === "microsoft" && c.connected);
 
   const { data: microsoftStatus } = useQuery<{ configured: boolean; connected: boolean }>({
-    queryKey: ["/api/calendar/microsoft/status"],
+    queryKey: ["/api/calendar/microsoft/status", forUserId || "me"],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/microsoft/status", { credentials: "include" });
+      const res = await fetch(wu("/api/calendar/microsoft/status"), { credentials: "include" });
       if (!res.ok) return { configured: false, connected: false };
       return res.json();
     },
   });
 
   const { data: healthResult } = useQuery<{ healthy: boolean; error?: string }>({
-    queryKey: ["/api/calendar/google/health"],
+    queryKey: ["/api/calendar/google/health", forUserId || "me"],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/google/health", { credentials: "include" });
+      const res = await fetch(wu("/api/calendar/google/health"), { credentials: "include" });
       if (!res.ok) return { healthy: false, error: "Failed to check connection health" };
       const result = await res.json();
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/connections"] });
@@ -233,9 +239,9 @@ export function CalendarSettings() {
   });
 
   const { data: microsoftHealthResult } = useQuery<{ healthy: boolean; error?: string }>({
-    queryKey: ["/api/calendar/microsoft/health"],
+    queryKey: ["/api/calendar/microsoft/health", forUserId || "me"],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/microsoft/health", { credentials: "include" });
+      const res = await fetch(wu("/api/calendar/microsoft/health"), { credentials: "include" });
       if (!res.ok) return { healthy: false, error: "Failed to check connection health" };
       const result = await res.json();
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/connections"] });
@@ -330,14 +336,14 @@ export function CalendarSettings() {
 
   const saveConfigMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("PUT", "/api/calendar/config", {
+      await apiRequest("PUT", wu("/api/calendar/config"), {
         timezone, meetingDuration, minBookingNotice, bufferTime,
         meetingLink: meetingLink || null,
         defaultSubject: defaultSubject || null,
         bookingPageSlug: bookingPageSlug || null,
         autoConsentRecording,
       });
-      await apiRequest("PUT", "/api/calendar/availability", {
+      await apiRequest("PUT", wu("/api/calendar/availability"), {
         slots: slots.map((s) => ({
           dayOfWeek: s.dayOfWeek,
           startTime: s.startTime,
@@ -365,7 +371,7 @@ export function CalendarSettings() {
         const res = await apiRequest("POST", "/api/calendar/microsoft/connect", { calendarIds, email: microsoftEmail, conflictCalendarIds: cIds });
         return res.json();
       }
-      await apiRequest("POST", "/api/calendar/connections", { provider, email: email || null });
+      await apiRequest("POST", wu("/api/calendar/connections"), { provider, email: email || null });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/connections"] });
@@ -447,7 +453,7 @@ export function CalendarSettings() {
 
   const updateConnectionMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      await apiRequest("PATCH", `/api/calendar/connections/${id}`, data);
+      await apiRequest("PATCH", wu(`/api/calendar/connections/${id}`), data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/connections"] });
@@ -457,7 +463,7 @@ export function CalendarSettings() {
   const colorDebounceTimers = {} as Record<string, any>;
   function updateConnectionColor(connId: string, color: string) {
     clearTimeout(colorDebounceTimers[connId]);
-    queryClient.setQueryData(["/api/calendar/connections"], (old: any) =>
+    queryClient.setQueryData(["/api/calendar/connections", forUserId || "me"], (old: any) =>
       old ? old.map((c: any) => c.id === connId ? { ...c, color } : c) : old
     );
     colorDebounceTimers[connId] = setTimeout(() => {
@@ -467,7 +473,7 @@ export function CalendarSettings() {
 
   const deleteConnectionMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/calendar/connections/${id}`, {});
+      await apiRequest("DELETE", wu(`/api/calendar/connections/${id}`), {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/connections"] });
@@ -477,7 +483,7 @@ export function CalendarSettings() {
 
   const upsertOverrideMutation = useMutation({
     mutationFn: async (data: any) => {
-      await apiRequest("POST", "/api/calendar/overrides", data);
+      await apiRequest("POST", wu("/api/calendar/overrides"), data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/overrides"] });
@@ -492,7 +498,7 @@ export function CalendarSettings() {
 
   const deleteOverrideMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/calendar/overrides/${id}`, {});
+      await apiRequest("DELETE", wu(`/api/calendar/overrides/${id}`), {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/calendar/overrides"] });
@@ -567,9 +573,11 @@ export function CalendarSettings() {
             )}
             <h2 className="t-micro-label font-heading">Connected Calendars</h2>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setConnectDialogOpen(true)} data-testid="button-connect-calendar">
-            <CalendarPlus className="w-4 h-4 mr-1" /> Connect
-          </Button>
+          {!forUserId && (
+            <Button size="sm" variant="outline" onClick={() => setConnectDialogOpen(true)} data-testid="button-connect-calendar">
+              <CalendarPlus className="w-4 h-4 mr-1" /> Connect
+            </Button>
+          )}
         </div>
 
         {expiredConnections.length > 0 && (
@@ -581,8 +589,11 @@ export function CalendarSettings() {
                   {expiredConnections.length === 1 ? "A calendar connection has expired" : `${expiredConnections.length} calendar connections have expired`}
                 </p>
                 <p className="t-helper mt-0.5">
-                  New bookings won't sync until you reconnect. Click below to fix this now.
+                  {forUserId
+                    ? "New bookings won't sync until this user reconnects from their own account."
+                    : "New bookings won't sync until you reconnect. Click below to fix this now."}
                 </p>
+                {!forUserId && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {expiredConnections.map((conn) => {
                     const providerInfo = CALENDAR_PROVIDERS.find((p) => p.id === conn.provider);
@@ -629,6 +640,7 @@ export function CalendarSettings() {
                     );
                   })}
                 </div>
+                )}
               </div>
             </div>
           </div>
@@ -687,6 +699,7 @@ export function CalendarSettings() {
                       <div className="flex items-center gap-1.5 mt-1">
                         <AlertTriangle className="w-3.5 h-3.5 text-[hsl(var(--brand-warning))] shrink-0" />
                         <span className="text-xs text-[hsl(var(--brand-warning))] font-ui">Connection expired</span>
+                        {!forUserId && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -718,6 +731,7 @@ export function CalendarSettings() {
                         >
                           {(conn.provider === "google" ? googleConnecting : microsoftConnecting) ? <Loader2 className="w-3 h-3 animate-spin" /> : "Reconnect"}
                         </Button>
+                        )}
                       </div>
                     )}
                   </div>

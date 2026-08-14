@@ -16,6 +16,8 @@ import { Label } from "@/components/ui/label";
 import { useConfirm } from "@/components/ui/confirm-bar";
 import { ProviderW9Section } from "./provider-w9-section";
 import { W9TemplateConfig } from "./w9-template-config";
+import { AdminW9Table } from "./admin-w9-table";
+import { GoStorkAgreementSection } from "./gostork-agreement-section";
 import { useAuth } from "@/hooks/use-auth";
 
 interface LegalIdentityState {
@@ -35,6 +37,8 @@ interface LegalIdentityState {
   businessAddressPostalCode: string | null;
   businessAddressCountry: string | null;
   source: "MANUAL" | "W9_AUTO_FILL" | "MIGRATED_FROM_BRAND_SETTINGS";
+  /** Provider display name (Company tab) - used as the placeholder example. */
+  companyName: string | null;
   lastW9SyncAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -63,17 +67,36 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
   const isAdmin = mode === "admin" || isAdminUser;
   const effectiveProviderId = providerId || (user as any)?.providerId;
 
-  // When a GoStork admin lands on /account/legal-identity with no
-  // provider impersonation context (their own user has no providerId),
+  // When a GoStork admin lands on /account/legal-identity (no explicit
+  // providerId prop - that only comes from the admin provider edit page),
   // they're here to manage the GLOBAL W-9 PandaDoc template - the one
   // GoStork sends out to every provider for signature. No per-provider
-  // identity form to render, just the template config.
-  const isGlobalAdminView = isAdminUser && !effectiveProviderId;
+  // identity form to render, just the template config. Admin users may
+  // carry a providerId (the GoStork house provider row); that link must
+  // NOT drop them into the per-provider identity form here.
+  const isGlobalAdminView = isAdminUser && !providerId;
 
   const getUrl = mode === "admin" && providerId
     ? `/api/admin/providers/${providerId}/legal-identity`
     : `/api/provider/legal-identity`;
   const putUrl = getUrl;
+
+  // W-9 status - same query key as ProviderW9Section (deduped by react-query).
+  // Used to keep polling the identity row for a short window after the W-9
+  // completes, because the PandaDoc webhook auto-fill lands ~1s after the
+  // completion and a page loaded in between shows stale empty fields.
+  const w9StatusUrl = isAdmin && effectiveProviderId
+    ? `/api/admin/providers/${effectiveProviderId}/w9`
+    : `/api/provider/w9`;
+  const { data: w9Status } = useQuery<{ status: string; completedAt: string | null }>({
+    queryKey: [w9StatusUrl],
+    queryFn: async () => {
+      const res = await fetch(w9StatusUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load W-9 status");
+      return res.json();
+    },
+    enabled: !isGlobalAdminView && !!effectiveProviderId,
+  });
 
   const { data: state, isLoading } = useQuery<LegalIdentityState>({
     queryKey: [getUrl],
@@ -83,6 +106,18 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
       return res.json();
     },
     enabled: !isGlobalAdminView,
+    // Poll while a freshly-completed W-9 hasn't been auto-filled into the
+    // row yet (webhook race). Stops as soon as lastW9SyncAt catches up, and
+    // never polls for completions older than 5 minutes - the manual "Sync
+    // from W-9" button covers a genuinely missed webhook.
+    refetchInterval: query => {
+      if (w9Status?.status !== "COMPLETED" || !w9Status.completedAt) return false;
+      const completedAt = new Date(w9Status.completedAt).getTime();
+      if (Date.now() - completedAt > 5 * 60 * 1000) return false;
+      const row = query.state.data;
+      const syncedAt = row?.lastW9SyncAt ? new Date(row.lastW9SyncAt).getTime() : 0;
+      return syncedAt >= completedAt ? false : 3000;
+    },
   });
 
   // Form state - seeded from server, written back on save.
@@ -170,7 +205,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
   const confirm = useConfirm();
   const onSyncClick = async () => {
     const ok = await confirm({
-      title: "Overwrite Legal Identity from W-9?",
+      title: "Overwrite legal details from W-9?",
       message: "This replaces Legal Name, Business Name, Tax Classification, Tax ID, and Address with whatever's on the signed W-9. Manual edits will be lost.",
       confirmLabel: "Overwrite from W-9",
       tone: "warning",
@@ -197,10 +232,11 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     return (
       <div className="space-y-6">
         <header>
-          <h2 className="text-2xl font-heading">Legal Identity - Admin tools</h2>
+          <h2 className="text-2xl font-heading">W-9</h2>
           <p className="t-helper mt-1">
-            GoStork-wide W-9 template configuration. Per-provider Legal Identity is edited
-            on each provider's admin page (<code className="text-xs bg-muted px-1 rounded">/admin/providers/:id</code> → Legal Identity tab).
+            GoStork-wide W-9 template configuration and per-provider tracking. Per-provider
+            legal details are edited on each provider's admin page
+            (<code className="text-xs bg-muted px-1 rounded">/admin/providers/:id</code> → Legal tab).
           </p>
         </header>
         <section className="space-y-3 rounded-xl border bg-card p-5">
@@ -210,11 +246,12 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
               Upload the master W-9 template that gets sent to every provider for signature.
               Configure the field IDs (Full_Name, Company_Name, RadioButtons1, Address,
               City_State_zipcode, SSN, EIN) so signed W-9s auto-fill into each provider's
-              Legal Identity.
+              Legal tab.
             </p>
           </div>
           <W9TemplateConfig />
         </section>
+        <AdminW9Table />
       </div>
     );
   }
@@ -223,7 +260,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
     <div className="space-y-6">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-heading">Legal Identity</h2>
+          <h2 className="text-2xl font-heading">Legal</h2>
           <p className="t-helper mt-1">
             {isAdmin
               ? "This provider's legal name, tax ID, and address. Used on payment receipts, the W-9, and Stripe Connect KYC for payouts."
@@ -280,6 +317,12 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         </section>
       )}
 
+      {/* The provider's GoStork Provider Service Agreement - sign while it
+          waits on them, permanent download once executed. Self-service only:
+          the endpoint reads the viewer's own providerId, and admins already
+          have the Sent contracts table on their Agreements tab. */}
+      {!isAdmin && <GoStorkAgreementSection />}
+
       {/* Identity form */}
       <section className="space-y-4 rounded-xl border bg-card p-5">
         <div>
@@ -291,7 +334,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           required
           hint="The name on your tax return - your business's legal name if entity-based, or your personal name if you're a sole proprietor / individual (W-9 Line 1)."
         >
-          <Input value={legalName} onChange={e => setLegalName(e.target.value)} placeholder="e.g. Eggceptional Fertility LLC or Jane Doe" />
+          <Input value={legalName} onChange={e => setLegalName(e.target.value)} placeholder={`e.g. ${state?.companyName || "Eggceptional Fertility LLC"} or Jane Doe`} />
         </Field>
 
         <Field
@@ -299,7 +342,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
           required
           hint="The business name GoStork displays on receipts and uses for Stripe Connect KYC. If you're a sole proprietor, this is your business / DBA name (W-9 Line 2). For LLCs or corporations, it usually matches your Legal name above."
         >
-          <Input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="e.g. Eggceptional Fertility LLC" />
+          <Input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder={`e.g. ${state?.companyName || "Eggceptional Fertility LLC"}`} />
         </Field>
 
         <Field
@@ -399,7 +442,7 @@ export function ProviderLegalIdentityTab({ providerId, mode = "provider" }: Prov
         style={{ background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))", borderRadius: "var(--radius)" }}
       >
         {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-        Save Legal Identity
+        Save Legal Details
       </Button>
 
     </div>

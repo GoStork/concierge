@@ -289,6 +289,7 @@ export default function ProviderHomePage() {
             {tasks.map(t => (
               <QueueRow
                 key={t.id}
+                tone="task"
                 icon={t.type === "CALL" ? <Phone className="w-4 h-4" />
                   : t.type === "EMAIL" ? <MessageCircle className="w-4 h-4" />
                   : <CheckCircle2 className="w-4 h-4" />}
@@ -309,6 +310,7 @@ export default function ProviderHomePage() {
             {pendingBookings.map((b: any) => (
               <QueueRow
                 key={b.id}
+                tone="task"
                 icon={<CalendarClock className="w-4 h-4" />}
                 title={`Meeting request${b.parentUser?.name ? ` from ${b.parentUser.name}` : b.attendeeName ? ` from ${b.attendeeName}` : ""}`}
                 detail={fmtWhen(b.scheduledAt)}
@@ -328,6 +330,7 @@ export default function ProviderHomePage() {
             {(queue?.ipFormsToReview || []).map(f => (
               <QueueRow
                 key={`ipform-${f.responseId}`}
+                tone="task"
                 icon={<FileText className="w-4 h-4" />}
                 title={`${f.parentNames} submitted their Intended Parent Form`}
                 detail="Download the PDF or the surrogate-safe version to share with candidates"

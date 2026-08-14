@@ -319,7 +319,7 @@ export function ParentRecordActions({ record }: { record: ParentRecord }) {
           onClick={() => navigate(chatDeepLink({ sessionId: newestSession }, true) as string)}
           data-testid="btn-record-open-monitor"
         >
-          <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Open in monitor
+          <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Open chat
         </Button>
       )}
       <Button

@@ -65,6 +65,7 @@ import IpFormPage from "@/pages/ip-form-page";
 import IpFormGuestPage from "@/pages/ip-form-guest-page";
 import ProviderParentFormsPage from "@/pages/provider-parent-forms-page";
 import W9SigningPage from "@/pages/w9-signing-page";
+import ProviderAgreementSigningPage from "@/pages/provider-agreement-signing-page";
 import PaymentPage from "@/pages/payment-page";
 import AdminBillingPage from "@/pages/admin-billing-page";
 import AdminSecurityPage from "@/pages/admin-security-page";
@@ -189,6 +190,7 @@ function AppRoutes() {
         {/* Template editor lives under account settings; keep the old URL working */}
         <Route path="/admin/ip-form-template" element={<Navigate to="/account/ip-form-template" replace />} />
         <Route path="/w9/:id" element={<ProtectedRoute><W9SigningPage /></ProtectedRoute>} />
+        <Route path="/provider-agreement/:id" element={<ProtectedRoute><ProviderAgreementSigningPage /></ProtectedRoute>} />
         {/* Public payment page - no auth required */}
         <Route path="/pay/:paymentToken" element={<PaymentPage />} />
         {/* Billing routes */}

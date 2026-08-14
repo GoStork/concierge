@@ -331,40 +331,55 @@ export function PandaDocTemplateEditor(props: PandaDocTemplateEditorProps) {
       )}
       <p className="t-helper">{description}</p>
 
-      <div
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onClick={() => !uploading && fileInputRef.current?.click()}
-        className={`relative flex flex-col items-center justify-center gap-3 rounded-[var(--radius)] border-2 border-dashed p-8 transition-colors cursor-pointer select-none
-          ${dragging ? "border-primary bg-[hsl(var(--primary)/0.06)]" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30"}
-          ${uploading ? "pointer-events-none opacity-60" : ""}`}
-      >
-        {uploading ? (
-          <RefreshCw className="w-8 h-8 text-muted-foreground animate-spin" />
-        ) : (
-          <Upload className={`w-8 h-8 transition-colors ${dragging ? "text-primary" : "text-muted-foreground"}`} />
-        )}
-        <div className="text-center">
-          <p className="text-sm font-medium">
+      {/* Compact dropzone, and only while there is nothing uploaded yet. Once
+          a file exists, Step 1 collapses to the current-file row below - the
+          old full-height target added ~200px of dead space to every visit. */}
+      {!templateUrl && (
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onClick={() => !uploading && fileInputRef.current?.click()}
+          className={`relative flex items-center gap-3 rounded-[var(--radius)] border-2 border-dashed px-4 py-3 transition-colors cursor-pointer select-none
+            ${dragging ? "border-primary bg-[hsl(var(--primary)/0.06)]" : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30"}
+            ${uploading ? "pointer-events-none opacity-60" : ""}`}
+        >
+          {uploading ? (
+            <RefreshCw className="w-5 h-5 text-muted-foreground animate-spin shrink-0" />
+          ) : (
+            <Upload className={`w-5 h-5 shrink-0 transition-colors ${dragging ? "text-primary" : "text-muted-foreground"}`} />
+          )}
+          <p className="text-sm font-medium flex-1 min-w-0">
             {uploading
               ? (loadingEditor ? "Syncing to PandaDoc..." : "Uploading...")
-              : dragging ? "Drop your file here" : "Drag & drop your file here"}
+              : dragging
+                ? "Drop your file here"
+                : <>Drag &amp; drop your file here, or <span className="text-primary underline underline-offset-2">click to browse</span></>}
           </p>
-          {!uploading && (
-            <p className="t-helper mt-1">
-              or <span className="text-primary underline underline-offset-2">click to browse</span>
-            </p>
-          )}
+          <p className="t-helper shrink-0 hidden sm:block">PDF, DOC, DOCX - max 16MB</p>
         </div>
-        <p className="t-helper">PDF, DOC, DOCX - max 16MB</p>
-      </div>
+      )}
 
       {templateUrl && (
-        <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] border bg-muted/40">
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          className={`flex items-center gap-3 p-3 rounded-[var(--radius)] border transition-colors ${dragging ? "border-primary bg-[hsl(var(--primary)/0.06)]" : "bg-muted/40"}`}
+        >
           <FileText className="w-4 h-4 text-primary shrink-0" />
           <span className="text-sm font-medium truncate flex-1">{templateFilename}</span>
           <span className="t-helper shrink-0">Current file</span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="shrink-0"
+          >
+            {uploading ? <RefreshCw className="w-4 h-4 mr-1.5 animate-spin" /> : <Upload className="w-4 h-4 mr-1.5" />}
+            Replace
+          </Button>
           <Button
             variant="ghost"
             size="sm"

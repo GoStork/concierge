@@ -4817,6 +4817,15 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
       }),
     ]);
 
+    // Providers who signed the GoStork service agreement in the last 7 days -
+    // good-news rows for the Needs attention widget, dismissible like the rest.
+    const signedProviderAgreementRows = await (prisma as any).providerAgreement.findMany({
+      where: { status: "COMPLETED", completedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+      orderBy: { completedAt: "desc" },
+      take: 10,
+      select: { id: true, completedAt: true, provider: { select: { name: true } } },
+    });
+
     // Dismissed Needs-attention rows. The taskKey embeds the occurrence
     // timestamp, so the same invoice failing AGAIN later gets a fresh key
     // and re-surfaces despite the old dismissal.
@@ -4848,6 +4857,14 @@ chatRouter.get("/api/admin/dashboard", requireAuth, async (req, res) => {
     }
 
     res.json({
+      signedProviderAgreements: signedProviderAgreementRows
+        .map((a: any) => ({
+          id: a.id,
+          providerName: a.provider?.name || "Provider",
+          completedAt: a.completedAt,
+          taskKey: `provider-agreement-signed:${a.id}`,
+        }))
+        .filter((a: any) => !dismissedKeys.has(a.taskKey)),
       flaggedReviews: flaggedReviewRows
         .map(r => ({
           reviewId: r.id,
@@ -5252,16 +5269,27 @@ chatRouter.get("/api/admin/agreements", requireAuth, async (req, res) => {
   }
 });
 
+// Resolves the provider org an agreements-management endpoint operates on.
+// GoStork admins may manage another provider's agreement setup from the admin
+// provider edit page via ?providerId=; everyone else stays on their own org.
+function agreementsProviderId(req: Request): string {
+  const user = req.user as any;
+  const q = typeof req.query.providerId === "string" ? req.query.providerId : "";
+  if (q && (user.roles || []).includes("GOSTORK_ADMIN")) return q;
+  return user.providerId;
+}
+
 chatRouter.get("/api/agreements", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const orgId = agreementsProviderId(req);
   try {
     // ?sessionId= scopes the list to one conversation - the chat rail's
     // Agreements section. Still force-scoped to the caller's own org first;
     // the session filter only ever narrows.
     const sessionId = typeof req.query.sessionId === "string" && req.query.sessionId ? req.query.sessionId : null;
     const agreements = await prisma.agreement.findMany({
-      where: { providerId: user.providerId, ...(sessionId ? { sessionId } : {}) },
+      where: { providerId: orgId, ...(sessionId ? { sessionId } : {}) },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -5285,7 +5313,7 @@ chatRouter.get("/api/agreements", requireAuth, async (req, res) => {
     // CREATED before anything reaches the parent, and only a SENT one opens
     // Gate B. Resolve rather than assume.
     const agreementGates = await resolveParentGatesBatch(
-      user.providerId,
+      orgId,
       agreements.map(a => ({ accountKey: parentAccountKey(a.parentUser as any) })),
     );
     const formatted = agreements.map(a => {
@@ -5317,7 +5345,7 @@ chatRouter.post("/api/agreements/sync-template", requireAuth, async (req, res) =
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    const templateId = await syncTemplateToPandaDoc(user.providerId, typeof req.query.serviceType === "string" ? req.query.serviceType : (typeof req.body?.serviceType === "string" ? req.body.serviceType : null));
+    const templateId = await syncTemplateToPandaDoc(agreementsProviderId(req), typeof req.query.serviceType === "string" ? req.query.serviceType : (typeof req.body?.serviceType === "string" ? req.body.serviceType : null));
     res.json({ templateId });
   } catch (e: any) {
     console.error("Sync template error:", e);
@@ -5329,18 +5357,19 @@ chatRouter.post("/api/agreements/sync-template", requireAuth, async (req, res) =
 chatRouter.delete("/api/agreements/template", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const orgId = agreementsProviderId(req);
   const serviceType = typeof req.query.serviceType === "string" ? req.query.serviceType : null;
   try {
     let pandaDocTemplateId: string | null = null;
     if (serviceType) {
       const row = await prisma.providerAgreementTemplate.findUnique({
-        where: { providerId_serviceType: { providerId: user.providerId, serviceType } },
+        where: { providerId_serviceType: { providerId: orgId, serviceType } },
         select: { pandaDocTemplateId: true },
       });
       pandaDocTemplateId = row?.pandaDocTemplateId ?? null;
     } else {
       const provider = await prisma.provider.findUnique({
-        where: { id: user.providerId },
+        where: { id: orgId },
         select: { pandaDocTemplateId: true },
       });
       pandaDocTemplateId = provider?.pandaDocTemplateId ?? null;
@@ -5357,11 +5386,11 @@ chatRouter.delete("/api/agreements/template", requireAuth, async (req, res) => {
     }
     if (serviceType) {
       await prisma.providerAgreementTemplate.deleteMany({
-        where: { providerId: user.providerId, serviceType },
+        where: { providerId: orgId, serviceType },
       });
     } else {
       await prisma.provider.update({
-        where: { id: user.providerId },
+        where: { id: orgId },
         data: { agreementTemplateUrl: null, agreementTemplateOriginalName: null, pandaDocTemplateId: null },
       });
     }
@@ -5378,15 +5407,16 @@ chatRouter.delete("/api/agreements/template", requireAuth, async (req, res) => {
 chatRouter.get("/api/agreements/templates", requireAuth, async (req, res) => {
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
+  const orgId = agreementsProviderId(req);
   try {
     const [provider, rows, services] = await Promise.all([
       prisma.provider.findUnique({
-        where: { id: user.providerId },
+        where: { id: orgId },
         select: { agreementTemplateUrl: true, agreementTemplateOriginalName: true, pandaDocTemplateId: true, agreementAutomation: true, autoFeaturesEnabled: true },
       }),
-      prisma.providerAgreementTemplate.findMany({ where: { providerId: user.providerId } }),
+      prisma.providerAgreementTemplate.findMany({ where: { providerId: orgId } }),
       prisma.providerService.findMany({
-        where: { providerId: user.providerId, status: "APPROVED" },
+        where: { providerId: orgId, status: "APPROVED" },
         select: { providerType: { select: { name: true } } },
       }),
     ]);
@@ -5432,11 +5462,12 @@ chatRouter.put("/api/agreements/templates/:serviceType", requireAuth, async (req
     return res.status(400).json({ message: "agreementTemplateUrl is required" });
   }
   try {
+    const orgId = agreementsProviderId(req);
     const row = await prisma.providerAgreementTemplate.upsert({
-      where: { providerId_serviceType: { providerId: user.providerId, serviceType } },
+      where: { providerId_serviceType: { providerId: orgId, serviceType } },
       // New file invalidates the previously synced PandaDoc template + roles
       update: { agreementTemplateUrl, agreementTemplateOriginalName: agreementTemplateOriginalName ?? null, pandaDocTemplateId: null, pandaDocRoles: null },
-      create: { providerId: user.providerId, serviceType, agreementTemplateUrl, agreementTemplateOriginalName: agreementTemplateOriginalName ?? null },
+      create: { providerId: orgId, serviceType, agreementTemplateUrl, agreementTemplateOriginalName: agreementTemplateOriginalName ?? null },
     });
     res.json({ ok: true, serviceType: row.serviceType });
   } catch (e: any) {
@@ -5455,7 +5486,7 @@ chatRouter.put("/api/agreements/automation", requireAuth, async (req, res) => {
   }
   try {
     await prisma.provider.update({
-      where: { id: user.providerId },
+      where: { id: agreementsProviderId(req) },
       data: { agreementAutomation: mode },
     });
     res.json({ ok: true, mode });
@@ -5470,7 +5501,7 @@ chatRouter.get("/api/agreements/template-editor-session", requireAuth, async (re
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    const eToken = await createTemplateEditingSession(user.providerId, user.email, typeof req.query.serviceType === "string" ? req.query.serviceType : null);
+    const eToken = await createTemplateEditingSession(agreementsProviderId(req), user.email, typeof req.query.serviceType === "string" ? req.query.serviceType : null);
     res.json({ eToken });
   } catch (e: any) {
     console.error("Template editor session error:", e);
@@ -5484,7 +5515,7 @@ chatRouter.post("/api/agreements/refresh-roles", requireAuth, async (req, res) =
   const user = req.user as any;
   if (!isProviderUser(user)) return res.status(403).json({ message: "Forbidden" });
   try {
-    const result = await refreshTemplateRoles(user.providerId, typeof req.query.serviceType === "string" ? req.query.serviceType : (typeof req.body?.serviceType === "string" ? req.body.serviceType : null));
+    const result = await refreshTemplateRoles(agreementsProviderId(req), typeof req.query.serviceType === "string" ? req.query.serviceType : (typeof req.body?.serviceType === "string" ? req.body.serviceType : null));
     res.json(result);
   } catch (e: any) {
     console.error("Refresh template roles error:", e);
@@ -6155,6 +6186,17 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
   });
   console.log(`[W-9 webhook] Provider ${w9.providerId} W-9 completed`);
 
+  // Close any open "Complete your W-9 form" reminder task the admin raised on
+  // this provider's Home queue - the work is done the moment the doc completes.
+  try {
+    await (prisma as any).parentTask.updateMany({
+      where: { systemKey: `w9:${w9.providerId}`, status: "OPEN" },
+      data: { status: "DONE", completedAt: new Date() },
+    });
+  } catch (err: any) {
+    console.error(`[W-9 webhook] Reminder task close failed: ${err?.message}`);
+  }
+
   // Pull W-9 field values into ProviderLegalIdentity so legalName, taxId,
   // tax classification, and business address auto-fill (only into empty
   // fields - manual edits win). Best-effort: a failure here doesn't
@@ -6209,6 +6251,114 @@ async function handleW9Webhook(eventType: string, documentId: string, event: any
   return true;
 }
 
+// Handle PandaDoc webhook events for GoStork -> provider service agreements
+// (ProviderAgreement). Sequence: GoStork signs first (referral fees), then the
+// provider is notified (email + Home-page task); completion closes the task.
+// Returns true if the document was a recognized ProviderAgreement.
+async function handleProviderAgreementWebhook(eventType: string, documentId: string, event: any): Promise<boolean> {
+  const pa = await (prisma as any).providerAgreement.findUnique({
+    where: { pandaDocDocumentId: documentId },
+    include: { provider: { select: { id: true, name: true, email: true } } },
+  });
+  if (!pa) return false;
+
+  // GoStork signer done -> the provider's turn begins.
+  if (eventType === "recipient_completed" && pa.status === "AWAITING_GOSTORK" && pa.gostorkSignerEmail) {
+    const completedEmails = new Set(
+      ((event?.data?.recipients ?? []) as any[])
+        .filter((r: any) => r.has_completed === true)
+        .map((r: any) => (r.email as string || "").toLowerCase()),
+    );
+    if (!completedEmails.has(pa.gostorkSignerEmail.toLowerCase())) return true;
+    if (pa.providerNotifiedAt) return true; // double-delivery guard
+
+    await (prisma as any).providerAgreement.update({
+      where: { id: pa.id },
+      data: { status: "SENT", gostorkCompletedAt: new Date(), providerNotifiedAt: new Date() },
+    });
+    console.log(`[ProviderAgreement webhook] GoStork signed for provider ${pa.providerId} - notifying provider`);
+
+    try {
+      const { raiseProviderAgreementTask } = await import("./pandadoc-service");
+      await raiseProviderAgreementTask(pa.providerId, pa.requestedByUserId || "system", pa.id);
+    } catch (err: any) {
+      console.error(`[ProviderAgreement webhook] Task raise failed: ${err?.message}`);
+    }
+
+    try {
+      const { getNestApp } = await import("./nest-app-ref");
+      const nestApp = getNestApp();
+      if (nestApp) {
+        const { NotificationService } = await import("./src/modules/notifications/notification.service");
+        const notifService = nestApp.get(NotificationService);
+        const { getBaseUrl } = await import("./src/lib/get-base-url");
+        await notifService.sendProviderAgreementRequestNotification({
+          providerId: pa.providerId,
+          providerName: pa.provider?.name || "Provider",
+          signingUrl: `${getBaseUrl()}/provider-agreement/${pa.id}`,
+          fallbackSigner: { userId: pa.signerUserId, email: pa.signerEmail || pa.provider?.email || "", name: pa.provider?.name || "" },
+        });
+      }
+    } catch (err: any) {
+      console.error(`[ProviderAgreement webhook] Provider notification failed: ${err?.message}`);
+    }
+    return true;
+  }
+
+  const isCompleted = eventType === "document_state_changed" && event?.data?.status === "document.completed";
+  if (!isCompleted) return true;
+  if (pa.status === "COMPLETED") return true; // idempotent
+
+  await (prisma as any).providerAgreement.update({
+    where: { id: pa.id },
+    data: { status: "COMPLETED", completedAt: new Date() },
+  });
+  console.log(`[ProviderAgreement webhook] Provider ${pa.providerId} agreement completed`);
+
+  // Close the "Sign your GoStork agreement" task - the work is done.
+  try {
+    await (prisma as any).parentTask.updateMany({
+      where: { systemKey: `pagr:${pa.providerId}`, status: "OPEN" },
+      data: { status: "DONE", completedAt: new Date() },
+    });
+  } catch (err: any) {
+    console.error(`[ProviderAgreement webhook] Task close failed: ${err?.message}`);
+  }
+
+  // Tell the admins the contract is signed - in-app bell AND email.
+  try {
+    const admins = await prisma.user.findMany({ where: { roles: { has: "GOSTORK_ADMIN" } }, select: { id: true, email: true, name: true } });
+    for (const admin of admins) {
+      await prisma.inAppNotification.create({
+        data: {
+          userId: admin.id,
+          eventType: "PROVIDER_AGREEMENT_COMPLETED",
+          payload: { providerId: pa.providerId, agreementId: pa.id, message: `${pa.provider?.name || "A provider"} has signed the GoStork agreement` },
+        },
+      }).catch(() => {});
+    }
+    const { getNestApp } = await import("./nest-app-ref");
+    const nestApp = getNestApp();
+    if (nestApp) {
+      const { NotificationService } = await import("./src/modules/notifications/notification.service");
+      const notifService = nestApp.get(NotificationService);
+      for (const admin of admins) {
+        if (!admin.email) continue;
+        await notifService.sendProviderAgreementCompletedNotification({
+          adminUserId: admin.id,
+          adminEmail: admin.email,
+          adminName: admin.name,
+          providerName: pa.provider?.name || "Provider",
+          agreementId: pa.id,
+        });
+      }
+    }
+  } catch (err: any) {
+    console.error(`[ProviderAgreement webhook] Admin notification failed: ${err?.message}`);
+  }
+  return true;
+}
+
 chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
   // Always respond 200 first - PandaDoc disables webhooks after repeated non-200 responses
   res.json({ received: true });
@@ -6231,9 +6381,13 @@ chatRouter.post("/api/webhooks/pandadoc", async (req, res) => {
         },
       }) as any;
       if (!agreement) {
-        // Not an agreement - it may be a provider W-9 document.
+        // Not a parent agreement - maybe a provider W-9 or a GoStork provider
+        // service agreement.
         const handledW9 = await handleW9Webhook(eventType, documentId, event);
-        if (!handledW9) console.log(`[PandaDoc webhook] No agreement or W-9 found for documentId: ${documentId}`);
+        if (!handledW9) {
+          const handledPa = await handleProviderAgreementWebhook(eventType, documentId, event);
+          if (!handledPa) console.log(`[PandaDoc webhook] No agreement, W-9, or provider agreement found for documentId: ${documentId}`);
+        }
         continue;
       }
 

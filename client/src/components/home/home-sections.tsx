@@ -7,7 +7,7 @@ import { ChevronRight, Loader2, X } from "lucide-react";
 // section header with a View-all link. One implementation so the three
 // dashboards never drift.
 
-export function QueueRow({ icon, title, detail, cta, onClick, action, onDismiss }: {
+export function QueueRow({ icon, title, detail, cta, onClick, action, onDismiss, tone = "notification" }: {
   icon: React.ReactNode;
   title: string;
   detail: string;
@@ -17,11 +17,21 @@ export function QueueRow({ icon, title, detail, cta, onClick, action, onDismiss 
   action?: { label: string; onClick: () => void; loading?: boolean };
   /** Optional dismiss handler - renders a small X that removes the row from the queue. */
   onDismiss?: () => void;
+  /** "task" = actionable work, brand-teal tint (same green as the Tasks panel
+   *  on a parent record). "notification" = informational, the amber default. */
+  tone?: "notification" | "task";
 }) {
+  const isTask = tone === "task";
+  const rowClasses = isTask
+    ? "bg-[hsl(var(--primary)/0.06)] border-[hsl(var(--primary)/0.18)] hover:bg-[hsl(var(--primary)/0.12)]"
+    : "bg-[hsl(var(--brand-warning)/0.06)] border-[hsl(var(--brand-warning)/0.25)] hover:bg-[hsl(var(--brand-warning)/0.12)]";
+  const iconClasses = isTask
+    ? "bg-[hsl(var(--primary)/0.15)] text-[hsl(var(--primary))]"
+    : "bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning))]";
   return (
-    <div className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border bg-[hsl(var(--brand-warning)/0.06)] border-[hsl(var(--brand-warning)/0.25)] hover:bg-[hsl(var(--brand-warning)/0.12)] transition-colors">
+    <div className={`w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius)] border transition-colors ${rowClasses}`}>
       <button onClick={onClick} className="flex-1 min-w-0 flex items-center gap-3 text-left">
-        <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-[hsl(var(--brand-warning)/0.15)] text-[hsl(var(--brand-warning))]">
+        <span className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${iconClasses}`}>
           {icon}
         </span>
         <span className="flex-1 min-w-0">
@@ -48,7 +58,7 @@ export function QueueRow({ icon, title, detail, cta, onClick, action, onDismiss 
       {onDismiss && (
         <button
           onClick={onDismiss}
-          className="shrink-0 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-[hsl(var(--brand-warning)/0.2)]"
+          className={`shrink-0 p-1 rounded-full text-muted-foreground hover:text-foreground ${isTask ? "hover:bg-[hsl(var(--primary)/0.2)]" : "hover:bg-[hsl(var(--brand-warning)/0.2)]"}`}
           aria-label="Dismiss"
           title="Dismiss - hide this item"
         >

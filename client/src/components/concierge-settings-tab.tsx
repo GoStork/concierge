@@ -30,7 +30,10 @@ interface ProviderAssistant {
   matchmakerName: string | null;
 }
 
-export default function ConciergeSettingsTab() {
+// readOnly: the admin provider edit page shows the persona roster without a
+// switcher - the pinned assistant is per-user, so there is no org-level
+// assistant for an admin to change on the provider's behalf.
+export default function ConciergeSettingsTab({ readOnly = false }: { readOnly?: boolean } = {}) {
   const { data: brand, isLoading: brandLoading } = useBrandSettings();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -44,8 +47,8 @@ export default function ConciergeSettingsTab() {
   const isParent = roles.includes("PARENT");
   // Providers get the same choice for their own pinned assistant. Admins keep
   // the read-only roster - persona CRUD is their job, elsewhere on this page.
-  const isProvider = !isParent && !!(user as any)?.providerId;
-  const canChoose = isParent || isProvider;
+  const isProvider = !readOnly && !isParent && !!(user as any)?.providerId;
+  const canChoose = !readOnly && (isParent || isProvider);
 
   const sessionsQuery = useQuery<ChatSession[]>({
     queryKey: ["/api/my/chat-sessions"],

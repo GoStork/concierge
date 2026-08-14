@@ -17,22 +17,53 @@ import { useNavigate } from "react-router-dom";
 import { ExternalLink, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DoctorMonogram } from "@/components/marketplace/doctor-monogram";
-import { DoctorAvatar } from "@/components/marketplace/doctor-monogram";
 import { getPhotoSrc } from "@/lib/profile-utils";
 import { cn } from "@/lib/utils";
+import { ServiceTag, normalizeServiceKey } from "@/components/ui/service-tag";
 import { MatchStatusBadge, chatDeepLink } from "./parent-cells";
 import { useDense } from "./record-density";
 import type { ConversationRow, ParentRecord, SavedProfileRow, SubjectKind } from "./parent-record-types";
 
-const KIND_LABEL: Record<string, string> = {
-  "egg-donor": "Egg donor",
-  "surrogate": "Surrogate",
-  "sperm-donor": "Sperm donor",
-  clinic: "Clinic",
-  agency: "Agency",
-  doctor: "Doctor",
-  none: "Concierge",
-};
+/**
+ * The row's type ("Egg Donor", "Surrogate", "IVF Clinic"...) as THE service
+ * tag, in the service line's platform color. Person kinds carry their own
+ * service; a clinic and a doctor are both IVF-colored; an agency's color
+ * comes from the thread's serviceType (a surrogacy agency is purple, an egg
+ * donor agency amber). "none" is the concierge thread - no type to tag.
+ */
+function KindTag({ kind, serviceType }: { kind: SubjectKind; serviceType?: string | null }) {
+  if (kind === "none") return null;
+  const fixed: Partial<Record<SubjectKind, { service: string; label: string }>> = {
+    "egg-donor": { service: "egg_donation", label: "Egg Donor" },
+    "sperm-donor": { service: "sperm_donation", label: "Sperm Donor" },
+    surrogate: { service: "surrogacy", label: "Surrogate" },
+    clinic: { service: "ivf", label: "IVF Clinic" },
+    doctor: { service: "ivf", label: "Doctor" },
+  };
+  if (fixed[kind]) {
+    return <ServiceTag service={fixed[kind]!.service} label={fixed[kind]!.label} />;
+  }
+  // agency
+  const key = normalizeServiceKey(serviceType);
+  const label =
+    key === "surrogacy" ? "Surrogacy Agency"
+    : key === "egg_donation" ? "Egg Donor Agency"
+    : key === "sperm_donation" ? "Sperm Donor Agency"
+    : "Agency";
+  return <ServiceTag service={key} label={label} />;
+}
+
+/** The neutral provider-name pill both card types share. */
+function ProviderChip({ name }: { name: string }) {
+  return (
+    <span
+      className="text-xs font-ui px-2 py-0.5 rounded-full"
+      style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
+    >
+      {name}
+    </span>
+  );
+}
 
 function Avatar({ photoUrl, name, status, kind }: {
   photoUrl: string | null; name: string; status?: string | null; kind?: SubjectKind;
@@ -103,21 +134,15 @@ export function ConversationRowCard({
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium truncate">{row.displayName}</span>
           <MatchStatusBadge status={row.matchStatus} />
-          {/* A thread with no subject profile is titled with the org itself, so
-              the org chip would just say the same words twice - under a group
-              header that already says them a third time. */}
+          <KindTag kind={row.subjectKind} serviceType={row.serviceType} />
+          {/* A thread with no subject profile is titled with the org itself,
+              so the org chip would just say the same words twice. */}
           {showOrg && row.providerName && row.providerName !== row.displayName && (
-            <span
-              className="text-xs font-ui px-2 py-0.5 rounded-full"
-              style={{ background: "hsl(var(--secondary))", color: "hsl(var(--foreground))" }}
-            >
-              {row.providerName}
-            </span>
+            <ProviderChip name={row.providerName} />
           )}
         </div>
         <p className="t-helper break-words">
-          {KIND_LABEL[row.subjectKind] || "Thread"}
-          {" · started "}{new Date(row.createdAt).toLocaleDateString()}
+          {"started "}{new Date(row.createdAt).toLocaleDateString()}
           {row.updatedAt ? ` · last activity ${new Date(row.updatedAt).toLocaleDateString()}` : ""}
         </p>
         {row.lastMessagePreview && (
@@ -154,18 +179,20 @@ function SavedRowCard({ row, showOrg }: { row: SavedProfileRow; showOrg: boolean
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
       <Avatar photoUrl={row.photoUrl} name={row.displayName} status={row.profileStatus} kind={row.subjectKind} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 space-y-1">
         <p className="text-sm font-medium truncate">{row.displayName}</p>
-        {/* break-words: a provider like "Sperm Bank California | Fertility
-            Center of California" ran straight past the card's right edge. */}
-        <p className="t-helper break-words">
-          {KIND_LABEL[row.subjectKind] || "Profile"}
+        <div className="flex items-center gap-2 flex-wrap">
+          <KindTag kind={row.subjectKind} serviceType={normalizeServiceKey(row.providerName)} />
           {/* Org name only where it disambiguates - the admin sees every
               provider's roster. A provider only ever receives their own
-              saved rows, so for them the label repeats on every card and
+              saved rows, so for them the chip repeats on every card and
               says nothing. */}
-          {showOrg && row.providerName ? ` · ${row.providerName}` : ""}
-          {" · saved "}{new Date(row.savedAt).toLocaleDateString()}
+          {showOrg && row.providerName && row.providerName !== row.displayName && (
+            <ProviderChip name={row.providerName} />
+          )}
+        </div>
+        <p className="t-helper break-words">
+          {"saved "}{new Date(row.savedAt).toLocaleDateString()}
         </p>
       </div>
       </div>
@@ -243,30 +270,16 @@ export function InterestedProfilesSection({
               : "No conversations about your profiles yet. They will appear here when this family starts a chat about one of your donors, surrogates or doctors."}
           </EmptyPanel>
         ) : groupByProvider ? (
-          <div className="space-y-4">
-            {groups.map((g) => (
-              <div key={g.key} className="space-y-2" data-testid={`interests-group-${g.key}`}>
-                <div className="flex items-center gap-2">
-                  {/* DoctorAvatar, not a bare img: a provider whose logo URL
-                      has gone dead on their own site rendered the browser's
-                      broken-image icon. This falls back to initials. */}
-                  <DoctorAvatar
-                    name={g.label}
-                    photoUrl={g.logoUrl}
-                    size={24}
-                    rounded="var(--radius)"
-                    className="object-contain"
-                  />
-                  <span className="text-sm font-medium font-ui">{g.label}</span>
-                  <span className="t-helper">({g.rows.length})</span>
-                </div>
-                <div className="space-y-2">
-                  {g.rows.map((row) => (
-                    <ConversationRowCard key={row.sessionId} row={row} isAdmin={isAdmin} parentUserId={record.parent.id} showOrg />
-                  ))}
-                </div>
-              </div>
-            ))}
+          // No per-provider header rows: every card wears its own provider
+          // chip, so a heading repeating the name above them was noise. The
+          // grouping still orders the list (one provider's threads stay
+          // adjacent, most recently active provider first, Eva last).
+          <div className="space-y-2">
+            {groups.flatMap((g) =>
+              g.rows.map((row) => (
+                <ConversationRowCard key={row.sessionId} row={row} isAdmin={isAdmin} parentUserId={record.parent.id} showOrg />
+              )),
+            )}
           </div>
         ) : (
           <div className="space-y-2">

@@ -25,6 +25,7 @@
  */
 import { serviceLineOfType } from "./service-lines";
 import { serviceLineOfSubject } from "./journey-timeline";
+import { PROVIDER_ROLES } from "../shared/roles";
 
 type Db = any;
 
@@ -369,6 +370,161 @@ export async function runTaskMaterializeSweep(db: Db): Promise<void> {
 }
 
 /**
+ * Calendar-connection tasks (calconn:<userId>).
+ *
+ * Every provider staff member is expected to have a working calendar - it is
+ * what lets parents book calls with them. This raises "Connect your calendar"
+ * for staff with no live connection and "Reconnect your calendar" when a
+ * connection's refresh token has died (tokenValid=false, cleared by the
+ * calendar-health scheduler), and closes the task itself the moment the
+ * calendar is healthy again.
+ *
+ * Same personal-task shape as the W-9 and provider-agreement tasks: the
+ * parentAccountId slot carries the providerId (no family attached), and the
+ * task is assigned to the specific user whose calendar it is.
+ *
+ * Reopen rule: a row this sweep closed (completedByUserId null) reopens if the
+ * calendar breaks again. A row the USER completed (completedByUserId set,
+ * possibly dismissedUnresolved) is their answer and is never re-raised.
+ */
+const calendarTaskState = (conns: Array<{ connected: boolean; tokenValid: boolean }>): "none" | "expired" | "ok" => {
+  const live = conns.filter((c) => c.connected);
+  if (!live.length) return "none";
+  if (live.some((c) => c.tokenValid === false)) return "expired";
+  return "ok";
+};
+
+const CAL_TASK_COPY = {
+  none: {
+    title: "Connect your calendar",
+    notes: "Connect your Google, Outlook, or Apple calendar so parents can book calls with you and your availability stays accurate.",
+    deepLink: "/account/calendar?connect=true",
+  },
+  expired: {
+    title: "Reconnect your calendar",
+    notes: "A calendar connection has expired, so new bookings are not syncing. Reconnect it from your Calendar settings.",
+    deepLink: "/account/calendar",
+  },
+} as const;
+
+export async function runCalendarConnectionTaskSweep(db: Db): Promise<void> {
+  try {
+    const staff = await db.user.findMany({
+      where: {
+        providerId: { not: null },
+        roles: { hasSome: [...PROVIDER_ROLES] },
+        // GoStork staff are linked to the house provider row; their calendars
+        // are managed from the admin table, not nagged by tasks.
+        NOT: { roles: { hasSome: ["GOSTORK_ADMIN", "GOSTORK_CONCIERGE"] } },
+      },
+      select: {
+        id: true, name: true, email: true, providerId: true,
+        calendarConnections: {
+          where: { NOT: { calendarId: "__pending__" } },
+          select: { connected: true, tokenValid: true },
+        },
+      },
+    });
+
+    let raised = 0, reopened = 0, closed = 0;
+    for (const u of staff as any[]) {
+      const key = `calconn:${u.id}`;
+      const state = calendarTaskState(u.calendarConnections);
+      if (state === "ok") {
+        // completedByUserId stays null - that is the marker that the SYSTEM
+        // closed it, which is what allows a reopen if it breaks again.
+        const r = await db.parentTask.updateMany({
+          where: { systemKey: key, status: "OPEN" },
+          data: { status: "DONE", completedAt: new Date() },
+        });
+        closed += r.count;
+        continue;
+      }
+      const copy = CAL_TASK_COPY[state];
+      try {
+        await db.parentTask.create({
+          data: {
+            parentAccountId: u.providerId,
+            scope: "PROVIDER",
+            providerId: u.providerId,
+            title: copy.title,
+            notes: copy.notes,
+            type: "TODO",
+            priority: "MEDIUM",
+            dueAt: new Date(Date.now() + 3 * 86_400_000),
+            source: "SYSTEM",
+            systemKey: key,
+            deepLink: copy.deepLink,
+            assigneeUserId: u.id,
+            assigneeName: u.name || u.email,
+            createdByUserId: "system",
+          },
+        });
+        raised++;
+      } catch (e: any) {
+        if (e?.code !== "P2002") throw e;
+        // Row exists. Keep an OPEN row's copy current (none -> expired), and
+        // reopen only a system-closed row - never one the user completed.
+        const r = await db.parentTask.updateMany({
+          where: {
+            systemKey: key,
+            OR: [
+              { status: "OPEN" },
+              { status: "DONE", completedByUserId: null },
+            ],
+          },
+          data: { status: "OPEN", title: copy.title, notes: copy.notes, deepLink: copy.deepLink, completedAt: null },
+        });
+        reopened += r.count;
+      }
+    }
+    if (raised || reopened || closed) {
+      console.log(`[tasks] calendar: raised ${raised}, refreshed/reopened ${reopened}, closed ${closed}`);
+    }
+  } catch (e: any) {
+    console.error(`[tasks] calendar-connection sweep failed: ${e?.message}`);
+  }
+}
+
+/**
+ * Read-time reconcile for calconn: tasks - connect a calendar, come straight
+ * back to Home, and the task is gone rather than waiting out the 10-minute
+ * sweep. Close-only, mirroring the silence reconciler.
+ */
+async function reconcileCalendarTasks<T extends { id: string; source?: string; systemKey?: string | null }>(
+  db: Db, tasks: T[],
+): Promise<T[]> {
+  const cal = tasks.filter((t) => t.source === "SYSTEM" && t.systemKey?.startsWith("calconn:"));
+  if (!cal.length) return tasks;
+  try {
+    const userIds = cal.map((t) => t.systemKey!.slice("calconn:".length));
+    const conns = await db.calendarConnection.findMany({
+      where: { userId: { in: userIds }, NOT: { calendarId: "__pending__" } },
+      select: { userId: true, connected: true, tokenValid: true },
+    });
+    const byUser = new Map<string, any[]>();
+    for (const c of conns as any[]) {
+      const list = byUser.get(c.userId) || [];
+      list.push(c);
+      byUser.set(c.userId, list);
+    }
+    const closedIds = cal
+      .filter((t) => calendarTaskState(byUser.get(t.systemKey!.slice("calconn:".length)) || []) === "ok")
+      .map((t) => t.id);
+    if (!closedIds.length) return tasks;
+    await db.parentTask.updateMany({
+      where: { id: { in: closedIds }, status: "OPEN" },
+      data: { status: "DONE", completedAt: new Date() },
+    });
+    const closed = new Set(closedIds);
+    return tasks.filter((t) => !closed.has(t.id));
+  } catch (e: any) {
+    console.error(`[tasks] calendar reconcile failed: ${e?.message}`);
+    return tasks;
+  }
+}
+
+/**
  * Close, right now, any of these tasks whose work is already done.
  *
  * The sweep above runs every ten minutes, which is fine for a queue nobody is
@@ -396,7 +552,9 @@ export async function reconcileTaskKeys<T extends { id: string; source?: string;
   // Silence tasks close the moment the family (or the team) touches the
   // thread again - checked here so a coordinator reading the record right
   // after a reply is not told to chase a family that just answered.
-  const remaining = await reconcileSilenceTasks(db, tasks);
+  let remaining = await reconcileSilenceTasks(db, tasks);
+  // Calendar tasks close the moment the calendar is healthy again.
+  remaining = await reconcileCalendarTasks(db, remaining);
 
   // Only the queue kinds this file owns - a playbook task has no artifact to
   // reconcile against, and silence was handled above.

@@ -1780,3 +1780,363 @@ export async function getW9SigningSession(w9Id: string, user: { id: string; prov
   if (!url) throw new Error("Could not create signing session - document may not be in a signable state");
   return { signingUrl: url, providerId: w9.providerId };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GoStork -> Provider service agreement (ProviderAgreement)
+//
+// The contract each provider signs with GoStork. Template roles: "GoStork"
+// (the admin - fills the referral-fee fields, signs FIRST) and one provider
+// role (usually "Client", signs second). DEFAULT template = the GoStork house
+// provider's agreement template fields (uploaded on /account/documents);
+// CUSTOM = a per-provider file stored on the ProviderAgreement row itself.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Resolve the GoStork house provider row that stores the default provider
+ *  service agreement template (same resolution as the ASRM gate). */
+export async function resolveGoStorkHouseTemplate(): Promise<{
+  providerId: string;
+  agreementTemplateUrl: string | null;
+  agreementTemplateOriginalName: string | null;
+  pandaDocTemplateId: string | null;
+}> {
+  const select = { id: true, agreementTemplateUrl: true, agreementTemplateOriginalName: true, pandaDocTemplateId: true } as const;
+  let row: any = null;
+  const envId = process.env.GOSTORK_PROVIDER_ID;
+  if (envId) row = await prisma.provider.findUnique({ where: { id: envId }, select });
+  if (!row) {
+    row = await prisma.provider.findFirst({ where: { name: { equals: "GoStork", mode: "insensitive" } }, select });
+  }
+  if (!row) throw new Error("GoStork house provider not found - upload the default agreement template first");
+  return {
+    providerId: row.id,
+    agreementTemplateUrl: row.agreementTemplateUrl,
+    agreementTemplateOriginalName: row.agreementTemplateOriginalName,
+    pandaDocTemplateId: row.pandaDocTemplateId,
+  };
+}
+
+async function fetchFileBuffer(fileUrl: string): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+  const filename = decodeURIComponent(fileUrl.split("/").pop()?.split("?")[0] || "agreement");
+  const gcsMatch = fileUrl.match(/storage\.googleapis\.com\/([^/]+)\/(.+)/);
+  if (gcsMatch) {
+    const keyJson = process.env.GCS_SERVICE_ACCOUNT_KEY;
+    if (!keyJson) throw new Error("GCS_SERVICE_ACCOUNT_KEY not configured");
+    const storage = new Storage({ credentials: JSON.parse(keyJson) });
+    const file = storage.bucket(gcsMatch[1]).file(gcsMatch[2]);
+    const [meta] = await file.getMetadata();
+    const [contents] = await file.download();
+    return { buffer: contents, contentType: (meta.contentType as string) || "application/octet-stream", filename };
+  }
+  if (fileUrl.startsWith("/uploads/")) {
+    const localPath = path.join(process.cwd(), "public", fileUrl);
+    const buffer = fs.readFileSync(localPath);
+    const contentType = filename.endsWith(".pdf") ? "application/pdf"
+      : filename.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : "application/msword";
+    return { buffer, contentType, filename };
+  }
+  const resp = await fetch(fileUrl);
+  if (!resp.ok) throw new Error(`Failed to fetch file: ${resp.status}`);
+  return { buffer: Buffer.from(await resp.arrayBuffer()), contentType: resp.headers.get("content-type") || "application/octet-stream", filename };
+}
+
+/** Sync a ProviderAgreement row's CUSTOM uploaded file to a PandaDoc template. */
+export async function syncProviderAgreementTemplate(agreementId: string): Promise<string> {
+  const row = await (prisma as any).providerAgreement.findUnique({ where: { id: agreementId } });
+  if (!row) throw new Error("Agreement not found");
+  if (!row.customTemplateUrl) throw new Error("No custom contract file uploaded yet");
+
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+
+  if (row.customPandaDocTemplateId) {
+    const checkRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${row.customPandaDocTemplateId}`, {
+      headers: { "Authorization": `API-Key ${apiKey}` },
+    });
+    if (checkRes.ok) return row.customPandaDocTemplateId;
+    await (prisma as any).providerAgreement.update({ where: { id: agreementId }, data: { customPandaDocTemplateId: null } });
+  }
+
+  const provider = await prisma.provider.findUnique({ where: { id: row.providerId }, select: { name: true } });
+  const { buffer, contentType, filename } = await fetchFileBuffer(row.customTemplateUrl);
+
+  const formData = new FormData();
+  formData.append("data", JSON.stringify({ name: `GoStork Agreement - ${provider?.name || "Provider"}` }));
+  formData.append("file", new Blob([buffer as unknown as ArrayBuffer], { type: contentType }), filename);
+
+  const createRes = await fetch("https://api.pandadoc.com/public/v1/templates", {
+    method: "POST",
+    headers: { "Authorization": `API-Key ${apiKey}` },
+    body: formData,
+  });
+  if (!createRes.ok) throw new Error(`PandaDoc template upload failed: ${createRes.status} - ${await createRes.text()}`);
+  const created = await createRes.json();
+  const templateId: string = created.uuid || created.id;
+  if (!templateId) throw new Error("PandaDoc did not return a template ID");
+
+  for (let i = 0; i < 15; i++) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const pollRes = await fetch(`https://api.pandadoc.com/public/v1/templates/${templateId}`, {
+      headers: { "Authorization": `API-Key ${apiKey}` },
+    });
+    if (pollRes.ok) {
+      const tmpl = await pollRes.json();
+      if (tmpl.status === "template.active" || tmpl.status === "template.PROCESSED") break;
+    }
+  }
+
+  await (prisma as any).providerAgreement.update({ where: { id: agreementId }, data: { customPandaDocTemplateId: templateId } });
+  return templateId;
+}
+
+/** Embedded editing session for a ProviderAgreement's CUSTOM template. */
+export async function createProviderAgreementEditingSession(agreementId: string, userEmail: string): Promise<string> {
+  const row = await (prisma as any).providerAgreement.findUnique({ where: { id: agreementId } });
+  if (!row?.customPandaDocTemplateId) throw new Error("Custom template not synced to PandaDoc yet");
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+  const res = await fetch(`https://api.pandadoc.com/public/v1/templates/${row.customPandaDocTemplateId}/editing-sessions`, {
+    method: "POST",
+    headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ email: userEmail }),
+  });
+  if (!res.ok) throw new Error(`PandaDoc editing session failed: ${res.status} - ${await res.text()}`);
+  const data = await res.json();
+  const eToken: string = data.token || data.key || data.id;
+  if (!eToken) throw new Error("PandaDoc did not return an editing session token");
+  return eToken;
+}
+
+/** Refresh cached role names (roles that have fields) for a CUSTOM template. */
+export async function refreshProviderAgreementRoles(agreementId: string): Promise<{ roles: string[] }> {
+  const row = await (prisma as any).providerAgreement.findUnique({ where: { id: agreementId } });
+  if (!row?.customPandaDocTemplateId) return { roles: [] };
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+  const { roles, fieldCountByRoleId } = await fetchTemplateRolesAndFields(apiKey, row.customPandaDocTemplateId);
+  const rolesWithFields = roles.filter(r => (fieldCountByRoleId[r.id] ?? 0) > 0);
+  await (prisma as any).providerAgreement.update({
+    where: { id: agreementId },
+    data: { customPandaDocRoles: rolesWithFields.length ? JSON.stringify(rolesWithFields.map(r => r.name)) : null },
+  });
+  return { roles: rolesWithFields.map(r => r.name) };
+}
+
+/** Provider-side signer: prefer PROVIDER_ADMIN / BILLING_MANAGER users (the
+ *  people who can sign contracts), then any user, then the provider email. */
+async function resolveProviderAgreementSigner(providerId: string): Promise<{ email: string; userId: string | null; firstName: string; lastName: string }> {
+  const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { name: true, email: true } });
+  if (!provider) throw new Error("Provider not found");
+
+  const user =
+    (await prisma.user.findFirst({
+      where: { providerId, isDisabled: false, roles: { hasSome: ["PROVIDER_ADMIN", "BILLING_MANAGER"] } },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, email: true, firstName: true, lastName: true, name: true },
+    })) ||
+    (await prisma.user.findFirst({
+      where: { providerId, isDisabled: false },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, email: true, firstName: true, lastName: true, name: true },
+    }));
+
+  if (user?.email) {
+    const first = user.firstName || (user.name ? user.name.split(" ")[0] : "") || provider.name;
+    const last = user.lastName || (user.name ? user.name.split(" ").slice(1).join(" ") : "") || "";
+    return { email: user.email, userId: user.id, firstName: first, lastName: last };
+  }
+  if (provider.email) {
+    return { email: provider.email, userId: null, firstName: provider.name.split(" ")[0] || provider.name, lastName: provider.name.split(" ").slice(1).join(" ") || "" };
+  }
+  throw new Error("This provider has no user or email to send the agreement to");
+}
+
+/**
+ * Create and (silently) send the GoStork provider service agreement.
+ * GoStork signs first (referral-fee fields), the provider second. Supersedes
+ * any previous live agreement rows for the provider.
+ */
+export async function sendProviderAgreement(params: {
+  providerId: string;
+  /** Existing DRAFT row id for CUSTOM sends; omit for DEFAULT sends. */
+  agreementId?: string | null;
+  requestedBy: { userId: string; email: string; firstName: string; lastName: string };
+}): Promise<{ agreement: any; signer: { email: string; userId: string | null; name: string }; hasGoStorkRole: boolean }> {
+  const { providerId, agreementId, requestedBy } = params;
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+
+  let templateId: string;
+  let templateSource: "DEFAULT" | "CUSTOM";
+  let draftRow: any = null;
+
+  if (agreementId) {
+    draftRow = await (prisma as any).providerAgreement.findUnique({ where: { id: agreementId } });
+    if (!draftRow) throw new Error("Agreement not found");
+    if (draftRow.providerId !== providerId) throw new Error("Agreement does not belong to this provider");
+    if (draftRow.status !== "DRAFT") throw new Error("This agreement was already sent");
+    if (!draftRow.customPandaDocTemplateId) throw new Error("Open the editor, assign signature fields, and Save before sending");
+    templateId = draftRow.customPandaDocTemplateId;
+    templateSource = "CUSTOM";
+  } else {
+    const house = await resolveGoStorkHouseTemplate();
+    if (!house.agreementTemplateUrl || !house.pandaDocTemplateId) {
+      throw new Error("No default agreement template configured. Upload it on the Agreements tab and assign signature fields first.");
+    }
+    templateId = house.pandaDocTemplateId;
+    templateSource = "DEFAULT";
+  }
+
+  const { roles } = await fetchTemplateRolesAndFields(apiKey, templateId);
+  if (roles.length === 0) throw new Error("No signature fields assigned on the template. Open the editor, assign fields to roles, and Save.");
+
+  const gostorkRole = roles.find(r => r.name.toLowerCase().includes("gostork")) || null;
+  const providerRoles = roles.filter(r => r !== gostorkRole);
+  if (providerRoles.length === 0) throw new Error("The template has no provider signer role (e.g. Client) with fields assigned.");
+  if (providerRoles.length > 1) {
+    throw new Error(`The template has ${providerRoles.length} provider roles (${providerRoles.map(r => r.name).join(", ")}). Use exactly one provider role plus the optional GoStork role.`);
+  }
+  const providerRole = providerRoles[0];
+
+  const signer = await resolveProviderAgreementSigner(providerId);
+  const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { name: true } });
+
+  // GoStork signs first so the referral-fee fields are filled before the
+  // provider ever sees the document; PandaDoc enforces the order.
+  const recipients = [
+    ...(gostorkRole ? [{
+      email: requestedBy.email,
+      first_name: requestedBy.firstName || "GoStork",
+      last_name: requestedBy.lastName || "Team",
+      role: gostorkRole.name,
+      signing_order: 1,
+    }] : []),
+    {
+      email: signer.email,
+      first_name: signer.firstName,
+      last_name: signer.lastName,
+      role: providerRole.name,
+      signing_order: gostorkRole ? 2 : 1,
+    },
+  ];
+
+  const createResponse = await fetch("https://api.pandadoc.com/public/v1/documents", {
+    method: "POST",
+    headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: `GoStork Provider Service Agreement - ${provider?.name || "Provider"}`,
+      template_uuid: templateId,
+      recipients,
+      metadata: { gostork_provider_agreement_provider_id: providerId },
+      tags: ["gostork", "provider-agreement"],
+    }),
+  });
+  if (!createResponse.ok) throw new Error(`PandaDoc API error: ${createResponse.status} - ${await createResponse.text()}`);
+  const pandaDocResult = await createResponse.json();
+  const pandaDocDocumentId = pandaDocResult.id;
+  console.log(`[ProviderAgreement] Document created for provider ${providerId}: ${pandaDocDocumentId}`);
+
+  const isReady = await waitForDocumentStatus(apiKey, pandaDocDocumentId, "document.draft");
+  if (!isReady) throw new Error("Agreement document did not reach draft state");
+
+  const sendResponse = await fetch(`https://api.pandadoc.com/public/v1/documents/${pandaDocDocumentId}/send`, {
+    method: "POST",
+    headers: { "Authorization": `API-Key ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "GoStork Provider Service Agreement", silent: true }),
+  });
+  if (!sendResponse.ok) throw new Error(`PandaDoc send error: ${sendResponse.status} - ${await sendResponse.text()}`);
+  await waitForDocumentStatus(apiKey, pandaDocDocumentId, "document.sent");
+
+  const pandaDocViewUrl = await fetchDocumentViewUrl(apiKey, pandaDocDocumentId, signer.email);
+
+  const data = {
+    pandaDocDocumentId,
+    pandaDocViewUrl,
+    // With a GoStork role the admin must fill fees + sign before the provider
+    // is looped in; without one the provider can sign immediately.
+    status: gostorkRole ? "AWAITING_GOSTORK" : "SENT",
+    templateSource,
+    signerEmail: signer.email,
+    signerUserId: signer.userId,
+    gostorkSignerEmail: gostorkRole ? requestedBy.email : null,
+    requestedByUserId: requestedBy.userId,
+    requestedAt: new Date(),
+  };
+
+  const agreement = draftRow
+    ? await (prisma as any).providerAgreement.update({ where: { id: draftRow.id }, data })
+    : await (prisma as any).providerAgreement.create({ data: { providerId, ...data } });
+
+  // History: the new send is the live row; everything else for this provider
+  // becomes superseded (kept for the audit trail, still downloadable if signed).
+  await (prisma as any).providerAgreement.updateMany({
+    where: { providerId, id: { not: agreement.id }, supersededAt: null },
+    data: { supersededAt: new Date() },
+  });
+
+  return {
+    agreement,
+    signer: { email: signer.email, userId: signer.userId, name: `${signer.firstName} ${signer.lastName}`.trim() },
+    hasGoStorkRole: !!gostorkRole,
+  };
+}
+
+/** Signing session for a ProviderAgreement - the viewer determines the
+ *  recipient: GoStork admins get the GoStork signer session, provider users
+ *  get the provider signer session. */
+export async function getProviderAgreementSigningSession(
+  id: string,
+  user: { id: string; email?: string | null; providerId?: string | null; roles?: string[] },
+): Promise<{ signingUrl: string; providerId: string; forGoStork: boolean }> {
+  const row = await (prisma as any).providerAgreement.findUnique({
+    where: { id },
+    select: { id: true, providerId: true, pandaDocDocumentId: true, signerEmail: true, gostorkSignerEmail: true, status: true },
+  });
+  if (!row) throw new Error("Agreement not found");
+
+  const isGoStorkAdmin = (user.roles || []).includes("GOSTORK_ADMIN");
+  if (!isGoStorkAdmin && user.providerId !== row.providerId) throw new Error("Not authorized to access this agreement");
+  if (!row.pandaDocDocumentId) throw new Error("Agreement has no PandaDoc document yet");
+
+  const apiKey = process.env.PANDADOC_API_KEY;
+  if (!apiKey) throw new Error("PANDADOC_API_KEY is not configured");
+
+  // The admin signs as the GoStork recipient while it is their turn; in every
+  // other case (including an admin reviewing later) open the provider session.
+  const forGoStork = isGoStorkAdmin && row.status === "AWAITING_GOSTORK" && !!row.gostorkSignerEmail;
+  const email = forGoStork ? row.gostorkSignerEmail : row.signerEmail;
+  if (!email) throw new Error("Agreement has no signer on record");
+
+  const url = await fetchDocumentViewUrl(apiKey, row.pandaDocDocumentId, email);
+  if (!url) throw new Error("Could not create signing session - document may not be in a signable state");
+  return { signingUrl: url, providerId: row.providerId, forGoStork };
+}
+
+/** Raise (or reopen) the "Sign your GoStork agreement" task on the provider's
+ *  Home work queue. Idempotent via unique systemKey (pagr:<providerId>). Called
+ *  when it becomes the provider's turn (GoStork signed) and on admin reminders;
+ *  the completion webhook closes it. */
+export async function raiseProviderAgreementTask(providerId: string, createdByUserId: string, agreementId: string) {
+  const dueAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+  await (prisma as any).parentTask.upsert({
+    where: { systemKey: `pagr:${providerId}` },
+    create: {
+      // Provider-scoped work with no family attached (same shape as the W-9
+      // task): the account key slot carries the providerId, which matches no
+      // parent account, so the task renders only on this provider's Home queue.
+      parentAccountId: providerId,
+      scope: "PROVIDER",
+      providerId,
+      title: "Sign your GoStork agreement",
+      notes: "Review and sign the GoStork Provider Service Agreement.",
+      type: "TODO",
+      priority: "HIGH",
+      dueAt,
+      source: "SYSTEM",
+      systemKey: `pagr:${providerId}`,
+      deepLink: `/provider-agreement/${agreementId}`,
+      createdByUserId,
+    },
+    update: { status: "OPEN", dueAt, completedAt: null, completedByUserId: null, deepLink: `/provider-agreement/${agreementId}` },
+  });
+}

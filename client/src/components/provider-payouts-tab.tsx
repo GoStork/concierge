@@ -643,7 +643,7 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!legalIdentityComplete) {
-        throw new Error("Complete your Legal Identity first.");
+        throw new Error("Complete your legal details first.");
       }
       if (bankAccount && bankAccountConfirm && bankAccount !== bankAccountConfirm) {
         throw new Error("Bank account numbers don't match");
@@ -712,14 +712,14 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
           <div>
             <h3 className="font-semibold text-sm">Business identity</h3>
             <p className="t-helper mt-0.5">
-              From your Legal Identity tab. Used for Stripe Connect KYC.
+              From your Legal tab. Used for Stripe Connect KYC.
             </p>
           </div>
           <a
             href="/account/legal-identity"
             className="text-xs underline text-primary shrink-0"
           >
-            Edit in Legal Identity
+            Edit in Legal
           </a>
         </div>
         {legalLoading ? (
@@ -744,10 +744,10 @@ function CustomPayoutForm({ state }: { state: PayoutsState | undefined }) {
           <div className="flex items-start gap-2 rounded-md border p-3 bg-card" style={{ borderColor: "hsl(var(--brand-warning) / 0.4)" }}>
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "hsl(var(--brand-warning))" }} />
             <div className="text-xs">
-              <p className="font-medium">Complete your Legal Identity first</p>
+              <p className="font-medium">Complete your legal details first</p>
               <p className="text-muted-foreground mt-0.5">
                 Stripe needs your business name, website URL, tax ID, tax classification, and address before we can set up payouts.{" "}
-                <a href="/account/legal-identity" className="underline text-primary">Open Legal Identity</a>
+                <a href="/account/legal-identity" className="underline text-primary">Open the Legal tab</a>
               </p>
             </div>
           </div>

@@ -69,6 +69,36 @@ async function buildW9Status(providerId: string) {
   };
 }
 
+// Raise (or reopen) the "Complete your W-9 form" task on the provider's Home
+// page work queue. Idempotent via the unique systemKey (w9:<providerId>).
+// Called on BOTH the initial admin send and every reminder, so the request is
+// always visible as a to-do; the PandaDoc completion webhook closes it
+// (chat-router handleW9Webhook).
+async function raiseW9Task(providerId: string, createdByUserId: string) {
+  const dueAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+  await (prisma as any).parentTask.upsert({
+    where: { systemKey: `w9:${providerId}` },
+    create: {
+      // Provider-scoped work with no family attached: the account key slot
+      // carries the providerId, which matches no parent account, so the task
+      // renders only on this provider's Home queue and nowhere else.
+      parentAccountId: providerId,
+      scope: "PROVIDER",
+      providerId,
+      title: "Complete your W-9 form",
+      notes: "GoStork needs your signed W-9 on file before payouts can be sent.",
+      type: "TODO",
+      priority: "HIGH",
+      dueAt,
+      source: "SYSTEM",
+      systemKey: `w9:${providerId}`,
+      deepLink: "/account/legal-identity",
+      createdByUserId,
+    },
+    update: { status: "OPEN", dueAt, completedAt: null, completedByUserId: null },
+  });
+}
+
 @Controller()
 export class W9Controller {
   private readonly logger = new Logger(W9Controller.name);
@@ -179,6 +209,75 @@ export class W9Controller {
     }
   }
 
+  // ── Admin: W-9 tracking table (all approved providers with user accounts) ──
+  // Scraped/CDC profiles with no login are excluded - nobody there can sign.
+  // The GoStork house provider (the row admin users are linked to) is excluded
+  // too: GoStork does not W-9 itself.
+
+  @Get("api/admin/w9/providers")
+  @UseGuards(SessionOrJwtGuard)
+  async listProviderW9s(@Req() req: Request) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const providers = await prisma.provider.findMany({
+      where: {
+        services: { some: { status: "APPROVED" } },
+        users: { some: {} },
+        NOT: { users: { some: { roles: { has: "GOSTORK_ADMIN" } } } },
+      },
+      select: {
+        id: true,
+        name: true,
+        services: {
+          where: { status: "APPROVED" },
+          select: { providerType: { select: { name: true } } },
+        },
+        w9: {
+          select: { id: true, status: true, requestedAt: true, completedAt: true, signerEmail: true },
+        },
+      },
+      orderBy: { name: "asc" },
+    });
+    // Which providers already have an open W-9 reminder task on their Home page.
+    const reminders = await (prisma as any).parentTask.findMany({
+      where: { systemKey: { in: providers.map((p: any) => `w9:${p.id}`) }, status: "OPEN" },
+      select: { systemKey: true },
+    });
+    const openReminders = new Set(reminders.map((r: any) => r.systemKey));
+    return {
+      providers: providers.map((p: any) => ({
+        providerId: p.id,
+        name: p.name,
+        serviceTypes: Array.from(new Set(p.services.map((s: any) => s.providerType.name))),
+        w9Id: p.w9?.id || null,
+        status: p.w9?.status || "NOT_SENT",
+        requestedAt: p.w9?.requestedAt || null,
+        completedAt: p.w9?.completedAt || null,
+        signerEmail: p.w9?.signerEmail || null,
+        reminderOpen: openReminders.has(`w9:${p.id}`),
+      })),
+    };
+  }
+
+  // Raise a "Complete your W-9 form" task on the provider's Home page work
+  // queue. Idempotent via the unique systemKey (w9:<providerId>) - re-sending
+  // just reopens/refreshes the same task. The task auto-closes when the
+  // PandaDoc completion webhook lands (chat-router handleW9Webhook).
+  @Post("api/admin/providers/:providerId/w9/remind")
+  @UseGuards(SessionOrJwtGuard)
+  async remindW9(@Req() req: Request, @Param("providerId") providerId: string) {
+    if (!isAdmin(req.user)) throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    const user = req.user as any;
+    const w9 = await (prisma as any).providerW9.findUnique({ where: { providerId } });
+    if (w9?.status === "COMPLETED") {
+      throw new HttpException("This provider's W-9 is already completed.", HttpStatus.BAD_REQUEST);
+    }
+    const provider = await prisma.provider.findUnique({ where: { id: providerId }, select: { id: true } });
+    if (!provider) throw new HttpException("Provider not found", HttpStatus.NOT_FOUND);
+
+    await raiseW9Task(providerId, user.id);
+    return { success: true };
+  }
+
   // ── Admin: per-provider W-9 status + send request ──
 
   @Get("api/admin/providers/:providerId/w9")
@@ -228,6 +327,14 @@ export class W9Controller {
         });
       } catch (notifErr: any) {
         this.logger.error(`[W-9] Request notification failed: ${notifErr?.message}`);
+      }
+
+      // The request itself is a to-do: put "Complete your W-9 form" on the
+      // provider's Home page work queue right away, not only on reminders.
+      try {
+        await raiseW9Task(providerId, user.id);
+      } catch (taskErr: any) {
+        this.logger.error(`[W-9] Task raise failed: ${taskErr?.message}`);
       }
 
       return { success: true, w9Id: w9.id, status: w9.status };
