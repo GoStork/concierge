@@ -9,6 +9,7 @@ import { ChevronLeft, Loader2, Lock, Check, Eye, EyeOff, AlertCircle, UserRound,
 import { getPhotoSrc } from "@/lib/profile-utils";
 import LocationAutocomplete from "@/components/location-autocomplete";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { SmsConsentDisclosure } from "@/components/ui/sms-consent-disclosure";
 import { TurnstileWidget } from "@/components/ui/turnstile-widget";
 import { countryNameToIsoCode } from "@/lib/country-flag";
 
@@ -989,7 +990,7 @@ function StepPhone({
         We will send you a verification code on this number. We make sure our users are real people
       </p>
 
-      <div className="mb-8">
+      <div className="mb-6">
         <PhoneInput
           variant="onboarding"
           value={value}
@@ -1008,6 +1009,7 @@ function StepPhone({
         </p>
       )}
 
+      <SmsConsentDisclosure actionLabel="tapping Verify phone number" />
     </div>
   );
 }
