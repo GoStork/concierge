@@ -27,6 +27,7 @@ import ConciergeSettingsTab from "@/components/concierge-settings-tab";
 import AccountPlaybooksPage from "@/pages/account-playbooks-page";
 import AccountAutomationPage from "@/pages/account-automation-page";
 import { AdminCalendarTable } from "@/components/calendar/admin-calendar-table";
+import { PartnerProvidersCard } from "@/components/partner-providers-card";
 import ProfileDatabasePanel from "@/components/profile-database-panel";
 import ProviderCostsTab from "@/components/provider-costs-tab";
 import { ProviderBillingTab } from "@/components/provider-billing-tab";
@@ -199,17 +200,8 @@ export default function AdminProviderEditPage() {
     queryKey: ["/api/provider-types"],
   });
 
-  const { data: allIvfClinics } = useQuery<any[]>({
-    queryKey: ["/api/providers/by-type/ivf-clinic"],
-    queryFn: async () => {
-      const res = await fetch("/api/providers/by-type/ivf-clinic", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
 
   const [manageServicesOpen, setManageServicesOpen] = useState(false);
-  const [partnerClinicSearch, setPartnerClinicSearch] = useState("");
 
   const [editName, setEditName] = useState("");
   const [editAbout, setEditAbout] = useState("");
@@ -766,7 +758,8 @@ export default function AdminProviderEditPage() {
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <div className="overflow-x-auto w-full">
+        {/* scrollbar-hide: the strip still scrolls horizontally, just without the visible bar. */}
+        <div className="overflow-x-auto w-full scrollbar-hide">
         <TabsList className="h-12 bg-muted dark:bg-muted p-1 rounded-[var(--radius)] border border-border dark:border-border min-w-full justify-start">
           <TabsTrigger value="profile" className={tabTriggerClass} data-testid="tab-edit-profile">Profile</TabsTrigger>
           <TabsTrigger value="users" className={tabTriggerClass} data-testid="tab-edit-users">Team</TabsTrigger>
@@ -1041,77 +1034,13 @@ export default function AdminProviderEditPage() {
               })()}
             </Card>
 
-            {isSurrogacyAgency && (
-              <Card className="p-6 space-y-4">
-                <h3 className="text-lg font-heading flex items-center gap-2">
-                  <Check className="w-5 h-5 text-primary" /> Partner IVF Clinics
-                </h3>
-                <p className="t-helper">Link the IVF clinic(s) that operate in the same country as this agency. The AI will combine both providers' matching requirements (and costs) when evaluating parents for this international program.</p>
-
-                {/* Selected partner clinics as removable chips */}
-                {partnerProviderIds.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {partnerProviderIds.map((pid) => {
-                      const clinic = (allIvfClinics || []).find((c: any) => c.id === pid);
-                      return (
-                        <Badge key={pid} variant="outline" className="flex items-center gap-1" data-testid={`chip-partner-clinic-${pid}`}>
-                          {clinic?.name || pid}
-                          <button
-                            type="button"
-                            onClick={() => setPartnerProviderIds(partnerProviderIds.filter((x) => x !== pid))}
-                            className="ml-1 text-muted-foreground hover:text-destructive"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Search input with inline results (inline avoids clipping by the Card's overflow-hidden) */}
-                <div className="max-w-md">
-                  <Input
-                    type="text"
-                    value={partnerClinicSearch}
-                    onChange={(e) => setPartnerClinicSearch(e.target.value)}
-                    placeholder="Search IVF clinics to add..."
-                    data-testid="input-partner-clinic-search"
-                  />
-                  {partnerClinicSearch.trim() && (
-                    <ul className="mt-1 w-full max-h-64 overflow-y-auto rounded-[var(--container-radius)] border border-border bg-card shadow-md">
-                      {(() => {
-                        const q = partnerClinicSearch.trim().toLowerCase();
-                        const matches = (allIvfClinics || [])
-                          .filter((c: any) => c.id !== id && !partnerProviderIds.includes(c.id) && c.name.toLowerCase().includes(q))
-                          .slice(0, 10);
-                        if (matches.length === 0) {
-                          return <li className="t-helper px-3 py-2 italic">No matching clinics</li>;
-                        }
-                        return matches.map((clinic: any) => (
-                          <li
-                            key={clinic.id}
-                            className="cursor-pointer px-3 py-2 text-sm flex items-center gap-2 hover:bg-muted"
-                            onClick={() => {
-                              setPartnerProviderIds([...partnerProviderIds, clinic.id]);
-                              setPartnerClinicSearch("");
-                            }}
-                            data-testid={`option-partner-clinic-${clinic.id}`}
-                          >
-                            <span>{clinic.name}</span>
-                            {clinic.locations?.length > 0 && (
-                              <span className="t-helper">({clinic.locations.map((l: any) => l.state || l.city).filter(Boolean).slice(0, 2).join(", ")})</span>
-                            )}
-                          </li>
-                        ));
-                      })()}
-                    </ul>
-                  )}
-                </div>
-                {!allIvfClinics && (
-                  <p className="t-helper italic">Loading IVF clinics...</p>
-                )}
-              </Card>
+            {(isSurrogacyAgency || isIvfClinic) && (
+              <PartnerProvidersCard
+                editingType={isSurrogacyAgency ? "surrogacy-agency" : "ivf-clinic"}
+                selfId={id!}
+                value={partnerProviderIds}
+                onChange={setPartnerProviderIds}
+              />
             )}
 
             {!isGoStorkHouse && (isIvfClinic || isSurrogacyAgency) && (
