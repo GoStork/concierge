@@ -1244,7 +1244,7 @@ export class ProvidersController {
     const primary = await this.prisma.providerMember.findUnique({
       where: { slug },
     });
-    if (!primary || primary.isPublicProfile === false) {
+    if (!primary || primary.isPublicProfile === false || !isClinicianMember(primary)) {
       throw new NotFoundException("Doctor not found");
     }
 

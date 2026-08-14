@@ -14,6 +14,7 @@
  */
 
 import { computeClinicSuccessRate, type EggSource, type AgeGroup } from "./ivf-success-rate";
+import { isClinicianMember } from "../modules/providers/clinician";
 
 // The Prisma select every caller must use so enrichDoctorRows has the fields it
 // needs (member identity + per-clinic success-rate rows).
@@ -157,6 +158,11 @@ const scoreRow = (m: any) => (m.photoUrl ? 100 : 0) + (m.specialties?.length || 
  * `rows` must have been selected with DOCTOR_MEMBER_SELECT.
  */
 export function enrichDoctorRows(rows: any[], ctx: DoctorEnrichmentContext): EnrichedDoctor[] {
+  // Every caller of this shape is a DOCTOR surface (marketplace directory, MCP
+  // search_doctors / resolve_doctor_card, comparison table). Enforce the
+  // clinician rule here once so no caller can leak a lab director or practice
+  // manager as a doctor card.
+  rows = rows.filter((m) => isClinicianMember(m));
   const srContext = { eggSource: ctx.eggSource, ageGroup: ctx.ageGroup, isNewPatient: ctx.isNewPatient };
   const specialtyFilter = (ctx.specialtyFilter || "").trim().toLowerCase();
   const searchTerms = ctx.searchTerms || [];

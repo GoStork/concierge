@@ -7,6 +7,7 @@ import { buildDoctorEnrichment } from "./doctor-data";
 import { upscaleMissingDoctorPhotos } from "../../lib/upscale-doctors";
 import { US_STATES } from "./us-states";
 import { clusterPersonVariants, pickBestDisplayName } from "../../lib/doctor-name-dedup";
+import { isClinicianMember } from "./clinician";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -506,17 +507,27 @@ export async function searchSartForClinic(
     const phone: string | null = bestMatch.Phone || null;
     const email: string | null = bestMatch.Email || null;
 
-    const members: SartMember[] = Array.isArray(bestMatch.Members)
-      ? bestMatch.Members.map((m: any) => ({
+    // Doctors only: the SART directory lists the whole lab (embryologists with
+    // HCLD/ELD credentials, practice managers, lab directors). Judge each entry
+    // on the RAW name - the display name below strips the MD/DO that proves
+    // clinician-ness - plus the SART role/title.
+    const rawMembers: any[] = Array.isArray(bestMatch.Members) ? bestMatch.Members : [];
+    const clinicianRaw = rawMembers.filter((m: any) =>
+      isClinicianMember({
+        name: m.NameFirstLast || m.FullName || "",
+        title: m.Title || m.Role || null,
+        isMedicalDirector: /medical director/i.test(m.Role || "") || /medical director/i.test(m.Title || ""),
+      }),
+    );
+    const members: SartMember[] = clinicianRaw.map((m: any) => ({
           name: (m.NameFirstLast || m.FullName || "").replace(/,?\s*(MD|DO|PhD|FACOG|FACS|MBA|MSc|RN|NP|PA|HCLD|TS|ELD)\b/gi, "").replace(/[,]+$/, "").trim(),
           title: m.Title || m.Role || null,
           bio: m.Bio && m.Bio.trim().length > 5 ? m.Bio.trim() : null,
           isMedicalDirector: /medical director/i.test(m.Role || "") || /medical director/i.test(m.Title || ""),
-        })).filter((m: SartMember) => m.name.length >= 3)
-      : [];
+        })).filter((m: SartMember) => m.name.length >= 3);
 
-    if (members.length > 0) {
-      console.log(`[clinic-enrichment] SART: collected ${members.length} staff members for "${clinicName}"`);
+    if (members.length > 0 || rawMembers.length > 0) {
+      console.log(`[clinic-enrichment] SART: collected ${members.length} doctors for "${clinicName}" (${rawMembers.length - clinicianRaw.length} non-clinician staff dropped)`);
     }
 
     return { websiteUrl, phone, email, members };
@@ -809,6 +820,16 @@ export function mergeTeamMembers(
       existing.fromSart = true;
       enrichedFromScraper++;
     } else {
+      // Doctors only. The scrape-side allowlist (isDoctorOrRE) also scans the
+      // BIO, so a Practice Director whose blurb mentions "our physicians" gets
+      // through it. isClinicianMember judges name + title only - the same rule
+      // every doctor-facing surface uses - so a scraper-only row that fails it
+      // never reaches the roster. (SART rows were already vetted at ingest,
+      // before their display name had the MD/DO stripped, so they skip this.)
+      if (!isClinicianMember({ name: scraped.name, title: scraped.title, isMedicalDirector: scraped.isMedicalDirector })) {
+        console.log(`[clinic-enrichment] Team merge: dropped non-clinician "${scraped.name}"${scraped.title ? ` (${scraped.title})` : ""} for "${providerName}"`);
+        continue;
+      }
       mergedMap.set(key, { ...scraped, fromSart: false });
       newFromScraper++;
     }

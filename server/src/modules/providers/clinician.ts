@@ -38,17 +38,23 @@ const NON_CLINICAL_TITLE = new RegExp(
   "i",
 );
 
-/** Titles that state the person practises medicine. */
+/** Titles that state the person practises medicine. Includes Spanish forms -
+ * international clinics (e.g. Colombia's Inser) list "Médica Ginecóloga". */
 const CLINICAL_TITLE = new RegExp(
   [
     "physician|doctor\\b",
-    "endocrinolog", // reproductive endocrinologist
-    "obstetric|gynecolog|\\bob\\s*/?\\s*gyn\\b",
+    "endocrinolog", // reproductive endocrinologist (also Spanish endocrinólogo)
+    "obstetric|gynecolog|\\bob\\s*[-/]?\\s*gyn\\b", // OB/GYN and OB-GYN
+    "division\\s+chief", // academic REI practices title their physicians this way
+    "professor\\b", // Associate Professor at an academic fertility practice
     "urolog|androlog",
     "surgeon",
     "fertility\\s+specialist|infertility\\s+specialist",
     "medical\\s+director|chief\\s+medical\\s+officer",
     "\\bm\\.?d\\.?\\b|\\bd\\.?o\\.?\\b",
+    "m[eé]dic[oa]\\b", // Médico / Médica (the noun, not "medical")
+    "ginec[oó]log|obstetra|cirujan[oa]",
+    "reproducci[oó]n\\s+(humana|asistida)", // especialista en Reproducción Humana
   ].join("|"),
   "i",
 );
@@ -60,6 +66,16 @@ const CLINICAL_TITLE = new RegExp(
  */
 const PHYSICIAN_DEGREE = /\b(M\.?\s?D\.?|MBBS|MBBCh)\b/i;
 const PHYSICIAN_DEGREE_DO = /\bD\.?\s?O\.?\b/;
+
+/**
+ * True when the title AFFIRMATIVELY marks staff (lab director, practice
+ * manager...), as opposed to merely lacking clinical evidence. The purge script
+ * deletes these outright but only hides no-signal rows, which may be doctors
+ * with missing data.
+ */
+export function isNonClinicalTitle(title: string | null | undefined): boolean {
+  return !!title && NON_CLINICAL_TITLE.test(title) && !CLINICAL_TITLE.test(title);
+}
 
 export interface ClinicianCandidate {
   name?: string | null;
@@ -96,6 +112,6 @@ export function isClinicianMember(m: ClinicianCandidate): boolean {
   // director, so it is only trusted once a staff title has been ruled out.
   if (m.isMedicalDirector) return true;
   if (title && CLINICAL_TITLE.test(title)) return true;
-  if (/^\s*dr\.?\s/i.test(name)) return true;
+  if (/^\s*dra?\.?\s/i.test(name)) return true; // "Dr." / "Dra." (Spanish)
   return false;
 }

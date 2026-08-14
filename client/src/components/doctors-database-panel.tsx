@@ -43,8 +43,13 @@ export default function DoctorsDatabasePanel({ providerId }: { providerId: strin
     queryFn: async () => (await apiRequest("GET", membersUrl)).json(),
     enabled: !!providerId,
   });
-  // Only public doctor profiles are marketplace-visible and sponsorable.
-  const doctors = useMemo(() => (membersQ.data || []).filter((m) => m.isPublicProfile !== false), [membersQ.data]);
+  // Only public doctor profiles are marketplace-visible and sponsorable, and
+  // this is a DOCTORS panel: the server annotates each member with isClinician
+  // (see clinician.ts) so practice/lab directors and other staff never render here.
+  const doctors = useMemo(
+    () => (membersQ.data || []).filter((m) => m.isPublicProfile !== false && m.isClinician !== false),
+    [membersQ.data],
+  );
 
   // ─── Filters ───────────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");

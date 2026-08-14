@@ -21,6 +21,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { SessionOrJwtGuard } from "../auth/guards/auth.guard";
 import { insertProviderMemberSchema } from "@shared/schema";
 import { hasProviderRole } from "@shared/roles";
+import { isClinicianMember } from "./clinician";
 import { z } from "zod";
 import { ErrorResponseDto } from "../../dto/auth.dto";
 
@@ -57,11 +58,14 @@ export class MembersController {
   @ApiParam({ name: "providerId", description: "Provider UUID" })
   @ApiResponse({ status: 200, description: "List of provider members" })
   async list(@Param("providerId") providerId: string) {
-    return this.prisma.providerMember.findMany({
+    const members = await this.prisma.providerMember.findMany({
       where: { providerId },
       include: { locations: { include: { location: true } } },
       orderBy: { sortOrder: "asc" },
     });
+    // Annotate rather than filter: the client can't run the clinician rule, and
+    // doctor surfaces (the admin Doctors tab) must hide non-clinician staff.
+    return members.map((m) => ({ ...m, isClinician: isClinicianMember(m) }));
   }
 
   @Post()
