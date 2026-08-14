@@ -24,7 +24,7 @@ import { emitJourneyEvent } from "./journey-events";
 import { hasContactRelease, parentAccountKey, releaseParentContact, releasedAccountIds } from "./parent-privacy";
 import { ipFormProviderIds } from "./notify-ip-form";
 import { maritalImpliesTwoParents } from "./ip-form-defaults";
-import { providerProgramTypes, providerOffersSurrogacy } from "./ip-form-flow";
+import { providerProgramTypes, providerOffersSurrogacy, providerRequiresIdPhotocopy } from "./ip-form-flow";
 
 export const ipFormRouter = Router();
 
@@ -329,10 +329,15 @@ async function accountCollectingProviders(memberIds: string[]): Promise<{ id: st
   for (const s of sessions) if (s.providerId) providerIds.add(s.providerId);
   for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
   if (!providerIds.size) return [];
-  return prisma.provider.findMany({
+  const collecting = await prisma.provider.findMany({
     where: { id: { in: [...providerIds] }, collectsIntendedParentForm: true },
-    select: { id: true, requiresIdPhotocopy: true },
+    select: { id: true },
   });
+  // requiresIdPhotocopy is derived from the ID question's per-provider
+  // visibility (no dedicated flag anymore).
+  return Promise.all(
+    collecting.map(async (p) => ({ id: p.id, requiresIdPhotocopy: await providerRequiresIdPhotocopy(p.id) })),
+  );
 }
 
 async function accountProgramTypes(memberIds: string[], collecting?: { id: string }[]): Promise<string[]> {
@@ -1203,7 +1208,7 @@ async function providerFormAccess(req: Request, res: Response, write: boolean): 
   const providerId = String(req.params.providerId || "");
   const provider = await prisma.provider.findUnique({
     where: { id: providerId },
-    select: { id: true, name: true, collectsIntendedParentForm: true, requiresIdPhotocopy: true, canEditParentForm: true },
+    select: { id: true, name: true, collectsIntendedParentForm: true, canEditParentForm: true },
   });
   if (!provider) {
     res.status(404).json({ message: "Provider not found" });
@@ -1229,6 +1234,13 @@ ipFormRouter.get("/api/ip-form/provider-config/:providerId", requireAuth, async 
     const user = (req as any).user;
     const admin = rolesOf(user).includes("GOSTORK_ADMIN");
     const programTypes = await providerProgramTypes(access.providerId);
+    // Surrogacy agencies ALWAYS collect the Intended Parent Form; the flag is
+    // an opt-in only for other provider types. Self-heal legacy rows here so
+    // the flag-based query gates stay consistent.
+    if (programTypes.includes("surrogacy") && !access.provider.collectsIntendedParentForm) {
+      await prisma.provider.update({ where: { id: access.providerId }, data: { collectsIntendedParentForm: true } }).catch(() => {});
+      access.provider.collectsIntendedParentForm = true;
+    }
     // The provider's applicable slice of the global template (active only),
     // with IVF-only copy variants swapped in for clinic-only providers.
     let sections = await loadIpFormTemplate();

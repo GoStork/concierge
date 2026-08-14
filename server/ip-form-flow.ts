@@ -150,6 +150,28 @@ export async function providerProgramTypes(providerId: string): Promise<string[]
 }
 
 /**
+ * Does this provider require the parents' ID document scans?
+ *
+ * No dedicated flag anymore - the requirement IS the visibility of the
+ * "ID Document Photocopy" question (key priv_id_photocopy, Private
+ * Information section) for this provider: shown (no hidden override) =
+ * required, hidden = not collected. Toggled per provider in the Parent Form
+ * tab like any other question.
+ */
+export async function providerRequiresIdPhotocopy(providerId: string): Promise<boolean> {
+  const q = await prisma.ipFormQuestion.findUnique({
+    where: { key: "priv_id_photocopy" },
+    select: { id: true, isActive: true },
+  });
+  if (!q || !q.isActive) return false;
+  const hiddenOverride = await prisma.ipFormProviderOverride.findFirst({
+    where: { providerId, targetType: "question", targetId: q.id, hidden: true },
+    select: { id: true },
+  });
+  return !hiddenOverride;
+}
+
+/**
  * Only surrogacy agencies get the surrogate-safe variant - everyone else has no
  * surrogate to forward it to. Used to hide the button, not just block the route.
  */
@@ -171,24 +193,29 @@ export async function maybePromptIpForm(opts: { parentUserId: string; providerId
         id: true,
         name: true,
         collectsIntendedParentForm: true,
-        requiresIdPhotocopy: true,
         services: { where: { status: "APPROVED" }, select: { providerType: { select: { name: true } } } },
       },
     });
     if (!provider) return;
     if ((provider.name || "").trim().toLowerCase() === "gostork") return;
-    // Any provider that collects the IP form triggers it (surrogacy agencies +
-    // international IVF clinics), not just surrogacy.
-    if (!provider.collectsIntendedParentForm) return;
     const isSurrogacy = provider.services.some((s) => (s.providerType?.name || "").toLowerCase().includes("surrogacy"));
+    // Surrogacy agencies ALWAYS collect the Intended Parent Form - the flag is
+    // only an opt-in for other provider types (e.g. international IVF clinics).
+    // Self-heal legacy rows so the query-side gates stay consistent.
+    if (isSurrogacy && !provider.collectsIntendedParentForm) {
+      await prisma.provider.update({ where: { id: provider.id }, data: { collectsIntendedParentForm: true } }).catch(() => {});
+    } else if (!provider.collectsIntendedParentForm) {
+      return;
+    }
 
     const { accountId, memberIds } = await accountIdsFor(opts.parentUserId);
     const existing = await prisma.ipFormResponse.findUnique({ where: { parentAccountId: accountId } });
-    // Already have a form? A provider that requires the ID photocopy still needs
-    // it - send a targeted supplemental request (the scan stays editable even
-    // after submission) rather than re-prompting the whole form.
+    // Already have a form? A provider that requires the ID photocopy (the
+    // "ID Document Photocopy" question is shown for it) still needs it - send
+    // a targeted supplemental request (the scan stays editable even after
+    // submission) rather than re-prompting the whole form.
     if ((existing?.promptedAt || existing?.status === "SUBMITTED")) {
-      if (provider.requiresIdPhotocopy && existing) await maybeRequestPhotocopy(existing, memberIds, provider);
+      if (existing && (await providerRequiresIdPhotocopy(provider.id))) await maybeRequestPhotocopy(existing, memberIds, provider);
       return;
     }
 

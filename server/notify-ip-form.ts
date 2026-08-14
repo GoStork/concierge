@@ -432,10 +432,15 @@ export async function notifyProvidersPhotocopyUploaded(responseId: string): Prom
   for (const s of sessions) if (s.providerId) providerIds.add(s.providerId);
   for (const b of bookings) if (b.providerUser?.providerId) providerIds.add(b.providerUser.providerId);
   if (!providerIds.size) return;
-  const providers = await prisma.provider.findMany({
-    where: { id: { in: [...providerIds] }, collectsIntendedParentForm: true, requiresIdPhotocopy: true },
+  const collecting = await prisma.provider.findMany({
+    where: { id: { in: [...providerIds] }, collectsIntendedParentForm: true },
     select: { id: true, name: true },
   });
+  // "Requires the ID" = the ID Document Photocopy question is shown for the
+  // provider (no dedicated flag anymore - see providerRequiresIdPhotocopy).
+  const { providerRequiresIdPhotocopy } = await import("./ip-form-flow");
+  const providers: { id: string; name: string | null }[] = [];
+  for (const p of collecting) if (await providerRequiresIdPhotocopy(p.id)) providers.push(p);
   for (const provider of providers) {
     const providerUsers = await prisma.user.findMany({ where: { providerId: provider.id, isDisabled: false }, select: { id: true } });
     for (const pu of providerUsers) {

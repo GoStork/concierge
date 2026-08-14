@@ -77,7 +77,6 @@ interface ProviderFormConfig {
     id: string;
     name: string;
     collectsIntendedParentForm: boolean;
-    requiresIdPhotocopy: boolean;
     canEditParentForm: boolean;
   };
   programTypes: string[];
@@ -163,36 +162,33 @@ export default function ProviderParentFormTab({ providerId, mode }: { providerId
       {mode === "admin" && (
         <Card className="p-4 space-y-3">
           <p className="font-ui font-medium">Form collection</p>
-          <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
-            <Checkbox
-              className="mt-0.5"
-              checked={provider.collectsIntendedParentForm}
-              disabled={savingFlag === "collectsIntendedParentForm"}
-              onCheckedChange={(v) => saveProviderFlag({ collectsIntendedParentForm: !!v })}
-              data-testid="checkbox-edit-collects-ip-form"
-            />
-            <span>
-              <span className="font-ui">Collects the Intended Parent Form</span> - after a consultation, parents are prompted to
-              complete the form and this provider can download it. Surrogacy agencies get the full form; other providers (e.g.
-              international IVF clinics) get the short version (basic info + ID).
-            </span>
-          </label>
-          {provider.collectsIntendedParentForm && (
+          {data.programTypes.includes("surrogacy") ? (
+            // Surrogacy agencies always collect - no opt-out, so no checkbox.
+            <p className="text-sm rounded-[var(--radius)] bg-secondary p-3" data-testid="note-surrogacy-always-collects">
+              <span className="font-ui">Surrogacy agencies always collect the Intended Parent Form</span> - after a consultation,
+              parents are prompted to complete it and this agency can download the branded PDF (full + surrogate-safe versions).
+            </p>
+          ) : (
             <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-secondary p-3">
               <Checkbox
                 className="mt-0.5"
-                checked={provider.requiresIdPhotocopy}
-                disabled={savingFlag === "requiresIdPhotocopy"}
-                onCheckedChange={(v) => saveProviderFlag({ requiresIdPhotocopy: !!v })}
-                data-testid="checkbox-edit-requires-id-photocopy"
+                checked={provider.collectsIntendedParentForm}
+                disabled={savingFlag === "collectsIntendedParentForm"}
+                onCheckedChange={(v) => saveProviderFlag({ collectsIntendedParentForm: !!v })}
+                data-testid="checkbox-edit-collects-ip-form"
               />
               <span>
-                <span className="font-ui">Requires a copy of each parent's ID document</span> - parents must upload a photo/scan of
-                their passport or government ID. Requested automatically when this provider connects, even if the form was already
-                submitted.
+                <span className="font-ui">Collects the Intended Parent Form</span> - after a consultation, parents are prompted to
+                complete the IVF clinic version of the form and this provider can download it. Leave off for clinics that do not
+                use the form.
               </span>
             </label>
           )}
+          <p className="t-helper">
+            ID documents: to require a photo/scan of each parent's passport or government ID, toggle the "ID Document Photocopy"
+            question in the Private Information section below - shown = required (requested automatically when this provider
+            connects, even post-submission), hidden = not collected.
+          </p>
           <label className="flex items-start gap-2 text-sm cursor-pointer rounded-[var(--radius)] bg-accent/15 p-3">
             <Checkbox
               className="mt-0.5"

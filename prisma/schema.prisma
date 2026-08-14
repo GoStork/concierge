@@ -68,7 +68,12 @@ model Provider {
   biometricMatchingAuthorized           Boolean                     @default(true)
   // Intended Parent Form: does this provider collect it (prompt the parent +
   // download it), and does it require a photocopy of each parent's ID document.
+  // For surrogacy agencies this is ALWAYS true (auto-healed server-side);
+  // the checkbox is an opt-in only for other provider types (IVF clinics).
   collectsIntendedParentForm            Boolean                     @default(false)
+  // DEPRECATED (Aug 13 2026): the ID requirement is now the per-provider
+  // visibility of the priv_id_photocopy question (IpFormProviderOverride) -
+  // see providerRequiresIdPhotocopy(). Column kept for history, never read.
   requiresIdPhotocopy                   Boolean                     @default(false)
   // GoStork-controlled: may this provider edit its own Parent Form
   // adjustments (per-provider overrides + custom questions)? Toggled only by
