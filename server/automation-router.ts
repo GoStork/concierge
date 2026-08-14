@@ -78,14 +78,32 @@ const FEATURE_GATES: Record<string, string> = {
   agreementAutomation: "auto_agreement_on_paid",
 };
 
+/**
+ * Unlike the silence config, these flags always live on a Provider row - a
+ * GoStork admin whose account is linked to the house provider edits that
+ * org's flags, not platform defaults. So the org comes straight from the
+ * user's own providerId, whatever their role.
+ */
+function featureProviderId(req: Request, res: Response): string | null {
+  const user = req.user as any;
+  if (!isGostorkStaff(user) && !isProviderStaff(user)) {
+    res.status(403).json({ message: "Forbidden" });
+    return null;
+  }
+  if (!user?.providerId) {
+    res.status(403).json({ message: "Provider account required" });
+    return null;
+  }
+  return user.providerId as string;
+}
+
 automationRouter.get("/api/automation/features", requireAuth, async (req, res) => {
   try {
-    const w = who(req, res);
-    if (!w) return;
-    if (!w.providerId) return res.status(403).json({ message: "Provider account required" });
+    const providerId = featureProviderId(req, res);
+    if (!providerId) return;
     const [provider, gateRows] = await Promise.all([
       prisma.provider.findUnique({
-        where: { id: w.providerId },
+        where: { id: providerId },
         select: { agreementAutomation: true, autoFeaturesEnabled: true },
       }),
       prisma.conciergePromptSection.findMany({
@@ -113,12 +131,11 @@ automationRouter.get("/api/automation/features", requireAuth, async (req, res) =
 
 automationRouter.put("/api/automation/features", requireAuth, async (req, res) => {
   try {
-    const w = who(req, res);
-    if (!w) return;
-    if (!w.providerId) return res.status(403).json({ message: "Provider account required" });
+    const providerId = featureProviderId(req, res);
+    if (!providerId) return;
     const body = req.body || {};
     const existing = await prisma.provider.findUnique({
-      where: { id: w.providerId },
+      where: { id: providerId },
       select: { autoFeaturesEnabled: true },
     });
     if (!existing) return res.status(404).json({ message: "Provider not found" });
@@ -129,7 +146,7 @@ automationRouter.put("/api/automation/features", requireAuth, async (req, res) =
       ...(typeof body.autoInvoiceDraft === "boolean" ? { autoInvoiceDraft: body.autoInvoiceDraft } : {}),
     };
     await prisma.provider.update({
-      where: { id: w.providerId },
+      where: { id: providerId },
       data: { autoFeaturesEnabled: next },
     });
     res.json({ ok: true, autoCostSheetDraft: next.autoCostSheetDraft === true, autoInvoiceDraft: next.autoInvoiceDraft === true });

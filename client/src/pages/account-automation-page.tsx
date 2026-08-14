@@ -225,7 +225,7 @@ function SilenceSection() {
  */
 function BillingAutomationSection() {
   const { toast } = useToast();
-  const { data, isLoading } = useQuery<AutomationFeatures>({
+  const { data, isLoading, isError, error } = useQuery<AutomationFeatures>({
     queryKey: ["/api/automation/features"],
     staleTime: 0,
   });
@@ -263,6 +263,20 @@ function BillingAutomationSection() {
     },
   });
 
+  if (isError) {
+    return (
+      <div className="space-y-2">
+        <SectionHeading
+          id="billing"
+          title="Documents & billing"
+          subtitle="The paperwork pipeline, automated end to end."
+        />
+        <p className="text-sm font-ui" style={{ color: "hsl(var(--destructive))" }} data-testid="billing-automation-error">
+          Could not load billing automation settings{(error as any)?.message ? ` - ${(error as any).message}` : ""}. Reload the page to retry.
+        </p>
+      </div>
+    );
+  }
   if (isLoading || !data) {
     return (
       <div className="flex items-center gap-2 text-sm font-ui text-muted-foreground">
